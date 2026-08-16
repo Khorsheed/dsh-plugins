@@ -3,7 +3,7 @@
  * by both the file view tab and the link-click drawer. */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { FilePreviewEntry, FilePreviewRead } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import { CodeBlock, DiffBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { languageFor } from './path-utils.ts'

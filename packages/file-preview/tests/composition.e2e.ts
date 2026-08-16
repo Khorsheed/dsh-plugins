@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import type { FilePreviewList, FilePreviewRead } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 
 const driver = fileURLToPath(new URL(
   '../../../../examples/headless-agent/tests/fixtures/file-preview-driver.ts',

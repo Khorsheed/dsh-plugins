@@ -1,7 +1,7 @@
 /**
  * Pure state derivation: diff two session-list snapshots into whalesong events.
  * Kept DOM/Audio-free so every edge rule is unit-testable without a browser.
- * @module @deepseek-ai/dsh-whalesong/client/status
+ * @module @khorsheed/dsh-whalesong/client/status
  */
 import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 

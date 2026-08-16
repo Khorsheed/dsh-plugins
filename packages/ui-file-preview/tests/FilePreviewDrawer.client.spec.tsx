@@ -11,7 +11,7 @@ import { useSyncExternalStore } from 'react'
 import { FilePreviewDrawer } from '../src/client/FilePreviewDrawer.tsx'
 import type { FilePreviewDrawerProps } from '../src/client/contract.ts'
 import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
-import type { FilePreviewList, FilePreviewRead } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 
 function hookOf(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => unknown }) {
   return function useSelector<S>(sel: (s: unknown) => S): S {

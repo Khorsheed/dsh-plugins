@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FsVersion, type FsInfo, type FsTarget, type FileSystem } from '@deepseek-ai/dsh-fs'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { FilePreviewService } from '@deepseek-ai/dsh-file-preview'
+import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 
 /** A minimal fs double covering the image-route surface (bytes, not text). */
 interface RouteFsDouble {

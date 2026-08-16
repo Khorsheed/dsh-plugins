@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-whalesong",
+  "name": "@khorsheed/dsh-whalesong",
   "description": "Status ambience for the dsh web GUI: the sidebar whale spouts water and the favicon animates while any task runs, with completion/blocked chimes",
   "version": "0.1.0-rc.5",
   "publishConfig": {

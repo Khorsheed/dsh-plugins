@@ -1,5 +1,5 @@
 /** Read-only file-preview Remote service over live sessions and the filesystem.
- * @module @deepseek-ai/dsh-file-preview
+ * @module @khorsheed/dsh-file-preview
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'

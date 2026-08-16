@@ -8,7 +8,7 @@
  * volume 1 reproduces v1's restrained loudness and 0 mutes without disabling.
  * Under `prefers-reduced-motion` every chime is dropped (silence pairs with
  * the hidden animation). Every chime ends well under 0.5s.
- * @module @deepseek-ai/dsh-whalesong/client/sound
+ * @module @khorsheed/dsh-whalesong/client/sound
  */
 
 /** Chime kinds: task finished vs. task waiting on the user. */

@@ -5,7 +5,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session/types'
 import {
   diffsFromResultMeta, foldFilePreview, pathFromToolCall,
-} from '@deepseek-ai/dsh-file-preview/src/fold.ts'
+} from '@khorsheed/dsh-file-preview/src/fold.ts'
 
 /** Build one tool/call event with JSON-serialized arguments. */
 function toolCall(seq: number, name: string, args: unknown, turn = 1, step = 1): SessionEvent<'tool/call'> {

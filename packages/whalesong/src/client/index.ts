@@ -4,7 +4,7 @@
  * the whale whalesong overlay plus completion/blocked chimes when enabled,
  * zero residue when disabled. Dispose (hot unload via `entry.update({disabled})`
  * or fiber teardown) unwinds everything through the same controller path.
- * @module @deepseek-ai/dsh-whalesong/client
+ * @module @khorsheed/dsh-whalesong/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { createConfigSync } from './config.ts'

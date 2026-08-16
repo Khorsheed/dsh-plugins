@@ -11,7 +11,7 @@ import { fireEvent } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-shortcuts/client'
+import { apply, inject } from '@khorsheed/dsh-ui-shortcuts/client'
 import type { ShortcutsRowInjected } from '../src/client/settings/ShortcutsRow.tsx'
 
 const SID = 's1' as SessionId

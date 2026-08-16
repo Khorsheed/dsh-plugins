@@ -8,7 +8,7 @@
  * receives the bound actions through the registration's inject hook.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { FilePreviewEntry, FilePreviewList, FilePreviewRead } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewEntry, FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface FilePreviewState {

@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-whalesong`.
- * @module @deepseek-ai/dsh-whalesong/invariant
+ * Package-owned invariant companion for `@khorsheed/dsh-whalesong`.
+ * @module @khorsheed/dsh-whalesong/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-whalesong'
+const PACKAGE_NAME = '@khorsheed/dsh-whalesong'
 
 /** Cordis companion plugin name. */
 export const name = 'whalesong-invariant'

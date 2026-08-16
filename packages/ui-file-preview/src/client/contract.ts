@@ -1,6 +1,6 @@
 /** Composed props contracts for the file-preview view and link-click drawer. */
 
-import type { FilePreviewList, FilePreviewRead } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -8,7 +8,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
-import type {} from '@deepseek-ai/dsh-file-preview/remote'
+import type {} from '@khorsheed/dsh-file-preview/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').

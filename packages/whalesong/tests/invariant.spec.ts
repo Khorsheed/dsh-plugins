@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as WhalesongInvariant from '@deepseek-ai/dsh-whalesong/invariant'
+import * as WhalesongInvariant from '@khorsheed/dsh-whalesong/invariant'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-whalesong'
+const PACKAGE_NAME = '@khorsheed/dsh-whalesong'
 
 async function mount(): Promise<Context> {
   const ctx = new Context()

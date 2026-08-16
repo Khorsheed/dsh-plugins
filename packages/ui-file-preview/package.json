@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-file-preview",
+  "name": "@khorsheed/dsh-client-ui-file-preview",
   "description": "Session file-preview side drawer: lists the files the session wrote or edited and previews their current content without opening an IDE",
   "version": "0.1.0-rc.5",
   "publishConfig": {
@@ -57,12 +57,12 @@
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-file-preview": "workspace:*",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/cordis": "^4.0.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@khorsheed/dsh-file-preview": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
@@ -75,14 +75,14 @@
     "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-file-preview": "workspace:*",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/cordis": "^4.0.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@khorsheed/dsh-file-preview": "workspace:*"
   },
   "files": [
     "lib/index.js",

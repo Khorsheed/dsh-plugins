@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-shortcuts`.
- * @module @deepseek-ai/dsh-client-ui-shortcuts/invariant
+ * Package-owned invariant companion for `@khorsheed/dsh-ui-shortcuts`.
+ * @module @khorsheed/dsh-ui-shortcuts/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-shortcuts'
+const PACKAGE_NAME = '@khorsheed/dsh-ui-shortcuts'
 
 /** Cordis companion plugin name. */
 export const name = 'client-ui-shortcuts-invariant'

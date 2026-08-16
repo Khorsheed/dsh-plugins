@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   basename, highlightMatch, languageFor, matchesQuery, parentPath, relativeToCwd, sortByLatest,
 } from '../src/client/path-utils.ts'
-import type { FilePreviewEntry } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewEntry } from '@khorsheed/dsh-file-preview/types'
 
 function entry(path: string, seq: number): FilePreviewEntry {
   return { path, op: 'write', seq, turn: 1, step: 1, diffs: [] }

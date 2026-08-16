@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-file-preview",
+  "name": "@khorsheed/dsh-file-preview",
   "description": "Read-only file-preview Remote service: lists the files a session wrote or edited and serves their current text content",
   "version": "0.1.0-rc.5",
   "publishConfig": {

@@ -1,4 +1,4 @@
-/** Pure log fold over the files a session read, wrote, or edited. @module @deepseek-ai/dsh-file-preview/fold */
+/** Pure log fold over the files a session read, wrote, or edited. @module @khorsheed/dsh-file-preview/fold */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the SessionEventMap merge for 'tool/code-dispatch'.

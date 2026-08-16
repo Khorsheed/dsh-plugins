@@ -10,7 +10,7 @@
  * (agent-profiles / plugin-toggle precedent). Cordis hot config updates
  * dispose and re-apply the entry, so the route closure always reflects the
  * latest resolved config without any listener plumbing.
- * @module @deepseek-ai/dsh-whalesong
+ * @module @khorsheed/dsh-whalesong
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'

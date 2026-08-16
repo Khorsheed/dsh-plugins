@@ -7,7 +7,7 @@
  * and no edits to core packages; the accepted user-sourced `session/title`
  * event pins the title against automatic regeneration. Composing this plugin
  * out of cordis.yml removes every surface it adds.
- * @module @deepseek-ai/dsh-client-session-title-edit/client
+ * @module @khorsheed/dsh-client-session-title-edit/client
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ctx.locale service merge.

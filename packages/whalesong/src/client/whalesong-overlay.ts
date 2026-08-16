@@ -11,7 +11,7 @@
  * whalesong.module.css); when neither logo anchor exists the overlay falls back
  * to the collapsed-rail corner with a one-time warning instead of hiding
  * (a hidden fallback made the whalesong silently invisible on older sidebars).
- * @module @deepseek-ai/dsh-whalesong/client/whalesong-overlay
+ * @module @khorsheed/dsh-whalesong/client/whalesong-overlay
  */
 import css from './whalesong.module.css'
 

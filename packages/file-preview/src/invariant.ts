@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-file-preview`.
- * @module @deepseek-ai/dsh-file-preview/invariant
+ * Package-owned invariant companion for `@khorsheed/dsh-file-preview`.
+ * @module @khorsheed/dsh-file-preview/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-file-preview'
+const PACKAGE_NAME = '@khorsheed/dsh-file-preview'
 
 /** Cordis companion plugin name. */
 export const name = 'file-preview-invariant'

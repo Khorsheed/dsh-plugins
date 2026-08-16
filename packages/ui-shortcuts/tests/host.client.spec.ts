@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   apply, DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE,
-} from '@deepseek-ai/dsh-client-ui-shortcuts'
-import type { ShortcutPreference } from '@deepseek-ai/dsh-client-ui-shortcuts'
+} from '@khorsheed/dsh-ui-shortcuts'
+import type { ShortcutPreference } from '@khorsheed/dsh-ui-shortcuts'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true

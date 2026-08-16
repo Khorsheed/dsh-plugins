@@ -1,6 +1,6 @@
 /** Pure path display helpers for the file-preview view. */
 
-import type { FilePreviewEntry } from '@deepseek-ai/dsh-file-preview/types'
+import type { FilePreviewEntry } from '@khorsheed/dsh-file-preview/types'
 
 /** The last path segment; the path itself when it has no separator. */
 export function basename(path: string): string {

@@ -3,4 +3,4 @@
 # block; there is no host half, so this row only activates the browser entry.
 - insert:
     - id: session-title-edit
-      name: '@deepseek-ai/dsh-client-session-title-edit'
+      name: '@khorsheed/dsh-client-session-title-edit'

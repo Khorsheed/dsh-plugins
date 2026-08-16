@@ -21,13 +21,13 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
-import type {} from '@deepseek-ai/dsh-file-preview/remote'
+import type {} from '@khorsheed/dsh-file-preview/remote'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.view',
 // 'conversation.chat.turnTail').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import filePreviewRemote from '@deepseek-ai/dsh-file-preview/remote'
+import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
 import { FilePreviewDrawer } from './FilePreviewDrawer.tsx'
 import { FilePreviewView } from './FilePreviewView.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-session-title-edit",
+  "name": "@khorsheed/dsh-client-session-title-edit",
   "description": "Session title editing in the web GUI chat header: an edit control beside the title that renames the current session through the official session.rename RPC (the user-sourced title pins against automatic regeneration)",
   "version": "0.1.0-rc.6",
   "publishConfig": {

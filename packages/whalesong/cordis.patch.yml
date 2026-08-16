@@ -5,11 +5,11 @@
 # the client-modules node half discovers browser bundles by scanning loader
 # entries for `dsh.client` declarations, so this entry row is what puts the
 # browser half on the roster. The entry name, tsdown bundle id and
-# /plugins/<id>/client.js URL are one name: `@deepseek-ai/dsh-whalesong`.
+# /plugins/<id>/client.js URL are one name: `@khorsheed/dsh-whalesong`.
 #
 # Additive only: no official file is patched or replaced; the row mounts the
 # plugin's own package, and the profile's own cordis.patch.yml can override
 # the `enabled` / `volume` config below.
 - insert:
     - id: whalesong
-      name: '@deepseek-ai/dsh-whalesong'
+      name: '@khorsheed/dsh-whalesong'

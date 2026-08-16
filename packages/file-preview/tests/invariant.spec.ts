@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as FilePreviewInvariant from '@deepseek-ai/dsh-file-preview/invariant'
+import * as FilePreviewInvariant from '@khorsheed/dsh-file-preview/invariant'
 
 async function setup(): Promise<Context> {
   const ctx = new Context()

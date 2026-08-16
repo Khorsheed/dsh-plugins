@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-session-title-edit`.
- * @module @deepseek-ai/dsh-client-session-title-edit/invariant
+ * Package-owned invariant companion for `@khorsheed/dsh-client-session-title-edit`.
+ * @module @khorsheed/dsh-client-session-title-edit/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-session-title-edit'
+const PACKAGE_NAME = '@khorsheed/dsh-client-session-title-edit'
 
 /** Cordis companion plugin name. */
 export const name = 'client-session-title-edit-invariant'

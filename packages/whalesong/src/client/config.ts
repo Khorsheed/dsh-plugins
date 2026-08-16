@@ -7,7 +7,7 @@
  * known config — a flaky route must never flap the UX. A surface without
  * fetch (jsdom benches, exotic embeds) keeps the default config and never
  * polls.
- * @module @deepseek-ai/dsh-whalesong/client/config
+ * @module @khorsheed/dsh-whalesong/client/config
  */
 
 /** The config the browser half runs on (mirrors the host's ResolvedConfig). */

@@ -1,4 +1,4 @@
-/** Wire payload vocabulary of the file-preview Remote service. @module @deepseek-ai/dsh-file-preview/types */
+/** Wire payload vocabulary of the file-preview Remote service. @module @khorsheed/dsh-file-preview/types */
 
 /** The model-facing operation recorded on a file. */
 export type FilePreviewOp = 'read' | 'write' | 'edit'

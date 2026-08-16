@@ -13,7 +13,7 @@
  * within one interval of the work ending.
  * Factored out of the cordis apply so every transition is unit-testable
  * with fake halves.
- * @module @deepseek-ai/dsh-whalesong/client/controller
+ * @module @khorsheed/dsh-whalesong/client/controller
  */
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { anySessionRunning, diffSessionList } from './status.ts'

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-shortcuts",
+  "name": "@khorsheed/dsh-ui-shortcuts",
   "description": "Optional web shortcuts plugin: fixed actions (pause the running turn, steer-send the draft) with user-chosen key bindings",
   "version": "0.1.0-rc.5",
   "publishConfig": {
