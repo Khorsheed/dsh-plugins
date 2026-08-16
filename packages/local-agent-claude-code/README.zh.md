@@ -1,4 +1,4 @@
-# `@khorsheed/dsh-local-agent-claude-code`
+# `@deepseek-ai/dsh-local-agent-claude-code`
 
 [English](README.md) | 中文
 
@@ -16,7 +16,7 @@
 ```sh
 # 1. Install the family core and this bundle into a profile.
 dsh plugin --profile web add @deepseek-ai/dsh-local-agent
-dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
+dsh plugin --profile web add @deepseek-ai/dsh-local-agent-claude-code
 
 # 2. Restart the profile. The first start provisions the scoped home; the
 #    subagent_claude_code_local tool mounts at the profile root, so every
@@ -28,7 +28,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
+dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-claude-code
 ```
 
 移除 bundle 会注销 harness、其 `/<name>` 命令族、工具行与 UI 行。一个用户自有的目录会刻意保留：作用域目录（`$DSH_HOME/local-agent/claude-code`）保住配置，重装后无需重新登录。删除它即可清除全部痕迹。
