@@ -141,7 +141,7 @@ importers:
         version: 0.1.0-rc.6(d1087903182dc7b0ae916e539f142e26)
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: ^0.1.0-rc.6
-        version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-client-runtime@0.1.0-rc.6(d1087903182dc7b0ae916e539f142e26))(@deepseek-ai/dsh-client-ui-slots@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-client-web-react@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-host-apiproxy@0.1.0-rc.6(a56b7e3e45b58c7b656385d41b52e4f0))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@types/node@26.2.0)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(jsdom@30.0.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(tsx@4.23.12))
+        version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-client-runtime@0.1.0-rc.6(d1087903182dc7b0ae916e539f142e26))(@deepseek-ai/dsh-client-ui-slots@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-client-web-react@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-host-apiproxy@0.1.0-rc.6(a56b7e3e45b58c7b656385d41b52e4f0))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@types/node@26.2.0)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(jsdom@29.1.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(tsx@4.23.12))
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(13dc764c7767bb949ecd4ace3add0d1a)
@@ -296,6 +296,9 @@ importers:
         version: 0.1.0-rc.6(13dc764c7767bb949ecd4ace3add0d1a)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
+      '@deepseek-ai/dsh-client-web-react':
+        specifier: 0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
       '@deepseek-ai/dsh-invariants':
         specifier: ^0.1.0-rc.6
@@ -3591,36 +3594,6 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       vitest: 4.1.10(@types/node@26.2.0)(jsdom@29.1.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(tsx@4.23.12))
-    transitivePeerDependencies:
-      - '@edge-runtime/vm'
-      - '@opentelemetry/api'
-      - '@types/node'
-      - '@types/react'
-      - '@types/react-dom'
-      - '@vitest/browser-playwright'
-      - '@vitest/browser-preview'
-      - '@vitest/browser-webdriverio'
-      - '@vitest/coverage-istanbul'
-      - '@vitest/coverage-v8'
-      - '@vitest/ui'
-      - happy-dom
-      - jsdom
-      - msw
-      - vite
-
-  '@deepseek-ai/dsh-client-test-runtime@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-client-runtime@0.1.0-rc.6(d1087903182dc7b0ae916e539f142e26))(@deepseek-ai/dsh-client-ui-slots@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-client-web-react@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-host-apiproxy@0.1.0-rc.6(a56b7e3e45b58c7b656385d41b52e4f0))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@types/node@26.2.0)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(jsdom@30.0.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(tsx@4.23.12))':
-    dependencies:
-      '@deepseek-ai/cordis': 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
-      '@deepseek-ai/dsh-client-runtime': 0.1.0-rc.6(d1087903182dc7b0ae916e539f142e26)
-      '@deepseek-ai/dsh-client-ui-slots': 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
-      '@deepseek-ai/dsh-client-web-react': 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
-      '@deepseek-ai/dsh-host-apiproxy': 0.1.0-rc.6(a56b7e3e45b58c7b656385d41b52e4f0)
-      '@deepseek-ai/dsh-invariants': 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)
-      '@testing-library/dom': 10.4.1
-      '@testing-library/react': 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      vitest: 4.1.10(@types/node@26.2.0)(jsdom@30.0.1)(vite@7.3.6(@types/node@26.2.0)(lightningcss@1.33.0)(tsx@4.23.12))
     transitivePeerDependencies:
       - '@edge-runtime/vm'
       - '@opentelemetry/api'

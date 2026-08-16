@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-shortcuts
+# @khorsheed/dsh-ui-shortcuts
 
 [English](README.md) | 中文
 
@@ -6,17 +6,13 @@
 
 ## 安装与卸载
 
-该插件**不在**默认 web bundle 中；安装需加入 profile。在 profile 的 `cordis.patch.yml`（叠加在 web profile 之上）加一行 Loader entry，并安装包：
+该插件**不在**默认 web bundle 中；安装需加入 profile。包声明了 `dsh.bundle`，一条命令完成安装并挂载 loader 行（不用手改 `cordis.patch.yml`）：
 
-```yaml
-# profile cordis.patch.yml
-- id: ui-shortcuts
-  name: '@deepseek-ai/dsh-client-ui-shortcuts'
+```sh
+dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 ```
 
-```
-pnpm add @deepseek-ai/dsh-client-ui-shortcuts
-```
+**警示**：本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`，同一 profile 挂两次会在启动时 fail loud——只保留其一。
 
 该行的 node 半边注册 `ui-shortcuts` 设置小节；浏览器半边（`/plugins/ui-shortcuts/client.js`）负责按键接线与 General Settings 行。卸载 = 移除或对该行 `disabled: true`。通过插件清单禁用属于部署层面的配置，不属于本包职责。
 

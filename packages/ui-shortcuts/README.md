@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-shortcuts
+# @khorsheed/dsh-ui-shortcuts
 
 English | [中文](README.zh.md)
 
@@ -6,17 +6,13 @@ Optional web shortcuts plugin: two fixed actions — **pause the running turn** 
 
 ## Install and uninstall
 
-The plugin is **not** part of the default web bundle; add it to a profile to install it. In the profile's `cordis.patch.yml` (over the web profile), add one Loader row and install the package:
+The plugin is **not** part of the default web bundle; add it to a profile to install it. The package declares `dsh.bundle`, so one command installs it and mounts its loader row (no hand-edited `cordis.patch.yml`):
 
-```yaml
-# profile cordis.patch.yml
-- id: ui-shortcuts
-  name: '@deepseek-ai/dsh-client-ui-shortcuts'
+```sh
+dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 ```
 
-```
-pnpm add @deepseek-ai/dsh-client-ui-shortcuts
-```
+**Warning**: this package shares the loader entry id `ui-shortcuts` with the official `@deepseek-ai/dsh-client-ui-shortcuts`. Mounting both in one profile fails loud at boot on the duplicate entry id — keep exactly one.
 
 The row's node half registers the `ui-shortcuts` settings section; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the General Settings row. Uninstall = remove or `disabled: true` the row. Disabling through the plugin inventory is a deployment concern, not this package's.
 

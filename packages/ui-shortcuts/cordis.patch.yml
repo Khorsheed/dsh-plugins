@@ -1,0 +1,7 @@
+# ui-shortcuts bundle patch: inserts the plugin row into the composing
+# profile. The client half is discovered through the package.json dsh.client
+# block; there is no host half, so this row only activates the browser entry.
+# Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
+- insert:
+    - id: ui-shortcuts
+      name: '@khorsheed/dsh-ui-shortcuts'
