@@ -43,7 +43,9 @@
   "scripts": {
     "bundle": "tsc -b tsconfig.json && tsdown",
     "watch": "tsdown --watch",
-    "build": "tsc -b tsconfig.json && tsdown"
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
   },
   "license": "MIT",
   "dependencies": {
