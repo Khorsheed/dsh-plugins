@@ -130,6 +130,31 @@ describe('the flat timeline panel', () => {
     expect(scrollIntoViewMock).toHaveBeenCalled()
   })
 
+  it('follows the reading position as it moves', () => {
+    const { railStore } = renderRail()
+    scrollIntoViewMock.mockClear()
+
+    // The tracker publishes a new reading position (e.g. a sent message
+    // bottom-follows the chat); the panel scrolls the lit row into view.
+    act(() => { railStore.set({ ...RAIL, activeKey: 'k1' }) })
+
+    expect(item('k1').className).toContain('itemCurrent')
+    expect(scrollIntoViewMock).toHaveBeenCalled()
+  })
+
+  it('does not yank the list while a row is hovered', () => {
+    const { railStore } = renderRail()
+    fireEvent.mouseEnter(item('k1'))
+    scrollIntoViewMock.mockClear()
+
+    // The tracker moving elsewhere does not move the highlight or the scroll:
+    // the hovered row is the current one.
+    act(() => { railStore.set({ ...RAIL, activeKey: 'k2' }) })
+
+    expect(item('k1').className).toContain('itemFocused')
+    expect(scrollIntoViewMock).not.toHaveBeenCalled()
+  })
+
   it('moves a bold focus while hovering and jumps on click', () => {
     const { jumpTo } = renderRail()
 

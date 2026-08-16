@@ -68,20 +68,13 @@ export function TimelineRail({
   const active = rail.chatView && rail.ready && rail.sessionId === sessionId
   const visible = active && items.length > 0
 
-  // Each opening lands on the reading position; afterwards the user owns the
-  // panel's scroll position. A short list needs no scroll: it centers
-  // vertically inside the scrollport box through CSS.
-  const positionedRef = useRef(false)
+  // Keep the lit row in view: the panel follows the reading position (a new
+  // message scrolls its row in), and mouse browsing is never yanked because
+  // the hovered row is the current one and always visible under the pointer.
   useEffect(() => {
-    if (!visible) {
-      positionedRef.current = false
-      return
-    }
-    if (positionedRef.current) return
-    positionedRef.current = true
     panelRef.current?.querySelector<HTMLElement>(`[data-item-key=${JSON.stringify(current)}]`)
       ?.scrollIntoView({ block: 'nearest' })
-  }, [visible, current])
+  }, [current])
 
   // Prefetch history while the panel is on a chat view: keep pulling pages
   // until the first user message materializes (bootstrap), then until
