@@ -1,24 +1,26 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
-import { parseClaudeJsonResult, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 
-/** The single JSON line a real `claude -p --output-format json` emits. */
-const jsonResult = JSON.stringify({
-  type: 'result',
-  subtype: 'success',
-  result: 'Task complete.',
-  usage: { input_tokens: 2, output_tokens: 5, cache_read_input_tokens: 6, cache_creation_input_tokens: 7 },
-  session_id: 's1',
-})
+/** The stream a real `claude -p --verbose --output-format stream-json` emits. */
+const streamJson = [
+  JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }),
+  JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'echo hi' } }] } }),
+  JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'hi' }] } }),
+  JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Task complete.' }] } }),
+  JSON.stringify({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 2, output_tokens: 5, cache_read_input_tokens: 6, cache_creation_input_tokens: 7 } }),
+].join('\n')
 
-/** A stub child that emits the JSON result then exits 0. */
+/** A stub child that emits the stream-json events then exits 0. */
 function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
   const stdout = new Readable({ read() {} })
-  stdout.push(jsonResult + '\n')
+  stdout.push(streamJson + '\n')
   stdout.push(null)
   const stderr = new Readable({ read() {} })
   stderr.push('')
@@ -42,18 +44,41 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
   return { handle, done }
 }
 
-describe('claude json result parsing', () => {
-  it('extracts the final answer and the usage buckets', () => {
-    const parsed = parseClaudeJsonResult(jsonResult)
+describe('claude stream-json parsing', () => {
+  it('extracts the ordered transcript, final answer, usage, and session id', () => {
+    const parsed = parseClaudeStreamJson(streamJson)
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', name: 'Bash', detail: 'echo hi', result: 'hi' },
+      { kind: 'text', text: 'Task complete.' },
+    ])
     expect(parsed.text).toBe('Task complete.')
     // claude's input_tokens is uncached; cache read/creation map to their
     // own buckets with no subtraction.
     expect(parsed.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
+    expect(parsed.sessionId).toBe('s1')
   })
 
   it('tolerates malformed output and reports is_error', () => {
-    expect(parseClaudeJsonResult('not-json')).toEqual({})
-    expect(parseClaudeJsonResult(JSON.stringify({ is_error: true, error: 'boom' }))).toEqual({ error: 'boom' })
+    expect(parseClaudeStreamJson('not-json')).toEqual({ lines: [] })
+    expect(parseClaudeStreamJson(JSON.stringify({ type: 'result', is_error: true, error: 'boom' })))
+      .toEqual({ lines: [], error: 'boom' })
+  })
+
+  it('mirrors the real stream-json fixture (system, tool_use, tool_result, text, result)', () => {
+    const fixture = readFileSync(
+      fileURLToPath(new URL('./fixtures/stream-json.sample.jsonl', import.meta.url)),
+      'utf8',
+    )
+    const parsed = parseClaudeStreamJson(fixture)
+    expect(parsed.sessionId).toBeTruthy()
+    const kinds = parsed.lines.map(line => line.kind)
+    expect(kinds).toEqual(['tool', 'text'])
+    expect(parsed.lines[0]).toMatchObject({ kind: 'tool', name: 'Bash' })
+    if (parsed.lines[0]?.kind === 'tool') {
+      expect(parsed.lines[0].result).toContain('hi')
+    }
+    expect(parsed.text).toBe('done')
+    expect(parsed.usage?.inputTokens).toBeGreaterThan(0)
   })
 })
 
@@ -84,9 +109,13 @@ describe('claude-cli-provider run settlement', () => {
     expect(result.stopReason).toBe('completed')
     expect(result.output).toEqual([{ type: 'text', text: 'Task complete.' }])
     const assistant = child.events.filter(event => event.type === 'assistant/message')
-    expect(assistant).toHaveLength(1)
-    expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
-    expect(assistant[0]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
+    // The stream transcript mirrors the tool call and the final text as
+    // separate assistant steps; usage rides the last one.
+    expect(assistant).toHaveLength(2)
+    expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi → hi' }])
+    expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
+    expect(assistant[0]!.data.usage).toBeUndefined()
+    expect(assistant[1]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
     const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
     expect(append).toHaveBeenCalledWith(child.id, child.events)
@@ -170,7 +199,7 @@ describe('claude-cli-provider resume round', () => {
     const run = await provider.start(request)
     const result = await run.result
     expect(result.stopReason).toBe('completed')
-    expect(spawned[0]).toEqual(['claude', '-p', '--dangerously-skip-permissions', '--resume', 's1', '--output-format', 'json', '接着做'])
+    expect(spawned[0]).toEqual(['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', 's1', '--output-format', 'stream-json', '接着做'])
     expect(run.id).toBe(SessionId('child-run-1'))
     const turnStarts = child.events.filter(event => event.type === 'turn/start')
     const turnEnds = child.events.filter(event => event.type === 'turn/end')
@@ -244,7 +273,7 @@ describe('claude-cli-provider resume lock', () => {
       spawn: () => {
         spawned += 1
         const stdout = new Readable({ read() {} })
-        stdout.push(jsonResult + '\n')
+        stdout.push(streamJson + '\n')
         stdout.push(null)
         const stderr = new Readable({ read() {} })
         stderr.push('')

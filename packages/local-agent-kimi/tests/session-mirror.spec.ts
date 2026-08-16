@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -137,5 +138,85 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-5'))
     await mirrorKimiSession(new Context(), child, home)
     expect(child.events).toEqual([])
+  })
+})
+
+describe('session-mirror resume deltas', () => {
+  it('mirrors two resume rounds without duplicating earlier messages (real fixture)', async () => {
+    const fixtureWire = readFileSync(
+      fileURLToPath(new URL('./fixtures/two-round-resume.wire.jsonl', import.meta.url)),
+      'utf8',
+    )
+    // The fixture is the FULL two-round wire. Round 1's wire is everything up
+    // to the second turn's user prompt ('继续上一个话题'); a real fresh round
+    // saw only that prefix, then the resume round appended the rest.
+    const round2PromptIndex = fixtureWire.split('\n').findIndex(line => line.includes('继续上一个话题'))
+    const round1Wire = fixtureWire.split('\n').slice(0, round2PromptIndex).join('\n')
+
+    const home = tempHome('kimi-mirror-resume-')
+    const dir = join(home, 'sessions', 'wd_tmp_abc', 'session_resume')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    const wirePath = join(dir, 'agents', 'main', 'wire.jsonl')
+
+    const child = Session.create(SessionId('child-resume'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    // Round 1 mirrors what the wire contained then (turn/start already opened
+    // by the provider, so the base turn is 1).
+    child.append('turn/start', { turn: 1 })
+    writeFileSync(wirePath, round1Wire)
+    const round1Total = await mirrorKimiSession(ctx, child, home, 'resume', 0)
+    const afterRound1 = child.events.length
+
+    // Round 2 (resume): the full wire is now on disk; the offset must slice
+    // ONLY the delta, so no round-1 message is duplicated.
+    child.append('turn/start', { turn: 2 })
+    writeFileSync(wirePath, fixtureWire)
+    const round2Total = await mirrorKimiSession(ctx, child, home, 'resume', round1Total)
+    const afterRound2 = child.events.length
+
+    expect(round1Total).toBeGreaterThan(0)
+    expect(round2Total).toBeGreaterThan(round1Total)
+    // The delta appended new events; nothing from round 1 was re-mirrored.
+    expect(afterRound2).toBeGreaterThan(afterRound1)
+
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const texts = assistant.map(event => JSON.stringify(event.data.message.content))
+    expect(new Set(texts).size).toBe(texts.length)
+
+    const userEvents = child.events.filter(event => event.type === 'user/message')
+    // Two rounds, two real user prompts (the system-reminders are filtered).
+    expect(userEvents).toHaveLength(2)
+    // Rounds carry distinct dsh turn numbers on their assistant messages.
+    const turns = new Set(assistant.map(event => (event.data as { turn?: number }).turn))
+    expect(turns.has(1)).toBe(true)
+    expect(turns.has(2)).toBe(true)
+    // The resumed round's usage is the SUM of its own per-request records,
+    // attached to its final assistant message.
+    const round2Usage = assistant
+      .map(event => event.data as { turn?: number; usage?: { inputTokens?: number } })
+      .filter(event => event.turn === 2 && event.usage !== undefined)
+    expect(round2Usage.length).toBe(1)
+    expect(round2Usage[0]!.usage?.inputTokens).toBe(15817 + 8360 + 1160 + 5698 + 5268)
+  })
+
+  it('tracks the mirror offset independently of a delegation record', async () => {
+    // Regression for the double-mirror: the offset used to live inside the
+    // delegation record, which is only written when the stderr hint parses.
+    // The mirror bookkeeping must survive without a record.
+    const { home } = wireHome('s1', fullWire)
+    const child = Session.create(SessionId('child-offset'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+
+    const total = await mirrorKimiSession(ctx, child, home, 's1', 0)
+    expect(total).toBeGreaterThan(0)
+    // Mirroring again from the recorded offset appends nothing new.
+    const eventsBefore = child.events.length
+    const totalAgain = await mirrorKimiSession(ctx, child, home, 's1', total)
+    expect(totalAgain).toBe(total)
+    expect(child.events.length).toBe(eventsBefore)
   })
 })

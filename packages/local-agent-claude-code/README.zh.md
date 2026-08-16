@@ -116,5 +116,5 @@ Claude 的 LLM 请求可以经自定义端点路由（例如自部署的模型�
 - **macOS logout 只删配置**——`/claude-code logout` 删除作用域 `.claude.json`；keychain 条目（以作用域目录路径哈希为键）留给 CLI 自己的 `claude auth logout`，下次登录会重写。
 - **Linux 凭据不隔离**（上游 bug #47661）——`CLAUDE_CONFIG_DIR` 不重定向凭据文件；见上文。
 - **交互会话记录可能缺失**——claude 的 headless `-p` 运行会写 project 会话文件，但自定义 `CLAUDE_CONFIG_DIR` 下的交互会话可能不写转写（上游行为）；records 列出 CLI 实际写出的内容。
-- **v1 只镜像最终回答**——JSON 结果的 `result` 字段以单条 assistant 消息追加；完整的事件流镜像留待 v2。
+- **完整 stream-json 镜像**——委派以 `claude -p --verbose --output-format stream-json` 运行，dsh 子代理会话按顺序镜像事件流：`thinking` 块折叠为 `reasoning` 块、`tool_use`/`tool_result` 块为工具行（`[工具 Bash] <command> → output`）、回复 `text` 块为 assistant 文本；最终 assistant 文本作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。
 - **headless 注意**——`/claude-code` 命令与标题栏下拉需要 Web 会话；`--profile headless` 仍可通过挂载工具行的组合进行委派。

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -48,10 +50,41 @@ describe('codex json stream parsing', () => {
     // codex's input_tokens includes cache hits, so the uncached bucket is the
     // remainder (10 - 6) and the cache-read bucket carries the subset.
     expect(parsed.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    expect(parsed.lines).toEqual([{ kind: 'text', text: 'Task complete.' }])
   })
 
   it('tolerates a stream with no usable events', () => {
-    expect(parseCodexJsonStream('not-json\n{"type":"other"}')).toEqual({})
+    expect(parseCodexJsonStream('not-json\n{"type":"other"}')).toEqual({ lines: [] })
+  })
+
+  it('mirrors reasoning, agent text, and command execution from the real fixture', () => {
+    const fixture = readFileSync(
+      fileURLToPath(new URL('./fixtures/command-execution.sample.ndjson', import.meta.url)),
+      'utf8',
+    )
+    const parsed = parseCodexJsonStream(fixture)
+    expect(parsed.threadId).toBeTruthy()
+    // agent_message (plan), command_execution (Bash), agent_message (final).
+    const kinds = parsed.lines.map(line => line.kind)
+    expect(kinds).toEqual(['text', 'tool', 'text'])
+    expect(parsed.lines[0]).toMatchObject({ kind: 'text' })
+    const command = parsed.lines[1]
+    expect(command).toMatchObject({ kind: 'tool', name: 'Bash' })
+    if (command.kind === 'tool' && command.detail !== undefined) {
+      expect(command.detail).toContain('hello.txt')
+    }
+    // the final agent_message is the run output
+    expect(parsed.text).toContain('hello.txt')
+  })
+
+  it('parses an agent-message-only fixture without tool events', () => {
+    const fixture = readFileSync(
+      fileURLToPath(new URL('./fixtures/agent-message.sample.ndjson', import.meta.url)),
+      'utf8',
+    )
+    const parsed = parseCodexJsonStream(fixture)
+    expect(parsed.lines).toEqual([{ kind: 'text', text: '1597' }])
+    expect(parsed.text).toBe('1597')
   })
 })
 

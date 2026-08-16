@@ -377,11 +377,13 @@ export function startKimiCliRun(
     // the result race settles — an awaited mirror inside the race branch would
     // lose to processFailure and fail the run with a spurious 'CLI exited
     // before the run settled' error. A resume round mirrors only the lines
-    // after the already-mirrored offset.
+    // after the already-mirrored offset, keyed by the recorded CLI session id
+    // (kimi prints its `-r session_<id>` hint on a fresh `-p`, not necessarily
+    // on a resume, so the intent's recorded id is authoritative).
     if (settled.stopReason === 'completed'
       && spec.childSession !== undefined && spec.homeDir !== undefined && spec.ctx !== undefined) {
       try {
-        const kimiSessionId = kimiSessionIdFromOutput(stderr)
+        const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
         if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
         // A resume round mirrors only the delta after the recorded offset; a
         // fresh round starts from zero. The mirror returns the new total

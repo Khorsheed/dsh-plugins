@@ -120,9 +120,18 @@ describe('LocalAgentRegistry delegation registry', () => {
     expect(registry.kimiMirroredLines('child-1')).toBe(12)
     registry.setKimiMirroredLines('child-1', 20)
     expect(registry.kimiMirroredLines('child-1')).toBe(20)
-    // A record without a child session ignores the offset update.
-    registry.setKimiMirroredLines('child-missing', 3)
-    expect(registry.kimiMirroredLines('child-missing')).toBeUndefined()
+  })
+
+  it('tracks the kimi mirror offset without a delegation record (double-mirror fix)', async () => {
+    // The offset lives independently of the delegation record: a fresh round
+    // whose stderr hint did not parse still advances the offset, so the resume
+    // round slices only its delta instead of re-mirroring round 1.
+    const registry = await mountRegistry()
+    expect(registry.kimiMirroredLines('child-1')).toBeUndefined()
+    registry.setKimiMirroredLines('child-1', 10)
+    expect(registry.kimiMirroredLines('child-1')).toBe(10)
+    registry.setKimiMirroredLines('child-1', 29)
+    expect(registry.kimiMirroredLines('child-1')).toBe(29)
   })
 
   it('replaces a duplicate child session record with the newer mapping', async () => {

@@ -27,6 +27,18 @@
 - 测试：core delegation registry（含伪造句柄拒绝、FIFO 配对、mirror 偏移、resume lock 互斥/异子会话独立/释放无副作用）；工具包 10 例（schema 含 resume、fresh 自述句柄、resume 传 target、伪造句柄 isError、prompt 内嵌句柄被无视、mount/unmount）；三 provider 的 resume 测试（续聊 argv、复用子会话、turn 2、子会话缺失 fail loud、**同子会话并发第二个 resume 被拒且零 spawn**、settle 释放锁后可再次 resume）。
 - `pnpm typecheck` 全绿；`pnpm test` 全绿；`verify-translation-pairing` 31 对同步。
 
+## 子会话记录保真度批次（harness 对比前置）
+
+目标是三家子会话记录达到可做对比的保真度，全部用本轮真实 wire/NDJSON/stream-json 样本做 fixture：
+
+- **kimi usage 改求和**：`usage.record` 每条是一次 LLM 请求的口径（实测两轮 resume 会话 8 条：round1 三条 4027/7855/2799，round2 五条），镜像对 delta 内所有 record 求和、挂当轮最后一条 assistant 消息。`session-view` 现在输出 `usageRecords`（带 transcript 行位置），mirror 按偏移求和。
+- **修 turn 对齐**：wire 的 `turnId`（loop 事件）就是 dsh 轮次号（1-based），mirror 直接用 `line.turn`，不再从 user 行数推——system-reminder 被过滤后 user 计数本就不可靠。
+- **修续聊重复镜像**：根因是 `kimiMirroredLines` 存在委派记录里、而记录依赖 stderr hint 解析；hint 缺失时 offset 从未写入，resume 回落 fromLines=0 导致首轮内容镜像两次。修复：offset 独立成 `kimiMirrorOffsets` map（与委派记录解耦），resume 的 session id 用 intent 记录值而非重解析 stderr。回归测试：真实两轮 fixture 镜像后无重复 assistant 文本、usage 求和正确。
+- **过滤 system-reminder**：kimi 自动权限模式的 `<system-reminder>` user 消息不进子会话（真实 wire 每轮都有）。
+- **工具行补入参**：`tool.call.args` 渲染为 `[工具 WebSearch] 查询词`；`tool.result` 按 `parentUuid`/`toolCallId` 配回自己的调用（并行调用不再错配），无 id 时回退最近工具行。
+- **codex 镜像全事件**：`reasoning`→`reasoning` 块、`agent_message`→文本、`command_execution`/`web_search_call`/`function_call_output`→工具行；最终 `agent_message` 为运行输出，usage 挂末条。流天然按轮增量。
+- **claude 换 stream-json**：argv 改为 `--verbose --output-format stream-json`（CLI 对 `--print`+stream-json 强制 --verbose）；解析 system/assistant/user/result 事件，`thinking`→`reasoning` 块、`tool_use`+`tool_result`→工具行、`text`→回复；session_id 来自 system init，usage 来自 result 事件。
+
 ## 后续
 
 - stop registry 与委派 registry 共用同一记录结构（active 子进程登记）。

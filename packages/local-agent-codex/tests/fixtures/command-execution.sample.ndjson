@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a00b94-b9fc-7393-bf4d-2313428d87b6"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll create the file in the current workspace and verify its contents."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf '%s\\\\n' 'hello world' > hello.txt && command cat hello.txt\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf '%s\\\\n' 'hello world' > hello.txt && command cat hello.txt\"","aggregated_output":"hello world\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Created [hello.txt](/private/tmp/codex-sample/hello.txt) containing `hello world`."}}
+{"type":"turn.completed","usage":{"input_tokens":26738,"cached_input_tokens":19968,"output_tokens":116,"reasoning_output_tokens":0}}

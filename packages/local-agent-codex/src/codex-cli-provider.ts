@@ -250,46 +250,97 @@ export function textTask(prompt: readonly ContentBlock[]): string {
   return texts.join('\n')
 }
 
+/** One ordered transcript line from a `codex exec --json` event stream. */
+export type CodexTranscriptLine =
+  | { kind: 'think'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; name: string; detail?: string }
+
 /**
- * Parse a `codex exec --json` NDJSON event stream for the final answer, token
- * usage, and the thread id a later resume round continues. Each event is one
- * JSON line: `thread.started` names the session's thread, `item.completed`
- * carries an `agent_message` item whose text is the assistant's final reply,
- * and `turn.completed` carries the turn's usage. The last of each wins — a
- * one-shot run emits exactly one of each, but taking the last is robust to
- * tool-heavy turns that interleave multiple item completions. Malformed
- * lines are skipped; a stream with no usable events yields neither.
+ * Parse a `codex exec --json` NDJSON event stream into an ordered transcript
+ * (thinking, agent text, tool/command activity in event order), plus the final
+ * answer text, token usage, and the thread id a later resume round continues.
+ * Item types covered: `reasoning` (thinking), `agent_message` (reply text),
+ * `command_execution` (shell command with aggregated output), `web_search_call`,
+ * and `function_call_output`. The last `agent_message` wins as the run output
+ * (the final answer), and `turn.completed` carries the turn's usage. Malformed
+ * lines are skipped.
  * @param stream - the collected stdout NDJSON text.
- * @returns the final reply text, the turn usage, and the thread id, when present.
+ * @returns the ordered transcript, final answer text, usage, and thread id.
  */
-export function parseCodexJsonStream(stream: string): { text?: string; usage?: TokenUsage; threadId?: string } {
+export function parseCodexJsonStream(stream: string): {
+  lines: readonly CodexTranscriptLine[]
+  text?: string
+  usage?: TokenUsage
+  threadId?: string
+} {
+  const lines: CodexTranscriptLine[] = []
   let text: string | undefined
   let usage: TokenUsage | undefined
   let threadId: string | undefined
   for (const raw of stream.split('\n')) {
     const line = raw.trim()
     if (line === '') continue
-    let event: { type?: string; item?: { type?: string; text?: string }; usage?: unknown; thread_id?: unknown }
+    let event: {
+      type?: string
+      item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string }
+      usage?: unknown
+      thread_id?: unknown
+    }
     try {
-      event = JSON.parse(line) as { type?: string; item?: { type?: string; text?: string }; usage?: unknown; thread_id?: unknown }
+      event = JSON.parse(line) as typeof event
     } catch {
       continue
     }
     if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
       threadId = event.thread_id
-    } else if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
-      text = event.item.text
-    } else if (event.type === 'turn.completed' && event.usage !== undefined) {
+      continue
+    }
+    if (event.type === 'turn.completed' && event.usage !== undefined) {
       usage = usageFromCodex(event.usage)
+      continue
+    }
+    if (event.type !== 'item.completed' || event.item === undefined) continue
+    const item = event.item
+    if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim() !== '') {
+      lines.push({ kind: 'think', text: item.text })
+    } else if (item.type === 'agent_message' && typeof item.text === 'string') {
+      lines.push({ kind: 'text', text: item.text })
+      text = item.text
+    } else if (item.type === 'command_execution') {
+      const command = typeof item.command === 'string' ? item.command : undefined
+      const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
+      if (command !== undefined || output !== undefined) {
+        lines.push({
+          kind: 'tool',
+          name: 'Bash',
+          ...command === undefined ? {} : { detail: command },
+          ...command !== undefined && output !== undefined && output.trim() !== '' ? { detail: `${command}\n${output}` } : {},
+        })
+      }
+    } else if (item.type === 'web_search_call') {
+      lines.push({ kind: 'tool', name: 'WebSearch' })
+    } else if (item.type === 'function_call_output') {
+      // A function/command result; attach to the previous tool line when one
+      // is pending (web search or command output).
+      const output = typeof item.output === 'string' ? item.output : undefined
+      if (output !== undefined && output.trim() !== '') {
+        const last = lines[lines.length - 1]
+        if (last !== undefined && last.kind === 'tool') {
+          lines[lines.length - 1] = {
+            ...last,
+            detail: last.detail === undefined ? output : `${last.detail}\n${output}`,
+          }
+        }
+      }
     }
   }
-  return text === undefined && usage === undefined && threadId === undefined
-    ? {}
-    : {
-      ...text === undefined ? {} : { text },
-      ...usage === undefined ? {} : { usage },
-      ...threadId === undefined ? {} : { threadId },
-    }
+  return {
+    lines,
+    ...text === undefined ? {} : { text },
+    ...usage === undefined ? {} : { usage },
+    ...threadId === undefined ? {} : { threadId },
+  }
 }
 
 /**
@@ -423,7 +474,11 @@ export function startCodexCliRun(
         // final-text view when the child session is absent).
         const parsed = parseCodexJsonStream(output)
         spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
-        void appendCodexResponse(spec, task, turn, collectOutput(), parsed.usage)
+        void appendCodexResponse(spec, task, turn, {
+          lines: parsed.lines,
+          output: collectOutput(),
+          ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+        })
         if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
@@ -450,24 +505,24 @@ export function startCodexCliRun(
 }
 
 /**
- * Append the delegation's user prompt and the codex response into the dsh
- * subagent session, then persist. Runs detached from the settle race — the
+ * Mirror the delegation's user prompt and the codex event transcript into the
+ * dsh subagent session, then persist. Runs detached from the settle race — the
  * run result settles with the child exit, and a failure here is
  * diagnostic-only (the subagent record degrades to a final-text-only view).
- * The assistant message carries the round's usage when codex reported it, so
- * the tokenUsage projection counts the delegation.
+ * The transcript's reasoning folds to `reasoning` blocks, agent text and tool
+ * activity to text blocks (tool lines render `[工具 Bash] <command> → output`),
+ * and the final assistant message carries the round's usage when codex
+ * reported it, so the tokenUsage projection counts the delegation.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
- * @param output - the parsed codex response blocks.
- * @param usage - the turn's token usage from the NDJSON stream, when present.
+ * @param parsed - the parsed NDJSON transcript, final output, and usage.
  */
 async function appendCodexResponse(
   spec: CodexCliRunSpec,
   task: string,
   turn: number,
-  output: ContentBlock[],
-  usage?: TokenUsage,
+  parsed: { lines: readonly CodexTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
   try {
@@ -475,15 +530,24 @@ async function appendCodexResponse(
       content: [{ type: 'text', text: task }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    spec.childSession.append('assistant/message', {
-      turn,
-      step: 1,
-      message: createAssistantMessage({
-        content: output,
-        source: { provider: 'codex-local', model: 'codex' },
-      }),
-      ...usage === undefined ? {} : { usage },
-    }, { surfaceOp: 'append' })
+    let step = 1
+    for (const line of parsed.lines) {
+      const blocks = line.kind === 'think'
+        ? [{ type: 'reasoning' as const, text: line.text }]
+        : line.kind === 'tool'
+          ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
+          : [{ type: 'text' as const, text: line.text }]
+      spec.childSession.append('assistant/message', {
+        turn,
+        step,
+        message: createAssistantMessage({
+          content: blocks,
+          source: { provider: 'codex-local', model: 'codex' },
+        }),
+        ...step === parsed.lines.length && parsed.usage !== undefined ? { usage: parsed.usage } : {},
+      }, { surfaceOp: 'append' })
+      step += 1
+    }
     await spec.ctx.get('sessionPersistence')?.append(spec.childSession.id, spec.childSession.events)
   } catch (error) {
     spec.onError?.(thrown(error), 'error')

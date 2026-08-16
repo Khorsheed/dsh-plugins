@@ -106,6 +106,6 @@ The child session carries real usage and timing: the provider opens `turn/start`
 ## Known Limitations and Deferred Work
 
 - **Login requires one interactive step** — the device-code URL appears in the session; credentials appear only after the user authorizes in the browser. No API-key path.
-- **v1 mirrors only the final answer** — the delegation's printed response is appended to the dsh subagent session as a single assistant message; a full event-stream mirror (reasoning, tool calls, diffs) is deferred to v2.
+- **Full event-stream mirror** — the dsh subagent session mirrors the `codex exec --json` event stream in order: `reasoning` items fold to `reasoning` blocks, `agent_message` items to reply text, and `command_execution`/`web_search_call`/`function_call_output` items to tool lines (`[工具 Bash] <command> → output`); the final `agent_message` is the run output and the round's usage rides the last mirrored assistant message. The stream is naturally incremental per round, so resumed rounds append their own turn without duplication.
 - **`codex exec` runs non-interactively** — actions the sandbox policy would need to approve are denied rather than prompted; `sandbox` plugin config (default `workspace-write`) selects the policy.
 - **Headless caveat** — `/codex` commands and the header dropdown need a Web session; `--profile headless` can still delegate through a composition that mounts the tool row.

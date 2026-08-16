@@ -1,8 +1,9 @@
 /**
  * Mirror a kimi session's transcript into a dsh subagent session, so the
  * delegation shows up in the standard 子代理 surface and opening the child
- * session shows the full conversation (user prompts, kimi replies, and the
- * tool activity) instead of a silent one-shot call.
+ * session shows the full conversation (user prompts, kimi replies, thinking,
+ * and tool activity with arguments and results) instead of a silent one-shot
+ * call.
  * @module @khorsheed/dsh-local-agent-kimi/session-mirror
  */
 
@@ -12,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { readKimiTranscript, type KimiTranscriptLine } from './session-view.ts'
+import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
 /** One user-role message event. */
 function userEvent(text: string) {
@@ -30,15 +31,17 @@ function assistantEvent(blocks: readonly ContentBlock[]) {
 /**
  * Fold one transcript line into message blocks. Thinking maps to the native
  * `reasoning` block so the standard conversation renders it as thinking
- * rather than a `[思考]` text prefix; tool activity and reply text stay text
- * (content is never filtered — kimi's own injections remain visible).
+ * rather than a `[思考]` text prefix; tool activity (call with arguments and
+ * result) and reply text stay text (content is never filtered — kimi's own
+ * injections remain visible).
  */
 function lineBlocks(line: KimiTranscriptLine): ContentBlock[] {
   if (line.kind === 'think') {
     return [{ type: 'reasoning', text: line.text }]
   }
   if (line.kind === 'tool') {
-    return [{ type: 'text', text: `[工具 ${line.name}]${line.result !== undefined ? ` → ${line.result}` : ''}` }]
+    const call = `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}`
+    return [{ type: 'text', text: `${call}${line.result !== undefined ? ` → ${line.result}` : ''}` }]
   }
   return [{ type: 'text', text: line.text }]
 }
@@ -51,9 +54,11 @@ function lineBlocks(line: KimiTranscriptLine): ContentBlock[] {
  *
  * A resumed round passes the already-mirrored transcript-line count so only
  * the delta is appended — re-mirroring earlier rounds would duplicate their
- * messages. Turn numbering continues from the rounds already recorded in the
- * child session, and the wire's last usage record (the newest turn's) rides
- * the delta's final assistant message.
+ * messages. Turn numbers come from the rounds already recorded in the child
+ * session (`turn/start` count — the dsh round numbering), never from user
+ * line counts, and the delta's usage is the SUM of every `usage.record`
+ * inside it (kimi reports per-request, not cumulative), attached to the
+ * delta's final assistant message.
  * @param ctx - host context carrying the session persistence service.
  * @param childSession - the dsh subagent session created for this delegation.
  * @param homeDir - the `kimi` harness's scoped home.
@@ -123,33 +128,38 @@ export async function mirrorKimiSession(
 
   const delta = transcript.lines.slice(fromLines)
   if (delta.length === 0) return transcript.lines.length
-  // The turn counter continues from the rounds already in the child session:
-  // each user message already mirrored opened one turn, so the delta's first
-  // user line opens the next turn.
-  let turn = childSession.events.filter(event => event.type === 'user/message').length
-  let step = 1
-  // The wire's last usage record belongs to the latest (resumed) turn's final
-  // assistant message; find its index within the delta so the accounting
-  // attaches to exactly that event.
+  const steps = new Map<number, number>()
+  // The delta's usage is the sum of every usage.record at or after the
+  // already-mirrored offset — each record is one LLM request, not cumulative.
+  const deltaUsage = sumUsageRecords(
+    transcript.usageRecords.filter(record => record.line >= fromLines),
+  )
+  // Attach the summed usage to the delta's LAST assistant message (text or
+  // think both carry the round's accounting; tool lines do not).
   let lastAssistant = -1
   for (let index = 0; index < delta.length; index += 1) {
-    if (delta[index]?.kind !== 'user') lastAssistant = index
+    const line = delta[index]
+    if (line !== undefined && line.kind !== 'user' && line.kind !== 'tool') lastAssistant = index
   }
   for (let index = 0; index < delta.length; index += 1) {
     const line = delta[index]
     if (line === undefined) continue
+    // The wire's turn number (1-based, matching the provider's turn/start
+    // numbering) is the dsh round; no offset is needed because both count the
+    // same rounds.
+    const turn = line.turn
     if (line.kind === 'user') {
-      turn += 1
-      step = 1
+      steps.set(turn, 1)
       childSession.append('user/message', userEvent(line.text), { surfaceOp: 'append' })
     } else {
+      const step = steps.get(turn) ?? 1
+      steps.set(turn, step + 1)
       childSession.append('assistant/message', {
         turn,
         step,
         message: assistantEvent(lineBlocks(line)),
-        ...index === lastAssistant && transcript.usage !== undefined ? { usage: transcript.usage } : {},
+        ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })
-      step += 1
     }
   }
   const persistence = ctx.get('sessionPersistence')

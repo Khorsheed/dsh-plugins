@@ -259,32 +259,130 @@ export function textTask(prompt: readonly ContentBlock[]): string {
   return texts.join('\n')
 }
 
+/** One ordered transcript line from a `claude --output-format stream-json` stream. */
+export type ClaudeTranscriptLine =
+  | { kind: 'think'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; name: string; detail?: string; result?: string }
+
 /**
- * Parse a `claude -p --output-format json` result payload. The single JSON
- * line carries `result` (the final answer), `usage` (Anthropic-style
- * counters), and `session_id` (the id a later resume round continues). A
- * malformed or error result yields neither.
- * @param output - the collected stdout.
- * @returns the final answer text, the usage, and the session id, when present.
+ * Parse a `claude -p --verbose --output-format stream-json` NDJSON stream.
+ * Each line is one event: `system` init (carries the session id), `assistant`
+ * (content blocks: `text`, `tool_use`, `thinking`), `user` (a `tool_result`
+ * block), and a terminal `result` (final usage, error flag, session id).
+ * Content blocks fold into an ordered transcript (thinking, reply text, tool
+ * calls with results), the last assistant `text` becomes the run output, and
+ * the `result` event's usage/session id ride the parse. A malformed stream or
+ * an `is_error` result yields the error instead.
+ * @param output - the collected stdout NDJSON text.
+ * @returns the ordered transcript, final answer text, usage, session id, and
+ *   the error when the run reported one.
  */
-export function parseClaudeJsonResult(output: string): { text?: string; usage?: TokenUsage; error?: string; sessionId?: string } {
-  let result: { result?: unknown; is_error?: unknown; error?: unknown; usage?: unknown; session_id?: unknown }
-  try {
-    result = JSON.parse(output) as { result?: unknown; is_error?: unknown; error?: unknown; usage?: unknown; session_id?: unknown }
-  } catch {
-    return {}
+export function parseClaudeStreamJson(output: string): {
+  lines: readonly ClaudeTranscriptLine[]
+  text?: string
+  usage?: TokenUsage
+  error?: string
+  sessionId?: string
+} {
+  const lines: ClaudeTranscriptLine[] = []
+  let text: string | undefined
+  let usage: TokenUsage | undefined
+  let sessionId: string | undefined
+  let error: string | undefined
+  for (const raw of output.split('\n')) {
+    const line = raw.trim()
+    if (line === '') continue
+    let event: {
+      type?: string
+      message?: { content?: unknown[]; type?: string }
+      is_error?: unknown
+      error?: unknown
+      usage?: unknown
+      session_id?: unknown
+      result?: unknown
+    }
+    try {
+      event = JSON.parse(line) as typeof event
+    } catch {
+      continue
+    }
+    if (event.type === 'system' && typeof event.session_id === 'string') {
+      sessionId = event.session_id
+      continue
+    }
+    if (event.type === 'result') {
+      if (event.is_error === true) {
+        error = typeof event.error === 'string' ? event.error : 'claude -p reported an error'
+      }
+      if (typeof event.session_id === 'string') sessionId = event.session_id
+      if (event.usage !== undefined) usage = usageFromClaude(event.usage)
+      continue
+    }
+    if (event.type !== 'assistant' && event.type !== 'user') continue
+    const blocks = event.message?.content ?? []
+    for (const block of blocks) {
+      if (typeof block !== 'object' || block === null) continue
+      const record = block as Record<string, unknown>
+      const kind = record['type']
+      if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
+        lines.push({ kind: 'text', text: record['text'] as string })
+        // The final assistant text block is the run output.
+        if (event.type === 'assistant') text = record['text'] as string
+      } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
+        lines.push({ kind: 'think', text: record['thinking'] as string })
+      } else if (kind === 'tool_use') {
+        const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
+        const detail = inputDetail(record['input'])
+        lines.push({
+          kind: 'tool',
+          name,
+          ...detail === undefined ? {} : { detail },
+        })
+      } else if (kind === 'tool_result') {
+        const content = record['content']
+        const resultText = toolResultText(content)
+        if (resultText !== undefined && resultText.trim() !== '') {
+          const last = lines[lines.length - 1]
+          if (last !== undefined && last.kind === 'tool') {
+            lines[lines.length - 1] = { ...last, result: resultText }
+          }
+        }
+      }
+    }
   }
-  if (result.is_error === true) {
-    return { error: typeof result.error === 'string' ? result.error : 'claude -p reported an error' }
-  }
-  const text = typeof result.result === 'string' ? result.result : undefined
-  const usage = result.usage === undefined ? undefined : usageFromClaude(result.usage)
-  const sessionId = typeof result.session_id === 'string' ? result.session_id : undefined
   return {
+    lines,
     ...text === undefined ? {} : { text },
     ...usage === undefined ? {} : { usage },
+    ...error === undefined ? {} : { error },
     ...sessionId === undefined ? {} : { sessionId },
   }
+}
+
+/** Render a tool_use input payload as a compact command/query line. */
+function inputDetail(input: unknown): string | undefined {
+  if (input === undefined) return undefined
+  if (typeof input === 'string') return input.trim() === '' ? undefined : input.trim()
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return undefined
+  const record = input as Record<string, unknown>
+  for (const key of ['command', 'query', 'url', 'path']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  return undefined
+}
+
+/** Flatten a tool_result content payload (string or block array) to text. */
+function toolResultText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return undefined
+  return content
+    .filter((block): block is { type?: string; text?: string } =>
+      typeof block === 'object' && block !== null && (block as { type?: string }).type === 'text'
+      && typeof (block as { text?: string }).text === 'string')
+    .map(block => block.text ?? '')
+    .join('\n')
 }
 
 /**
@@ -320,13 +418,14 @@ function usageFromClaude(usage: unknown): TokenUsage {
 }
 
 /**
- * Start the real `claude -p` child and publish its one-shot run. The claude
- * result arrives as a single JSON line on stdout (`--output-format json`):
- * `result` is the final answer, `usage` the token accounting, and
- * `session_id` the id a later resume round continues. stderr is piped for
- * diagnostics and never folded into the run output. A resume round spawns
- * `claude -p --resume <session_id>` instead, continuing the same session.
- * The run id is the child session id for a session-backed run.
+ * Start the real `claude -p` child and publish its run. The claude
+ * result arrives as an NDJSON event stream on stdout (`--verbose
+ * --output-format stream-json`): assistant content blocks (text, tool_use,
+ * thinking), user tool_result blocks, and a terminal result event carrying
+ * usage and session id. stderr is piped for diagnostics and never folded
+ * into the run output. A resume round spawns `claude -p --resume
+ * <session_id>` instead, continuing the same session. The run id is the
+ * child session id for a session-backed run.
  * @param request - resolved shared subagent request.
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
@@ -340,13 +439,14 @@ export function startClaudeCliRun(
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
   const turn = spec.resume?.turn ?? 1
+  // --verbose is required by the CLI when --print and stream-json combine.
   const argv = spec.resume === undefined
     ? spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'json', task]
-      : ['claude', '-p', '--output-format', 'json', task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', task]
+      : ['claude', '-p', '--verbose', '--output-format', 'stream-json', task]
     : spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--resume', spec.resume.cliSessionId, '--output-format', 'json', task]
-      : ['claude', '-p', '--resume', spec.resume.cliSessionId, '--output-format', 'json', task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', task]
+      : ['claude', '-p', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', task]
 
   const child = spec.spawn({
     argv,
@@ -397,7 +497,7 @@ export function startClaudeCliRun(
     // Parse fresh at call time: stdout 'data' events may still be flushing
     // when the settle callback computes its first output, and the consumer
     // may poll output again later.
-    const text = parseClaudeJsonResult(output).text?.trim()
+    const text = parseClaudeStreamJson(output).text?.trim()
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
@@ -423,7 +523,7 @@ export function startClaudeCliRun(
         // run result settles with the child exit, and the append is
         // diagnostic-only (the subagent record degrades to a timing-less
         // final-text view when the child session is absent).
-        const parsed = parseClaudeJsonResult(output)
+        const parsed = parseClaudeStreamJson(output)
         if (parsed.error !== undefined) {
           spec.childSession?.append('turn/end', {
             turn,
@@ -432,7 +532,11 @@ export function startClaudeCliRun(
           throw new Error(`subagent-claude: ${parsed.error}`)
         }
         spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
-        void appendClaudeResponse(spec, task, turn, collectOutput(), parsed.usage)
+        void appendClaudeResponse(spec, task, turn, {
+          lines: parsed.lines,
+          output: collectOutput(),
+          ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+        })
         if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
@@ -459,23 +563,23 @@ export function startClaudeCliRun(
 }
 
 /**
- * Append the delegation's user prompt and the claude response into the dsh
- * subagent session, then persist. Runs detached from the settle race — the
- * run result settles with the child exit, and a failure here is
- * diagnostic-only. The assistant message carries the round's usage when
+ * Mirror the delegation's user prompt and the claude stream transcript into
+ * the dsh subagent session, then persist. Runs detached from the settle race —
+ * the run result settles with the child exit, and a failure here is
+ * diagnostic-only. The transcript's thinking folds to `reasoning` blocks,
+ * reply text and tool activity (call with command plus result) to text
+ * blocks, and the final assistant message carries the round's usage when
  * claude reported it, so the tokenUsage projection counts the delegation.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
- * @param output - the parsed claude response blocks.
- * @param usage - the turn's token usage, when present.
+ * @param parsed - the parsed stream transcript, final output, and usage.
  */
 async function appendClaudeResponse(
   spec: ClaudeCliRunSpec,
   task: string,
   turn: number,
-  output: ContentBlock[],
-  usage?: TokenUsage,
+  parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
   try {
@@ -483,15 +587,27 @@ async function appendClaudeResponse(
       content: [{ type: 'text', text: task }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    spec.childSession.append('assistant/message', {
-      turn,
-      step: 1,
-      message: createAssistantMessage({
-        content: output,
-        source: { provider: 'claude-local', model: 'claude' },
-      }),
-      ...usage === undefined ? {} : { usage },
-    }, { surfaceOp: 'append' })
+    let step = 1
+    for (const line of parsed.lines) {
+      const blocks = line.kind === 'think'
+        ? [{ type: 'reasoning' as const, text: line.text }]
+        : line.kind === 'tool'
+          ? [{
+            type: 'text' as const,
+            text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
+          }]
+          : [{ type: 'text' as const, text: line.text }]
+      spec.childSession.append('assistant/message', {
+        turn,
+        step,
+        message: createAssistantMessage({
+          content: blocks,
+          source: { provider: 'claude-local', model: 'claude' },
+        }),
+        ...step === parsed.lines.length && parsed.usage !== undefined ? { usage: parsed.usage } : {},
+      }, { surfaceOp: 'append' })
+      step += 1
+    }
     await spec.ctx.get('sessionPersistence')?.append(spec.childSession.id, spec.childSession.events)
   } catch (error) {
     spec.onError?.(thrown(error), 'error')

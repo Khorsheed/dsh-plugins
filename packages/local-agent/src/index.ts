@@ -234,6 +234,15 @@ export class LocalAgentRegistry {
    * of the same child fails loud instead of racing the first process.
    */
   private readonly resumeLocks = new Set<string>()
+  /**
+   * Kimi transcript-line mirror offset per child session, tracked
+   * INDEPENDENTLY of the delegation record: the offset must survive even when
+   * the CLI session hint is not parsed from stderr (the record — and therefore
+   * a resume — needs the hint, but the mirror bookkeeping does not). Without
+   * this separation a resume round would fall back to offset 0 and duplicate
+   * the first round's messages.
+   */
+  private readonly kimiMirrorOffsets = new Map<string, number>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -467,25 +476,30 @@ export class LocalAgentRegistry {
   /**
    * Read the kimi transcript lines already mirrored into one child session,
    * so a resumed round mirrors only its delta instead of duplicating earlier
-   * messages. Absent means the first round has not mirrored yet.
+   * messages. Absent means the first round has not mirrored yet. Reads the
+   * dedicated offset map (never gated on a delegation record).
    * @param childSessionId - the dsh child session id.
    * @returns the mirrored transcript-line count, or undefined.
    */
   kimiMirroredLines(childSessionId: string): number | undefined {
-    return this.delegations.get(childSessionId)?.kimiMirroredLines
+    return this.kimiMirrorOffsets.get(childSessionId)
   }
 
   /**
    * Advance the kimi transcript-line mirror offset for one child session.
    * The kimi provider calls this after every mirror (fresh or resumed) with
-   * the new total transcript-line count.
+   * the new total transcript-line count. Writes the dedicated offset map so
+   * the offset survives even without a delegation record; the record's own
+   * field is mirrored for completeness.
    * @param childSessionId - the dsh child session id.
    * @param lines - the total transcript lines mirrored so far.
    */
   setKimiMirroredLines(childSessionId: string, lines: number): void {
+    this.kimiMirrorOffsets.set(childSessionId, lines)
     const record = this.delegations.get(childSessionId)
-    if (record === undefined) return
-    this.delegations.set(childSessionId, { ...record, kimiMirroredLines: lines })
+    if (record !== undefined) {
+      this.delegations.set(childSessionId, { ...record, kimiMirroredLines: lines })
+    }
   }
 
   /**
