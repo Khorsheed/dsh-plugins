@@ -1,0 +1,6 @@
+# message-timeline bundle patch: inserts the plugin row into the composing profile.
+# The browser half is discovered through the package.json dsh.client block; the
+# node half is the empty apply that makes the row a real loader entry.
+- insert:
+    - id: message-timeline
+      name: '@khorsheed/dsh-message-timeline'

@@ -1,0 +1,132 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The flat timeline: no frame, no visible scrollbar. The auto-margin spacers
+   split the free space, so a short list centers vertically while an
+   overflowing one starts at the top and scrolls invisibly. The panel itself
+   takes no pointer events: at rest only the narrow tick strip of each row is
+   sensitive, so crossing the list on the way to the sidebar never lights it. */
+.panel {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.panel::before,
+.panel::after {
+  content: '';
+  margin: auto;
+}
+
+.panel::-webkit-scrollbar {
+  display: none;
+}
+
+/* Rows rest dimmed so the list reads as ambient; their hit area rests at the
+   tick strip's width and widens to the full row once the panel is hovered or
+   keyboard-focused, which is also what lights every row. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  max-width: 20px;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.panel:hover .item,
+.panel:focus-within .item {
+  max-width: 100%;
+  opacity: 1;
+}
+
+.tick {
+  flex: none;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--dsw-static-deepseek-400);
+}
+
+/* The reading position keeps its blue at rest (dimmed like the list, but
+   visibly above it); on hover every row is lit and the blue stays on top. */
+.itemCurrent {
+  color: var(--dsw-static-deepseek-500);
+  opacity: 0.75;
+}
+
+.tickCurrent {
+  background: var(--dsw-static-deepseek-500);
+}
+
+/* Only the ticks show at rest — the current row's blue tick marks the
+   reading position; all row text fades in when the panel is hovered or
+   keyboard-focused. */
+.itemText {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.panel:hover .itemText,
+.panel:focus-within .itemText {
+  opacity: 1;
+  /* Passing over the tick strip on the way elsewhere ends before the delay,
+     so only a deliberate stop reveals the text. */
+  transition-delay: 90ms;
+}
+
+.itemFocused {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* Pointer clicks never leave a focus ring; keyboard focus keeps an explicit one. */
+.item:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.item:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
