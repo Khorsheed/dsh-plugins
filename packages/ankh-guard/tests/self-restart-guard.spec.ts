@@ -20,7 +20,8 @@ import * as selfRestartGuard from '../src/index.ts'
 import { currentHead } from '../src/git.ts'
 import { install as installInvariant } from '../src/invariant.ts'
 import {
-  acknowledgeRestartRecord, pendingRestartRecord, restartContextText,
+  acknowledgeRestartRecord, pendingRestartRecord, readInterruptedSnapshot, restartContextText,
+  writeInterruptedSnapshot,
 } from '../src/restart-context.ts'
 import { preflightInternals, resolvePreflightBin, runCli, type CliIo } from '../src/cli.ts'
 import {
@@ -1515,6 +1516,14 @@ describe('restart context injection', () => {
   it('renders a failure and stays silent for an empty record', () => {
     expect(restartContextText({ error: 'no listener' }, false)).toContain('失败')
     expect(restartContextText({}, false)).toBe('')
+  })
+
+  it('writes the shutdown snapshot even when the state directory does not exist yet', () => {
+    // Fresh deployments have no $DSH_HOME/state — the write must create it
+    // (observed: the first-ever restart on a clean install lost the snapshot).
+    const dir = join(tmpDir('guard-ctx-'), 'not-created-yet')
+    writeInterruptedSnapshot(dir, { exitAt: NOW, resume: [], interrupted: ['session-x'] })
+    expect(readInterruptedSnapshot(dir)?.interrupted).toEqual(['session-x'])
   })
 })
 

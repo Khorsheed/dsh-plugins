@@ -24,7 +24,7 @@ The restart itself is handed to a watchdog: a detached supervisor that brings th
 
 ## Install and load
 
-This package is a dsh plugin: it guards a running dsh web instance against broken self-modification restarts. It is published to npm as **`@khorsheed/dsh-ankh-guard`** (the community channel — the `Khorsheed/dsh-ankh-guard` repo is the publish source); inside the deepseek-harness monorepo the same code is the `@deepseek-ai/dsh-ankh-guard` family member at `packages/guard/ankh-guard`, mounted by the base bundle. **Official dsh images therefore already mount it — do not also plugin-add it there** (a duplicate loader entry id fails boot). For a composition that does not include it, install the host and add the plugin as a profile bundle:
+This package is a dsh plugin: it guards a running dsh web instance against broken self-modification restarts. Its single identity is **`@khorsheed/dsh-ankh-guard`**, developed in the `dsh-plugins` monorepo and published to npm from there. Install the host and add the plugin as a profile bundle:
 
 ```sh
 npm install @deepseek-ai/dsh                                 # the host (dsh web / dsh CLI)

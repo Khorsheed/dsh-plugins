@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-ankh-guard
+# @khorsheed/dsh-ankh-guard
 
 [English](README.md) | 中文
 
@@ -24,7 +24,7 @@ agent 改完代码想重启的时候，这个插件会先问一句：这次改�
 
 ## 安装与加载
 
-本包是 dsh 插件：守护运行中的 dsh web 实例，防止坏掉的自我修改重启。它发布在 npm 的 **`@khorsheed/dsh-ankh-guard`**（社区渠道——发布源是 `Khorsheed/dsh-ankh-guard` 仓库）；在 deepseek-harness monorepo 里，同一份代码是 `packages/guard/ankh-guard` 的 `@deepseek-ai/dsh-ankh-guard` 家族成员，由 base bundle 挂载。**官方 dsh 镜像因此已经挂载了它——在那里不要再 plugin-add**（重复 loader entry id 会让 boot 失败）。对不含它的组合，装宿主后把插件加为 profile bundle：
+本包是 dsh 插件：守护运行中的 dsh web 实例，防止坏掉的自我修改重启。它的唯一身份是 **`@khorsheed/dsh-ankh-guard`**，在 `dsh-plugins` monorepo 中开发并从那里发布到 npm。装宿主后把插件加为 profile bundle：
 
 ```sh
 npm install @deepseek-ai/dsh                                 # the host (dsh web / dsh CLI)
