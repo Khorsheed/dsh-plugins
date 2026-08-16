@@ -92,6 +92,11 @@ Codex 子会话是委派 Session 工作区内一个全新的一次性 `codex exe
 
 子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终 `assistant/message` 携带从 `codex exec --json` 事件流解析的本回合 token 用量。codex 的 `input_tokens` 是**含缓存命中的总输入**（OpenAI 口径；`input_tokens + output_tokens` 等于 rollout 的 `total_tokens`），所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、`output_tokens` 映射输出；codex 没有缓存写入概念。`tokenUsage` 投影据此统计委派，不会把缓存命中双重计数。
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制与后续工作
 
 - **登录需要一次交互**——device-code URL 出现在会话中；只有用户在浏览器完成授权后凭据才会出现。没有 API key 路径。

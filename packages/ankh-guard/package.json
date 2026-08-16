@@ -80,6 +80,10 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6",
+      "notes": "composition-preflight restart gate unavailable on the npm line (fork-only dsh preflight); the guard proceeds with a notice, every other capability intact"
     }
   }
 }

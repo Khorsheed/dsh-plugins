@@ -38,6 +38,9 @@
         "@deepseek-ai/dsh-client-runtime"
       ],
       "platform": "web"
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6"
     }
   },
   "scripts": {

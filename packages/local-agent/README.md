@@ -64,6 +64,11 @@ Command discovery, execution, and reply text add no model tokens. Delegation tok
 
 Registry metadata and command replies never enter a model request and do not affect its cache; a delegated child owns its cache independently.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **Login is a captured prompt** — the web GUI has no interactive terminal surface, so the device-code URL is surfaced in the command reply while the CLI polls in the background; a terminal-backed login for CLI surfaces is deferred.

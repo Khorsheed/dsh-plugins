@@ -58,6 +58,11 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 
 不超出任何普通新用户消息的范围——尾部追加延展历史而不改写它。
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-session@0.1.0-rc.6` 导出 `./surface` 子路径(含 `isAppendSurfaceEvent` / `isReplacementSurfaceEvent`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制与延后工作
 
 - **全区间聊天隐藏依赖一个未文档化的 DOM 属性。** 投影层没有节点抑制 seam(分析见下条),因此隐藏工作在 DOM 层完成:一张动态样式表把 `data-chat-flow-key` 属性(`packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx:44-46`)锚点落在撤回区间内的所有聊天行一律隐藏,覆盖助手步骤、工具调用、turn 尾部等全部种类。隐藏器在首个非空规则集出现时探测该属性;若上游改名或移除,它自动停用并 `console.warn` 一次——失效形态是退化为旧行为(被遮蔽的用户消息仍由渲染器隐藏),绝不报错。行在分页时从节点存储重新挂载,隐藏规则随之重新生效;人工验证中未观察到与滚动锚定的相互影响。

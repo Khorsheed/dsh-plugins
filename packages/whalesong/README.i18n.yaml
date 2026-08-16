@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/whalesong/README.md
-packages/whalesong/README.md: 32be3d11cce02906a28edc07f95a8348e55325e9
-packages/whalesong/README.zh.md: 28a343ee3821b4c3d8e5e8fc943adccb93571607
+packages/whalesong/README.md: beb5f71a303329ab50e991316256f34830bd743f
+packages/whalesong/README.zh.md: de1c85831e6005d1392677ce9b022ef29b454474

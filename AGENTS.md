@@ -29,6 +29,7 @@ Several agents work this repo at once. The rules below exist because of real inc
 - **Client discovery**: browser halves declare `dsh.client` (`platform`, `inject`, `immediately`) in package.json.
 - **Dependencies**: official packages are peerDependencies with wide ranges (`@deepseek-ai/cordis ^4.0.1`, `@deepseek-ai/dsh-* ^0.1.0-rc.6`) plus `peerDependenciesMeta.optional` where loadable without; intra-repo deps use `workspace:*`. Never `workspace:^` across repos.
 - **Degrade, don't explode**: probe optional host capabilities at apply time (`ctx.get`, `ctx.slots.spec`) and degrade silently or to an empty state. A plugin that throws on a missing capability fails the whole boot.
+- **Compatibility labeling**: every package carries a `Compatibility` section in both READMEs (verdict per host line: npm release vs deepseek-harness master) and the matching machine-readable `dsh.compat` field in package.json (`minHost`, plus `notes` when any item is degraded). Keep the two in sync on every host-API audit; after each official release, re-check whether the release now ships a degraded item's missing capability and retire the degraded path when it does.
 - **DOM anchors are last resort**: prefer slots and public services; a DOM anchor must carry a fallback.
 
 ## Versioning and publish

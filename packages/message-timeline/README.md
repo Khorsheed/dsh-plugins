@@ -32,6 +32,11 @@ None.
 | `panelWidth` | `360` | Timeline panel width in px (clamped 120–640). |
 | `initialPages` | `5` | History pages (50 events each) prefetched when the panel opens; older pages load on demand when the panel is scrolled to its top (clamped 1–20). |
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **DOM probe coupling** — the panel targets the official row attributes `data-chat-anchor-key` / `data-chat-flow-kind` and the `[data-conversation-scroll]` scrollport. If the official DOM structure changes, the panel hides itself (one `console.warn`) until the probe is updated; there is no legacy-compat path by design.

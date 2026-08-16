@@ -64,6 +64,11 @@ registry 本身不提交任何内容。`/<harness> login|sessions|status` 回复
 
 registry 元数据与命令回复从不进入模型请求、不影响其缓存；被委派的子会话独立拥有自己的缓存。
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制与后续工作
 
 - **登录为抓取式 prompt**——web GUI 没有交互式终端面，device-code URL 通过命令回复呈现、CLI 在后台轮询；面向 CLI 面的终端式登录留待后续。

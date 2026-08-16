@@ -92,6 +92,11 @@ No effect.
 
 The child session carries real usage and timing: the provider opens `turn/start` when the CLI spawns and closes `turn/end` when it settles — including on failure or cancellation (reason `error`/`aborted`) — so the `subagentTiming` projection's duration equals the actual CLI runtime and the window never stays open on a failed run; the final `assistant/message` carries the turn's token usage parsed from the `codex exec --json` event stream. Codex's `input_tokens` is the TOTAL input including cache hits (OpenAI-style; `input_tokens + output_tokens` equals the rollout's `total_tokens`), so the uncached bucket is `input_tokens − cached_input_tokens`, `cached_input_tokens` maps to cache read, `output_tokens` to output; codex has no cache-write concept. The `tokenUsage` projection counts the delegation without double counting cache hits.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **Login requires one interactive step** — the device-code URL appears in the session; credentials appear only after the user authorizes in the browser. No API-key path.

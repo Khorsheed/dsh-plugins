@@ -22,6 +22,11 @@ None.
 
 None.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **In-place editing is a DOM-layer stopgap.** The official `ConversationSessionHeader` renders the title and exposes no title seat, so "the title becomes an input" is faked by hiding the official crumb via a `data-ste-inplace` attribute and overlaying the plugin's input at the crumb's measured rect (viewport-fixed, re-measured on window resize). When the crumb cannot be located (the official DOM changed), the entry degrades to an inline editor in the actions row. TODO(session-title-edit): deprecate the overlay when the official header opens a title slot (or makes the crumb editable) — the entry then becomes a pure slot consumer.

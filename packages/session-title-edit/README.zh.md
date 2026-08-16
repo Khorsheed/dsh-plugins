@@ -22,6 +22,11 @@
 
 无。
 
+## Compatibility
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## Known Limitations and Deferred Work
 
 - **原位编辑是 DOM 层过渡方案。** 官方 `ConversationSessionHeader` 自行渲染标题且没有暴露标题槽位,因此"标题变成输入框"是通过隐藏官方 crumb(`data-ste-inplace` 属性)并在其测量矩形上覆盖输入框(视口定位、窗口缩放时重测)实现的。当 crumb 无法定位(官方 DOM 变化)时,退回 actions 行内编辑器。TODO(session-title-edit):官方 header 开放标题槽位(或让 crumb 可编辑)后废弃本覆盖逻辑,条目变成纯槽位消费者。

@@ -132,6 +132,11 @@ dsh-ankh-guard restart \
 
 无。
 
+## Compatibility
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):⚠️ 降级——组合 preflight 重启门禁依赖 fork 的 `dsh preflight` 命令,npm 发布版不带该命令;宿主缺少它时守护放行并提示,其余能力(restart/supervise 门禁、watchdog、回滚到已知良好点)全部完整。
+- 源码线(deepseek-harness master):✅
+
 ## Known Limitations and Deferred Work
 
 - **闸门在 `restart`/`supervise` 里强制，launcher 里还没有**——两者在拒绝时会拒绝停实例，但绕开 guard 的手动 `kill`/启动仍可绕过；watchdog 是让被绕过的闸门可恢复的自动安全网。

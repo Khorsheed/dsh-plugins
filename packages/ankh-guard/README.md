@@ -132,6 +132,11 @@ None. The guard is host-side infrastructure; it adds no tool schema, prompt, or 
 
 None.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ⚠️ degraded — the composition-preflight restart gate rides the fork's `dsh preflight` command, which the npm release does not ship; on a host without it the guard proceeds with a notice, and every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **The gate is enforced in `restart`/`supervise`, not the launcher** — both refuse to stop the instance on a denial, but a manual `kill`/start outside the guard still bypasses it; the watchdog is the automatic safety net that makes a bypassed gate recoverable.

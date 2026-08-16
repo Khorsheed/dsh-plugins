@@ -58,6 +58,11 @@ A restore adds the span's replayable tokens (user messages plus assistant text) 
 
 None beyond any ordinary new user message — the tail append extends the history without rewriting it.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — verified against the published tarball: `@deepseek-ai/dsh-session@0.1.0-rc.6` exports the `./surface` subpath with `isAppendSurfaceEvent` / `isReplacementSurfaceEvent`; the rest of the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **Full-span chat hiding depends on an undocumented DOM attribute.** The projection offers no node-suppression seam (the analysis below), so hiding works at the DOM layer: a dynamic stylesheet drops every chat row whose `data-chat-flow-key` attribute (`packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx:44-46`) anchors inside a withdrawn span, covering assistant steps, tool calls, turn tails, and every other kind. On the first non-empty rule set the hider probes for the attribute and, if upstream renames or drops it, disables itself with one `console.warn` — the failure mode is the pre-hider behavior (the shadowed renderer still hides user messages), never an error. Rows remount from the node store on paging, so hidden rows re-acquire their rules as they mount; no scroll-anchoring interaction was observed in manual verification.

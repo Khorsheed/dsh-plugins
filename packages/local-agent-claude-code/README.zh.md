@@ -99,6 +99,11 @@ Claude 的 LLM 请求可以经自定义端点路由（例如自部署的模型�
 
 每次委派在 info 级别记录有效端点（`subagent-claude: delegating via <endpoint>`），失败运行的报错文本会点名它使用的端点。
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制与后续工作
 
 - **登录需要一次交互**——浏览器 OAuth URL 出现在会话中；只有用户在浏览器完成授权后凭据才会出现。

@@ -32,6 +32,11 @@
 | `panelWidth` | `360` | 时间轴面板宽度(px,限 120–640)。 |
 | `initialPages` | `5` | 面板打开时预取的历史页数(每页 50 条事件);更早历史在面板滚动到顶部时按需加载(限 1–20)。 |
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制与后续工作
 
 - **依赖官方 DOM 探针** —— 面板针对官方行属性 `data-chat-anchor-key` / `data-chat-flow-kind` 与 `[data-conversation-scroll]` 滚动区;官方结构变化时面板自行隐藏(console.warn 一次)直到探针更新,刻意不做旧兼容路径。

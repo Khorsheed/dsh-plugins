@@ -17,6 +17,11 @@ None, as the view renders host-computed file data in the browser; nothing here r
 
 None; this package neither assembles nor sends a provider request.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **Text preview only** — binary, oversized, and missing files render classified notices with their size, not content.

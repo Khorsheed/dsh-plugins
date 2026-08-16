@@ -51,6 +51,9 @@
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6"
     }
   },
   "files": [

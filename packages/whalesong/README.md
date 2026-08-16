@@ -64,6 +64,11 @@ None, as the plugin only renders browser-side status ambience from the session l
 
 None.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - Chimes arriving before the first user gesture (autoplay policy) are dropped, never queued.

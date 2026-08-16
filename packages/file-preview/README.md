@@ -29,6 +29,11 @@ The service is a trusted, read-only capability: it reads whatever `ctx.fs` allow
 
 This package is a pure host-side addition: it registers one Remote service (mounted by its browser half through the official `ctx.remote.$mount` channel) and writes nothing into other packages. The browser half (`@deepseek-ai/dsh-client-ui-file-preview`) is equally additive and depends on official extension points only. Both packages distribute independently and compose into a stock dsh core with zero edits.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **List is a point-in-time fold** — the client refreshes by re-calling `list`; there is no push channel for new files.
