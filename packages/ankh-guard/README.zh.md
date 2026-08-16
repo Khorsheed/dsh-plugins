@@ -31,7 +31,7 @@ npm install @deepseek-ai/dsh                                 # the host (dsh web
 dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 ```
 
-包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（一个裸 `ankh-guard` 挂载行）自动并入 profile 的 bundles 层——不用手改 cordis.yml。源码安装：clone monorepo，包在 `packages/guard/ankh-guard`（`pnpm install && pnpm run build`）。
+包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（一个裸 `ankh-guard` 挂载行）自动并入 profile 的 bundles 层——不用手改 cordis.yml。源码安装：clone monorepo，包在 `packages/ankh-guard`（`pnpm install && pnpm run build`）。
 
 配置（全部可选）：`stateDir`（默认 `$DSH_HOME/state`，否则 `<cwd>/.dsh-guard-state`）、`repoDir`（默认进程 cwd）、`maxAgeMinutes`（凭证新鲜窗口，默认 10）、`reportRestartContext`（`followup` 自主报告 / `step` 骑下一次回合 / `off`，默认 `followup`）、`resumeInterrupted`（恢复被重启中断的会话并排入继续回合，默认 true）、`resumeDelayMs`（默认 5000）、`resumeMaxSnapshotAgeMs`（默认 600000）。
 
