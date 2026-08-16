@@ -1,25 +1,31 @@
 /**
  * gen-typert: regenerate the Typert face artifacts (lib/typert.host.*,
- * lib/typert.remote-client.*) for the packages in this repo whose upstream
- * sources live in the harness monorepo.
+ * lib/typert.remote-client.*) for the packages in this repo with `./typert`
+ * and `./remote` exports.
  *
- * Why this reaches into a harness checkout: the published
- * @deepseek-ai/dsh-typert-generator analyzer is monorepo-coupled — its Remote
- * marker detection and merged-interface face attribution require every
- * contributing package (typert-protocol, session, …) to be a registered
- * workspace SOURCE package, which npm-installed copies never satisfy (the
- * cascade ends at vendoring the whole dependency graph). Generation therefore
- * runs against a local harness checkout — a dev-time path dependency,
- * defaulting to ~/code/deepseek-harness and overridable with DSH_HARNESS —
- * and the artifacts are written back into this repo with the package's
- * @khorsheed self-name rewritten in (the generator stamps the source scope
- * into identifiers and the manifest owner field).
+ * Why the overlay: the published @deepseek-ai/dsh-typert-generator analyzer
+ * is monorepo-coupled — its Remote marker detection and merged-interface face
+ * attribution require every contributing package (typert-protocol, session,
+ * …) to be a registered workspace SOURCE package under the generator root,
+ * which npm-installed copies never satisfy (the cascade ends at vendoring the
+ * whole dependency graph). The plugin sources moved out of the harness
+ * monorepo into this repo (harness commit "remove migrated plugin packages"),
+ * so generation runs against a scratch OVERLAY: an APFS clonefile copy of the
+ * harness checkout (packages, vendor, native, apps, node_modules, face
+ * tsconfigs) with this repo's three packages copied in as real directories
+ * (the analyzer realpaths package roots, so symlinks would be filtered out)
+ * and referenced from the overlay's tsconfig.host.json. The overlay root
+ * keeps the harness layout, so the harness tsconfig.base.json source-plane
+ * paths resolve every @deepseek-ai/* import exactly as the in-tree generation
+ * did, and the copied manifests already carry the @khorsheed self-name the
+ * generator stamps into identifiers and the manifest owner field.
  *
- * The harness checkout only needs its sources (this script itself runs under
- * tsx, which also transpiles the generator source it imports — no harness
- * build step required). Sources here are kept identical to the harness copies
- * modulo the scope rename, so generating from the harness side yields this
- * repo's artifacts.
+ * The overlay lives under $DSH_HOME/scratch (default ~/.dsh/scratch), one
+ * per process (concurrent `pnpm -r build` invocations must not share mutable
+ * scratch), cloned fresh from the current harness checkout (DSH_HARNESS,
+ * default ~/code/deepseek-harness) on every run — a stale overlay tests
+ * yesterday's API surface — and removed when generation finishes. The
+ * harness checkout itself is never modified.
  *
  * Usage: tsx scripts/gen-typert.mts
  *
@@ -28,41 +34,43 @@
  * per-package invocations would emit divergent artifacts (harness's own
  * workspace build also generates every contributor in a single pass).
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+/** The harness's own TypeScript (v5 API surface; this repo's typescript@7 differs). */
+interface JsoncParser {
+  parseConfigFileTextToJson(fileName: string, text: string): { config?: unknown, error?: { messageText: unknown } }
+  flattenDiagnosticMessageText(messageText: unknown, newLine: string): string
+}
+
 interface TypertPackage {
   /** This repo's package directory (relative to the repo root). */
   readonly dir: string
-  /** Upstream harness package directory (relative to the harness root). */
-  readonly harnessDir: string
-  /** Upstream source-scope package name the generator knows. */
-  readonly sourceName: string
-  /** This repo's @khorsheed package name. */
-  readonly distName: string
+  /** The package's @khorsheed name — what the overlay manifest declares. */
+  readonly name: string
+  /** Aggregate reference targets, relative to the overlay package dir. */
+  readonly hostConfigs: readonly string[]
 }
 
-/** Packages with ./typert + ./remote exports and their upstream counterparts. */
+/** Packages with ./typert + ./remote exports. */
 const TYPERT_PACKAGES: readonly TypertPackage[] = [
   {
     dir: 'packages/message-tools',
-    harnessDir: 'packages/client/message-tools',
-    sourceName: '@deepseek-ai/dsh-client-message-tools',
-    distName: '@khorsheed/dsh-client-message-tools',
+    name: '@khorsheed/dsh-client-message-tools',
+    hostConfigs: ['tsconfig.host.json'],
   },
   {
     dir: 'packages/file-preview',
-    harnessDir: 'packages/fs/file-preview',
-    sourceName: '@deepseek-ai/dsh-file-preview',
-    distName: '@khorsheed/dsh-file-preview',
+    name: '@khorsheed/dsh-file-preview',
+    hostConfigs: ['tsconfig.json'],
   },
   {
     dir: 'packages/local-agent',
-    harnessDir: 'packages/local-agent/local-agent',
-    sourceName: '@deepseek-ai/dsh-local-agent',
-    distName: '@khorsheed/dsh-local-agent',
+    name: '@khorsheed/dsh-local-agent',
+    hostConfigs: ['tsconfig.host.json'],
   },
 ]
 
@@ -87,39 +95,91 @@ interface WorkspaceGenerator {
 
 const repoRoot = new URL('..', import.meta.url).pathname
 const harness = process.env['DSH_HARNESS'] ?? join(homedir(), 'code/deepseek-harness')
+const dshHome = process.env['DSH_HOME'] ?? join(homedir(), '.dsh')
+// One overlay per process: `pnpm -r build` invokes this script from several
+// package builds concurrently, and a shared directory would race rm/copy.
+const overlay = join(dshHome, 'scratch', 'typert-overlay', `${process.pid}-${Date.now()}`)
 
-function rewrite(text: string, pkg: TypertPackage): string {
-  return text.split(pkg.sourceName).join(pkg.distName)
-    // The generator mangles the package name into schema identifiers.
-    .split(pkg.sourceName.replaceAll(/[@/-]/g, '_')).join(pkg.distName.replaceAll(/[@/-]/g, '_'))
+/** Top-level harness entries the host-face analysis can reach. */
+const HARNESS_ENTRIES = [
+  'packages',
+  'vendor',
+  'native',
+  'apps',
+  'node_modules',
+  'package.json',
+  'pnpm-workspace.yaml',
+  'tsconfig.base.json',
+  'tsconfig.host.json',
+] as const
+
+/** Rebuild the overlay from the harness checkout, plugin packages overlaid. */
+async function buildOverlay(): Promise<void> {
+  const ts = await import(pathToFileURL(join(harness, 'node_modules/typescript/lib/typescript.js')).href) as JsoncParser
+  rmSync(overlay, { recursive: true, force: true })
+  mkdirSync(overlay, { recursive: true })
+  for (const entry of HARNESS_ENTRIES) {
+    const source = join(harness, entry)
+    if (!existsSync(source)) throw new Error(`gen-typert: harness entry ${source} not found — build a current checkout or set DSH_HARNESS`)
+    // APFS clonefile keeps the copy cheap; fall back to a plain copy elsewhere.
+    try {
+      execFileSync('cp', ['-c', '-R', source, join(overlay, entry)])
+    } catch {
+      cpSync(source, join(overlay, entry), { recursive: true, verbatimSymlinks: true })
+    }
+  }
+  for (const pkg of TYPERT_PACKAGES) {
+    const target = join(overlay, pkg.dir)
+    mkdirSync(target, { recursive: true })
+    cpSync(join(repoRoot, pkg.dir, 'src'), join(target, 'src'), { recursive: true })
+    cpSync(join(repoRoot, pkg.dir, 'package.json'), join(target, 'package.json'))
+    for (const config of pkg.hostConfigs) {
+      cpSync(join(repoRoot, pkg.dir, config), join(target, config))
+    }
+  }
+  const aggregatePath = join(overlay, 'tsconfig.host.json')
+  const parsed = ts.parseConfigFileTextToJson(aggregatePath, readFileSync(aggregatePath, 'utf8'))
+  if (parsed.error !== undefined) {
+    throw new Error(`gen-typert: cannot parse harness tsconfig.host.json: ${ts.flattenDiagnosticMessageText(parsed.error.messageText, '\n')}`)
+  }
+  const aggregate = parsed.config as { references?: Array<{ path: string }> }
+  aggregate.references = [
+    ...aggregate.references ?? [],
+    ...TYPERT_PACKAGES.flatMap(pkg => pkg.hostConfigs.map(config => ({ path: `./${pkg.dir}/${config}` }))),
+  ]
+  writeFileSync(aggregatePath, `${JSON.stringify(aggregate, null, 2)}\n`)
 }
 
 async function main(): Promise<void> {
-  const selected = TYPERT_PACKAGES
   const generatorModule = join(harness, 'packages/typert/generator/src/workspace.ts')
   if (!existsSync(generatorModule)) {
     throw new Error(`gen-typert: harness checkout not found at ${harness} — set DSH_HARNESS to a deepseek-harness clone`)
   }
-  const { WorkspaceTypertGenerator } = await import(pathToFileURL(generatorModule).href) as {
-    WorkspaceTypertGenerator: new (root: string) => WorkspaceGenerator
-  }
-  const generator = new WorkspaceTypertGenerator(harness)
-  const artifacts = generator.generate(selected.map(pkg => pkg.sourceName), ['host'])
-  for (const pkg of selected) {
-    const own = artifacts.filter(artifact => artifact.package === pkg.sourceName)
-    if (own.length === 0) throw new Error(`gen-typert: no host artifact generated for ${pkg.sourceName}`)
-    const out = join(repoRoot, pkg.dir, 'lib')
-    mkdirSync(out, { recursive: true })
-    for (const artifact of own) {
-      writeFileSync(join(out, `typert.${artifact.face}.js`), rewrite(artifact.js, pkg))
-      writeFileSync(join(out, `typert.${artifact.face}.d.ts`), rewrite(artifact.dts, pkg))
-      if (artifact.remote !== undefined) {
-        writeFileSync(join(out, 'typert.remote-client.js'), rewrite(artifact.remote.js, pkg))
-        writeFileSync(join(out, 'typert.remote-client.d.ts'), rewrite(artifact.remote.dts, pkg))
-        writeFileSync(join(out, 'typert.remote-client.d.ts.map'), artifact.remote.dtsMap)
-      }
+  await buildOverlay()
+  try {
+    const { WorkspaceTypertGenerator } = await import(pathToFileURL(generatorModule).href) as {
+      WorkspaceTypertGenerator: new (root: string) => WorkspaceGenerator
     }
-    console.log(`gen-typert: ${pkg.distName} <- harness ${pkg.harnessDir}`)
+    const generator = new WorkspaceTypertGenerator(overlay)
+    const artifacts = generator.generate(TYPERT_PACKAGES.map(pkg => pkg.name), ['host'])
+    for (const pkg of TYPERT_PACKAGES) {
+      const own = artifacts.filter(artifact => artifact.package === pkg.name)
+      if (own.length === 0) throw new Error(`gen-typert: no host artifact generated for ${pkg.name}`)
+      const out = join(repoRoot, pkg.dir, 'lib')
+      mkdirSync(out, { recursive: true })
+      for (const artifact of own) {
+        writeFileSync(join(out, `typert.${artifact.face}.js`), artifact.js)
+        writeFileSync(join(out, `typert.${artifact.face}.d.ts`), artifact.dts)
+        if (artifact.remote !== undefined) {
+          writeFileSync(join(out, 'typert.remote-client.js'), artifact.remote.js)
+          writeFileSync(join(out, 'typert.remote-client.d.ts'), artifact.remote.dts)
+          writeFileSync(join(out, 'typert.remote-client.d.ts.map'), artifact.remote.dtsMap)
+        }
+      }
+      console.log(`gen-typert: ${pkg.name} generated from overlay ${overlay}`)
+    }
+  } finally {
+    rmSync(overlay, { recursive: true, force: true })
   }
 }
 
