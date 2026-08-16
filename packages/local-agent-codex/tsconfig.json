@@ -4,8 +4,7 @@
     "rootDir": "src",
     "outDir": "lib/types"
   },
-  "include": ["src"],
-  "references": [
-    { "path": "../local-agent/tsconfig.host.json" }
+  "include": [
+    "src"
   ]
 }
