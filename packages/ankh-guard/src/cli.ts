@@ -320,7 +320,15 @@ export async function runPreflightCheck(profile: string, timeoutMs: number): Pro
       } else if (code === 0) {
         resolvePromise({ kind: 'pass', output })
       } else if (code === 1) {
-        resolvePromise({ kind: 'composition-failed', output })
+        // A host CLI that predates the preflight subcommand also exits 1, with
+        // commander's unknown-command error. That host simply has no gate
+        // contract — degrade to unavailable instead of refusing every restart
+        // on a composition verdict nobody produced.
+        if (/unknown command/.test(output)) {
+          resolvePromise({ kind: 'unavailable', output })
+        } else {
+          resolvePromise({ kind: 'composition-failed', output })
+        }
       } else if (code === 3) {
         resolvePromise({ kind: 'infra-failed', output })
       } else {

@@ -462,6 +462,20 @@ describe('composition preflight gate', () => {
     expect(unexpected.err.join('')).toContain('unexpected code 2')
   })
 
+  it('gate treats a host CLI without the preflight subcommand as unavailable', async () => {
+    // An official checkout (or older npm host) has bin.ts but no `preflight`
+    // subcommand: commander answers exit 1 with an unknown-command error. The
+    // gate must degrade and proceed, not refuse restarts on a phantom verdict.
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-')
+    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    stubPreflight(`"${process.execPath}" -e "console.error(\\"error: unknown command 'preflight'\\"); process.exit(1)"`)
+    const out = io()
+    await runCli(['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo], out.io)
+    expect(out.err.join('')).not.toContain('composition preflight failed')
+    expect(out.out.join('')).toContain('unavailable')
+  })
+
   it('preflight resolves the profile from $DSH_PROFILE when no flag is given', async () => {
     stubPreflight('true')
     const previous = process.env.DSH_PROFILE
