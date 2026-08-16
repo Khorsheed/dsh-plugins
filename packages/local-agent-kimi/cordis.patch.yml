@@ -1,0 +1,29 @@
+# The dsh-local-agent-kimi bundle patch: register the Kimi harness and mount
+# its delegation tool. The family core row (`local-agent`, shared scoped-homes
+# root) ships in the framework bundle @deepseek-ai/dsh-local-agent's own patch,
+# which this bundle declares as a dependency — so installing this bundle alone
+# still mounts the core, and no two patches insert the same row id.
+#
+# Two rows are inserted:
+#   - local-agent-kimi: this bundle's plugin registers the `kimi` harness
+#     (KIMI_CODE_HOME, `kimi login`, session_index records).
+#   - tool-subagent-kimi: the one-shot CLI subagent provider (spawns
+#     `kimi -p` under the harness's scoped home). The provider name
+#     `kimi-cli` is what preset tool rows reference.
+#
+# The subagent_kimi tool row mounts at the profile root, so every agent
+# preset (standard/code/minimal/cordis and future ones) can delegate without
+# per-preset variants. The provider starts no Kimi process until a tool call
+# or /kimi login.
+
+- insert:
+    - id: local-agent-kimi
+      name: '@khorsheed/dsh-local-agent-kimi'
+
+    - id: tool-subagent-kimi
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: kimi-cli
+        toolName: subagent_kimi
+        enableRunInBackground: false
+        maxDepth: provider-managed
