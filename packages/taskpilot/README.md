@@ -77,7 +77,7 @@ pnpm run typecheck # host + client 两个 aggregate(与产品一致,避免 host/
 pnpm test          # vitest:轨迹折叠 + 胶囊/抽屉组件测试
 ```
 
-**开发期类型解析**:产品的 npm 发布链暂不完整(client 包依赖未发布的 `@deepseek-ai/dsh-compact`),类型检查通过两个 tsconfig 的 `paths` 指向本地 deepseek-harness checkout 的 `lib/types` 产物。发布链补齐后可换成纯 npm 依赖。
+**开发期类型解析**:产品的 npm 发布链暂不完整(client 包依赖未发布的 `@deepseek-ai/dsh-compact`),类型检查通过两个 tsconfig 的 `paths` 指向本地 deepseek-harness checkout 的 `lib/types` 产物。路径表是机器本地文件(已 gitignore):用 `node ../../scripts/sync-harness-paths.mjs` 生成(读取 `DSH_HARNESS` 环境变量,默认 `~/code/deepseek-harness`)。发布链补齐后可换成纯 npm 依赖。
 
 ## 已知限制
 

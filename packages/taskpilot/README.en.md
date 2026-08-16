@@ -77,7 +77,7 @@ pnpm run typecheck # host + client aggregates (mirrors the product split; avoids
 pnpm test          # vitest: trail folding + capsule/drawer component tests
 ```
 
-**Type resolution during development**: the product's npm release chain is not complete yet (client packages depend on unpublished `@deepseek-ai/dsh-compact`), so the two tsconfigs resolve product types through `paths` into a local deepseek-harness checkout's `lib/types` artifacts. Once the release chain is fixed, plain npm dependencies work.
+**Type resolution during development**: the product's npm release chain is not complete yet (client packages depend on unpublished `@deepseek-ai/dsh-compact`), so the two tsconfigs resolve product types through `paths` into a local deepseek-harness checkout's `lib/types` artifacts. The path map is gitignored and machine-local: regenerate it with `node ../../scripts/sync-harness-paths.mjs` (honors `DSH_HARNESS`, default `~/code/deepseek-harness`). Once the release chain is fixed, plain npm dependencies work.
 
 ## Known limitations
 

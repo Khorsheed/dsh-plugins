@@ -1,4 +1,5 @@
 {
+  "extends": "./tsconfig.paths.json",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -18,23 +19,7 @@
     "declarationMap": true,
     "rootDir": "src",
     "outDir": "lib/types/client",
-    "types": [],
-    "paths": {
-      "@deepseek-ai/cordis": ["/Users/zhuyudan/code/deepseek-harness/vendor/cordis/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-client-ui-slots": ["/Users/zhuyudan/code/deepseek-harness/packages/client/ui-slots/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-client-ui-primitives": ["/Users/zhuyudan/code/deepseek-harness/packages/client/ui-primitives/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-client-runtime/client": ["/Users/zhuyudan/code/deepseek-harness/packages/client/runtime/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-client-ui-conversation/client": ["/Users/zhuyudan/code/deepseek-harness/packages/client/ui-conversation/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-client-ui-layout/client": ["/Users/zhuyudan/code/deepseek-harness/packages/client/ui-layout/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-client-locale/client": ["/Users/zhuyudan/code/deepseek-harness/packages/client/locale/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-api-remotes/client": ["/Users/zhuyudan/code/deepseek-harness/packages/api/remotes/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-client-connection/client": ["/Users/zhuyudan/code/deepseek-harness/packages/client/connection/lib/types/client/index.d.ts"],
-      "@deepseek-ai/dsh-commands/remote": ["/Users/zhuyudan/code/deepseek-harness/packages/interaction/commands/lib/typert.remote-client.d.ts"],
-      "@deepseek-ai/dsh-host-apiproxy/api": ["/Users/zhuyudan/code/deepseek-harness/packages/host/apiproxy/lib/types/api/index.d.ts"],
-      "@deepseek-ai/dsh-host-apiproxy/client": ["/Users/zhuyudan/code/deepseek-harness/packages/host/apiproxy/lib/types/fetch/client.d.ts"],
-      "@deepseek-ai/dsh-session/types": ["/Users/zhuyudan/code/deepseek-harness/packages/core/session/lib/types/types.d.ts"],
-      "@deepseek-ai/dsh-tools/presentation": ["/Users/zhuyudan/code/deepseek-harness/packages/core/tools/lib/types/presentation.d.ts"]
-    }
+    "types": []
   },
   "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/types.ts", "src/css-modules.d.ts"]
 }
