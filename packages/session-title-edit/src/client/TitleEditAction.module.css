@@ -1,0 +1,101 @@
+.renameButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Sits right off the title text: the negative margin closes the official
+     titleCluster gap (10px), leaving a ~6px title-to-icon gutter. */
+  width: 22px;
+  height: 22px;
+  margin-left: -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.renameButton:hover,
+.renameButton:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editorInput {
+  box-sizing: border-box;
+  width: 220px;
+  height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.editorInput:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.editorInput:disabled {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.editorError {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* In-place overlay: the input sits exactly on the hidden crumb's rect, so the
+   title itself reads as an editable field (viewport-fixed; the official
+   header exposes no title seat — see the component's deprecation TODO). */
+.inPlaceInput {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 40;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.inPlaceInput:focus {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.inPlaceInput:disabled {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.inPlaceError {
+  /* In-flow in the actions row (the overlay input is fixed, so this is the
+     row's only content): never fixed-positioned, so it cannot overlap the
+     title area or the chat below the header. */
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Hide the official current-title crumb while the in-place editor is open
+   (DOM layer: attribute set by the entry, removed on close). visibility keeps
+   the crumb's layout box so its rect stays measurable for the overlay and for
+   resize re-measurement, and so the surrounding actions row never shifts. */
+header nav button[data-ste-inplace] {
+  visibility: hidden !important;
+}

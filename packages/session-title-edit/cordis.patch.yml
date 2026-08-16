@@ -1,0 +1,6 @@
+# session-title-edit bundle patch: inserts the plugin row into the composing
+# profile. The client half is discovered through the package.json dsh.client
+# block; there is no host half, so this row only activates the browser entry.
+- insert:
+    - id: session-title-edit
+      name: '@deepseek-ai/dsh-client-session-title-edit'
