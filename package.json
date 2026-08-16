@@ -4,5 +4,9 @@
   "type": "module",
   "engines": {
     "node": "^22.19 || >=24"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.33.0",
+    "tsdown": "^0.22.14"
   }
 }

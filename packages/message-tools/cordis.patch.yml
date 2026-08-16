@@ -1,0 +1,6 @@
+# message-tools bundle: inserts the plugin row into the web profile.
+# The plugin shadows the official user-message renderer (priority -1) to
+# add edit/withdraw actions without modifying ui-conversation.
+- insert:
+    - id: message-tools
+      name: '@khorsheed/dsh-client-message-tools'
