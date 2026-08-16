@@ -1,0 +1,11 @@
+# ankh-guard bundle patch: inserts the guard row into the composing profile,
+# so `dsh plugin --profile <name> add @deepseek-ai/dsh-ankh-guard` reconciles
+# it into the bundles layer (apps/cli plugin.ts reconcilePlugins). The row is
+# a bare mount — every config field has a schema default.
+#
+# NOTE: official dsh images already mount this row through the base bundle —
+# installing the package there as a profile bundle duplicates the loader entry
+# id and fails boot. This patch is for compositions that do not include it.
+- insert:
+    - id: ankh-guard
+      name: "@deepseek-ai/dsh-ankh-guard"
