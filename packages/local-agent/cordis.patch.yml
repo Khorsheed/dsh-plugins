@@ -1,0 +1,14 @@
+# The dsh-local-agent framework bundle patch: the family core row. Every
+# harness bundle (@khorsheed/dsh-local-agent-kimi, -codex, future claude)
+# declares this package as a dependency, so `dsh plugin add` reconciles it
+# into the profile's bundles layer automatically (apps/cli plugin.ts
+# reconcilePlugins) — a harness bundle installs standalone and still gets the
+# core. The core row must NOT be re-inserted by any harness bundle's patch:
+# two top-level `insert` rows with the same id would mount the core twice.
+
+- insert:
+    - id: local-agent
+      name: '@khorsheed/dsh-local-agent'
+      config:
+        # Shared scoped-homes root; override in a later patch layer.
+        homesRoot: !!js dshHomePath('local-agent')
