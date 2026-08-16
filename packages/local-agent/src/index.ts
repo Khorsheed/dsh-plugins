@@ -127,6 +127,9 @@ export interface Config {
   loginPromptTimeoutMs?: number
 }
 
+/** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
+export const REPLACE_LOGIN_GRACE_MS = 5_000
+
 export const Config: z<Config> = z.object({
   homesRoot: z.string().required(),
   loginPromptTimeoutMs: z.number().default(10_000),
@@ -342,14 +345,32 @@ export class LocalAgentRegistry {
    * arrive on stderr (verified against kimi-code 0.33.0; other harnesses print
    * the same prompt shape); the reply surfaces that prompt immediately while
    * the child keeps polling in the background. A second login while one is
-   * pending is refused.
+   * pending terminates the previous login's child and replaces it — a stale or
+   * abandoned login (browser never opened, user gave up) must not hold the
+   * slot forever, and the user's retry should just get a fresh code. An
+   * abandoned login with no retry self-heals when the CLI's own device code
+   * expires and its polling child exits (kimi/codex/claude all do); no
+   * idle timer is added because a too-short one would kill a user who is
+   * genuinely authorizing.
    * @param harness - the harness whose login command runs.
    * @returns the device-code prompt as the command success text.
    */
   private login(harness: LocalAgentHarness): Promise<CommandResult> {
     const existing = this.logins.get(harness.name)
     if (existing !== undefined) {
-      return Promise.resolve({ kind: 'error', text: `A ${harness.name} login is already pending; finish or wait for it first.` })
+      // A pending login is replaced, not refused: terminate its child so the
+      // new login gets a clean slot. The old controller's done signal already
+      // cleared the map entry or will (its settle path deletes only when the
+      // map still holds THAT controller, which the new set() below makes false).
+      const stale = existing.child
+      stale.kill()
+      // SIGTERM first, then SIGKILL after a grace period: a CLI that ignores
+      // SIGTERM must not leave a zombie polling process behind (the slot is
+      // already replaced, so this is process hygiene, not a functional lock).
+      const hardKill = setTimeout(() => {
+        if (stale.exitCode === null && stale.signalCode === null) stale.kill('SIGKILL')
+      }, REPLACE_LOGIN_GRACE_MS)
+      stale.once('exit', () => { clearTimeout(hardKill) })
     }
     const controller: LoginController = { child: undefined as unknown as ChildProcess, done: Promise.resolve() }
     this.logins.set(harness.name, controller)

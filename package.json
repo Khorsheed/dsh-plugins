@@ -9,7 +9,8 @@
     "build": "pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
     "test:scripts": "vitest run scripts",
-    "typecheck": "pnpm -r --if-present run typecheck"
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

@@ -1,4 +1,6 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of
-# the last confirmed-consistent state. Both languages carry equal authority.
-2026-08-16-message-timeline-toggleless-follow.md: 0a4843d354227b67ebaaea46981d7ba616b16132
-2026-08-16-message-timeline-toggleless-follow.zh.md: a3e36355e746cd49e2613a88d21af229c5ca3eb7
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-message-timeline-toggleless-follow.md
+.agents/notes/implemented/feature/2026-08-16-message-timeline-toggleless-follow.md: 0a4843d354227b67ebaaea46981d7ba616b16132
+.agents/notes/implemented/feature/2026-08-16-message-timeline-toggleless-follow.zh.md: a3e36355e746cd49e2613a88d21af229c5ca3eb7

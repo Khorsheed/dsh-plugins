@@ -198,17 +198,53 @@ describe('LocalAgentRegistry', () => {
     expectSuccess(again, 'TEST-URL')
   })
 
-  it('refuses a second login while one is pending, and the timeout reaps the silent child', async () => {
+  it('captures the device-code prompt from stdout when the harness declares it', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-stdout-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    registry.register(harness({
+      login: {
+        command: fakeCli('echo "device URL=STDOUT-URL code=STDOUT-CODE"\nexit 0'),
+        args: [],
+        capture: 'stdout',
+      },
+    }))
+    const result = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    expectSuccess(result, 'STDOUT-URL')
+  })
+
+  it('replaces a pending login instead of refusing it, and the timeout reaps the silent child', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pending-'), loginPromptTimeoutMs: 400 })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ login: { command: fakeCli('sleep 30'), args: [] } }))
     const pending = ctx.commands.execute(agent, '/fake login', new AbortController().signal)
     await new Promise((resolve) => { setTimeout(resolve, 150) })
+    // A second login terminates the stale child and starts a fresh one — the
+    // user's retry gets a new code instead of being locked out by an
+    // abandoned login. The replaced first attempt reports its child was
+    // terminated; the replacement itself times out like any silent child.
     const second = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
-    expectError(second, 'already pending')
+    expectError(second, 'printed no device-code prompt')
     const first = await pending
-    expectError(first, 'printed no device-code prompt')
+    expectError(first, 'exited with code unknown')
   })
+
+  it('SIGKILLs a replaced login child that ignores SIGTERM', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-sigkill-'), loginPromptTimeoutMs: 400 })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    // A shell that traps TERM and execs sleep (single process): the
+    // replacement must fall back to SIGKILL so no zombie polling process
+    // survives the grace period.
+    registry.register(harness({ login: { command: fakeCli("trap '' TERM\nexec sleep 30"), args: [] } }))
+    const pending = ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    await new Promise((resolve) => { setTimeout(resolve, 150) })
+    const second = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    expectError(second, 'printed no device-code prompt')
+    const first = await pending
+    expectError(first, 'exited with code unknown')
+    // The SIGKILL grace is 5s; wait it out so the hard kill lands before the
+    // test ends (the child would otherwise linger as a zombie).
+    await new Promise((resolve) => { setTimeout(resolve, 5_200) })
+  }, 12_000)
 
   it('reports a login spawn failure as an error', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-spawn-') })

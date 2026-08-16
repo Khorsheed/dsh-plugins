@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { LocalAgentRosterRow, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from './locales.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -52,6 +53,11 @@ export function parseLoginUrl(text: string): string | undefined {
   return /https?:\/\/\S+/.exec(text)?.[0]
 }
 
+/** Resolve a harness id to its display label for toast text. */
+function harnessLabel(id: string): string {
+  return KNOWN_HARNESSES.find(harness => harness.id === id)?.label ?? id
+}
+
 /**
  * Settings section managing the registered local-agent harnesses: per-harness
  * auth status through the read-only Remote channel and a web-login action
@@ -70,6 +76,9 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
   const [views, setViews] = useState<Readonly<Record<string, HarnessView>>>({})
   /** Harness ids whose device-code login is still pending, keyed by start time. */
   const [pendingLogins, setPendingLogins] = useState<Readonly<Record<string, number>>>({})
+  /** A login-completion toast awaiting mount; seq forces a re-show for repeats. */
+  const [loginToast, setLoginToast] = useState<{ seq: number; harness: string } | null>(null)
+  const toastSeq = useRef(0)
   /** Whether the last roster fetch failed; the retry button bumps the tick. */
   const [rosterFailed, setRosterFailed] = useState(false)
   const [retryTick, setRetryTick] = useState(0)
@@ -89,6 +98,12 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
       })
       if (statusKind === 'authenticated') {
         setPendingLogins((prev) => {
+          // A pending→authenticated transition (the id was tracked) is the
+          // authorization-complete moment; surface it as a success toast.
+          if (prev[id] !== undefined) {
+            toastSeq.current += 1
+            setLoginToast({ seq: toastSeq.current, harness: id })
+          }
           if (prev[id] === undefined) return prev
           return Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id))
         })
@@ -261,6 +276,14 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
           )
         })}
       </ul>
+      {loginToast !== null && (
+        <Toast
+          key={loginToast.seq}
+          text={t('settings.loginSuccess', { harness: harnessLabel(loginToast.harness) })}
+          icon={<IconCheckOutline16 />}
+          onDone={() => { setLoginToast(null) }}
+        />
+      )}
     </div>
   )
 }

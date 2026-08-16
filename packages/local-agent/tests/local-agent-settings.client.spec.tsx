@@ -131,6 +131,8 @@ describe('LocalAgentSettingsSection', () => {
     expect(screen.getByText(zh['settings.authenticated'])).toBeTruthy()
     // The prompt is dropped once the login completes.
     expect(screen.queryByText(zh['settings.openPage'])).toBeNull()
+    // The pending→authenticated transition surfaced a success toast.
+    expect(screen.getByText('Kimi Code 登录成功，快去试试吧！')).toBeTruthy()
   })
 
   it('stops polling when the login window expires without credentials', async () => {
