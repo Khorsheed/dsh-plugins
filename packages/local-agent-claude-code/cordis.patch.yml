@@ -1,0 +1,35 @@
+# The dsh-local-agent-claude-code bundle patch: delegate dsh agents to the
+# local Claude Code CLI under a scoped CLAUDE_CONFIG_DIR, and surface its
+# session records. The family core row (`local-agent`, shared scoped-homes
+# root) ships in the framework bundle @deepseek-ai/dsh-local-agent's own
+# patch, which this bundle declares as a dependency — so installing this
+# bundle alone still mounts the core, and no two patches insert the same row
+# id.
+#
+# Two rows are inserted:
+#   - local-agent-claude-code: this bundle's plugin registers the
+#     `claude-code` harness (CLAUDE_CONFIG_DIR scoped home,
+#     `claude auth login` browser flow, project-file session records).
+#   - tool-subagent-claude-code-local: the one-shot CLI subagent provider
+#     (`claude -p --output-format json` under the harness's scoped home). The
+#     provider name `claude-local` and tool name `subagent_claude_code_local`
+#     deliberately avoid colliding with the official subagent-claude-code
+#     provider (`claude-code`) and the disabled `subagent_claude_code` row in
+#     the shipped presets — a composition that mounts both would fail loud
+#     with a duplicate registration.
+#
+# The tool mounts at the profile root, so every agent preset can delegate
+# without per-preset variants. The provider starts no claude process until a
+# tool call or /claude-code login.
+
+- insert:
+    - id: local-agent-claude-code
+      name: '@khorsheed/dsh-local-agent-claude-code'
+
+    - id: tool-subagent-claude-code-local
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: claude-local
+        toolName: subagent_claude_code_local
+        enableRunInBackground: false
+        maxDepth: provider-managed
