@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-taskpilot",
   "description": "TaskPilot — dock pills above the composer for background jobs and subagents, with stop/interrupt verbs, live duration and token readouts, and a job detail drawer. A zero-intrusion community bundle for DeepSeek Harness.",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Khorsheed/dsh-taskpilot.git"
@@ -52,6 +52,9 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-commands"
       ]
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6"
     }
   },
   "peerDependencies": {

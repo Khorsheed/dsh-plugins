@@ -79,6 +79,11 @@ pnpm test          # vitest:轨迹折叠 + 胶囊/抽屉组件测试
 
 **开发期类型解析**:产品的 npm 发布链暂不完整(client 包依赖未发布的 `@deepseek-ai/dsh-compact`),类型检查通过两个 tsconfig 的 `paths` 指向本地 deepseek-harness checkout 的 `lib/types` 产物。路径表是机器本地文件(已 gitignore):用 `node ../../scripts/sync-harness-paths.mjs` 生成(读取 `DSH_HARNESS` 环境变量,默认 `~/code/deepseek-harness`)。发布链补齐后可换成纯 npm 依赖。
 
+## 兼容性
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery);`@deepseek-ai/dsh-api-remotes` 仅为 `import type`,不产生运行时依赖。
+- 源码线(deepseek-harness master):✅
+
 ## 已知限制
 
 - 任务详情抽屉的**执行轨迹是模型视角**:只包含模型实际读到、且未被日志截断的 `job_output` 增量;完整原始输出(内存溢出时的 spill 文件)不展示。
