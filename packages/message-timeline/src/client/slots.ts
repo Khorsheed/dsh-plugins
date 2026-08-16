@@ -5,17 +5,13 @@
  */
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  HostObservable, InjectFace, PropsLocale, PropsRuntime, PropsStore,
+  HostObservable, InjectFace, PropsLocale, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merge (the header utilities slot)
 // and the runtime's SessionStandardProps merge (useSession / sessionId).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { createTimelineStore } from './store.ts'
-
-/** The rail store handle type shared by the register declaration. */
-export type TimelineStore = ReturnType<typeof createTimelineStore>
 
 /**
  * Live rail geometry plus the currently visible user message, published by
@@ -67,6 +63,5 @@ export interface TimelineItem {
 /** Full props of the header-utilities entry. */
 export type TimelineRailProps =
   PropsRuntime<'conversation.session.header.utilities'>
-  & PropsStore<TimelineStore>
   & InjectFace<TimelineRailInjected>
   & PropsLocale<'message-timeline'>

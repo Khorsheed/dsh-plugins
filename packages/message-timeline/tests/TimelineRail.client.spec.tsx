@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The header-utilities entry: toggle chip behavior, the flat timeline panel
- * (rows, reading-position highlight, hover/focus brightening hooks, keyboard
- * and click jumps, scroll-top paging), and the conditions that keep the
- * panel hidden.
+ * The header-utilities entry: the flat timeline panel (rows, reading-position
+ * highlight, hover/focus brightening hooks, keyboard and click jumps,
+ * scroll-top paging), and the conditions that keep the panel hidden.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -15,7 +14,6 @@ import {
 import { en } from '../src/client/locales.ts'
 import { TimelineRail } from '../src/client/TimelineRail.tsx'
 import type { TimelineRailProps, TimelineRailState } from '../src/client/slots.ts'
-import { createTimelineStore } from '../src/client/store.ts'
 
 afterEach(() => {
   cleanup()
@@ -57,7 +55,6 @@ const RAIL: TimelineRailState = {
 }
 
 function renderRail(overrides: Partial<TimelineRailProps> = {}) {
-  const store = createTimelineStore().create()
   const sessionStore = createSnapshotStore(sessionSnapshot())
   const railStore = createSnapshotStore(RAIL)
   const jumpTo = vi.fn()
@@ -65,8 +62,6 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
   const props = {
     sessionId: 's1',
     useSession: bindSnapshotSelector(sessionStore),
-    useStore: bindSnapshotSelector(store),
-    actions: store.actions,
     useRail: bindSnapshotSelector(railStore),
     jumpTo,
     loadOlder,
@@ -76,7 +71,7 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
     t: (key: keyof typeof en) => en[key],
   } as unknown as TimelineRailProps
   const view = render(<TimelineRail {...{ ...props, ...overrides }} />)
-  return { view, store, sessionStore, railStore, jumpTo, loadOlder }
+  return { view, sessionStore, railStore, jumpTo, loadOlder }
 }
 
 function items(): HTMLElement[] {
@@ -90,25 +85,6 @@ function panel(): HTMLElement {
 function item(key: string): HTMLElement {
   return document.body.querySelector<HTMLElement>(`[data-item-key="${key}"]`)!
 }
-
-describe('the header toggle chip', () => {
-  it('renders pressed while the panel is open', () => {
-    const { view } = renderRail()
-    const toggle = view.container.querySelector('button')!
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('collapses the panel through the store action', () => {
-    const { store, view } = renderRail()
-    const toggle = view.container.querySelector('button')!
-    expect(items()).toHaveLength(3)
-
-    fireEvent.click(toggle)
-
-    expect(store.getSnapshot()).toEqual({ open: false })
-    expect(items()).toHaveLength(0)
-  })
-})
 
 describe('the flat timeline panel', () => {
   it('renders one row per included user message, each a tick plus a one-line preview', () => {
@@ -385,15 +361,8 @@ describe('hidden conditions', () => {
     expect(items()).toHaveLength(3)
   })
 
-  it('renders nothing when the panel is collapsed', () => {
-    const { store } = renderRail()
-    act(() => { store.actions.setOpen(false) })
-    expect(items()).toHaveLength(0)
-  })
-
-  it('hides the toggle and the panel while a non-chat view is active', () => {
-    const { view } = renderRail({ useRail: bindSnapshotSelector(createSnapshotStore({ ...RAIL, chatView: false })) })
-    expect(view.container.querySelector('button')).toBeNull()
+  it('renders nothing while a non-chat view is active', () => {
+    renderRail({ useRail: bindSnapshotSelector(createSnapshotStore({ ...RAIL, chatView: false })) })
     expect(items()).toHaveLength(0)
   })
 
