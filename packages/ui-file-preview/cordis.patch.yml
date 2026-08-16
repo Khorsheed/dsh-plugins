@@ -1,0 +1,7 @@
+# ui-file-preview bundle patch: inserts the plugin row into the composing
+# profile. The client half is discovered through the package.json dsh.client
+# block; this row activates the browser entry and the file-preview host seam.
+# Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
+- insert:
+    - id: ui-file-preview
+      name: '@khorsheed/dsh-client-ui-file-preview'

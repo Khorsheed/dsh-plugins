@@ -1,0 +1,7 @@
+# file-preview bundle patch: inserts the plugin row into the composing
+# profile. Host half only (the session file-fold Remote service); the browser
+# side ships in the companion @khorsheed/dsh-client-ui-file-preview package.
+# Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
+- insert:
+    - id: file-preview
+      name: '@khorsheed/dsh-file-preview'
