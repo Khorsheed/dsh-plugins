@@ -227,6 +227,13 @@ export class LocalAgentRegistry {
    * delegations from one parent.
    */
   private readonly delegationIntents = new Map<string, LocalAgentDelegationIntent[]>()
+  /**
+   * Per-child-session resume locks: a dsh child session may have only one
+   * in-flight resume at a time. The provider takes the lock before spawning
+   * the resume CLI and releases it when the run settles, so a second resume
+   * of the same child fails loud instead of racing the first process.
+   */
+  private readonly resumeLocks = new Set<string>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -430,6 +437,31 @@ export class LocalAgentRegistry {
    */
   listDelegations(): readonly LocalAgentDelegationRecord[] {
     return [...this.delegations.values()]
+  }
+
+  /**
+   * Acquire the resume lock for one child session. A dsh child session may
+   * have only one in-flight resume: the provider takes the lock before
+   * spawning the resume CLI and releases it when the run settles, so a second
+   * resume of the same child fails loud instead of racing the first process.
+   * Fresh delegations never take the lock (they mint a new child session).
+   * @param childSessionId - the dsh child session id to resume.
+   * @returns whether the lock was acquired (false when already held).
+   */
+  acquireResumeLock(childSessionId: string): boolean {
+    if (this.resumeLocks.has(childSessionId)) return false
+    this.resumeLocks.add(childSessionId)
+    return true
+  }
+
+  /**
+   * Release the resume lock for one child session. The provider releases it
+   * on every settle path (completed, failed, cancelled) so a deadlock never
+   * strands a later resume. Releasing an unheld lock is a no-op.
+   * @param childSessionId - the dsh child session id.
+   */
+  releaseResumeLock(childSessionId: string): void {
+    this.resumeLocks.delete(childSessionId)
   }
 
   /**

@@ -222,6 +222,8 @@ describe('kimi-cli-provider resume round', () => {
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
       kimiMirroredLines: () => 2,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
     } as never)
 
     const spawned: string[][] = []
@@ -273,6 +275,8 @@ describe('kimi-cli-provider resume round', () => {
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
       kimiMirroredLines: () => undefined,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
     } as never)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
 
@@ -285,5 +289,139 @@ describe('kimi-cli-provider resume round', () => {
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/is not live/)
+  })
+
+  it('rejects a concurrent second resume of the same child with no CLI spawn', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    // A real registry holds the resume lock; the stub child never settles, so
+    // the first resume keeps the lock while the second is attempted.
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 'run-1',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => 2,
+      acquireResumeLock: (childSessionId: string) => {
+        if (locked) return false
+        locked = childSessionId
+        return true
+      },
+      releaseResumeLock: () => { locked = undefined },
+    } as never)
+    let locked: string | undefined
+
+    let spawned = 0
+    ctx.provide('subprocess', {
+      spawn: () => {
+        spawned += 1
+        // A child that never exits keeps the first resume's lock held.
+        const stdout = new Readable({ read() {} })
+        stdout.push('• done\n')
+        stdout.push(null)
+        const stderr = new Readable({ read() {} })
+        stderr.push(`kimi version 0.33.0\nTo resume this session: kimi -r session_run-1\n`)
+        stderr.push(null)
+        const handle: SubprocessHandle = {
+          pid: 4242,
+          stdin: undefined,
+          stdout,
+          stderr,
+          collected: {
+            stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+            stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+          },
+          done: new Promise(() => {}),
+          terminate: () => undefined,
+          waitForExit: async () => true,
+        }
+        return handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    const first = await provider.start(request)
+    // The first resume holds the lock; a second resume of the same child
+    // fails loud with the in-flight message and spawns nothing.
+    await expect(provider.start(request)).rejects.toThrow(/有进行中的委派/)
+    expect(spawned).toBe(1)
+    expect(locked).toBe('child-run-1')
+    // Releasing the lock (as settle does) makes the child resumable again.
+    ctx.localAgent.releaseResumeLock('child-run-1')
+    expect(locked).toBeUndefined()
+  })
+
+  it('releases the resume lock on the settle path so a later resume succeeds', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const releases: string[] = []
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 'run-1',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => 2,
+      acquireResumeLock: () => true,
+      releaseResumeLock: (childSessionId: string) => { releases.push(childSessionId) },
+    } as never)
+
+    let spawned = 0
+    ctx.provide('subprocess', {
+      spawn: () => {
+        spawned += 1
+        const { handle, done } = stubChild('run-1')
+        return handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    await run.result
+    expect(spawned).toBe(1)
+    // Settle released the lock exactly once for this child.
+    expect(releases).toEqual(['child-run-1'])
+    await run.dispose()
   })
 })

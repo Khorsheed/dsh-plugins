@@ -197,6 +197,8 @@ describe('codex-cli-provider resume round', () => {
         cliSessionId: 't1',
       }),
       recordDelegation: () => {},
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
     } as never)
 
     const spawned: string[][] = []
@@ -242,6 +244,8 @@ describe('codex-cli-provider resume round', () => {
         cliSessionId: 't1',
       }),
       recordDelegation: () => {},
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
     } as never)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
 
@@ -254,5 +258,78 @@ describe('codex-cli-provider resume round', () => {
     } as unknown as Parameters<CodexCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/is not live/)
+  })
+})
+
+describe('codex-cli-provider resume lock', () => {
+  it('rejects a concurrent second resume of the same child with no CLI spawn', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    let locked: string | undefined
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/codex-home',
+      get: () => ({ displayName: 'Codex' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 't1',
+      }),
+      recordDelegation: () => {},
+      acquireResumeLock: (childSessionId: string) => {
+        if (locked !== undefined) return false
+        locked = childSessionId
+        return true
+      },
+      releaseResumeLock: () => { locked = undefined },
+    } as never)
+
+    let spawned = 0
+    ctx.provide('subprocess', {
+      spawn: () => {
+        spawned += 1
+        const stdout = new Readable({ read() {} })
+        stdout.push(jsonStream + '\n')
+        stdout.push(null)
+        const stderr = new Readable({ read() {} })
+        stderr.push('')
+        stderr.push(null)
+        return {
+          pid: 4242,
+          stdin: undefined,
+          stdout,
+          stderr,
+          collected: {
+            stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+            stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+          },
+          done: new Promise(() => {}),
+          terminate: () => undefined,
+          waitForExit: async () => true,
+        }
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new CodexCliProvider(ctx, 'read-only')
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<CodexCliProvider['start']>[0]
+
+    const first = await provider.start(request)
+    await expect(provider.start(request)).rejects.toThrow(/有进行中的委派/)
+    expect(spawned).toBe(1)
+    ctx.localAgent.releaseResumeLock('child-run-1')
+    expect(locked).toBeUndefined()
   })
 })

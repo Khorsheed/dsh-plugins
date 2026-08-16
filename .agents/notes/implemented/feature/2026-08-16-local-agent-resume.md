@@ -15,15 +15,16 @@
 
 ## 关键实现点
 
-- `LocalAgentRegistry` 新增：`recordDelegation`/`resolveDelegation`（伪造句柄拒绝：未知子会话、他人 parent、错误 provider）/`stageDelegationIntent`/`takeDelegationIntent`（FIFO，每工具调用 stage 恰好一个、每 start 消费恰好一个）/`kimiMirroredLines`/`setKimiMirroredLines`/`listDelegations`。
+- `LocalAgentRegistry` 新增：`recordDelegation`/`resolveDelegation`（伪造句柄拒绝：未知子会话、他人 parent、错误 provider）/`stageDelegationIntent`/`takeDelegationIntent`（FIFO，每工具调用 stage 恰好一个、每 start 消费恰好一个）/`acquireResumeLock`/`releaseResumeLock`（per-child resume 互斥）/`kimiMirroredLines`/`setKimiMirroredLines`/`listDelegations`。
 - 三个 provider 的 `start()` 拆 fresh/resume：resume 经 `sessions.get(childSessionId)` 复用子会话（缺失即 fail loud），`nextTurn = turn/start 计数 + 1`，spawn 续聊命令（kimi `-S session_<id> -p`，-S 必须在 -p 前；claude `-p --resume <id>`；codex `exec --json resume <thread_id>`，thread_id 来自 `thread.started` 事件），返回 `id: childSessionId`。
+- **resume 并发边界**：同一 dsh 子会话的 resume 必须串行——per-child 互斥锁放在框架注册表（与委派 registry 同层，未来 stop registry 复用）。provider 在 spawn 前 `acquireResumeLock(childSessionId)`，取不到即 fail loud（`该子会话有进行中的委派，等其完成后再追问`），**不排队静默等待**——模型拿到明确错误会自己重试。锁在 `run.result` 的 settle 路径（completed/error/aborted 都经 result resolve）与 start 异常路径都释放，不留死锁。fresh 委派不加锁（每次 mint 新子会话，天然无冲突）。
 - 新鲜轮 settle 后记录 cliSessionId（kimi 从 stderr hint、claude 从结果 JSON `session_id`、codex 从 NDJSON `thread_id`）。
 - 工具包 `@khorsheed/dsh-local-agent-tool-subagent`：inject `['tools','subagents','localAgent']`，execute 里先 `resolveDelegation` 校验再 stage，然后照常 `ctx.subagents.start()`，fresh 轮在结果 output 追加 `追问请带 resume="<run.id>"`。
 
 ## 验证
 
 - 三种 CLI 续聊命令均实机验证：kimi `-S session_<id>`（42 记住了）、claude `--resume <id>`（42）、codex `exec resume <thread_id>`（同 thread_id 返回）。
-- 测试：core delegation registry（含伪造句柄拒绝、FIFO 配对、mirror 偏移）；工具包 9 例（schema 含 resume、fresh 自述句柄、resume 传 target、伪造句柄 isError、prompt 内嵌句柄被无视、mount/unmount）；三 provider 各 2 例 resume 测试（续聊 argv、复用子会话、turn 2、子会话缺失 fail loud）。
+- 测试：core delegation registry（含伪造句柄拒绝、FIFO 配对、mirror 偏移、resume lock 互斥/异子会话独立/释放无副作用）；工具包 10 例（schema 含 resume、fresh 自述句柄、resume 传 target、伪造句柄 isError、prompt 内嵌句柄被无视、mount/unmount）；三 provider 的 resume 测试（续聊 argv、复用子会话、turn 2、子会话缺失 fail loud、**同子会话并发第二个 resume 被拒且零 spawn**、settle 释放锁后可再次 resume）。
 - `pnpm typecheck` 全绿；`pnpm test` 全绿；`verify-translation-pairing` 31 对同步。
 
 ## 后续

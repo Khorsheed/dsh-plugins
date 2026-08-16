@@ -144,4 +144,32 @@ describe('LocalAgentRegistry delegation registry', () => {
       .toEqual({ cliSessionId: 'session_99' })
     expect(registry.listDelegations()).toHaveLength(1)
   })
+
+  describe('resume lock', () => {
+    it('serializes resumes of the same child session and releases on settle', async () => {
+      const registry = await mountRegistry()
+      expect(registry.acquireResumeLock('child-1')).toBe(true)
+      // A second resume of the same child is rejected while the first is held.
+      expect(registry.acquireResumeLock('child-1')).toBe(false)
+      registry.releaseResumeLock('child-1')
+      // After release the child is resumable again.
+      expect(registry.acquireResumeLock('child-1')).toBe(true)
+      registry.releaseResumeLock('child-1')
+    })
+
+    it('keeps different child sessions independent', async () => {
+      const registry = await mountRegistry()
+      expect(registry.acquireResumeLock('child-1')).toBe(true)
+      expect(registry.acquireResumeLock('child-2')).toBe(true)
+      registry.releaseResumeLock('child-1')
+      registry.releaseResumeLock('child-2')
+    })
+
+    it('releasing an unheld lock is a no-op', async () => {
+      const registry = await mountRegistry()
+      expect(() => registry.releaseResumeLock('child-missing')).not.toThrow()
+      expect(registry.acquireResumeLock('child-missing')).toBe(true)
+      registry.releaseResumeLock('child-missing')
+    })
+  })
 })

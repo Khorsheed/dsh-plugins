@@ -142,31 +142,50 @@ export class KimiCliProvider implements SubagentProvider {
     parentCwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
-    const sessions = this.ctx.get('sessions')
-    const childSession = sessions?.get(SessionId(intent.childSessionId))
-    if (childSession === undefined) {
+    // One in-flight resume per child session: a second resume of the same
+    // child fails loud instead of racing the first process. The lock releases
+    // on every settle path (the run.result handler below) and on the error
+    // path, so a deadlock never strands a later resume.
+    if (!this.ctx.localAgent.acquireResumeLock(intent.childSessionId)) {
       throw new Error(
-        `subagent-kimi: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
+        `subagent-kimi: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // The next turn follows the rounds already recorded in the child session.
-    const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
-    const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
-    this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
-    return startKimiCliRun(request, {
-      cwd: parentCwd,
-      env: { KIMI_CODE_HOME: homeDir },
-      endpointLabel: baseUrl,
-      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-      spawn: spec => this.ctx.subprocess.spawn(spec),
-      onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-      },
-      childSession,
-      homeDir,
-      ctx: this.ctx,
-      resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-    })
+    try {
+      const sessions = this.ctx.get('sessions')
+      const childSession = sessions?.get(SessionId(intent.childSessionId))
+      if (childSession === undefined) {
+        throw new Error(
+          `subagent-kimi: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
+        )
+      }
+      // The next turn follows the rounds already recorded in the child session.
+      const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
+      this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
+      const run = await startKimiCliRun(request, {
+        cwd: parentCwd,
+        env: { KIMI_CODE_HOME: homeDir },
+        endpointLabel: baseUrl,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: spec => this.ctx.subprocess.spawn(spec),
+        onError: (error: unknown, stopReason) => {
+          this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+        },
+        childSession,
+        homeDir,
+        ctx: this.ctx,
+        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+      })
+      void run.result.then(
+        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+      )
+      return run
+    } catch (error) {
+      this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+      throw error
+    }
   }
 }
 
