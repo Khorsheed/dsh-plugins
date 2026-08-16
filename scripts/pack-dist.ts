@@ -177,7 +177,10 @@ export function packDist(options: PackDistOptions): string {
     ]
     for (const file of stagedTexts) {
       const text = readFileSync(file, 'utf8')
-      for (const [source] of pairs) {
+      for (const [source, target] of pairs) {
+        // A package already published under its source name (the post-migration
+        // state of this repo) rewrites to itself — nothing can be left over.
+        if (source === target) continue
         if (text.includes(source)) leftovers.push(`${relative(staging, file)}: ${source}`)
       }
     }
