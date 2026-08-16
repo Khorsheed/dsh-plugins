@@ -1,0 +1,9 @@
+# TaskPilot bundle layer. One dual-face row: the node half (lib/index.js)
+# registers the stop/interrupt commands; the dsh.client declaration makes the
+# browser half (lib/client.js) part of the web module table through
+# @deepseek-ai/dsh-client-modules' incremental scan. Installing the bundle
+# appends this row to the profile; removing it drops the row and the
+# dependency. No product file is touched.
+- insert:
+    - id: taskpilot
+      name: "@khorsheed/dsh-taskpilot"

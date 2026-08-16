@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "types": ["node"],
+    "paths": {
+      "@deepseek-ai/cordis": ["/Users/zhuyudan/code/deepseek-harness/vendor/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-commands": ["/Users/zhuyudan/code/deepseek-harness/packages/interaction/commands/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-jobs": ["/Users/zhuyudan/code/deepseek-harness/packages/jobs/jobs/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-jobs/brand": ["/Users/zhuyudan/code/deepseek-harness/packages/jobs/jobs/lib/types/brand.d.ts"],
+      "@deepseek-ai/dsh-subagent": ["/Users/zhuyudan/code/deepseek-harness/packages/subagent/subagent/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-session": ["/Users/zhuyudan/code/deepseek-harness/packages/core/session/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-invariants": ["/Users/zhuyudan/code/deepseek-harness/packages/runtime-diagnostics/invariants/lib/types/index.d.ts"]
+    }
+  },
+  "include": ["src/index.ts", "src/invariant.ts", "src/types.ts"]
+}

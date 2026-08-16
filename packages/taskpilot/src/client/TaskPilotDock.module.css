@@ -1,0 +1,186 @@
+/* Mirrors the composer bar's alignment skeleton (InputBar.root): a centering
+   column with the shared side clearance, so the capsule row's left edge
+   matches the input card's left edge on every width. */
+.dock {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0 var(--dsh-composer-side-clearance);
+}
+
+/* The capsule row rides the same width axis as the input card. */
+.inner {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width);
+}
+
+.group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Entry capsule: the compact trigger that opens the row popover. */
+.capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+  padding: 3px 12px;
+}
+
+.capsule:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.capsule[aria-expanded='true'] {
+  border-color: var(--dsw-alias-accent);
+}
+
+.capsuleDot {
+  flex: none;
+}
+
+.capsuleLabel {
+  font-size: 13px;
+}
+
+.capsuleCount {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Popover listing the session's rows; floats above the composer card. */
+.popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 320px;
+  max-width: 520px;
+  max-height: 40vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 6px;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSettled {
+  opacity: 0.65;
+}
+
+.rowDot {
+  flex: none;
+}
+
+.rowMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.rowKind {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.rowLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.rowDuration {
+  flex: none;
+  /* Push duration (and any trailing status/token columns) to the row tail,
+     so label text does not leave a blank gap before them. */
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowStatus {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.rowTokens {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stop verb in the composer-stop visual language, at capsule scale. */
+.stop {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+
+.stop:hover {
+  background: var(--dsw-alias-button-info-hover);
+}
+
+.empty {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  padding: 6px 10px;
+}
