@@ -416,12 +416,16 @@ describe('composition preflight gate', () => {
   const io = cliIo
 
   it('resolvePreflightBin finds the sibling app in this checkout and maps foreign layouts', () => {
-    // The monorepo checkout resolves the source form (tsx) or the built one.
+    // Self-checkout resolution only applies when the package lives inside a dsh
+    // repo checkout (a sibling apps/cli exists). In the standalone dsh-plugins
+    // monorepo there is no sibling app, so the no-arg form stays undefined and
+    // only the foreign-layout mapping is asserted.
     const here = resolvePreflightBin()
-    expect(here).toBeDefined()
-    expect(here).toContain('apps')
-    // The production seam resolves the same bin.
-    expect(preflightInternals.resolveBin()).toBe(here)
+    if (here !== undefined) {
+      expect(here).toContain('apps')
+      // The production seam resolves the same bin.
+      expect(preflightInternals.resolveBin()).toBe(here)
+    }
     // Built-only layout: no src/bin.ts and no tsx, but lib/bin.js exists.
     const builtOnly = tmpDir('guard-layout-')
     mkdirSync(join(builtOnly, 'apps/cli/lib'), { recursive: true })

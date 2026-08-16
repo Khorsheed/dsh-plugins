@@ -41,7 +41,7 @@
     }
   },
   "scripts": {
-    "bundle": "tsdown",
+    "bundle": "tsc -p tsconfig.json && tsdown",
     "watch": "tsdown --watch"
   },
   "license": "MIT",

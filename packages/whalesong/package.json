@@ -41,8 +41,9 @@
     }
   },
   "scripts": {
-    "bundle": "tsdown",
-    "watch": "tsdown --watch"
+    "bundle": "tsc -b tsconfig.json && tsdown",
+    "watch": "tsdown --watch",
+    "build": "tsc -b tsconfig.json && tsdown"
   },
   "license": "MIT",
   "dependencies": {
@@ -59,7 +60,8 @@
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-loader-smoke": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-loader-smoke": "^0.1.0-rc.6",
+    "@types/node": "^26.2.0"
   },
   "files": [
     "lib/index.js",

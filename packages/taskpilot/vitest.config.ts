@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  esbuild: { jsx: 'automatic' },
   test: {
     // .module.css imports resolve to a class-map proxy instead of being parsed.
     css: true,
