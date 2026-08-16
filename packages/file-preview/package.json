@@ -71,5 +71,10 @@
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -p tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

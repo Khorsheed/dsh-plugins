@@ -85,6 +85,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-test-runtime": "^0.1.0-rc.6",
@@ -104,7 +105,7 @@
     "vitest": "^4.1.10"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json && tsdown",
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --noEmit"
   }
