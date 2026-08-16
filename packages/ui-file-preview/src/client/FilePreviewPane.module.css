@@ -1,0 +1,217 @@
+/* Shared preview pane styles (file view tab and link-click drawer). */
+
+.previewColumn {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0; /* Shrink below content width so long diff/code lines scroll
+                   inside the pane instead of overflowing the drawer. */
+  flex-direction: column;
+}
+
+/* Tabs follow the app's main view-tab language (figma Tab_Group): 13/16
+   medium text, quiet tertiary label, active state on the business blue with
+   a 2px bar, no boxed hover. */
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 20px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.tab {
+  padding: 4px 0 9px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.tabActive {
+  color: var(--dsw-alias-state-business-primary);
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-state-business-primary);
+}
+
+.previewScroll {
+  flex: 1;
+  min-height: 0;
+  /* Bottom clearance applies only in the view tab (the var is set on the
+     view root); in the drawer it falls back to the plain padding. */
+  padding: 10px 12px calc(10px + var(--dsh-file-preview-bottom-clearance, 0px));
+  overflow: auto;
+}
+
+/* Soft-wrap the diff lines to the surface width without touching the shared
+   DiffBlock. The `className` prop and the stable `data-diff` root land on the
+   SAME element (DiffBlock does `clsx(css.block, className)` + `data-diff`), so
+   this must be a compound same-element selector — a descendant selector never
+   matches. The body div follows the root, then the line divs (structural,
+   since line classes are css-module-hashed). */
+.diffWrap[data-diff] > div > div {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Image preview: center the bitmap in a scrollable pane, capping it to the
+   surface so a large asset never overflows the drawer or view. */
+.imageScroll {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  padding: 12px 12px calc(12px + var(--dsh-file-preview-bottom-clearance, 0px));
+  overflow: auto;
+}
+
+.image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+/* Content-search row: pinned above the text preview, hairline-separated. */
+.contentSearch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.contentSearchInput {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.contentSearchInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.contentSearchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchCount {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search mode renders plain text with line-level hits and inline marks. */
+.markedPre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre;
+}
+
+.markedLine {
+  display: block;
+}
+
+.markedLineHit {
+  display: block;
+  background: var(--dsw-alias-bg-l2);
+}
+
+.contentMatch {
+  border-radius: 3px;
+  background: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-neutral-00);
+  padding: 0 1px;
+}
+
+/* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows
+   never separate — a lone trailing arrow reads as decoration, not a button),
+   clamped at both ends of the change chain. */
+.stepper {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: flex-start;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.stepButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stepButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepButton:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.stepLabel {
+  flex: none;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice {
+  margin: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.missingPath {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
