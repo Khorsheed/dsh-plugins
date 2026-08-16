@@ -29,7 +29,7 @@ import messageToolsRemote from '@khorsheed/dsh-client-message-tools/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { installDomHider } from './dom-hider.ts'
 import { mergedDraft } from './backfill.ts'
-import { editInPlace } from './edit-in-place.ts'
+import { editInPlace, waitForTurnSettled } from './edit-in-place.ts'
 import { en, zh } from './locales.ts'
 import {
   editedMessageDefinition, restoredAssistantMessageDefinition, restoredMessageDefinition, withdrawnDividerDefinition,
@@ -156,18 +156,13 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       if (!carried.ok) throw new Error(`messageTools.edit transport: ${carried.error.code}`)
       if (!carried.value.ok) throw new Error(`messageTools.edit rejected: ${carried.value.error.code}`)
     }
-    // After a cancel, the turn's teardown writes land within moments; wait
-    // (bounded) so the edit replacement's span covers them instead of racing
-    // them onto the surface.
-    const waitIdle = async (): Promise<void> => {
-      const deadline = Date.now() + 5_000
-      for (;;) {
-        const session = ctx.sessions.binding(sessionId)?.session
-        if (session === undefined || !session.getSnapshot().running) return
-        if (Date.now() >= deadline) return
-        await new Promise<void>((resolve) => { setTimeout(resolve, 100) })
-      }
-    }
+    // After a cancel, `running` flips false BEFORE the turn's teardown
+    // finishes landing (cancelled tool results persist after the flip,
+    // turn/end last); the edit replacement's span must cover all of it, so
+    // wait for the turn to actually close. Bounded: a turn that never
+    // settles rejects instead of letting the edit race the stragglers.
+    const waitIdle = (): Promise<void> =>
+      waitForTurnSettled(() => ctx.sessions.binding(sessionId)?.session.getSnapshot())
     return {
       editMessage: (targetSeq, text) => editInPlace({
         cancel: () => conversation.cancel(),

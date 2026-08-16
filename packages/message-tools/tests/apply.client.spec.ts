@@ -30,8 +30,15 @@ interface BenchOptions {
   subagent?: boolean
   /** The session binding vanishes during the edit's cancel step. */
   bindingVanishes?: boolean
-  /** The turn never settles (cancel does not clear running): waitIdle hits its deadline. */
+  /** The turn never settles (cancel never closes it): waitIdle hits its deadline. */
   stuckRunning?: boolean
+}
+
+/** The settle-shaped snapshot stub: a turn whose teardown lands only when cancel completes it. */
+interface SettleState {
+  running: boolean
+  runningCalls: readonly unknown[]
+  chat: { timeline: { turnOrder: readonly number[]; turns: Map<number, { status: 'open' | 'closed' | 'unknown' }> } }
 }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub services. */
@@ -54,11 +61,26 @@ async function bench(options: BenchOptions = {}) {
     setDraft: vi.fn((text: string) => { input.state.getSnapshot().draft = text }),
     notify: vi.fn(),
   }
-  const running = createSnapshotStore({ running: options.running === true })
+  const settle = createSnapshotStore<SettleState>({
+    running: options.running === true,
+    runningCalls: options.running === true ? [{ call: 1 }] : [],
+    chat: {
+      timeline: {
+        turnOrder: [1],
+        turns: new Map([[1, { status: options.running === true ? 'open' : 'closed' }]]),
+      },
+    },
+  })
   const conversation = {
     cancel: vi.fn(async () => {
       if (options.bindingVanishes === true) bindingState.missing = true
-      if (options.stuckRunning !== true) running.getSnapshot().running = false
+      if (options.stuckRunning !== true) {
+        // A healthy cancel: running flips, the pending results land, turn/end closes the turn.
+        const snapshot = settle.getSnapshot()
+        snapshot.running = false
+        ;(snapshot as { runningCalls: unknown[] }).runningCalls = []
+        snapshot.chat.timeline.turns.set(1, { status: 'closed' })
+      }
     }),
     send: vi.fn(async () => {}),
     input: { for: () => input },
@@ -84,7 +106,7 @@ async function bench(options: BenchOptions = {}) {
     scope: () => (scopeState.behavior === 'no-scope' ? undefined : actx),
     binding: () => bindingState.missing
       ? undefined
-      : { session: { getSnapshot: () => running.getSnapshot(), subscribe: () => () => {} } },
+      : { session: { getSnapshot: () => settle.getSnapshot(), subscribe: () => () => {} } },
     subagentAddress: () => (options.subagent === true ? 'subagent://s1' : undefined),
   } as never)
   ctx.provide('conversation', {} as never)
@@ -200,24 +222,33 @@ describe('message-tools client apply', () => {
     await expect(user.editMessage(2, 'x')).rejects.toThrow('transport')
   })
 
-  it('edit proceeds when the session binding vanishes during the cancel', async () => {
-    const { ctx, slots, remote } = await bench({ running: true, bindingVanishes: true })
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const user = face(slots, 'user')('s1') as MessageToolsInjected
-    await user.editMessage(2, '新文本')
-    expect(remote.edit).toHaveBeenCalledTimes(1)
+  it('edit rejects when the session binding vanishes during the cancel (the settle can no longer be proven)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, slots, remote } = await bench({ running: true, bindingVanishes: true })
+      await ctx.plugin({ inject: [...inject], apply }).await()
+      const user = face(slots, 'user')('s1') as MessageToolsInjected
+      const editing = user.editMessage(2, '新文本')
+      const expectation = expect(editing).rejects.toThrow('timed out waiting for the cancelled turn to settle')
+      await vi.advanceTimersByTimeAsync(5_100)
+      await expectation
+      expect(remote.edit).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  it('edit proceeds when a stuck turn never settles (bounded waitIdle deadline)', async () => {
+  it('edit rejects when a stuck turn never settles (bounded waitIdle deadline), never racing the stragglers', async () => {
     vi.useFakeTimers()
     try {
       const { ctx, slots, remote } = await bench({ running: true, stuckRunning: true })
       await ctx.plugin({ inject: [...inject], apply }).await()
       const user = face(slots, 'user')('s1') as MessageToolsInjected
       const editing = user.editMessage(2, '新文本')
+      const expectation = expect(editing).rejects.toThrow('timed out waiting for the cancelled turn to settle')
       await vi.advanceTimersByTimeAsync(5_100)
-      await editing
-      expect(remote.edit).toHaveBeenCalledTimes(1)
+      await expectation
+      expect(remote.edit).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }

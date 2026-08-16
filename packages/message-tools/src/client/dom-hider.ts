@@ -5,11 +5,18 @@
  * (ChatNodeSeat.tsx). The projection itself offers no suppression seam (see
  * README), so this works at the DOM layer. The attribute is an undocumented
  * surface: the first time a non-empty rule set is computed, the hider probes
- * for it (after a frame, so React has committed) and, when absent, disables
- * itself with one console.warn — the shadowed user renderer keeps hiding
- * user messages, which is the pre-hider behavior. Rules track the currently
- * selected session only: flow keys are session-scoped (seq-like ids collide
- * across sessions), and only one chat view is mounted at a time.
+ * for it (after a frame, so React has committed). A page restored onto a tab
+ * where the chat rows are not mounted yet (the trace tab, or the chat area
+ * still mounting) makes that first probe miss, so a miss does NOT disable
+ * the hider outright: it enters a bounded retry — a MutationObserver waits
+ * for the first row to appear, with a deadline — and only a window that
+ * expires with rows still absent disables the hider, with one console.warn,
+ * degrading to renderer-only hiding (the shadowed user renderer keeps hiding
+ * user messages). Even then the observer stays: a row appearing after the
+ * disable (the page sat on a non-chat tab past the window) proves the
+ * attribute exists after all, and hiding reactivates. It never throws. Rules track the currently selected
+ * session only: flow keys are session-scoped (seq-like ids collide across
+ * sessions), and only one chat view is mounted at a time.
  */
 import type { ChatConversationViewNode, ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { messageToolsOp } from '../marker.ts'
@@ -65,12 +72,26 @@ export function renderHiderRules(keys: readonly string[]): string {
 }
 
 /**
+ * Tuning of {@link installDomHider}; the defaults match production.
+ */
+export interface DomHiderOptions {
+  /**
+   * Bound on the probe retry window: how long the hider waits for the first
+   * `data-chat-flow-key` row to appear before concluding the attribute is
+   * gone and disabling itself (default 10s; tests shrink it).
+   */
+  probeRetryWindowMs?: number
+}
+
+/**
  * Install the hider: one shared style element, rebound whenever the selected
  * session changes, rewritten only when the span set or the node count moves.
  * @param ctx - client root context (reads the sessions service).
+ * @param options - probe retry tuning.
  * @returns disposer removing the stylesheet and every subscription.
  */
-export function installDomHider(ctx: ClientContext): () => void {
+export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {}): () => void {
+  const probeRetryWindowMs = options.probeRetryWindowMs ?? 10_000
   // rAF so the probe runs after React committed; setTimeout covers jsdom.
   const nextFrame = typeof requestAnimationFrame === 'function'
     ? requestAnimationFrame
@@ -85,6 +106,9 @@ export function installDomHider(ctx: ClientContext): () => void {
   let probed = false
   let probeScheduled = false
   let disabled = false
+  let retrying = false
+  let retryObserver: MutationObserver | undefined
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
   let latest: ConversationSnapshot | undefined
 
   const applyRules = (snapshot: ConversationSnapshot): void => {
@@ -97,6 +121,62 @@ export function installDomHider(ctx: ClientContext): () => void {
     style.textContent = renderHiderRules(hiddenFlowKeys(nodes, ranges))
   }
 
+  const probeFound = (): boolean => document.querySelector('[data-chat-flow-key]') !== null
+
+  const stopRetry = (): void => {
+    retrying = false
+    retryObserver?.disconnect()
+    retryObserver = undefined
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+  }
+
+  const passProbe = (): void => {
+    stopRetry()
+    probed = true
+    disabled = false
+    /* v8 ignore next -- the probe is only scheduled from onSnapshot, which sets latest first */
+    if (latest !== undefined) applyRules(latest)
+  }
+
+  const failProbe = (): void => {
+    // Window expired with rows still absent: degrade (one warn, no rules) —
+    // but KEEP the observer: a row appearing later proves the miss was
+    // mounting timing (e.g. the page sat on the trace tab past the window),
+    // and hiding reactivates instead of leaking the spans forever.
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+    retrying = false
+    disabled = true
+    style.textContent = ''
+    console.warn(
+      'message-tools: data-chat-flow-key rows not found; full-span chat hiding disabled '
+      + '(user messages stay hidden by the shadowed renderer; hiding reactivates if chat rows appear)',
+    )
+  }
+
+  /**
+   * A missed probe is not proof the attribute is gone — the chat rows may
+   * simply not be mounted yet (page restored onto the trace tab, chat area
+   * still mounting). Watch for the first row within a bounded window; only
+   * an expired window with rows still absent disables the hider, and the
+   * observer outlives even that (see failProbe).
+   */
+  const startRetry = (): void => {
+    retrying = true
+    if (typeof MutationObserver === 'function') {
+      retryObserver = new MutationObserver(() => { if (probeFound()) passProbe() })
+      retryObserver.observe(document.body, {
+        childList: true, subtree: true, attributes: true, attributeFilter: ['data-chat-flow-key'],
+      })
+    }
+    retryTimer = setTimeout(() => { if (probeFound()) passProbe(); else failProbe() }, probeRetryWindowMs)
+  }
+
   const onSnapshot = (snapshot: ConversationSnapshot): void => {
     latest = snapshot
     if (disabled) return
@@ -107,22 +187,15 @@ export function installDomHider(ctx: ClientContext): () => void {
     // Probe on the first non-empty rule set, one frame out so React has
     // committed the rows the rules target.
     if (hiddenFlowKeys(snapshot.chat.nodes.values()).length === 0) return
-    if (probeScheduled) return
+    if (probeScheduled || retrying) return
     probeScheduled = true
     nextFrame(() => {
       probeScheduled = false
-      if (document.querySelector('[data-chat-flow-key]') === null) {
-        disabled = true
-        style.textContent = ''
-        console.warn(
-          'message-tools: data-chat-flow-key rows not found; full-span chat hiding disabled '
-          + '(user messages stay hidden by the shadowed renderer)',
-        )
+      if (probeFound()) {
+        passProbe()
         return
       }
-      probed = true
-      /* v8 ignore next -- the probe is only scheduled from onSnapshot, which sets latest first */
-      if (latest !== undefined) applyRules(latest)
+      startRetry()
     })
   }
 
@@ -148,6 +221,7 @@ export function installDomHider(ctx: ClientContext): () => void {
     stopList()
     stopProvide()
     stopSession?.()
+    stopRetry()
     style.remove()
   }
 }

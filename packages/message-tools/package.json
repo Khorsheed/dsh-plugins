@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-client-message-tools",
   "description": "User-message edit (withdraw and resend) and withdrawal: the withdrawal writes a surface replacement that hides the message and everything after it from the model, with a chat divider marking the spot",
-  "version": "0.4.7",
+  "version": "0.4.9",
   "publishConfig": {
     "access": "public"
   },

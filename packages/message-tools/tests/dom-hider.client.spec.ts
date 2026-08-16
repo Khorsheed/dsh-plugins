@@ -109,18 +109,58 @@ describe('installDomHider', () => {
     expect(document.querySelector('style[data-message-tools-hider]')).toBeNull()
   })
 
-  it('disables itself with one warning when the row attribute is absent', async () => {
+  it('disables itself with one warning only after the probe retry window expires with rows still absent', async () => {
     const { ctx, list, sessions } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const session = createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)]))
     sessions.set('s1', session)
-    const dispose = installDomHider(ctx)
+    const dispose = installDomHider(ctx, { probeRetryWindowMs: 30 })
     list.update((s) => { s.current = 's1' })
     await nextFrame()
+    // A bare miss does NOT disable: the rows may simply not be mounted yet.
+    expect(warn).not.toHaveBeenCalled()
+    await new Promise(resolve => setTimeout(resolve, 60))
     const style = document.querySelector('style[data-message-tools-hider]')
     expect(style?.textContent).toBe('')
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0]?.[0]).toContain('data-chat-flow-key')
+    dispose()
+  })
+
+  it('recovers when the chat rows mount during the probe retry window', async () => {
+    const { ctx, list, sessions } = harness()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const session = createSnapshotStore(snapshotOf([
+      node('user', '4:userA', 5),
+      node('assistant-step', '14:assistant-stepB', 6),
+      divider(5, 10),
+    ]))
+    sessions.set('s1', session)
+    // A short window proves the recovery happens through the retry, not the first probe.
+    const dispose = installDomHider(ctx, { probeRetryWindowMs: 2_000 })
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toBe('')
+    expect(warn).not.toHaveBeenCalled()
+    // The chat area mounts late (page restored onto another tab first).
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    await nextFrame()
+    const style = document.querySelector('style[data-message-tools-hider]')
+    expect(style?.textContent).toContain('[data-chat-flow-key="4:userA"]')
+    expect(style?.textContent).toContain('[data-chat-flow-key="14:assistant-stepB"]')
+    expect(warn).not.toHaveBeenCalled()
+    // Recovered for good: later snapshots keep rewriting the rules.
+    session.update((snapshot) => {
+      (snapshot as { chat: { nodes: unknown } }).chat.nodes = {
+        get: () => undefined,
+        values: () => [
+          node('user', '4:userA', 5), node('tool-call', '9:tool-callC', 7), node('turn-tail', '9:turn-tailD', 9.1), divider(5, 10),
+        ],
+      }
+    })
+    expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('9:tool-callC')
     dispose()
   })
 
@@ -238,14 +278,15 @@ describe('installDomHider edges', () => {
     dispose()
   })
 
-  it('ignores further snapshots once disabled by a failed probe', async () => {
+  it('ignores snapshots while disabled by an exhausted window, but reactivates when a row appears later', async () => {
     const { ctx, list, sessions } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const session = createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)]))
     sessions.set('s1', session)
-    const dispose = installDomHider(ctx)
+    const dispose = installDomHider(ctx, { probeRetryWindowMs: 30 })
     list.update((s) => { s.current = 's1' })
     await nextFrame()
+    await new Promise(resolve => setTimeout(resolve, 60))
     expect(warn).toHaveBeenCalledTimes(1)
     session.update((snapshot) => {
       (snapshot as { chat: { nodes: unknown } }).chat.nodes = {
@@ -254,6 +295,13 @@ describe('installDomHider edges', () => {
       }
     })
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toBe('')
+    // The page sat past the window with the chat unmounted, then the user
+    // switches to the chat tab: rows mount, and hiding reactivates.
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    await nextFrame()
+    expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('4:userB')
     dispose()
   })
 
