@@ -1,31 +1,30 @@
-/** General Settings row for the shortcut actions: fixed operations with user-chosen keys. */
+/** General Settings row for the shortcut registry: one rebindable field per registered action. */
 import { Fragment, useEffect } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { DEFAULT_PREFERENCES } from '../../settings.ts'
-import type { ShortcutAction, ShortcutPreference } from '../../settings.ts'
 import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey } from '../bindings.ts'
-import type { ShortcutKey } from '../locales.ts'
+import type { ShortcutPreference } from '../../settings.ts'
+import type { ShortcutActionContribution } from '../contract.ts'
 import css from './ShortcutsRow.module.css'
 
 /** Registration-side preference face. */
 export interface ShortcutsRowInjected {
   hooks: {
-    /** Live pause preference bound as usePause. */
-    pause: SnapshotStore<ShortcutPreference>
-    /** Live steer-send preference bound as useSteerSend. */
-    steerSend: SnapshotStore<ShortcutPreference>
-    /** Live new-session preference bound as useNewSession. */
-    newSession: SnapshotStore<ShortcutPreference>
+    /** Live registered action list (registration order) bound as useActions. */
+    actions: SnapshotStore<readonly ShortcutActionContribution[]>
+    /** Live preference per action id bound as usePreferences. */
+    preferences: SnapshotStore<Record<string, ShortcutPreference>>
     /** Action currently recording a new binding (null = none) bound as useCapturing. */
-    capturing: SnapshotStore<ShortcutAction | null>
+    capturing: SnapshotStore<string | null>
   }
+  /** Translate a contributing plugin's locale seat (its ns + key). */
+  translate: (ns: string, key: string) => string
   /** Replace one action's preference (`{ kind: 'none' }` unbinds). */
-  setPreference: (action: ShortcutAction, preference: ShortcutPreference) => void
-  /** Restore one action to its shipped default preference. */
-  reset: (action: ShortcutAction) => void
+  setPreference: (id: string, preference: ShortcutPreference) => void
+  /** Restore one action to its shipped default binding. */
+  reset: (id: string) => void
   /** Enter or leave key-capture mode for one action. */
-  setCapturing: (action: ShortcutAction | null) => void
+  setCapturing: (id: string | null) => void
 }
 
 /** Full Settings-row props. */
@@ -34,25 +33,17 @@ export type ShortcutsRowProps =
   & PropsLocale<'shortcuts'>
   & InjectFace<ShortcutsRowInjected>
 
-/** The fixed actions in display order. */
-const ACTIONS: readonly { action: ShortcutAction; label: ShortcutKey; desc: ShortcutKey }[] = [
-  { action: 'pause', label: 'action.pause', desc: 'action.pause.desc' },
-  { action: 'steerSend', label: 'action.steerSend', desc: 'action.steerSend.desc' },
-  { action: 'newSession', label: 'action.newSession', desc: 'action.newSession.desc' },
-]
-
 /**
- * Render the shortcut preferences: one row per fixed action with its current
- * binding, a key-capture recorder, and a reset-to-default control.
+ * Render the shortcut preferences: one row per registered action with its
+ * current binding, a key-capture recorder, and a reset-to-default control.
  * @param props - composed Settings slot props.
  * @returns the preference section.
  */
 export function ShortcutsRow({
-  usePause, useSteerSend, useNewSession, useCapturing, setPreference, reset, setCapturing, t,
+  useActions, usePreferences, useCapturing, translate, setPreference, reset, setCapturing, t,
 }: ShortcutsRowProps) {
-  const pause = usePause(value => value)
-  const steerSend = useSteerSend(value => value)
-  const newSession = useNewSession(value => value)
+  const actions = useActions(value => value)
+  const preferences = usePreferences(value => value)
   const capturing = useCapturing(value => value)
 
   // Key capture: while one action records, every keydown completes, cancels
@@ -91,20 +82,20 @@ export function ShortcutsRow({
         <div className={css.desc}>{t('settings.description')}</div>
       </div>
       <div className={css.fields}>
-        {ACTIONS.map(({ action, label, desc }) => {
-          const preference = action === 'pause' ? pause : action === 'steerSend' ? steerSend : newSession
-          const active = capturing === action
+        {actions.map((action) => {
+          const preference = preferences[action.id] ?? action.defaultBinding
+          const active = capturing === action.id
           // The default hint and the reset control share one condition: they
           // exist only while the binding differs from the shipped default.
-          const modified = !equalPreference(preference, DEFAULT_PREFERENCES[action])
+          const modified = !equalPreference(preference, action.defaultBinding)
           return (
-            <div key={action} className={css.field}>
+            <div key={action.id} className={css.field}>
               <div className={css.fieldText}>
-                <div className={css.fieldLabel}>{t(label)}</div>
-                <div className={css.fieldDesc}>{t(desc)}</div>
+                <div className={css.fieldLabel}>{translate(action.label.ns, action.label.key)}</div>
+                <div className={css.fieldDesc}>{translate(action.description.ns, action.description.key)}</div>
                 {modified && (
                   <div className={css.defaultHint}>
-                    {t('default', { binding: formatBinding(DEFAULT_PREFERENCES[action]) })}
+                    {t('default', { binding: formatBinding(action.defaultBinding) })}
                   </div>
                 )}
               </div>
@@ -115,7 +106,7 @@ export function ShortcutsRow({
                     className={active ? css.capture : preference.kind === 'none' ? css.empty : css.binding}
                     aria-pressed={active}
                     title={active ? undefined : t('binding.hint')}
-                    onClick={() => { setCapturing(active ? null : action) }}
+                    onClick={() => { setCapturing(active ? null : action.id) }}
                   >
                     {active
                       ? t('capturing')
@@ -132,7 +123,7 @@ export function ShortcutsRow({
                     <button
                       type="button"
                       className={css.reset}
-                      onClick={() => { reset(action) }}
+                      onClick={() => { reset(action.id) }}
                     >
                       {t('reset')}
                     </button>

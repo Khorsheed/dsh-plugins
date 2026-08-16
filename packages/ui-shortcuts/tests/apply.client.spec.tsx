@@ -125,6 +125,35 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
+  it('a contributed action dispatches its chord, honors its availability gate, and its disposer removes it', async () => {
+    const b = await bench()
+    const registry = b.runtime.ctx.get('shortcuts')!
+    const run = vi.fn()
+    let available = true
+    const dispose = registry.registerAction({
+      id: 'test.contributed',
+      label: { ns: 'shortcuts', key: 'action.pause' },
+      description: { ns: 'shortcuts', key: 'action.pause.desc' },
+      defaultBinding: { kind: 'key', modifiers: ['primary'], key: 'k' },
+      layering: 'global',
+      available: () => available,
+      run,
+    })
+    const chord = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(chord)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(chord.defaultPrevented).toBe(true)
+    // The availability gate stands the chord down.
+    available = false
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(run).toHaveBeenCalledTimes(1)
+    // The disposer removes the action from dispatch.
+    dispose()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(run).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
   it('Ctrl+S stands down without a current session, a current ghost, or an unbound action', async () => {
     const b = await bench()
     // No current session.

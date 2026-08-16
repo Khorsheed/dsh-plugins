@@ -6,14 +6,43 @@ import { createSnapshotStore, type SessionListState, type WorkspaceListState } f
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ShortcutsRow } from '../src/client/settings/ShortcutsRow.tsx'
 import type { ShortcutsRowProps } from '../src/client/settings/ShortcutsRow.tsx'
-import type { ShortcutAction, ShortcutPreference } from '../src/settings.ts'
+import type { ShortcutActionContribution } from '../src/client/contract.ts'
+import type { ShortcutPreference } from '../src/settings.ts'
 import { DEFAULT_PREFERENCES } from '../src/settings.ts'
-import { zh } from '../src/client/locales.ts'
+import { NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
   document.body.textContent = ''
 })
+
+/** The built-in actions as the row receives them from the registry. */
+const ACTIONS: readonly ShortcutActionContribution[] = [
+  {
+    id: 'pause',
+    label: { ns: NS, key: 'action.pause' },
+    description: { ns: NS, key: 'action.pause.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['pause']!,
+    layering: 'yield',
+    run: () => {},
+  },
+  {
+    id: 'steerSend',
+    label: { ns: NS, key: 'action.steerSend' },
+    description: { ns: NS, key: 'action.steerSend.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['steerSend']!,
+    layering: 'global',
+    run: () => {},
+  },
+  {
+    id: 'newSession',
+    label: { ns: NS, key: 'action.newSession' },
+    description: { ns: NS, key: 'action.newSession.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['newSession']!,
+    layering: 'global',
+    run: () => {},
+  },
+]
 
 function emptySessions() {
   return bindSnapshotSelector(createSnapshotStore<SessionListState>({
@@ -29,33 +58,32 @@ function emptyWorkspaces() {
 }
 
 function mount() {
-  const pause = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.pause)
-  const steerSend = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.steerSend)
-  const newSession = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.newSession)
-  const capturing = createSnapshotStore<ShortcutAction | null>(null)
-  const storeOf = (action: ShortcutAction) =>
-    action === 'pause' ? pause : action === 'steerSend' ? steerSend : newSession
-  const setPreference = vi.fn((action: ShortcutAction, preference: ShortcutPreference) => {
-    storeOf(action).set(preference)
+  const t = makeTranslate(zh)
+  const actions = createSnapshotStore<readonly ShortcutActionContribution[]>(ACTIONS)
+  const preferences = createSnapshotStore<Record<string, ShortcutPreference>>({ ...DEFAULT_PREFERENCES })
+  const capturing = createSnapshotStore<string | null>(null)
+  const setPreference = vi.fn((id: string, preference: ShortcutPreference) => {
+    preferences.set({ ...preferences.getSnapshot(), [id]: preference })
   })
-  const reset = vi.fn((action: ShortcutAction) => {
-    storeOf(action).set(DEFAULT_PREFERENCES[action])
+  const reset = vi.fn((id: string) => {
+    const action = ACTIONS.find(entry => entry.id === id)!
+    preferences.set({ ...preferences.getSnapshot(), [id]: action.defaultBinding })
   })
-  const setCapturing = vi.fn((action: ShortcutAction | null) => { capturing.set(action) })
+  const setCapturing = vi.fn((id: string | null) => { capturing.set(id) })
   const props: ShortcutsRowProps = {
     useSessions: emptySessions(),
     useWorkspaces: emptyWorkspaces(),
-    usePause: bindSnapshotSelector(pause),
-    useSteerSend: bindSnapshotSelector(steerSend),
-    useNewSession: bindSnapshotSelector(newSession),
+    useActions: bindSnapshotSelector(actions),
+    usePreferences: bindSnapshotSelector(preferences),
     useCapturing: bindSnapshotSelector(capturing),
+    translate: (_ns, key) => t(key),
     setPreference,
     reset,
     setCapturing,
-    t: makeTranslate(zh),
+    t,
   }
   render(<ShortcutsRow {...props} />)
-  return { pause, steerSend, newSession, capturing, setPreference, reset, setCapturing }
+  return { preferences, capturing, setPreference, reset, setCapturing }
 }
 
 /** Keydown against the document capture listener the row installs while recording. */
@@ -64,7 +92,7 @@ function press(init: KeyboardEventInit): void {
 }
 
 describe('ShortcutsRow', () => {
-  it('describes both fixed actions and hides reset and the default hint at defaults', () => {
+  it('describes the registered actions and hides reset and the default hint at defaults', () => {
     mount()
     expect(screen.getByText('快捷键')).toBeDefined()
     expect(screen.getByText('暂停当前任务')).toBeDefined()
@@ -128,7 +156,9 @@ describe('ShortcutsRow', () => {
 
   it('reset restores the default and following a preference change updates the row', () => {
     const b = mount()
-    act(() => { b.pause.set({ kind: 'key', modifiers: ['alt'], key: 'p' }) })
+    act(() => {
+      b.preferences.set({ ...b.preferences.getSnapshot(), pause: { kind: 'key', modifiers: ['alt'], key: 'p' } })
+    })
     // Only the modified action offers a reset.
     const resetButton = screen.getByRole('button', { name: '恢复默认' })
     fireEvent.click(resetButton)
@@ -136,7 +166,7 @@ describe('ShortcutsRow', () => {
     // Back at the default, the reset control leaves the row again.
     expect(screen.queryByRole('button', { name: '恢复默认' })).toBeNull()
     // The stores are authoritative: an external preference change re-renders.
-    act(() => { b.steerSend.set({ kind: 'none' }) })
+    act(() => { b.preferences.set({ ...b.preferences.getSnapshot(), steerSend: { kind: 'none' } }) })
     expect(screen.getByRole('button', { name: '未绑定' })).toBeDefined()
   })
 

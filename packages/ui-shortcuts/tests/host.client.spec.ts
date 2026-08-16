@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
-  apply, DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE,
+  apply, UI_SHORTCUTS_NAMESPACE,
 } from '@khorsheed/dsh-ui-shortcuts'
 import type { ShortcutPreference } from '@khorsheed/dsh-ui-shortcuts'
 
@@ -24,14 +24,11 @@ describe('ui-shortcuts host', () => {
     const fiber = ctx.plugin({ apply })
     await fiber.await()
     const ns = settingsNamespace(UI_SHORTCUTS_NAMESPACE)
-    expect(ctx.settings.get(ns)).toEqual({
-      pause: DEFAULT_PREFERENCES.pause,
-      steerSend: DEFAULT_PREFERENCES.steerSend,
-      newSession: DEFAULT_PREFERENCES.newSession,
-    })
+    expect(ctx.settings.get(ns)).toEqual({})
     await ctx.settings.update(ns, { pause: PREFERENCE, steerSend: NONE })
-    // The schema refills untouched actions with their shipped defaults.
-    expect(ctx.settings.get(ns)).toEqual({ pause: PREFERENCE, steerSend: NONE, newSession: DEFAULT_PREFERENCES.newSession })
+    // The dict schema persists exactly the written entries; unwritten action
+    // ids fall back to their registered defaults on the browser side.
+    expect(ctx.settings.get(ns)).toEqual({ pause: PREFERENCE, steerSend: NONE })
     await expect(ctx.settings.update(ns, { pause: { kind: 'key', modifiers: ['bogus'], key: 'x' } })).rejects.toThrow()
     await expect(ctx.settings.update(ns, { pause: { kind: 'bogus' } })).rejects.toThrow()
     await fiber.dispose()

@@ -1,20 +1,23 @@
 /**
- * Browser shortcuts plugin: fixed actions (pause the running turn, steer-send
- * the draft) bound to user-chosen keys. Pure UI over public services — the
- * actions never reach ui-conversation internals:
+ * Browser shortcuts plugin: the shortcut action registry provider plus three
+ * built-in actions (pause the running turn, steer-send the draft, new
+ * session) bound to user-chosen keys. Pure UI over public services — the
+ * built-in handlers never reach ui-conversation internals, and every action
+ * (built-in or contributed by another plugin through `ctx.shortcuts`) rides
+ * the same registration path:
  *
  * - steer-send submits the current session's draft through the public
  *   `conversation.input.for(scope).submit('steer')` facade.
  * - pause cancels the current session's running turn through the scope-addressed
  *   `conversation.cancel()` (the same action as the composer's Stop button).
- *   Escape is a GLOBAL pause that yields to whatever owns the key first: a
- *   consumed keydown (`defaultPrevented` — the composer's slash menu,
- *   popupSelect), an open overlay (`[role="dialog"]/menu/listbox` — modals,
- *   menus, and the settings panel close on Escape without preventDefault),
- *   or a non-composer editable target (inline rename, search fields).
+ *   Its layering is `yield`: Escape yields to a consumed keydown
+ *   (`defaultPrevented` — the composer's slash menu, popupSelect), an open
+ *   overlay (`[role="dialog"]/menu/listbox` — modals, menus, and the settings
+ *   panel close on Escape without preventDefault), or a non-composer editable
+ *   target (inline rename, search fields).
  * - new-session starts a session through the public `workspaces.startSession()`
- *   (the same entry the sidebar New-session button calls), a global chord like
- *   steer-send.
+ *   (the same entry the sidebar New-session button calls). Its layering is
+ *   `global`, like steer-send.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
@@ -24,12 +27,16 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { matches } from './bindings.ts'
-import { ShortcutBindingsPolicy } from './policy.ts'
-import { UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
+import { ShortcutRegistryRuntime } from './registry.ts'
+import { DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
 import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
 import { ShortcutsRow } from './settings/ShortcutsRow.tsx'
 import type { ShortcutsRowInjected } from './settings/ShortcutsRow.tsx'
+import type { ShortcutLayering } from './contract.ts'
 import { en, NS, zh, type ShortcutKey } from './locales.ts'
+
+export type { ShortcutActionContribution, ShortcutLabelRef, ShortcutLayering, ShortcutRegistry } from './contract.ts'
+import type {} from './contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -125,47 +132,79 @@ function startNewSession(ctx: ClientContext): void {
 }
 
 /**
- * Browser plugin body: bind the fixed actions to the persisted keys and
- * register the shortcut settings row. The binding snapshots are read in the
- * handlers (event-handler code may read live snapshots); the wiring stands
- * down entirely while the settings row records a new binding.
- * @param ctx - client root context.
+ * Dispatch one keydown against the registered actions of one layering.
+ * First match in registration order wins; `global` actions suppress the
+ * browser default, `yield` actions stand down when anything else owns the key.
+ * @param event - the keydown event.
+ * @param layering - which action tier this listener serves.
+ * @param registry - the live registry.
  */
-export function apply(ctx: ClientContext): void {
-  const policy = new ShortcutBindingsPolicy(
-    ctx.settingsScope.bind<ShortcutSettings>({ namespace: UI_SHORTCUTS_NAMESPACE }),
-  )
-
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-shortcuts: dictionaries')
-
-  ctx.effect(() => {
-    const onKeyDownCapture = (event: KeyboardEvent): void => {
-      if (policy.capturing.getSnapshot() !== null) return
-      if (isComposing(event) || event.repeat) return
-      if (matches(event, policy.steerSend.getSnapshot())) {
-        event.preventDefault() // the browser save gesture must not fire
-        steerSendDraft(ctx)
-        return
-      }
-      if (matches(event, policy.newSession.getSnapshot())) {
-        event.preventDefault() // the browser open-file gesture must not fire
-        startNewSession(ctx)
-      }
-    }
-    const onKeyDownBubble = (event: KeyboardEvent): void => {
-      if (policy.capturing.getSnapshot() !== null) return
-      if (isComposing(event) || event.repeat) return
-      if (!matches(event, policy.pause.getSnapshot())) return
-      // Global pause that yields to whoever owns Escape first: a consumed key
-      // (composer slash menu, popupSelect — component handlers run before
-      // document bubble listeners), an open overlay (modals/menus close on
-      // Escape without preventDefault, and their DOM is still present during
-      // dispatch), or a non-composer editable (inline rename, search).
+function dispatch(event: KeyboardEvent, layering: ShortcutLayering, registry: ShortcutRegistryRuntime): void {
+  if (registry.capturing.getSnapshot() !== null) return
+  if (isComposing(event) || event.repeat) return
+  for (const action of registry.actions.getSnapshot()) {
+    if (action.layering !== layering) continue
+    if (!matches(event, registry.preferenceOf(action.id))) continue
+    if (action.available?.() === false) continue
+    if (layering === 'yield') {
+      // Component handlers run before document bubble listeners, so a
+      // consumed key is visible here; an overlay's DOM is still present
+      // during dispatch (its state-driven unmount lands after it).
       if (event.defaultPrevented) return
       if (anyOverlayOpen()) return
       if (isNonComposerEditable(event)) return
-      pauseCurrentTask(ctx)
+    } else {
+      event.preventDefault() // the browser gesture (save, open-file) must not fire
     }
+    action.run()
+    return
+  }
+}
+
+/**
+ * Browser plugin body: provide the registry, bind the built-in actions
+ * through it, and register the shortcut settings row. The binding snapshots
+ * are read in the handlers (event-handler code may read live snapshots); the
+ * wiring stands down entirely while the settings row records a new binding.
+ * @param ctx - client root context.
+ */
+export function apply(ctx: ClientContext): void {
+  const registry = new ShortcutRegistryRuntime(
+    ctx.settingsScope.bind<ShortcutSettings>({ namespace: UI_SHORTCUTS_NAMESPACE }),
+  )
+  ctx.provide('shortcuts', registry)
+
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-shortcuts: dictionaries')
+
+  // The built-ins register through the public face like any consumer.
+  ctx.effect(() => registry.registerAction({
+    id: 'pause',
+    label: { ns: NS, key: 'action.pause' },
+    description: { ns: NS, key: 'action.pause.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['pause']!,
+    layering: 'yield',
+    run: () => { pauseCurrentTask(ctx) },
+  }), 'ui-shortcuts: action pause')
+  ctx.effect(() => registry.registerAction({
+    id: 'steerSend',
+    label: { ns: NS, key: 'action.steerSend' },
+    description: { ns: NS, key: 'action.steerSend.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['steerSend']!,
+    layering: 'global',
+    run: () => { steerSendDraft(ctx) },
+  }), 'ui-shortcuts: action steerSend')
+  ctx.effect(() => registry.registerAction({
+    id: 'newSession',
+    label: { ns: NS, key: 'action.newSession' },
+    description: { ns: NS, key: 'action.newSession.desc' },
+    defaultBinding: DEFAULT_PREFERENCES['newSession']!,
+    layering: 'global',
+    run: () => { startNewSession(ctx) },
+  }), 'ui-shortcuts: action newSession')
+
+  ctx.effect(() => {
+    const onKeyDownCapture = (event: KeyboardEvent): void => { dispatch(event, 'global', registry) }
+    const onKeyDownBubble = (event: KeyboardEvent): void => { dispatch(event, 'yield', registry) }
     document.addEventListener('keydown', onKeyDownCapture, true)
     document.addEventListener('keydown', onKeyDownBubble)
     return () => {
@@ -181,14 +220,14 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (): ShortcutsRowInjected => ({
       hooks: {
-        pause: policy.pause,
-        steerSend: policy.steerSend,
-        newSession: policy.newSession,
-        capturing: policy.capturing,
+        actions: registry.actions,
+        preferences: registry.preferences,
+        capturing: registry.capturing,
       },
-      setPreference: (action, preference: ShortcutPreference) => { policy.setPreference(action, preference) },
-      reset: (action) => { policy.reset(action) },
-      setCapturing: (action) => { policy.capturing.set(action) },
+      translate: (ns, key) => ctx.locale.bind(ns)(key),
+      setPreference: (id, preference: ShortcutPreference) => { registry.setPreference(id, preference) },
+      reset: (id) => { registry.reset(id) },
+      setCapturing: (id) => { registry.capturing.set(id) },
     }),
   }, ShortcutsRow))
 }

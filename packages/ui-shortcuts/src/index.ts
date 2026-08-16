@@ -5,9 +5,9 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { UI_SHORTCUTS_NAMESPACE, ShortcutSettingsSchema } from './settings.ts'
 
 export {
-  DEFAULT_PAUSE_PREFERENCE, DEFAULT_PREFERENCES, DEFAULT_STEER_SEND_PREFERENCE,
-  SHORTCUT_ACTIONS, SHORTCUT_MODIFIERS, UI_SHORTCUTS_NAMESPACE,
-  type BoundKey, type ShortcutAction, type ShortcutModifier, type ShortcutPreference, type ShortcutSettings,
+  DEFAULT_NEW_SESSION_PREFERENCE, DEFAULT_PAUSE_PREFERENCE, DEFAULT_PREFERENCES, DEFAULT_STEER_SEND_PREFERENCE,
+  SHORTCUT_MODIFIERS, UI_SHORTCUTS_NAMESPACE,
+  type BoundKey, type ShortcutModifier, type ShortcutPreference, type ShortcutSettings,
 } from './settings.ts'
 
 /**

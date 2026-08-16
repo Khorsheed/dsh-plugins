@@ -26,6 +26,25 @@ The row's node half registers the `ui-shortcuts` settings section; its browser h
 
 All three actions run only through public services — the plugin never reaches into ui-conversation internals. Keys are rebound in General Settings → 快捷键 (Keyboard shortcuts): click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
 
+## For plugin authors
+
+Any plugin can contribute its own keyboard actions through the `ctx.shortcuts` registry this package provides — contributed actions get the Settings row entry, rebinding, persistence, and conflict-free dispatch for free:
+
+```ts
+ctx.effect(() => ctx.shortcuts.registerAction({
+  id: 'my-plugin.myAction',          // unique id, <plugin>.<action> by convention
+  label: { ns: 'my-plugin', key: 'action.myAction' },
+  description: { ns: 'my-plugin', key: 'action.myAction.desc' },
+  defaultBinding: { kind: 'key', modifiers: ['primary', 'shift'], key: 'o' },
+  layering: 'global',                // 'global': capture-phase, browser default suppressed
+                                     // 'yield': bubble-phase, yields to consumed keys / open overlays / editables
+  available: () => true,             // optional dispatch-time gate
+  run: () => { /* ... */ },
+}), 'my-plugin: shortcut')
+```
+
+The contribution's locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; when several actions share one chord, the first registration wins. Users rebind or unbind any action in Settings → General → Keyboard shortcuts; preferences persist under the `ui-shortcuts` section keyed by action id.
+
 ## Escape layering
 
 Escape pause is global and yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, and the settings panel close on Escape without `preventDefault`, and their DOM is still present during dispatch), or a non-composer editable target (inline rename, search fields). Everywhere else — the composer textarea, the sidebar, the session list — Escape pauses the running turn. IME composition and held-repeat keys never trigger any action.
@@ -45,6 +64,6 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **No custom actions** — the action set is fixed at three; adding user-defined actions (command lines, toggles) is deferred until the rebinding UI proves the interaction model.
+- **No user-defined actions** — plugins contribute actions through `ctx.shortcuts` (see *For plugin authors*); arbitrary user-defined actions (command lines, toggles) are not offered.
 - **Ctrl/Cmd+S is draft-only** — an empty draft does nothing; the plugin deliberately leaves whole-queue steering to the composer's `Cmd/Ctrl+Enter` gesture.
 - **No in-repo e2e** — the plugin is not in the default bundle, so it has no `apps/web` replay scenario; its wiring is covered by the apply-level browser spec against fakes.

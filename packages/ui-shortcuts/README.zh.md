@@ -26,6 +26,25 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
 三个动作都只使用公开服务——插件从不触及 ui-conversation 内部。键位在 设置 → 通用 → 快捷键 中重绑：点击键位开始录制下一个组合键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
 
+## 给插件作者
+
+任何插件都可以通过本包提供的 `ctx.shortcuts` 注册表贡献自己的键盘动作——设置区条目、重绑、持久化、无冲突分发全部免费获得：
+
+```ts
+ctx.effect(() => ctx.shortcuts.registerAction({
+  id: 'my-plugin.myAction',          // 唯一 id，惯例 <插件>.<动作>
+  label: { ns: 'my-plugin', key: 'action.myAction' },
+  description: { ns: 'my-plugin', key: 'action.myAction.desc' },
+  defaultBinding: { kind: 'key', modifiers: ['primary', 'shift'], key: 'o' },
+  layering: 'global',                // 'global'：capture 阶段，抑制浏览器默认
+                                     // 'yield'：bubble 阶段，让位于已消费按键/打开的弹层/可编辑目标
+  available: () => true,             // 可选的分发时门禁
+  run: () => { /* ... */ },
+}), 'my-plugin: shortcut')
+```
+
+贡献项的文案留在贡献方自己的 locale 命名空间。id 重复会 loud 报错；多个动作共享同一组合键时先注册者生效。用户可在 设置 → 通用 → 快捷键 重绑或解绑任何动作；偏好按动作 id 持久化在 `ui-shortcuts` 小节。
+
 ## Escape 分层
 
 Escape 暂停是全局的，但让位于先消费该键的一方：已被消费的 keydown（`defaultPrevented`——composer 的斜杠菜单、popupSelect）、打开的弹层（模态框、菜单、设置面板用 Escape 关闭且不 `preventDefault`，事件分发期间它们的 DOM 仍在）、以及 composer 之外的可编辑目标（行内重命名、搜索框）。其余任何位置——composer 文本框、侧边栏、会话列表——Escape 都会暂停运行中的回合。IME 组合输入与按住重复的按键不会触发任一动作。
@@ -45,6 +64,6 @@ Escape 暂停是全局的，但让位于先消费该键的一方：已被消费�
 
 ## Known Limitations and Deferred Work
 
-- **无自定义动作**——动作集固定为三个；在重绑 UI 验证交互模型之前，暂不提供用户自定义动作（命令、开关等）。
+- **无用户自定义动作**——插件通过 `ctx.shortcuts` 贡献动作（见「给插件作者」）；任意的用户自定义动作（命令、开关等）暂不提供。
 - **Ctrl/Cmd+S 仅草稿**——空草稿不做事；插件刻意把整队列插队留给 composer 的 `Cmd/Ctrl+Enter` 手势。
 - **无仓库内 e2e**——插件不在默认 bundle 中，因此没有 `apps/web` replay 场景；其接线由针对 fakes 的 apply 级浏览器 spec 覆盖。
