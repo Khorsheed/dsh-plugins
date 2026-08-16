@@ -144,14 +144,36 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('Escape pauses the running turn from the composer textarea, and only there', async () => {
+  it('Escape pauses the running turn globally, from the composer or any non-editable surface', async () => {
     const b = await bench({ running: true })
+    // Composer textarea: the classic path still fires.
     withComposerTextarea((textarea) => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     })
     expect(b.cancel).toHaveBeenCalledTimes(1)
-    // Outside the composer textarea (popup, modal, sidebar focus): the
-    // composer's own layering owns the key — no pause.
+    // No editable focus (sidebar, body): the global pause fires too.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(b.cancel).toHaveBeenCalledTimes(2)
+    await b.runtime.dispose()
+  })
+
+  it('Escape stands down for open overlays and non-composer editables', async () => {
+    const b = await bench({ running: true })
+    // An open dialog/menu/listbox owns Escape: those layers close without
+    // preventDefault, and their DOM is still present during dispatch.
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(b.cancel).not.toHaveBeenCalled()
+    dialog.remove()
+    // Another editable (inline rename, search input) keeps its own Escape.
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(b.cancel).not.toHaveBeenCalled()
+    input.remove()
+    // Once the surface is clear the global pause fires again.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     expect(b.cancel).toHaveBeenCalledTimes(1)
     await b.runtime.dispose()

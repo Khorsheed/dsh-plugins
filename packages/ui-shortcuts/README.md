@@ -28,7 +28,7 @@ All three actions run only through public services — the plugin never reaches 
 
 ## Escape layering
 
-Escape keeps the composer's existing layering, which the plugin relies on as a documented contract: the keydown is handled only when the event target is the composer's textarea, and only when the composer did not already consume the key (an open slash menu `preventDefault`s a consumed Escape). Everything else — modals, menus, the popupSelect shell — keeps its own Escape behavior because focus lives outside the textarea there. IME composition and held-repeat keys never trigger either action.
+Escape pause is global and yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, and the settings panel close on Escape without `preventDefault`, and their DOM is still present during dispatch), or a non-composer editable target (inline rename, search fields). Everywhere else — the composer textarea, the sidebar, the session list — Escape pauses the running turn. IME composition and held-repeat keys never trigger any action.
 
 ## Model Experience
 
@@ -45,7 +45,6 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **Escape-pause is composer-scoped** — the key pauses only while focus is in the composer textarea. A global Escape would need a shared overlay-consumer registry that does not exist; until one does, pausing from the sidebar or over a modal is intentionally not offered.
 - **No custom actions** — the action set is fixed at three; adding user-defined actions (command lines, toggles) is deferred until the rebinding UI proves the interaction model.
 - **Ctrl/Cmd+S is draft-only** — an empty draft does nothing; the plugin deliberately leaves whole-queue steering to the composer's `Cmd/Ctrl+Enter` gesture.
 - **No in-repo e2e** — the plugin is not in the default bundle, so it has no `apps/web` replay scenario; its wiring is covered by the apply-level browser spec against fakes.

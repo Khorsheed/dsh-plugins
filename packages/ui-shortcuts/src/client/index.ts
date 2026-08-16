@@ -6,12 +6,12 @@
  * - steer-send submits the current session's draft through the public
  *   `conversation.input.for(scope).submit('steer')` facade.
  * - pause cancels the current session's running turn through the scope-addressed
- *   `conversation.cancel()` (the same action as the composer's Stop button),
- *   gated on the composer's existing Escape layering: the keydown runs only
- *   when the event target is the composer textarea, and only when the composer
- *   did not already consume the key (the slash menu `preventDefault`s a
- *   consumed Escape). Everything else — modals, menus, popupSelect — keeps its
- *   own Escape behavior because focus lives outside the textarea there.
+ *   `conversation.cancel()` (the same action as the composer's Stop button).
+ *   Escape is a GLOBAL pause that yields to whatever owns the key first: a
+ *   consumed keydown (`defaultPrevented` — the composer's slash menu,
+ *   popupSelect), an open overlay (`[role="dialog"]/menu/listbox` — modals,
+ *   menus, and the settings panel close on Escape without preventDefault),
+ *   or a non-composer editable target (inline rename, search fields).
  * - new-session starts a session through the public `workspaces.startSession()`
  *   (the same entry the sidebar New-session button calls), a global chord like
  *   steer-send.
@@ -52,6 +52,23 @@ function isComposing(event: KeyboardEvent): boolean {
 function isComposerTextarea(event: KeyboardEvent): boolean {
   return event.target instanceof HTMLTextAreaElement
     && event.target.closest('[data-composer-card]') !== null
+}
+
+/**
+ * Escape inside an editable other than the composer belongs to that field's
+ * own semantics (inline rename, search boxes); only the composer textarea's
+ * Escape is the pause gesture.
+ */
+function isNonComposerEditable(event: KeyboardEvent): boolean {
+  if (!(event.target instanceof HTMLElement) || isComposerTextarea(event)) return false
+  return event.target instanceof HTMLTextAreaElement
+    || event.target instanceof HTMLInputElement
+    || event.target.isContentEditable
+}
+
+/** An open overlay (modal, menu, listbox popup) owns Escape: those layers close on Escape without preventDefault. */
+function anyOverlayOpen(): boolean {
+  return document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null
 }
 
 /**
@@ -139,10 +156,14 @@ export function apply(ctx: ClientContext): void {
       if (policy.capturing.getSnapshot() !== null) return
       if (isComposing(event) || event.repeat) return
       if (!matches(event, policy.pause.getSnapshot())) return
-      // The composer owns Escape inside its textarea: an open slash menu
-      // consumed the key (preventDefault), and other surfaces (modals,
-      // popupSelect) keep focus away from the textarea entirely.
-      if (!isComposerTextarea(event) || event.defaultPrevented) return
+      // Global pause that yields to whoever owns Escape first: a consumed key
+      // (composer slash menu, popupSelect — component handlers run before
+      // document bubble listeners), an open overlay (modals/menus close on
+      // Escape without preventDefault, and their DOM is still present during
+      // dispatch), or a non-composer editable (inline rename, search).
+      if (event.defaultPrevented) return
+      if (anyOverlayOpen()) return
+      if (isNonComposerEditable(event)) return
       pauseCurrentTask(ctx)
     }
     document.addEventListener('keydown', onKeyDownCapture, true)

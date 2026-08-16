@@ -28,7 +28,7 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
 ## Escape 分层
 
-Escape 沿用 composer 现有分层，插件将其作为已记录的契约依赖：只有当事件目标是 composer 文本框、且 composer 没有先消费该按键（打开的斜杠菜单会对被消费的 Escape `preventDefault`）时才处理。其余一切——模态框、菜单、popupSelect——因为焦点在文本框之外，各自保留自己的 Escape 行为。IME 组合输入与按住重复的按键不会触发任一动作。
+Escape 暂停是全局的，但让位于先消费该键的一方：已被消费的 keydown（`defaultPrevented`——composer 的斜杠菜单、popupSelect）、打开的弹层（模态框、菜单、设置面板用 Escape 关闭且不 `preventDefault`，事件分发期间它们的 DOM 仍在）、以及 composer 之外的可编辑目标（行内重命名、搜索框）。其余任何位置——composer 文本框、侧边栏、会话列表——Escape 都会暂停运行中的回合。IME 组合输入与按住重复的按键不会触发任一动作。
 
 ## Model Experience
 
@@ -45,7 +45,6 @@ Escape 沿用 composer 现有分层，插件将其作为已记录的契约依赖
 
 ## Known Limitations and Deferred Work
 
-- **Escape 暂停限定在 composer 内**——只有焦点在 composer 文本框中时才暂停。全局 Escape 需要一个尚不存在的共享弹层消费方注册表；在那之前，侧边栏或模态框之上触发暂停是刻意不提供的。
 - **无自定义动作**——动作集固定为三个；在重绑 UI 验证交互模型之前，暂不提供用户自定义动作（命令、开关等）。
 - **Ctrl/Cmd+S 仅草稿**——空草稿不做事；插件刻意把整队列插队留给 composer 的 `Cmd/Ctrl+Enter` 手势。
 - **无仓库内 e2e**——插件不在默认 bundle 中，因此没有 `apps/web` replay 场景；其接线由针对 fakes 的 apply 级浏览器 spec 覆盖。
