@@ -59,10 +59,28 @@ export async function readCodexBaseUrl(homeDir: string): Promise<string | undefi
   } catch {
     return undefined
   }
-  const selected = /^model_provider\s*=\s*"([^"]*)"/m.exec(text)?.[1]
+  // Section-aware line scan: key order inside a provider table is the
+  // writer's choice, so a base_url that does not immediately follow its
+  // header must still be found — a diagnostic that silently reports the
+  // default would mislead. model_provider is a top-level key, so it only
+  // counts before the first table header.
+  let section = ''
+  let selected: string | undefined
   const providers = new Map<string, string>()
-  for (const match of text.matchAll(/\[model_providers\.([^\]]+)\]\s*base_url\s*=\s*"([^"]*)"/g)) {
-    providers.set(match[1]!.replace(/^"(.*)"$/, '$1'), match[2]!)
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    const key = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (key === null) continue
+    if (section === '' && key[1] === 'model_provider') selected = key[2]
+    const provider = /^model_providers\.(".*"|[\w-]+)$/.exec(section)
+    if (provider !== null && key[1] === 'base_url') {
+      providers.set(provider[1]!.replace(/^"(.*)"$/, '$1'), key[2]!)
+    }
   }
   if (selected !== undefined && providers.has(selected)) return providers.get(selected)
   // No selection: any single custom provider is the endpoint in effect.

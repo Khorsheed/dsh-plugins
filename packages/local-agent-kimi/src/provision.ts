@@ -90,6 +90,9 @@ export async function provisionKimiConfig(homeDir: string, model: string): Promi
   return true
 }
 
+/** The managed-service provider section provisioned into the scoped config. */
+const MANAGED_PROVIDER_SECTION = 'providers."managed:kimi-code"'
+
 /**
  * Read the scoped config's effective LLM endpoint: the
  * `[providers."managed:kimi-code"].base_url` key, if present. A missing or
@@ -106,8 +109,23 @@ export async function readKimiBaseUrl(homeDir: string): Promise<string | undefin
   } catch {
     return undefined
   }
-  const match = /\[providers\."managed:kimi-code"\]\s*base_url\s*=\s*"([^"]*)"/.exec(text)
-  return match?.[1]
+  // Section-aware line scan: key order inside the provider table is the
+  // writer's choice, so base_url must be found wherever it sits in the
+  // section — a diagnostic that silently reports the default would mislead.
+  let section = ''
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    if (section === MANAGED_PROVIDER_SECTION) {
+      const match = /^base_url\s*=\s*"([^"]*)"$/.exec(line)
+      if (match !== null) return match[1]
+    }
+  }
+  return undefined
 }
 
 /** Permission rule block letting the kimi subagent run shell commands. */
