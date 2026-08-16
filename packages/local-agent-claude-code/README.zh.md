@@ -86,6 +86,19 @@ Claude 子会话是委派 Session 工作区内一个全新的一次性 `claude -
 
 **权限模式风险**：`skip` 授予子进程与运行 dsh 宿主的用户相同的文件系统触达——与 codex 不同，claude（以及 kimi）**没有 OS 级沙箱**，`skip` 子进程可以写用户能写的任何地方，包括委派工作区之外。`skip` 是可工作的默认，因为一次性 CLI 子代理没有审批面；当委派任务必须被限制在可审批动作内时切换到 `normal`（注意 `normal` 在非交互模式下会拒绝写，产生文件的任务会失败）。若委派既需要写文件又需要工作区隔离，优先给宿主自身套沙箱（例如在沙箱化工作区内运行 dsh 宿主）。
 
+## 自定义端点
+
+Claude 的 LLM 请求可以经自定义端点路由（例如自部署的模型路由器或代理），两种方式：
+
+- **cordis 配置**——在 bundle 行的 config 里设 `baseUrl`，它会作为 `ANTHROPIC_BASE_URL` 传给子进程。
+- **宿主环境**——在启动 dsh 宿主的 shell 里 export `ANTHROPIC_BASE_URL`，每个委派子进程都会继承。
+
+优先级是配置优先于环境。**环境是启动时的快照**：长驻的 dsh 进程在启动时捕获 `ANTHROPIC_BASE_URL`，之后在别的 shell 里 export 对运行中的进程无效，除非重启宿主——排查委派路由异常时，检查宿主的实际环境而非你当前的 shell。
+
+⚠️ **OAuth token 暴露**：作用域登录的 OAuth token 会发送给处理请求的端点。把 `baseUrl` 指向不受信地址等于把该 token 交给它；只使用你控制或信任的端点。
+
+每次委派在 info 级别记录有效端点（`subagent-claude: delegating via <endpoint>`），失败运行的报错文本会点名它使用的端点。
+
 ## 已知限制与后续工作
 
 - **登录需要一次交互**——浏览器 OAuth URL 出现在会话中；只有用户在浏览器完成授权后凭据才会出现。

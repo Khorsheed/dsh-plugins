@@ -86,6 +86,19 @@ This bundle accepts two plugin config fields (both optional):
 
 **Permission-mode risk**: `skip` grants the child the same filesystem reach as the user running the dsh host — unlike codex, claude (and kimi) have **no OS-level sandbox**, so a `skip` child can write anywhere the user can, including outside the delegating workspace. `skip` is the working default because a one-shot CLI subagent has no approval surface; switch to `normal` when the delegated task must be confined to approval-able actions (note `normal` will deny writes in non-interactive mode, so file-producing tasks fail). Prefer scoping the host's own sandbox (e.g. run the dsh host inside a sandboxed workspace) if the delegation needs both file writes and workspace confinement.
 
+## Custom endpoint
+
+Claude's LLM requests can be routed through a custom endpoint (e.g. a self-hosted model router or a proxy) two ways:
+
+- **Cordis config** — set `baseUrl` on the bundle row's config; it is passed to the child as `ANTHROPIC_BASE_URL`.
+- **Host environment** — export `ANTHROPIC_BASE_URL` in the shell that starts the dsh host; it is inherited by every delegation child.
+
+Priority is config over environment. **The environment is a startup-time snapshot**: a long-running dsh process captures `ANTHROPIC_BASE_URL` when it boots, so later `export` in a different shell has no effect until the host restarts — check the host's own environment, not your current shell, when diagnosing a delegation that routes unexpectedly.
+
+⚠️ **OAuth token exposure**: the scoped login's OAuth token is sent to whatever endpoint serves the request. Pointing `baseUrl` at an untrusted address hands that token to it; only use endpoints you control or trust.
+
+Every delegation logs the effective endpoint at info level (`subagent-claude: delegating via <endpoint>`), and a failed run's error text names the endpoint it used.
+
 ## Known Limitations and Deferred Work
 
 - **Login requires one interactive step** — the browser OAuth URL appears in the session; credentials appear only after the user authorizes in the browser.

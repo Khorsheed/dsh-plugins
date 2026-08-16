@@ -26,6 +26,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { readKimiBaseUrl } from './provision.ts'
 import { mirrorKimiSession } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
@@ -44,7 +45,7 @@ export class KimiCliProvider implements SubagentProvider {
 
   constructor(private readonly ctx: Context) {}
 
-  start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
+  async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
     if (parentCwd === undefined) {
       throw new Error('subagent-kimi: the parent session has no working directory to run the CLI in')
@@ -85,13 +86,20 @@ export class KimiCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-kimi: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Resolve the effective endpoint from the scoped config.toml for
+    // diagnostics: the CLI reads it directly, and a user-edited value is
+    // authoritative. Log it so a failing delegation reports which endpoint
+    // it actually used.
+    const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
+    this.ctx.logger.info(`subagent-kimi: delegating via ${baseUrl ?? 'kimi default endpoint'}`)
     return startKimiCliRun(request, {
       cwd: parentCwd,
       env: { KIMI_CODE_HOME: homeDir },
+      endpointLabel: baseUrl,
       disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
       spawn: spec => this.ctx.subprocess.spawn(spec),
       onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}): ${error instanceof Error ? error.message : String(error)}`)
+        this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
       },
       childSession,
       homeDir,
@@ -106,6 +114,8 @@ export interface KimiCliRunSpec {
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
   readonly env: Record<string, string>
+  /** Resolved endpoint label for diagnostics; absent means the CLI default. */
+  readonly endpointLabel?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -232,7 +242,8 @@ export function startKimiCliRun(
     attempt: () => Promise.race([
       child.done.then((outcome) => {
         if (outcome.exitCode !== 0) {
-          throw new Error(`subagent-kimi: kimi -p exited with code ${String(outcome.exitCode)}`)
+          const via = spec.endpointLabel ?? 'kimi default endpoint'
+          throw new Error(`subagent-kimi: kimi -p exited with code ${String(outcome.exitCode)} via ${via}`)
         }
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),

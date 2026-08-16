@@ -38,6 +38,21 @@ dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-kimi
 
 本包启动的每个 Kimi 进程（登录、委派）都带着 harness 作用域目录（默认 `$DSH_HOME/local-agent/kimi`）作为 `KIMI_CODE_HOME` 运行。config、credentials、sessions 全部留在那里，与用户自己的 `~/.kimi-code` 互不干扰。登录只走 device-code：`/kimi login` 把授权 URL 和验证码呈现在会话中、CLI 在后台轮询；用户授权后凭据写入作用域目录。`/kimi logout` 删除作用域内的凭据与 OAuth 缓存——kimi CLI 没有 logout 命令——之后重新登录即可换一个账号。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制一份，用户没有 config 时则写入一份最小的 kimi-managed config——因为 `kimi acp` 没有 provider 与 model 定义就拒绝认证。已存在的 config 保持原样不动。
 
+## 自定义端点
+
+Kimi 的 LLM 请求经作用域 `config.toml`（`$DSH_HOME/local-agent/kimi/config.toml`）里 `managed:kimi-code` provider 的 `base_url` 路由：
+
+```toml
+[providers."managed:kimi-code"]
+base_url = "https://your-router.example/v1"
+```
+
+**只原地改写这一个键**——该文件预置后已存在，其余全部内容（`models` 定义、`oauth` 子表、`permission.rules`）必须保留。预置逻辑从不覆盖已存在的 config，所以你的修改在重启与重装后都会保留。**不要**改动 `[services.moonshot_*]` 的 base_url：那些路由内置的搜索/抓取工具，自托管路由器通常只想重定向 LLM 路径。
+
+⚠️ **OAuth token 暴露**：作用域登录的 OAuth token 会发送给处理请求的端点。把 `base_url` 指向不受信地址等于把该 token 交给它；只使用你控制或信任的端点。
+
+每次委派在 info 级别记录有效端点（`subagent-kimi: delegating via <endpoint>`），失败运行的报错文本会点名它使用的端点。
+
 ## 会话记录
 
 `/kimi sessions` 列出作用域目录下的 `session_index.jsonl`（kimi 自有的 append-only 索引）——即本 agent 委派产生的会话，绝不是用户的私人会话。家族 core 的浏览器设置分区呈现同一份列表，并收窄到当前会话的工作区（只显示 `workDir` 与当前会话 cwd 一致的记录），一个项目的 kimi 会话不会出现在另一个项目的会话里；`/kimi sessions` 本身始终显示完整列表。其设置区（设置 → 本地 Agent）显示 harness 的认证状态，并提供网页登录按钮展示 device-code URL；登录进行中时状态会持续重新探测，直到凭据落地。已认证的行额外提供退出登录按钮（运行 `/kimi logout`），换账号即先退出再重新登录。

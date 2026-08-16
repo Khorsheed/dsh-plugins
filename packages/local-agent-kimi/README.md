@@ -38,6 +38,21 @@ Removing the bundle unregisters the harness, its `/<name>` command family, the t
 
 Every Kimi process the bundle starts (login, delegation) runs with `KIMI_CODE_HOME` set to the harness's scoped home (default `$DSH_HOME/local-agent/kimi`). Config, credentials, and sessions stay there, never colliding with the user's own `~/.kimi-code`. Login is device-code only: `/kimi login` surfaces the authorization URL and code in the session and the CLI polls in the background; credentials land in the scoped home when the user authorizes. `/kimi logout` removes the scoped credentials and OAuth cache — the kimi CLI has no logout command — so a later login authorizes a fresh account. The scoped home is provisioned with a `config.toml` on first boot — the user's own config copied with every `api_key` blanked, or a minimal kimi-managed config when the user has none — because the kimi CLI refuses to authenticate without provider and model definitions. An existing config is respected untouched.
 
+## Custom endpoint
+
+Kimi's LLM requests route through the `base_url` of the `managed:kimi-code` provider in the scoped `config.toml` (`$DSH_HOME/local-agent/kimi/config.toml`):
+
+```toml
+[providers."managed:kimi-code"]
+base_url = "https://your-router.example/v1"
+```
+
+Edit **only that key** in place — the file already exists after provisioning, and everything else (`models` definitions, the `oauth` sub-table, `permission.rules`) must be preserved. Provisioning never overwrites an existing config, so your edit survives restarts and reinstalls. Do **not** change the `[services.moonshot_*]` base URLs: those route the built-in search/fetch tools, and a self-hosted router usually wants only the LLM path redirected.
+
+⚠️ **OAuth token exposure**: the scoped login's OAuth token is sent to whatever endpoint serves the request. Pointing `base_url` at an untrusted address hands that token to it; only use endpoints you control or trust.
+
+Every delegation logs the effective endpoint at info level (`subagent-kimi: delegating via <endpoint>`), and a failed run's error text names the endpoint it used.
+
 ## Session records
 
 `/kimi sessions` lists the scoped home's `session_index.jsonl` (kimi's own append-only index) — the sessions this agent's delegations created, never the user's personal sessions. The family core's browser settings section renders the same listing narrowed to the current session's workspace (only records whose `workDir` matches the session cwd), so one project's kimi sessions never surface in another project's session; `/kimi sessions` itself always shows the full list. The settings section (Settings → 本地 Agent) shows the harness auth status with a web-login button that surfaces the device-code URL; while a login is pending, the status keeps re-probing until the credentials land. An authenticated row adds a sign-out button that runs `/kimi logout`, so switching accounts is a sign-out then a fresh login.

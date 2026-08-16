@@ -88,17 +88,25 @@ export class ClaudeCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-claude: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Resolve the effective endpoint once per run: the cordis Config field
+    // wins, else the host environment's ANTHROPIC_BASE_URL (a STARTUP-time
+    // snapshot — a long-running dsh process does not see later shell exports),
+    // else the CLI's own default. Log it (without the key) so a failing
+    // delegation reports which endpoint it actually used.
+    const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
+    this.ctx.logger.info(`subagent-claude: delegating via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
     return startClaudeCliRun(request, {
       cwd: parentCwd,
       env: {
         CLAUDE_CONFIG_DIR: homeDir,
         ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
       },
+      endpointLabel: effectiveBaseUrl,
       permissionMode: this.permissionMode,
       disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
       spawn: spec => this.ctx.subprocess.spawn(spec),
       onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}): ${error instanceof Error ? error.message : String(error)}`)
+        this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
       },
       childSession,
       ctx: this.ctx,
@@ -110,8 +118,14 @@ export class ClaudeCliProvider implements SubagentProvider {
 export interface ClaudeCliRunSpec {
   /** Parent Session workspace; also the claude process cwd. */
   readonly cwd: string
-  /** Explicit environment layered after the shared credential scrub. */
+  /**
+   * Explicit environment layered after the shared credential scrub; an
+   * `undefined` value tombstones an inherited ambient entry, a string
+   * restores or overrides it.
+   */
   readonly env: Record<string, string>
+  /** Resolved endpoint label for diagnostics; absent means the CLI default. */
+  readonly endpointLabel?: string | undefined
   /** Permission mode passed to `claude -p`. */
   readonly permissionMode: 'skip' | 'normal'
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -294,11 +308,12 @@ export function startClaudeCliRun(
           throw new Error('subagent-claude: run cancelled locally')
         }
         if (outcome.exitCode !== 0) {
+          const via = spec.endpointLabel ?? 'claude default endpoint'
           spec.childSession?.append('turn/end', {
             turn: 1,
-            reason: { kind: 'error', error: { message: `claude -p exited with code ${String(outcome.exitCode)}`, code: 'UNKNOWN' } },
+            reason: { kind: 'error', error: { message: `claude -p exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
           })
-          throw new Error(`subagent-claude: claude -p exited with code ${String(outcome.exitCode)}`)
+          throw new Error(`subagent-claude: claude -p exited with code ${String(outcome.exitCode)} via ${via}`)
         }
         // The turn closes at the real settle moment, so the timing
         // projection's duration equals the actual CLI runtime. Voided: the

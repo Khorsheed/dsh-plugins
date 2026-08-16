@@ -37,6 +37,23 @@ dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-codex
 
 本包启动的每个 Codex 进程（登录、委派）都带着 harness 作用域目录（默认 `$DSH_HOME/local-agent/codex`）作为 `CODEX_HOME` 运行。config、credentials、sessions 全部留在那里，与用户自己的 `~/.codex` 互不干扰。登录只走 device-code：`/codex login` 把授权 URL 和验证码呈现在会话中、CLI 在后台轮询；用户授权后凭据写入作用域目录。首次启动会在作用域目录写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 在 macOS 上会解析到系统 keychain，既把凭据泄漏到作用域目录之外，也让本包的 `auth.json` 存在性检查失效。已存在的 config 保持原样不动。`/codex logout` 删除作用域内的 `auth.json`，之后重新登录即可换一个账号。
 
+## 自定义端点
+
+Codex 的 LLM 请求可以经自定义端点路由，但只能在作用域 `config.toml`（`$DSH_HOME/local-agent/codex/config.toml`）里**新增自定义 provider**——codex 拒绝覆盖内置 provider（`model_providers contains reserved built-in provider IDs`），且不认 `OPENAI_BASE_URL` 环境变量。原地编辑（预置逻辑从不覆盖已存在的 config）：
+
+```toml
+[model_providers.dsh-router]
+name = "dsh-router"
+base_url = "https://your-router.example/v1"
+model_provider = "dsh-router"
+```
+
+最后一行让委派选择该自定义 provider。文件其余内容（`cli_auth_credentials_store`、其他 provider）必须保留。
+
+⚠️ **凭据暴露**：codex 作用域的 `auth.json` token 会发送给处理请求的端点。把 `base_url` 指向不受信地址等于把该 token 交给它；只使用你控制或信任的端点。
+
+每次委派在 info 级别记录生效的自定义端点（`subagent-codex: delegating via <endpoint>`），失败运行的报错文本会点名它使用的端点。更完整的 provider 编辑器（端点 + 模型 + 认证键）另行规划。
+
 ## 会话记录
 
 `/codex sessions` 列出作用域目录下的 `sessions/YYYY/MM/DD/rollout-*.jsonl` rollout 文件（Codex 自有的 append-only 会话日志）——即本 agent 委派产生的会话，绝不是用户的私人会话。家族 core 的浏览器设置分区呈现同一份列表，并收窄到当前会话的工作区（只显示 `workDir` 与当前会话 cwd 一致的记录），一个项目的 codex 会话不会出现在另一个项目的会话里；`/codex sessions` 本身始终显示完整列表。其设置区（设置 → 本地 Agent）显示 harness 的认证状态，并提供网页登录按钮展示 device-code URL；登录进行中时状态会持续重新探测，直到凭据落地。已认证的行额外提供退出登录按钮（运行 `/codex logout`），换账号即先退出再重新登录。

@@ -33,6 +33,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { readCodexBaseUrl } from './provision.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -55,7 +56,7 @@ export class CodexCliProvider implements SubagentProvider {
     private readonly sandbox: CodexSandbox = 'workspace-write',
   ) {}
 
-  start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
+  async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
     if (parentCwd === undefined) {
       throw new Error('subagent-codex: the parent session has no working directory to run the CLI in')
@@ -89,14 +90,21 @@ export class CodexCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Resolve the effective custom endpoint from the scoped config.toml for
+    // diagnostics: codex reads it directly (a user manually editing the
+    // config to route through a custom provider is authoritative). Log it so
+    // a failing delegation reports which endpoint it actually used.
+    const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+    this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
     return startCodexCliRun(request, {
       cwd: parentCwd,
       env: { CODEX_HOME: homeDir },
+      endpointLabel: baseUrl,
       sandbox: this.sandbox,
       disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
       spawn: spec => this.ctx.subprocess.spawn(spec),
       onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}): ${error instanceof Error ? error.message : String(error)}`)
+        this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
       },
       childSession,
       ctx: this.ctx,
@@ -110,6 +118,8 @@ export interface CodexCliRunSpec {
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
   readonly env: Record<string, string>
+  /** Resolved endpoint label for diagnostics; absent means the CLI default. */
+  readonly endpointLabel?: string | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */
   readonly sandbox: CodexSandbox
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -297,11 +307,12 @@ export function startCodexCliRun(
           throw new Error('subagent-codex: run cancelled locally')
         }
         if (outcome.exitCode !== 0) {
+          const via = spec.endpointLabel ?? 'codex default endpoint'
           spec.childSession?.append('turn/end', {
             turn: 1,
-            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(outcome.exitCode)}`, code: 'UNKNOWN' } },
+            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
           })
-          throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)}`)
+          throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)} via ${via}`)
         }
         // The turn closes at the real settle moment, so the timing
         // projection's duration equals the actual CLI runtime. Voided: the

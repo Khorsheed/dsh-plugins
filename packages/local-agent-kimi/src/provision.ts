@@ -90,6 +90,26 @@ export async function provisionKimiConfig(homeDir: string, model: string): Promi
   return true
 }
 
+/**
+ * Read the scoped config's effective LLM endpoint: the
+ * `[providers."managed:kimi-code"].base_url` key, if present. A missing or
+ * malformed config yields undefined (the CLI falls back to its default
+ * endpoint). Used only for diagnostics — the config itself is authoritative,
+ * and a user-edited value is respected untouched.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns the configured base URL, or undefined when absent/unreadable.
+ */
+export async function readKimiBaseUrl(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  const match = /\[providers\."managed:kimi-code"\]\s*base_url\s*=\s*"([^"]*)"/.exec(text)
+  return match?.[1]
+}
+
 /** Permission rule block letting the kimi subagent run shell commands. */
 const KIMI_PERMISSION_BLOCK = `
 [[permission.rules]]

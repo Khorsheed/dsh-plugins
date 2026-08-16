@@ -37,6 +37,23 @@ Removing the bundle unregisters the harness, its `/<name>` command family, the t
 
 Every Codex process the bundle starts (login, delegation) runs with `CODEX_HOME` set to the harness's scoped home (default `$DSH_HOME/local-agent/codex`). Config, credentials, and sessions stay there, never colliding with the user's own `~/.codex`. Login is device-code only: `/codex login` surfaces the authorization URL and code in the session and the CLI polls in the background; credentials land in the scoped home when the user authorizes. The first start writes a minimal `config.toml` into the scoped home pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` resolves to the OS keychain on macOS, which would both leak credentials outside the scoped home and defeat this package's `auth.json` presence check. An existing config is respected untouched. `/codex logout` removes the scoped `auth.json`, so a later login authorizes a fresh account.
 
+## Custom endpoint
+
+Codex's LLM requests can be routed through a custom endpoint, but only by adding a **custom provider** to the scoped `config.toml` (`$DSH_HOME/local-agent/codex/config.toml`) — codex refuses to override a built-in provider (`model_providers contains reserved built-in provider IDs`), and the `OPENAI_BASE_URL` environment variable is not honored. Edit in place (provisioning never overwrites an existing config):
+
+```toml
+[model_providers.dsh-router]
+name = "dsh-router"
+base_url = "https://your-router.example/v1"
+model_provider = "dsh-router"
+```
+
+The last line selects the custom provider for delegations. Everything else in the file (`cli_auth_credentials_store`, any other providers) must be preserved.
+
+⚠️ **Credential exposure**: codex's scoped `auth.json` token is sent to whatever endpoint serves the request. Pointing `base_url` at an untrusted address hands that token to it; only use endpoints you control or trust.
+
+Every delegation logs the effective custom endpoint at info level (`subagent-codex: delegating via <endpoint>`), and a failed run's error text names the endpoint it used. A richer provider editor (endpoint + model + auth key) is planned separately.
+
 ## Session records
 
 `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` rollout files (Codex's own append-only session log) — the sessions this agent's delegations created, never the user's personal sessions. The family core's browser settings section renders the same listing narrowed to the current session's workspace (only records whose `workDir` matches the session cwd), so one project's codex sessions never surface in another project's session; `/codex sessions` itself always shows the full list. The settings section (Settings → 本地 Agent) shows the harness auth status with a web-login button that surfaces the device-code URL; while a login is pending, the status keeps re-probing until the credentials land. An authenticated row adds a sign-out button that runs `/codex logout`, so switching accounts is a sign-out then a fresh login.

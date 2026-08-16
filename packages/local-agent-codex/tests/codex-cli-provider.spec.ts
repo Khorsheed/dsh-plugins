@@ -156,7 +156,7 @@ describe('codex-cli-provider child session record', () => {
       descriptor: { version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex 建文件' },
     } as unknown as Parameters<CodexCliProvider['start']>[0]
 
-    expect(() => provider.start(request)).toThrow(/not spawned/)
+    await expect(provider.start(request)).rejects.toThrow(/not spawned/)
     expect(created).toHaveLength(1)
     expect(created[0]!.meta).toEqual({
       cwd: '/tmp',

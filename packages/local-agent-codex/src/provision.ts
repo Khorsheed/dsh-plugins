@@ -43,6 +43,34 @@ export async function provisionCodexConfig(homeDir: string): Promise<boolean> {
 }
 
 /**
+ * Read the scoped config's effective custom endpoint: the base_url of the
+ * `model_providers` entry named by `model_provider`, or the first custom
+ * provider's base_url when no selection exists (a user manually editing the
+ * config to route through a custom endpoint typically sets both). Only used
+ * for diagnostics — the config is authoritative and a user-edited value is
+ * respected untouched.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @returns the configured custom base URL, or undefined when none is set.
+ */
+export async function readCodexBaseUrl(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  const selected = /^model_provider\s*=\s*"([^"]*)"/m.exec(text)?.[1]
+  const providers = new Map<string, string>()
+  for (const match of text.matchAll(/\[model_providers\.([^\]]+)\]\s*base_url\s*=\s*"([^"]*)"/g)) {
+    providers.set(match[1]!.replace(/^"(.*)"$/, '$1'), match[2]!)
+  }
+  if (selected !== undefined && providers.has(selected)) return providers.get(selected)
+  // No selection: any single custom provider is the endpoint in effect.
+  if (providers.size === 1) return [...providers.values()][0]
+  return undefined
+}
+
+/**
  * Sign out of the scoped account: remove the credential file, so `/<name>
  * status` reports not authenticated and the next login authorizes a fresh
  * account. With `cli_auth_credentials_store = "file"` the credentials live

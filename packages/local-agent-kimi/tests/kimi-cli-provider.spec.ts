@@ -149,8 +149,7 @@ describe('kimi-cli-provider child session record', () => {
       descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi 建文件' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
-    const promise = () => provider.start(request)
-    expect(promise).toThrow(/not spawned/)
+    await expect(provider.start(request)).rejects.toThrow(/not spawned/)
     expect(created).toHaveLength(1)
     // The meta the provider passes is what the real store folds into the
     // durable header that the 子代理 enumeration keys on.
@@ -180,6 +179,6 @@ describe('kimi-cli-provider child session record', () => {
       descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi 建文件' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
-    expect(() => provider.start(request)).toThrow(/not spawned/)
+    await expect(provider.start(request)).rejects.toThrow(/not spawned/)
   })
 })
