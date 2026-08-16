@@ -429,6 +429,18 @@ export function startCodexCliRun(
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
+  // Abort branch: the moment the run is cancelled locally, the attempt settles
+  // immediately — settleRunResult observes `cancelled()` and resolves the
+  // result with 'aborted' WITHOUT waiting for the child to exit. The actual
+  // process kill is dispose's job (SIGTERM → grace → SIGKILL teardown ladder),
+  // per the subprocessRunHandle contract: requestCancel settles the result,
+  // teardown reaps the process. Without this branch the result would only
+  // settle after the child exits, and dispose (which runs after the result)
+  // would never fire — a dead wait on a long-running CLI.
+  const abortBranch = new Promise<never>((_, reject) => {
+    runAbort.signal.addEventListener('abort', () => reject(new Error('subagent-codex: run cancelled locally')), { once: true })
+  })
+
   const processFailure: Promise<never> = child.done.then(
     outcome => Promise.reject(new Error(
       'subagent-codex: CLI exited before the run settled '
@@ -448,48 +460,59 @@ export function startCodexCliRun(
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
+  // Captured from the child's exit so the error turn/end can name the real
+  // code without the settle chain re-deriving it.
+  let exitCode: number | null = null
+
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: () => Promise.race([
       child.done.then((outcome) => {
-        // Every terminal path closes the turn so the timing window never
-        // stays open on a failed or cancelled run: success settles
-        // 'completed', a non-zero exit 'error', and a locally cancelled run
-        // 'aborted'. The turn/end timestamp is the real settle moment.
-        if (runAbort.signal.aborted) {
-          spec.childSession?.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-          throw new Error('subagent-codex: run cancelled locally')
-        }
         if (outcome.exitCode !== 0) {
           const via = spec.endpointLabel ?? 'codex default endpoint'
-          spec.childSession?.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
-          })
+          exitCode = outcome.exitCode
           throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)} via ${via}`)
         }
-        // The turn closes at the real settle moment, so the timing
-        // projection's duration equals the actual CLI runtime. Voided: the
-        // run result settles with the child exit, and the append is
-        // diagnostic-only (the subagent record degrades to a timing-less
-        // final-text view when the child session is absent).
-        const parsed = parseCodexJsonStream(output)
-        spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
-        void appendCodexResponse(spec, task, turn, {
-          lines: parsed.lines,
-          output: collectOutput(),
-          ...parsed.usage === undefined ? {} : { usage: parsed.usage },
-        })
-        if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
       processFailure,
+      abortBranch,
     ]),
     collectOutput,
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
     onAbort,
+  }).then((settled) => {
+    // Every terminal path closes the turn so the timing window never stays
+    // open on a failed or cancelled run: success settles 'completed', a
+    // non-zero exit 'error', and a locally cancelled run 'aborted'. The
+    // turn/end timestamp is the real settle moment.
+    if (spec.childSession !== undefined) {
+      if (settled.stopReason === 'completed') {
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+      } else if (settled.stopReason === 'aborted') {
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+      } else {
+        spec.childSession.append('turn/end', {
+          turn,
+          reason: { kind: 'error', error: { message: `codex exec exited with code ${String(exitCode)}`, code: 'UNKNOWN' } },
+        })
+      }
+    }
+    return settled
   })
+
+  // After the child EXITS — however it ended (completed, killed by dispose, or
+  // crashed) — mirror whatever the NDJSON stream already produced into the dsh
+  // subagent session, so a cancelled round still preserves its partial work
+  // (reasoning, commands, replies) and real token usage. The thread id is
+  // recorded even on abort so the partial thread stays resumable. Waits for
+  // the settle chain first (so turn/end is already appended) AND for the
+  // process to actually exit (so stdout is drained before parsing).
+  void result.then(() => child.done).then(
+    () => mirrorCodexAfterExit(spec, task, turn, output),
+    () => { /* child.done rejects only on infra faults; nothing to mirror */ },
+  )
 
   return Promise.resolve(subprocessRunHandle({
     // A session-backed run's id is the child session id (the seam's local-run
@@ -552,4 +575,44 @@ async function appendCodexResponse(
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }
+}
+
+/**
+ * Mirror the codex NDJSON stream into the child session AFTER the CLI process
+ * has exited, whatever its stop reason. A cancelled or failed round still
+ * preserves the events the stream already emitted (reasoning, commands,
+ * replies, usage) instead of leaving the child blank — the run result settles
+ * 'aborted'/'error' at the cancel moment, but codex may have produced content
+ * before the kill landed. Also records the thread id (fresh rounds) so a
+ * later resume can continue the partial thread.
+ * @param spec - the run spec carrying the child session and host context.
+ * @param task - the one-shot task text (the user prompt).
+ * @param turn - the round's turn number.
+ * @param output - the collected NDJSON stdout.
+ */
+async function mirrorCodexAfterExit(
+  spec: CodexCliRunSpec,
+  task: string,
+  turn: number,
+  output: string,
+): Promise<void> {
+  if (spec.childSession === undefined || spec.ctx === undefined) return
+  try {
+    const parsed = parseCodexJsonStream(output)
+    if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
+    if (parsed.lines.length === 0) return
+    await appendCodexResponse(spec, task, turn, {
+      lines: parsed.lines,
+      output: collectOutputBlocks(parsed.text),
+      ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+    })
+  } catch (error) {
+    spec.onError?.(thrown(error), 'error')
+  }
+}
+
+/** Build the run-output blocks from the final codex answer text. */
+function collectOutputBlocks(text: string | undefined): ContentBlock[] {
+  const trimmed = text?.trim()
+  return trimmed === undefined || trimmed === '' ? [] : [{ type: 'text', text: trimmed }]
 }

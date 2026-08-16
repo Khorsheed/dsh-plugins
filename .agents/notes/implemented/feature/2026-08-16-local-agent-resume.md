@@ -39,6 +39,16 @@
 - **codex 镜像全事件**：`reasoning`→`reasoning` 块、`agent_message`→文本、`command_execution`/`web_search_call`/`function_call_output`→工具行；最终 `agent_message` 为运行输出，usage 挂末条。流天然按轮增量。
 - **claude 换 stream-json**：argv 改为 `--verbose --output-format stream-json`（CLI 对 `--print`+stream-json 强制 --verbose）；解析 system/assistant/user/result 事件，`thinking`→`reasoning` 块、`tool_use`+`tool_result`→工具行、`text`→回复；session_id 来自 system init，usage 来自 result 事件。
 
+## 修 one-shot 委派中止链路（死等 + 内容保留）
+
+**死等链路根因（3080 实盘复盘确认）**：父回合中止时，三个 provider 的 `requestCancel` 只翻 `runAbort` 标志位——`attempt` 的 race 只有 `child.done`/`processFailure` 两个分支，都等子进程退出才 settle；而 `settleRunResult` 的 `cancelled()` 在 `await attempt()` **之后**才检查，所以 abort 时 result 永不 settle。杀进程的 `dispose`（SIGTERM→grace→SIGKILL 梯子）又排在 result settle 之后，形成死等；CLI 子进程全程收不到任何信号。kimi/claude 之前看似能停是恰好快跑完自然退出，codex 长请求挂了 3.5 分钟、父回合卡死。
+
+**官方契约依据**：`out-of-process.ts` 的 `subprocessRunHandle` 注释写明 dispose 的职责——"removes the abort listener, settles local cancellation — there is no assumption the child cooperates — and then awaits the backend's teardown to actual exit"。即 requestCancel 让 result **立即** settle，teardown 异步杀进程。本修复对齐该契约：三个 provider 的 attempt race 加 `abortBranch`（`runAbort` 触发即 reject），`settleRunResult` 观察到 `cancelled()` 后立即以 `'aborted'` settle；杀进程留在 dispose 的梯子里。
+
+**中止也保留内容**：原来镜像/回写只在 `completed` 时跑，中止轮只落 `turn/end`——子会话空白、token 为 0，但 CLI 侧其实已产出内容（kimi/claude 那次是自然跑完的完整答案，被丢弃）。改为：镜像/回写挂在 `result.then(() => child.done).then(...)` 上——**先等 settle 链写好 turn/end、再等子进程真正退出**（stdout/wire 收完），然后无论 stopReason 都回写已产出内容和 usage（kimi 读 wire、codex 解析已收 NDJSON、claude 解析已收 stream-json）；`turn/end` 的 reason 保持 aborted/error 不变。kimi 的 mirror offset、codex 的 threadId、claude 的 sessionId 都在 abort/error 轮也记录，保证部分成果可继续 resume。**注意**：镜像链必须挂在 `result.then(() => child.done)` 而不是直接 `child.done.then`——直接挂会抢在 settle 链写 turn/end 之前 append，导致持久化批次缺 turn/end。
+
+**验收标准**：父回合中止后工具结果秒回（result 立即 'aborted' settle）；子进程在 dispose 的 SIGTERM→grace→SIGKILL 内退出；中止轮子会话含已产出内容 + usage + 正确的 aborted/parent turn/end；进程已自然退出时 dispose 幂等不报错。测试用 10 分钟假 CLI（`done` 永不自行 resolve，`terminate()` 才释放）验证 abort 后 <1s settle、dispose 杀进程、幂等、中止轮内容保留。
+
 ## 后续
 
 - stop registry 与委派 registry 共用同一记录结构（active 子进程登记）。

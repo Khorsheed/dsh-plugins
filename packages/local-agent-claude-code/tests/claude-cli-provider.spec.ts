@@ -108,10 +108,14 @@ describe('claude-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(result.output).toEqual([{ type: 'text', text: 'Task complete.' }])
+    // The mirror runs after the child exits (fire-and-forget), so let it
+    // finish before asserting the transcript was appended.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     // The stream transcript mirrors the tool call and the final text as
     // separate assistant steps; usage rides the last one.
-    expect(assistant).toHaveLength(2)
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi → hi' }])
     expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
     expect(assistant[0]!.data.usage).toBeUndefined()
@@ -308,5 +312,107 @@ describe('claude-cli-provider resume lock', () => {
     expect(spawned).toBe(1)
     ctx.localAgent.releaseResumeLock('child-run-1')
     expect(locked).toBeUndefined()
+  })
+})
+
+describe('claude-cli-provider abort path', () => {
+  /**
+   * A 10-minute fake CLI that never exits on its own: emits a partial
+   * stream-json (a tool_use + a thinking block), then hangs until terminate()
+   * releases its `done`.
+   */
+  function hangingChild(): {
+    handle: SubprocessHandle
+    done: Promise<{ exitCode: number; signal: null }>
+    terminated: () => boolean
+  } {
+    const partialStream = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 's-abort' }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'thinking', thinking: '先想想怎么做。' }] } }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'echo hi' } }] } }),
+    ].join('\n')
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    stderr.push('')
+    stderr.push(null)
+    let resolveDone: (outcome: { exitCode: number; signal: null }) => void = () => {}
+    let terminated = false
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => {
+      resolveDone = resolve
+    })
+    const handle: SubprocessHandle = {
+      pid: 4242,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => {
+        terminated = true
+        resolveDone({ exitCode: 0, signal: null })
+      },
+      waitForExit: async () => true,
+    }
+    // Emit the partial stream soon after spawn (a real process writes while
+    // running), then hang.
+    setTimeout(() => {
+      stdout.push(partialStream + '\n')
+      stdout.push(null)
+    }, 10)
+    return { handle, done, terminated: () => terminated }
+  }
+
+  it('settles the result immediately on abort and mirrors the partial stream-json after the kill', async () => {
+    const child = Session.create(SessionId('child-abort-claude'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const hanging = hangingChild()
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startClaudeCliRun(request, {
+      cwd: '/tmp',
+      env: { CLAUDE_CONFIG_DIR: '/tmp/claude-home' },
+      permissionMode: 'skip',
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      ctx,
+    })
+    // Let the fake's partial stream reach the provider's 'data' listener before
+    // aborting, so the abort mirror has content to preserve.
+    await new Promise(resolve => { setTimeout(resolve, 50) })
+
+    const settledAt = Date.now()
+    controller.abort()
+    const result = await run.result
+    expect(result.stopReason).toBe('aborted')
+    expect(Date.now() - settledAt).toBeLessThan(1_000)
+    expect(hanging.terminated()).toBe(false)
+
+    await run.dispose()
+    expect(hanging.terminated()).toBe(true)
+    await expect(run.dispose()).resolves.toBeUndefined()
+
+    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+
+    // The partial stream (thinking + tool call) is mirrored after the kill.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    expect(assistant[0]!.data.message.content).toEqual([{ type: 'reasoning', text: '先想想怎么做。' }])
+    expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi' }])
+    await hanging.done
   })
 })

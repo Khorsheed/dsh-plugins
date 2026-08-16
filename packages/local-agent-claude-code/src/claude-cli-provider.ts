@@ -482,6 +482,18 @@ export function startClaudeCliRun(
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
+  // Abort branch: the moment the run is cancelled locally, the attempt settles
+  // immediately — settleRunResult observes `cancelled()` and resolves the
+  // result with 'aborted' WITHOUT waiting for the child to exit. The actual
+  // process kill is dispose's job (SIGTERM → grace → SIGKILL teardown ladder),
+  // per the subprocessRunHandle contract: requestCancel settles the result,
+  // teardown reaps the process. Without this branch the result would only
+  // settle after the child exits, and dispose (which runs after the result)
+  // would never fire — a dead wait on a long-running CLI.
+  const abortBranch = new Promise<never>((_, reject) => {
+    runAbort.signal.addEventListener('abort', () => reject(new Error('subagent-claude: run cancelled locally')), { once: true })
+  })
+
   const processFailure: Promise<never> = child.done.then(
     outcome => Promise.reject(new Error(
       'subagent-claude: CLI exited before the run settled '
@@ -501,53 +513,64 @@ export function startClaudeCliRun(
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
+  let exitCode: number | null = null
+
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: () => Promise.race([
       child.done.then((outcome) => {
-        // Every terminal path closes the turn so the timing window never
-        // stays open on a failed or cancelled run.
-        if (runAbort.signal.aborted) {
-          spec.childSession?.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-          throw new Error('subagent-claude: run cancelled locally')
-        }
         if (outcome.exitCode !== 0) {
           const via = spec.endpointLabel ?? 'claude default endpoint'
-          spec.childSession?.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: `claude -p exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
-          })
+          exitCode = outcome.exitCode
           throw new Error(`subagent-claude: claude -p exited with code ${String(outcome.exitCode)} via ${via}`)
         }
-        // The turn closes at the real settle moment, so the timing
-        // projection's duration equals the actual CLI runtime. Voided: the
-        // run result settles with the child exit, and the append is
-        // diagnostic-only (the subagent record degrades to a timing-less
-        // final-text view when the child session is absent).
-        const parsed = parseClaudeStreamJson(output)
-        if (parsed.error !== undefined) {
-          spec.childSession?.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: parsed.error, code: 'UNKNOWN' } },
-          })
-          throw new Error(`subagent-claude: ${parsed.error}`)
-        }
-        spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
-        void appendClaudeResponse(spec, task, turn, {
-          lines: parsed.lines,
-          output: collectOutput(),
-          ...parsed.usage === undefined ? {} : { usage: parsed.usage },
-        })
-        if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
       processFailure,
+      abortBranch,
     ]),
     collectOutput,
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
     onAbort,
+  }).then((settled) => {
+    // Every terminal path closes the turn so the timing window never stays
+    // open on a failed or cancelled run. The turn/end timestamp is the real
+    // settle moment; an in-stream error result or a non-zero exit settles
+    // 'error', a locally cancelled run 'aborted'.
+    if (spec.childSession !== undefined) {
+      if (settled.stopReason === 'completed') {
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+      } else if (settled.stopReason === 'aborted') {
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+      } else {
+        const parsed = parseClaudeStreamJson(output)
+        spec.childSession.append('turn/end', {
+          turn,
+          reason: {
+            kind: 'error',
+            error: {
+              message: parsed.error ?? `claude -p exited with code ${String(exitCode)}`,
+              code: 'UNKNOWN',
+            },
+          },
+        })
+      }
+    }
+    return settled
   })
+
+  // After the child EXITS — however it ended (completed, killed by dispose, or
+  // crashed) — mirror whatever the stream-json already produced into the dsh
+  // subagent session, so a cancelled round still preserves its partial work
+  // (thinking, tool calls with results, replies) and real token usage. The
+  // session id is recorded even on abort so the partial session stays
+  // resumable. Waits for the settle chain first (so turn/end is already
+  // appended) AND for the process to actually exit (so stdout is drained).
+  void result.then(() => child.done).then(
+    () => mirrorClaudeAfterExit(spec, task, turn, output),
+    () => { /* child.done rejects only on infra faults; nothing to mirror */ },
+  )
 
   return Promise.resolve(subprocessRunHandle({
     // A session-backed run's id is the child session id (the seam's local-run
@@ -609,6 +632,41 @@ async function appendClaudeResponse(
       step += 1
     }
     await spec.ctx.get('sessionPersistence')?.append(spec.childSession.id, spec.childSession.events)
+  } catch (error) {
+    spec.onError?.(thrown(error), 'error')
+  }
+}
+
+/**
+ * Mirror the claude stream-json into the child session AFTER the CLI process
+ * has exited, whatever its stop reason. A cancelled or failed round still
+ * preserves the events the stream already emitted (thinking, tool calls with
+ * results, replies, usage) instead of leaving the child blank — the run result
+ * settles 'aborted'/'error' at the cancel moment, but claude may have produced
+ * content before the kill landed. Also records the session id (fresh rounds)
+ * so a later resume can continue the partial session.
+ * @param spec - the run spec carrying the child session and host context.
+ * @param task - the one-shot task text (the user prompt).
+ * @param turn - the round's turn number.
+ * @param output - the collected stream-json stdout.
+ */
+async function mirrorClaudeAfterExit(
+  spec: ClaudeCliRunSpec,
+  task: string,
+  turn: number,
+  output: string,
+): Promise<void> {
+  if (spec.childSession === undefined || spec.ctx === undefined) return
+  try {
+    const parsed = parseClaudeStreamJson(output)
+    if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
+    if (parsed.lines.length === 0) return
+    const trimmed = parsed.text?.trim()
+    await appendClaudeResponse(spec, task, turn, {
+      lines: parsed.lines,
+      output: trimmed === undefined || trimmed === '' ? [] : [{ type: 'text', text: trimmed }],
+      ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+    })
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }

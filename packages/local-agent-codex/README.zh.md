@@ -106,6 +106,6 @@ Codex 子会话是委派 Session 工作区内一个全新的一次性 `codex exe
 ## 已知限制与后续工作
 
 - **登录需要一次交互**——device-code URL 出现在会话中；只有用户在浏览器完成授权后凭据才会出现。没有 API key 路径。
-- **完整事件流镜像**——dsh 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` 事件折叠为 `reasoning` 块、`agent_message` 事件为回复文本、`command_execution`/`web_search_call`/`function_call_output` 事件为工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。流天然按轮增量，续聊轮各自追加自己的 turn，不会重复。
+- **完整事件流镜像**——dsh 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` 事件折叠为 `reasoning` 块、`agent_message` 事件为回复文本、`command_execution`/`web_search_call`/`function_call_output` 事件为工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。流天然按轮增量，续聊轮各自追加自己的 turn，不会重复。中止运行会让工具结果立即 settle，并仍然镜像已收到的事件——被取消的轮保留部分推理/命令与真实用量。
 - **`codex exec` 非交互运行**——沙箱策略本需审批的动作会被拒绝而非弹提示；`sandbox` 插件 config（默认 `workspace-write`）选择策略。
 - **headless 注意**——`/codex` 命令与标题栏下拉需要 Web 会话；`--profile headless` 仍可通过挂载工具行的组合进行委派。

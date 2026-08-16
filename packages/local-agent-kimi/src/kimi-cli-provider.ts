@@ -264,6 +264,41 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 }
 
 /**
+ * Mirror the kimi session's transcript into the child session AFTER the CLI
+ * process has exited, whatever its stop reason. A cancelled or failed round
+ * still preserves whatever the wire already recorded (partial answer, tool
+ * activity, usage) instead of leaving the child blank — the run result
+ * settles 'aborted'/'error' at the cancel moment, but the CLI may have
+ * produced content before the kill landed, and that content belongs in the
+ * 子代理 surface with its real token accounting. Also records the delegation
+ * (fresh rounds) so a later resume can continue the session.
+ * @param spec - the run spec carrying the child session, home, and context.
+ * @param stderr - the collected CLI stderr (the resume hint lives here).
+ */
+async function mirrorKimiAfterExit(
+  spec: KimiCliRunSpec,
+  stderr: string,
+): Promise<void> {
+  if (spec.childSession === undefined || spec.homeDir === undefined || spec.ctx === undefined) return
+  try {
+    const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
+    if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
+    // A resume round mirrors only the delta after the recorded offset; a
+    // fresh round starts from zero. The mirror returns the new total
+    // transcript-line count, which becomes the next round's offset.
+    const fromLines = spec.resume === undefined
+      ? 0
+      : spec.ctx.localAgent.kimiMirroredLines(spec.childSession.id) ?? 0
+    const total = await mirrorKimiSession(
+      spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, fromLines,
+    )
+    spec.ctx.localAgent.setKimiMirroredLines(spec.childSession.id, total)
+  } catch (error) {
+    spec.onError?.(thrown(error), 'error')
+  }
+}
+
+/**
  * Start the real `kimi -p` (fresh) or `kimi -S session_<id> -p` (resume)
  * child and publish its run. The kimi response is printed to stdout; stderr
  * is inherited for diagnostics. The run id is the child session id for a
@@ -322,6 +357,18 @@ export function startKimiCliRun(
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
+  // Abort branch: the moment the run is cancelled locally, the attempt settles
+  // immediately — settleRunResult observes `cancelled()` and resolves the
+  // result with 'aborted' WITHOUT waiting for the child to exit. The actual
+  // process kill is dispose's job (SIGTERM → grace → SIGKILL teardown ladder),
+  // per the subprocessRunHandle contract: requestCancel settles the result,
+  // teardown reaps the process. Without this branch the result would only
+  // settle after the child exits, and dispose (which runs after the result)
+  // would never fire — a dead wait on a long-running CLI.
+  const abortBranch = new Promise<never>((_, reject) => {
+    runAbort.signal.addEventListener('abort', () => reject(new Error('subagent-kimi: run cancelled locally')), { once: true })
+  })
+
   const processFailure: Promise<never> = child.done.then(
     outcome => Promise.reject(new Error(
       'subagent-kimi: CLI exited before the run settled '
@@ -348,16 +395,16 @@ export function startKimiCliRun(
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
       processFailure,
+      abortBranch,
     ]),
     collectOutput,
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
     onAbort,
-  }).then(async (settled) => {
+  }).then((settled) => {
     // The turn closes at the real settle moment, so the timing projection's
-    // duration equals the actual CLI runtime; the mirror after it carries the
-    // transcript into the already-closed turn. Every terminal path closes the
+    // duration equals the actual CLI runtime. Every terminal path closes the
     // window — a failed or cancelled run settles 'error'/'aborted' instead of
     // leaving the turn open with a distorted tiny duration.
     if (spec.childSession !== undefined) {
@@ -372,35 +419,21 @@ export function startKimiCliRun(
         })
       }
     }
-    // Mirror the kimi session's transcript delta into the dsh subagent session
-    // so the delegation is visible in the standard 子代理 surface. Runs AFTER
-    // the result race settles — an awaited mirror inside the race branch would
-    // lose to processFailure and fail the run with a spurious 'CLI exited
-    // before the run settled' error. A resume round mirrors only the lines
-    // after the already-mirrored offset, keyed by the recorded CLI session id
-    // (kimi prints its `-r session_<id>` hint on a fresh `-p`, not necessarily
-    // on a resume, so the intent's recorded id is authoritative).
-    if (settled.stopReason === 'completed'
-      && spec.childSession !== undefined && spec.homeDir !== undefined && spec.ctx !== undefined) {
-      try {
-        const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
-        if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
-        // A resume round mirrors only the delta after the recorded offset; a
-        // fresh round starts from zero. The mirror returns the new total
-        // transcript-line count, which becomes the next round's offset.
-        const fromLines = spec.resume === undefined
-          ? 0
-          : spec.ctx.localAgent.kimiMirroredLines(spec.childSession.id) ?? 0
-        const total = await mirrorKimiSession(
-          spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, fromLines,
-        )
-        spec.ctx.localAgent.setKimiMirroredLines(spec.childSession.id, total)
-      } catch (error) {
-        spec.onError?.(thrown(error), 'error')
-      }
-    }
     return settled
   })
+
+  // After the child EXITS — however it ended (completed, killed by dispose, or
+  // crashed) — mirror whatever the kimi session already produced into the dsh
+  // subagent session, so a cancelled round still preserves its partial work
+  // and real token usage instead of leaving the child blank. The mirror reads
+  // the wire file, so it only reflects what kimi flushed before the kill.
+  // Waits for the settle chain first (so turn/end is already appended) AND for
+  // the process to actually exit (so the wire file is complete) before
+  // reading it.
+  void result.then(() => child.done).then(
+    () => mirrorKimiAfterExit(spec, stderr),
+    () => { /* child.done rejects only on infra faults; nothing to mirror */ },
+  )
 
   return Promise.resolve(subprocessRunHandle({
     // A session-backed run's id is the child session id (the seam's local-run

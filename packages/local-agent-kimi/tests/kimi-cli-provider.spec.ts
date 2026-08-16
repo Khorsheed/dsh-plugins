@@ -78,8 +78,11 @@ describe('kimi-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(result.output).toEqual([{ type: 'text', text: '• done' }])
-    // the mirror appended the transcript after settlement
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    // The mirror runs after the child exits (fire-and-forget), so let it
+    // finish before asserting the transcript was appended.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(append).toHaveBeenCalledWith(child.id, child.events)
     await done
@@ -423,5 +426,140 @@ describe('kimi-cli-provider resume round', () => {
     // Settle released the lock exactly once for this child.
     expect(releases).toEqual(['child-run-1'])
     await run.dispose()
+  })
+})
+
+describe('kimi-cli-provider abort path', () => {
+  /**
+   * A 10-minute fake CLI that never exits on its own: emits some stdout/stderr
+   * (content kimi would have produced), then hangs until terminate() releases
+   * its `done`. Mirrors a long-running LLM request the parent round aborts.
+   */
+  function hangingChild(sessionId: string): {
+    handle: SubprocessHandle
+    done: Promise<{ exitCode: number; signal: null }>
+    resolveDone: (outcome: { exitCode: number; signal: null }) => void
+    terminated: () => boolean
+  } {
+    const stdout = new Readable({ read() {} })
+    stdout.push('• partial answer\n')
+    stdout.push(null)
+    const stderr = new Readable({ read() {} })
+    stderr.push(`kimi version 0.33.0\nTo resume this session: kimi -r session_${sessionId}\n`)
+    stderr.push(null)
+    let resolveDone: (outcome: { exitCode: number; signal: null }) => void = () => {}
+    let terminated = false
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => {
+      resolveDone = resolve
+    })
+    const handle: SubprocessHandle = {
+      pid: 4242,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      // A real process exits when the teardown ladder kills it; the fake
+      // resolves `done` on terminate (the SIGTERM → grace → SIGKILL ladder's
+      // terminal step in the real subprocess seam).
+      terminate: () => {
+        terminated = true
+        resolveDone({ exitCode: 0, signal: null })
+      },
+      waitForExit: async () => true,
+    }
+    return { handle, done, resolveDone, terminated: () => terminated }
+  }
+
+  it('settles the result immediately on abort and mirrors the partial content after the kill', async () => {
+    const homeDir = wireHome('run-1')
+    const child = Session.create(SessionId('child-abort-1'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const hanging = hangingChild('run-1')
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startKimiCliRun(request, {
+      cwd: '/tmp',
+      env: { KIMI_CODE_HOME: homeDir },
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      homeDir,
+      ctx,
+    })
+
+    // Abort the parent round: the result must settle promptly — NOT wait for
+    // the (never-exiting) CLI child.
+    const settledAt = Date.now()
+    controller.abort()
+    const result = await run.result
+    const settleMs = Date.now() - settledAt
+    expect(result.stopReason).toBe('aborted')
+    expect(settleMs).toBeLessThan(1_000)
+    // The abort must not have killed the child yet — dispose owns the kill.
+    expect(hanging.terminated()).toBe(false)
+
+    // Dispose reaps the process (the SIGTERM → grace → SIGKILL ladder); the
+    // fake child exits when terminated.
+    await run.dispose()
+    expect(hanging.terminated()).toBe(true)
+    // dispose is idempotent: a second call must not throw or re-kill.
+    await expect(run.dispose()).resolves.toBeUndefined()
+
+    // The aborted round's turn/end records the parent cancellation.
+    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+
+    // Once the child has exited, the partial content is mirrored into the
+    // child session (with its usage) instead of leaving it blank.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '任务完成。' }])
+    expect(assistant[0]!.data.usage).toBeUndefined()
+    expect(append).toHaveBeenCalled()
+    await hanging.done
+  })
+
+  it('settles aborted without a child session record and dispose is a no-op', async () => {
+    const homeDir = wireHome('run-1')
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const hanging = hangingChild('run-1')
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startKimiCliRun(request, {
+      cwd: '/tmp',
+      env: { KIMI_CODE_HOME: homeDir },
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      homeDir,
+      ctx,
+    })
+    controller.abort()
+    const result = await run.result
+    expect(result.stopReason).toBe('aborted')
+    await expect(run.dispose()).resolves.toBeUndefined()
+    await expect(run.dispose()).resolves.toBeUndefined()
+    await hanging.done
   })
 })

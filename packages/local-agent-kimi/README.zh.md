@@ -95,7 +95,7 @@ Kimi 子会话是委派 Session 工作区内一个全新的一次性 `kimi -p` �
 
 ### 委派记账
 
-子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口。镜像达到可做 harness 对比的保真度：过滤 kimi 自动权限模式的 `<system-reminder>` 用户消息、工具调用带参数渲染（`[工具 WebSearch] 查询词`）、每个工具结果按 id 配回自己的调用、每行都带 wire 轮次号、当轮最后的 assistant 消息携带**求和**后的 token 用量（`inputOther`→未缓存输入、`output`→输出、`inputCacheRead`→缓存读取、`inputCacheCreation`→缓存写入）。用量是该轮 delta 内所有 `usage.record` 之和——每条记录是一次 LLM 请求的口径、非累计——`tokenUsage` 投影据此统计委派。每轮续聊都在各自递增的轮次号下重复这一记账。
+子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口。镜像达到可做 harness 对比的保真度：过滤 kimi 自动权限模式的 `<system-reminder>` 用户消息、工具调用带参数渲染（`[工具 WebSearch] 查询词`）、每个工具结果按 id 配回自己的调用、每行都带 wire 轮次号、当轮最后的 assistant 消息携带**求和**后的 token 用量（`inputOther`→未缓存输入、`output`→输出、`inputCacheRead`→缓存读取、`inputCacheCreation`→缓存写入）。中止运行会让工具结果**立即** settle（杀进程交给 dispose 的 SIGTERM→grace→SIGKILL 梯子），并仍然镜像 wire 已记录的内容——被取消的轮保留部分成果与真实用量。用量是该轮 delta 内所有 `usage.record` 之和——每条记录是一次 LLM 请求的口径、非累计——`tokenUsage` 投影据此统计委派。每轮续聊都在各自递增的轮次号下重复这一记账。
 
 ## 兼容性
 
