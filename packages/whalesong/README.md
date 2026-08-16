@@ -12,15 +12,15 @@ Pure browser-side behavior over the session list, with a tiny config-serving hos
 One command, no checkout, no manual config:
 
 ```sh
-dsh plugin --profile web add @deepseek-ai/dsh-whalesong
+dsh plugin --profile web add @khorsheed/dsh-whalesong
 ```
 
 Then restart the web instance.
-The bundle is additive: it mounts only its own entry row, so `dsh plugin --profile web remove @deepseek-ai/dsh-whalesong` restores the previous composition exactly.
+The bundle is additive: it mounts only its own entry row, so `dsh plugin --profile web remove @khorsheed/dsh-whalesong` restores the previous composition exactly.
 
 ## What it does
 
-- **favicon waterline bubbles (primary indicator)**: while any session runs, the tab icon becomes the whale bobbing at a waterline with three rising bubbles (SVG frames, no canvas); it restores the original icon when everything finishes.
+- **favicon waterline bubbles (primary indicator)**: while any session runs, the tab icon becomes the whale bobbing at a waterline with three rising bubbles (SVG frames, no canvas); when idle, the tab icon stays a **static whale colored to the page palette** (black on light pages, white on dark pages) instead of restoring the stock icon — the stock icon's `prefers-color-scheme` follows the OS and renders an invisible white whale on a light page with a dark system. Only a failed fetch of the stock artwork falls back to the previous icon; a transient failure retries on the next activation edge or theme switch.
 - **sidebar droplets**: three DeepSeek-blue droplets rise from the sidebar whale's blowhole (DOM overlay anchored to the official logo; a fixed rail-corner fallback when no anchor exists).
 - **chimes**: completion = three rising sine glides (380→520→700→990 Hz); blocked = the same 440→660 Hz rise twice (WebAudio synthesis, no audio assets). Under `prefers-reduced-motion` the animation hides and the chimes go silent.
 
@@ -47,7 +47,7 @@ src/client/index.ts     cordis client plugin: inject ['sessions'], ctx.effect ow
 src/client/config.ts    config sync: fetch + 3 s poll; no-fetch surfaces keep the default
 src/client/controller.ts  runtime controller: idempotent enabled/disabled state machine + 2.5 s reconcile poll
 src/client/status.ts    pure diff of session-list snapshots into whalesong events
-src/client/favicon.ts   favicon animation: SVG frame data-URLs, original restored on stop
+src/client/favicon.ts   favicon animation: SVG frame data-URLs; the page-matched static whale stays when idle
 src/client/whalesong-overlay.ts  fixed overlay anchored to the official sidebar logo
 src/client/sound.ts     WebAudio oscillator chimes (autoplay-unlock on first gesture)
 src/client/whalesong.module.css  droplet keyframes + on/off + reduced-motion rules

@@ -12,15 +12,15 @@ Whalesong 是 dsh Web GUI 的可选状态氛围组合包:只要有会话在运�
 一条命令,无需 checkout、无需手动配置:
 
 ```sh
-dsh plugin --profile web add @deepseek-ai/dsh-whalesong
+dsh plugin --profile web add @khorsheed/dsh-whalesong
 ```
 
 然后重启 web 实例。
-组合包是纯增量的:只挂载自己的入口行,执行 `dsh plugin --profile web remove @deepseek-ai/dsh-whalesong` 即可精确还原原组合。
+组合包是纯增量的:只挂载自己的入口行,执行 `dsh plugin --profile web remove @khorsheed/dsh-whalesong` 即可精确还原原组合。
 
 ## 功能
 
-- **favicon 水线气泡(主指示)**:任一会话运行期间,标签页图标变成鲸鱼在水线下浮动、三颗气泡上升(SVG 帧,无 canvas);全部结束后恢复原图标。
+- **favicon 水线气泡(主指示)**:任一会话运行期间,标签页图标变成鲸鱼在水线下浮动、三颗气泡上升(SVG 帧,无 canvas);空闲时标签页保持一只**按页面主题着色的静态鲸鱼**(浅色页面黑鱼、深色页面白鱼),不再恢复官方原图——官方图的 `prefers-color-scheme` 跟随系统,浅色页面 + 深色系统会渲染出看不见的白鱼。只有拉取官方图失败才回退到原图标;瞬时失败会在下一次激活沿或主题切换时重试。
 - **侧栏水滴**:三颗 DeepSeek 蓝水滴从侧栏鲸鱼喷气孔上升(DOM 叠加层锚定官方 logo;找不到锚点时兜底定位到折叠栏角落)。
 - **提示音**:完成 = 三连上升滑音(380→520→700→990 Hz);阻塞 = 440→660 Hz 上扬重复两次(WebAudio 合成,无音频资源文件)。`prefers-reduced-motion` 下动画隐藏且提示音静音。
 
@@ -47,7 +47,7 @@ src/client/index.ts     cordis client plugin: inject ['sessions'], ctx.effect ow
 src/client/config.ts    config sync: fetch + 3 s poll; no-fetch surfaces keep the default
 src/client/controller.ts  runtime controller: idempotent enabled/disabled state machine + 2.5 s reconcile poll
 src/client/status.ts    pure diff of session-list snapshots into whalesong events
-src/client/favicon.ts   favicon animation: SVG frame data-URLs, original restored on stop
+src/client/favicon.ts   favicon 动画:SVG 帧 data-URL;空闲时保持按页面主题着色的静态鲸鱼
 src/client/whalesong-overlay.ts  fixed overlay anchored to the official sidebar logo
 src/client/sound.ts     WebAudio oscillator chimes (autoplay-unlock on first gesture)
 src/client/whalesong.module.css  droplet keyframes + on/off + reduced-motion rules
