@@ -186,9 +186,12 @@ export function parseCodexJsonStream(stream: string): { text?: string; usage?: T
 }
 
 /**
- * Map codex's token-count payload onto the shared usage contract. Codex
- * reports uncached input, cache-read input, and output separately and has no
- * cache-write concept, so the cache-write bucket is omitted.
+ * Map codex's token-count payload onto the shared usage contract. Codex's
+ * `input_tokens` is the TOTAL input including cache hits (OpenAI-style
+ * accounting, confirmed against `total_tokens` in the rollout token_count),
+ * and `cached_input_tokens` is the cache-read subset — so the uncached bucket
+ * subtracts the cached portion to avoid double counting. There is no
+ * cache-write concept, so that bucket is omitted.
  * @param usage - the raw codex usage object from `turn.completed`.
  * @returns the shared usage record.
  */
@@ -197,8 +200,13 @@ function usageFromCodex(usage: unknown): TokenUsage {
   const input = Number(raw.input_tokens)
   const cached = Number(raw.cached_input_tokens)
   const output = Number(raw.output_tokens)
+  const uncached = Number.isFinite(input) && Number.isFinite(cached)
+    ? Math.max(0, input - cached)
+    : Number.isFinite(input)
+      ? input
+      : 0
   const usageRecord: TokenUsage = {
-    inputTokens: Number.isFinite(input) ? input : 0,
+    inputTokens: uncached,
     outputTokens: Number.isFinite(output) ? output : 0,
   }
   if (Number.isFinite(cached) && cached > 0) usageRecord.cacheReadTokens = cached
@@ -280,7 +288,19 @@ export function startCodexCliRun(
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: () => Promise.race([
       child.done.then((outcome) => {
+        // Every terminal path closes the turn so the timing window never
+        // stays open on a failed or cancelled run: success settles
+        // 'completed', a non-zero exit 'error', and a locally cancelled run
+        // 'aborted'. The turn/end timestamp is the real settle moment.
+        if (runAbort.signal.aborted) {
+          spec.childSession?.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+          throw new Error('subagent-codex: run cancelled locally')
+        }
         if (outcome.exitCode !== 0) {
+          spec.childSession?.append('turn/end', {
+            turn: 1,
+            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(outcome.exitCode)}`, code: 'UNKNOWN' } },
+          })
           throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)}`)
         }
         // The turn closes at the real settle moment, so the timing

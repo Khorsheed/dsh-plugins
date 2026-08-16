@@ -1,0 +1,83 @@
+# `@deepseek-ai/dsh-local-agent-codex`
+
+[English](README.md) | 中文
+
+[local-agent 家族](../../local-agent/local-agent/README.md) 的 Codex harness。bundle patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、`codex login --device-auth` device-code 流程、rollout 文件会话记录），并把 `subagent_codex_local` 工具行挂到 **profile 根**——`codex-local` 一次性 provider 在 harness 作用域目录下 spawn `codex exec`，任意 agent preset 都能委派、无需逐 preset 变体。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
+
+> 家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@deepseek-ai/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——但 `dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，所以要与本包一起显式安装 core（两条命令）。codex 包刻意不重复插入该行——重复会挂载两次 core。
+
+## 前置依赖
+
+- 一个可运行的 dsh profile（`dsh --profile web`、`--profile headless` 或自定义）；与本包一起安装家族 core bundle。
+- `PATH` 上有 Codex CLI（`codex`，即用户平时交互使用的那个二进制）。插件不负责安装、不替用户登录、也不触碰用户自己的 `~/.codex`。
+
+## 安装
+
+```sh
+# 1. Install the family core and this bundle into a profile.
+dsh plugin --profile web add @deepseek-ai/dsh-local-agent
+dsh plugin --profile web add @deepseek-ai/dsh-local-agent-codex
+
+# 2. Restart the profile. The first start provisions the scoped home; the
+#    subagent_codex_local tool mounts at the profile root, so every preset
+#    can delegate — no preset step needed.
+
+# 3. Run /codex login once from a session.
+```
+
+## 卸载
+
+```sh
+dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-codex
+```
+
+移除 bundle 会注销 harness、其 `/<name>` 命令族、工具行与 UI 行。一个用户自有的目录会刻意保留：作用域目录（`$DSH_HOME/local-agent/codex`）保住会话与凭据，重装后无需重新登录。删除它即可清除全部痕迹。
+
+## 作用域隔离
+
+本包启动的每个 Codex 进程（登录、委派）都带着 harness 作用域目录（默认 `$DSH_HOME/local-agent/codex`）作为 `CODEX_HOME` 运行。config、credentials、sessions 全部留在那里，与用户自己的 `~/.codex` 互不干扰。登录只走 device-code：`/codex login` 把授权 URL 和验证码呈现在会话中、CLI 在后台轮询；用户授权后凭据写入作用域目录。首次启动会在作用域目录写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 在 macOS 上会解析到系统 keychain，既把凭据泄漏到作用域目录之外，也让本包的 `auth.json` 存在性检查失效。已存在的 config 保持原样不动。`/codex logout` 删除作用域内的 `auth.json`，之后重新登录即可换一个账号。
+
+## 会话记录
+
+`/codex sessions` 列出作用域目录下的 `sessions/YYYY/MM/DD/rollout-*.jsonl` rollout 文件（Codex 自有的 append-only 会话日志）——即本 agent 委派产生的会话，绝不是用户的私人会话。家族 core 的浏览器设置分区呈现同一份列表，并收窄到当前会话的工作区（只显示 `workDir` 与当前会话 cwd 一致的记录），一个项目的 codex 会话不会出现在另一个项目的会话里；`/codex sessions` 本身始终显示完整列表。其设置区（设置 → 本地 Agent）显示 harness 的认证状态，并提供网页登录按钮展示 device-code URL；登录进行中时状态会持续重新探测，直到凭据落地。已认证的行额外提供退出登录按钮（运行 `/codex logout`），换账号即先退出再重新登录。
+
+## Model Experience
+
+### 子请求
+
+#### 模型看到什么
+
+Codex 子会话是委派 Session 工作区内一个全新的一次性 `codex exec` 进程，以作用域目录启动。父级只提交独立的任务文本；父级对话永不跨进程边界。
+
+#### Token 影响
+
+子会话为独立的 Codex 上下文与回合付费。子会话 token 永不进入父级上下文。
+
+#### KV Cache 影响
+
+与父级请求缓存相互独立。复用只取决于作用域 Codex 安装自身的 provider、模型与历史。
+
+### 父级工具结果（间接）
+
+#### 模型看到什么
+
+经由 `dsh-tool-subagent`，父级只看到选定的 Codex 最终回答，或 Consumer 的精确错误。Codex 的评论、工具活动、工作区 diff 不会复制进父级 Session。
+
+#### Token 影响
+
+父级输入只增加工具结果中保留的最终回答或错误。本包自身不增加任何父级工具 schema。
+
+#### KV Cache 影响
+
+无。
+
+### 委派记账
+
+子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终 `assistant/message` 携带从 `codex exec --json` 事件流解析的本回合 token 用量。codex 的 `input_tokens` 是**含缓存命中的总输入**（OpenAI 口径；`input_tokens + output_tokens` 等于 rollout 的 `total_tokens`），所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、`output_tokens` 映射输出；codex 没有缓存写入概念。`tokenUsage` 投影据此统计委派，不会把缓存命中双重计数。
+
+## 已知限制与后续工作
+
+- **登录需要一次交互**——device-code URL 出现在会话中；只有用户在浏览器完成授权后凭据才会出现。没有 API key 路径。
+- **v1 只镜像最终回答**——委派的打印输出以单条 assistant 消息追加进 dsh 子代理会话；完整的事件流镜像（推理、工具调用、diff）留待 v2。
+- **`codex exec` 非交互运行**——沙箱策略本需审批的动作会被拒绝而非弹提示；`sandbox` 插件 config（默认 `workspace-write`）选择策略。
+- **headless 注意**——`/codex` 命令与标题栏下拉需要 Web 会话；`--profile headless` 仍可通过挂载工具行的组合进行委派。

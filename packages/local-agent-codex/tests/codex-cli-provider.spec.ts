@@ -42,10 +42,12 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
 }
 
 describe('codex json stream parsing', () => {
-  it('extracts the final agent message and the turn usage', () => {
+  it('extracts the final agent message and the turn usage with uncached input', () => {
     const parsed = parseCodexJsonStream(jsonStream)
     expect(parsed.text).toBe('Task complete.')
-    expect(parsed.usage).toEqual({ inputTokens: 10, outputTokens: 4, cacheReadTokens: 6 })
+    // codex's input_tokens includes cache hits, so the uncached bucket is the
+    // remainder (10 - 6) and the cache-read bucket carries the subset.
+    expect(parsed.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
   })
 
   it('tolerates a stream with no usable events', () => {
@@ -83,7 +85,7 @@ describe('codex-cli-provider run settlement', () => {
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant).toHaveLength(1)
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
-    expect(assistant[0]!.data.usage).toEqual({ inputTokens: 10, outputTokens: 4, cacheReadTokens: 6 })
+    expect(assistant[0]!.data.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     // the turn opened at spawn and closed at settle, bracketing the run
     const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
@@ -92,8 +94,9 @@ describe('codex-cli-provider run settlement', () => {
     await done
   })
 
-  it('settles error when the child exits non-zero', async () => {
+  it('settles error and closes the turn with an error reason', async () => {
     const done = Promise.resolve({ exitCode: 1, signal: null })
+    const child = Session.create(SessionId('child-run-error'))
     const handle: SubprocessHandle = {
       pid: 4243,
       stdin: undefined,
@@ -109,10 +112,17 @@ describe('codex-cli-provider run settlement', () => {
     }
     const run = await startCodexCliRun(
       { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
-      { cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle },
+      { cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle, childSession: child },
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    // The timing window must close even on failure, with an error reason.
+    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
+    expect(endData?.turn).toBe(1)
+    expect(endData?.reason?.kind).toBe('error')
+    expect(endData?.reason?.error?.message).toContain('exited with code 1')
+    expect(endData?.reason?.error?.code).toBe('UNKNOWN')
     await done
   })
 })

@@ -19,4 +19,11 @@ describe('local-agent-kimi bundle patch', () => {
     expect(patch).not.toMatch(/<.*>-kimi/)
     expect(patch).not.toContain('presets/kimi')
   })
+
+  it('does not re-insert the family core row the framework bundle owns', () => {
+    // The local-agent family core row (homesRoot config) ships in the
+    // framework bundle @khorsheed/dsh-local-agent's own patch (a dependency
+    // of this bundle); inserting a duplicate id here would mount two rows.
+    expect(patch).not.toMatch(/- id: local-agent\n/)
+  })
 })

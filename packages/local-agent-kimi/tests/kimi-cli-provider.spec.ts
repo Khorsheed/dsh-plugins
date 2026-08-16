@@ -85,8 +85,9 @@ describe('kimi-cli-provider run settlement', () => {
     await done
   })
 
-  it('settles error when the child exits non-zero', async () => {
+  it('settles error and closes the turn with an error reason', async () => {
     const done = Promise.resolve({ exitCode: 1, signal: null })
+    const child = Session.create(SessionId('child-kimi-error'))
     const handle: SubprocessHandle = {
       pid: 4243,
       stdin: undefined,
@@ -102,10 +103,17 @@ describe('kimi-cli-provider run settlement', () => {
     }
     const run = await startKimiCliRun(
       { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
-      { cwd: '/tmp', env: {}, disposeGraceMs: 3_000, spawn: () => handle },
+      { cwd: '/tmp', env: {}, disposeGraceMs: 3_000, spawn: () => handle, childSession: child },
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    // The timing window must close even on failure, with an error reason.
+    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
+    expect(endData?.turn).toBe(1)
+    expect(endData?.reason?.kind).toBe('error')
+    expect(endData?.reason?.error?.message).toBeTruthy()
+    expect(endData?.reason?.error?.code).toBe('UNKNOWN')
     await done
   })
 })

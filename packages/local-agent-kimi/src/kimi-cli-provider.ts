@@ -246,9 +246,20 @@ export function startKimiCliRun(
   }).then(async (settled) => {
     // The turn closes at the real settle moment, so the timing projection's
     // duration equals the actual CLI runtime; the mirror after it carries the
-    // transcript into the already-closed turn.
-    if (settled.stopReason === 'completed' && spec.childSession !== undefined) {
-      spec.childSession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // transcript into the already-closed turn. Every terminal path closes the
+    // window — a failed or cancelled run settles 'error'/'aborted' instead of
+    // leaving the turn open with a distorted tiny duration.
+    if (spec.childSession !== undefined) {
+      if (settled.stopReason === 'completed') {
+        spec.childSession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      } else if (settled.stopReason === 'aborted') {
+        spec.childSession.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+      } else {
+        spec.childSession.append('turn/end', {
+          turn: 1,
+          reason: { kind: 'error', error: { message: 'kimi -p exited before the run completed', code: 'UNKNOWN' } },
+        })
+      }
     }
     // Mirror the kimi session's transcript into the dsh subagent session so
     // the delegation is visible in the standard 子代理 surface and opening it

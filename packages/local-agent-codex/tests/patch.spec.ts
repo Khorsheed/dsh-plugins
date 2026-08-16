@@ -15,9 +15,10 @@ describe('local-agent-codex bundle patch', () => {
     expect(patch).toContain('enableRunInBackground: false')
   })
 
-  it('does not re-insert the family core row the kimi bundle owns', () => {
-    // The local-agent family core row (homesRoot config) ships in the kimi
-    // bundle's patch; inserting a duplicate id here would mount two rows.
+  it('does not re-insert the family core row the framework bundle owns', () => {
+    // The local-agent family core row (homesRoot config) ships in the
+    // framework bundle @khorsheed/dsh-local-agent's own patch (a dependency
+    // of this bundle); inserting a duplicate id here would mount two rows.
     expect(patch).not.toMatch(/- id: local-agent\n/)
   })
 })

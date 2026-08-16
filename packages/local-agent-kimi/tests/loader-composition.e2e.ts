@@ -30,10 +30,15 @@ describe('local-agent-kimi public Loader composition', () => {
     })
 
     expect(stderr).toBe('')
-    expect(JSON.parse(stdout)).toEqual({
-      registeredProviders: ['kimi-acp'],
+    const parsed = JSON.parse(stdout) as { minimalTools?: string[] }
+    // The tool row mounts at the profile root, so a minimal-preset agent's
+    // tool view carries subagent_kimi — the cross-preset visibility the
+    // variant removal guarantees.
+    expect(parsed.minimalTools).toContain('subagent_kimi')
+    expect(parsed).toEqual({
+      registeredProviders: ['kimi-cli'],
       provider: {
-        name: 'kimi-acp',
+        name: 'kimi-cli',
         capabilities: {
           outputSchema: false,
           depthLimit: false,

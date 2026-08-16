@@ -6,7 +6,9 @@
     "node": "^22.19 || >=24"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "lightningcss": "^1.33.0",
-    "tsdown": "^0.22.14"
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2"
   }
 }
