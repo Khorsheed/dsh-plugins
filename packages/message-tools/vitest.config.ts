@@ -1,4 +1,3 @@
-import { defineConfig } from 'vitest/config'
-export default defineConfig({
-  test: { include: ['tests/**/*.spec.ts'], environment: 'node', testTimeout: 30_000 },
-})
+import { dshTestConfig } from '../../build/vitest.ts'
+
+export default dshTestConfig()

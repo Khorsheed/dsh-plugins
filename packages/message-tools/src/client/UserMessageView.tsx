@@ -1,164 +1,305 @@
 /**
- * Shadow user-message renderer (priority -1): replaces the official user
- * bubble to add edit/withdraw actions. Uses only official ui-primitives
- * components (RiskConfirmation, Button, MessageText, writeClipboard, icons)
- * and theme tokens, so visual language matches dsh and dark/light adapts.
+ * Shadow user-message renderer (keys 'user' and 'steering', priority -1; also
+ * the plugin's own 'message-tools-edited' and 'message-tools-restored' rows):
+ * a visual clone of the official bubble chrome — ui-conversation ships no
+ * public components, so the structure is replicated against
+ * ui-primitives/ui-attachment platform modules — plus the copy/edit/withdraw
+ * action row and the「已编辑」/「已恢复」labels. User messages inside a
+ * withdrawn span render nothing; the withdrawal divider marks the spot.
  */
-import { useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { shallowEqual, type ConversationSnapshot, type UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  Button, IconCheckOutline16, IconEditOutline16, IconTrashOutline16,
-  MessageText, RiskConfirmation, Tooltip, writeClipboard,
+  Button, IconCheckOutline16, IconCopyOutline16, IconEditOutline16,
+  JsonBlock, MessageText, RiskConfirmation, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ImageGallery, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import { IconUndoOutline16 } from './icons.tsx'
+import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
+import { withdrawAndBackfill } from './withdraw-backfill.ts'
+import { ModelChip, type ModelChipProps } from './ModelChip.tsx'
+import type { UserMessageViewProps } from './slots.ts'
+import css from './UserMessageView.module.css'
 
-/** Effective user message this view renders. */
-export interface ViewMessage {
-  /** Original session seq. */
-  seq: number
-  /** Current visible text (resolved by projection). */
+type Translate = UserMessageViewProps['t']
+type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
+
+/** Selector identity kept module-level so uSES memoization holds. */
+function selectHiddenRanges(snapshot: ConversationSnapshot): number[] {
+  return foldHiddenRanges(snapshot.chat.nodes.values())
+}
+
+/** Split user content into joined text, images, and leftover blocks. */
+function contentParts(content: readonly unknown[]): {
   text: string
-  /** True when withdrawn (render divider placeholder). */
-  withdrawn: boolean
+  images: { attachment: UserImage['attachment'] }[]
+  rest: unknown[]
+} {
+  const texts: string[] = []
+  const images: { attachment: UserImage['attachment'] }[] = []
+  const rest: unknown[] = []
+  for (const block of content) {
+    const b = block as { type?: string; text?: string; attachment?: unknown }
+    if (b.type === 'text' && typeof b.text === 'string') texts.push(b.text)
+    else if (b.type === 'image' && b.attachment !== undefined) {
+      images.push({ attachment: (b as UserImage).attachment })
+    } else rest.push(block)
+  }
+  return { text: texts.join(''), images, rest }
 }
 
-/** File-impact summary for the withdraw confirmation. */
-export interface WithdrawImpact {
-  /** e.g. "lib/config.js  +28行". */
-  lines: string[]
+/** Plaintext `/name` and `@name` word-boundary tokens decorate as chips; the logged text stays the truth. */
+function projectUserText(text: string): ReactNode {
+  const re = /(^|\s)([/@][\w-]+)(?=\s|$)/g
+  const parts: ReactNode[] = []
+  let cursor = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    /* v8 ignore next -- the `(^|\s)` group always participates in a match, so m[1] is never undefined. */
+    const tokenStart = m.index + (m[1]?.length ?? 0)
+    /* v8 ignore next -- the token group always participates in a match, so m[2] is never undefined. */
+    const label = m[2] ?? ''
+    if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
+    parts.push(
+      <span key={tokenStart} className={css.refChip} data-ref-chip={label.startsWith('@') ? 'subagent' : 'skill'}>
+        {label}
+      </span>,
+    )
+    cursor = tokenStart + label.length
+  }
+  if (parts.length === 0) return <MessageText text={text} />
+  if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
+  return <>{parts}</>
 }
 
-/** Props: message data + actions. */
-export interface UserMessageViewProps {
-  message: ViewMessage
-  /** Save an edit: append user/message/edited and start a new turn. */
-  onEdit: (seq: number, newText: string) => void
-  /** Withdraw: append user/message/withdrawn. */
-  onWithdraw: (seq: number) => void
-  /** File-impact summary shown in the withdraw confirm. */
-  withdrawImpact?: WithdrawImpact | undefined
+/** Resolve the message-image strings from this plugin's namespace. */
+function imageLabels(t: Translate): MessageImageLabels {
+  return {
+    image: t('image.label'),
+    open: t('image.openOriginal'),
+    openNamed: label => t('image.openOriginalLabel', { label }),
+    loading: t('image.loading'),
+    loadFailed: t('image.loadFailed'),
+    lightbox: { dialog: t('image.preview'), close: t('image.closePreview') },
+  }
 }
 
-/** Copy button (official writeClipboard + icons). */
-function CopyButton({ text }: { text: string }): ReactNode {
+/** Copy action: the copy icon swaps to a short-lived check after a successful write. */
+function CopyButton({ text, t }: { text: string; t: Translate }): ReactNode {
   const [copied, setCopied] = useState(false)
+  const pending = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const epoch = useRef(0)
+  useEffect(() => () => {
+    epoch.current += 1
+    pending.current = false
+    if (timer.current !== null) clearTimeout(timer.current)
+  }, [])
+  const onCopy = (): void => {
+    if (copied || pending.current) return
+    const current = ++epoch.current
+    pending.current = true
+    void writeClipboard(text).then((ok) => {
+      if (current !== epoch.current) return
+      pending.current = false
+      if (!ok) return
+      setCopied(true)
+      timer.current = setTimeout(() => {
+        timer.current = null
+        setCopied(false)
+      }, 1000)
+    })
+  }
   return (
-    <Tooltip label={copied ? '已复制' : '复制'}>
-      <button
-        type="button"
-        aria-label="copy"
-        onClick={() => { void writeClipboard(text).then((ok) => { if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500) } }) }}
-      >
-        <IconCheckOutline16 />
+    <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
+      <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
+        {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
       </button>
     </Tooltip>
   )
 }
 
-/** Inline edit box: textarea (auto-height, max 240px) + model selector + actions. */
-function InlineEditor({ initial, onSave, onCancel }: {
+/** Cap for the auto-grown edit box height; longer text scrolls inside it. */
+const EDITOR_MAX_HEIGHT = 240
+
+/**
+ * Inline editor (MessageEditBox structure): the textarea is backfilled with
+ * the true original text and auto-grows to its content, capped so a long
+ * message scrolls inside instead of pushing the row's anchor. The trailing
+ * seat renders the real model chip when the session's model directory is
+ * available; its margin-right: auto container keeps the buttons
+ * right-aligned either way.
+ */
+function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
   initial: string
+  busy: boolean
+  t: Translate
   onSave: (text: string) => void
   onCancel: () => void
+  /** Model-chip wiring; undefined when ui-model-selection is not composed. */
+  models: ModelChipProps | undefined
 }): ReactNode {
-  const [text, setText] = useState(initial)
+  const [draft, setDraft] = useState(initial)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const autoGrow = (): void => {
+    const el = inputRef.current
+    /* v8 ignore next -- the textarea ref is attached before the mount/change effects run. */
+    if (el === null) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, EDITOR_MAX_HEIGHT)}px`
+  }
+  // Grow once on mount (the backfilled text may exceed the default height)
+  // and on every edit; the cap keeps the box bounded.
+  useEffect(autoGrow, [])
+  const save = (): void => {
+    /* v8 ignore next -- the save button is disabled while the draft is blank, and jsdom drops clicks on disabled controls. */
+    if (draft.trim() === '') return
+    onSave(draft)
+  }
   return (
-    <div data-message-tools-editor className="mt-editor-box">
+    <div className={css.editor} data-message-tools-edit-box>
       <textarea
-        value={text}
-        onChange={(e) => { setText(e.target.value) }}
-        rows={Math.min(6, Math.max(2, text.split('\n').length))}
-        aria-label="edit message"
+        ref={inputRef}
+        className={css.editorInput}
+        value={draft}
+        aria-label={t('editor.aria')}
+        placeholder={t('editor.placeholder')}
+        disabled={busy}
+        rows={1}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value)
+          autoGrow()
+        }}
       />
-      <div className="mt-editor-toolbar">
-        <span className="mt-model-chip">DeepSeek-V4-Flash · High ▾</span>
-        <span>
-          <Button variant="outline" onClick={onCancel}>取消</Button>
-          <Button variant="primary" disabled={text.trim() === ''} onClick={() => { onSave(text) }}>重新发送</Button>
-        </span>
+      <div className={css.editorActions}>
+        <div className={css.editorTrailing}>{models !== undefined && <ModelChip {...models} />}</div>
+        <Button variant="outline" disabled={busy} onClick={onCancel}>{t('cancel')}</Button>
+        <Button variant="primary" disabled={busy || draft.trim() === ''} onClick={save}>
+          {t('editor.save')}
+        </Button>
       </div>
     </div>
   )
 }
 
-/** Withdraw confirmation via official RiskConfirmation. */
-function WithdrawConfirm({ impact, onConfirm, onCancel }: {
-  impact: WithdrawImpact | undefined
-  onConfirm: () => void
-  onCancel: () => void
-}): ReactNode {
-  const description = impact === undefined
-    ? '撤回这条消息及其引发的文件改动。'
-    : `以下操作将被撤回：\n${impact.lines.map((l) => `- ${l}`).join('\n')}`
-  return (
-    <RiskConfirmation
-      open
-      title="撤回这条消息？"
-      description={description}
-      cancelLabel="取消"
-      confirmLabel="确认撤回"
-      acknowledgeLabel="确认撤回影响"
-      acknowledged
-      onCancel={onCancel}
-      onConfirm={onConfirm}
-      onAcknowledgedChange={() => {}}
-    />
-  )
-}
-
-/** Withdrawn divider: label centered in a full-width line. */
-function WithdrawnDivider(): ReactNode {
-  return (
-    <div className="mt-withdrawn-zone">
-      <span className="mt-withdrawn-label">已撤回 1 条消息</span>
-    </div>
-  )
-}
-
-/**
- * The shadow user-message view: bubble + hover-revealed actions
- * (copy/edit/withdraw), inline editor, official withdraw modal.
- */
-export function UserMessageView(props: UserMessageViewProps): ReactNode {
-  const { message, onEdit, onWithdraw, withdrawImpact } = props
+/** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
+export const UserMessageView = memo(function UserMessageView({
+  node, loadImage, t, useSession, editMessage, withdrawMessage, backfillDraft,
+  useModelDirectory, modelsAvailable, loadModels, selectModel,
+}: UserMessageViewProps): ReactNode {
+  const ranges = useSession(selectHiddenRanges, shallowEqual)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<'edit' | 'withdraw' | null>(null)
+  const data = node.data
+  if (isSeqHidden(ranges, data.seq)) return null
 
-  if (message.withdrawn) return <WithdrawnDivider />
+  const { text, images, rest } = contentParts(data.content)
+  const truncated = (total: number): string => t('json.truncated', { total })
+  const showBubble = text !== '' || rest.length > 0
+
+  const saveEdit = (newText: string): void => {
+    setBusy(true)
+    setFailed(null)
+    void editMessage(data.seq, newText)
+      .then(() => { setEditing(false) })
+      .catch(() => { setFailed('edit') })
+      .finally(() => { setBusy(false) })
+  }
+  const confirmWithdraw = (): void => {
+    setBusy(true)
+    setFailed(null)
+    // A landed withdrawal auto-backfills the target's original text into the
+    // composer draft (never sends); a failed one backfills nothing.
+    void withdrawAndBackfill({ withdraw: () => withdrawMessage(data.seq), backfill: backfillDraft }, text)
+      .catch(() => { setFailed('withdraw') })
+      .finally(() => {
+        setBusy(false)
+        setConfirming(false)
+        setAcknowledged(false)
+      })
+  }
 
   if (editing) {
     return (
-      <InlineEditor
-        initial={message.text}
-        onSave={(text) => { onEdit(message.seq, text); setEditing(false) }}
-        onCancel={() => { setEditing(false) }}
-      />
+      <div className={css.userRow}>
+        <div className={css.userStack}>
+          <InlineEditor
+            initial={text}
+            busy={busy}
+            t={t}
+            onSave={saveEdit}
+            onCancel={() => { setEditing(false) }}
+            models={modelsAvailable
+              ? { useModelDirectory, loadModels, selectModel, t }
+              : undefined}
+          />
+          {failed === 'edit' && <div className={css.actionError} role="status">{t('error.edit')}</div>}
+        </div>
+      </div>
     )
   }
 
   return (
-    <div className="mt-user-message" data-message-tools-user-message>
-      <div className="mt-bubble">
-        <MessageText text={message.text} />
+    <div className={css.userRow} data-time-hover-root>
+      <div className={css.userStack}>
+        {node.kind === 'message-tools-edited' && (
+          <div className={css.editedLabel}>{t('edited.badge')}</div>
+        )}
+        {node.kind === 'message-tools-restored' && (
+          <div className={css.editedLabel}>{t('withdrawn.restored')}</div>
+        )}
+        <ImageGallery images={images} load={loadImage} align="end" labels={imageLabels(t)} />
+        {showBubble && (
+          <div className={css.bubble}>
+            {projectUserText(text)}
+            {rest.map((block, index) => (
+              <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
+            ))}
+          </div>
+        )}
       </div>
-      <div className="mt-actions">
-        <CopyButton text={message.text} />
-        <Tooltip label="编辑">
-          <button type="button" aria-label="edit" onClick={() => { setEditing(true) }}>
+      <div className={css.actions}>
+        <CopyButton text={text} t={t} />
+        <Tooltip label={t('edit')} side="bottom">
+          <button
+            type="button"
+            className={css.action}
+            aria-label={t('edit')}
+            onClick={() => { setFailed(null); setEditing(true) }}
+          >
             <IconEditOutline16 />
           </button>
         </Tooltip>
-        <Tooltip label="撤回">
-          <button type="button" aria-label="withdraw" onClick={() => { setConfirming(true) }}>
-            <IconTrashOutline16 />
+        <Tooltip label={t('action.withdraw')} side="bottom">
+          <button
+            type="button"
+            className={css.action}
+            aria-label={t('action.withdraw')}
+            onClick={() => { setFailed(null); setAcknowledged(false); setConfirming(true) }}
+          >
+            <IconUndoOutline16 />
           </button>
         </Tooltip>
       </div>
+      {failed === 'withdraw' && <div className={css.actionError} role="status">{t('error.withdraw')}</div>}
       {confirming && (
-        <WithdrawConfirm
-          impact={withdrawImpact}
-          onConfirm={() => { onWithdraw(message.seq); setConfirming(false) }}
-          onCancel={() => { setConfirming(false) }}
+        <RiskConfirmation
+          open
+          title={t('withdraw.title')}
+          description={t('withdraw.description')}
+          acknowledgeLabel={t('withdraw.acknowledge')}
+          cancelLabel={t('cancel')}
+          confirmLabel={t('withdraw.confirm')}
+          acknowledged={acknowledged}
+          disabled={busy}
+          onAcknowledgedChange={setAcknowledged}
+          onCancel={() => { setConfirming(false); setAcknowledged(false) }}
+          onConfirm={confirmWithdraw}
         />
       )}
     </div>
   )
-}
+})

@@ -1,53 +1,70 @@
-# message-tools
+# @khorsheed/dsh-client-message-tools
 
-dsh 插件：给用户消息加上**编辑**和**撤回**。
+English | [中文](README.zh.md)
 
-agent 回错话了？不用重开对话。把消息就地改掉重新发送，或者撤回它——撤回会连同这轮引发的文件改动一起处理，还能一键恢复。
+User-message edit and withdrawal for the dsh web GUI. The browser half shadows the official user-message renderer (`conversation.chat.node`, keys `user` and `steering`, priority -1) with a visual clone that adds a copy/edit/withdraw action row (the withdraw action carries this package's own rotate-ccw undo glyph — ui-primitives ships no undo icon), and registers four `ConversationNodeDefinition`s: each landed withdrawal becomes an expandable「已撤回 N 条消息」divider row (N = the chat nodes hidden by the span), each edit replacement an in-place bubble with an「已编辑」badge, and each restore entry a replayed row — user bubbles (with the full action row) and assistant text lines forming the「已恢复」group. The host half is the `messageTools` Typert Remote service with `withdraw`, `edit`, and `restore` methods; the client mounts its own generated Remote contribution through `ctx.remote.$mount`, so the plugin installs into any profile with no edits to core packages. Queued (not yet admitted) messages already carry official edit/remove controls in the queue dock (`conversation.updateQueue` with `{ kind: 'edit' | 'remove' }`); they never touch the surface mechanism because they are not in the log yet.
 
-## 安装
+Edit is an in-place replacement: the host appends one `user/message` replacement whose content IS the edited text (covering the target and the surface tail — editing an old message discards what followed it), then starts a regeneration turn via `agent.followup` carrying a minimal plugin-sourced trigger (no wake-without-append path exists in the harness). The edited text appears exactly once in the model context; the old content stays in the log as the audit trail. When the session has a running turn, the edit cancels it first (it is writing into the span being shadowed) and waits for the settle; a failed cancel rejects without editing. No「已撤回」divider appears for an edit — the plugin's edit Definition claims the replacement into an ordinary bubble row with a light「已编辑」badge (edit chains work: an edited bubble edits again, targeting the previous replacement's seq). The editor's trailing seat carries a real model chip: it reads and submits through the same per-session `ModelDirectory` the composer seat and the /model popup share (`ctx.get('modelDirectories')` — an optional service, so a composition without ui-model-selection simply renders no chip), and the switch is the host-validated selection the regenerated turn lands on.
 
-需要 dsh 宿主：
+Withdrawal is real, not a marker: the host appends a `user/message` surface replacement (the compaction mechanism) whose span covers the target message and every surface node after it, so the span leaves `session.surface` and never reaches the model again. The replacement event carries `source: { kind: 'plugin', plugin: 'message-tools' }` and its `sourceEventSeqs` cite every shadowed node, satisfying surface provenance validation; `SessionStore.flush` makes the append durable before the method returns. No new session event type is introduced — an out-of-harness event type cannot carry `ignorable: true` (the append API assigns the envelope), and a persisted unknown type would make session-persistence refuse the log on reload. The replacement event itself is the durable audit trail. A landed withdrawal also backfills the target's original text into the session composer draft through the same `setDraft` path the divider's「重新编辑」action uses (blank draft fills directly, non-empty appends on a new line, an info notice lands on the composer) — never auto-sent, and a failed withdrawal backfills nothing; the in-place edit path never backfills.
 
-```sh
-npm install @deepseek-ai/dsh
-dsh plugin --profile web add @khorsheed/dsh-client-message-tools
-npx @deepseek-ai/dsh web
-```
+The chat projection learns about a withdrawal from the same replacement event: the plugin's Definition claims it into a divider node anchored at the replacement's seq. Hiding then happens two layers deep: the shadowed user renderer renders nothing for a user message inside a hidden span, and a DOM hider covers every other kind — a dynamic stylesheet drops every chat row whose `data-chat-flow-key` (`ChatNodeSeat.tsx`) anchors inside the span. The hider probes for that undocumented attribute on its first non-empty rule set and, when it is absent, disables itself with one `console.warn`, degrading to renderer-only hiding; it never throws. The divider row follows the official compaction marker's visual language and expands in place to a read-only replay of the span (user originals plus assistant text, folded from the live node store) with the「恢复到对话末尾」action (the restore below).
 
-装完即用，无需配置。卸载：
+Restore is a tail replay of the whole withdrawn span, never an in-place repair: the surface fold is positional — a replaced span splices into exactly one node (`packages/core/session/src/surface.ts` `applySurfacePlan`) — so the span cannot re-enter the model context where it was. The host `restore` method walks the withdrawal replacement's `sourceEventSeqs` (the span's authoritative boundary, never re-derived) and appends every replayable entry back-to-back at the tail in original order: user messages verbatim — an edit replacement's content IS the last edit's new text, so restoring a span that starts at one replays the edited text — and each assistant reply's text as a framed plugin-sourced user message (`assistant/message` cannot carry a plugin source, and the turn/step trace forbids assistant appends outside a step). Every replay cites its original event in `sourceEventSeqs`. Tool calls/results never replay: the call/result pairing cannot be re-entered and their side effects are not replayable, and the assistant text usually already summarizes them. The replayed rows render as a「已恢复」group — user bubbles carrying the full copy/edit/withdraw action row, assistant replies as full-width lines rendered through the official `MarkdownText` (the public renderer behind ui-conversation's AssistantMarkdown, so typography and code blocks match a native reply) with a small tertiary「已恢复 · 助手回复」caption and the model-facing frame stripped from display — and the divider carries a「已恢复」badge while a live restore row cites the span; withdrawing the restored rows again clears the badge and re-enables the action (the restore events stay in the log either way).
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
-```
+The `/client` exports are the plugin body (`apply`/`inject`) and the `MessageToolsRemote` type; the host export is the `MessageToolsService` class plus the wire types under `/types`.
 
-## 它能做什么
+## Model Experience
 
-**编辑**：把鼠标移到任意一条用户消息上，出现编辑按钮。点击后消息就地变成输入框，改完重新发送——模型看到的是改后的内容。
+### Edit replacement
 
-**撤回**：同样的位置有撤回按钮。点击弹出确认框，列出这轮消息引发的文件改动（哪个文件、加了几行减了几行）。确认后：
-- 这条消息和该轮的回复从对话流中隐藏
-- 相关文件改动被快照（不真删文件）
-- 对话流中出现一条分隔线，标注"已撤回 N 条消息"
+#### What the model sees
 
-**撤回撤回**：未来支持在分隔线上恢复被撤回的消息和文件改动（文件快照已就绪）。
+After an edit, the model reads the edited text in place of the original message, and nothing that followed the original; one minimal plugin-sourced trigger (`(用户编辑了上一条消息，请按编辑后的内容重新回答)`) follows it and starts the regeneration turn. The edited text appears exactly once.
 
-## 工作原理
+#### Token effect
 
-- **零侵入**：通过 dsh 的 slot shadow 机制（priority -1）接管用户消息渲染，不改官方代码；卸载即恢复
-- **官方组件**：确认弹窗用官方 `RiskConfirmation`，按钮用官方 `Button`，样式走主题 token（暗/亮自动适配）
-- **事件持久化**：编辑/撤回写入会话日志（`user/message/edited` / `user/message/withdrawn`，带 `ignorable` 标记）
-- **文件快照**：撤回时把相关文件内容存到会话状态目录，供撤回撤回恢复
+An edit removes every token of the shadowed span from subsequent requests and adds the edited message plus one short trigger message.
 
-## 开发
+#### KV Cache effect
 
-```sh
-git clone https://github.com/Khorsheed/dsh-client-message-tools.git
-cd dsh-client-message-tools
-pnpm install && pnpm run build && pnpm test
-```
+A surface replacement rewrites the history tail, so the prompt prefix is invalidated from the edit point.
 
-## 平台
+### Withdrawal replacement
 
-需要 dsh web 宿主（macOS / Linux）。
+#### What the model sees
 
-> 状态：编辑、撤回、文件快照已实现（14 项测试）。撤回撤回的 UI 入口待下一里程碑。
+After a withdrawal the model no longer sees the withdrawn user message or anything that followed it; in their place the history contains one minimal plugin-sourced user message, `(用户撤回了这条消息及其后的所有内容)`.
+
+#### Token effect
+
+A withdrawal removes every token of the shadowed span from subsequent requests and adds one short placeholder message.
+
+#### KV Cache effect
+
+A surface replacement rewrites the history tail, so the prompt prefix is invalidated from the replacement point — the same trade compaction makes, bounded by the withdrawn span's position: withdrawing an older message discards more cached prefix than withdrawing the latest one.
+
+### Restore replay
+
+#### What the model sees
+
+A restore appends the withdrawn span's replayable content at the tail in original order: every user message verbatim (an edited message restored as its last edit's text) and each assistant reply's text behind a one-line frame (`(以下是先前被撤回、现随恢复放回的助手回复)`), all plugin-tagged and citing their original events. Tool calls and results are not replayed. The withdrawn span itself stays hidden.
+
+#### Token effect
+
+A restore adds the span's replayable tokens (user messages plus assistant text) at the tail; tool-call and tool-result tokens stay out.
+
+#### KV Cache effect
+
+None beyond any ordinary new user message — the tail append extends the history without rewriting it.
+
+## Known Limitations and Deferred Work
+
+- **Full-span chat hiding depends on an undocumented DOM attribute.** The projection offers no node-suppression seam (the analysis below), so hiding works at the DOM layer: a dynamic stylesheet drops every chat row whose `data-chat-flow-key` attribute (`packages/client/ui-conversation/src/client/chat/ChatNodeSeat.tsx:44-46`) anchors inside a withdrawn span, covering assistant steps, tool calls, turn tails, and every other kind. On the first non-empty rule set the hider probes for the attribute and, if upstream renames or drops it, disables itself with one `console.warn` — the failure mode is the pre-hider behavior (the shadowed renderer still hides user messages), never an error. Rows remount from the node store on paging, so hidden rows re-acquire their rules as they mount; no scroll-anchoring interaction was observed in manual verification.
+- **Why the projection cannot do it (the upstream seam a durable fix needs).** The assembler runs every registered Definition's `match` per event with no veto (`packages/client/runtime/src/client/sessions/conversation-assembler.ts:370`), and `match(event)` reads only the current event (packages/client/AGENTS.md, "Conversation Node discipline"), while a shadowed event keeps its original `surfaceOp: 'append'` in the log — the replacement's range metadata lives on the replacement event only (`packages/core/session/src/types.ts:404-436`) — so shadowed events still match the built-in Definitions (`conversation-nodes/message.ts:36-40` and `assistant.ts:247-250` exclude *replacement* events, not shadowed ones). Node `visibility` is set only by the Definition that owns the node (`conversation-nodes/common.ts:56`) and the render order filters on nothing else (`chat-snapshot-builder.ts:135-139`); the assembler forbids withdrawing a materialized node (`conversation-assembler.ts:296-300`), and a node key is bound to its owning Definition's kind (`conversation-assembler.ts:707-718` + `contract/conversation.ts:272`), so a plugin Definition can neither flip nor impersonate an official node. Keyed shadowing of the other `conversation.chat.node` keys fails too: the official components are not exported, and the `command`, `turn-tail`, and `tool-call` entries declare child slots a shadow cannot re-declare (`ui-slots/src/index.ts:829`) — `tool-call` owns the per-tool-name keyed `tool.call.toolview` slot (`ui-tool/src/client/apply.ts:23-31`), whose key space is unbounded. Nothing about how the host writes the replacement (range, `sourceEventSeqs`) can change this, because the chat projection folds the log, not the surface; the official compaction pipeline makes the identical choice by design — a replaced span stays in the transcript (`chat/CompactionItem.tsx:1-7`, `runtime/src/client/sessions/conversation.ts:206-212`).
+- **Edit is text-only.** The inline editor backfills the joined text blocks; image attachments of the original message are not carried into the resend.
+- **Restore is a tail replay, not an in-place repair.** The surface fold is positional — a replaced span splices into exactly one node (`packages/core/session/src/surface.ts` `applySurfacePlan`) — so the withdrawn span cannot re-enter the model context where it was; `messageTools.restore` replays its user messages and assistant text as fresh tail messages in original order (tool calls/results excluded: the pairing cannot be re-entered and their side effects are not replayable), and the divider keeps its place with a「已恢复」badge while the restore rows live — withdrawing the restored rows again clears the badge and re-enables the action. A withdrawal's model-side hiding is never undone — the span stays off the surface. File snapshots from the predecessor experiment remain out of scope.
+- **The restore entry lives on withdrawal dividers only.** Editing produces no divider (the edited bubble replaces the span in place), so a purely edited span has no restore affordance; restoring a withdrawal span that CONTAINS an edit replacement replays the last edit's new text, and restoring one that starts at an edit replacement (an edited bubble later withdrawn) replays the edited text as the span's first entry.
+- **Assistant text replays as framed user-role messages.** `assistant/message` cannot carry a plugin source (`AssistantMessage.source` is `ModelMessageSource`) and the session trace requires an open step for assistant appends (`packages/core/session/src/invariant.ts:118`), so replayed replies land as plugin-sourced user messages behind the frame `(以下是先前被撤回、现随恢复放回的助手回复)` — role fidelity is preserved by the frame, not the role field.
+- **The divider's expand replay reads the materialized chat nodes.** A span whose rows fell out of the loaded window shows「撤回的内容不在当前已加载的历史中」instead of the entries; the model-side restore replay is unaffected (it folds the durable log, not the node store).
+- **Context messages keep the official renderer**, so they carry no edit/withdraw actions; admitted steering messages share the shadowed renderer and do. Withdrawing a user message hides any steering message inside the span from the model, since the replacement covers the surface tail. Queued (not yet admitted) messages are outside this plugin's scope: they are not in the session log, and the official queue dock already edits/removes them via `conversation.updateQueue`.

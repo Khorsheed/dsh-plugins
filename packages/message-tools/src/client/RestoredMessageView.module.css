@@ -1,0 +1,20 @@
+/* Restored-assistant line: left-aligned full-width like a native assistant
+   reply (the body typography comes from MarkdownText's own module); the undo
+   caption stays small and tertiary. */
+
+.restoredLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.restoredAssistantRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
+}

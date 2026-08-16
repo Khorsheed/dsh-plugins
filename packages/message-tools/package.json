@@ -1,13 +1,14 @@
 {
   "name": "@khorsheed/dsh-client-message-tools",
-  "description": "dsh plugin: edit and withdraw user messages (inline edit, withdrawal with file-impact confirmation, snapshot-backed undo)",
-  "version": "0.1.0-rc.6.2",
+  "description": "User-message edit (withdraw and resend) and withdrawal: the withdrawal writes a surface replacement that hides the message and everything after it from the model, with a chat divider marking the spot",
+  "version": "0.4.7",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-client-message-tools.git"
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/message-tools"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -17,68 +18,102 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": [
-    "lib/*.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts",
-    "cordis.patch.yml"
-  ],
-  "license": "MIT",
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "message",
-    "edit",
-    "withdraw",
-    "conversation"
-  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-runtime"
+        "@deepseek-ai/dsh-client-ui-model-selection"
       ],
       "platform": "web"
     }
   },
+  "scripts": {
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "bundle": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "watch": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-model-selection": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
-    "react": "^18.3.0"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-model-selection": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.3.0",
-    "lightningcss": "^1.33.0",
-    "react": "^18.3.0",
-    "tsdown": "^0.22.2",
-    "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^26.2.0",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0"
   },
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsdown",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit"
-  }
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ]
 }

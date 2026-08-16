@@ -1,0 +1,106 @@
+/* Withdrawal divider: one dim marker row in the official compaction-marker
+   language (no hard hairlines), expanding in place to the read-only replay.
+   Every token carries a fallback chain. */
+
+.row {
+  padding: 2px 0;
+}
+
+/* The marker row: a quiet 24px button with a chevron, dim title, and the
+   optional restored badge. */
+.marker {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.marker:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-1));
+}
+
+.leading {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+}
+
+.title {
+  flex: none;
+  font-size: 14px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary-dimmed, var(--dsw-alias-label-tertiary));
+}
+
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+}
+
+/* The expand body: indented under the marker, replay entries stacked. */
+.body {
+  padding: 4px 0 4px 22px;
+}
+
+.empty {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.entryUser,
+.entryAssistant {
+  padding: 4px 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+}
+
+.entryKind {
+  margin-bottom: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+}
+
+.entryUser {
+  border-left: 2px solid var(--dsw-alias-border-l2, var(--dsw-alias-label-primary-dimmed));
+  padding-left: 8px;
+}
+
+.entryAssistant {
+  border-left: 2px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2, var(--dsw-alias-label-primary-dimmed)));
+  padding-left: 8px;
+}
+
+.restoreRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.restoreFailed {
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+}

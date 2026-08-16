@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/marker.ts",
+    "src/types.ts",
+    "src/withdraw.ts",
+    "src/client/index.ts",
+    "src/client/backfill.ts",
+    "src/client/dom-hider.ts",
+    "src/client/edit-in-place.ts",
+    "src/client/withdraw-backfill.ts",
+    "src/client/icons.tsx",
+    "src/client/locales.ts",
+    "src/client/slots.ts",
+    "src/client/withdrawn-node.ts",
+    "src/client/ModelChip.tsx",
+    "src/client/RestoredMessageView.tsx",
+    "src/client/UserMessageView.tsx",
+    "src/client/WithdrawnDividerView.tsx"
+  ]
+}

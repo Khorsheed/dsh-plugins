@@ -1,0 +1,134 @@
+/* User bubble clone (ui-conversation ships no public components) plus the
+   message-tools action row and inline editor. Every token carries a fallback
+   so the bundle stays sane if a theme token is renamed. */
+
+.userRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.userStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(525px, 82%);
+}
+
+.bubble {
+  /* 525px cap inside the 736 column; percentage keeps narrow windows sane. */
+  max-width: 100%;
+  background: var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-1));
+  border-radius: 22px;
+  /* 44px single-line bubble: 24 line + 10 vertical padding each side. */
+  padding: 10px 16px;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
+}
+
+/* Reference chip projection inside a user bubble (`/skill` and `@subagent`
+   plain-text tokens render as chips; the logged text stays the truth). */
+.refChip {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(97, 135, 216, 0.22);
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
+  font-size: 0.85em;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+/* Action row: copy/edit/withdraw — metrics aligned with the official
+   MessageIconActions (10px row gap; 28px round buttons, tertiary → secondary
+   on hover). */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+}
+
+/* Inline editor: card + self-bordered textarea (MessageEditBox structure).
+   Auto-grow is JS-driven (scrollHeight, capped at 240px); overflow scrolls
+   inside the box so a long message never pushes the row's anchor. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2, var(--dsw-alias-label-primary-dimmed)));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, var(--dsw-alias-bg-layer-1));
+}
+
+.editorInput {
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-l1, var(--dsw-alias-label-primary-dimmed)));
+  border-radius: 6px;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
+  font: inherit;
+}
+
+.editorActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The trailing seat (the official model selector is a patch slot this plugin
+   does not have): stays empty, and its auto margin keeps the buttons right. */
+.editorTrailing {
+  display: flex;
+  align-items: center;
+  margin-right: auto;
+}
+
+.actionError {
+  align-self: flex-end;
+  padding: 2px 4px;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-secondary));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The「已编辑」badge above an edited bubble (edited replacement row). */
+.editedLabel {
+  align-self: flex-end;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
+}
