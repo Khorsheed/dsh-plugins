@@ -1,0 +1,3 @@
+import { clientBundle } from '../../build/tsdown.client.ts'
+
+export default clientBundle('@deepseek-ai/dsh-client-ui-shortcuts', ['lib/types/index.js', 'lib/types/invariant.js'])

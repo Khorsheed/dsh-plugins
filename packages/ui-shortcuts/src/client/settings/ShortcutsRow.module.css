@@ -1,0 +1,222 @@
+/* Shortcut settings row: fixed actions with rebindable key bindings. */
+
+/* The closing hairline is the inner `.divider`, not a border here: the
+   section column strips a border on the slot's last child. */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0 0;
+}
+
+.rowText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 48px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.divider {
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Grouped card: the fields sit inside one rounded container with inset
+   separators (the iOS/macOS grouped-list grammar), so the section header
+   outside the card reads as the parent of the rows inside it. */
+.fields {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+}
+
+.field + .field {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.fieldText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fieldLabel {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.fieldDesc {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.defaultHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-quaternary);
+}
+
+/* Right-hand column: the control row plus the capture hint that appears
+   under it while recording. */
+.side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Binding button: no own chrome — the keycaps carry the click affordance
+   the way game keybinding screens do (Steam / Discord keybinds): a physical
+   key reads as pressable without a wrapper. The button only supplies the
+   click target across the whole cluster. */
+.binding {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.binding:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+/* Keycap: elevated surface (lighter than the panel in dark mode) with a
+   thicker bottom edge for the physical-key look. Hover lifts the cap and
+   grows the bottom edge; pressing sinks it back — the key answers the
+   pointer like a mechanical switch. */
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-bottom: 2px solid var(--dsw-alias-border-l4);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.binding:hover .keycap {
+  transform: translateY(-1px);
+  border-bottom-width: 3px;
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.binding:active .keycap {
+  transform: translateY(1px);
+  border-bottom-width: 1px;
+}
+
+.plus {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Unbound slot: dashed outline reads as an empty seat to fill. */
+.empty {
+  composes: binding;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-tertiary);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.empty:hover {
+  border-color: var(--dsw-alias-border-l4);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Recording: accent outline + pulsing fill signal the claimed keyboard;
+   the fill doubles as the static state when motion is reduced. */
+.capture {
+  composes: binding;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+  animation: capturePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes capturePulse {
+  0%, 100% { background: transparent; }
+  50% { background: var(--dsw-alias-state-business-tertiary); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture {
+    animation: none;
+    background: var(--dsw-alias-state-business-tertiary);
+  }
+}
+
+.captureHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Reset-to-default: rendered only while the binding differs from the
+   shipped default (see ShortcutsRow), so no disabled state exists. */
+.reset {
+  height: 32px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-link);
+  cursor: pointer;
+}
+
+.reset:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
