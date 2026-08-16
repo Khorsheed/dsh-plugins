@@ -1,0 +1,29 @@
+# The dsh-local-agent-codex bundle patch: delegate dsh agents to the local
+# Codex CLI under a scoped CODEX_HOME, and surface its session records.
+#
+# Two rows are inserted:
+#   - local-agent-codex: this bundle's plugin registers the `codex` harness
+#     (CODEX_HOME scoped home, `codex login --device-auth`, rollout-file
+#     session records).
+#   - tool-subagent-codex-local: the one-shot CLI subagent provider
+#     (`codex exec` under the harness's scoped home). The provider name
+#     `codex-local` and tool name `subagent_codex_local` deliberately avoid
+#     colliding with the official subagent-codex provider (`codex`) and the
+#     disabled `subagent_codex` row in the shipped presets — a composition
+#     that mounts both would fail loud with a duplicate registration.
+#
+# The tool mounts at the profile root, so every agent preset can delegate
+# without per-preset variants. The provider starts no codex process until a
+# tool call or /codex login.
+
+- insert:
+    - id: local-agent-codex
+      name: '@khorsheed/dsh-local-agent-codex'
+
+    - id: tool-subagent-codex-local
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: codex-local
+        toolName: subagent_codex_local
+        enableRunInBackground: false
+        maxDepth: provider-managed
