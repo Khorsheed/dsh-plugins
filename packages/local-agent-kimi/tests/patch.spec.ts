@@ -5,14 +5,21 @@ import { describe, expect, it } from 'vitest'
 const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8')
 
 describe('local-agent-kimi bundle patch', () => {
-  it('mounts the subagent_kimi tool at the profile root', () => {
+  it('mounts the family-owned subagent_kimi tool at the profile root', () => {
     // The tool row sits beside the family rows (top-level insert), so every
     // agent preset — including minimal — delegates without per-preset
-    // variants.
+    // variants. The family tool replaces the official tool-subagent row with
+    // the same model-facing toolName, adding the optional resume parameter.
     expect(patch).toContain('- id: tool-subagent-kimi')
+    expect(patch).toContain("name: '@khorsheed/dsh-local-agent-tool-subagent'")
     expect(patch).toContain('provider: kimi-cli')
     expect(patch).toContain('toolName: subagent_kimi')
-    expect(patch).toContain('enableRunInBackground: false')
+  })
+
+  it('no longer references the official tool-subagent row or its config keys', () => {
+    expect(patch).not.toContain('@deepseek-ai/dsh-tool-subagent')
+    expect(patch).not.toContain('enableRunInBackground')
+    expect(patch).not.toContain('maxDepth')
   })
 
   it('no longer ships preset variants', () => {

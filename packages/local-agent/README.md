@@ -48,6 +48,10 @@ export function registerCodex(ctx: Context): void {
 }
 ```
 
+## Delegation registry (resume carrier)
+
+Beyond harness identity, the registry owns the family's **delegation registry**: a per-child-session record of which provider and CLI session a delegation used, plus a per-(parent, provider) FIFO of delegation intents. The family tool (`@khorsheed/dsh-local-agent-tool-subagent`, mounted by each harness bundle's patch) stages exactly one intent per call before `ctx.subagents.start()`, and the owning provider consumes exactly one per start — so fresh and resume rounds stay paired even under parallel delegation. A resume round's handle (the dsh child session id) resolves through the registry, which rejects a handle naming an unknown child, another parent's session, or the wrong provider. The subagent request descriptor cannot carry the target (its schema rejects unknown fields), so this service is the family-internal carrier; the same records will feed a future stop registry.
+
 ## Model Experience
 
 ### Harness command replies

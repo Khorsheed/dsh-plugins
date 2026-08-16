@@ -46,7 +46,8 @@
   "dependencies": {
     "@deepseek-ai/dsh-home-paths": "^0.0.1-rc.3",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@khorsheed/dsh-local-agent": "workspace:*"
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

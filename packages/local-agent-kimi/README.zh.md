@@ -57,6 +57,12 @@ base_url = "https://your-router.example/v1"
 
 `/kimi sessions` 列出作用域目录下的 `session_index.jsonl`（kimi 自有的 append-only 索引）——即本 agent 委派产生的会话，绝不是用户的私人会话。家族 core 的浏览器设置分区呈现同一份列表，并收窄到当前会话的工作区（只显示 `workDir` 与当前会话 cwd 一致的记录），一个项目的 kimi 会话不会出现在另一个项目的会话里；`/kimi sessions` 本身始终显示完整列表。其设置区（设置 → 本地 Agent）显示 harness 的认证状态，并提供网页登录按钮展示 device-code URL；登录进行中时状态会持续重新探测，直到凭据落地。已认证的行额外提供退出登录按钮（运行 `/kimi logout`），换账号即先退出再重新登录。
 
+## 续聊（resume）
+
+`subagent_kimi` 工具是家族自有工具（`@khorsheed/dsh-local-agent-tool-subagent`）——官方子集（`description`/`prompt`）加上一个可选 `resume` 参数。**首次**委派的结果文本会自述句柄（`追问请带 resume="<childSessionId>"`）；在后续轮次把它作为 `resume` 传回，就会在**同一个** dsh 子会话里继续**同一个** kimi 会话（`kimi -S session_<id> -p`），并按轮记账：轮次号递增、每轮 `turn/start`/`turn/end` 成对、usage 挂在当轮最后一条镜像的 assistant 消息上、wire 日志镜像增量推进，因此早期消息绝不重复。
+
+句柄绝不进 prompt：它只从 `resume` 参数读取，localAgent registry 只对记录该委派的同一 parent 会话与 provider 解析句柄——伪造的句柄（未知子会话、他人 parent 的会话、或错误的 provider）在任何 CLI 进程启动前就被拒绝。descriptor 无法携带该目标（其 schema 拒绝未知字段），因此家族改经 `localAgent` 服务的委派 registry 传递。
+
 ## Model Experience
 
 ### 子请求
@@ -77,7 +83,7 @@ Kimi 子会话是委派 Session 工作区内一个全新的一次性 `kimi -p` �
 
 #### 模型看到什么
 
-经由 `dsh-tool-subagent`，父级只看到选定的 Kimi 最终回答，或 Consumer 的精确错误。Kimi 的评论、工具活动、工作区 diff 不会复制进父级 Session。
+经由家族工具（`subagent_kimi`），父级只看到选定的 Kimi 最终回答，或 Consumer 的精确错误，以及首次委派时的续聊自述。Kimi 的评论、工具活动、工作区 diff 不会复制进父级 Session。
 
 #### Token 影响
 
@@ -89,7 +95,7 @@ Kimi 子会话是委派 Session 工作区内一个全新的一次性 `kimi -p` �
 
 ### 委派记账
 
-子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终镜像的 `assistant/message` 携带 wire 日志里最后一条 `usage.record` 的 token 用量（`inputOther`→未缓存输入、`output`→输出、`inputCacheRead`→缓存读取、`inputCacheCreation`→缓存写入），`tokenUsage` 投影据此统计委派。
+子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终镜像的 `assistant/message` 携带 wire 日志里最后一条 `usage.record` 的 token 用量（`inputOther`→未缓存输入、`output`→输出、`inputCacheRead`→缓存读取、`inputCacheCreation`→缓存写入），`tokenUsage` 投影据此统计委派。每轮续聊都在各自递增的轮次号下重复这一记账。
 
 ## 兼容性
 

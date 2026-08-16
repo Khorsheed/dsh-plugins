@@ -1,9 +1,11 @@
 /**
- * One-shot Kimi CLI subagent lifecycle: spawn `kimi -p "<task>"` through the
- * subprocess seam, capture its printed response as the run output, and
- * dispose to whole-tree quiescence. Mirrors the official one-shot Codex
- * provider: every accepted run is a fresh process and a fresh kimi session;
- * there is no continuation across runs.
+ * One-shot and resumable Kimi CLI subagent lifecycle: spawn `kimi -p "<task>"`
+ * through the subprocess seam, capture its printed response as the run output,
+ * and dispose to whole-tree quiescence. Mirrors the official one-shot Codex
+ * provider, and adds the family's own resume: a later round calls the tool with
+ * the first round's dsh child session id, the family registry maps it back to
+ * the kimi session, and the provider spawns `kimi -S session_<id> -p` so the
+ * SAME kimi conversation continues inside the SAME dsh child session.
  * @module @khorsheed/dsh-local-agent-kimi/kimi-cli-provider
  */
 
@@ -33,10 +35,13 @@ import { mirrorKimiSession } from './session-mirror.ts'
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /**
- * One-shot Kimi CLI subagent provider: every accepted run starts a fresh
- * `kimi -p` process in the delegating Session's workspace, under the harness
- * scoped home. Mirrors the official one-shot Codex provider, including
- * `NO_START_CAPABILITIES` — there is no continuation across runs.
+ * One-shot Kimi CLI subagent provider: every accepted fresh run starts a
+ * fresh `kimi -p` process in the delegating Session's workspace, under the
+ * harness scoped home; a resume round (the family tool's staged resume intent)
+ * continues the SAME kimi session with `kimi -S session_<id> -p` inside the
+ * SAME dsh child session. Mirrors the official one-shot Codex provider for the
+ * fresh path, including `NO_START_CAPABILITIES` — continuation is the family's
+ * own resume mechanism, not the official Agent-type continuable seam.
  */
 export class KimiCliProvider implements SubagentProvider {
   readonly name = 'kimi-cli'
@@ -51,10 +56,22 @@ export class KimiCliProvider implements SubagentProvider {
       throw new Error('subagent-kimi: the parent session has no working directory to run the CLI in')
     }
     const homeDir = this.ctx.localAgent.homeDir('kimi')
-    // A dsh subagent session records the delegation so it appears in the
-    // standard 子代理 surface; the transcript is mirrored into it after the
-    // run settles. Failure to create or persist the record degrades to the
-    // plain one-shot run rather than failing the delegation.
+    // The family tool stages exactly one intent per delegation call; the
+    // provider consumes exactly one per start. A resume intent continues the
+    // recorded kimi session inside the existing child session.
+    const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    if (intent !== undefined && intent.kind === 'resume') {
+      return this.startKimiResume(request, intent, parentCwd, homeDir)
+    }
+    return this.startKimiFresh(request, parentCwd, homeDir)
+  }
+
+  /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
+  private async startKimiFresh(
+    request: ResolvedSubagentStartRequest,
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
@@ -104,6 +121,51 @@ export class KimiCliProvider implements SubagentProvider {
       childSession,
       homeDir,
       ctx: this.ctx,
+      // The first round records the kimi session id so a later resume round
+      // can continue it; the mirror offset starts at zero.
+      onCliSessionId: (cliSessionId) => {
+        if (cliSessionId === undefined) return
+        this.ctx.localAgent.recordDelegation({
+          childSessionId: runId,
+          provider: this.name,
+          parentSessionId: request.parent.session.id,
+          cliSessionId,
+        })
+      },
+    })
+  }
+
+  /** Resume round: continue the recorded kimi session inside the existing child session. */
+  private async startKimiResume(
+    request: ResolvedSubagentStartRequest,
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
+    const sessions = this.ctx.get('sessions')
+    const childSession = sessions?.get(SessionId(intent.childSessionId))
+    if (childSession === undefined) {
+      throw new Error(
+        `subagent-kimi: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
+      )
+    }
+    // The next turn follows the rounds already recorded in the child session.
+    const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+    const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
+    this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
+    return startKimiCliRun(request, {
+      cwd: parentCwd,
+      env: { KIMI_CODE_HOME: homeDir },
+      endpointLabel: baseUrl,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => this.ctx.subprocess.spawn(spec),
+      onError: (error: unknown, stopReason) => {
+        this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+      },
+      childSession,
+      homeDir,
+      ctx: this.ctx,
+      resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
     })
   }
 }
@@ -128,6 +190,18 @@ export interface KimiCliRunSpec {
   readonly homeDir?: string | undefined
   /** Host context carrying session persistence for the transcript mirror. */
   readonly ctx?: Context | undefined
+  /**
+   * Resume round: continue the CLI session named by `cliSessionId` with
+   * `kimi -S session_<id> -p` instead of a fresh `kimi -p`, appending this
+   * round into the same child session under the given turn number.
+   */
+  readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
+  /**
+   * Called after the run settles with the kimi session id parsed from stderr
+   * (absent when the hint is missing). The fresh path uses it to record the
+   * delegation so a later resume round can continue the session.
+   */
+  readonly onCliSessionId?: ((cliSessionId: string | undefined) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -171,8 +245,11 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 }
 
 /**
- * Start the real `kimi -p` child and publish its one-shot run. The kimi
- * response is printed to stdout; stderr is inherited for diagnostics.
+ * Start the real `kimi -p` (fresh) or `kimi -S session_<id> -p` (resume)
+ * child and publish its run. The kimi response is printed to stdout; stderr
+ * is inherited for diagnostics. The run id is the child session id for a
+ * session-backed run, so the tool's `resume="<id>"` self-description names
+ * the same handle the registry records.
  * @param request - resolved shared subagent request.
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
@@ -185,12 +262,16 @@ export function startKimiCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-kimi: request was aborted before the CLI started')
   }
+  const turn = spec.resume?.turn ?? 1
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc mirror time.
-  spec.childSession?.append('turn/start', { turn: 1 })
+  spec.childSession?.append('turn/start', { turn })
 
   const child = spec.spawn({
-    argv: ['kimi', '-p', task],
+    // -S must precede -p: after -p, kimi parses the id as a command.
+    argv: spec.resume === undefined
+      ? ['kimi', '-p', task]
+      : ['kimi', '-S', `session_${spec.resume.cliSessionId}`, '-p', task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
@@ -200,7 +281,7 @@ export function startKimiCliRun(
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   // stderr carries diagnostics plus the resume hint naming this run's session;
-  // parsed for the mirror, never folded into the run output.
+  // parsed for the mirror and the delegation record, never folded into output.
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
@@ -262,25 +343,37 @@ export function startKimiCliRun(
     // leaving the turn open with a distorted tiny duration.
     if (spec.childSession !== undefined) {
       if (settled.stopReason === 'completed') {
-        spec.childSession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
       } else if (settled.stopReason === 'aborted') {
-        spec.childSession.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
       } else {
         spec.childSession.append('turn/end', {
-          turn: 1,
+          turn,
           reason: { kind: 'error', error: { message: 'kimi -p exited before the run completed', code: 'UNKNOWN' } },
         })
       }
     }
-    // Mirror the kimi session's transcript into the dsh subagent session so
-    // the delegation is visible in the standard 子代理 surface and opening it
-    // shows the conversation. Runs AFTER the result race settles — an awaited
-    // mirror inside the race branch would lose to processFailure and fail the
-    // run with a spurious 'CLI exited before the run settled' error.
+    // Mirror the kimi session's transcript delta into the dsh subagent session
+    // so the delegation is visible in the standard 子代理 surface. Runs AFTER
+    // the result race settles — an awaited mirror inside the race branch would
+    // lose to processFailure and fail the run with a spurious 'CLI exited
+    // before the run settled' error. A resume round mirrors only the lines
+    // after the already-mirrored offset.
     if (settled.stopReason === 'completed'
       && spec.childSession !== undefined && spec.homeDir !== undefined && spec.ctx !== undefined) {
       try {
-        await mirrorKimiSession(spec.ctx, spec.childSession, spec.homeDir, kimiSessionIdFromOutput(stderr))
+        const kimiSessionId = kimiSessionIdFromOutput(stderr)
+        if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
+        // A resume round mirrors only the delta after the recorded offset; a
+        // fresh round starts from zero. The mirror returns the new total
+        // transcript-line count, which becomes the next round's offset.
+        const fromLines = spec.resume === undefined
+          ? 0
+          : spec.ctx.localAgent.kimiMirroredLines(spec.childSession.id) ?? 0
+        const total = await mirrorKimiSession(
+          spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, fromLines,
+        )
+        spec.ctx.localAgent.setKimiMirroredLines(spec.childSession.id, total)
       } catch (error) {
         spec.onError?.(thrown(error), 'error')
       }
@@ -289,7 +382,10 @@ export function startKimiCliRun(
   })
 
   return Promise.resolve(subprocessRunHandle({
-    id: SessionId(randomUUID()),
+    // A session-backed run's id is the child session id (the seam's local-run
+    // contract), so the tool's resume self-description names the same handle
+    // the delegation registry records.
+    id: spec.childSession?.id ?? SessionId(randomUUID()),
     result,
     signal: request.signal,
     onAbort,

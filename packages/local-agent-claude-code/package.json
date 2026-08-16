@@ -48,9 +48,9 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-subagent": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@khorsheed/dsh-local-agent": "workspace:*"
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",

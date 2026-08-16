@@ -58,6 +58,12 @@ Every delegation logs the effective custom endpoint at info level (`subagent-cod
 
 `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` rollout files (Codex's own append-only session log) — the sessions this agent's delegations created, never the user's personal sessions. The family core's browser settings section renders the same listing narrowed to the current session's workspace (only records whose `workDir` matches the session cwd), so one project's codex sessions never surface in another project's session; `/codex sessions` itself always shows the full list. The settings section (Settings → 本地 Agent) shows the harness auth status with a web-login button that surfaces the device-code URL; while a login is pending, the status keeps re-probing until the credentials land. An authenticated row adds a sign-out button that runs `/codex logout`, so switching accounts is a sign-out then a fresh login.
 
+## Continuation (resume)
+
+The `subagent_codex_local` tool is the family-owned tool (`@khorsheed/dsh-local-agent-tool-subagent`) — the official subset (`description`/`prompt`) plus an optional `resume` parameter. A **fresh** delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as `resume` in a later round continues the SAME codex thread (`codex exec --json resume <thread_id>`) inside the SAME dsh child session, with per-round accounting: the turn number increments, `turn/start`/`turn/end` pair per round, and usage rides that round's assistant message.
+
+The handle never rides the prompt: it is read only from the `resume` parameter, and the localAgent registry resolves it only for the same parent session and provider that recorded the delegation — a forged handle (unknown child session, another parent's session, or the wrong provider) is rejected before any CLI process starts. The descriptor cannot carry the target (its schema rejects unknown fields), so the family passes it through the `localAgent` service's delegation registry instead.
+
 ## Model Experience
 
 ### Child request
@@ -78,7 +84,7 @@ Independent of the parent request cache. Reuse depends only on the scoped Codex 
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent sees only the selected final Codex answer or the consumer's exact error. Codex commentary, tool activity, and workspace diffs are not copied into the parent Session.
+Through the family tool (`subagent_codex_local`), the parent sees only the selected final Codex answer or the consumer's exact error, plus the resume self-description on a fresh delegation. Codex commentary, tool activity, and workspace diffs are not copied into the parent Session.
 
 #### Token effect
 
@@ -90,7 +96,7 @@ No effect.
 
 ### Delegation accounting
 
-The child session carries real usage and timing: the provider opens `turn/start` when the CLI spawns and closes `turn/end` when it settles — including on failure or cancellation (reason `error`/`aborted`) — so the `subagentTiming` projection's duration equals the actual CLI runtime and the window never stays open on a failed run; the final `assistant/message` carries the turn's token usage parsed from the `codex exec --json` event stream. Codex's `input_tokens` is the TOTAL input including cache hits (OpenAI-style; `input_tokens + output_tokens` equals the rollout's `total_tokens`), so the uncached bucket is `input_tokens − cached_input_tokens`, `cached_input_tokens` maps to cache read, `output_tokens` to output; codex has no cache-write concept. The `tokenUsage` projection counts the delegation without double counting cache hits.
+The child session carries real usage and timing: the provider opens `turn/start` when the CLI spawns and closes `turn/end` when it settles — including on failure or cancellation (reason `error`/`aborted`) — so the `subagentTiming` projection's duration equals the actual CLI runtime and the window never stays open on a failed run; the final `assistant/message` carries the turn's token usage parsed from the `codex exec --json` event stream. Codex's `input_tokens` is the TOTAL input including cache hits (OpenAI-style; `input_tokens + output_tokens` equals the rollout's `total_tokens`), so the uncached bucket is `input_tokens − cached_input_tokens`, `cached_input_tokens` maps to cache read, `output_tokens` to output; codex has no cache-write concept. The `tokenUsage` projection counts the delegation without double counting cache hits. Each resumed round repeats this accounting under its own incrementing turn number.
 
 ## Compatibility
 

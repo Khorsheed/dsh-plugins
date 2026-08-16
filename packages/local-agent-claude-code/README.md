@@ -43,6 +43,12 @@ Every Claude process the bundle starts (login, delegation) runs with `CLAUDE_CON
 
 `/claude-code sessions` lists the scoped home's `projects/<cwd-slug>/<uuid>.jsonl` session files (Claude Code's own append-only session log) — the sessions this agent's delegations created, never the user's personal sessions. The directory slug is a **lossy** encoding of the workspace path (separators become dashes and distinct paths can collide), so the listed `workDir` always comes from the file CONTENT (the first `user` event's `cwd` field), never the directory name. The family core's browser settings section renders the same listing narrowed to the current session's workspace; `/claude-code sessions` itself always shows the full list.
 
+## Continuation (resume)
+
+The `subagent_claude_code_local` tool is the family-owned tool (`@khorsheed/dsh-local-agent-tool-subagent`) — the official subset (`description`/`prompt`) plus an optional `resume` parameter. A **fresh** delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as `resume` in a later round continues the SAME claude session (`claude -p --resume <session_id>`) inside the SAME dsh child session, with per-round accounting: the turn number increments, `turn/start`/`turn/end` pair per round, and usage rides that round's assistant message.
+
+The handle never rides the prompt: it is read only from the `resume` parameter, and the localAgent registry resolves it only for the same parent session and provider that recorded the delegation — a forged handle (unknown child session, another parent's session, or the wrong provider) is rejected before any CLI process starts. The descriptor cannot carry the target (its schema rejects unknown fields), so the family passes it through the `localAgent` service's delegation registry instead.
+
 ## Model Experience
 
 ### Child request
@@ -63,7 +69,7 @@ Independent of the parent request cache. Reuse depends only on the scoped Claude
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent sees only the selected final Claude answer or the consumer's exact error. Claude commentary, tool activity, and workspace diffs are not copied into the parent Session.
+Through the family tool (`subagent_claude_code_local`), the parent sees only the selected final Claude answer or the consumer's exact error, plus the resume self-description on a fresh delegation. Claude commentary, tool activity, and workspace diffs are not copied into the parent Session.
 
 #### Token effect
 

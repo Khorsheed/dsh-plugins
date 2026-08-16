@@ -10,13 +10,15 @@
 #   - local-agent-claude-code: this bundle's plugin registers the
 #     `claude-code` harness (CLAUDE_CONFIG_DIR scoped home,
 #     `claude auth login` browser flow, project-file session records).
-#   - tool-subagent-claude-code-local: the one-shot CLI subagent provider
-#     (`claude -p --output-format json` under the harness's scoped home). The
-#     provider name `claude-local` and tool name `subagent_claude_code_local`
-#     deliberately avoid colliding with the official subagent-claude-code
-#     provider (`claude-code`) and the disabled `subagent_claude_code` row in
-#     the shipped presets — a composition that mounts both would fail loud
-#     with a duplicate registration.
+#   - tool-subagent-claude-code-local: the family-owned delegation tool
+#     (schema description/prompt plus optional resume) over the `claude-local`
+#     provider. The toolName stays `subagent_claude_code_local` — the same
+#     model-facing name the official tool-subagent row used — and deliberately
+#     avoids colliding with the official subagent-claude-code provider
+#     (`claude-code`) and the disabled `subagent_claude_code` row in the
+#     shipped presets, while the family tool adds continuation: a later round
+#     may pass the dsh child session id returned by the first delegation to
+#     continue the same claude conversation.
 #
 # The tool mounts at the profile root, so every agent preset can delegate
 # without per-preset variants. The provider starts no claude process until a
@@ -27,9 +29,7 @@
       name: '@khorsheed/dsh-local-agent-claude-code'
 
     - id: tool-subagent-claude-code-local
-      name: '@deepseek-ai/dsh-tool-subagent'
+      name: '@khorsheed/dsh-local-agent-tool-subagent'
       config:
         provider: claude-local
         toolName: subagent_claude_code_local
-        enableRunInBackground: false
-        maxDepth: provider-managed

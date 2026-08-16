@@ -17,6 +17,7 @@ function crossCheckContext(harness: LocalAgentHarness, mountedProviders: readonl
   const registry = {
     list: () => [harness.name],
     get: (name: string) => (name === harness.name ? harness : undefined),
+    listDelegations: () => [],
   } as unknown as LocalAgentRegistry
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
   ctx.provide('loader', { await: async () => {} })
@@ -88,10 +89,30 @@ describe('local-agent delegation cross-check', () => {
     const registry = {
       list: () => ['kimi'],
       get: (name: string) => (name === 'kimi' ? harness('kimi', { delegationProvider: 'kimi-acp' }) : undefined),
+      listDelegations: () => [],
     } as unknown as LocalAgentRegistry
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('loader', { await: async () => {} })
     await ctx.plugin(InvariantRegistry, { enabled: true })
     await expect(ctx.plugin(LocalAgentInvariant)).resolves.toBeDefined()
+  })
+
+  it('fails loud when a recorded delegation names a provider that is not mounted', async () => {
+    const ctx = new Context()
+    const registry = {
+      list: () => [],
+      get: () => undefined,
+      listDelegations: () => [{
+        childSessionId: 'child-1',
+        provider: 'kimi-cli',
+        parentSessionId: 'parent-1',
+        cliSessionId: 'session_42',
+      }],
+    } as unknown as LocalAgentRegistry
+    ctx.provide(LOCAL_AGENT_SERVICE, registry)
+    ctx.provide('loader', { await: async () => {} })
+    ctx.provide('subagents', { getProvider: () => undefined })
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await expect(ctx.plugin(LocalAgentInvariant)).rejects.toThrow(/records provider "kimi-cli" which is not mounted/)
   })
 })

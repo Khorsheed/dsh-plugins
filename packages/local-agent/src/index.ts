@@ -23,7 +23,13 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import type { LocalAgentRosterRow, LocalAgentSessionRecord, LocalAgentStatus } from './types.ts'
+import type {
+  LocalAgentDelegationIntent,
+  LocalAgentDelegationRecord,
+  LocalAgentRosterRow,
+  LocalAgentSessionRecord,
+  LocalAgentStatus,
+} from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 
 /** Stable Cordis plugin name. */
@@ -32,7 +38,13 @@ export const name = 'local-agent'
 /** Services required before the registry and commands can mount. */
 export const inject = ['commands']
 
-export type { LocalAgentRosterRow, LocalAgentSessionRecord, LocalAgentStatus } from './types.ts'
+export type {
+  LocalAgentDelegationIntent,
+  LocalAgentDelegationRecord,
+  LocalAgentRosterRow,
+  LocalAgentSessionRecord,
+  LocalAgentStatus,
+} from './types.ts'
 
 /** Per-harness session listing: reads the harness's own records format. */
 export interface LocalAgentRecordsAdapter {
@@ -130,6 +142,11 @@ export interface Config {
 /** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
 export const REPLACE_LOGIN_GRACE_MS = 5_000
 
+/** One delegation-intent queue per (parent session, provider). */
+function delegationIntentKey(parentSessionId: string, provider: string): string {
+  return `${parentSessionId}\u0000${provider}`
+}
+
 export const Config: z<Config> = z.object({
   homesRoot: z.string().required(),
   loginPromptTimeoutMs: z.number().default(10_000),
@@ -196,6 +213,20 @@ export class LocalAgentRegistry {
   private readonly harnesses = new Map<string, LocalAgentHarness>()
   private readonly commandDisposers = new Map<string, () => void>()
   private readonly logins = new Map<string, LoginController>()
+  /**
+   * One delegation per dsh child session id: the CLI session id a resumed
+   * round continues, plus the ownership proof (parent session) and the
+   * provider that owns the CLI session.
+   */
+  private readonly delegations = new Map<string, LocalAgentDelegationRecord>()
+  /**
+   * Per-(parent session, provider) FIFO of delegation intents. The family
+   * resume tool stages exactly one intent per call before awaiting
+   * `ctx.subagents.start()`, and the owning provider consumes exactly one per
+   * start, so fresh and resume rounds stay paired even under parallel
+   * delegations from one parent.
+   */
+  private readonly delegationIntents = new Map<string, LocalAgentDelegationIntent[]>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -302,7 +333,131 @@ export class LocalAgentRegistry {
     return this.requireHarness(name).records.listSessions(this.homeDir(name))
   }
 
-  /** Resolve one harness or fail loud. */
+  /**
+   * Record one delegation's CLI-session mapping after its first round
+   * settles, so a later resume round can continue the same CLI session. The
+   * provider learns the CLI session id only from the settled round's output,
+   * so recording happens post-settle. A duplicate child session id replaces
+   * the earlier record: a resumed child keeps one mapping.
+   * @param record - the delegation's dsh child session id, provider, owning
+   *   parent session id, and CLI session id.
+   */
+  recordDelegation(record: LocalAgentDelegationRecord): void {
+    this.delegations.set(record.childSessionId, record)
+  }
+
+  /**
+   * Resolve the CLI-session mapping a resume tool call needs to continue a
+   * previous delegation. Ownership is proven by the recorded parent session
+   * id: a caller naming a child session it did not delegate is rejected
+   * instead of resuming someone else's conversation context.
+   * @param childSessionId - the dsh child session id from the first round.
+   * @param claims - the caller's provider and parent session id.
+   * @returns the recorded CLI session id to continue.
+   * @throws when the child session is unknown, owned by another parent, or
+   *   served by a different provider than claimed.
+   */
+  resolveDelegation(
+    childSessionId: string,
+    claims: { readonly provider: string; readonly parentSessionId: string },
+  ): { readonly cliSessionId: string } {
+    const record = this.delegations.get(childSessionId)
+    if (record === undefined) {
+      throw new Error(`localAgent: no delegation recorded for child session ${childSessionId}`)
+    }
+    if (record.parentSessionId !== claims.parentSessionId) {
+      throw new Error(
+        `localAgent: child session ${childSessionId} belongs to another parent session and cannot be resumed`,
+      )
+    }
+    if (record.provider !== claims.provider) {
+      throw new Error(
+        `localAgent: child session ${childSessionId} was delegated through ${record.provider}, not ${claims.provider}`,
+      )
+    }
+    return { cliSessionId: record.cliSessionId }
+  }
+
+  /**
+   * Stage one delegation intent for a provider's next `start()`. The family
+   * resume tool stages exactly one intent per call before awaiting
+   * `ctx.subagents.start()`; the provider consumes exactly one per start via
+   * {@link takeDelegationIntent}, so the per-(parent, provider) FIFO pairs
+   * fresh and resume rounds even under parallel delegations from one parent.
+   * @param parentSessionId - the delegating parent session id.
+   * @param provider - the `ctx.subagents` provider name.
+   * @param intent - the fresh or resume intent for the next start.
+   */
+  stageDelegationIntent(
+    parentSessionId: string,
+    provider: string,
+    intent: LocalAgentDelegationIntent,
+  ): void {
+    const key = delegationIntentKey(parentSessionId, provider)
+    const queue = this.delegationIntents.get(key)
+    if (queue === undefined) {
+      this.delegationIntents.set(key, [intent])
+      return
+    }
+    queue.push(intent)
+  }
+
+  /**
+   * Consume the oldest staged intent for one provider start, or `undefined`
+   * when the queue is empty (a provider invoked directly without the family
+   * tool stages nothing and starts a fresh round).
+   * @param parentSessionId - the delegating parent session id.
+   * @param provider - the `ctx.subagents` provider name.
+   * @returns the oldest staged intent, or undefined when none is staged.
+   */
+  takeDelegationIntent(
+    parentSessionId: string,
+    provider: string,
+  ): LocalAgentDelegationIntent | undefined {
+    const key = delegationIntentKey(parentSessionId, provider)
+    const queue = this.delegationIntents.get(key)
+    if (queue === undefined || queue.length === 0) return undefined
+    const intent = queue.shift()
+    if (queue.length === 0) this.delegationIntents.delete(key)
+    return intent
+  }
+
+  /**
+   * Every recorded delegation, in recording order. The invariant companion
+   * cross-checks each record's provider against the mounted subagent
+   * providers so a provider rename cannot leave a stale resume mapping.
+   * @returns the recorded delegations.
+   */
+  listDelegations(): readonly LocalAgentDelegationRecord[] {
+    return [...this.delegations.values()]
+  }
+
+  /**
+   * Read the kimi transcript lines already mirrored into one child session,
+   * so a resumed round mirrors only its delta instead of duplicating earlier
+   * messages. Absent means the first round has not mirrored yet.
+   * @param childSessionId - the dsh child session id.
+   * @returns the mirrored transcript-line count, or undefined.
+   */
+  kimiMirroredLines(childSessionId: string): number | undefined {
+    return this.delegations.get(childSessionId)?.kimiMirroredLines
+  }
+
+  /**
+   * Advance the kimi transcript-line mirror offset for one child session.
+   * The kimi provider calls this after every mirror (fresh or resumed) with
+   * the new total transcript-line count.
+   * @param childSessionId - the dsh child session id.
+   * @param lines - the total transcript lines mirrored so far.
+   */
+  setKimiMirroredLines(childSessionId: string, lines: number): void {
+    const record = this.delegations.get(childSessionId)
+    if (record === undefined) return
+    this.delegations.set(childSessionId, { ...record, kimiMirroredLines: lines })
+  }
+
+  /**
+   * Resolve one harness or fail loud. */
   private requireHarness(name: string): LocalAgentHarness {
     const harness = this.harnesses.get(name)
     if (harness === undefined) throw new Error(`localAgent: unknown harness ${name}`)

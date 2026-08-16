@@ -5,14 +5,21 @@ import { describe, expect, it } from 'vitest'
 const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8')
 
 describe('local-agent-codex bundle patch', () => {
-  it('mounts the subagent_codex_local tool at the profile root', () => {
+  it('mounts the family-owned tool at the profile root', () => {
     // The tool row sits at the profile root (top-level insert), so every
     // agent preset — including minimal — delegates without per-preset
-    // variants.
+    // variants. The family tool replaces the official tool-subagent row with
+    // the same model-facing toolName, adding the optional resume parameter.
     expect(patch).toContain('- id: tool-subagent-codex-local')
+    expect(patch).toContain("name: '@khorsheed/dsh-local-agent-tool-subagent'")
     expect(patch).toContain('provider: codex-local')
     expect(patch).toContain('toolName: subagent_codex_local')
-    expect(patch).toContain('enableRunInBackground: false')
+  })
+
+  it('no longer references the official tool-subagent row or its config keys', () => {
+    expect(patch).not.toContain('@deepseek-ai/dsh-tool-subagent')
+    expect(patch).not.toContain('enableRunInBackground')
+    expect(patch).not.toContain('maxDepth')
   })
 
   it('does not re-insert the family core row the framework bundle owns', () => {

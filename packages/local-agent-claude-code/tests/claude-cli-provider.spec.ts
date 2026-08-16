@@ -4,7 +4,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
-import { parseClaudeJsonResult, startClaudeCliRun } from '../src/claude-cli-provider.ts'
+import { parseClaudeJsonResult, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 
 /** The single JSON line a real `claude -p --output-format json` emits. */
 const jsonResult = JSON.stringify({
@@ -121,5 +121,86 @@ describe('claude-cli-provider run settlement', () => {
     expect(endData?.reason?.kind).toBe('error')
     expect(endData?.reason?.error?.message).toContain('exited with code 1')
     await done
+  })
+})
+
+describe('claude-cli-provider resume round', () => {
+  it('spawns claude -p --resume <session_id> into the existing child session with the next turn', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'claude-local', label: 'Claude Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/claude-home',
+      get: () => ({ displayName: 'Claude Code' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 's1',
+      }),
+      recordDelegation: () => {},
+    } as never)
+
+    const spawned: string[][] = []
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: string[] }) => {
+        spawned.push(spec.argv)
+        return stubChild().handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new ClaudeCliProvider(ctx, 'skip')
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '继续' },
+    } as unknown as Parameters<ClaudeCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(spawned[0]).toEqual(['claude', '-p', '--dangerously-skip-permissions', '--resume', 's1', '--output-format', 'json', '接着做'])
+    expect(run.id).toBe(SessionId('child-run-1'))
+    const turnStarts = child.events.filter(event => event.type === 'turn/start')
+    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    expect(turnStarts).toHaveLength(2)
+    expect(turnEnds).toHaveLength(2)
+    expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
+    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    await run.dispose()
+  })
+
+  it('fails loud when the resume target child session is not live', async () => {
+    const ctx = new Context()
+    ctx.provide('sessions', { get: () => undefined } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/claude-home',
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-gone',
+        cliSessionId: 's1',
+      }),
+      recordDelegation: () => {},
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new ClaudeCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<ClaudeCliProvider['start']>[0]
+
+    await expect(provider.start(request)).rejects.toThrow(/is not live/)
   })
 })

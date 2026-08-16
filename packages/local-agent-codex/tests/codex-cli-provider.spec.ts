@@ -143,7 +143,14 @@ describe('codex-cli-provider child session record', () => {
         return session
       },
     } as never)
-    ctx.provide('localAgent', { homeDir: () => '/tmp/codex-home', get: () => ({ displayName: 'Codex' }) } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/codex-home',
+      get: () => ({ displayName: 'Codex' }),
+      takeDelegationIntent: () => undefined,
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in record test') } } as never)
     ctx.provide('logger', { warn: () => {} } as never)
 
@@ -166,5 +173,86 @@ describe('codex-cli-provider child session record', () => {
     })
     const descriptor = created[0]!.session.events.find(event => event.type === 'subagent/descriptor')
     expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex: Codex 建文件' })
+  })
+})
+
+describe('codex-cli-provider resume round', () => {
+  it('spawns codex exec --json resume <thread_id> into the existing child session with the next turn', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) } as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/codex-home',
+      get: () => ({ displayName: 'Codex' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 't1',
+      }),
+      recordDelegation: () => {},
+    } as never)
+
+    const spawned: string[][] = []
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: string[] }) => {
+        spawned.push(spec.argv)
+        return stubChild().handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new CodexCliProvider(ctx, 'read-only')
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'codex-local', label: '继续' },
+    } as unknown as Parameters<CodexCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'read-only', '--json', 'resume', 't1', '接着做'])
+    expect(run.id).toBe(SessionId('child-run-1'))
+    const turnStarts = child.events.filter(event => event.type === 'turn/start')
+    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    expect(turnStarts).toHaveLength(2)
+    expect(turnEnds).toHaveLength(2)
+    expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
+    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    await run.dispose()
+  })
+
+  it('fails loud when the resume target child session is not live', async () => {
+    const ctx = new Context()
+    ctx.provide('sessions', { get: () => undefined } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/codex-home',
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-gone',
+        cliSessionId: 't1',
+      }),
+      recordDelegation: () => {},
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new CodexCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<CodexCliProvider['start']>[0]
+
+    await expect(provider.start(request)).rejects.toThrow(/is not live/)
   })
 })

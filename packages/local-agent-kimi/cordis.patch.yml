@@ -7,9 +7,13 @@
 # Two rows are inserted:
 #   - local-agent-kimi: this bundle's plugin registers the `kimi` harness
 #     (KIMI_CODE_HOME, `kimi login`, session_index records).
-#   - tool-subagent-kimi: the one-shot CLI subagent provider (spawns
-#     `kimi -p` under the harness's scoped home). The provider name
-#     `kimi-cli` is what preset tool rows reference.
+#   - tool-subagent-kimi: the family-owned delegation tool (schema
+#     description/prompt plus optional resume) over the `kimi-cli` provider.
+#     The toolName stays `subagent_kimi` — the same model-facing name the
+#     official tool-subagent row used — so presets and prompts keep working,
+#     while the family tool adds continuation: a later round may pass the dsh
+#     child session id returned by the first delegation to continue the same
+#     kimi conversation.
 #
 # The subagent_kimi tool row mounts at the profile root, so every agent
 # preset (standard/code/minimal/cordis and future ones) can delegate without
@@ -21,9 +25,7 @@
       name: '@khorsheed/dsh-local-agent-kimi'
 
     - id: tool-subagent-kimi
-      name: '@deepseek-ai/dsh-tool-subagent'
+      name: '@khorsheed/dsh-local-agent-tool-subagent'
       config:
         provider: kimi-cli
         toolName: subagent_kimi
-        enableRunInBackground: false
-        maxDepth: provider-managed

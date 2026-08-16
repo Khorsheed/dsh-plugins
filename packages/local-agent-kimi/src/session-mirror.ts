@@ -48,24 +48,34 @@ function lineBlocks(line: KimiTranscriptLine): ContentBlock[] {
  * user prompt becomes a `user/message`, each assistant reply (including
  * folded thinking and tool activity) an `assistant/message`, then the events
  * are appended to persistence so the child session is viewable.
+ *
+ * A resumed round passes the already-mirrored transcript-line count so only
+ * the delta is appended — re-mirroring earlier rounds would duplicate their
+ * messages. Turn numbering continues from the rounds already recorded in the
+ * child session, and the wire's last usage record (the newest turn's) rides
+ * the delta's final assistant message.
  * @param ctx - host context carrying the session persistence service.
  * @param childSession - the dsh subagent session created for this delegation.
  * @param homeDir - the `kimi` harness's scoped home.
  * @param kimiSessionId - the kimi session to mirror; omitted mirrors the most
- * recent session (a one-shot `kimi -p` run always creates a fresh one).
+ *   recent session (a one-shot `kimi -p` run always creates a fresh one).
+ * @param fromLines - transcript lines already mirrored into the child session
+ *   (0 for the first round); only lines after this offset are appended.
+ * @returns the new total transcript-line count mirrored into the child session.
  */
 export async function mirrorKimiSession(
   ctx: Context,
   childSession: Session,
   homeDir: string,
   kimiSessionId?: string,
-): Promise<void> {
+  fromLines = 0,
+): Promise<number> {
   let workspaces: string[]
   try {
     workspaces = await readdir(join(homeDir, 'sessions'))
   } catch {
     // No kimi sessions at all; nothing to mirror.
-    return
+    return 0
   }
   let transcript: Awaited<ReturnType<typeof readKimiTranscript>> | undefined
   if (kimiSessionId !== undefined) {
@@ -109,18 +119,24 @@ export async function mirrorKimiSession(
       }
     }
   }
-  if (transcript === undefined || transcript.lines.length === 0) return
+  if (transcript === undefined || transcript.lines.length === 0) return 0
 
-  let turn = 0
+  const delta = transcript.lines.slice(fromLines)
+  if (delta.length === 0) return transcript.lines.length
+  // The turn counter continues from the rounds already in the child session:
+  // each user message already mirrored opened one turn, so the delta's first
+  // user line opens the next turn.
+  let turn = childSession.events.filter(event => event.type === 'user/message').length
   let step = 1
-  // The wire's last usage record belongs to the final assistant message; find
-  // its index so the mirror can attach the accounting to exactly that event.
+  // The wire's last usage record belongs to the latest (resumed) turn's final
+  // assistant message; find its index within the delta so the accounting
+  // attaches to exactly that event.
   let lastAssistant = -1
-  for (let index = 0; index < transcript.lines.length; index += 1) {
-    if (transcript.lines[index]?.kind !== 'user') lastAssistant = index
+  for (let index = 0; index < delta.length; index += 1) {
+    if (delta[index]?.kind !== 'user') lastAssistant = index
   }
-  for (let index = 0; index < transcript.lines.length; index += 1) {
-    const line = transcript.lines[index]
+  for (let index = 0; index < delta.length; index += 1) {
+    const line = delta[index]
     if (line === undefined) continue
     if (line.kind === 'user') {
       turn += 1
@@ -138,4 +154,5 @@ export async function mirrorKimiSession(
   }
   const persistence = ctx.get('sessionPersistence')
   await persistence?.append(childSession.id, childSession.events)
+  return transcript.lines.length
 }

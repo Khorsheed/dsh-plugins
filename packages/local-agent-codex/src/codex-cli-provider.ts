@@ -42,9 +42,11 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /**
- * One-shot Codex CLI subagent provider: every accepted run starts a fresh
- * `codex exec` process in the delegating Session's workspace, under the
- * harness scoped home.
+ * One-shot and resumable Codex CLI subagent provider: every accepted FRESH run
+ * starts a `codex exec` process in the delegating Session's workspace, under
+ * the harness scoped home; a resume round (the family tool's staged resume
+ * intent) continues the SAME thread with `codex exec --json resume <thread_id>`
+ * inside the SAME dsh child session.
  */
 export class CodexCliProvider implements SubagentProvider {
   readonly name = 'codex-local'
@@ -62,10 +64,22 @@ export class CodexCliProvider implements SubagentProvider {
       throw new Error('subagent-codex: the parent session has no working directory to run the CLI in')
     }
     const homeDir = this.ctx.localAgent.homeDir('codex')
-    // A dsh subagent session records the delegation so it appears in the
-    // standard 子代理 surface; the response is appended after the run
-    // settles. Failure to create or persist the record degrades to the
-    // plain one-shot run rather than failing the delegation.
+    // The family tool stages exactly one intent per delegation call; the
+    // provider consumes exactly one per start. A resume intent continues the
+    // recorded thread inside the existing child session.
+    const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    if (intent !== undefined && intent.kind === 'resume') {
+      return this.startCodexResume(request, intent, parentCwd, homeDir)
+    }
+    return this.startCodexFresh(request, parentCwd, homeDir)
+  }
+
+  /** Fresh round: record the child session, spawn `codex exec`, append after settle. */
+  private async startCodexFresh(
+    request: ResolvedSubagentStartRequest,
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
@@ -108,6 +122,50 @@ export class CodexCliProvider implements SubagentProvider {
       },
       childSession,
       ctx: this.ctx,
+      // The first round records the thread id so a later resume round can
+      // continue it.
+      onThreadId: (threadId) => {
+        if (threadId === undefined) return
+        this.ctx.localAgent.recordDelegation({
+          childSessionId: runId,
+          provider: this.name,
+          parentSessionId: request.parent.session.id,
+          cliSessionId: threadId,
+        })
+      },
+    })
+  }
+
+  /** Resume round: continue the recorded thread inside the existing child session. */
+  private async startCodexResume(
+    request: ResolvedSubagentStartRequest,
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
+    const sessions = this.ctx.get('sessions')
+    const childSession = sessions?.get(SessionId(intent.childSessionId))
+    if (childSession === undefined) {
+      throw new Error(
+        `subagent-codex: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
+      )
+    }
+    const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+    const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+    this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
+    return startCodexCliRun(request, {
+      cwd: parentCwd,
+      env: { CODEX_HOME: homeDir },
+      endpointLabel: baseUrl,
+      sandbox: this.sandbox,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => this.ctx.subprocess.spawn(spec),
+      onError: (error: unknown, stopReason) => {
+        this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+      },
+      childSession,
+      ctx: this.ctx,
+      resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
     })
   }
 }
@@ -132,6 +190,18 @@ export interface CodexCliRunSpec {
   readonly childSession?: Session | undefined
   /** Host context carrying session persistence. */
   readonly ctx?: Context | undefined
+  /**
+   * Resume round: continue the thread named by `cliSessionId` with
+   * `codex exec --json resume <thread_id>` instead of a fresh exec, appending
+   * this round into the same child session under the given turn number.
+   */
+  readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
+  /**
+   * Called after the run settles with the thread id parsed from the NDJSON
+   * stream (absent when none was reported). The fresh path uses it to record
+   * the delegation so a later resume round can continue the thread.
+   */
+  readonly onThreadId?: ((threadId: string | undefined) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -162,37 +232,45 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 }
 
 /**
- * Parse a `codex exec --json` NDJSON event stream for the final answer and
- * token usage. Each event is one JSON line: `item.completed` carries an
- * `agent_message` item whose text is the assistant's final reply, and
- * `turn.completed` carries the turn's usage. The last of each wins — a
+ * Parse a `codex exec --json` NDJSON event stream for the final answer, token
+ * usage, and the thread id a later resume round continues. Each event is one
+ * JSON line: `thread.started` names the session's thread, `item.completed`
+ * carries an `agent_message` item whose text is the assistant's final reply,
+ * and `turn.completed` carries the turn's usage. The last of each wins — a
  * one-shot run emits exactly one of each, but taking the last is robust to
  * tool-heavy turns that interleave multiple item completions. Malformed
  * lines are skipped; a stream with no usable events yields neither.
  * @param stream - the collected stdout NDJSON text.
- * @returns the final reply text and the turn usage, when present.
+ * @returns the final reply text, the turn usage, and the thread id, when present.
  */
-export function parseCodexJsonStream(stream: string): { text?: string; usage?: TokenUsage } {
+export function parseCodexJsonStream(stream: string): { text?: string; usage?: TokenUsage; threadId?: string } {
   let text: string | undefined
   let usage: TokenUsage | undefined
+  let threadId: string | undefined
   for (const raw of stream.split('\n')) {
     const line = raw.trim()
     if (line === '') continue
-    let event: { type?: string; item?: { type?: string; text?: string }; usage?: unknown }
+    let event: { type?: string; item?: { type?: string; text?: string }; usage?: unknown; thread_id?: unknown }
     try {
-      event = JSON.parse(line) as { type?: string; item?: { type?: string; text?: string }; usage?: unknown }
+      event = JSON.parse(line) as { type?: string; item?: { type?: string; text?: string }; usage?: unknown; thread_id?: unknown }
     } catch {
       continue
     }
-    if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+    if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
+      threadId = event.thread_id
+    } else if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
       text = event.item.text
     } else if (event.type === 'turn.completed' && event.usage !== undefined) {
       usage = usageFromCodex(event.usage)
     }
   }
-  return text === undefined && usage === undefined
+  return text === undefined && usage === undefined && threadId === undefined
     ? {}
-    : { ...text === undefined ? {} : { text }, ...usage === undefined ? {} : { usage } }
+    : {
+      ...text === undefined ? {} : { text },
+      ...usage === undefined ? {} : { usage },
+      ...threadId === undefined ? {} : { threadId },
+    }
 }
 
 /**
@@ -224,11 +302,13 @@ function usageFromCodex(usage: unknown): TokenUsage {
 }
 
 /**
- * Start the real `codex exec` child and publish its one-shot run. The codex
+ * Start the real `codex exec` child and publish its run. The codex
  * reply arrives as an NDJSON event stream on stdout (`--json`): the final
  * `agent_message` item is the run output and the `turn.completed` usage is
  * the token accounting. stderr is piped for diagnostics and never folded
- * into the run output.
+ * into the run output. A resume round spawns `codex exec --json resume
+ * <thread_id>` instead, continuing the same thread. The run id is the child
+ * session id for a session-backed run.
  * @param request - resolved shared subagent request.
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
@@ -241,9 +321,12 @@ export function startCodexCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-codex: request was aborted before the CLI started')
   }
+  const turn = spec.resume?.turn ?? 1
 
   const child = spec.spawn({
-    argv: ['codex', 'exec', '--sandbox', spec.sandbox, '--json', task],
+    argv: spec.resume === undefined
+      ? ['codex', 'exec', '--sandbox', spec.sandbox, '--json', task]
+      : ['codex', 'exec', '--sandbox', spec.sandbox, '--json', 'resume', spec.resume.cliSessionId, task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
@@ -252,7 +335,7 @@ export function startCodexCliRun(
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
-  spec.childSession?.append('turn/start', { turn: 1 })
+  spec.childSession?.append('turn/start', { turn })
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   let stderr = ''
@@ -303,13 +386,13 @@ export function startCodexCliRun(
         // 'completed', a non-zero exit 'error', and a locally cancelled run
         // 'aborted'. The turn/end timestamp is the real settle moment.
         if (runAbort.signal.aborted) {
-          spec.childSession?.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+          spec.childSession?.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
           throw new Error('subagent-codex: run cancelled locally')
         }
         if (outcome.exitCode !== 0) {
           const via = spec.endpointLabel ?? 'codex default endpoint'
           spec.childSession?.append('turn/end', {
-            turn: 1,
+            turn,
             reason: { kind: 'error', error: { message: `codex exec exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
           })
           throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)} via ${via}`)
@@ -320,8 +403,9 @@ export function startCodexCliRun(
         // diagnostic-only (the subagent record degrades to a timing-less
         // final-text view when the child session is absent).
         const parsed = parseCodexJsonStream(output)
-        spec.childSession?.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-        void appendCodexResponse(spec, task, collectOutput(), parsed.usage)
+        spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
+        void appendCodexResponse(spec, task, turn, collectOutput(), parsed.usage)
+        if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
       processFailure,
@@ -334,7 +418,10 @@ export function startCodexCliRun(
   })
 
   return Promise.resolve(subprocessRunHandle({
-    id: SessionId(randomUUID()),
+    // A session-backed run's id is the child session id (the seam's local-run
+    // contract), so the tool's resume self-description names the same handle
+    // the delegation registry records.
+    id: spec.childSession?.id ?? SessionId(randomUUID()),
     result,
     signal: request.signal,
     onAbort,
@@ -348,16 +435,18 @@ export function startCodexCliRun(
  * subagent session, then persist. Runs detached from the settle race — the
  * run result settles with the child exit, and a failure here is
  * diagnostic-only (the subagent record degrades to a final-text-only view).
- * The assistant message carries the turn's usage when codex reported it, so
+ * The assistant message carries the round's usage when codex reported it, so
  * the tokenUsage projection counts the delegation.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
+ * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
  * @param output - the parsed codex response blocks.
  * @param usage - the turn's token usage from the NDJSON stream, when present.
  */
 async function appendCodexResponse(
   spec: CodexCliRunSpec,
   task: string,
+  turn: number,
   output: ContentBlock[],
   usage?: TokenUsage,
 ): Promise<void> {
@@ -368,7 +457,7 @@ async function appendCodexResponse(
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     spec.childSession.append('assistant/message', {
-      turn: 1,
+      turn,
       step: 1,
       message: createAssistantMessage({
         content: output,

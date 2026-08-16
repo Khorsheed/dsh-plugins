@@ -136,7 +136,15 @@ describe('kimi-cli-provider child session record', () => {
         return session
       },
     } as never)
-    ctx.provide('localAgent', { homeDir: () => '/tmp/kimi-home', get: () => ({ displayName: 'Kimi Code' }) } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      // No staged intent: the provider starts a fresh round.
+      takeDelegationIntent: () => undefined,
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in record test') } } as never)
     ctx.provide('logger', { warn: () => {} } as never)
 
@@ -166,7 +174,13 @@ describe('kimi-cli-provider child session record', () => {
 
   it('degrades to a plain run when the sessions service is absent', async () => {
     const ctx = new Context()
-    ctx.provide('localAgent', { homeDir: () => '/tmp/kimi-home' } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      takeDelegationIntent: () => undefined,
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned') } } as never)
     ctx.provide('logger', { warn: () => {} } as never)
 
@@ -180,5 +194,96 @@ describe('kimi-cli-provider child session record', () => {
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/not spawned/)
+  })
+})
+
+describe('kimi-cli-provider resume round', () => {
+  it('spawns kimi -S session_<id> -p into the existing child session with the next turn', async () => {
+    const ctx = new Context()
+    // Round 1 already created the child session with one completed turn.
+    const child = Session.create(SessionId('child-run-1'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const sessions = { get: (id: SessionId) => (id === SessionId('child-run-1') ? child : undefined) }
+    ctx.provide('sessions', sessions as never)
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-1',
+        cliSessionId: 'run-1',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => 2,
+    } as never)
+
+    const spawned: string[][] = []
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: string[] }) => {
+        spawned.push(spec.argv)
+        const { handle, done } = stubChild('run-1')
+        return handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    // The resume round continues the SAME kimi session with -S before -p.
+    expect(spawned[0]).toEqual(['kimi', '-S', 'session_run-1', '-p', '接着做'])
+    // The run id is the existing child session id, not a new one.
+    expect(run.id).toBe(SessionId('child-run-1'))
+    // Round 2 opens and closes its own turn (turn numbering increments).
+    const turnStarts = child.events.filter(event => event.type === 'turn/start')
+    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    expect(turnStarts).toHaveLength(2)
+    expect(turnEnds).toHaveLength(2)
+    expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
+    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    await run.dispose()
+  })
+
+  it('fails loud when the resume target child session is not live', async () => {
+    const ctx = new Context()
+    ctx.provide('sessions', { get: () => undefined } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-gone',
+        cliSessionId: 'run-1',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    await expect(provider.start(request)).rejects.toThrow(/is not live/)
   })
 })

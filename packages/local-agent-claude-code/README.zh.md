@@ -43,6 +43,12 @@ dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-claude-code
 
 `/claude-code sessions` 列出作用域目录下的 `projects/<cwd-slug>/<uuid>.jsonl` 会话文件（Claude Code 自有的 append-only 会话日志）——即本 agent 委派产生的会话，绝不是用户的私人会话。目录 slug 是工作区路径的**有损**编码（分隔符转连字符，不同路径可能撞名），所以列出的 `workDir` 始终取自文件**内容**（第一条 `user` 事件的 `cwd` 字段），绝不取自目录名。家族 core 的浏览器设置分区呈现同一份列表并收窄到当前会话的工作区；`/claude-code sessions` 本身始终显示完整列表。
 
+## 续聊（resume）
+
+`subagent_claude_code_local` 工具是家族自有工具（`@khorsheed/dsh-local-agent-tool-subagent`）——官方子集（`description`/`prompt`）加上一个可选 `resume` 参数。**首次**委派的结果文本会自述句柄（`追问请带 resume="<childSessionId>"`）；在后续轮次把它作为 `resume` 传回，就会在**同一个** dsh 子会话里继续**同一个** claude 会话（`claude -p --resume <session_id>`），并按轮记账：轮次号递增、每轮 `turn/start`/`turn/end` 成对、usage 挂在当轮的 assistant 消息上。
+
+句柄绝不进 prompt：它只从 `resume` 参数读取，localAgent registry 只对记录该委派的同一 parent 会话与 provider 解析句柄——伪造的句柄（未知子会话、他人 parent 的会话、或错误的 provider）在任何 CLI 进程启动前就被拒绝。descriptor 无法携带该目标（其 schema 拒绝未知字段），因此家族改经 `localAgent` 服务的委派 registry 传递。
+
 ## Model Experience
 
 ### 子请求
@@ -63,7 +69,7 @@ Claude 子会话是委派 Session 工作区内一个全新的一次性 `claude -
 
 #### 模型看到什么
 
-经由 `dsh-tool-subagent`，父级只看到选定的 Claude 最终回答，或 Consumer 的精确错误。Claude 的评论、工具活动、工作区 diff 不会复制进父级 Session。
+经由家族工具（`subagent_claude_code_local`），父级只看到选定的 Claude 最终回答，或 Consumer 的精确错误，以及首次委派时的续聊自述。Claude 的评论、工具活动、工作区 diff 不会复制进父级 Session。
 
 #### Token 影响
 
@@ -75,7 +81,7 @@ Claude 子会话是委派 Session 工作区内一个全新的一次性 `claude -
 
 ### 委派记账
 
-子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终 `assistant/message` 携带从 `claude -p --output-format json` 结果解析的本回合 token 用量（`input_tokens`→未缓存输入、`output_tokens`→输出、`cache_read_input_tokens`→缓存读取、`cache_creation_input_tokens`→缓存写入——Anthropic 各桶独立上报，无需减法），`tokenUsage` 投影据此统计委派。
+子会话携带真实的用量与耗时：provider 在 CLI spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或被取消也会关（reason `error`/`aborted`）——`subagentTiming` 投影的时长等于实际 CLI 运行时长，失败运行不会留下未闭合的耗时窗口；最终 `assistant/message` 携带从 `claude -p --output-format json` 结果解析的本回合 token 用量（`input_tokens`→未缓存输入、`output_tokens`→输出、`cache_read_input_tokens`→缓存读取、`cache_creation_input_tokens`→缓存写入——Anthropic 各桶独立上报，无需减法），`tokenUsage` 投影据此统计委派。每轮续聊都在各自递增的轮次号下重复这一记账。
 
 ## 配置
 

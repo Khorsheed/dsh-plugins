@@ -39,9 +39,11 @@ import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /**
- * One-shot Claude Code CLI subagent provider: every accepted run starts a
- * fresh `claude -p` process in the delegating Session's workspace, under the
- * harness scoped home.
+ * One-shot and resumable Claude Code CLI subagent provider: every accepted
+ * FRESH run starts a `claude -p` process in the delegating Session's
+ * workspace, under the harness scoped home; a resume round (the family tool's
+ * staged resume intent) continues the SAME session with `claude -p --resume
+ * <session_id>` inside the SAME dsh child session.
  */
 export class ClaudeCliProvider implements SubagentProvider {
   readonly name = 'claude-local'
@@ -54,16 +56,28 @@ export class ClaudeCliProvider implements SubagentProvider {
     private readonly baseUrl?: string,
   ) {}
 
-  start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
+  async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
     if (parentCwd === undefined) {
       throw new Error('subagent-claude: the parent session has no working directory to run the CLI in')
     }
     const homeDir = this.ctx.localAgent.homeDir('claude-code')
-    // A dsh subagent session records the delegation so it appears in the
-    // standard 子代理 surface; the response is appended after the run
-    // settles. Failure to create or persist the record degrades to the
-    // plain one-shot run rather than failing the delegation.
+    // The family tool stages exactly one intent per delegation call; the
+    // provider consumes exactly one per start. A resume intent continues the
+    // recorded session inside the existing child session.
+    const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    if (intent !== undefined && intent.kind === 'resume') {
+      return this.startClaudeResume(request, intent, parentCwd, homeDir)
+    }
+    return this.startClaudeFresh(request, parentCwd, homeDir)
+  }
+
+  /** Fresh round: record the child session, spawn `claude -p`, append after settle. */
+  private async startClaudeFresh(
+    request: ResolvedSubagentStartRequest,
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
     try {
@@ -110,6 +124,53 @@ export class ClaudeCliProvider implements SubagentProvider {
       },
       childSession,
       ctx: this.ctx,
+      // The first round records the claude session id so a later resume round
+      // can continue it.
+      onSessionId: (sessionId) => {
+        if (sessionId === undefined) return
+        this.ctx.localAgent.recordDelegation({
+          childSessionId: runId,
+          provider: this.name,
+          parentSessionId: request.parent.session.id,
+          cliSessionId: sessionId,
+        })
+      },
+    })
+  }
+
+  /** Resume round: continue the recorded claude session inside the existing child session. */
+  private async startClaudeResume(
+    request: ResolvedSubagentStartRequest,
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    parentCwd: string,
+    homeDir: string,
+  ): Promise<SubagentRun> {
+    const sessions = this.ctx.get('sessions')
+    const childSession = sessions?.get(SessionId(intent.childSessionId))
+    if (childSession === undefined) {
+      throw new Error(
+        `subagent-claude: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
+      )
+    }
+    const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+    const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
+    this.ctx.logger.info(`subagent-claude: resuming via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
+    return startClaudeCliRun(request, {
+      cwd: parentCwd,
+      env: {
+        CLAUDE_CONFIG_DIR: homeDir,
+        ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+      },
+      endpointLabel: effectiveBaseUrl,
+      permissionMode: this.permissionMode,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => this.ctx.subprocess.spawn(spec),
+      onError: (error: unknown, stopReason) => {
+        this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+      },
+      childSession,
+      ctx: this.ctx,
+      resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
     })
   }
 }
@@ -138,6 +199,18 @@ export interface ClaudeCliRunSpec {
   readonly childSession?: Session | undefined
   /** Host context carrying session persistence. */
   readonly ctx?: Context | undefined
+  /**
+   * Resume round: continue the session named by `cliSessionId` with
+   * `claude -p --resume <session_id>` instead of a fresh `claude -p`,
+   * appending this round into the same child session under the given turn.
+   */
+  readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
+  /**
+   * Called after the run settles with the claude session id parsed from the
+   * result JSON (absent when none was reported). The fresh path uses it to
+   * record the delegation so a later resume round can continue the session.
+   */
+  readonly onSessionId?: ((sessionId: string | undefined) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -170,11 +243,12 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 /**
  * Parse a `claude -p --output-format json` result payload. The single JSON
  * line carries `result` (the final answer), `usage` (Anthropic-style
- * counters), and `session_id`. A malformed or error result yields neither.
+ * counters), and `session_id` (the id a later resume round continues). A
+ * malformed or error result yields neither.
  * @param output - the collected stdout.
- * @returns the final answer text and the usage, when present.
+ * @returns the final answer text, the usage, and the session id, when present.
  */
-export function parseClaudeJsonResult(output: string): { text?: string; usage?: TokenUsage; error?: string } {
+export function parseClaudeJsonResult(output: string): { text?: string; usage?: TokenUsage; error?: string; sessionId?: string } {
   let result: { result?: unknown; is_error?: unknown; error?: unknown; usage?: unknown; session_id?: unknown }
   try {
     result = JSON.parse(output) as { result?: unknown; is_error?: unknown; error?: unknown; usage?: unknown; session_id?: unknown }
@@ -186,9 +260,11 @@ export function parseClaudeJsonResult(output: string): { text?: string; usage?: 
   }
   const text = typeof result.result === 'string' ? result.result : undefined
   const usage = result.usage === undefined ? undefined : usageFromClaude(result.usage)
+  const sessionId = typeof result.session_id === 'string' ? result.session_id : undefined
   return {
     ...text === undefined ? {} : { text },
     ...usage === undefined ? {} : { usage },
+    ...sessionId === undefined ? {} : { sessionId },
   }
 }
 
@@ -227,8 +303,11 @@ function usageFromClaude(usage: unknown): TokenUsage {
 /**
  * Start the real `claude -p` child and publish its one-shot run. The claude
  * result arrives as a single JSON line on stdout (`--output-format json`):
- * `result` is the final answer and `usage` the token accounting. stderr is
- * piped for diagnostics and never folded into the run output.
+ * `result` is the final answer, `usage` the token accounting, and
+ * `session_id` the id a later resume round continues. stderr is piped for
+ * diagnostics and never folded into the run output. A resume round spawns
+ * `claude -p --resume <session_id>` instead, continuing the same session.
+ * The run id is the child session id for a session-backed run.
  * @param request - resolved shared subagent request.
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
@@ -241,9 +320,14 @@ export function startClaudeCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
-  const argv = spec.permissionMode === 'skip'
-    ? ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'json', task]
-    : ['claude', '-p', '--output-format', 'json', task]
+  const turn = spec.resume?.turn ?? 1
+  const argv = spec.resume === undefined
+    ? spec.permissionMode === 'skip'
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--output-format', 'json', task]
+      : ['claude', '-p', '--output-format', 'json', task]
+    : spec.permissionMode === 'skip'
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--resume', spec.resume.cliSessionId, '--output-format', 'json', task]
+      : ['claude', '-p', '--resume', spec.resume.cliSessionId, '--output-format', 'json', task]
 
   const child = spec.spawn({
     argv,
@@ -255,7 +339,7 @@ export function startClaudeCliRun(
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
-  spec.childSession?.append('turn/start', { turn: 1 })
+  spec.childSession?.append('turn/start', { turn })
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   let stderr = ''
@@ -304,13 +388,13 @@ export function startClaudeCliRun(
         // Every terminal path closes the turn so the timing window never
         // stays open on a failed or cancelled run.
         if (runAbort.signal.aborted) {
-          spec.childSession?.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+          spec.childSession?.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
           throw new Error('subagent-claude: run cancelled locally')
         }
         if (outcome.exitCode !== 0) {
           const via = spec.endpointLabel ?? 'claude default endpoint'
           spec.childSession?.append('turn/end', {
-            turn: 1,
+            turn,
             reason: { kind: 'error', error: { message: `claude -p exited with code ${String(outcome.exitCode)} via ${via}`, code: 'UNKNOWN' } },
           })
           throw new Error(`subagent-claude: claude -p exited with code ${String(outcome.exitCode)} via ${via}`)
@@ -323,13 +407,14 @@ export function startClaudeCliRun(
         const parsed = parseClaudeJsonResult(output)
         if (parsed.error !== undefined) {
           spec.childSession?.append('turn/end', {
-            turn: 1,
+            turn,
             reason: { kind: 'error', error: { message: parsed.error, code: 'UNKNOWN' } },
           })
           throw new Error(`subagent-claude: ${parsed.error}`)
         }
-        spec.childSession?.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-        void appendClaudeResponse(spec, task, collectOutput(), parsed.usage)
+        spec.childSession?.append('turn/end', { turn, reason: { kind: 'completed' } })
+        void appendClaudeResponse(spec, task, turn, collectOutput(), parsed.usage)
+        if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
         return { output: collectOutput(), stopReason: 'completed' as const }
       }),
       processFailure,
@@ -342,7 +427,10 @@ export function startClaudeCliRun(
   })
 
   return Promise.resolve(subprocessRunHandle({
-    id: SessionId(randomUUID()),
+    // A session-backed run's id is the child session id (the seam's local-run
+    // contract), so the tool's resume self-description names the same handle
+    // the delegation registry records.
+    id: spec.childSession?.id ?? SessionId(randomUUID()),
     result,
     signal: request.signal,
     onAbort,
@@ -355,16 +443,18 @@ export function startClaudeCliRun(
  * Append the delegation's user prompt and the claude response into the dsh
  * subagent session, then persist. Runs detached from the settle race — the
  * run result settles with the child exit, and a failure here is
- * diagnostic-only. The assistant message carries the turn's usage when
+ * diagnostic-only. The assistant message carries the round's usage when
  * claude reported it, so the tokenUsage projection counts the delegation.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
+ * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
  * @param output - the parsed claude response blocks.
  * @param usage - the turn's token usage, when present.
  */
 async function appendClaudeResponse(
   spec: ClaudeCliRunSpec,
   task: string,
+  turn: number,
   output: ContentBlock[],
   usage?: TokenUsage,
 ): Promise<void> {
@@ -375,7 +465,7 @@ async function appendClaudeResponse(
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     spec.childSession.append('assistant/message', {
-      turn: 1,
+      turn,
       step: 1,
       message: createAssistantMessage({
         content: output,

@@ -6,7 +6,7 @@
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { LocalAgentHarness } from './index.ts'
+import type { LocalAgentDelegationRecord, LocalAgentHarness } from './index.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent'
 
@@ -66,13 +66,40 @@ async function auditDelegationClaims(ctx: Context, fail: InvariantFailure): Prom
 }
 
 /**
+ * Audit the delegation registry: a recorded delegation must name a mounted
+ * subagent provider (the record is only useful when a resume round can route
+ * back through the same provider). Mirrors the harness-level delegation-claim
+ * check with the same "identity present, delegation 404" rationale — a record
+ * whose provider the tree does not mount means a provider rename left a stale
+ * mapping that would fail loud on the first resume attempt.
+ */
+async function auditDelegationProviders(ctx: Context, fail: InvariantFailure): Promise<void> {
+  const loader = ctx.get('loader') as { await(): Promise<unknown> } | undefined
+  await loader?.await()
+  const subagents = ctx.get('subagents') as { getProvider(name: string): unknown } | undefined
+  if (subagents === undefined) return
+  const registry = ctx.get('localAgent') as {
+    listDelegations(): readonly LocalAgentDelegationRecord[]
+  } | undefined
+  if (registry === undefined) return
+  for (const record of registry.listDelegations()) {
+    if (subagents.getProvider(record.provider) === undefined) {
+      fail(`local-agent delegation for child session ${record.childSessionId} records provider ${JSON.stringify(record.provider)} which is not mounted`)
+    }
+  }
+}
+
+/**
  * Install the package's checks.
  * @param ctx - child context owned by this invariant registration.
  * @param fail - reporter bound to the registering package name.
  */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure): Promise<void> => {
   auditLifecycle(ctx, fail)
-  return auditDelegationClaims(ctx, fail)
+  return Promise.all([
+    auditDelegationClaims(ctx, fail),
+    auditDelegationProviders(ctx, fail),
+  ]).then(() => {})
 }, {})
 
 /**

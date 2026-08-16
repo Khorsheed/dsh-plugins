@@ -48,6 +48,10 @@ export function registerCodex(ctx: Context): void {
 }
 ```
 
+## 委派 registry（resume 载体）
+
+除 harness 身份之外，registry 还持有家族的**委派 registry**：每个子会话一条记录，记下该委派用的 provider 与 CLI 会话，以及按 (parent, provider) 分组的委派 intent FIFO。家族工具（`@khorsheed/dsh-local-agent-tool-subagent`，由各 harness bundle 的 patch 挂载）在每次调用 `ctx.subagents.start()` 前恰好 stage 一个 intent，归属 provider 每次 start 恰好消费一个——因此即使并行委派，fresh 轮与 resume 轮也能正确配对。resume 轮的句柄（dsh 子会话 id）经 registry 解析，凡是未知子会话、他人 parent 的会话、或错误 provider 的句柄都会被拒绝。subagent 请求 descriptor 无法携带该目标（其 schema 拒绝未知字段），因此本服务就是家族内部的载体；同一份记录未来也会喂给 stop registry。
+
 ## Model Experience
 
 ### Harness 命令回复
