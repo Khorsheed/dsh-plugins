@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-17-message-tools-edit-settle-and-hider-probe-retry.md
+.agents/notes/implemented/bug-fix/2026-08-17-message-tools-edit-settle-and-hider-probe-retry.md: deea3a57122ce16273e98eccdc1b4e15ac8f194f
+.agents/notes/implemented/bug-fix/2026-08-17-message-tools-edit-settle-and-hider-probe-retry.zh.md: 5206d0f3eedc52baa6b4bb8c0a7f08c5887779cd
