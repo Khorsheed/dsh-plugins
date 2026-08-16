@@ -1,0 +1,61 @@
+/* Whalesong overlay: DeepSeek-blue droplets rising from the sidebar whale's
+   blowhole. Container is fixed-positioned by TS (whalesong-overlay.ts); this
+   module owns the droplet animation and the on/off + reduced-motion rules.
+   Reference: whalenap's removed thinking-whalesong (PixelWhale .whalesongDrop). */
+
+.whalesong {
+  position: fixed;
+  z-index: 900;
+  width: 12px;
+  height: 16px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* [hidden] (no logo found) wins over every display rule below. */
+.whalesong[hidden] {
+  display: none;
+}
+
+.drop {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 6px;
+  border-radius: 999px;
+  background: #4A7DFF;
+  animation: whalesong-rise 1.1s ease-in-out infinite;
+}
+
+.drop:nth-child(1) {
+  left: 0;
+  animation-delay: 0s;
+}
+
+.drop:nth-child(2) {
+  left: 4.5px;
+  animation-delay: 0.18s;
+}
+
+.drop:nth-child(3) {
+  left: 9px;
+  animation-delay: 0.36s;
+}
+
+@keyframes whalesong-rise {
+  0% { opacity: 0; transform: translateY(4px) scale(0.6); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-12px) scale(1.1); }
+}
+
+/* Idle: nothing running → no whalesong (body class toggled from TS). */
+:global(body:not(.dsh-whalesong-on)) .whalesong {
+  display: none;
+}
+
+/* Reduced motion: hide rather than freeze-frame (simplest, least noise). */
+@media (prefers-reduced-motion: reduce) {
+  .whalesong {
+    display: none;
+  }
+}

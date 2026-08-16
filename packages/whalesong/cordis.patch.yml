@@ -1,0 +1,15 @@
+# The dsh-whalesong bundle patch layer — contributed by `dsh.bundle.patch` in
+# package.json. Bare insert of the mount anchor. Whalesong is a client-only
+# plugin: the host half is an intentional no-op (`src/index.ts`) whose only
+# job is serving the resolved plugin config over `GET /whalesong/config` —
+# the client-modules node half discovers browser bundles by scanning loader
+# entries for `dsh.client` declarations, so this entry row is what puts the
+# browser half on the roster. The entry name, tsdown bundle id and
+# /plugins/<id>/client.js URL are one name: `@deepseek-ai/dsh-whalesong`.
+#
+# Additive only: no official file is patched or replaced; the row mounts the
+# plugin's own package, and the profile's own cordis.patch.yml can override
+# the `enabled` / `volume` config below.
+- insert:
+    - id: whalesong
+      name: '@deepseek-ai/dsh-whalesong'
