@@ -5,12 +5,6 @@ import z from '@deepseek-ai/schemastery'
 /** Settings namespace owned by the shortcuts plugin. */
 export const UI_SHORTCUTS_NAMESPACE = 'ui-shortcuts'
 
-/** The fixed shortcut actions users bind keys to. */
-export const SHORTCUT_ACTIONS = ['pause', 'steerSend', 'newSession'] as const
-
-/** One shortcut action name. */
-export type ShortcutAction = typeof SHORTCUT_ACTIONS[number]
-
 /** Key-modifier vocabulary; `primary` means Ctrl on Windows/Linux and Cmd on macOS. */
 export const SHORTCUT_MODIFIERS = ['primary', 'alt', 'shift'] as const
 
@@ -32,18 +26,12 @@ export interface BoundKey {
 export type ShortcutPreference = { readonly kind: 'none' } | BoundKey
 
 /**
- * Durable shortcut section: one preference per action. Properties are
- * optional because the schema fills the shipped defaults; the browser policy
- * adopts each field only when the Host section carries it.
+ * Durable shortcut section: action id → preference. The map is open — any
+ * plugin can register actions (see client/contract.ts) — so the schema is a
+ * dict and only entries the user actually changed are persisted; a missing
+ * id falls back to the registered action's default binding at read time.
  */
-export interface ShortcutSettings {
-  /** Pause the running turn (the Stop-button action). */
-  pause?: ShortcutPreference
-  /** Send the current draft with steer (queue-jump) delivery. */
-  steerSend?: ShortcutPreference
-  /** Start a new session (the sidebar New-session button). */
-  newSession?: ShortcutPreference
-}
+export type ShortcutSettings = Record<string, ShortcutPreference>
 
 /** Default: bare Escape pauses. */
 export const DEFAULT_PAUSE_PREFERENCE: BoundKey = { kind: 'key', modifiers: [], key: 'Escape' }
@@ -58,8 +46,8 @@ export const DEFAULT_STEER_SEND_PREFERENCE: BoundKey = { kind: 'key', modifiers:
  */
 export const DEFAULT_NEW_SESSION_PREFERENCE: BoundKey = { kind: 'key', modifiers: ['primary'], key: 'o' }
 
-/** Default preference per action (all defaults are bound keys). */
-export const DEFAULT_PREFERENCES: Record<ShortcutAction, BoundKey> = {
+/** Default bindings of the plugin's built-in actions, keyed by action id. */
+export const DEFAULT_PREFERENCES: Record<string, BoundKey> = {
   pause: DEFAULT_PAUSE_PREFERENCE,
   steerSend: DEFAULT_STEER_SEND_PREFERENCE,
   newSession: DEFAULT_NEW_SESSION_PREFERENCE,
@@ -73,9 +61,5 @@ const KeySchema = z.object({
 const NoneSchema = z.object({ kind: z.const('none').required() })
 const PreferenceSchema = z.union([NoneSchema, KeySchema])
 
-/** Durable shortcut schema; also the wire envelope the browser scope validates against. */
-export const ShortcutSettingsSchema: z<ShortcutSettings> = z.object({
-  pause: PreferenceSchema.default(DEFAULT_PAUSE_PREFERENCE),
-  steerSend: PreferenceSchema.default(DEFAULT_STEER_SEND_PREFERENCE),
-  newSession: PreferenceSchema.default(DEFAULT_NEW_SESSION_PREFERENCE),
-})
+/** Durable shortcut schema: an open action-id → preference dict; also the wire envelope the browser scope validates against. */
+export const ShortcutSettingsSchema: z<ShortcutSettings> = z.dict(PreferenceSchema).default({})
