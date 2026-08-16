@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-可选的 web 快捷键插件：两个固定动作——**暂停当前任务**与**插队发送草稿**——绑定到用户自选的键位。动作是固定的产品操作，键位由用户决定。默认：`Esc` 暂停（与 composer 的 Stop 按钮相同的取消操作），`Ctrl/Cmd+S` 以插队（steer）投递方式发送当前草稿。
+可选的 web 快捷键插件：三个固定动作——**暂停当前任务**、**插队发送草稿**与**新建会话**——绑定到用户自选的键位。动作是固定的产品操作，键位由用户决定。默认：`Esc` 全局暂停（与 composer 的 Stop 按钮相同的取消操作），`Ctrl/Cmd+S` 以插队（steer）投递方式发送当前草稿，`Ctrl/Cmd+O` 新建会话（与侧边栏新会话按钮同一入口）。
 
 ## 安装与卸载
 
@@ -22,8 +22,9 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 | --- | --- | --- |
 | 暂停当前任务 | `Esc` | 通过公开的 `conversation.cancel()` 取消当前会话运行中的回合——与 composer 的 Stop 按钮同一操作。普通会话与 continuable 子智能体可停止；one-shot 子智能体不可（与 Stop 按钮的可见性一致）。 |
 | 插队发送 | `Ctrl/Cmd+S` | 通过公开的 `conversation.input.for(scope).submit('steer')` 以 `steer` 投递方式发送当前草稿；绑定时抑制浏览器保存手势。仅草稿：空草稿保持静默无操作（插队整个队列仍是 `Cmd/Ctrl+Enter` 的手势）。 |
+| 新建会话 | `Ctrl/Cmd+O` | 通过公开的 `workspaces.startSession()` 新建会话——与侧边栏新会话按钮同一入口；绑定时抑制浏览器的打开文件手势。全局动作，不限定焦点位置。 |
 
-两个动作都只使用公开服务——插件从不触及 ui-conversation 内部。键位在 设置 → 通用 → 快捷键 中重绑：点击键位开始录制下一个组合键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
+三个动作都只使用公开服务——插件从不触及 ui-conversation 内部。键位在 设置 → 通用 → 快捷键 中重绑：点击键位开始录制下一个组合键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
 
 ## Escape 分层
 
@@ -37,9 +38,14 @@ Escape 沿用 composer 现有分层，插件将其作为已记录的契约依赖
 
 无；本包既不组装也不发送 provider 请求。
 
+## Compatibility
+
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.6` 暴露 `conversation.input`(`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`,`InputSubmitMode` 含 `'steer'`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- 源码线(deepseek-harness master):✅
+
 ## Known Limitations and Deferred Work
 
 - **Escape 暂停限定在 composer 内**——只有焦点在 composer 文本框中时才暂停。全局 Escape 需要一个尚不存在的共享弹层消费方注册表；在那之前，侧边栏或模态框之上触发暂停是刻意不提供的。
-- **无自定义动作**——动作集固定为两个；在重绑 UI 验证交互模型之前，暂不提供用户自定义动作（命令、开关等）。
+- **无自定义动作**——动作集固定为三个；在重绑 UI 验证交互模型之前，暂不提供用户自定义动作（命令、开关等）。
 - **Ctrl/Cmd+S 仅草稿**——空草稿不做事；插件刻意把整队列插队留给 composer 的 `Cmd/Ctrl+Enter` 手势。
 - **无仓库内 e2e**——插件不在默认 bundle 中，因此没有 `apps/web` replay 场景；其接线由针对 fakes 的 apply 级浏览器 spec 覆盖。

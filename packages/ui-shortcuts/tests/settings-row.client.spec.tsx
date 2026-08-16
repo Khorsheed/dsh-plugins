@@ -31,14 +31,15 @@ function emptyWorkspaces() {
 function mount() {
   const pause = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.pause)
   const steerSend = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.steerSend)
+  const newSession = createSnapshotStore<ShortcutPreference>(DEFAULT_PREFERENCES.newSession)
   const capturing = createSnapshotStore<ShortcutAction | null>(null)
+  const storeOf = (action: ShortcutAction) =>
+    action === 'pause' ? pause : action === 'steerSend' ? steerSend : newSession
   const setPreference = vi.fn((action: ShortcutAction, preference: ShortcutPreference) => {
-    const store = action === 'pause' ? pause : steerSend
-    store.set(preference)
+    storeOf(action).set(preference)
   })
   const reset = vi.fn((action: ShortcutAction) => {
-    const store = action === 'pause' ? pause : steerSend
-    store.set(DEFAULT_PREFERENCES[action])
+    storeOf(action).set(DEFAULT_PREFERENCES[action])
   })
   const setCapturing = vi.fn((action: ShortcutAction | null) => { capturing.set(action) })
   const props: ShortcutsRowProps = {
@@ -46,6 +47,7 @@ function mount() {
     useWorkspaces: emptyWorkspaces(),
     usePause: bindSnapshotSelector(pause),
     useSteerSend: bindSnapshotSelector(steerSend),
+    useNewSession: bindSnapshotSelector(newSession),
     useCapturing: bindSnapshotSelector(capturing),
     setPreference,
     reset,
@@ -53,7 +55,7 @@ function mount() {
     t: makeTranslate(zh),
   }
   render(<ShortcutsRow {...props} />)
-  return { pause, steerSend, capturing, setPreference, reset, setCapturing }
+  return { pause, steerSend, newSession, capturing, setPreference, reset, setCapturing }
 }
 
 /** Keydown against the document capture listener the row installs while recording. */
@@ -67,8 +69,10 @@ describe('ShortcutsRow', () => {
     expect(screen.getByText('快捷键')).toBeDefined()
     expect(screen.getByText('暂停当前任务')).toBeDefined()
     expect(screen.getByText('插队发送')).toBeDefined()
+    expect(screen.getByText('新建会话')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Esc' })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Ctrl/Cmd+S' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Ctrl/Cmd+O' })).toBeDefined()
     // At the shipped defaults there is nothing to reset and no hint to show.
     expect(screen.queryByRole('button', { name: '恢复默认' })).toBeNull()
     expect(screen.queryByText(/默认：/)).toBeNull()

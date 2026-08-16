@@ -15,6 +15,8 @@ export interface ShortcutsRowInjected {
     pause: SnapshotStore<ShortcutPreference>
     /** Live steer-send preference bound as useSteerSend. */
     steerSend: SnapshotStore<ShortcutPreference>
+    /** Live new-session preference bound as useNewSession. */
+    newSession: SnapshotStore<ShortcutPreference>
     /** Action currently recording a new binding (null = none) bound as useCapturing. */
     capturing: SnapshotStore<ShortcutAction | null>
   }
@@ -36,6 +38,7 @@ export type ShortcutsRowProps =
 const ACTIONS: readonly { action: ShortcutAction; label: ShortcutKey; desc: ShortcutKey }[] = [
   { action: 'pause', label: 'action.pause', desc: 'action.pause.desc' },
   { action: 'steerSend', label: 'action.steerSend', desc: 'action.steerSend.desc' },
+  { action: 'newSession', label: 'action.newSession', desc: 'action.newSession.desc' },
 ]
 
 /**
@@ -45,10 +48,11 @@ const ACTIONS: readonly { action: ShortcutAction; label: ShortcutKey; desc: Shor
  * @returns the preference section.
  */
 export function ShortcutsRow({
-  usePause, useSteerSend, useCapturing, setPreference, reset, setCapturing, t,
+  usePause, useSteerSend, useNewSession, useCapturing, setPreference, reset, setCapturing, t,
 }: ShortcutsRowProps) {
   const pause = usePause(value => value)
   const steerSend = useSteerSend(value => value)
+  const newSession = useNewSession(value => value)
   const capturing = useCapturing(value => value)
 
   // Key capture: while one action records, every keydown completes, cancels
@@ -88,7 +92,7 @@ export function ShortcutsRow({
       </div>
       <div className={css.fields}>
         {ACTIONS.map(({ action, label, desc }) => {
-          const preference = action === 'pause' ? pause : steerSend
+          const preference = action === 'pause' ? pause : action === 'steerSend' ? steerSend : newSession
           const active = capturing === action
           // The default hint and the reset control share one condition: they
           // exist only while the binding differs from the shipped default.

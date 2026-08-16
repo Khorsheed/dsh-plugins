@@ -25,6 +25,11 @@ async function bench(over: BenchOptions = {}) {
   const runtime = await SlotTestRuntime.create()
   const submit = vi.fn()
   const cancel = vi.fn(() => Promise.resolve())
+  // The runtime provides a real workspaces service at root; shadow its
+  // startSession with a spy (providing a second one fails loud).
+  const startSession = vi.fn()
+  const workspaces = runtime.ctx.get('workspaces') as { startSession: () => void } | undefined
+  if (workspaces !== undefined) workspaces.startSession = startSession
   runtime.provide('conversation', {
     input: { for: () => ({ submit }) },
     cancel,
@@ -44,7 +49,7 @@ async function bench(over: BenchOptions = {}) {
       ...(over.subagent !== undefined ? { subagent: over.subagent } : {}),
     },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel }
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession }
 }
 
 /** The inject face the settings row entry serves (reaches the apply-built policy). */
@@ -89,6 +94,34 @@ describe('ui-shortcuts apply', () => {
     const cmd = new KeyboardEvent('keydown', { key: 'S', metaKey: true, bubbles: true, cancelable: true })
     document.dispatchEvent(cmd)
     expect(b.submit).toHaveBeenCalledTimes(2)
+    await b.runtime.dispose()
+  })
+
+  it('Ctrl/Cmd+O starts a new session through the workspaces service and suppresses the browser open-file', async () => {
+    const b = await bench()
+    const ctrl = new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(ctrl)
+    expect(b.startSession).toHaveBeenCalledTimes(1)
+    expect(ctrl.defaultPrevented).toBe(true)
+
+    const cmd = new KeyboardEvent('keydown', { key: 'O', metaKey: true, bubbles: true, cancelable: true })
+    document.dispatchEvent(cmd)
+    expect(b.startSession).toHaveBeenCalledTimes(2)
+    await b.runtime.dispose()
+  })
+
+  it('Ctrl/Cmd+O stands down while unbound and while recording', async () => {
+    const b = await bench()
+    const injected = await rowInjected(b)
+    injected.setPreference('newSession', { kind: 'none' })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true }))
+    expect(b.startSession).not.toHaveBeenCalled()
+    injected.reset('newSession')
+    // Recording another action claims the keyboard: the chord stands down.
+    injected.setCapturing('pause')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(b.startSession).not.toHaveBeenCalled()
+    injected.setCapturing(null)
     await b.runtime.dispose()
   })
 

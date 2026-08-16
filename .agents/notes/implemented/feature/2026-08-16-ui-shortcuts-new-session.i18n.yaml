@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-ui-shortcuts-new-session.md
+.agents/notes/implemented/feature/2026-08-16-ui-shortcuts-new-session.md: 8787e85a8ab73ff66982fc5b656caaed997d60a2
+.agents/notes/implemented/feature/2026-08-16-ui-shortcuts-new-session.zh.md: 5cdbf9cedea63e9dd5ee8c24c6669cb20775d8d5

@@ -12,6 +12,9 @@
  *   did not already consume the key (the slash menu `preventDefault`s a
  *   consumed Escape). Everything else — modals, menus, popupSelect — keeps its
  *   own Escape behavior because focus lives outside the textarea there.
+ * - new-session starts a session through the public `workspaces.startSession()`
+ *   (the same entry the sidebar New-session button calls), a global chord like
+ *   steer-send.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
@@ -36,7 +39,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required by the shortcuts plugin. */
-export const inject = ['slots', 'sessions', 'conversation', 'settingsScope', 'locale']
+export const inject = ['slots', 'sessions', 'conversation', 'workspaces', 'settingsScope', 'locale']
 
 /** IME guard: a composition in flight never triggers a shortcut. */
 function isComposing(event: KeyboardEvent): boolean {
@@ -96,6 +99,15 @@ function pauseCurrentTask(ctx: ClientContext): void {
 }
 
 /**
+ * Start a new session through the public workspaces service — the same entry
+ * the sidebar New-session button calls. An absent service is a silent no-op.
+ * @param ctx - client root context.
+ */
+function startNewSession(ctx: ClientContext): void {
+  ctx.get('workspaces')?.startSession()
+}
+
+/**
  * Browser plugin body: bind the fixed actions to the persisted keys and
  * register the shortcut settings row. The binding snapshots are read in the
  * handlers (event-handler code may read live snapshots); the wiring stands
@@ -113,9 +125,15 @@ export function apply(ctx: ClientContext): void {
     const onKeyDownCapture = (event: KeyboardEvent): void => {
       if (policy.capturing.getSnapshot() !== null) return
       if (isComposing(event) || event.repeat) return
-      if (!matches(event, policy.steerSend.getSnapshot())) return
-      event.preventDefault() // the browser save gesture must not fire
-      steerSendDraft(ctx)
+      if (matches(event, policy.steerSend.getSnapshot())) {
+        event.preventDefault() // the browser save gesture must not fire
+        steerSendDraft(ctx)
+        return
+      }
+      if (matches(event, policy.newSession.getSnapshot())) {
+        event.preventDefault() // the browser open-file gesture must not fire
+        startNewSession(ctx)
+      }
     }
     const onKeyDownBubble = (event: KeyboardEvent): void => {
       if (policy.capturing.getSnapshot() !== null) return
@@ -144,6 +162,7 @@ export function apply(ctx: ClientContext): void {
       hooks: {
         pause: policy.pause,
         steerSend: policy.steerSend,
+        newSession: policy.newSession,
         capturing: policy.capturing,
       },
       setPreference: (action, preference: ShortcutPreference) => { policy.setPreference(action, preference) },

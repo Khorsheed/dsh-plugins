@@ -11,6 +11,7 @@ import type { ShortcutAction, ShortcutPreference, ShortcutSettings } from '../se
 const FIELD_OF: Record<ShortcutAction, keyof ShortcutSettings> = {
   pause: 'pause',
   steerSend: 'steerSend',
+  newSession: 'newSession',
 }
 
 /**
@@ -22,6 +23,8 @@ export class ShortcutBindingsPolicy {
   readonly pause: SnapshotStore<ShortcutPreference> = createSnapshotStore(DEFAULT_PREFERENCES.pause)
   /** Preference of the steer-send action. */
   readonly steerSend: SnapshotStore<ShortcutPreference> = createSnapshotStore(DEFAULT_PREFERENCES.steerSend)
+  /** Preference of the new-session action. */
+  readonly newSession: SnapshotStore<ShortcutPreference> = createSnapshotStore(DEFAULT_PREFERENCES.newSession)
   /** Action currently recording a new binding, or null; the global wiring stands down while set. */
   readonly capturing: SnapshotStore<ShortcutAction | null> = createSnapshotStore<ShortcutAction | null>(null)
   private readonly host: SettingsScope<ShortcutSettings> | undefined
@@ -62,7 +65,11 @@ export class ShortcutBindingsPolicy {
   }
 
   private storeOf(action: ShortcutAction): SnapshotStore<ShortcutPreference> {
-    return action === 'pause' ? this.pause : this.steerSend
+    switch (action) {
+      case 'pause': return this.pause
+      case 'steerSend': return this.steerSend
+      case 'newSession': return this.newSession
+    }
   }
 
   /**
@@ -77,6 +84,9 @@ export class ShortcutBindingsPolicy {
     if (section.pause !== undefined && this.pause.getSnapshot() !== section.pause) this.pause.set(section.pause)
     if (section.steerSend !== undefined && this.steerSend.getSnapshot() !== section.steerSend) {
       this.steerSend.set(section.steerSend)
+    }
+    if (section.newSession !== undefined && this.newSession.getSnapshot() !== section.newSession) {
+      this.newSession.set(section.newSession)
     }
   }
 }

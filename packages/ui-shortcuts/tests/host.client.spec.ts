@@ -27,9 +27,11 @@ describe('ui-shortcuts host', () => {
     expect(ctx.settings.get(ns)).toEqual({
       pause: DEFAULT_PREFERENCES.pause,
       steerSend: DEFAULT_PREFERENCES.steerSend,
+      newSession: DEFAULT_PREFERENCES.newSession,
     })
     await ctx.settings.update(ns, { pause: PREFERENCE, steerSend: NONE })
-    expect(ctx.settings.get(ns)).toEqual({ pause: PREFERENCE, steerSend: NONE })
+    // The schema refills untouched actions with their shipped defaults.
+    expect(ctx.settings.get(ns)).toEqual({ pause: PREFERENCE, steerSend: NONE, newSession: DEFAULT_PREFERENCES.newSession })
     await expect(ctx.settings.update(ns, { pause: { kind: 'key', modifiers: ['bogus'], key: 'x' } })).rejects.toThrow()
     await expect(ctx.settings.update(ns, { pause: { kind: 'bogus' } })).rejects.toThrow()
     await fiber.dispose()

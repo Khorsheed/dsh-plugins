@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Optional web shortcuts plugin: two fixed actions — **pause the running turn** and **steer-send the draft** — bound to user-chosen keys. The actions are fixed product operations; the keys are the user's. Defaults: `Esc` pauses (the same cancel as the composer's Stop button), `Ctrl/Cmd+S` sends the current draft with queue-jump (steer) delivery.
+Optional web shortcuts plugin: three fixed actions — **pause the running turn**, **steer-send the draft**, and **new session** — bound to user-chosen keys. The actions are fixed product operations; the keys are the user's. Defaults: `Esc` pauses globally (the same cancel as the composer's Stop button), `Ctrl/Cmd+S` sends the current draft with queue-jump (steer) delivery, `Ctrl/Cmd+O` starts a new session (the same entry as the sidebar New-session button).
 
 ## Install and uninstall
 
@@ -22,8 +22,9 @@ The row's node half registers the `ui-shortcuts` settings section; its browser h
 | --- | --- | --- |
 | 暂停当前任务 (Pause current task) | `Esc` | Cancels the current session's running turn through the public `conversation.cancel()` — the same operation as the composer's Stop button. Ordinary sessions and continuable subagents stop; one-shot subagents do not (mirroring the Stop button's visibility). |
 | 插队发送 (Send with priority) | `Ctrl/Cmd+S` | Sends the current draft with `steer` delivery through the public `conversation.input.for(scope).submit('steer')` facade; the browser save gesture is suppressed while bound. Draft-only: an empty draft is a silent no-op (steering the whole queue stays `Cmd/Ctrl+Enter`'s gesture). |
+| 新建会话 (New session) | `Ctrl/Cmd+O` | Starts a new session through the public `workspaces.startSession()` — the same entry as the sidebar New-session button; the browser open-file gesture is suppressed while bound. A global action, independent of focus. |
 
-Both actions run only through public services — the plugin never reaches into ui-conversation internals. Keys are rebound in General Settings → 快捷键 (Keyboard shortcuts): click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
+All three actions run only through public services — the plugin never reaches into ui-conversation internals. Keys are rebound in General Settings → 快捷键 (Keyboard shortcuts): click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
 
 ## Escape layering
 
@@ -37,9 +38,14 @@ None. The actions call existing public verbs (`conversation.cancel`, `conversati
 
 None; this package neither assembles nor sends a provider request.
 
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — verified against the published tarball: `@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.6` exposes `conversation.input` (`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`, with `'steer'` in `InputSubmitMode`); the rest of the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- source line (deepseek-harness master): ✅
+
 ## Known Limitations and Deferred Work
 
 - **Escape-pause is composer-scoped** — the key pauses only while focus is in the composer textarea. A global Escape would need a shared overlay-consumer registry that does not exist; until one does, pausing from the sidebar or over a modal is intentionally not offered.
-- **No custom actions** — the action set is fixed at two; adding user-defined actions (command lines, toggles) is deferred until the rebinding UI proves the interaction model.
+- **No custom actions** — the action set is fixed at three; adding user-defined actions (command lines, toggles) is deferred until the rebinding UI proves the interaction model.
 - **Ctrl/Cmd+S is draft-only** — an empty draft does nothing; the plugin deliberately leaves whole-queue steering to the composer's `Cmd/Ctrl+Enter` gesture.
 - **No in-repo e2e** — the plugin is not in the default bundle, so it has no `apps/web` replay scenario; its wiring is covered by the apply-level browser spec against fakes.
