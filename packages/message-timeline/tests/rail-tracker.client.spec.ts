@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 describe('measureGeometry', () => {
-  it('keeps the composer band inside the centering box (no deduction)', () => {
+  it('insets the scrollport rect and clears the composer seat', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
     const composer = document.createElement('div')
@@ -33,9 +33,7 @@ describe('measureGeometry', () => {
     rect(composer, { top: 260, left: 0, width: 400, height: 40 })
     scrollport.appendChild(composer)
 
-    // The composer seat stays part of the box height: a short list centers
-    // over chat plus input rather than floating above the conversation.
-    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 284, width: 400 })
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 244, width: 400 })
   })
 
   it('returns null while the scrollport has no laid-out size', () => {

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of the
-# last confirmed-consistent state. Both languages carry equal authority; after
-# editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-17-message-timeline-centering-counts-composer.md
-.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-centering-counts-composer.md: 28e970ef5feaef31500cde93797d0fd251c7a1b9
-.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-centering-counts-composer.zh.md: b0d139b9ad35f671e8db0213b94df029696e0470
