@@ -104,12 +104,22 @@ describe('LocalAgentSettingsSection', () => {
   })
 
   it('renders harness-owned extra rows below the harness list (provider-neutral seat)', async () => {
-    const renderSlot = vi.fn().mockReturnValue(<div>extra-row-marker</div>)
+    const renderSlot = vi.fn((key: string) => key === 'local-agent.settings.row' ? <div>extra-row-marker</div> : null)
     render(<LocalAgentSettingsSection {...props({ renderSlot })} />)
 
     expect(await screen.findByText('extra-row-marker')).toBeTruthy()
     // The section asks the seat for every contribution with empty owner props.
     expect(renderSlot).toHaveBeenCalledWith('local-agent.settings.row', {})
+  })
+
+  it('renders per-harness actions inside each row, filtered by the harness id', async () => {
+    const renderSlot = vi.fn((key: string, _owner: unknown, opts?: { only?: string }) =>
+      key === 'local-agent.settings.row-action' && opts?.only === 'kimi' ? <button type="button">row-action-marker</button> : null)
+    render(<LocalAgentSettingsSection {...props({ renderSlot })} />)
+
+    expect(await screen.findByText('row-action-marker')).toBeTruthy()
+    // The action seat is asked once per harness row, filtered to that id.
+    expect(renderSlot).toHaveBeenCalledWith('local-agent.settings.row-action', {}, { only: 'kimi' })
   })
 
   it('runs the login command and offers the authorization page link', async () => {

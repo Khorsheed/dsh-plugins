@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { DeepSeekSettingsRow, type DeepSeekSettingsProps } from '../src/client/DeepSeekSettingsRow.tsx'
+import { DeepSeekSettingsAction, type DeepSeekSettingsProps } from '../src/client/DeepSeekSettingsAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -37,17 +37,17 @@ function ready(value: { enabled: boolean }): SettingsScopeSnapshot<{ enabled: bo
   return { status: 'ready', value, base: {}, user: undefined, revision: 1, writable: true, mode: 'host' }
 }
 
-describe('DeepSeek settings row', () => {
+describe('DeepSeek settings action', () => {
   it('renders the switch in the off state by default', () => {
     const fake = fakeScope(ready({ enabled: false }))
-    render(<DeepSeekSettingsRow t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
+    render(<DeepSeekSettingsAction t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
     const toggle = screen.getByRole('switch')
     expect(toggle.getAttribute('aria-checked')).toBe('false')
   })
 
   it('writes the namespace through the bound scope when toggled on', async () => {
     const fake = fakeScope(ready({ enabled: false }))
-    render(<DeepSeekSettingsRow t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
+    render(<DeepSeekSettingsAction t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
     const toggle = screen.getByRole('switch')
     fireEvent.click(toggle)
     expect(fake.scope.set).toHaveBeenCalledWith('enabled', true)
@@ -58,7 +58,7 @@ describe('DeepSeek settings row', () => {
 
   it('flips back off through the scope write', async () => {
     const fake = fakeScope(ready({ enabled: true }))
-    render(<DeepSeekSettingsRow t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
+    render(<DeepSeekSettingsAction t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
     const toggle = screen.getByRole('switch')
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
@@ -69,7 +69,7 @@ describe('DeepSeek settings row', () => {
 
   it('disables the switch while the namespace is unavailable', () => {
     const fake = fakeScope({ status: 'unavailable', value: undefined, base: {}, user: undefined, revision: undefined, writable: false, mode: 'memory' })
-    render(<DeepSeekSettingsRow t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
+    render(<DeepSeekSettingsAction t={t} scope={fake.scope as never} subscribe={fake.scope.subscribe as never} />)
     const toggle = screen.getByRole('switch')
     expect((toggle as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(toggle)

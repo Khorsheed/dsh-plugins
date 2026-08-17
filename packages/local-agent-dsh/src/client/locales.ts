@@ -5,7 +5,6 @@ export const NS = 'local-agent-dsh'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'settings.intro': '把 dsh 自身作为本地 CLI 委派：开 → 注册 dsh 委派工具（独立进程、独立 DSH_HOME）；关 → 仅用官方内置子代理。',
   'settings.on': '已开启：模型可使用 subagent_dsh 委派给本机 dsh',
   'settings.off': '已关闭：委派只走官方内置子代理工具',
   'settings.switch': 'DeepSeek 委派开关',
@@ -14,7 +13,6 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<LocalAgentDshKey, string> = {
-  'settings.intro': 'Delegate to dsh itself as a local CLI: ON registers the dsh delegation tool (separate process, own DSH_HOME); OFF keeps the official in-process subagent only.',
   'settings.on': 'ON: the model can delegate to the local dsh via subagent_dsh',
   'settings.off': 'OFF: delegation goes through the official in-process subagent tool only',
   'settings.switch': 'DeepSeek delegation switch',

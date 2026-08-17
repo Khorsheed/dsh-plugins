@@ -74,7 +74,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       order: 20,
       label: () => t('settings.nav'),
       locale: NS,
-      children: { 'local-agent.settings.row': { kind: 'list', scope: 'root' } },
+      children: {
+        'local-agent.settings.row': { kind: 'list', scope: 'root' },
+        'local-agent.settings.row-action': { kind: 'list', scope: 'root' },
+      },
       inject: (): LocalAgentSettingsInjected => ({
         roster: () => gateway.roster().then(result => (result.ok ? result.value : undefined)),
         status: name => gateway.status(name).then(result => (result.ok ? result.value : undefined)),

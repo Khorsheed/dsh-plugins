@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls the family core's `local-agent.settings.row` slot declaration.
 import type {} from '@khorsheed/dsh-local-agent/client'
-import { DeepSeekSettingsRow, type DeepSeekSettingsInjected } from './DeepSeekSettingsRow.tsx'
+import { DeepSeekSettingsAction, type DeepSeekSettingsInjected } from './DeepSeekSettingsAction.tsx'
 import { en, NS, zh, type LocalAgentDshKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -37,15 +37,16 @@ export function apply(ctx: ClientContext): void {
     scope,
     subscribe: listener => scope.subscribe(listener),
   }
+  // The toggle renders inside the dsh harness row's action area, keyed to
+  // the harness id the section filters by.
   ctx.slots.inject(
-    'local-agent.settings.row',
+    'local-agent.settings.row-action',
     () => ctx.slots.register({
-      name: 'local-agent.settings.row',
+      name: 'local-agent.settings.row-action',
       id: 'dsh',
-      // Below the harness rows.
       order: 0,
       locale: NS,
       inject: () => injected,
-    }, DeepSeekSettingsRow),
+    }, DeepSeekSettingsAction),
   )
 }

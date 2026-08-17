@@ -1,10 +1,9 @@
 /**
- * Slot contract for extra rows contributed into the 本地 Agent settings
- * section: the additive seat for a harness-level switch that needs no auth
- * action of its own (e.g. the dsh DeepSeek enable/disable toggle). The
- * section only stacks rows; a row draws its own internals, including its
- * label, through its own inject face — so the section stays provider-neutral
- * (it never knows which harness a row belongs to).
+ * Slot contract for harness-owned contributions to the 本地 Agent settings
+ * section: a per-harness action seat inside each harness row (next to the
+ * login/logout buttons) and an extra-row seat below the harness list. The
+ * section only renders contributions filtered by harness id — it never knows
+ * what a contributed action does — so the section stays provider-neutral.
  */
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -19,10 +18,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'root'
       owner: LocalAgentSettingsRowOwnerProps
     }
+    /**
+     * One per-harness action rendered inside a harness row's action area (next
+     * to the login/logout buttons), filtered by the row's harness id. Options:
+     * `id` (the harness id this action belongs to), `order` (position).
+     */
+    'local-agent.settings.row-action': {
+      kind: 'list'
+      scope: 'root'
+      owner: LocalAgentSettingsRowOwnerProps
+    }
   }
 }
 
-/** Owner share of a local-agent settings row (the section supplies nothing). */
+/** Owner share of a local-agent settings row or row action (the section supplies nothing). */
 export interface LocalAgentSettingsRowOwnerProps {
   /** Marker field: row owner props are intentionally empty. */
   children?: never
