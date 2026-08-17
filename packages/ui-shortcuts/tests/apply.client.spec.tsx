@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// apply wiring: the shortcut settings row registers, and the global keydown
+// apply wiring: the shortcut settings card registers, and the global keydown
 // listeners drive the public services — steer-send submits through
 // conversation.input, Escape-pause cancels through the scope-addressed
 // conversation face, gated on the composer's own Escape layering (a consumed
@@ -13,6 +13,7 @@ import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test
 import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '@khorsheed/dsh-ui-shortcuts/client'
 import type { ShortcutsRowInjected } from '../src/client/settings/ShortcutsRow.tsx'
+import { UI_SHORTCUTS_NAMESPACE } from '../src/settings.ts'
 
 const SID = 's1' as SessionId
 
@@ -38,9 +39,9 @@ async function bench(over: BenchOptions = {}) {
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
   runtime.slots.installLocale(locale)
-  // The General section declares the item row in production; the test root
-  // declares it here so the registration lands.
-  await runtime.root.declare({ 'settings.general.item': { kind: 'list', scope: 'root' } }, (_p: { renderSlot?: unknown }) => null)
+  // The Plugins section declares the keyed card slot in production; the test
+  // root declares it here so the registration lands.
+  await runtime.root.declare({ 'settings.plugin.item': { kind: 'keyed', scope: 'root' } }, (_p: { renderSlot?: unknown }) => null)
   const feature = await runtime.mount({ inject: [...inject], apply })
   await runtime.sessions.add({
     id: SID,
@@ -52,10 +53,10 @@ async function bench(over: BenchOptions = {}) {
   return { runtime, feature, slots: runtime.slots, submit, cancel, startSession }
 }
 
-/** The inject face the settings row entry serves (reaches the apply-built policy). */
+/** The inject face the settings card entry serves (reaches the apply-built policy). */
 async function rowInjected(b: Awaited<ReturnType<typeof bench>>): Promise<ShortcutsRowInjected> {
-  const entry = b.slots.entries('settings.general.item').find(e => e.options.id === 'shortcuts')
-  if (entry === undefined) throw new Error('shortcuts settings row not registered')
+  const entry = b.slots.entries('settings.plugin.item').find(e => e.options.key === UI_SHORTCUTS_NAMESPACE)
+  if (entry === undefined) throw new Error('shortcuts settings card not registered')
   return (entry.inject as unknown as () => ShortcutsRowInjected)()
 }
 
@@ -78,9 +79,9 @@ afterEach(() => {
 })
 
 describe('ui-shortcuts apply', () => {
-  it('registers the shortcut settings row', async () => {
+  it('registers the shortcut settings card', async () => {
     const b = await bench()
-    expect(b.slots.entries('settings.general.item').map(entry => entry.options.id)).toContain('shortcuts')
+    expect(b.slots.entries('settings.plugin.item').map(entry => entry.options.key)).toContain(UI_SHORTCUTS_NAMESPACE)
     await b.runtime.dispose()
   })
 
@@ -286,11 +287,11 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('the settings row face writes and resets bindings', async () => {
+  it('the settings card face writes and resets bindings', async () => {
     const b = await bench()
     const injected = await rowInjected(b)
     injected.reset('pause')
-    expect(b.slots.entries('settings.general.item').map(entry => entry.options.id)).toContain('shortcuts')
+    expect(b.slots.entries('settings.plugin.item').map(entry => entry.options.key)).toContain(UI_SHORTCUTS_NAMESPACE)
     await b.runtime.dispose()
   })
 

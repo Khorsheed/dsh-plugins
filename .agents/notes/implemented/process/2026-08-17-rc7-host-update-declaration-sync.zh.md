@@ -25,3 +25,9 @@ English | [中文](2026-08-17-rc7-host-update-declaration-sync.zh.md)
 - guard 凭证 `build+test` 已记录在 `99f6f02fec`,带一条如实注明的例外:4 次全量测试各有 1–2 个时序敏感用例失败(`user-patches.spec.ts` HMR watcher 3 次、`process-exit.spec.ts` 1 次),单独跑全部确定性通过——这是这台 macOS 全量套件下的环境级 flaky,不是 rc.7 缺陷(同一提交上游 CI 全绿)。
 - **组合 preflight 门禁已无 fork 补丁重建**:`packages/ankh-guard/src/preflight-runner.ts` 通过动态 import 从在线 harness checkout 加载官方已发布包(`@deepseek-ai/dsh-app-boot`/`dsh-home-paths`/`dsh-launch-environment`/`dsh-cmdline`,monorepo 布局映射 `packages/<category>/<name>`,harness 根取自 `--repo`/`DSH_HARNESS`/默认 `~/code/deepseek-harness`),把 webserver 端口钉到 0,boot 整棵插件树,检查每个已注册 client bundle 产物存在,dispose,退出码 0/1/3。guard CLI 的 `preflight` 命令与 `schedule-exit`/`restart` 门禁优先走 runner(解析顺序:`DSH_PREFLIGHT_COMMAND` override → runner → fork `dsh preflight`)。这能扛住上游发布——不修改 apps/cli,rc.8 抹不掉它;只依赖已发布 API 面保持稳定(兼容性审计的职责)。npm 线(独立安装无 checkout)仍降级为提示。
 - profile 的 tarball 安装(`message-tools`、`taskpilot`)仍引用清理前的 tarball;刷新属于下一次发布周期。
+
+## 后续:ui-shortcuts 设置卡片迁移(2026-08-17)
+
+快捷键偏好从 General 设置行(`settings.general.item`,id `shortcuts`)迁到插件配置 tab 的卡片(`settings.plugin.item`,key `ui-shortcuts`),依据官方 `docs/cookbook/adding-a-settings-card.md`——命名空间(`UI_SHORTCUTS_NAMESPACE`)、schema(开放 `actionId → 绑定` dict)、`settingsScope` 写入本来就在,所以这次只是浏览器半边的槽位迁移 + keyed 槽位声明的 type-only import(`@deepseek-ai/dsh-client-ui-settings-plugins/client`)+ `dsh.client.inject` 条目。按键捕获交互不变(卡片自绘全部内容,tab 只做 key 分发)。线上已验证:preflight PASS、canary PASS、卡片注册在服务的 client bundle 里。
+
+途中踩到一个坑:**pnpm 11 对 `@deepseek-ai/dsh-client-ui-settings-plugins` 把 `^0.1.0-rc.6` 错误解析成 `0.1.0-rc.6`**,尽管 rc.7 满足该范围(node-semver 判定 rc.7 是 maxSatisfying;完整与缩写 packument 都含 rc.7;其余 dsh-* 包同范围都正常解析 rc.7)。由于这个 devDep 只为了 rc.7 才有的 keyed 槽位类型,范围定为 `^0.1.0-rc.7`(如实表达所需 API)——这是宽范围惯例的唯一刻意例外。若 pnpm 恢复对宽范围的支持,可改回 `^0.1.0-rc.6`。

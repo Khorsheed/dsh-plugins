@@ -14,7 +14,7 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
 **警示**：本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`，同一 profile 挂两次会在启动时 fail loud——只保留其一。
 
-该行的 node 半边注册 `ui-shortcuts` 设置小节；浏览器半边（`/plugins/ui-shortcuts/client.js`）负责按键接线与 General Settings 行。卸载 = 移除或对该行 `disabled: true`。通过插件清单禁用属于部署层面的配置，不属于本包职责。
+该行的 node 半边注册 `ui-shortcuts` 设置命名空间；浏览器半边（`/plugins/ui-shortcuts/client.js`）负责按键接线与插件配置 tab 里的快捷键卡片（设置 → 插件）。卸载 = 移除或对该行 `disabled: true`。通过插件清单禁用属于部署层面的配置，不属于本包职责。
 
 ## 动作
 
@@ -24,7 +24,7 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 | 插队发送 | `Ctrl/Cmd+S` | 通过公开的 `conversation.input.for(scope).submit('steer')` 以 `steer` 投递方式发送当前草稿；绑定时抑制浏览器保存手势。仅草稿：空草稿保持静默无操作（插队整个队列仍是 `Cmd/Ctrl+Enter` 的手势）。 |
 | 新建会话 | `Ctrl/Cmd+O` | 通过公开的 `workspaces.startSession()` 新建会话——与侧边栏新会话按钮同一入口；绑定时抑制浏览器的打开文件手势。全局动作，不限定焦点位置。 |
 
-三个动作都只使用公开服务——插件从不触及 ui-conversation 内部。键位在 设置 → 通用 → 快捷键 中重绑：点击键位开始录制下一个组合键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
+三个动作都只使用公开服务——插件从不触及 ui-conversation 内部。键位在 设置 → 插件 → 快捷键 中重绑：点击键位开始录制下一个组合键（`Esc` 取消，`Delete`/`Backspace` 解绑，`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键），或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
 
 ## 给插件作者
 
@@ -43,7 +43,7 @@ ctx.effect(() => ctx.shortcuts.registerAction({
 }), 'my-plugin: shortcut')
 ```
 
-贡献项的文案留在贡献方自己的 locale 命名空间。id 重复会 loud 报错；多个动作共享同一组合键时先注册者生效。用户可在 设置 → 通用 → 快捷键 重绑或解绑任何动作；偏好按动作 id 持久化在 `ui-shortcuts` 小节。
+贡献项的文案留在贡献方自己的 locale 命名空间。id 重复会 loud 报错；多个动作共享同一组合键时先注册者生效。用户可在 设置 → 插件 → 快捷键 重绑或解绑任何动作；偏好按动作 id 持久化在 `ui-shortcuts` 小节。
 
 ## Escape 分层
 

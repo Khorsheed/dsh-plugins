@@ -1,7 +1,10 @@
-/** General Settings row for the shortcut registry: one rebindable field per registered action. */
+/** Settings card for the shortcut registry: one rebindable field per registered action. */
 import { Fragment, useEffect } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: the settings.plugin.item keyed-slot SlotMap merge, so this
+// component's props type matches the plugin configuration card contract.
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { bindingOfEvent, bindingParts, equalPreference, formatBinding, isBindingKey } from '../bindings.ts'
 import type { ShortcutPreference } from '../../settings.ts'
 import type { ShortcutActionContribution } from '../contract.ts'
@@ -27,9 +30,9 @@ export interface ShortcutsRowInjected {
   setCapturing: (id: string | null) => void
 }
 
-/** Full Settings-row props. */
+/** Full settings-card props. */
 export type ShortcutsRowProps =
-  PropsRuntime<'settings.general.item'>
+  PropsRuntime<'settings.plugin.item'>
   & PropsLocale<'shortcuts'>
   & InjectFace<ShortcutsRowInjected>
 

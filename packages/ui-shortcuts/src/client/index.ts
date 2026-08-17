@@ -26,6 +26,9 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: the settings.plugin.item keyed-slot SlotMap merge, so the card
+// registration below type-checks against the official contract.
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { matches } from './bindings.ts'
 import { ShortcutRegistryRuntime } from './registry.ts'
 import { DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
@@ -163,9 +166,9 @@ function dispatch(event: KeyboardEvent, layering: ShortcutLayering, registry: Sh
 
 /**
  * Browser plugin body: provide the registry, bind the built-in actions
- * through it, and register the shortcut settings row. The binding snapshots
+ * through it, and register the shortcut settings card. The binding snapshots
  * are read in the handlers (event-handler code may read live snapshots); the
- * wiring stands down entirely while the settings row records a new binding.
+ * wiring stands down entirely while the card records a new binding.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -213,10 +216,12 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'ui-shortcuts: global keydown')
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
-    id: 'shortcuts',
-    order: 30,
+  // The plugin configuration tab keys its cards on the settings namespace, so
+  // the shortcut preferences card registers under UI_SHORTCUTS_NAMESPACE and
+  // renders wherever the tab dispatches that key.
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    key: UI_SHORTCUTS_NAMESPACE,
     locale: NS,
     inject: (): ShortcutsRowInjected => ({
       hooks: {

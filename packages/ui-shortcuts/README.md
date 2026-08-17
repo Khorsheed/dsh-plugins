@@ -14,7 +14,7 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
 **Warning**: this package shares the loader entry id `ui-shortcuts` with the official `@deepseek-ai/dsh-client-ui-shortcuts`. Mounting both in one profile fails loud at boot on the duplicate entry id — keep exactly one.
 
-The row's node half registers the `ui-shortcuts` settings section; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the General Settings row. Uninstall = remove or `disabled: true` the row. Disabling through the plugin inventory is a deployment concern, not this package's.
+The row's node half registers the `ui-shortcuts` settings namespace; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the keyboard-shortcuts card in the plugin configuration tab (Settings → Plugins). Uninstall = remove or `disabled: true` the row. Disabling through the plugin inventory is a deployment concern, not this package's.
 
 ## Actions
 
@@ -24,7 +24,7 @@ The row's node half registers the `ui-shortcuts` settings section; its browser h
 | 插队发送 (Send with priority) | `Ctrl/Cmd+S` | Sends the current draft with `steer` delivery through the public `conversation.input.for(scope).submit('steer')` facade; the browser save gesture is suppressed while bound. Draft-only: an empty draft is a silent no-op (steering the whole queue stays `Cmd/Ctrl+Enter`'s gesture). |
 | 新建会话 (New session) | `Ctrl/Cmd+O` | Starts a new session through the public `workspaces.startSession()` — the same entry as the sidebar New-session button; the browser open-file gesture is suppressed while bound. A global action, independent of focus. |
 
-All three actions run only through public services — the plugin never reaches into ui-conversation internals. Keys are rebound in General Settings → 快捷键 (Keyboard shortcuts): click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
+All three actions run only through public services — the plugin never reaches into ui-conversation internals. Keys are rebound in Settings → Plugins → 快捷键 (Keyboard shortcuts): click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
 
 ## For plugin authors
 
@@ -43,7 +43,7 @@ ctx.effect(() => ctx.shortcuts.registerAction({
 }), 'my-plugin: shortcut')
 ```
 
-The contribution's locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; when several actions share one chord, the first registration wins. Users rebind or unbind any action in Settings → General → Keyboard shortcuts; preferences persist under the `ui-shortcuts` section keyed by action id.
+The contribution's locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; when several actions share one chord, the first registration wins. Users rebind or unbind any action in Settings → Plugins → Keyboard shortcuts; preferences persist under the `ui-shortcuts` section keyed by action id.
 
 ## Escape layering
 
