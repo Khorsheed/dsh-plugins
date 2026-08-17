@@ -1,252 +1,270 @@
 # dsh-plugins
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **14 packages** that extend the official web GUI. 13 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 14th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. The whole pack already runs together on the production profile, and nothing about the official UI is patched or replaced.
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**14 个纯增量插件**。其中 13 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 14 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。整套 13 个 bundle 已经同时跑在生产 profile 上,卸载即精确还原。
 
-This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
+本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
-## What's in the box
+## 截图
 
-| Package (npm) | Face | Row id | One-line feature |
+生产实例实拍(全部 13 个 bundle 已装,中文界面):
+
+| 能力 | 截图 |
+| --- | --- |
+| 会话总览(时间轴、标题编辑、消息操作、任务胶囊同屏) | <img src="docs/screenshots/01-chat-overview.png" width="480"> |
+| message-timeline · 历史消息时间轴(悬停展开) | <img src="docs/screenshots/02-message-timeline.png" width="480"> |
+| session-title-edit · 标题内联编辑 | <img src="docs/screenshots/03-session-title-edit.png" width="480"> |
+| message-tools · 用户消息操作(复制 / 编辑 / 撤回) | <img src="docs/screenshots/04-message-actions.png" width="480"> |
+| ui-file-preview · 「产物」tab 文件列表 | <img src="docs/screenshots/05-file-preview-tab.png" width="480"> |
+| ui-file-preview · 文件内容预览 | <img src="docs/screenshots/06-file-preview.png" width="480"> |
+| ui-shortcuts · 快捷键设置(键帽) | <img src="docs/screenshots/07-ui-shortcuts.png" width="480"> |
+| local-agent · 设置 → 本地 Agent(登录状态) | <img src="docs/screenshots/08-local-agent.png" width="480"> |
+| taskpilot · 后台任务胶囊(任务运行中) | <img src="docs/screenshots/09-taskpilot.png" width="480"> |
+| whalesong · 侧栏鲸鱼(任务运行时喷水) | <img src="docs/screenshots/10-whalesong.png" width="280"> |
+| whalesong · 任务运行中的 favicon | <img src="docs/screenshots/whalesong-favicon.svg" width="64"> |
+
+## 全家桶速览
+
+| 包名(npm) | 面 | 行 id | 一句话特性 |
 | --- | --- | --- | --- |
-| `@khorsheed/dsh-client-message-tools` | host + client | `message-tools` | Edit, really-withdraw and restore user messages |
-| `@khorsheed/dsh-message-timeline` | client | `message-timeline` | Floating history timeline along the chat scrollport, jump to any user message |
-| `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | Inline session-title editing in the chat header |
-| `@khorsheed/dsh-file-preview` | host | `file-preview` | Read-only file-preview Remote service (list + content + diffs) |
-| `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 「产物」tab, per-turn "N files changed" card, file-preview drawer |
-| `@khorsheed/dsh-local-agent` | host + client | `local-agent` | Local coding-agent family **core**: scoped homes, login/session commands, delegation registry |
-| `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness: `kimi -p` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness: `codex exec` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness: `claude -p` delegation, resume, usage accounting |
-| `@khorsheed/dsh-local-agent-tool-subagent` | host (tool) | *(mounted by harnesses)* | Family-owned delegation tool with `resume` continuation |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
+| `@khorsheed/dsh-client-message-tools` | host + client | `message-tools` | 用户消息**编辑 / 真撤回 / 恢复重放** |
+| `@khorsheed/dsh-message-timeline` | client | `message-timeline` | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 |
+| `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | 聊天区标题**内联编辑重命名**会话 |
+| `@khorsheed/dsh-file-preview` | host | `file-preview` | 宿主侧只读**文件预览 Remote 服务**(列表 + 内容 + diff) |
+| `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 会话「产物」tab、回合变更卡片、文件预览抽屉 |
+| `@khorsheed/dsh-local-agent` | host + client | `local-agent` | 本地编码 Agent 家族**核心**:作用域 home、登录/会话命令族、委派 registry |
+| `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 |
+| `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness:`codex exec` 委派、续聊、记账 |
+| `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness:`claude -p` 委派、续聊、记账 |
+| `@khorsheed/dsh-local-agent-tool-subagent` | host(工具) | *(随 harness 挂载)* | 家族自有委派工具,带 `resume` 续聊参数 |
+| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
+| `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
+| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
+| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
 
-Versions are the current workspace lines; the npm registry may have newer ones.
+版本为仓库内当前发布线,以 npm 实际发布为准。
 
-## Do the plugins conflict?
+## 互相冲突吗?
 
-**No — they are designed to coexist, and they already do.** The production profile composes all 13 bundles over the stock `dsh-base` + `dsh-web-app` layers and boots; every client bundle serves. Three properties guarantee it:
+**不冲突——整套插件就是按"能共存"设计的,而且已经在共存。** 生产 profile 把全部 13 个 bundle 叠在官方 `dsh-base` + `dsh-web-app` 之上正常启动,所有 client bundle 均正常服务。三条性质保证:
 
-- **Distinct loader entry ids.** Each `cordis.patch.yml` inserts its own row ids, and nothing is ever re-inserted: the local-agent family's core row ships only in the core bundle's patch (harness bundles declare it as a dependency instead), and each harness mounts its own tool row with a distinct id (`tool-subagent-kimi`, `tool-subagent-codex-local`, `tool-subagent-claude-code-local`).
-- **Distinct UI seats.** Each client mounts its own slots with `slots.inject` discipline: `conversation.session.header.utilities` (message-timeline), `conversation.session.header.actions` (session-title-edit), `conversation.chat.node` (message-tools shadows the official user renderer), `conversation.input.dock` (taskpilot), `conversation.view` / `conversation.chat.turnTail` (ui-file-preview), `settings.general.item` (ui-shortcuts). `shell.overlay` is shared by taskpilot and ui-file-preview, but it is a multi-registration stack — two separate overlays, no fight.
-- **Degrade, don't explode.** A plugin that cannot find an optional sibling or capability degrades silently instead of failing boot.
+- **行 id 互不重复。** 每个 `cordis.patch.yml` 只插入自己的行;家族共享行从不重复插入——local-agent 核心行只存在于核心包自己的 patch 里(harness 包改为声明依赖),每个 harness 的工具行 id 各不相同(`tool-subagent-kimi` / `tool-subagent-codex-local` / `tool-subagent-claude-code-local`)。
+- **UI 席位互不重叠。** 每个 client 都走 `slots.inject` 纪律挂自己的席位:`conversation.session.header.utilities`(message-timeline)、`conversation.session.header.actions`(session-title-edit)、`conversation.chat.node`(message-tools 影分身官方用户消息渲染)、`conversation.input.dock`(taskpilot)、`conversation.view` / `conversation.chat.turnTail`(ui-file-preview)、`settings.general.item`(ui-shortcuts)。taskpilot 与 ui-file-preview 共用 `shell.overlay`,但那是多注册浮层栈——两个独立浮层,不打架。
+- **降级不爆炸。** 探测不到可选兄弟/能力时静默降级,绝不把整个 boot 打挂。
 
-There are **two exclusivity rules** worth remembering, and they are the only real conflicts in the whole pack:
+全包仅有的两条**排他规则**(也是仅有的真实冲突点):
 
-1. **`ui-shortcuts` is exclusive with the official `@deepseek-ai/dsh-client-ui-shortcuts`.** Both use the loader entry id `ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. In practice the official one cannot even be installed: it was a fork-grown package, **never published to npm, and removed from the harness when it migrated into this repo** — the rule only guards against an old fork tarball lying around. The default web bundle never mounted a shortcuts row at all (not enabled, not disabled — simply absent).
-2. **`ankh-guard` must not be added as a profile bundle on a host that already mounts the `ankh-guard` row** (pre-migration fork images did, via the base bundle): the duplicate row id fails boot. Check `dsh.profile.bundles` first; if the row is already there, skip the add (or disable the duplicate instead of adding).
+1. **`ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 互斥。** 两者 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。实际上官方那个**根本无法安装**:它是 fork 自生包,**从未发布到 npm**,迁移进本仓库时已从 harness 删除——这条规则只防着旧 fork tarball 流落在外面。默认 web bundle 从来没有挂过任何 shortcuts 行(不是不启用,是压根不存在)。
+2. **宿主已挂 `ankh-guard` 行的镜像不要再以 profile bundle 添加本包。**(迁移前的 fork 镜像会经 base bundle 挂该行;当前 master 已移除。)重复行 id 会导致启动失败。先查 `dsh.profile.bundles`;已有该行就跳过 add(或禁用重复行)。
 
-And one namespace rule: exactly one composition may mount the `filePreview` Remote (ui-file-preview does); a double-mount logs loud but the rest of the plugin still registers.
+另有一条命名空间规则:`filePreview` Remote 只能由一个组合挂载(ui-file-preview 负责);重复挂载会 log loud,但插件其余部分照常注册。
 
-## Install
+## 安装
 
-Prerequisites: a dsh host ≥ `0.1.0-rc.6` (every bundle declares `minHost`), any profile (`web` / `headless` / custom). Every bundle declares `dsh.bundle`, so one command installs it **and** mounts its loader row — no hand-edited `cordis.yml`. Restart the web instance afterwards.
+前置:dsh 宿主 ≥ `0.1.0-rc.6`(每个 bundle 声明 `minHost`),任意 profile(`web` / `headless` / 自定义)。每个 bundle 都声明 `dsh.bundle`:`dsh plugin add` 一条命令完成安装并自动挂载 loader 行,**无需手改 cordis.yml**。装完**重启 web 实例**生效。
 
 ```sh
-# one plugin, by npm name
+# 按 npm 名装单个
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
-# from a tarball / a source directory (message-timeline is source-only — see below)
+# 从 tarball / 源码目录装(message-timeline 只能源码装,见下)
 dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
-The whole pack, family by family:
+全家桶按家族一键装:
 
 ```sh
-# dialog control
+# 对话控制
 dsh plugin --profile web add @khorsheed/dsh-client-message-tools
 dsh plugin --profile web add @khorsheed/dsh-message-timeline
 dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 
-# file preview (host service + UI, install both)
+# 文件预览(服务 + 界面,推荐成对)
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 
-# local-agent family (core + the harnesses you actually use)
+# 本地 Agent 家族(核心 + 你实际用的 harness,成对装)
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
 dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
 
-# task / ambience / shortcuts
+# 任务监控 / 氛围 / 快捷键
 dsh plugin --profile web add @khorsheed/dsh-taskpilot
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
-# ops guard (self-hosting / self-modification scenarios)
+# 运维守护(自托管 / 让 AI 自己改代码场景)
 dsh plugin --profile web add @khorsheed/dsh-ankh-guard
 ```
 
-## Uninstall
+## 卸载
 
-One command removes a plugin: the host CLI drops the dependency and reconciles its bundle row out of the profile, so every surface the plugin added disappears.
+一条命令卸载一个插件:宿主 CLI 会移除依赖并把它的 bundle 行从 profile 调和出去,插件添加的所有界面随之消失。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-<name>
 ```
 
-The general rules:
+通用规则:
 
-- **Uninstall is exact.** No plugin patches or replaces official files, so removal restores the previous composition precisely.
-- **User data is deliberately kept.** The local-agent family keeps each harness's scoped home (`$DSH_HOME/local-agent/<name>`) so a reinstall needs no fresh login — delete the directory to remove every trace. ankh-guard keeps its state under `stateDir` (`$DSH_HOME/state` by default): credentials, restart records, the interrupted-session snapshot. ui-shortcuts keeps your key bindings in `$DSH_HOME/settings.yaml`. Session logs are never touched by any uninstall — the audit trail of an edit/withdrawal lives in the log on purpose.
-- **Family rows travel together.** Removing a harness removes its harness row, its `/…` command family, its tool row, and its UI rows. Removing the core (`dsh-local-agent`) while harnesses remain leaves those harness rows **pending, not crashing** — re-add the core to reactivate.
-- **`enabled: false`** on a row disables a plugin without removing it — a deployment concern, not a code change.
+- **卸载即精确还原。** 没有任何插件修改/替换官方文件,移除后组合精确回到之前的状态。
+- **用户数据刻意保留。** local-agent 家族保留每个 harness 的作用域目录(`$DSH_HOME/local-agent/<name>`),重装无需重新登录——删目录即清全部痕迹;ankh-guard 保留 `stateDir`(默认 `$DSH_HOME/state`)下的状态(凭证、重启记录、中断会话快照);ui-shortcuts 的键位保留在 `$DSH_HOME/settings.yaml`。任何卸载都不碰会话日志——编辑/撤回的审计轨迹留在日志里是有意为之。
+- **家族行随行。** 卸 harness 会一并注销它的 harness 行、`/…` 命令族、工具行和 UI 行。先卸核心(`dsh-local-agent`)而 harness 还在时,harness 行保持 **pending,不会崩溃**——重新装上核心即恢复。
+- **`enabled: false`** 可以禁用某行而不卸载——这是部署层操作,不是代码改动。
 
-Per-plugin unload details follow in the catalog.
+各插件卸载细节见下文目录。
 
-## The plugin catalog
+## 插件目录
 
-### Dialog control
+### 一、对话控制
 
-#### `dsh-client-message-tools` — edit / withdraw / restore user messages
+#### `dsh-client-message-tools` —— 消息编辑 / 撤回 / 恢复
 
-The only plugin in the pack that changes what the model sees, and it uses the official compaction mechanism to do it:
+全家桶里唯一改变模型所见的插件,且用的是与官方 compaction 同一套机制:
 
-- **Edit** — in-place replacement: the host appends a `user/message` surface replacement whose content *is* the edited text; the model reads the edited text in place of the original, and everything that followed the original leaves the model context. Edit chains work (an edited bubble edits again), and the editor carries a real model chip.
-- **Withdraw** — a real withdrawal, not a marker: the host appends a surface replacement whose span covers the target message and every surface node after it, so the span leaves `session.surface` and never reaches the model again. Each landed withdrawal renders as an expandable 「已撤回 N 条消息」 divider; the original text is backfilled into the composer draft (never auto-sent).
-- **Restore** — a tail replay of the whole withdrawn span along its authoritative boundary (`sourceEventSeqs`): user messages verbatim, assistant replies as framed text, in original order. Tool calls/results never replay. Renders as a 「已恢复」 group.
+- **编辑**:原位替换——host 追加 replacement,模型在**原位置**读到编辑后的新文本,旧内容及之后的一切从模型上下文消失;可形成编辑链,编辑框带真实的模型 chip(与 composer 共享同一 `ModelDirectory`)。
+- **撤回是真撤回,不是打标记**:用 surface replacement 把目标消息及之后的所有内容从 `session.surface` 移出,不再进入模型上下文;每条撤回投影为可展开的「已撤回 N 条消息」分隔线,原文自动回填 composer 草稿(绝不自动发送)。
+- **恢复**:沿撤回区间的权威边界(`sourceEventSeqs`)把用户消息与助手文本按原始顺序**尾部重放**(工具调用/结果永不重放),渲染为「已恢复」组。
 
-Model impact (the one significant one in the pack): an edit/withdraw removes the shadowed span's tokens from subsequent requests and invalidates the KV-cache prefix from the replacement point — the same tradeoff as official compaction.
+**模型影响**(全家桶里唯一显著的一个):一次撤回/编辑会把遮蔽区间的全部 token 从后续请求移除,KV 缓存前缀从替换点失效——与官方 compaction 同样的取舍。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-message-tools`: all edit/withdraw/restore surfaces disappear; the audit trail stays in the session log by design.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-client-message-tools`:编辑/撤回/恢复所有界面消失;审计轨迹按设计留在会话日志里。
 
-#### `dsh-message-timeline` — history timeline
+#### `dsh-message-timeline` —— 历史消息时间轴
 
-A flat floating timeline along the left edge of the chat scrollport — one row per loaded user message (steering messages included, configurable), a dimmed tick at rest, text on hover/focus, click to jump. Follows the reading position, pages older history at its top, `enabled` is the master switch. Pure read of the session snapshot: zero events, zero prompts, zero model/KV impact.
+平铺在会话滚动区左缘的悬浮时间轴:一行一条已加载用户消息(含回合中插入的 steering 消息,可配置),静止时只显示压淡刻度,悬停/键盘聚焦展开文字,点击跳转对应消息;跟随阅读位置、顶部翻页加载更早历史、面板宽度可配置,`enabled` 可整体关闭。纯读取会话快照,零事件、零提示词,对模型与 KV 缓存完全无影响。
 
-> **Source-only package.** `dsh-message-timeline` is `private` and not published to npm — install it from this repo (`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` or a packed tarball).
+> **仅源码安装。** `dsh-message-timeline` 标记为 `private`,未发布到 npm——从本仓库安装(`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` 或打包成 tarball)。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`。
 
-#### `dsh-client-session-title-edit` — inline session-title editing
+#### `dsh-client-session-title-edit` —— 会话标题编辑
 
-A pencil control right of the title in the chat header → inline editor (Enter commits, Escape cancels, trimmed-empty disables save). Rides the official `session.rename` RPC, so a user-sourced title is **pinned** against automatic regeneration. No host half, no new RPC; titles are projection-only, so zero model impact.
+聊天区标题右侧铅笔控件 → 原位内联编辑:Enter 提交、Escape 取消、空草稿禁用保存。走官方 `session.rename` RPC,用户来源标题会被**钉住**,不再被自动生成覆盖。无需宿主半边、零新增 RPC;标题是纯投影属性,对模型零影响。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit`.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit`。
 
-### File preview (host + UI)
+### 二、文件与产物
 
-#### `dsh-file-preview` — the host service
+#### `dsh-file-preview` —— 宿主服务
 
-A read-only Remote service: `list` folds one session's log into the files its `read`/`write`/`edit` tool calls touched (nested Code Mode dispatches included), with every change's diff; `read` serves the current content of one of those files through `ctx.fs` (images as browser URLs). Config caps `maxReadBytes` / `maxFiles`. Owns no session state, writes nothing — the log and the filesystem stay authoritative.
+只读 Remote 服务:`list` 把单个会话的日志折叠成其 `read`/`write`/`edit` 工具调用碰过的文件清单(含嵌套 Code Mode 派发),带每次改动的 diff;`read` 通过 `ctx.fs` 提供其中某个文件的当前内容(图片走浏览器 URL)。配置上限 `maxReadBytes` / `maxFiles`。不持有会话状态、不写任何东西——日志与文件系统始终是权威。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-file-preview`. If the UI half stays installed, its surfaces degrade to empty rather than fail.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-file-preview`。UI 半边若仍在,其界面降级为空态而非报错。
 
-#### `dsh-client-ui-file-preview` — the browser surface
+#### `dsh-client-ui-file-preview` —— 浏览器界面
 
-A 「产物」 tab in the conversation view ring (beside chat and trajectory) listing the session's files with inline preview, a change-history tab stepping through every diff, and content search; a per-turn "N files changed" card at the end of each finished turn; a content-only drawer with show-in-folder / open-in-IDE gestures. Pairs with `dsh-file-preview` (declared as a peer, auto-installed); without the host row the surfaces render a degraded/empty state instead of failing boot.
+与「对话」「轨迹」并列的会话「产物」tab:列出会话写入/编辑过的文件(按最近活动倒序),内联预览当前内容,改动记录 tab 逐条步进每次 write/edit 的 diff(每条带所属轮次/步骤),带内容搜索(高亮 + 逐个跳转);每个已完成回合末尾出现「N 个文件已修改」汇总卡;点文件打开仅内容的抽屉,宿主支持时提供「在文件夹中打开 / 在 IDE 打开」。与 `dsh-file-preview` 成对(声明为 peer,自动安装);没有宿主行时界面渲染降级/空态,而不是 boot 失败。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`; remove both halves together unless you keep the headless service.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`;除非保留 headless 服务,建议两个半边一起卸。
 
-### The local coding-agent family
+### 三、本地编码 Agent 家族
 
-Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
+让 dsh 能把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code——各自独立上下文、独立记账,还能跨轮续聊。
 
-**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family and ships the roster-driven browser settings section (Settings → 本地 Agent). Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants.
+**架构。** `dsh-local-agent`(家族核心)是 harness 注册表 + 作用域目录供给:每个 harness 在自己独立的 scoped home 下运行(`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`,位于 `$DSH_HOME/local-agent/` 下,0700 权限因为它持有凭据),**绝不触碰你用户目录里的私人配置与凭据**。核心注册 `/<harness> login|sessions|status|logout` 命令族,自带 roster 驱动的浏览器设置分区(设置 → 本地 Agent)。每个 harness 包注册一个 harness,并把委派工具挂到 **profile 根**,任意 agent preset 都能委派,无需逐 preset 变体。
 
-**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex_local` (`codex exec`), `subagent_claude_code_local` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context.
+**委派。** `subagent_kimi`(`kimi -p`)、`subagent_codex_local`(`codex exec`)、`subagent_claude_code_local`(`claude -p --output-format json`)。父级只看到最终回答或精确错误;子会话独立上下文、独立 token、独立 KV 缓存,永不进父级。
 
-**Continuation (resume).** The family tool (`dsh-local-agent-tool-subagent`) extends the official `subagent_*` schema with an optional `resume` parameter — the dsh child session id returned by the first delegation. A resumed call continues the **same** CLI conversation in the **same** dsh child session, accounting per round. The handle never travels inside the prompt: it is read from the parameter and validated against the registry per (parent, provider), so a forged handle is rejected before any CLI process starts.
+**续聊(resume)。** 家族工具(`dsh-local-agent-tool-subagent`)在官方 `subagent_*` schema 上加了可选 `resume` 参数——首次委派返回的 dsh 子会话 id。传回后就在**同一个** dsh 子会话里继续**同一个** CLI 会话,按轮记账。续聊句柄**绝不进 prompt**:只从参数读取,并经 registry 按 (parent, provider) 校验,伪造句柄在任何 CLI 进程启动前就被拒绝。
 
-**Accounting & records.** Real usage and duration per delegation (`turn/start` … `turn/end`, closed on failure/cancel too; tokens bucketed per CLI's own accounting — kimi four-bucket sum, codex deduped cache hits, claude per-bucket), and `/… sessions` lists the sessions each delegation produced.
+**记账与会话记录。** 真实用量与耗时:每次委派 `turn/start` 开、`turn/end` 关(失败/取消也关),token 按各 CLI 口径正确分桶(kimi 四桶求和、codex 去重缓存命中、claude 各桶独立);`/… sessions` 列出本 agent 委派产生的会话。
 
-**Install note — the core and the harnesses go in together.** `dsh plugin add` reconciles only *direct* dependencies into the bundles layer, so a harness's transitive dependency on the core does not activate the core row by itself:
+**安装注意 —— 核心与 harness 显式一起装。** `dsh plugin add` 只把直接依赖调和进 bundles 层,harness 对核心的传递依赖不会单独激活核心行:
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-local-agent
-dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -claude-code
 ```
 
-Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and run `/<name> login` once.
+前置:对应 CLI 已在 `PATH`(与你交互式使用同一个二进制,插件不负责安装)。装完重启,跑一次 `/<name> login`。
 
-**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its UI rows. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
+**卸载(每个 harness)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi`(或 `-codex` / `-claude-code`):注销 harness、命令族、工具行和 UI 行。作用域目录 `$DSH_HOME/local-agent/<name>` **刻意保留**(会话 + 凭据,重装免重新登录);删目录即清全部痕迹。
 
-**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row and the settings section; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
+**卸载(核心)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent`:卸载 `local-agent` 行与设置分区;仍装着的 harness 保持 pending(绝不崩溃),重装核心即恢复。`$DSH_HOME/local-agent` homes 根目录保留,删除即清。
 
-**`dsh-local-agent-tool-subagent`** has no bundle row of its own — it is mounted once per harness with a distinct tool name by the harness patches. Uninstalling the harnesses unmounts its rows and pnpm prunes the package as an unused dependency.
+**`dsh-local-agent-tool-subagent`** 没有自己的 bundle 行——由各 harness 的 patch 以不同工具名各挂一次。卸掉 harness 即卸载其行,pnpm 会作为无用的依赖自动清理。
 
-### Task & subagent monitoring
+### 四、任务与子 Agent 监控
 
-#### `dsh-taskpilot` — dock pills for background jobs and subagents
+#### `dsh-taskpilot` —— 后台任务 / 子 Agent 胶囊
 
-Two capsule entries above the composer, each independently shown only when it has data:
+聊天框上方两个胶囊入口,各自独立显隐(无数据不出现):
 
-- **Background jobs** — the current session's jobs (running first, ticking every second), a stop button per running job, a row click opens the detail drawer.
-- **Subagents** — the session's **full subagent lineage** (direct children + deep descendants, same index as the title tree), duration and token readouts, an interrupt button per running subagent (deep-child interrupts are authorized to their direct parent), a row click jumps to the child session.
-- **Detail drawer** — command/type/status/times/duration plus a trajectory replayed from the session log (start, each `job_output` increment, stop, completion; collapsed by default).
+- **后台任务**:当前会话全部后台任务,运行中在前、每秒计时、运行中带停止按钮(与聊天框停止按钮同款视觉),点击行打开详情抽屉。
+- **子 Agent**:当前会话的**完整子 Agent 谱系**(直接子 + 深层后代,与标题树同一索引),展示运行时间与消耗 token,运行中带中断按钮(深层中断授权给其直接父),点击行跳转到该子 Agent 会话。
+- **详情抽屉**:命令/类型/状态/起止时间/耗时 + 从会话日志回放的**执行轨迹**(启动、每次 `job_output` 增量、停止、完成;默认折叠)。
 
-All data comes from official mirrors (`jobsBySession` / `subagentsByParent` — the same sources as the title-tree list); the stop/interrupt verbs register on the official `commands` extension point (`/taskpilot-stop`, `/taskpilot-interrupt`). Zero model impact.
+数据全部来自产品已有镜像(`jobsBySession` / `subagentsByParent`,与标题旁列表同源);停止/中断动词注册在官方 `commands` 扩展点(`/taskpilot-stop`、`/taskpilot-interrupt`)。对模型零影响。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-taskpilot`.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-taskpilot`。
 
-### Status ambience
+### 五、状态氛围
 
-#### `dsh-whalesong` — the whale spouts while tasks run
+#### `dsh-whalesong` —— 任务跑着,鲸鱼喷水
 
-- **favicon waterline bubbles** — while any session runs, the tab icon becomes a whale bobbing at a waterline with three rising bubbles (SVG frames); idle keeps a static whale colored to the page palette.
-- **sidebar droplets** — three DeepSeek-blue droplets rise from the sidebar whale's blowhole (DOM overlay anchored to the official logo, with a rail-corner fallback).
-- **chimes** — completion: three rising sine glides; blocked: the same rise twice (WebAudio synthesis, no audio assets). `prefers-reduced-motion` silences both.
+- **favicon 水线气泡**:任一会话运行期间,标签页图标变成鲸鱼 + 三颗上升气泡(SVG 帧);空闲时保持一只按页面主题着色的静态鲸鱼。
+- **侧栏水滴**:三颗 DeepSeek 蓝水滴从侧栏鲸鱼喷气孔上升(DOM 浮层锚定官方 logo,带角落回退)。
+- **提示音**:完成 = 三连上升滑音;阻塞 = 同型上扬重复两次(WebAudio 合成,无音频资源文件)。`prefers-reduced-motion` 下动画与提示音自动静音。
 
-Config (`enabled`, `volume`) hot-applies within one poll round-trip, no refresh. Read-only over the session list: zero model impact.
+配置(`enabled` / `volume`)热生效,无需刷新。只读会话列表,对模型零影响。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-whalesong` restores the previous composition exactly.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-whalesong`,精确还原之前的组合。
 
-### Productivity
+### 六、效率工具
 
-#### `dsh-ui-shortcuts` — user-rebindable keyboard shortcuts
+#### `dsh-ui-shortcuts` —— 可自定义键位的快捷键
 
-Three fixed actions, your keys: **pause the running turn** (`Esc` — same as the composer Stop), **steer-send the draft** (`Ctrl/Cmd+S`), **new session** (`Ctrl/Cmd+O`). Rebind in Settings → 通用 → 快捷键; preferences persist in `$DSH_HOME/settings.yaml`. The package also exposes a `ctx.shortcuts` registry so any plugin can contribute its own actions and get the settings row, rebinding, persistence, and conflict-free dispatch for free. All actions run through public services only.
+三个固定动作、键位用户自选:**暂停当前任务**(默认 `Esc`,与聊天框停止按钮同操作)、**插队发送草稿**(默认 `Ctrl/Cmd+S`)、**新建会话**(默认 `Ctrl/Cmd+O`)。设置 → 通用 → 快捷键中重绑/解绑/恢复默认;偏好持久化在 `$DSH_HOME/settings.yaml`。附带 `ctx.shortcuts` **动作注册表**:任何插件可以注册自己的键盘动作,免费获得设置项、重绑、持久化、无冲突分发。全部走公开服务(`conversation.cancel` / `conversation.input.submit('steer')` / `workspaces.startSession()`),对模型零影响。
 
-> ⚠️ **Exclusive with the official shortcuts package.** This package shares the loader entry id `ui-shortcuts` with `@deepseek-ai/dsh-client-ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. The official package was fork-grown, never published to npm, and removed from the harness when this package migrated in, so there is nothing to install and ours alone is always safe. Note the roles are reversed from what you might expect: **this package *provides* the `ctx.shortcuts` registry** that any plugin can register actions into — the official one had no contribution seam at all.
+> ⚠️ **与官方快捷键包互斥。** 本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。官方包是 fork 自生、从未发布到 npm,迁移时已从 harness 删除——实际无法安装,本包单独装永远安全。注意角色是反的:**本包*提供* `ctx.shortcuts` 注册表**(任何插件都可注册自己的动作),官方包没有任何供第三方注册的接缝。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts`; key bindings remain in `settings.yaml` (delete the `ui-shortcuts` section to clear them).
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts`;键位保留在 `settings.yaml`(删除其中 `ui-shortcuts` 小节即清)。
 
-### Ops guard
+### 七、运维守护
 
-#### `dsh-ankh-guard` — let the agent change its own code and restart without taking the service down
+#### `dsh-ankh-guard` —— 让 Agent 自己改代码、自己重启,还不把服务搞挂
 
-For self-hosting scenarios where an AI agent edits code and restarts the service on its own. One rule at the core: **prove the code is good before you allow a restart.**
+面向「让 AI Agent 自主修改代码并重启服务」的自托管场景。核心一条规则:**证明代码是好的,才允许重启。**
 
-- **Green-build credential gate** — after a green build + tests, record a credential bound to the current git commit (valid `maxAgeMinutes`, default 10). A restart request checks the credential exists, is fresh, and the HEAD still matches — broken builds never get a credential, so the restart is refused before it can hurt.
-- **preflight composition gate** — after the credential, before anything is stopped, deep-dry-run the exact composition in a subprocess (the whole plugin tree boots through the same engine, then disposes; the web port pinned to 0 so it never collides). A composition that cannot boot means the running instance is never stopped.
-- **watchdog, seamless restart** — a detached supervisor takes over the port when the instance exits, respawns it, runs the canary; on repeated boot failure it rolls back to the last known-good revision (healthy-boot stamp → checkpoint → credential HEAD), always leaving `guard-backup-*` recovery anchors, and stops at a crash page after four consecutive failures.
-- **The restart report reaches the model by itself** — queued as the next turn via `agent.followup`; interrupted sessions are snapshotted at SIGTERM and resumed with a "continue" followup on the next boot.
+- **绿色凭证门禁**:构建与测试全绿后记录凭证(绑定 git commit、`maxAgeMinutes` 默认 10 分钟有效窗口);重启前查凭证存在、新鲜、HEAD 一致——改坏了构建就永远拿不到凭证,重启在造成伤害前被拒绝。
+- **preflight 组合闸门**:凭证之后、停任何东西之前,在子进程对完全相同组合做深度干跑(整棵插件树真实 apply 再 dispose,web 端口钉到 0 绝不与现网冲突),组合起不来绝不停止运行中的实例。
+- **watchdog 无感重启**:detached 监督进程,宿主退出后接管端口、拉起、跑 canary;连续起不来回滚到最后已知可用版本(健康启动戳 → 检查点 → 凭证 HEAD),回滚前自动留 `guard-backup-*` 恢复锚点,不依赖 reflog;连续 4 次失败停在带重试按钮的崩溃页。
+- **重启报告自动送达模型**:经 `agent.followup` 排为下一轮;SIGTERM 时快照在途回合,重启后自动拉起并排入「继续」followup。
 
-Six-step protocol: `checkpoint` → modify → build+test → `record` → `verify` → restart + `canary`. The same surface is available as the `selfRestartGuard` service in-app.
+六步自我重启协议:`checkpoint` → 修改 → build+test → `record` → `verify` → 重启+`canary`。应用内同一能力以 `selfRestartGuard` 服务暴露。
 
-Compatibility note: on the npm release line the composition-preflight gate degrades (it rides the fork's `dsh preflight` command); every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+兼容性注意:npm 发布线上组合 preflight 门禁**降级**(依赖 fork 的 `dsh preflight` 命令),其余能力(restart/supervise 门禁、watchdog、回滚到已知良好)全部完整。
 
-**Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ankh-guard`: the row and its CLI/service surface go away; guard state under `stateDir` (default `$DSH_HOME/state`) is kept by design — delete it for a clean slate. If the host image already mounts the `ankh-guard` row, don't add the profile row at all (duplicate entry id → boot fail); disable the duplicate instead.
+**卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-ankh-guard`:行与 CLI/服务面消失;`stateDir`(默认 `$DSH_HOME/state`)下的守护状态按设计保留,删除即清。宿主镜像已挂 `ankh-guard` 行的不要以 profile bundle 添加本包(重复行 id → 启动失败),禁用重复行即可。
 
-## Compatibility with host lines
+## 兼容性
 
-All packages declare `minHost: 0.1.0-rc.6` and touch only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery):
+所有包声明 `minHost: 0.1.0-rc.6`,运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery):
 
-- npm release line: ✅ full — the single exception is `dsh-ankh-guard`, ⚠️ degraded (composition-preflight gate depends on the fork's `dsh preflight`; without it the guard proceeds with a notice, everything else intact).
-- source line (deepseek-harness master): ✅
+- npm 发布线:全部 ✅ **完整**,唯一例外是 `dsh-ankh-guard` ⚠️ **降级**(组合 preflight 门禁依赖 fork 的 `dsh preflight`,缺失时守护放行并提示,其余能力完整)。
+- 源码线(deepseek-harness master):全部 ✅。
 
-## Model impact at a glance
+## 模型影响总表
 
-| Plugin | Model context | Tokens | KV cache |
+| 插件 | 模型上下文 | Token | KV 缓存 |
 | --- | --- | --- | --- |
-| message-tools (edit/withdraw) | Yes — surface replacement shadows the span | Removes the span's tokens, adds a minimal placeholder | Prefix invalidated from the replacement point (same as official compaction) |
-| message-tools (restore) | Yes — tail replay | Adds replayable tokens | Tail extension only, no rewrite |
-| local-agent delegation (child) | Independent child context | Child-side billing, never in the parent | Fully independent of the parent |
-| everything else | No | No | No |
+| message-tools(编辑/撤回) | 有——surface 替换遮蔽区间 | 移除区间 token,新增少量占位 | 前缀从替换点失效(同官方 compaction) |
+| message-tools(恢复) | 有——尾部重放 | 新增可重放 token | 仅尾部延展,不改写 |
+| local-agent 委派(子会话) | 独立子上下文 | 子会话独立付费,不进父级 | 与父级相互独立 |
+| 其余全部插件 | 无 | 无 | 无 |
 
-## Development
+## 开发
 
-Standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
+独立 pnpm monorepo;每个包以 `@khorsheed/dsh-*` 发布。
 
 ```
-packages/    one directory per publishable plugin
-build/       shared build/test presets (tsdown client bundle, vitest source-plane config)
-scripts/     repo tooling (pack-dist, gen-typert, sync-harness-paths)
+packages/   一个目录一个可发布插件
+build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
+scripts/    仓库工具(pack-dist、gen-typert、sync-harness-paths)
 ```
 
 ```sh
@@ -256,12 +274,12 @@ pnpm run test       # pnpm -r --if-present run test
 pnpm run typecheck  # pnpm -r --if-present run typecheck
 ```
 
-Tests must run through the root `pnpm test` or `pnpm --filter <pkg> test` — a bare `vitest run packages/xxx` bypasses the per-package vitest config (the source-plane alias preset) and fails with misleading resolution errors.
+测试必须走根 `pnpm test` 或 `pnpm --filter <pkg> test`——裸跑 `vitest run packages/xxx` 会绕过每包的 vitest 配置(源码面别名预设),报误导性的解析错误。
 
-**Dev-time dependency on a harness checkout.** Three mechanisms resolve into a local deepseek-harness clone (env `DSH_HARNESS`, default `~/code/deepseek-harness`); the published npm artifacts alone cannot serve them:
+**开发期对 harness checkout 的依赖。** 三条机制解析到本地 deepseek-harness clone(env `DSH_HARNESS`,默认 `~/code/deepseek-harness`),发布的 npm 产物单独无法满足:
 
-- `scripts/gen-typert.mts` regenerates the `lib/typert.*` artifacts (message-tools, file-preview, local-agent) against the harness checkout, then copies them back with the `@khorsheed` self-name rewritten in.
-- `build/vitest.ts` (the shared vitest preset) maps platform imports onto the harness's `tsconfig.base.json` paths — published packages ship no `src/` and their `/client` entries are loader-wrapped browser bundles that explode on a plain test import.
-- `scripts/sync-harness-paths.mjs` writes taskpilot's gitignored `tsconfig.paths.json` for type resolution (npm release chain incomplete).
+- `scripts/gen-typert.mts` 对 harness checkout 重新生成 `lib/typert.*` 产物(message-tools、file-preview、local-agent),再把 `@khorsheed` 自名重写后拷回。
+- `build/vitest.ts`(共享 vitest 预设)把平台 import 映射到 harness 的 `tsconfig.base.json` 路径——发布的包不携带 `src/`,其 `/client` 入口是 loader 包裹的浏览器 bundle,裸 import 会炸。
+- `scripts/sync-harness-paths.mjs` 为 taskpilot 写 gitignored 的 `tsconfig.paths.json` 用于类型解析(npm 发布链不完整)。
 
-CI note: clone deepseek-harness next to this repo and point `DSH_HARNESS` at it before `pnpm test`; a stale harness checkout means the tested API surface may lag the production host. Publish via `scripts/pack-dist.ts` (`--family` rewrites scopes in peer deps) and verify the tarball before `npm publish`. Full repo conventions live in [AGENTS.md](AGENTS.md).
+CI 注意:先在本仓库旁 clone deepseek-harness 并设 `DSH_HARNESS` 再 `pnpm test`;harness checkout 过期意味着被测 API 面可能落后于生产宿主。发布走 `scripts/pack-dist.ts`(`--family` 重写 peer 依赖的 scope),`npm publish` 前先验证 tarball。完整仓库纪律见 [AGENTS.md](AGENTS.md)。
