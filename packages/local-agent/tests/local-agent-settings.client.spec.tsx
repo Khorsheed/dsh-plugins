@@ -54,6 +54,8 @@ function props(
     status: () => Promise.resolve(kimiStatus(false)),
     runCommand: () => Promise.resolve(''),
     t,
+    // The extra-rows seat renders nothing unless a test contributes entries.
+    renderSlot: () => null,
     ...over,
   } as unknown as LocalAgentSettingsProps
 }
@@ -99,6 +101,15 @@ describe('LocalAgentSettingsSection', () => {
     expect(screen.queryByRole('button', { name: zh['settings.reauthorize'] })).toBeNull()
     expect(screen.queryByRole('button', { name: zh['settings.logout'] })).toBeNull()
     expect(runCommand).not.toHaveBeenCalled()
+  })
+
+  it('renders harness-owned extra rows below the harness list (provider-neutral seat)', async () => {
+    const renderSlot = vi.fn().mockReturnValue(<div>extra-row-marker</div>)
+    render(<LocalAgentSettingsSection {...props({ renderSlot })} />)
+
+    expect(await screen.findByText('extra-row-marker')).toBeTruthy()
+    // The section asks the seat for every contribution with empty owner props.
+    expect(renderSlot).toHaveBeenCalledWith('local-agent.settings.row', {})
   })
 
   it('runs the login command and offers the authorization page link', async () => {

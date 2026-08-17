@@ -6,7 +6,7 @@ local-agent 家族的 **dsh harness**：把 dsh 自己作为本地 CLI 委派出
 
 ## DeepSeek 开关
 
-与其他家族 harness 不同，本包**默认不挂载任何模型可见的东西**。互斥开关位于 设置 → 本地 Agent（namespace `local-agent-dsh`，默认 **off**）：
+与其他家族 harness 不同，本包**默认不挂载任何模型可见的东西**。互斥开关以一行开关位于 设置 → 本地 Agent 页内、harness 行下方（namespace `local-agent-dsh`，默认 **off**）：
 
 - **OFF**（默认）：实例保持现状——委派走官方 in-process subagent 工具。模型永远看不到 dsh 委派工具。
 - **ON**：控制器注册 `dsh` harness、`dsh-cli` 委派 provider 与家族委派工具（`subagent_dsh`）。开关经 settings watcher 实时翻转组合。

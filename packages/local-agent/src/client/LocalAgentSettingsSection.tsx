@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { LocalAgentRosterRow, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from './locales.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from './slot-contract.ts'
 import css from './LocalAgentSettingsSection.module.css'
 
 /** Known harnesses the family plans to support; unregistered ones render as pending. */
@@ -39,7 +40,8 @@ export interface LocalAgentSettingsInjected {
 
 /** Full props for the settings section. */
 export type LocalAgentSettingsProps =
-  PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & LocalAgentSettingsInjected
+  PropsRuntime<'settings.section'> & PropsLocale<typeof NS>
+  & PropsRenderSlots<'local-agent.settings.row'> & LocalAgentSettingsInjected
 
 /** Per-harness view state: the last status, its capability flags, and the login prompt. */
 interface HarnessView {
@@ -74,7 +76,7 @@ function harnessLabel(id: string): string {
  * @param props - runtime slot currency plus the injected query and command faces.
  * @returns the section content.
  */
-export function LocalAgentSettingsSection({ useSessions, runCommand, roster, status, t }: LocalAgentSettingsProps) {
+export function LocalAgentSettingsSection({ useSessions, runCommand, roster, status, t, renderSlot }: LocalAgentSettingsProps) {
   const sessionId = useSessions((state: SessionListState) => state.current)
   const [registered, setRegistered] = useState<readonly LocalAgentHarnessView[]>([])
   const [views, setViews] = useState<Readonly<Record<string, HarnessView>>>({})
@@ -292,6 +294,10 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
           )
         })}
       </ul>
+      {/* Harness-owned extra rows (e.g. the dsh enable/disable toggle), drawn
+          below the harness list; the section never knows which harness they
+          belong to. */}
+      {renderSlot('local-agent.settings.row', {})}
       {loginToast !== null && (
         <Toast
           key={loginToast.seq}

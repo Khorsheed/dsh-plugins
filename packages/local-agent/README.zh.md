@@ -8,7 +8,7 @@
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
-**浏览器半身随本包提供。** `./client` 导出（一个 `dsh.client` 行）是 roster 驱动的设置分区（设置 → 本地 Agent）：每个 harness 的认证状态、网页登录设备码、退出登录、委派 preset 状态。它通过本包的 `dsh.client` manifest 自动挂载——不再需要独立 UI 包，因为 UI 是 provider 无关的（只消费 `/<harness>` 命令族和只读 gateway），且没有独立消费方。
+**浏览器半身随本包提供。** `./client` 导出（一个 `dsh.client` 行）是 roster 驱动的设置分区（设置 → 本地 Agent）：每个 harness 的认证状态、网页登录设备码、退出登录、委派 preset 状态。它通过本包的 `dsh.client` manifest 自动挂载——不再需要独立 UI 包，因为 UI 是 provider 无关的（只消费 `/<harness>` 命令族和只读 gateway），且没有独立消费方。该分区还声明了一个 provider-neutral 的附加行槽（`local-agent.settings.row`），harness bundle 可以贡献自己的设置行（如 dsh 的启用/禁用开关），分区无需认识它们。
 
 ## 安装
 

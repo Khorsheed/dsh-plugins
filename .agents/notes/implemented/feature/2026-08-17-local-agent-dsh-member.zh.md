@@ -36,7 +36,7 @@
 
 ### 4. 设置区开关 UI
 
-`local-agent-dsh` 包自带 client（`dsh.client` 行，`clientBundle` 产物带 `window.__ModuleLoader__.load` 头）：`ctx.settingsScope.bind({namespace: 'local-agent-dsh'})` 绑定 scope，注册 `settings.section` 页（order 21，紧随本地 Agent），一个互斥 switch（role="switch"）写 `scope.set('enabled', …)`；namespace 不可用时禁用。宿主 watcher 收到写后实时翻转注册——开关即组合。
+`local-agent-dsh` 包自带 client（`dsh.client` 行，`clientBundle` 产物带 `window.__ModuleLoader__.load` 头）：`ctx.settingsScope.bind({namespace: 'local-agent-dsh'})` 绑定 scope，并把开关**折叠进「本地 Agent」页**——核心 settings section 提供 provider-neutral 的行注入槽 `local-agent.settings.row`（只渲染、不认具体 harness），dsh client 经 `slots.inject` 贡献一行（互斥 switch，role="switch"，写 `scope.set('enabled', …)`；namespace 不可用时禁用），渲染在 dsh harness 行下方。独立 tab 已删除。宿主 watcher 收到写后实时翻转注册——开关即组合。行按钮不复用「重新授权/退出登录」：那些是认证动作（device-code/登出），dsh 没有登录流程，复用会语义撒谎且把"凭据状态"与"注册状态"两个状态机混在一行。
 
 ## 核心变更（评审三处修正落地）
 
