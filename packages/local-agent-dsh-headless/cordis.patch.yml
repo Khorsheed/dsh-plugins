@@ -1,0 +1,45 @@
+# The dsh-local-agent-dsh-headless bundle patch: the sub-dsh one-shot app over
+# dsh-base, sibling to the official @deepseek-ai/dsh-headless bundle but
+# caller-session-aware. The local-agent-dsh provider on the parent side spawns
+#
+#   dsh --profile headless-local-agent-dsh --session-id <uuid> "<task>"   (fresh)
+#   dsh --profile headless-local-agent-dsh --resume <uuid> "<task>"       (resume)
+#
+# The startup provider parses the flags; the runner creates (or resumes)
+# exactly that session through the core registry, drives the task, prints the
+# final assistant text, and exits. Like the official headless bundle, this
+# composition mounts no Host, HTTP, or browser layer. The sub-dsh session id
+# comes from the caller, never from stdout parsing — the official headless
+# stdout stays format-pure.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# The shared module-reload HMR row stays off; the launcher's watch-only
+# fallback still keeps the user patch layers live until the run exits.
+- id: hmr
+  disabled: true
+
+- id: tools
+  config:
+    # Keep the same temporary process-wide Code Mode opt-in as the Web surface.
+    mode: !!js process.env.DSH_TOOLS_MODE
+
+- insert:
+    # Code Mode is a core execution capability, not a Web component.
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
+    - id: local-agent-dsh-headless-startup
+      name: '@khorsheed/dsh-local-agent-dsh-headless/startup'
+
+    # Reads its invocation from the startup provider above.
+    - id: local-agent-dsh-headless-runner
+      name: '@khorsheed/dsh-local-agent-dsh-headless'
+      inject: [localAgentDshHeadlessStartup]
+      config:
+        task: !!js ctx.localAgentDshHeadlessStartup.task
+        sessionId: !!js ctx.localAgentDshHeadlessStartup.sessionId
+        resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId
