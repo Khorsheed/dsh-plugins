@@ -41,7 +41,8 @@ export interface LocalAgentSettingsInjected {
 /** Full props for the settings section. */
 export type LocalAgentSettingsProps =
   PropsRuntime<'settings.section'> & PropsLocale<typeof NS>
-  & PropsRenderSlots<'local-agent.settings.row'> & LocalAgentSettingsInjected
+  & PropsRenderSlots<'local-agent.settings.row' | 'local-agent.settings.row-action'>
+  & LocalAgentSettingsInjected
 
 /** Per-harness view state: the last status, its capability flags, and the login prompt. */
 interface HarnessView {
@@ -278,6 +279,10 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
                         : authenticated ? t('settings.reauthorize') : t('settings.login')}
                     </button>
                   )}
+                  {/* Harness-owned per-row actions (e.g. the dsh enable/disable
+                      toggle), keyed to this harness id; the section never knows
+                      what a contributed action does. */}
+                  {renderSlot('local-agent.settings.row-action', {}, { only: harness.id })}
                 </span>
               </div>
               {view?.loginText !== undefined && (
