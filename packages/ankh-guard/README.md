@@ -91,11 +91,11 @@ When a watchdog is already supervising, the restart trigger is `schedule-exit`: 
 
 ### supervise: one port, one owner
 
-A port must have exactly one supervision owner, but the owner itself should be supervised. Three deployment shapes:
+A port must have exactly one supervision owner, but the owner itself should be supervised — a bare detached watchdog that dies (SIGKILL, a wide `pkill`, a closed terminal, OOM) leaves the service down with zero automatic recovery. Three deployment shapes:
 
 - **A — pure guard**: no external supervisor; the instance adopts the watchdog via `supervise` before a self-restart. Simplest, but nothing pulls the host back after an unexpected crash.
 - **B — pure launchd/systemd**: the launcher owns the port with KeepAlive. Solid for crashes, but self-modification restarts are not guarded by the credential gate.
-- **C — layered (recommended)**: launchd supervises the watchdog, the watchdog supervises the instance. One owner per port, and the owner is supervised. Run the watchdog in the foreground:
+- **C — layered (recommended)**: launchd supervises the watchdog, the watchdog supervises the instance. One owner per port, and the owner is supervised. macOS: `scripts/install-launchd.sh --start "CMD"` generates a `com.dsh.watchdog.plist` (whose `ProgramArguments` run the CLI in the foreground) into `~/Library/LaunchAgents` and bootstraps it; `--force` replaces a running detached watchdog; `--uninstall` removes the job. systemd: a KeepAlive unit running the same command:
 
 ```sh
 # launchd/systemd job (KeepAlive) runs this; the CLI process IS the watchdog:
@@ -103,7 +103,7 @@ dsh-ankh-guard supervise --foreground --port 3093 --start "<start command>" \
   --state-dir "$DSH_HOME/state" --repo "<checkout>"
 ```
 
-`--foreground` runs the watchdog inline (adopting the port) and exits with it, so a dead watchdog triggers the external supervisor's restart. The detached form (`supervise` without `--foreground`) is for the instance adopting supervision ahead of a self-restart.
+`--foreground` runs the watchdog inline (adopting the port) and exits with it, so a dead watchdog triggers the external supervisor's restart. On TERM/INT or any exit the watchdog reaps what it spawned — the instance child and the give-up crash page — and removes its own pidfile, then exits non-zero; under the installed plist's `KeepAlive SuccessfulExit: false` a killed watchdog restarts the whole chain, while a deliberate `watchdog-stop` (exit 0) stays down. The detached form (`supervise` without `--foreground`) is a debug / one-shot tool — the instance adopting supervision ahead of a self-restart, or a quick manual session — not a production supervision shape, because nothing supervises the detached watchdog itself.
 
 The checkpoint/rollback round trip:
 
@@ -114,7 +114,7 @@ dsh-ankh-guard canary --port 3080   # fails → roll back
 dsh-ankh-guard reset <checkpoint-sha>
 ```
 
-`restart` owns the whole restart loop in a detached process that outlives the restarted instance. It refuses to stop the instance when the gate denies (the credential check is enforced in the restart path itself, not just by procedure), stops the listener on `--port`, starts the `--start` command detached, polls until the port listens, re-verifies, and with `--rollback` hard-resets to the recorded checkpoint when the new instance never comes up:
+`restart` owns the whole restart loop in a detached process that outlives the restarted instance. It refuses to stop the instance when the gate denies (the credential check is enforced in the restart path itself, not just by procedure), SIGTERMs the listener on `--port` and waits `--stop-timeout-ms` (default 30000 — large sessions flushing out tens of thousands of log tokens can take tens of seconds) for a graceful exit before escalating to SIGKILL, starts the `--start` command detached, polls until the port listens, re-verifies, and with `--rollback` hard-resets to the recorded checkpoint when the new instance never comes up. The escalation prints a line naming the pid — it correlates with the watchdog log's `Killed: 9` for the same pid, which lives in a different log than the CLI's stdout:
 
 ```sh
 dsh-ankh-guard restart \
@@ -147,3 +147,4 @@ None.
 - **The guard watches the checkout, not who else works on it** — concurrent self-modifying sessions share the tree; rollbacks are anchored and recoverable, but nothing serializes the sessions themselves.
 - **Checkpoint commits sweep the whole working tree** — intended (a checkpoint is a full rollback point), but note it also captures unrelated uncommitted work.
 - **`restart`/`supervise` discover the listener via `lsof`** (macOS/Linux with lsof); other platforms need `--pid`.
+- **Kills are per-pid with a descendant sweep, never per process group** — the instance is not setsid'd, so `restart`, `schedule-exit`'s exit agent, and the watchdog's `free_port` target the listener pid and (on the forced paths: the `restart` SIGKILL escalation, the watchdog's port adoption and exit cleanup) walk `pgrep -P` descendants instead of killing a group. The supervised instance is expected to manage its own children on graceful shutdown; the sweep is the best-effort net for the forced paths.

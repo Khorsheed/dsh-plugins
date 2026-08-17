@@ -91,11 +91,11 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 ### supervise：一个端口一个拥有者
 
-一个端口只能有一个监督拥有者，但拥有者本身也应该被监督。三种部署形态：
+一个端口只能有一个监督拥有者，但拥有者本身也应该被监督——裸的 detached watchdog 一旦死掉（SIGKILL、宽匹配的 `pkill`、终端关闭、OOM），服务就永久停摆、零自动恢复。三种部署形态：
 
 - **A — 纯 guard**：无外部监督者；实例在自我重启前用 `supervise` 采用 watchdog。最简单，但意外崩溃后没有东西拉回宿主。
 - **B — 纯 launchd/systemd**：launcher 用 KeepAlive 拥有端口。抗崩溃，但自我修改重启不受凭证闸门约束。
-- **C — 分层（推荐）**：launchd 监督 watchdog，watchdog 监督实例。每端口一个拥有者，且拥有者也被监督。watchdog 以前台方式运行：
+- **C — 分层（推荐）**：launchd 监督 watchdog，watchdog 监督实例。每端口一个拥有者，且拥有者也被监督。macOS：`scripts/install-launchd.sh --start "CMD"` 生成 `com.dsh.watchdog.plist`（`ProgramArguments` 以前台方式跑 CLI）装进 `~/Library/LaunchAgents` 并 bootstrap；`--force` 替换正在运行的 detached watchdog；`--uninstall` 移除任务。systemd：等价的 KeepAlive unit 跑同一条命令：
 
 ```sh
 # launchd/systemd job (KeepAlive) runs this; the CLI process IS the watchdog:
@@ -103,7 +103,7 @@ dsh-ankh-guard supervise --foreground --port 3093 --start "<start command>" \
   --state-dir "$DSH_HOME/state" --repo "<checkout>"
 ```
 
-`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。detached 形态（不带 `--foreground` 的 `supervise`）用于实例在自我重启前自行采用监督。
+`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。
 
 检查点/回滚闭环：
 
@@ -114,7 +114,7 @@ dsh-ankh-guard canary --port 3080   # fails → roll back
 dsh-ankh-guard reset <checkpoint-sha>
 ```
 
-`restart` 在独立于被重启实例的进程中跑完整套重启循环。它在闸门拒绝时拒绝停实例（凭证检查在重启路径本身强制，而非仅靠流程），停止 `--port` 上的监听者，以 detached 方式启动 `--start` 命令，轮询端口直到监听，重新校验；`--rollback` 时若新实例一直起不来则硬重置到记录的检查点：
+`restart` 在独立于被重启实例的进程中跑完整套重启循环。它在闸门拒绝时拒绝停实例（凭证检查在重启路径本身强制，而非仅靠流程），向 `--port` 上的监听者发 SIGTERM 并等 `--stop-timeout-ms`（默认 30000——几十万 token 日志落盘的大会话可能花数十秒）优雅退出，超时才升级 SIGKILL，然后以 detached 方式启动 `--start` 命令，轮询端口直到监听，重新校验；`--rollback` 时若新实例一直起不来则硬重置到记录的检查点。升级前会打印一行带 pid 的记录——它可与 watchdog 日志里同一 pid 的 `Killed: 9` 对齐（两者在不同日志：CLI 的 stdout vs watchdog 的日志）：
 
 ```sh
 dsh-ankh-guard restart \
@@ -147,3 +147,4 @@ dsh-ankh-guard restart \
 - **guard 看着检出，不管还有谁在上面工作**——并发的自修改会话共享同一棵树；回滚有锚点可恢复，但没有任何机制串行化这些会话本身。
 - **checkpoint 提交会扫入整个工作树**——有意为之（检查点就是完整回滚点），但也会带上无关的未提交改动。
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；其他平台需用 `--pid`。
+- **杀进程一律按单 pid + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 的 `free_port` 都针对监听者 pid，并在强制路径（`restart` 的 SIGKILL 升级、watchdog 的端口接管与退出清理）沿 `pgrep -P` 回收后代，而不是杀进程组。被监管实例应在优雅停机时自行管理子进程；后代回收只是强制路径上的尽力而为兜底。
