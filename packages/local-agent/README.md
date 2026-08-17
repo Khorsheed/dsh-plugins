@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-The local code-agent harness family core. Each locally-installed coding-agent CLI — Kimi Code, Codex, Claude Code — registers itself as one **harness** into `ctx.localAgent`: a scoped home under the shared homes root (its state never touches the user's native installation, and the home is created 0700 because it holds credentials and sessions), a device-code login command, a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each scoped home and registers the `/<harness> login|sessions|status|logout` command family.
+The local code-agent harness family core. Each locally-installed coding-agent CLI — Kimi Code, Codex, Claude Code — registers itself as one **harness** into `ctx.localAgent`: a scoped home under the shared homes root (its state never touches the user's native installation, and the home is created 0700 because it holds credentials and sessions), an optional device-code login command, a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each scoped home and registers the `/<harness> login|sessions|status|logout` command family.
 
-**Delegation stays out of this seam.** Each harness bundle mounts its own subagent-provider row into the existing `subagent` capability (subagent-acp for a harness that speaks ACP over stdio, a Codex app-server provider for Codex), reading the scoped home through `localAgent.homeDir(name)`. This package owns harness identity and lifecycle only — the per-harness differences are `homeEnvVar`, the login invocation, the records adapter, the auth probe, and the sign-out path, nothing more.
+**Delegation stays out of this seam.** Each harness bundle mounts its own subagent-provider row into the existing `subagent` capability (subagent-acp for a harness that speaks ACP over stdio, a Codex app-server provider for Codex), reading the scoped home through `localAgent.homeDir(name)`. This package owns harness identity and lifecycle only — the per-harness differences are `homeEnvVar`, the (optional) login invocation, the records adapter, the auth probe, and the sign-out path, nothing more.
 
 **Program queries ride a read-only Remote channel.** A `LocalAgentGateway` (service key `localAgentGateway`, generated `./remote`) exposes roster, per-harness status, and scoped sessions to the browser through Typert Gateway. It emits no session events, so UI polls never leave command nodes in the session log; login and logout stay on the slash-command channel, where a visible command node is the expected feedback for a user-initiated action.
 
@@ -47,6 +47,8 @@ export function registerCodex(ctx: Context): void {
   })
 }
 ```
+
+`login` is optional: a harness without one (e.g. dsh itself, which authenticates through the host instance's `DEEPSEEK_API_KEY` rather than a device-code flow) omits it, and `/dsh login` answers that the harness has no login flow instead of spawning a CLI. Such harnesses still report `status` through `isAuthenticated` and list sessions normally.
 
 ## Delegation registry (resume carrier)
 

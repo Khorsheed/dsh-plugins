@@ -2,9 +2,9 @@
 
 [English](README.md) | 中文
 
-本地代码 agent 家族核心。每个本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code——向 `ctx.localAgent` 注册为一个 **harness**：共享 homes 根下的一个作用域目录（其状态绝不触碰用户的本地安装；目录以 0700 创建，因为里面是凭据与会话）、一个 device-code 登录命令、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族。
+本地代码 agent 家族核心。每个本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code——向 `ctx.localAgent` 注册为一个 **harness**：共享 homes 根下的一个作用域目录（其状态绝不触碰用户的本地安装；目录以 0700 创建，因为里面是凭据与会话）、一个可选的 device-code 登录命令、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族。
 
-**委派不属于这个 seam。** 每个 harness bundle 各自向既有的 `subagent` 能力挂载 subagent-provider 行（讲 stdio ACP 的 harness 用 subagent-acp，Codex 用其 app-server provider），经 `localAgent.homeDir(name)` 读取作用域目录。本包只拥有 harness 身份与生命周期——harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器、认证探测与退出登录路径，别无其他。
+**委派不属于这个 seam。** 每个 harness bundle 各自向既有的 `subagent` 能力挂载 subagent-provider 行（讲 stdio ACP 的 harness 用 subagent-acp，Codex 用其 app-server provider），经 `localAgent.homeDir(name)` 读取作用域目录。本包只拥有 harness 身份与生命周期——harness 间差异只剩 `homeEnvVar`、（可选的）登录调用、records 适配器、认证探测与退出登录路径，别无其他。
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
@@ -47,6 +47,8 @@ export function registerCodex(ctx: Context): void {
   })
 }
 ```
+
+`login` 是可选的：没有登录流程的 harness（例如 dsh 自身——它通过宿主实例的 `DEEPSEEK_API_KEY` 认证，而非 device-code 流程）省略它，`/dsh login` 会回答"该 harness 无登录流程"而不是 spawn 一个 CLI。这类 harness 仍通过 `isAuthenticated` 报告 `status`，并正常列出会话。
 
 ## 委派 registry（resume 载体）
 

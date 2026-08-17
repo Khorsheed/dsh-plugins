@@ -254,6 +254,16 @@ describe('LocalAgentRegistry', () => {
     expectError(execution, 'failed to start')
   })
 
+  it('answers a harness without a login flow instead of spawning a CLI', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-none-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    // The dsh harness has no device-code login: it authenticates through the
+    // host instance's credentials. /login must answer, never spawn anything.
+    registry.register(harness({ login: undefined }))
+    const execution = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    expectError(execution, 'has no device-code login')
+  })
+
   it('reports a child that exits before printing the prompt', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-exit-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry

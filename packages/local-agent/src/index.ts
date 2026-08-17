@@ -89,8 +89,13 @@ export interface LocalAgentHarness {
    * that names a provider the composition does not mount fails loud.
    */
   delegationProvider?: string
-  /** Device-code login invocation; the prompt is captured from stderr. */
-  login: {
+  /**
+   * Device-code login invocation; the prompt is captured from stderr. Absent
+   * means the harness has no login flow — it authenticates through the host
+   * instance (e.g. by resolving a credential from the parent's store), so
+   * `/login` reports that instead of guessing a command.
+   */
+  login?: {
     command: string
     args: readonly string[]
     /**
@@ -552,11 +557,19 @@ export class LocalAgentRegistry {
    * abandoned login with no retry self-heals when the CLI's own device code
    * expires and its polling child exits (kimi/codex/claude all do); no
    * idle timer is added because a too-short one would kill a user who is
-   * genuinely authorizing.
+   * genuinely authorizing. A harness without a login flow answers with an
+   * error instead of spawning anything.
    * @param harness - the harness whose login command runs.
    * @returns the device-code prompt as the command success text.
    */
   private login(harness: LocalAgentHarness): Promise<CommandResult> {
+    const login = harness.login
+    if (login === undefined) {
+      return Promise.resolve({
+        kind: 'error',
+        text: `${harness.name} has no device-code login; it authenticates through the host instance's credentials.`,
+      })
+    }
     const existing = this.logins.get(harness.name)
     if (existing !== undefined) {
       // A pending login is replaced, not refused: terminate its child so the
@@ -575,7 +588,7 @@ export class LocalAgentRegistry {
     }
     const controller: LoginController = { child: undefined as unknown as ChildProcess, done: Promise.resolve() }
     this.logins.set(harness.name, controller)
-    const resultPromise = this.runLogin(harness, controller)
+    const resultPromise = this.runLogin(harness, login, controller)
     // The settle signal is the real one only after runLogin populated it;
     // chaining earlier would clear the guard on the placeholder promise.
     void controller.done.then(() => {
@@ -585,8 +598,12 @@ export class LocalAgentRegistry {
   }
 
   /** Spawn the harness login command and capture its device-code prompt. */
-  private runLogin(harness: LocalAgentHarness, controller: LoginController): Promise<CommandResult> {
-    const child = spawn(harness.login.command, [...harness.login.args], {
+  private runLogin(
+    harness: LocalAgentHarness,
+    login: NonNullable<LocalAgentHarness['login']>,
+    controller: LoginController,
+  ): Promise<CommandResult> {
+    const child = spawn(login.command, [...login.args], {
       env: { ...process.env, [harness.homeEnvVar]: this.homeDir(harness.name) },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -595,7 +612,7 @@ export class LocalAgentRegistry {
       child.on('exit', () => { resolve() })
       child.on('error', () => { resolve() })
     })
-    const capture = harness.login.capture ?? 'stderr'
+    const capture = login.capture ?? 'stderr'
     let prompt = ''
     return new Promise<CommandResult>((resolve) => {
       const probe = capture === 'stderr' ? child.stderr : child.stdout
