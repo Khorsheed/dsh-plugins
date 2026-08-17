@@ -6,3 +6,8 @@ coverage/
 *.log
 packages/taskpilot/tsconfig.paths.json
 .harness-diff/
+
+# harness / dev tooling state
+.playwright-mcp/
+scratch-*
+*.tsbuildinfo
