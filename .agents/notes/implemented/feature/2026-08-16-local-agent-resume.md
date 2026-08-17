@@ -1,56 +1,74 @@
-# 三家 CLI 子代理支持续聊（resume）：家族自有工具 + localAgent 载体
+# Agent Note: CLI sub-agent resume for the local-agent family — family tool + localAgent carrier
 
-## 背景：为什么不是官方 continuable seam
+Status: implemented
 
-官方 `subagent` 的 continuable 能力（`prepareContinuable` + continuation manager）是 **Agent 型专属**：`send_message`/`interrupt_agent`（tool-subagent-control）通过 `ctx.subagents.followup`/`interrupt` 操作 continuation manager 持有的 `AgentHandle`，而 CLI 子代理（kimi/codex/claude）走的是 out-of-process one-shot provider，没有本地 Agent、没有 inbox、没有 `ctx.agents.create()` 的 Activation 所有权契约（上游 `subagent/README.md:147` 只提到 ACP `prepareContinuable` 需要"provider-specific descriptor data"来持久化远端会话 id，但 descriptor schema 严格拒绝未知字段，且该契约在上游缺失）。因此 CLI provider 无法接入官方 continuable seam——这是 option 1 被排除的结论。
+English | [中文](2026-08-16-local-agent-resume.zh.md)
 
-## 采用方案（option 2：seam 外自管 resume）
+## Problem
 
-- **自有工具**：各 bundle 的 patch 把官方 `@deepseek-ai/dsh-tool-subagent` 行替换为 `@khorsheed/dsh-local-agent-tool-subagent`，`toolName` 不变（`subagent_kimi`/`subagent_codex_local`/`subagent_claude_code_local`），schema = 官方子集（`description`/`prompt`）+ 可选 `resume?: string`（值为首次委派返回的 dsh 子会话 id）。
-- **禁止 prompt 内嵌句柄**：任务文本不可信，伪造 resume 会劫持别人会话的上下文。工具只读 `resume` 参数，绝不从 prompt 提取句柄。
-- **载体验证结论**：`descriptor.ts` 的 one-shot 键严格为 `version/mode/provider/label`，`assertKnownKeys` 对未知字段抛错——descriptor schema 严格放不下 resume 目标。故走 **localAgent 服务**在家族内部传递：委派 registry（子会话 id → CLI 会话 id + parent + provider）加按 (parent, provider) 分组的 intent FIFO。
-- **续聊轮仍走 `ctx.subagents.start()`**：生命周期事件（`subagent/start`/`subagent/end`）和子代理展示不变；provider 在 start() 顶部消费一个 intent，resume intent 复用同一子会话、以递增 turn 追加新一轮。
-- **每轮记账**：turn 编号递增；`turn/start`+`turn/end` 每轮成对（subagentTiming 逐轮累计）；usage 挂当轮 assistant 消息（tokenUsage 按 turn/step 去重累计）；kimi wire.jsonl 镜像改为增量（registry 记录 `kimiMirroredLines` 行偏移，续聊只镜像 delta，不重复追加）。
-- 首个委派结果文本自述 `追问请带 resume="<childSessionId>"`（run.id == 子会话 id，seam 的 local-run 契约）。
+The official `subagent` continuable capability (`prepareContinuable` + continuation manager) is **Agent-typed only**: `send_message`/`interrupt_agent` (tool-subagent-control) operate on the `AgentHandle` held by the continuation manager via `ctx.subagents.followup`/`interrupt`, while the CLI sub-agents (kimi/codex/claude) run through the out-of-process one-shot provider — no local Agent, no inbox, no `ctx.agents.create()` Activation ownership contract (upstream `subagent/README.md:147` only mentions that ACP `prepareContinuable` needs "provider-specific descriptor data" to persist a remote session id, but the descriptor schema strictly rejects unknown fields and that contract is missing upstream). The CLI providers therefore cannot plug into the official continuable seam — this is why option 1 was excluded.
 
-## 关键实现点
+## Decision
 
-- `LocalAgentRegistry` 新增：`recordDelegation`/`resolveDelegation`（伪造句柄拒绝：未知子会话、他人 parent、错误 provider）/`stageDelegationIntent`/`takeDelegationIntent`（FIFO，每工具调用 stage 恰好一个、每 start 消费恰好一个）/`acquireResumeLock`/`releaseResumeLock`（per-child resume 互斥）/`kimiMirroredLines`/`setKimiMirroredLines`/`listDelegations`。
-- 三个 provider 的 `start()` 拆 fresh/resume：resume 经 `sessions.get(childSessionId)` 复用子会话（缺失即 fail loud），`nextTurn = turn/start 计数 + 1`，spawn 续聊命令（kimi `-S session_<id> -p`，-S 必须在 -p 前；claude `-p --resume <id>`；codex `exec --json resume <thread_id>`，thread_id 来自 `thread.started` 事件），返回 `id: childSessionId`。
-- **resume 并发边界**：同一 dsh 子会话的 resume 必须串行——per-child 互斥锁放在框架注册表（与委派 registry 同层，未来 stop registry 复用）。provider 在 spawn 前 `acquireResumeLock(childSessionId)`，取不到即 fail loud（`该子会话有进行中的委派，等其完成后再追问`），**不排队静默等待**——模型拿到明确错误会自己重试。锁在 `run.result` 的 settle 路径（completed/error/aborted 都经 result resolve）与 start 异常路径都释放，不留死锁。fresh 委派不加锁（每次 mint 新子会话，天然无冲突）。
-- 新鲜轮 settle 后记录 cliSessionId（kimi 从 stderr hint、claude 从结果 JSON `session_id`、codex 从 NDJSON `thread_id`）。
-- 工具包 `@khorsheed/dsh-local-agent-tool-subagent`：inject `['tools','subagents','localAgent']`，execute 里先 `resolveDelegation` 校验再 stage，然后照常 `ctx.subagents.start()`，fresh 轮在结果 output 追加 `追问请带 resume="<run.id>"`。
+Adopt option 2: manage resume outside the official seam, inside the family.
 
-## 验证
+- **Family tool**: each bundle's patch replaces the official `@deepseek-ai/dsh-tool-subagent` row with `@khorsheed/dsh-local-agent-tool-subagent`; `toolName` unchanged (`subagent_kimi`/`subagent_codex_local`/`subagent_claude_code_local`); schema = the official subset (`description`/`prompt`) plus an optional `resume?: string` whose value is the dsh child session id returned by the first delegation.
+- **Prompt-embedded handles are forbidden**: task text is untrusted — a forged resume would hijack another session's context. The tool reads only the `resume` parameter and never extracts a handle from the prompt.
+- **Carrier verdict**: `descriptor.ts`'s one-shot keys are strictly `version/mode/provider/label` and `assertKnownKeys` throws on unknown fields — the descriptor schema cannot hold a resume target. The target therefore travels inside the family via the **localAgent service**: a delegation registry (child session id → CLI session id + parent + provider) plus a per-(parent, provider) intent FIFO.
+- **Resume rounds still go through `ctx.subagents.start()`**: lifecycle events (`subagent/start`/`subagent/end`) and sub-agent rendering stay unchanged; the provider consumes exactly one intent at the top of `start()`; a resume intent reuses the same child session and appends a new round with an incremented turn.
+- **Per-round accounting**: turn number increments; `turn/start` + `turn/end` pair per round (subagentTiming accumulates per round); usage hangs on the current round's assistant message (tokenUsage deduped by turn/step); the kimi wire.jsonl mirror becomes incremental (the registry records a `kimiMirroredLines` offset; resume mirrors only the delta).
+- The first delegation's result text self-describes `追问请带 resume="<childSessionId>"` (run.id == child session id, the seam's local-run contract).
 
-- 三种 CLI 续聊命令均实机验证：kimi `-S session_<id>`（42 记住了）、claude `--resume <id>`（42）、codex `exec resume <thread_id>`（同 thread_id 返回）。
-- 测试：core delegation registry（含伪造句柄拒绝、FIFO 配对、mirror 偏移、resume lock 互斥/异子会话独立/释放无副作用）；工具包 10 例（schema 含 resume、fresh 自述句柄、resume 传 target、伪造句柄 isError、prompt 内嵌句柄被无视、mount/unmount）；三 provider 的 resume 测试（续聊 argv、复用子会话、turn 2、子会话缺失 fail loud、**同子会话并发第二个 resume 被拒且零 spawn**、settle 释放锁后可再次 resume）。
-- `pnpm typecheck` 全绿；`pnpm test` 全绿；`verify-translation-pairing` 31 对同步。
+### Registry and provider details
 
-## 子会话记录保真度批次（harness 对比前置）
+- `LocalAgentRegistry` additions: `recordDelegation` / `resolveDelegation` (rejects forged handles: unknown child session, other parent, wrong provider) / `stageDelegationIntent` / `takeDelegationIntent` (FIFO; exactly one staged per tool call, exactly one consumed per start) / `acquireResumeLock` / `releaseResumeLock` (per-child resume mutual exclusion) / `kimiMirroredLines` / `setKimiMirroredLines` / `listDelegations`.
+- The three providers' `start()` splits fresh/resume: resume reuses the child session via `sessions.get(childSessionId)` (fail loud when missing), `nextTurn = turn/start count + 1`, spawns the resume command (kimi `-S session_<id> -p`, where `-S` must precede `-p`; claude `-p --resume <id>`; codex `exec --json resume <thread_id>`, thread_id from the `thread.started` event), and returns `id: childSessionId`.
+- **Resume concurrency boundary**: resumes of the same child session must serialize — the per-child mutex lives in the framework registry (the same layer as the delegation registry; the future stop registry reuses it). The provider takes `acquireResumeLock(childSessionId)` before spawn and fails loud when unavailable (该子会话有进行中的委派，等其完成后再追问) — no silent queueing; the model sees an explicit error and retries itself. The lock releases on `run.result`'s settle path (completed/error/aborted all resolve through result) and on the start exception path, so no deadlock remains. Fresh delegations take no lock (each mints a new child session, naturally conflict-free).
+- After a fresh round settles, the cliSessionId is recorded (kimi from the stderr hint, claude from the result JSON `session_id`, codex from the NDJSON `thread_id`).
+- Tool package `@khorsheed/dsh-local-agent-tool-subagent`: injects `['tools','subagents','localAgent']`; `execute` first `resolveDelegation`-validates then stages, then calls `ctx.subagents.start()` as usual; fresh rounds append `追问请带 resume="<run.id>"` to the result output.
 
-目标是三家子会话记录达到可做对比的保真度，全部用本轮真实 wire/NDJSON/stream-json 样本做 fixture：
+## Alternatives considered
 
-- **kimi usage 改求和**：`usage.record` 每条是一次 LLM 请求的口径（实测两轮 resume 会话 8 条：round1 三条 4027/7855/2799，round2 五条），镜像对 delta 内所有 record 求和、挂当轮最后一条 assistant 消息。`session-view` 现在输出 `usageRecords`（带 transcript 行位置），mirror 按偏移求和。
-- **修 turn 对齐**：wire 的 `turnId`（loop 事件）就是 dsh 轮次号（1-based），mirror 直接用 `line.turn`，不再从 user 行数推——system-reminder 被过滤后 user 计数本就不可靠。
-- **修续聊重复镜像**：根因是 `kimiMirroredLines` 存在委派记录里、而记录依赖 stderr hint 解析；hint 缺失时 offset 从未写入，resume 回落 fromLines=0 导致首轮内容镜像两次。修复：offset 独立成 `kimiMirrorOffsets` map（与委派记录解耦），resume 的 session id 用 intent 记录值而非重解析 stderr。回归测试：真实两轮 fixture 镜像后无重复 assistant 文本、usage 求和正确。
-- **过滤 system-reminder**：kimi 自动权限模式的 `<system-reminder>` user 消息不进子会话（真实 wire 每轮都有）。
-- **工具行补入参**：`tool.call.args` 渲染为 `[工具 WebSearch] 查询词`；`tool.result` 按 `parentUuid`/`toolCallId` 配回自己的调用（并行调用不再错配），无 id 时回退最近工具行。
-- **codex 镜像全事件**：`reasoning`→`reasoning` 块、`agent_message`→文本、`command_execution`/`web_search_call`/`function_call_output`→工具行；最终 `agent_message` 为运行输出，usage 挂末条。流天然按轮增量。
-- **claude 换 stream-json**：argv 改为 `--verbose --output-format stream-json`（CLI 对 `--print`+stream-json 强制 --verbose）；解析 system/assistant/user/result 事件，`thinking`→`reasoning` 块、`tool_use`+`tool_result`→工具行、`text`→回复；session_id 来自 system init，usage 来自 result 事件。
+### Why not the official continuable seam (option 1)?
 
-## 修 one-shot 委派中止链路（死等 + 内容保留）
+The seam is Agent-typed: it operates on the continuation manager's `AgentHandle` via `ctx.subagents.followup`/`interrupt`, but CLI sub-agents are out-of-process one-shot providers without a local Agent, inbox, or `ctx.agents.create()` Activation ownership. Upstream's ACP `prepareContinuable` mentions persisting a remote session id via "provider-specific descriptor data", yet the descriptor schema strictly rejects unknown fields and the contract is missing upstream — the resume target cannot ride the descriptor. Option 1 was excluded.
 
-**死等链路根因（3080 实盘复盘确认）**：父回合中止时，三个 provider 的 `requestCancel` 只翻 `runAbort` 标志位——`attempt` 的 race 只有 `child.done`/`processFailure` 两个分支，都等子进程退出才 settle；而 `settleRunResult` 的 `cancelled()` 在 `await attempt()` **之后**才检查，所以 abort 时 result 永不 settle。杀进程的 `dispose`（SIGTERM→grace→SIGKILL 梯子）又排在 result settle 之后，形成死等；CLI 子进程全程收不到任何信号。kimi/claude 之前看似能停是恰好快跑完自然退出，codex 长请求挂了 3.5 分钟、父回合卡死。
+## Consequences
 
-**官方契约依据**：`out-of-process.ts` 的 `subprocessRunHandle` 注释写明 dispose 的职责——"removes the abort listener, settles local cancellation — there is no assumption the child cooperates — and then awaits the backend's teardown to actual exit"。即 requestCancel 让 result **立即** settle，teardown 异步杀进程。本修复对齐该契约：三个 provider 的 attempt race 加 `abortBranch`（`runAbort` 触发即 reject），`settleRunResult` 观察到 `cancelled()` 后立即以 `'aborted'` settle；杀进程留在 dispose 的梯子里。
+- The family owns resume end-to-end: one tool package, three providers, one registry; lifecycle events and rendering stay on the official seam, so nothing user-visible changes.
+- Security posture: the handle is a first-class parameter, never prompt-extracted; the registry rejects forged handles at resolve time.
+- Resumes are serialized per child session with explicit fail-loud errors; no queueing, no deadlock (lock release covers every settle path).
 
-**中止也保留内容**：原来镜像/回写只在 `completed` 时跑，中止轮只落 `turn/end`——子会话空白、token 为 0，但 CLI 侧其实已产出内容（kimi/claude 那次是自然跑完的完整答案，被丢弃）。改为：镜像/回写挂在 `result.then(() => child.done).then(...)` 上——**先等 settle 链写好 turn/end、再等子进程真正退出**（stdout/wire 收完），然后无论 stopReason 都回写已产出内容和 usage（kimi 读 wire、codex 解析已收 NDJSON、claude 解析已收 stream-json）；`turn/end` 的 reason 保持 aborted/error 不变。kimi 的 mirror offset、codex 的 threadId、claude 的 sessionId 都在 abort/error 轮也记录，保证部分成果可继续 resume。**注意**：镜像链必须挂在 `result.then(() => child.done)` 而不是直接 `child.done.then`——直接挂会抢在 settle 链写 turn/end 之前 append，导致持久化批次缺 turn/end。
+## Testing
 
-**验收标准**：父回合中止后工具结果秒回（result 立即 'aborted' settle）；子进程在 dispose 的 SIGTERM→grace→SIGKILL 内退出；中止轮子会话含已产出内容 + usage + 正确的 aborted/parent turn/end；进程已自然退出时 dispose 幂等不报错。测试用 10 分钟假 CLI（`done` 永不自行 resolve，`terminate()` 才释放）验证 abort 后 <1s settle、dispose 杀进程、幂等、中止轮内容保留。
+- Live verification of all three resume commands: kimi `-S session_<id>` (42 remembered), claude `--resume <id>` (42), codex `exec resume <thread_id>` (same thread returns).
+- Tests: core delegation registry (forged-handle rejection, FIFO pairing, mirror offset, resume-lock mutual exclusion / independence across child sessions / release with no side effects); tool package, 10 cases (schema with resume, fresh self-describing handle, resume target passing, forged handle isError, prompt-embedded handle ignored, mount/unmount); the three providers' resume tests (resume argv, child session reuse, turn 2, missing child session fail loud, a second concurrent resume of the same child session rejected with zero spawn, lock released after settle allowing resume again).
+- `pnpm typecheck` green; `pnpm test` green; `verify-translation-pairing` 31 pairs in sync.
 
-## 后续
+## Sub-session record fidelity batch (harness-comparison prerequisite)
 
-- stop registry 与委派 registry 共用同一记录结构（active 子进程登记）。
-- 委派超时（stall timer）落地时应按轮重置。
-- 官方 `settleRunResult` 先 `await attempt()` 再查 `cancelled()` 的缺陷仍待上游修复（中止无法打断挂起的 child.done 竞态）。
+Goal: the three children's session records reach fidelity comparable enough for comparison, with all fixtures taken from this round's real wire/NDJSON/stream-json samples:
+
+- **kimi usage becomes a sum**: each `usage.record` entry is the caliber of one LLM request (measured on a real two-round resume session, 8 records: round 1 three — 4027/7855/2799; round 2 five); the mirror sums every record in the delta and hangs it on the current round's last assistant message. `session-view` now outputs `usageRecords` (with transcript line positions); the mirror sums by offset.
+- **Turn alignment fixed**: the wire's `turnId` (loop event) IS the dsh round number (1-based); the mirror uses `line.turn` directly instead of inferring from the user line count — with system-reminder filtered out, user counting was unreliable.
+- **Resume duplicate-mirroring fixed**: root cause — `kimiMirroredLines` lived in the delegation record, which depended on stderr-hint parsing; when the hint was missing the offset was never written and resume fell back to `fromLines=0`, mirroring the first round twice. Fix: the offset becomes an independent `kimiMirrorOffsets` map (decoupled from delegation records), and resume's session id uses the intent-recorded value rather than re-parsing stderr. Regression test: after mirroring a real two-round fixture there is no duplicated assistant text and the usage sum is correct.
+- **system-reminder filtered**: kimi auto-permission mode's `<system-reminder>` user messages do not enter the child session (the real wire carries them every round).
+- **Tool lines carry parameters**: `tool.call.args` renders as `[工具 WebSearch] 查询词`; `tool.result` is matched back to its own call by `parentUuid`/`toolCallId` (parallel calls no longer mismatch), falling back to the nearest tool line when no id is present.
+- **codex mirrors all events**: `reasoning`→reasoning blocks, `agent_message`→text, `command_execution`/`web_search_call`/`function_call_output`→tool lines; the final `agent_message` is the run output, usage on the last entry. The stream is naturally incremental per round.
+- **claude switched to stream-json**: argv is now `--verbose --output-format stream-json` (the CLI forces `--verbose` for `--print` + stream-json); parses system/assistant/user/result events; `thinking`→reasoning blocks, `tool_use` + `tool_result`→tool lines, `text`→replies; session_id from the system init, usage from the result event.
+
+## Abort-chain fix for one-shot delegation (dead-wait + content preservation)
+
+**Dead-wait root cause (confirmed by the 3080 live postmortem)**: when the parent round aborts, the three providers' `requestCancel` only flips the `runAbort` flag — the `attempt` race had only the `child.done`/`processFailure` branches, both of which wait for the child to exit before settling, and `settleRunResult`'s `cancelled()` is checked *after* `await attempt()`, so the result never settles on abort. The kill-process `dispose` (SIGTERM→grace→SIGKILL ladder) is ordered after result settle → dead-wait; the CLI child never receives any signal. kimi/claude only *looked* stoppable because they happened to finish fast naturally; a long codex request hung 3.5 minutes with the parent round stuck.
+
+**Official contract basis**: `out-of-process.ts`'s `subprocessRunHandle` comment states dispose's job — "removes the abort listener, settles local cancellation — there is no assumption the child cooperates — and then awaits the backend's teardown to actual exit". That is, `requestCancel` settles the result **immediately** and teardown kills asynchronously. This fix aligns with that contract: the three providers' attempt race gains an `abortBranch` (rejects on `runAbort`), `settleRunResult` observes `cancelled()` and settles `'aborted'` right away; process killing stays in dispose's ladder.
+
+**Abort preserves content too**: mirror/writeback previously ran only on `completed`; an aborted round wrote only `turn/end` — the child session was blank with zero tokens even though the CLI side had produced content (kimi/claude's naturally completed full answer was discarded). Now mirror/writeback hangs on `result.then(() => child.done).then(...)` — first let the settle chain write `turn/end`, then wait for the child's real exit (stdout/wire fully received), then write back the produced content and usage regardless of stopReason (kimi reads wire, codex parses the received NDJSON, claude parses the received stream-json); the `turn/end` reason stays aborted/error. kimi's mirror offset, codex's threadId, and claude's sessionId are recorded on abort/error rounds too, so partial results remain resumable. **Note**: the mirror chain must hang on `result.then(() => child.done)` and not directly on `child.done.then` — a direct hang appends before the settle chain writes `turn/end`, leaving the persistence batch without `turn/end`.
+
+Acceptance criteria for the fix: after a parent-round abort the tool result returns in seconds (the result settles `'aborted'` immediately); the child exits within dispose's SIGTERM→grace→SIGKILL ladder; the aborted round's child session contains the produced content + usage + the correct aborted/parent `turn/end`; dispose is idempotent when the process already exited. The test uses a 10-minute fake CLI (`done` never self-resolves; `terminate()` releases it), verifying <1s settle after abort, dispose kills the process, idempotency, and content preservation on the aborted round.
+
+## Deferred
+
+- The stop registry will share the same record structure as the delegation registry (registration of active child processes).
+- The delegation stall timer, when it lands, should reset per round.
+- The official `settleRunResult` defect (await `attempt()` before checking `cancelled()`) still awaits an upstream fix — abort cannot break a pending `child.done` race.

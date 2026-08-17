@@ -10,6 +10,8 @@
     "test": "pnpm -r --if-present run test",
     "test:scripts": "vitest run scripts",
     "typecheck": "pnpm -r --if-present run typecheck",
+    "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
+    "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts",
     "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
     "hooks:install": "node scripts/setup-hooks.mjs"
