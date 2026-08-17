@@ -42,6 +42,7 @@ interface CliOptions {
   pid: string | undefined
   timeoutMs: number | undefined
   delayMs: number | undefined
+  stopTimeoutMs: number | undefined
   log: string | undefined
   foreground: boolean
   rollback: boolean
@@ -66,7 +67,7 @@ commands:
   reset <sha> [--repo DIR]
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   preflight [--profile NAME] [--timeout-ms MS]
-  restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--rollback]
+  restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
           [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR]
@@ -82,6 +83,9 @@ flags:
   --pid PID        restart: process to stop (default: the listener on --port)
   --timeout-ms MS  restart: how long to wait for the new instance to listen (default 60000);
                    preflight: how long the dry-run boot may take (default 120000)
+  --stop-timeout-ms MS  restart: how long to wait for the old instance to exit after SIGTERM
+                   before escalating to SIGKILL (default 30000; large sessions writing out
+                   logs can take tens of seconds to flush)
   --delay-ms MS    restart: sleep before stopping, so the current turn can finish first
                    (agent-driven graceful self-restart: schedule, complete, then restart);
                    schedule-exit: delay before the detached exit agent kills the host
@@ -104,7 +108,8 @@ export function parse(
 ): { error: string } | { command: string; positionals: readonly string[]; options: CliOptions } {
   const options: CliOptions = {
     stateDir: '', repoDir: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined,
-    start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, log: undefined,
+    start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
+    log: undefined,
     foreground: false, rollback: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
   }
   const positionals: string[] = []
@@ -156,6 +161,14 @@ export function parse(
           const n = Number(raw)
           if (raw === undefined || !Number.isInteger(n) || n < 0) throw new Error('--delay-ms must be a non-negative integer')
           options.delayMs = n
+          i++
+          break
+        }
+        case '--stop-timeout-ms': {
+          const raw = flagValue(arg, true)
+          const n = Number(raw)
+          if (raw === undefined || !Number.isInteger(n) || n < 100) throw new Error('--stop-timeout-ms must be an integer >= 100')
+          options.stopTimeoutMs = n
           i++
           break
         }
@@ -453,8 +466,41 @@ function findPidOnPort(port: number): string | null {
   }
 }
 
-/** Wait for a pid to exit; SIGKILL after the deadline. @returns whether it exited. */
-async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+/**
+ * Kill a pid AND its descendants, deepest first (best effort). The supervised
+ * instance may have forked children; a plain SIGKILL on the pid alone would
+ * orphan them (the EADDRINUSE race the watchdog's EADDRINUSE branch exists
+ * for). The process-group model is NOT assumed — the instance is not
+ * setsid'd — so the sweep walks `pgrep -P` instead. `pgrep` missing or
+ * returning nothing is fine: the pid itself still gets the signal.
+ */
+function killPidTree(pid: number, signal: NodeJS.Signals): void {
+  let children: string[] = []
+  try {
+    const out = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).trim()
+    children = out === '' ? [] : out.split('\n')
+  } catch {
+    // no children, or pgrep unavailable — the pid itself still gets killed
+  }
+  for (const raw of children) {
+    const child = Number(raw)
+    if (Number.isInteger(child) && child > 0) killPidTree(child, signal)
+  }
+  try {
+    process.kill(pid, signal)
+  } catch {
+    // already gone
+  }
+}
+
+/**
+ * Wait for a pid to exit; SIGKILL (the whole descendant tree) after the
+ * deadline. @param onEscalate - invoked right before the SIGKILL, so the
+ * caller can write a log line that correlates with the watchdog log's
+ * `Killed: 9` (the two live in different logs — the CLI's stdout vs the
+ * watchdog's). @returns whether it exited.
+ */
+async function waitForExit(pid: number, timeoutMs: number, onEscalate?: () => void): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
@@ -464,8 +510,9 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
     }
     await sleep(250)
   }
+  onEscalate?.()
   try {
-    process.kill(pid, 'SIGKILL')
+    killPidTree(pid, 'SIGKILL')
   } catch {
     return true
   }
@@ -629,7 +676,15 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`stop ${pid} failed: ${String(error)}\n`)
         return 1
       }
-      const exited = await waitForExit(pidNumber, 10_000)
+      // Graceful-exit deadline before the SIGKILL escalation: large sessions
+      // flushing out tens of thousands of log tokens can take longer than the
+      // old hardcoded 10 s. Configurable via --stop-timeout-ms.
+      const stopTimeoutMs = options.stopTimeoutMs ?? 30_000
+      const exited = await waitForExit(pidNumber, stopTimeoutMs, () => {
+        // This line lives in the CLI's stdout; the watchdog's own log carries
+        // the matching `Killed: 9` for the same pid — the two align on pid.
+        io.stdout(`pid ${pid} did not exit within ${stopTimeoutMs} ms of SIGTERM — sending SIGKILL (the watchdog log will show 'Killed: 9' for ${pid})\n`)
+      })
       io.stdout(`stopped ${pid}${exited ? '' : ' (forced)'}\n`)
       const child = spawn(options.start, { shell: true, detached: true, stdio: 'ignore' })
       child.unref()

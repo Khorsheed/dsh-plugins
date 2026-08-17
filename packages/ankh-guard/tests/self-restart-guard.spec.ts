@@ -361,6 +361,37 @@ describe('CLI', () => {
     }
   })
 
+  it('restart escalates to SIGKILL after --stop-timeout-ms and reports the forced stop', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-')
+    const port = 20000 + Math.floor(Math.random() * 15000)
+    // A listener that swallows SIGTERM: only the SIGKILL escalation can stop it.
+    const stubborn = spawn(process.execPath, ['-e',
+      `process.on('SIGTERM', () => {}); require('http').createServer((q, s) => s.end('stubborn')).listen(${port}, '127.0.0.1')`],
+    { stdio: 'ignore' })
+    try {
+      await waitForPort(port)
+      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      stubPreflight('true')
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      const out = io()
+      const started = Date.now()
+      expect(await runCli(
+        ['restart', '--port', String(port), '--start', startCmd, '--stop-timeout-ms', '700',
+          '--state-dir', stateDir, '--repo', repo],
+        out.io,
+      )).toBe(0)
+      // The grace deadline was honored before the SIGKILL escalation.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(600)
+      expect(out.out.join('')).toContain('sending SIGKILL')
+      expect(out.out.join('')).toContain('(forced)')
+      expect(await fetchBody(port)).toBe('new')
+    } finally {
+      await killListener(port)
+      stubborn.kill('SIGKILL')
+    }
+  })
+
   it('restart --rollback resets to the checkpoint when the new instance never comes up', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')

@@ -14,6 +14,15 @@
 # outside the protected process — spawned detached (setsid) by the guard CLI's
 # `supervise` verb or by a launcher, never by hand in normal operation.
 #
+# Process model: the watchdog reaps the instance it spawned, and on the way
+# out (EXIT/TERM/INT) anything it still owns (the instance child, the give-up
+# crash page) — supervision never leaves orphans. It does NOT assume a process
+# group: the instance is not setsid'd, so reaping walks the descendant tree
+# (pgrep -P) instead of killing a group. The supervised instance is expected to
+# manage its own children on graceful shutdown; the tree walk is the
+# best-effort net for the forced paths (SIGKILL cannot be trapped, and the next
+# start's free_port covers that case).
+#
 # Everything is parameterized by environment (the guard CLI's `supervise` verb
 # sets these); nothing here is machine-specific:
 #   WD_HOME=DIR        dsh root: markers, pidfile, state (default: $DSH_HOME)
@@ -64,14 +73,26 @@ healthy() {
   [ "$code" = "200" ]
 }
 
+# Reap a pid AND its descendants, deepest first (best effort). The watchdog
+# guarantees the direct child; the sweep keeps grandchildren from outliving
+# the instance — a single-pid kill is what orphaned listeners and left the
+# EADDRINUSE race behind.
+kill_tree() {
+  local pid=$1 sig=${2:-TERM} child
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    kill_tree "$child" "$sig"
+  done
+  kill -s "$sig" "$pid" 2>/dev/null || true
+}
+
 # Free the port: the watchdog is the declared owner, so it adopts an existing
 # listener (the one-time bounce that moves a running instance under supervision).
 free_port() {
-  local pid
+  local pid p
   pid=$(lsof -tiTCP:$PORT -sTCP:LISTEN -P 2>/dev/null)
   if [ -n "$pid" ]; then
     echo "[watchdog] freeing :$PORT from pid(s) $pid"
-    kill $pid 2>/dev/null
+    for p in $pid; do kill_tree "$p" TERM; done
     sleep 2
   fi
 }
@@ -209,6 +230,25 @@ failures=0
 reset_done=0
 
 trap 'retry_on_usrs' USR1
+
+# Reap what we spawned on the way out — the instance child and the give-up
+# crash page. Without this, TERM/INT (or a plain exit) orphans them to PPID 1:
+# the leak that left three crash pages on 8/16, and the held port the
+# EADDRINUSE branch then had to free. SIGKILL cannot be trapped; the next
+# start's free_port covers that case. (`set -u` — guard every var.)
+cleanup() {
+  if [ -n "${page_pid:-}" ]; then kill "$page_pid" 2>/dev/null; fi
+  if [ -n "${child:-}" ]; then kill_tree "$child" TERM; fi
+  # Drop the pidfile ONLY while it names us: a successor watchdog may have
+  # already claimed it in the restart window, and deleting theirs would let a
+  # second supervisor in.
+  if [ -f "$PIDFILE" ] && [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ]; then
+    rm -f "$PIDFILE"
+  fi
+  return 0
+}
+trap cleanup EXIT
+trap 'cleanup; exit 143' TERM INT
 
 if [ "${WD_WAIT_OWNER:-0}" = "1" ]; then
   # Adoption ahead of a self-restart: the current owner exits on its own.
