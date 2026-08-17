@@ -80,10 +80,6 @@ export function ShortcutsRow({
 
   return (
     <div className={css.row}>
-      <div className={css.rowText}>
-        <div className={css.title}>{t('settings.title')}</div>
-        <div className={css.desc}>{t('settings.description')}</div>
-      </div>
       <div className={css.fields}>
         {actions.map((action) => {
           const preference = preferences[action.id] ?? action.defaultBinding
@@ -138,9 +134,6 @@ export function ShortcutsRow({
           )
         })}
       </div>
-      {/* The section column strips a border on the slot's last child, so this
-          block's closing hairline lives on an inner element it cannot reach. */}
-      <div className={css.divider} />
     </div>
   )
 }

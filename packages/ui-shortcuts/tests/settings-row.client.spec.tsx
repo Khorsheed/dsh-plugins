@@ -5,6 +5,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { createSnapshotStore, type SessionListState, type WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ShortcutsRow } from '../src/client/settings/ShortcutsRow.tsx'
+import { ShortcutsCard } from '../src/client/settings/ShortcutsCard.tsx'
 import type { ShortcutsRowProps } from '../src/client/settings/ShortcutsRow.tsx'
 import type { ShortcutActionContribution } from '../src/client/contract.ts'
 import type { ShortcutPreference } from '../src/settings.ts'
@@ -57,7 +58,7 @@ function emptyWorkspaces() {
   }))
 }
 
-function mount() {
+function buildProps() {
   const t = makeTranslate(zh)
   const actions = createSnapshotStore<readonly ShortcutActionContribution[]>(ACTIONS)
   const preferences = createSnapshotStore<Record<string, ShortcutPreference>>({ ...DEFAULT_PREFERENCES })
@@ -82,8 +83,13 @@ function mount() {
     setCapturing,
     t,
   }
-  render(<ShortcutsRow {...props} />)
-  return { preferences, capturing, setPreference, reset, setCapturing }
+  return { preferences, capturing, setPreference, reset, setCapturing, props }
+}
+
+function mount() {
+  const b = buildProps()
+  render(<ShortcutsRow {...b.props} />)
+  return b
 }
 
 /** Keydown against the document capture listener the row installs while recording. */
@@ -94,7 +100,6 @@ function press(init: KeyboardEventInit): void {
 describe('ShortcutsRow', () => {
   it('describes the registered actions and hides reset and the default hint at defaults', () => {
     mount()
-    expect(screen.getByText('快捷键')).toBeDefined()
     expect(screen.getByText('暂停当前任务')).toBeDefined()
     expect(screen.getByText('插队发送')).toBeDefined()
     expect(screen.getByText('新建会话')).toBeDefined()
@@ -185,5 +190,23 @@ describe('ShortcutsRow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Esc' }))
     cleanup()
     expect(b.setCapturing).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('ShortcutsCard', () => {
+  it('collapses the rebinding fields by default and discloses them on header click', () => {
+    // mount() builds the same injected props the card passes through.
+    const { props } = buildProps()
+    const card = render(<ShortcutsCard {...props} />)
+    // Collapsed: the header names the card; the fields stay hidden.
+    expect(card.getByRole('button', { name: /展开快捷键设置: 快捷键/ })).toBeDefined()
+    expect(card.queryByRole('button', { name: 'Esc' })).toBeNull()
+    // Header click discloses the fields in place.
+    fireEvent.click(card.getByRole('button', { name: /展开快捷键设置: 快捷键/ }))
+    expect(card.getByRole('button', { name: /收起快捷键设置: 快捷键/ })).toBeDefined()
+    expect(card.getByRole('button', { name: 'Esc' })).toBeDefined()
+    // And the key-capture interaction still works inside the open card.
+    fireEvent.click(card.getByRole('button', { name: 'Esc' }))
+    expect(card.getByRole('button', { name: /按下新键位/ })).toBeDefined()
   })
 })

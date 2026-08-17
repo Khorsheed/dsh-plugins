@@ -33,7 +33,7 @@ import { matches } from './bindings.ts'
 import { ShortcutRegistryRuntime } from './registry.ts'
 import { DEFAULT_PREFERENCES, UI_SHORTCUTS_NAMESPACE } from '../settings.ts'
 import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
-import { ShortcutsRow } from './settings/ShortcutsRow.tsx'
+import { ShortcutsCard } from './settings/ShortcutsCard.tsx'
 import type { ShortcutsRowInjected } from './settings/ShortcutsRow.tsx'
 import type { ShortcutLayering } from './contract.ts'
 import { en, NS, zh, type ShortcutKey } from './locales.ts'
@@ -234,5 +234,5 @@ export function apply(ctx: ClientContext): void {
       reset: (id) => { registry.reset(id) },
       setCapturing: (id) => { registry.capturing.set(id) },
     }),
-  }, ShortcutsRow))
+  }, ShortcutsCard))
 }

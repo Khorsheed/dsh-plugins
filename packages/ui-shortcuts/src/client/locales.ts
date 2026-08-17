@@ -7,6 +7,8 @@ export const NS = 'shortcuts'
 export const zh = {
   'settings.title': '快捷键',
   'settings.description': '点击键帽自定义键位',
+  'settings.expand': '展开快捷键设置',
+  'settings.collapse': '收起快捷键设置',
   'action.pause': '暂停当前任务',
   'action.pause.desc': '中断当前会话正在运行的任务（等同停止按钮）',
   'action.steerSend': '插队发送',
@@ -25,6 +27,8 @@ export const zh = {
 export const en = {
   'settings.title': 'Keyboard shortcuts',
   'settings.description': 'Click a keycap to rebind',
+  'settings.expand': 'Expand keyboard shortcuts',
+  'settings.collapse': 'Collapse keyboard shortcuts',
   'action.pause': 'Pause current task',
   'action.pause.desc': 'Interrupts the running turn (same as the Stop button)',
   'action.steerSend': 'Send with priority',
