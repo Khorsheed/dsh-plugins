@@ -103,7 +103,7 @@ dsh-ankh-guard supervise --foreground --port 3093 --start "<start command>" \
   --state-dir "$DSH_HOME/state" --repo "<checkout>"
 ```
 
-`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。
+`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。若已有存活的 detached watchdog 持有 pidfile，`--foreground` 会等它退出再接管——直接 exit 0 会被当作"正常结束"、任务转 idle，另一个看门狗静默失去监督者。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。
 
 检查点/回滚闭环：
 

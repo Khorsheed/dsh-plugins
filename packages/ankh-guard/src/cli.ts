@@ -510,12 +510,19 @@ async function waitForExit(pid: number, timeoutMs: number, onEscalate?: () => vo
     }
     await sleep(250)
   }
-  onEscalate?.()
+  // The pid may have exited inside the final polling window: probe once more
+  // so the escalation report is not a false positive (the watchdog log would
+  // show no matching `Killed: 9` for a process that already exited).
+  // killPidTree never throws (it swallows "already gone" internally), so a
+  // try/catch around it could no longer distinguish "exited on its own" from
+  // "killed by us" — the pre-`killPidTree` probe restores that distinction.
   try {
-    killPidTree(pid, 'SIGKILL')
+    process.kill(pid, 0)
   } catch {
     return true
   }
+  onEscalate?.()
+  killPidTree(pid, 'SIGKILL')
   return false
 }
 
@@ -728,12 +735,36 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const existing = readFileSync(pidfile, 'utf8').trim()
         const existingPid = Number(existing)
         if (existing !== '' && Number.isInteger(existingPid)) {
+          let existingAlive = true
           try {
             process.kill(existingPid, 0)
-            io.stdout(`already supervised by pid ${existing}\n`)
-            return 0
           } catch {
-            // stale pidfile — fall through and spawn
+            existingAlive = false // stale pidfile — fall through and spawn
+          }
+          if (existingAlive) {
+            if (options.foreground) {
+              // Foreground = an external supervisor (launchd KeepAlive) runs
+              // THIS process. Exiting 0 here would read as an intentional stop
+              // under `KeepAlive SuccessfulExit: false`, so the job would go
+              // idle and never restart the CLI — silently leaving the OTHER
+              // watchdog unsupervised, i.e. a quiet regression to the
+              // single-point-of-failure shape. Instead, wait for it to exit
+              // and then take over: the chain (supervisor → this CLI →
+              // watchdog) stays intact the whole time.
+              io.stdout(`watchdog ${existing} already supervises the port — waiting for it to exit, then taking over (foreground)\n`)
+              while (true) {
+                try {
+                  process.kill(existingPid, 0)
+                } catch {
+                  break
+                }
+                await sleep(1000)
+              }
+              io.stdout(`watchdog ${existing} exited — taking over\n`)
+            } else {
+              io.stdout(`already supervised by pid ${existing}\n`)
+              return 0
+            }
           }
         }
       }

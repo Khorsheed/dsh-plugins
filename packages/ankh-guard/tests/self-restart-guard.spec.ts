@@ -373,7 +373,15 @@ describe('CLI', () => {
       await waitForPort(port)
       await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
-      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      // The replacement retries binding: the stubborn listener's socket is
+      // released asynchronously after its SIGKILL, so a single immediate bind
+      // can race it (EADDRINUSE) and crash the replacement — a flake under
+      // load. Retrying makes the takeover deterministic.
+      const startCmd = `"${process.execPath}" -e "
+const http = require('http');
+const tryListen = () => http.createServer((q, s) => s.end('new')).listen(${port}, '127.0.0.1').on('error', (e) => { if (e.code === 'EADDRINUSE') setTimeout(tryListen, 100); else throw e; });
+tryListen();
+"`
       const out = io()
       const started = Date.now()
       expect(await runCli(
@@ -385,7 +393,20 @@ describe('CLI', () => {
       expect(Date.now() - started).toBeGreaterThanOrEqual(600)
       expect(out.out.join('')).toContain('sending SIGKILL')
       expect(out.out.join('')).toContain('(forced)')
-      expect(await fetchBody(port)).toBe('new')
+      // The takeover window is real: `restart`'s port probe can succeed against
+      // the stubborn listener while it is still dying (SIGKILL delivery is
+      // asynchronous) — the port then goes quiet until the replacement's
+      // retrying bind wins. Probe until the NEW server answers.
+      const takeoverDeadline = Date.now() + 5000
+      let body = ''
+      while (Date.now() < takeoverDeadline) {
+        try {
+          body = await fetchBody(port)
+          if (body === 'new') break
+        } catch { /* not up yet — the takeover window */ }
+        await new Promise((resolve) => { setTimeout(resolve, 100) })
+      }
+      expect(body).toBe('new')
     } finally {
       await killListener(port)
       stubborn.kill('SIGKILL')

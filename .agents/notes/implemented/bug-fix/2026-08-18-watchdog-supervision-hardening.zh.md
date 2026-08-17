@@ -15,16 +15,16 @@ Status: implemented
 
 ## Decision
 
-1. **launchd 监督作为产物随包提供。** `scripts/install-launchd.sh` 生成 `com.dsh.watchdog.plist` 到 `~/Library/LaunchAgents`——`ProgramArguments` 经 `bash -c` 跑 `supervise --foreground`（launchd 重启的是 CLI，CLI 随 watchdog 退出；直接监督 watchdog 脚本本身不行），`KeepAlive SuccessfulExit: false`（被杀——非零退出——重启整条链；刻意的 `watchdog-stop` exit 0 保持停机），`RunAtLoad`，`EnvironmentVariables` 带 `DSH_HOME`，stdout/stderr 落 `state/watchdog.log` / `state/watchdog.stderr.log`。脚本负责 bootstrap，支持 `--force`（先 TERM 正在运行的 detached 看门狗，让 launchd 任务成为唯一拥有者）和 `--uninstall`。README 把 detached `supervise` 形态降级为调试/一次性工具。
+1. **launchd 监督作为产物随包提供。** `scripts/install-launchd.sh` 生成 `com.dsh.watchdog.plist` 到 `~/Library/LaunchAgents`——`ProgramArguments` 经 `bash -c` 跑 `supervise --foreground`（launchd 重启的是 CLI，CLI 随 watchdog 退出；直接监督 watchdog 脚本本身不行），`KeepAlive SuccessfulExit: false`（被杀——非零退出——重启整条链；刻意的 `watchdog-stop` exit 0 保持停机），`RunAtLoad`，`EnvironmentVariables` 带 `DSH_HOME`，stdout/stderr 落 `state/watchdog.log` / `state/watchdog.stderr.log`。脚本负责 bootstrap，支持 `--force`（先 TERM 正在运行的 detached 看门狗，让 launchd 任务成为唯一拥有者）和 `--uninstall`。README 把 detached `supervise` 形态降级为调试/一次性工具。复核轮（2026-08-18）：foreground 模式下发现存活 pidfile 不再 exit 0——那个退出在 `KeepAlive SuccessfulExit: false` 下会被当作"正常结束"，任务转为 idle，另一个看门狗静默失去监督者（悄悄退回单点失效形态）。现在 foreground CLI 会等现有看门狗退出再接管，监督链（外部监督者 → CLI → watchdog）全程不断；detached 形态保留 exit-0 复用。
 2. **两个看门狗脚本都加退出清理**（包内 `scripts/dsh-watchdog.sh` 与部署副本 `$DSH_HOME/bin`）：`cleanup()`——杀崩溃页、`kill_tree` 实例子进程、仅当 pidfile 指向自己时删除——绑定 `EXIT` 与 `TERM`/`INT`（`exit 143`）。SIGKILL 拦不住，下次启动的 `free_port` 兜底。
-3. **停止期限可配置。** `restart --stop-timeout-ms`（默认 30000）取代硬编码 10 秒。升级 SIGKILL 前 CLI 打印一行带 pid 的记录，可与 watchdog 日志里同一 pid 的 `Killed: 9` 对齐——两份日志以 pid 关联。
+3. **停止期限可配置。** `restart --stop-timeout-ms`（默认 30000）取代硬编码 10 秒。升级 SIGKILL 前 CLI 打印一行带 pid 的记录，可与 watchdog 日志里同一 pid 的 `Killed: 9` 对齐——两份日志以 pid 关联。复核轮：`waitForExit` 在升级前补一次探针——`killPidTree` 内部吞掉"已消失"异常、从不向外抛，朴素的 try/catch 因此无法再识别"最后一个轮询窗口内自行退出"，超时路径一律报强制杀，制造出 watchdog 日志里根本不存在的 `Killed: 9` 假阳性；探针恢复了这一区分。
 4. **按 pid + 后代回收，写进文档，绝不按进程组。** bash 的 `kill_tree()`（用于 `free_port`、EADDRINUSE 重试、退出清理）与 cli.ts 的 `killPidTree()`（用于 `waitForExit` 的 SIGKILL 升级）沿 `pgrep -P` 由深到浅回收后代，强制路径不再假设进程组。README 与两个脚本头写明契约：被监管实例在优雅停机时自行管理子进程；后代回收只是强制路径上的尽力而为兜底。测试清理的进程组杀保留——它针对的是 setsid 的看门狗本身，看门狗确实是组长。
 
 ## Verification
 
 - `bash -n` 通过（包内看门狗、部署看门狗、`install-launchd.sh` 三个脚本）；安装脚本生成的 plist 通过 `plutil` lint，键结构与预期一致（`KeepAlive`/`RunAtLoad`/`ProgramArguments`/env/log）。
 - `pnpm --filter @khorsheed/dsh-ankh-guard typecheck` 通过。
-- `tests/self-restart-guard.spec.ts`：新增用例 `restart escalates to SIGKILL after --stop-timeout-ms and reports the forced stop` 对吞掉 SIGTERM 的监听者跑 `restart --stop-timeout-ms 700`，断言宽限期被尊重（≥600 ms）、输出含 `sending SIGKILL` 与 `(forced)`、新实例正常起来；全套通过。
+- `tests/self-restart-guard.spec.ts`：新增用例 `restart escalates to SIGKILL after --stop-timeout-ms and reports the forced stop` 对吞掉 SIGTERM 的监听者跑 `restart --stop-timeout-ms 700`，断言宽限期被尊重（≥600 ms）、输出含 `sending SIGKILL` 与 `(forced)`、新实例正常起来。初版用例在全量套件负载下会 flake（约一半概率）：两段接管竞态——替身的一次性 bind 会撞上 stubborn 监听者 SIGKILL 后异步释放 socket（EADDRINUSE 崩溃），且 `restart` 的端口探测可能连到"正在死去的 stubborn"而误报成功，随后的单次 `fetchBody` 落在静默窗口。替身改为对 EADDRINUSE 重试绑定、测试跨接管窗口探测新服务器后，套件多次全量（每次 66/66）+ 隔离重跑均通过。
 
 ## Alternatives considered
 
