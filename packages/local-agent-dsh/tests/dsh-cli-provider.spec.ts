@@ -13,7 +13,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { LocalAgentDelegationIntent } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
-import { DshCliProvider } from '../src/dsh-cli-provider.ts'
+import { DshCliProvider, dshLaunchArgv } from '../src/dsh-cli-provider.ts'
 
 /** A stub child that prints the final answer, then exits 0. */
 function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
@@ -110,6 +110,24 @@ function request(over: Partial<{ prompt: string; cwd: string; signal: AbortSigna
     signal: over.signal ?? new AbortController().signal,
   }
 }
+
+describe('dsh launch argv', () => {
+  it('ignores an empty cliLaunch override (schemastery resolves an absent array to [])', () => {
+    // Without the length guard, an absent cliLaunch field would resolve to []
+    // and drop the node/tsx/bin prefix, spawning a bare `--profile`.
+    expect(dshLaunchArgv({ cliLaunch: [] })).toEqual([
+      process.execPath,
+      ...process.execArgv,
+      process.argv[1] ?? 'dsh',
+    ])
+    expect(dshLaunchArgv({})).toEqual([
+      process.execPath,
+      ...process.execArgv,
+      process.argv[1] ?? 'dsh',
+    ])
+    expect(dshLaunchArgv({ cliLaunch: ['dsh'] })).toEqual(['dsh'])
+  })
+})
 
 describe('dsh-cli-provider fresh run', () => {
   it('spawns the sub-dsh with the caller session id, scoped DSH_HOME and injected key, and records the identity mapping', async () => {

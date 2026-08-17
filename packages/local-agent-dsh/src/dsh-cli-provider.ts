@@ -37,6 +37,7 @@ import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+
 /**
  * One-shot dsh CLI subagent provider: every accepted fresh run starts a fresh
  * sub-dsh headless process in the delegating Session's workspace, under the
@@ -226,7 +227,9 @@ function thrown(value: unknown): Error {
  * @returns the launch prefix before the profile flag.
  */
 export function dshLaunchArgv(config: LocalAgentDshConfig): readonly string[] {
-  if (config.cliLaunch !== undefined) return config.cliLaunch
+  // An empty array is a degenerate override (an absent schema field resolves
+  // to [] without an explicit default); treat it as no override.
+  if (config.cliLaunch !== undefined && config.cliLaunch.length > 0) return config.cliLaunch
   return [process.execPath, ...process.execArgv, process.argv[1] ?? 'dsh']
 }
 
