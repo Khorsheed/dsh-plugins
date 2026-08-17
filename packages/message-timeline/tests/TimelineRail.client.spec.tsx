@@ -391,9 +391,9 @@ describe('width policy', () => {
   }
 
   it('caps the width to the left gutter so the panel never covers the flow', () => {
-    // flowLeft 300, panel left 10: the gutter is 300 - 10 - 16 (gap) = 274.
+    // flowLeft 300, panel left 10: the budget is 300 - 10 - 8 (padding) - 16 (gap) = 266.
     renderWith({ flowLeft: 300 })
-    expect(panel().style.width).toBe('274px')
+    expect(panel().style.width).toBe('266px')
   })
 
   it('keeps the configured width when the gutter is wider than the panel', () => {
@@ -402,14 +402,14 @@ describe('width policy', () => {
   })
 
   it('renders at the minimum width when the gutter exactly fits it', () => {
-    // flowLeft 146, panel left 10: gutter = 146 - 10 - 16 = 120.
-    renderWith({ flowLeft: 146 })
+    // flowLeft 154, panel left 10: budget = 154 - 10 - 8 - 16 = 120.
+    renderWith({ flowLeft: 154 })
     expect(panel().style.width).toBe('120px')
   })
 
   it('hides entirely when the gutter cannot hold the minimum width', () => {
-    // flowLeft 145 would leave 119px of gutter — one pixel below the floor.
-    renderWith({ flowLeft: 145 })
+    // flowLeft 153 would leave 119px — one pixel below the floor.
+    renderWith({ flowLeft: 153 })
     expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
   })
 

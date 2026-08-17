@@ -13,7 +13,7 @@ English | [中文](2026-08-17-message-timeline-gutter-width-cap.zh.md)
 面板宽度自适应实测的左缘沟槽;沟槽小到放不下可用宽度时,面板整条隐藏:
 
 - rail tracker 在既有几何之外,新增发布滚动区宽度和消息流左缘(`flowLeftX`:第一条 `[data-chat-flow-kind]` 行的 rect.left,该行紧贴居中列左缘)(`rail-tracker.ts`、`TimelineRailState`)。
-- 组件把宽度封顶为 `min(panelWidth, flowLeft − rail.left − 16px)`——面板右缘绝不越过消息流,并保留呼吸间距。
+- 组件把宽度封顶为 `min(panelWidth, flowLeft − rail.left − 24px)`——16px 可见呼吸间距加面板 8px 右内边距(`PANEL_PADDING_X`)——时间轴文字绝不越过消息流。
 - 沟槽放不下最小可用宽度(`PANEL_WIDTH_MIN`,120px,从 `config.ts` 导出)时,面板整条隐藏,而不是渲染一条只会拦截会话内容的细条。
 - 流探针未应答(官方结构变化)时,宽度降级为 `min(panelWidth, max(120, 滚动区宽度 × 0.4))`——永不抛错、盖住的范围不超过兜底值。
 

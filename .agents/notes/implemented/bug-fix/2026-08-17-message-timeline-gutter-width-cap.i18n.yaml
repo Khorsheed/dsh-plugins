@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-17-message-timeline-gutter-width-cap.md
-.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-gutter-width-cap.md: 5cd23226cdb5f9a4197c8ce7249d470096074510
-.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-gutter-width-cap.zh.md: 1279be83a07c37ae5bf72c2610908e469a9981e9
+.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-gutter-width-cap.md: ad5968ed76dc1bc6296fb2a5433906e42ffe9d93
+.agents/notes/implemented/bug-fix/2026-08-17-message-timeline-gutter-width-cap.zh.md: 9430cc026b0dff0e0e43ab34a0d7a43e73937e93

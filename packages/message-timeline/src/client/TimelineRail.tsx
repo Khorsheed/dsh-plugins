@@ -24,7 +24,13 @@ function nodeContent(node: { data: unknown }): readonly ContentBlock[] {
   return (node.data as { content?: readonly ContentBlock[] }).content ?? []
 }
 
-/** Breathing gap between the panel's right edge and the message flow (px). */
+/**
+ * Horizontal panel padding, matching `.panel`'s `padding: 4px 8px`: the text
+ * band sits this far inside the box, so the width budget must give it back
+ * for {@link PANEL_GAP} to be the visible gap to the message flow.
+ */
+const PANEL_PADDING_X = 8
+/** Visible breathing gap between the timeline text and the message flow (px). */
 const PANEL_GAP = 16
 /** Degraded width cap (fraction of the scrollport) while the flow probe is unanswered. */
 const DEGRADED_WIDTH_RATIO = 0.4
@@ -76,13 +82,14 @@ export function TimelineRail({
 
   // The panel must never cover the message flow: its width is the configured
   // preferred width capped by the scrollport's left gutter — the message
-  // flow's left edge minus the panel's left edge, less a breathing gap. A
-  // gutter too small for the minimum usable width hides the panel entirely
-  // (the timeline is an overlay affordance; squeezed into nothing it only
-  // intercepts the transcript). When the flow probe is unanswered (official
-  // structure change), the width degrades to a fraction of the scrollport
-  // instead — never throws, never covers more than the fallback.
-  const gutter = rail.flowLeft === null ? null : rail.flowLeft - rail.left - PANEL_GAP
+  // flow's left edge minus the panel's left edge, less the panel's right
+  // padding and the visible breathing gap. A gutter too small for the minimum
+  // usable width hides the panel entirely (the timeline is an overlay
+  // affordance; squeezed into nothing it only intercepts the transcript).
+  // When the flow probe is unanswered (official structure change), the width
+  // degrades to a fraction of the scrollport instead — never throws, never
+  // covers more than the fallback.
+  const gutter = rail.flowLeft === null ? null : rail.flowLeft - rail.left - PANEL_PADDING_X - PANEL_GAP
   const width = gutter === null
     ? Math.min(panelWidth, Math.max(PANEL_WIDTH_MIN, rail.scrollportWidth * DEGRADED_WIDTH_RATIO))
     : Math.min(panelWidth, Math.max(0, gutter))
