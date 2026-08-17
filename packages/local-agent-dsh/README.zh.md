@@ -11,7 +11,7 @@ local-agent 家族的 **dsh harness**：把 dsh 自己作为本地 CLI 委派出
 - **OFF**（默认）：实例保持现状——委派走官方 in-process subagent 工具。模型永远看不到 dsh 委派工具。
 - **ON**：控制器注册 `dsh` harness、`dsh-cli` 委派 provider 与家族委派工具（`subagent_dsh`）。开关经 settings watcher 实时翻转组合。
 
-官方 in-process subagent 工具归 base bundle 所有，不在开关控制范围内；OFF 时只剩它们，ON 时加上 dsh 工具——模型绝不会同时看到两者。
+官方 in-process subagent 工具归 base bundle 所有，不在开关控制范围内：OFF 时只剩它们，ON 时 `subagent_dsh` 与它们并存——两种委派形态语义不同（in-process continuable vs. 独立 CLI 进程），家族工具描述（"separate process, its own scoped home"）让模型可以区分。
 
 ## 委派如何工作
 
