@@ -5,3 +5,4 @@ lib/
 coverage/
 *.log
 packages/taskpilot/tsconfig.paths.json
+.harness-diff/
