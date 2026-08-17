@@ -348,3 +348,87 @@ describe('TitleEditAction in-place editing (crumb fixture mounted)', () => {
     expect(fixtureCrumb()?.hasAttribute('data-ste-inplace')).toBe(false)
   })
 })
+
+describe('TitleEditAction length gate (row editor)', () => {
+  it('shows the over-limit hint and disables save beyond the host byte cap', () => {
+    render(<TitleEditAction {...props({})} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '汉'.repeat(27) } })
+    expect(screen.getByRole('alert').textContent).toContain('最多 80 字节')
+    expect(screen.getByRole<HTMLButtonElement>('button', SAVE).disabled).toBe(true)
+  })
+
+  it('accepts a draft at exactly the byte cap', () => {
+    render(<TitleEditAction {...props({})} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '汉'.repeat(26) } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', SAVE).disabled).toBe(false)
+  })
+
+  it('clears the hint and re-enables save once the draft fits again', () => {
+    render(<TitleEditAction {...props({})} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: '汉'.repeat(30) } })
+    expect(screen.getByRole<HTMLButtonElement>('button', SAVE).disabled).toBe(true)
+    fireEvent.change(input, { target: { value: 'short' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', SAVE).disabled).toBe(false)
+  })
+
+  it('never commits an over-limit draft on Enter', () => {
+    const rename = vi.fn(async () => {})
+    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '汉'.repeat(27) } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(rename).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toBeTruthy()
+  })
+})
+
+describe('TitleEditAction in-place auto-fit', () => {
+  it('grows the overlay with the draft text and clamps at the official 220px crumb cap', () => {
+    mountCrumb('Short')
+    render(<TitleEditAction {...props({ title: 'Short' })} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    const input = screen.getByRole<HTMLInputElement>('textbox')
+    // Open floors the fitted width at the crumb's measured width (100px fixture).
+    expect(input.style.width).toBe('100px')
+    const mirror = document.querySelector('[aria-hidden="true"]') as HTMLSpanElement
+    expect(mirror).toBeTruthy()
+    // A draft the crumb could not have shown (offsetWidth 160) widens the box.
+    Object.defineProperty(mirror, 'offsetWidth', { value: 160, configurable: true })
+    fireEvent.change(input, { target: { value: 'a longer title that overflows the crumb' } })
+    expect(input.style.width).toBe('182px') // 160 + (8+1)*2 padding/border + 4 caret buffer
+    // A very wide draft clamps at 220px, matching the crumb's max-width.
+    Object.defineProperty(mirror, 'offsetWidth', { value: 500, configurable: true })
+    fireEvent.change(input, { target: { value: 'W'.repeat(80) } })
+    expect(input.style.width).toBe('220px')
+  })
+
+  it('never shrinks the overlay below the crumb width while deleting', () => {
+    mountCrumb('A fairly long original title')
+    render(<TitleEditAction {...props({ title: 'A fairly long original title' })} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    const input = screen.getByRole<HTMLInputElement>('textbox')
+    expect(input.style.width).toBe('100px') // fixture crumb width 100
+    fireEvent.change(input, { target: { value: 'x' } })
+    // Mirror measures 0 in jsdom; the crumb-width floor keeps the box stable.
+    expect(input.style.width).toBe('100px')
+  })
+
+  it('shows the over-limit hint in place and blocks Enter commit', () => {
+    const rename = vi.fn(async () => {})
+    mountCrumb('Old')
+    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '汉'.repeat(27) } })
+    expect(screen.getByRole('alert').textContent).toContain('最多 80 字节')
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(rename).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(fixtureCrumb()?.getAttribute('data-ste-inplace')).toBe('')
+  })
+})

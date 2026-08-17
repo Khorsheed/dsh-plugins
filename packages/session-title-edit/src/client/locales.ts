@@ -9,6 +9,7 @@ export const zh = {
   'cancel': '取消',
   'error.invalid': '标题不能为空',
   'error.rename': '重命名失败，请重试',
+  'hint.tooLong': '标题过长：最多 {max} 字节（约 {chars} 个汉字），当前 {bytes} 字节',
 } satisfies Record<string, string>
 
 /** The session-title-edit namespace key union. */
@@ -33,4 +34,5 @@ export const en = {
   'cancel': 'Cancel',
   'error.invalid': 'The title cannot be empty',
   'error.rename': 'Rename failed, please try again',
+  'hint.tooLong': 'Title too long: max {max} bytes (about {chars} CJK characters), currently {bytes}',
 } satisfies Record<string, string>

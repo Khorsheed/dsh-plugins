@@ -55,9 +55,18 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* In-place overlay: the input sits exactly on the hidden crumb's rect, so the
-   title itself reads as an editable field (viewport-fixed; the official
-   header exposes no title seat — see the component's deprecation TODO). */
+/* Over-limit length hint inside the row editor (same size, warning-tinted). */
+.editorHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* In-place overlay: the input sits on the hidden crumb's rect, so the title
+   itself reads as an editable field (viewport-fixed; the official header
+   exposes no title seat — see the component's deprecation TODO). Its width is
+   fitted to the draft between the crumb's original width and the 220px cap
+   (mirror span below); left/top/height come from the measured crumb rect. */
 .inPlaceInput {
   position: fixed;
   box-sizing: border-box;
@@ -82,6 +91,22 @@
   color: var(--dsw-alias-label-dimmed);
 }
 
+/* Hidden width-measuring mirror of the draft, rendered at the same font as
+   the in-place input so its width tracks the text exactly (an input's own
+   scrollWidth cannot shrink once content fits). Off-screen and invisible:
+   it never paints, intercepts pointers, or scrolls an ancestor. */
+.inPlaceMirror {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .inPlaceError {
   /* In-flow in the actions row (the overlay input is fixed, so this is the
      row's only content): never fixed-positioned, so it cannot overlap the
@@ -90,6 +115,15 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* Over-limit length hint, laid out like the in-place error: in-flow in the
+   actions row, warning-tinted. */
+.inPlaceHint {
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 /* Hide the official current-title crumb while the in-place editor is open
