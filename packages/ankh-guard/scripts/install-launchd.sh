@@ -53,8 +53,13 @@ UNINSTALL=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILT_CLI="$PKG_ROOT/lib/cli.js"
+# launchd jobs run with a minimal PATH (/usr/bin:/bin:...), so bare `node`
+# would fail with exit 127 ("node: not found") both for the CLI invocation and
+# for the instance's WD_START. Resolve node absolutely for the default CLI and
+# snapshot this shell's PATH into the plist's EnvironmentVariables below.
+NODE_BIN="$(command -v node || echo /usr/bin/node)"
 if [ -f "$BUILT_CLI" ]; then
-  DEFAULT_CLI="node $BUILT_CLI"
+  DEFAULT_CLI="$NODE_BIN $BUILT_CLI"
 else
   DEFAULT_CLI=""
 fi
@@ -147,6 +152,8 @@ if ! cat > "$PLIST" <<EOF
   <dict>
     <key>DSH_HOME</key>
     <string>$(xml_escape "$HOME_DIR")</string>
+    <key>PATH</key>
+    <string>$(xml_escape "$PATH")</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

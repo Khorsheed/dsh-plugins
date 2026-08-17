@@ -36,4 +36,4 @@ Status: implemented
 
 ## Consequences
 
-被杀的看门狗现在能在 launchd 下自愈；TERM 看门狗会连同实例一起下线（已写文档——手动 `kill <watchdog>` 不再是"实例继续跑"的操作）；`restart` 的强制停止跨 CLI 与 watchdog 两份日志可归因；强制路径会回收孤儿监听者，而不是留给 EADDRINUSE 分支。当前裸部署（看门狗 pid 67131）仍需一次性执行 `install-launchd.sh --force` 迁到 launchd 下——本次未做；部署副本 `$DSH_HOME/bin` 只打了清理/kill_tree 补丁，等待合并到包内脚本。
+被杀的看门狗现在能在 launchd 下自愈；TERM 看门狗会连同实例一起下线（已写文档——手动 `kill <watchdog>` 不再是"实例继续跑"的操作）；`restart` 的强制停止跨 CLI 与 watchdog 两份日志可归因；强制路径会回收孤儿监听者，而不是留给 EADDRINUSE 分支。开发机已于 2026-08-18 通过 `install-launchd.sh --force` 迁入 launchd（任务 `com.dsh.watchdog`，`KeepAlive SuccessfulExit: false`）；部署副本 `$DSH_HOME/bin` 只打了清理/kill_tree 补丁，已被包内脚本取代，待合并。安装器首跑之后还落了一个部署期修复：launchd 任务跑在极简 PATH 下，plist 必须把安装时的 PATH 快照进 `EnvironmentVariables`（`ProgramArguments` 或 `WD_START` 里的裸 `node` 否则以 exit 127 "node: not found" 死掉——首次 bootstrap 时实测复现）。

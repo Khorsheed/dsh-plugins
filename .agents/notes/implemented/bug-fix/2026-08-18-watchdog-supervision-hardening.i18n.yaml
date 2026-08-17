@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-18-watchdog-supervision-hardening.md
-.agents/notes/implemented/bug-fix/2026-08-18-watchdog-supervision-hardening.md: 25d50c1dfe848e61312f374a765e0349a9e385a4
-.agents/notes/implemented/bug-fix/2026-08-18-watchdog-supervision-hardening.zh.md: 9cefa5372280ca8f5ce906c037e692ae8145fc5b
+.agents/notes/implemented/bug-fix/2026-08-18-watchdog-supervision-hardening.md: a7211cd1b03e5e73e8e98662a77d8a4b49b0d06a
+.agents/notes/implemented/bug-fix/2026-08-18-watchdog-supervision-hardening.zh.md: b093accc62a53b22e58f08e7c4105e373f6d7a93
