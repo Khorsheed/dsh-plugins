@@ -14,6 +14,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { PANEL_WIDTH_MIN } from './config.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import css from './TimelineRail.module.css'
@@ -22,6 +23,11 @@ import css from './TimelineRail.module.css'
 function nodeContent(node: { data: unknown }): readonly ContentBlock[] {
   return (node.data as { content?: readonly ContentBlock[] }).content ?? []
 }
+
+/** Breathing gap between the panel's right edge and the message flow (px). */
+const PANEL_GAP = 8
+/** Degraded width cap (fraction of the scrollport) while the flow probe is unanswered. */
+const DEGRADED_WIDTH_RATIO = 0.4
 
 /**
  * The header-utilities entry: the portal timeline panel.
@@ -68,6 +74,20 @@ export function TimelineRail({
   const active = rail.chatView && rail.ready && rail.sessionId === sessionId
   const visible = active && items.length > 0
 
+  // The panel must never cover the message flow: its width is the configured
+  // preferred width capped by the scrollport's left gutter — the message
+  // flow's left edge minus the panel's left edge, less a breathing gap. A
+  // gutter too small for the minimum usable width hides the panel entirely
+  // (the timeline is an overlay affordance; squeezed into nothing it only
+  // intercepts the transcript). When the flow probe is unanswered (official
+  // structure change), the width degrades to a fraction of the scrollport
+  // instead — never throws, never covers more than the fallback.
+  const gutter = rail.flowLeft === null ? null : rail.flowLeft - rail.left - PANEL_GAP
+  const width = gutter === null
+    ? Math.min(panelWidth, Math.max(PANEL_WIDTH_MIN, rail.scrollportWidth * DEGRADED_WIDTH_RATIO))
+    : Math.min(panelWidth, Math.max(0, gutter))
+  const tooNarrow = gutter !== null && width < PANEL_WIDTH_MIN
+
   // Keep the lit row in view: the panel follows the reading position (a new
   // message scrolls its row in), and mouse browsing is never yanked because
   // the hovered row is the current one and always visible under the pointer.
@@ -104,7 +124,7 @@ export function TimelineRail({
     jumpTo(key)
   }
 
-  if (!visible) return null
+  if (!visible || tooNarrow) return null
   return createPortal(
     <div
       ref={panelRef}
@@ -113,7 +133,7 @@ export function TimelineRail({
       aria-label={t('rail.panel')}
       tabIndex={0}
       data-timeline-panel=""
-      style={{ left: rail.left, top: rail.top, height: rail.height, width: panelWidth }}
+      style={{ left: rail.left, top: rail.top, height: rail.height, width }}
       onScroll={onPanelScroll}
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

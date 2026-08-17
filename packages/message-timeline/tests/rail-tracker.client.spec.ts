@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  activeRowKey, installRailTracker, jumpRow, measureGeometry,
+  activeRowKey, flowLeftX, installRailTracker, jumpRow, measureGeometry,
 } from '../src/client/rail-tracker.ts'
 import type { TimelineRailState } from '../src/client/slots.ts'
 
@@ -33,7 +33,7 @@ describe('measureGeometry', () => {
     rect(composer, { top: 260, left: 0, width: 400, height: 40 })
     scrollport.appendChild(composer)
 
-    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 244 })
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 244, width: 400 })
   })
 
   it('returns null while the scrollport has no laid-out size', () => {
@@ -50,7 +50,7 @@ describe('measureGeometry', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 48, left: 10, width: 400, height: 300 })
 
-    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 96, height: 244 })
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 96, height: 244, width: 400 })
   })
 
   it('ignores tab strips that are not adjacent to the scrollport top', () => {
@@ -65,7 +65,30 @@ describe('measureGeometry', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 200, left: 10, width: 400, height: 300 })
 
-    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 208, height: 284 })
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 208, height: 284, width: 400 })
+  })
+})
+
+describe('flowLeftX', () => {
+  function flowRow(scrollport: HTMLElement, kind: string, left: number): HTMLElement {
+    const el = document.createElement('div')
+    el.setAttribute('data-chat-flow-kind', kind)
+    rect(el, { top: 40, left, width: 100, height: 20 })
+    scrollport.appendChild(el)
+    return el
+  }
+
+  it('returns the left edge of the first flow row', () => {
+    const scrollport = document.createElement('div')
+    flowRow(scrollport, 'user', 200)
+    flowRow(scrollport, 'assistant', 200)
+
+    expect(flowLeftX(scrollport)).toBe(200)
+  })
+
+  it('returns null while no flow row is rendered', () => {
+    const scrollport = document.createElement('div')
+    expect(flowLeftX(scrollport)).toBeNull()
   })
 })
 
@@ -202,7 +225,7 @@ describe('installRailTracker', () => {
     const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
     rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
     const user = scrollport.querySelector<HTMLElement>('[data-chat-anchor-key]')!
-    rect(user, { top: 40, left: 0, width: 100, height: 20 })
+    rect(user, { top: 40, left: 200, width: 100, height: 20 })
 
     const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
     await frame()
@@ -211,6 +234,8 @@ describe('installRailTracker', () => {
     expect(state.sessionId).toBe('s1')
     expect(state.ready).toBe(true)
     expect(state.left).toBe(16)
+    expect(state.scrollportWidth).toBe(400)
+    expect(state.flowLeft).toBe(200)
     expect(state.activeKey).toBe('u1')
     expect(state.chatView).toBe(true)
 
@@ -265,7 +290,8 @@ describe('installRailTracker', () => {
   it('publishes the idle state while no session is current', () => {
     const tracker = installRailTracker(fakeCtx(undefined) as unknown as ClientContext, true)
     expect(tracker.state.getSnapshot()).toEqual({
-      sessionId: undefined, ready: false, left: 0, top: 0, height: 0, activeKey: null, chatView: false,
+      sessionId: undefined, ready: false, left: 0, top: 0, height: 0, scrollportWidth: 0, flowLeft: null,
+      activeKey: null, chatView: false,
     } satisfies TimelineRailState)
     tracker.dispose()
   })

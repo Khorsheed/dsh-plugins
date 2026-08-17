@@ -25,7 +25,8 @@ const JUMP_OFFSET = 16
 
 /** Idle state published before any session binds or while none is current. */
 const IDLE: TimelineRailState = {
-  sessionId: undefined, ready: false, left: 0, top: 0, height: 0, activeKey: null, chatView: false,
+  sessionId: undefined, ready: false, left: 0, top: 0, height: 0, scrollportWidth: 0, flowLeft: null,
+  activeKey: null, chatView: false,
 }
 
 /**
@@ -34,10 +35,13 @@ const IDLE: TimelineRailState = {
  * conversation tab strip at the top. The tabs render just above the
  * scrollport, but centering reads against the whole window, so the strip
  * height leaves the box either way — otherwise the list sits visibly high.
+ * The scrollport's own width rides along for the width-cap fallback when the
+ * message-flow probe is unanswered.
  * @param scrollport - the official conversation scrollport element.
- * @returns the panel box, or null while the scrollport has no laid-out size.
+ * @returns the panel box plus the scrollport width, or null while the
+ * scrollport has no laid-out size.
  */
-export function measureGeometry(scrollport: HTMLElement): { left: number; top: number; height: number } | null {
+export function measureGeometry(scrollport: HTMLElement): { left: number; top: number; height: number; width: number } | null {
   const rect = scrollport.getBoundingClientRect()
   if (rect.width === 0 && rect.height === 0) return null
   const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
@@ -55,7 +59,22 @@ export function measureGeometry(scrollport: HTMLElement): { left: number; top: n
     left: rect.left + RAIL_LEFT_INSET,
     top: rect.top + topInset,
     height: Math.max(0, rect.height - composerHeight - topInset - RAIL_VERTICAL_PADDING),
+    width: rect.width,
   }
+}
+
+/**
+ * The viewport x of the message flow's left edge: the left of the first
+ * rendered `[data-chat-flow-kind]` row, which sits flush inside the official
+ * centered content column (max 748px, `margin: 0 auto`). Every flow row
+ * shares that edge, so the first one found suffices. The panel's right edge
+ * stays left of it — the panel may only occupy the scrollport's left gutter.
+ * @param scrollport - the official conversation scrollport element.
+ * @returns the flow's left edge, or null while no flow row is rendered.
+ */
+export function flowLeftX(scrollport: HTMLElement): number | null {
+  const row = scrollport.querySelector<HTMLElement>('[data-chat-flow-kind]')
+  return row === null ? null : row.getBoundingClientRect().left
 }
 
 /**
@@ -134,7 +153,9 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
   const same = (left: TimelineRailState, right: TimelineRailState): boolean =>
     left.sessionId === right.sessionId && left.ready === right.ready
     && left.left === right.left && left.top === right.top
-    && left.height === right.height && left.activeKey === right.activeKey
+    && left.height === right.height && left.scrollportWidth === right.scrollportWidth
+    && left.flowLeft === right.flowLeft
+    && left.activeKey === right.activeKey
     && left.chatView === right.chatView
 
   const publish = (next: TimelineRailState): void => {
@@ -150,7 +171,11 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
     publish({
       sessionId: activeSession,
       ready: true,
-      ...geometry,
+      left: geometry.left,
+      top: geometry.top,
+      height: geometry.height,
+      scrollportWidth: geometry.width,
+      flowLeft: flowLeftX(scrollport),
       activeKey: activeRowKey(scrollport, includeSteering),
       chatView: scrollport.querySelector('[data-chat-flow]') !== null,
     })

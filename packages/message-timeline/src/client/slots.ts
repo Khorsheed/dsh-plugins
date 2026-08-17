@@ -28,6 +28,14 @@ export interface TimelineRailState {
   top: number
   /** Rail height in px (scrollport minus the composer seat). */
   height: number
+  /** Scrollport width in px (the degraded width cap when the flow probe fails). */
+  scrollportWidth: number
+  /**
+   * Viewport x of the message flow's left edge (the official centered
+   * content column), or null while the probe is unanswered. The panel's
+   * right edge never crosses it, so the width adapts to the left gutter.
+   */
+  flowLeft: number | null
   /** Key of the user message row nearest the visible top, or null. */
   activeKey: string | null
   /** Whether the chat view (not trajectory or another tab) is rendered. */

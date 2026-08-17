@@ -12,7 +12,13 @@ export interface TimelineConfig {
   enabled: boolean
   /** Count steering messages (user text admitted mid-turn) as rows. */
   includeSteering: boolean
-  /** Timeline panel width in px (long text ellipsizes). */
+  /**
+   * Preferred timeline panel width in px (clamped 120–640; long text
+   * ellipsizes). The panel's right edge never crosses the message flow: the
+   * width is capped by the scrollport's left gutter, so a narrow column
+   * shrinks the panel automatically, and a gutter too small for
+   * {@link PANEL_WIDTH_MIN} hides the panel entirely.
+   */
   panelWidth: number
   /**
    * History pages to prefetch when the rail opens (50 events each); older
@@ -22,8 +28,8 @@ export interface TimelineConfig {
 }
 
 /** Bounds of the deployment-tunable numbers (clamped in resolveConfig). */
-const PANEL_WIDTH_MIN = 120
-const PANEL_WIDTH_MAX = 640
+export const PANEL_WIDTH_MIN = 120
+export const PANEL_WIDTH_MAX = 640
 const INITIAL_PAGES_MIN = 1
 const INITIAL_PAGES_MAX = 20
 

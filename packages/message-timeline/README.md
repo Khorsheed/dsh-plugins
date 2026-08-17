@@ -29,7 +29,7 @@ None.
 | --- | --- | --- |
 | `enabled` | `true` | Master switch; false hides the panel entirely. |
 | `includeSteering` | `true` | Count steering messages (user text admitted mid-turn) as rows. |
-| `panelWidth` | `360` | Timeline panel width in px (clamped 120–640). |
+| `panelWidth` | `360` | Preferred timeline panel width in px (clamped 120–640); the panel's right edge never crosses the message flow, so a narrow column shrinks the panel (long text ellipsizes), and a left gutter too small for 120px hides the panel entirely. |
 | `initialPages` | `5` | History pages (50 events each) prefetched when the panel opens; older pages load on demand when the panel is scrolled to its top (clamped 1–20). |
 
 ## Compatibility

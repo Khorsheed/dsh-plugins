@@ -51,7 +51,8 @@ function sessionSnapshot(overrides: { order?: readonly string[]; hasMore?: boole
 }
 
 const RAIL: TimelineRailState = {
-  sessionId: 's1', ready: true, left: 10, top: 20, height: 300, activeKey: 'k3', chatView: true,
+  sessionId: 's1', ready: true, left: 10, top: 20, height: 300, scrollportWidth: 1200, flowLeft: 400,
+  activeKey: 'k3', chatView: true,
 }
 
 function renderRail(overrides: Partial<TimelineRailProps> = {}) {
@@ -377,6 +378,50 @@ describe('the flat timeline panel', () => {
     fireEvent.scroll(panel())
 
     expect(loadOlder).not.toHaveBeenCalled()
+  })
+})
+
+describe('width policy', () => {
+  function railWith(overrides: Partial<TimelineRailState>): TimelineRailState {
+    return { ...RAIL, ...overrides }
+  }
+
+  function renderWith(overrides: Partial<TimelineRailState>) {
+    return renderRail({ useRail: bindSnapshotSelector(createSnapshotStore(railWith(overrides))) })
+  }
+
+  it('caps the width to the left gutter so the panel never covers the flow', () => {
+    // flowLeft 300, panel left 10: the gutter is 300 - 10 - 8 (gap) = 282.
+    renderWith({ flowLeft: 300 })
+    expect(panel().style.width).toBe('282px')
+  })
+
+  it('keeps the configured width when the gutter is wider than the panel', () => {
+    renderWith({ flowLeft: 1200 })
+    expect(panel().style.width).toBe('320px')
+  })
+
+  it('renders at the minimum width when the gutter exactly fits it', () => {
+    // flowLeft 138, panel left 10: gutter = 138 - 10 - 8 = 120.
+    renderWith({ flowLeft: 138 })
+    expect(panel().style.width).toBe('120px')
+  })
+
+  it('hides entirely when the gutter cannot hold the minimum width', () => {
+    renderWith({ flowLeft: 100 })
+    expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
+  })
+
+  it('degrades to a scrollport fraction while the flow probe is unanswered', () => {
+    // 40% of a 1200px scrollport (480) exceeds the configured 320px.
+    renderWith({ flowLeft: null, scrollportWidth: 1200 })
+    expect(panel().style.width).toBe('320px')
+  })
+
+  it('keeps the degraded floor while the flow probe is unanswered on a narrow scrollport', () => {
+    // 40% of 200px (80) floors at the minimum panel width.
+    renderWith({ flowLeft: null, scrollportWidth: 200 })
+    expect(panel().style.width).toBe('120px')
   })
 })
 
