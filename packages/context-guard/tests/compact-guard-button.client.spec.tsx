@@ -33,12 +33,24 @@ function renderGuard(overrides: {
   thresholdRatio?: number
   maxTokens?: number
   compactNow?: () => Promise<string | null>
+  /** Settings-scope snapshot the `useConfig` hook serves; undefined value falls back to the props. */
+  configValue?: { thresholdRatio: number; maxTokens: number }
 } = {}) {
   const pressure = overrides.pressure
   const useProjection = (key: string) => (key === 'contextPressure' ? pressure : undefined)
   const compactNow = overrides.compactNow ?? vi.fn<() => Promise<string | null>>().mockResolvedValue(null)
+  const useConfig = () => ({
+    status: 'ready' as const,
+    value: overrides.configValue,
+    base: undefined,
+    user: undefined,
+    revision: 1,
+    writable: true,
+    mode: 'host' as const,
+  })
   const props = {
     useProjection,
+    useConfig,
     thresholdRatio: overrides.thresholdRatio ?? 0.8,
     maxTokens: overrides.maxTokens ?? DEFAULT_MAX_TOKENS,
     compactNow,
@@ -97,6 +109,17 @@ describe('CompactGuardButton', () => {
     const button = buttonOf(view.container)
     expect(button).not.toBeNull()
     expect(button?.className).toContain('overdue')
+  })
+
+  it('reads the threshold and budget from the live settings section when served', () => {
+    // The fallback maxTokens (256k) would show the button at 72k+256k = 328k;
+    // the settings section overrides it with 10k, so 72k+10k = 82k stays below
+    // the 80% threshold (320k) and the button must NOT appear.
+    const { view } = renderGuard({
+      pressure: { projectedTokens: 72_000, contextWindow: WINDOW },
+      configValue: { thresholdRatio: 0.8, maxTokens: 10_000 },
+    })
+    expect(buttonOf(view.container)).toBeNull()
   })
 
   it('runs the injected compact verb on click', () => {

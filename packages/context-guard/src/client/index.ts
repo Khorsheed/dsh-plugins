@@ -2,12 +2,15 @@
  * Context-guard plugin, browser half: contributes one
  * `conversation.input.right` entry — a compact button inside the composer's
  * tool row that appears automatically when the next request's budget
- * (`contextPressure.projectedTokens` + the configured output cap) crosses
- * `thresholdRatio` of the routed model's context window. The action rides the
- * official `/compact` command channel (`remote.commands.execute` → host
- * `ctx.commands` → `ctx.compaction.compactNow`), so the plugin needs no host
- * half, no new RPC, and no edits to core packages; composing this plugin out
- * of cordis.yml removes every surface it adds.
+ * (`contextPressure.projectedTokens` + the output budget) crosses
+ * `thresholdRatio` of the routed model's context window — plus one
+ * `settings.plugin.item` card in the plugin configuration tab that edits the
+ * same two numbers live. The action rides the official `/compact` command
+ * channel (`remote.commands.execute` → host `ctx.commands` →
+ * `ctx.compaction.compactNow`); the config rides the official settings
+ * surface (host half registers the namespace, this half binds its
+ * `settingsScope`), so neither needs a new RPC or any edit to core packages;
+ * composing this plugin out of cordis.yml removes every surface it adds.
  *
  * Why this exists: the official auto-compaction fires at `agent/pre-step`
  * when the meter's context estimate crosses 80% of the window — a check that
@@ -28,36 +31,50 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the ctx.settingsScope service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: pulls ui-settings-plugins' SlotMap merge
+// ('settings.plugin.item').
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: pulls the `contextPressure` SessionProjectionMap merge for
 // useProjection.
 import type {} from '@deepseek-ai/dsh-token-meter/client'
+import { CONTEXT_GUARD_NS } from '../namespace.ts'
 import { resolveConfig, type ContextGuardConfig } from './config.ts'
 import { en, NS, zh } from './locales.ts'
-import type { ContextGuardInjected } from './slots.ts'
+import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from './slots.ts'
 import { CompactGuardButton } from './CompactGuardButton.tsx'
+import { ContextGuardSettingsCard } from './SettingsCard.tsx'
 
 export type { ContextGuardConfig } from './config.ts'
 export { resolveConfig } from './config.ts'
 export type { ContextGuardKey } from './locales.ts'
 export { guardReading } from './guard.ts'
 export type { GuardInput, GuardLevel, GuardReading } from './guard.ts'
-export type { CompactGuardButtonProps, ContextGuardInjected } from './slots.ts'
+export type {
+  CompactGuardButtonProps, ContextGuardInjected, ContextGuardSettingsCardInjected, ContextGuardSettingsCardProps,
+} from './slots.ts'
 
 /** Dictionary namespace owned by this plugin. */
 export { NS }
 
-/** Required services: the slot ledger, the command Remote, and the copy. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale']
+/** Required services: the slot ledger, the command Remote, the settings scope, and the copy. */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'settingsScope']
 
 /**
- * Client plugin body: register the composer-tool-row compact button.
+ * Client plugin body: register the composer-tool-row compact button and the
+ * settings card over the shared `context-guard` section.
  * @param ctx - client root context.
- * @param config - entry config; defaults apply when the runner passes none.
+ * @param config - entry config (the section's composition base layer); defaults apply when the runner passes none.
  */
 export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>): void {
-  const options = resolveConfig(config)
+  const fallback = resolveConfig(config)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'context-guard: dictionaries')
-  if (!options.enabled) return
+
+  // One shared live section: the settings card writes it, the button reads
+  // it. While the settings surface is absent, the button falls back to the
+  // composition-time values above.
+  const scope = ctx.settingsScope.bind<ContextGuardConfig>({ namespace: CONTEXT_GUARD_NS })
 
   // The slot is declared by ui-conversation, whose apply order relative to
   // this plugin is unconstrained: register through slots.inject so the entry
@@ -70,8 +87,8 @@ export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>):
     order: -10,
     locale: NS,
     inject: (sessionId: SessionId): ContextGuardInjected => ({
-      thresholdRatio: options.thresholdRatio,
-      maxTokens: options.maxTokens,
+      thresholdRatio: fallback.thresholdRatio,
+      maxTokens: fallback.maxTokens,
       // Failure strings stay English (error-surface policy: not localized).
       compactNow: async () => {
         const result = await ctx.remote.commands.execute(sessionId, '/compact')
@@ -79,6 +96,20 @@ export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>):
         if (result.value === undefined) return 'unknown command: /compact'
         return null
       },
+      hooks: { config: scope },
     }),
   }, CompactGuardButton))
+
+  // The plugin configuration tab keys its cards on the settings namespace, so
+  // the compact-timing card registers under CONTEXT_GUARD_NS and renders
+  // wherever the tab dispatches that key.
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    key: CONTEXT_GUARD_NS,
+    locale: NS,
+    inject: (): ContextGuardSettingsCardInjected => ({
+      scope,
+      hooks: { config: scope },
+    }),
+  }, ContextGuardSettingsCard))
 }

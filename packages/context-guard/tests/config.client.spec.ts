@@ -1,5 +1,7 @@
 /**
- * context-guard entry config: defaults, clamping, and the enabled switch.
+ * context-guard entry config: defaults and clamping. The two fields tune only
+ * when the compact button appears; the official compaction engine reads its
+ * own config and is never touched by these.
  */
 import { describe, expect, it } from 'vitest'
 import { resolveConfig } from '../src/client/config.ts'
@@ -7,7 +9,6 @@ import { resolveConfig } from '../src/client/config.ts'
 describe('resolveConfig', () => {
   it('applies the documented defaults when no config is passed', () => {
     expect(resolveConfig(undefined)).toEqual({
-      enabled: true,
       thresholdRatio: 0.8,
       maxTokens: 256_000,
     })
@@ -15,7 +16,6 @@ describe('resolveConfig', () => {
 
   it('keeps explicit values', () => {
     expect(resolveConfig({ thresholdRatio: 0.6, maxTokens: 16_000 })).toEqual({
-      enabled: true,
       thresholdRatio: 0.6,
       maxTokens: 16_000,
     })
@@ -30,9 +30,5 @@ describe('resolveConfig', () => {
   it('clamps maxTokens to at least 1', () => {
     expect(resolveConfig({ maxTokens: 0 }).maxTokens).toBe(1)
     expect(resolveConfig({ maxTokens: -10 }).maxTokens).toBe(1)
-  })
-
-  it('honors the enabled switch', () => {
-    expect(resolveConfig({ enabled: false }).enabled).toBe(false)
   })
 })

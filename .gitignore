@@ -11,3 +11,6 @@ packages/taskpilot/tsconfig.paths.json
 .playwright-mcp/
 scratch-*
 *.tsbuildinfo
+
+# pnpm v11 local store created by sandboxed installs
+.pnpm-store/

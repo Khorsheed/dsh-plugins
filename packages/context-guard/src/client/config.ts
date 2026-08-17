@@ -4,6 +4,11 @@
  * this module supplies the defaults and clamps, so a composition that does
  * not pass config still renders with the documented values and out-of-range
  * input lands inside the legal bounds.
+ *
+ * Once the settings surface is composed, these values arrive through the
+ * `context-guard` settings section instead: the composition entry becomes the
+ * section's base layer, and the settings card overrides it per field. The
+ * fallback path here only serves deployments without the settings surface.
  */
 
 /**
@@ -16,10 +21,13 @@
  * compact button once that sum crosses `thresholdRatio` of the window —
  * BEFORE the official 80%-of-context auto-compaction fires, while a manual
  * compaction (whose own summarization call must also fit) can still run.
+ *
+ * These two fields tune ONLY when the compact button appears. The official
+ * compaction engine (compaction-basic) reads its own `thresholdRatio` /
+ * `maxTokens` config and never touches this section — real compaction timing
+ * is not affected by these knobs.
  */
 export interface ContextGuardConfig {
-  /** Master switch: false hides the guard entirely. */
-  enabled: boolean
   /**
    * Fraction of the model's context window at which context + maxTokens is
    * considered "about to overflow" (clamped to (0, 1]; default 0.8, matching
@@ -57,7 +65,6 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function resolveConfig(config: Partial<ContextGuardConfig> | undefined): ContextGuardConfig {
   return {
-    enabled: config?.enabled ?? true,
     thresholdRatio: clamp(
       config?.thresholdRatio ?? 0.8,
       THRESHOLD_RATIO_MIN,

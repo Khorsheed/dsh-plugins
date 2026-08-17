@@ -14,25 +14,32 @@ export type { CompactGuardButtonProps } from './slots.ts'
 
 /**
  * Composer-tool-row compact button. Renders nothing until the next request's
- * budget (projected context + configured output cap) crosses the threshold;
- * then it appears automatically — amber while a compaction can still run,
- * red once the budget already exceeds the window. Clicking executes the
- * official `/compact` command through the injected face.
+ * budget (projected context + output budget) crosses the threshold; then it
+ * appears automatically — amber while a compaction can still run, red once
+ * the budget already exceeds the window. The threshold and budget come from
+ * the shared `context-guard` settings section (live), falling back to the
+ * composition-time values while the settings surface is absent. Clicking
+ * executes the official `/compact` command through the injected face.
  */
 export function CompactGuardButton({
   useProjection,
+  useConfig,
   t,
   thresholdRatio,
   maxTokens,
   compactNow,
 }: CompactGuardButtonProps) {
   const pressure = useProjection('contextPressure')
+  const config = useConfig(value => value)
+  const effective = config.status === 'ready' && config.value !== undefined
+    ? config.value
+    : { thresholdRatio, maxTokens }
   const reading = useMemo(() => guardReading({
     projectedTokens: pressure?.projectedTokens ?? pressure?.pressureTokens ?? Number.NaN,
     contextWindow: pressure?.contextWindow,
-    maxTokens,
-    thresholdRatio,
-  }), [pressure, maxTokens, thresholdRatio])
+    maxTokens: effective.maxTokens,
+    thresholdRatio: effective.thresholdRatio,
+  }), [pressure, effective.maxTokens, effective.thresholdRatio])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const aliveRef = useRef(true)
@@ -73,7 +80,7 @@ export function CompactGuardButton({
           ? t('button.overdue.title', { percent: String(reading.percent) })
           : t('button.warning.title', {
             percent: String(reading.percent),
-            maxTokens: String(maxTokens),
+            maxTokens: String(effective.maxTokens),
           })}
         disabled={busy}
         onClick={run}
