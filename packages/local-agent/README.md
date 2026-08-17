@@ -8,7 +8,7 @@ The local code-agent harness family core. Each locally-installed coding-agent CL
 
 **Program queries ride a read-only Remote channel.** A `LocalAgentGateway` (service key `localAgentGateway`, generated `./remote`) exposes roster, per-harness status, and scoped sessions to the browser through Typert Gateway. It emits no session events, so UI polls never leave command nodes in the session log; login and logout stay on the slash-command channel, where a visible command node is the expected feedback for a user-initiated action.
 
-**Browser half ships in this package.** The `./client` export (a `dsh.client` row) is the roster-driven settings section (Settings → 本地 Agent): per-harness auth status, web-login device code, sign-out, and the delegation preset state. It is mounted automatically from this package's `dsh.client` manifest — no separate UI package, because the UI is provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway) and has no independent consumer.
+**Browser half ships in this package.** The `./client` export (a `dsh.client` row) is the roster-driven settings section (Settings → 本地 Agent): per-harness auth status, web-login device code, sign-out, and the delegation preset state. It is mounted automatically from this package's `dsh.client` manifest — no separate UI package, because the UI is provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway) and has no independent consumer. The section also declares a provider-neutral extra-row seat (`local-agent.settings.row`) so harness bundles can contribute their own settings rows (e.g. the dsh enable/disable toggle) without the section knowing them.
 
 ## Install
 

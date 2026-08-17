@@ -22,6 +22,7 @@ import { en, NS, zh, type LocalAgentKey } from './locales.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 export type { LocalAgentSettingsInjected, LocalAgentSettingsProps } from './LocalAgentSettingsSection.tsx'
+export type { LocalAgentSettingsRowOwnerProps } from './slot-contract.ts'
 
 /** The mounted local-agent gateway namespace, read back from the global store. */
 export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGateway']
@@ -73,6 +74,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       order: 20,
       label: () => t('settings.nav'),
       locale: NS,
+      children: { 'local-agent.settings.row': { kind: 'list', scope: 'root' } },
       inject: (): LocalAgentSettingsInjected => ({
         roster: () => gateway.roster().then(result => (result.ok ? result.value : undefined)),
         status: name => gateway.status(name).then(result => (result.ok ? result.value : undefined)),

@@ -6,7 +6,7 @@ The **dsh harness** for the local-agent family: delegate to dsh itself as a loca
 
 ## The DeepSeek toggle
 
-Unlike the other family harnesses, this one mounts **nothing model-visible by default**. A mutually-exclusive switch lives in Settings → 本地 Agent (namespace `local-agent-dsh`, default **off**):
+Unlike the other family harnesses, this one mounts **nothing model-visible by default**. A mutually-exclusive switch row lives inside the 本地 Agent settings page, right below the harness rows (namespace `local-agent-dsh`, default **off**):
 
 - **OFF** (default): the instance keeps exactly the current behavior — delegation runs through the official in-process subagent tools. The model never sees a dsh delegation tool.
 - **ON**: the controller registers the `dsh` harness, the `dsh-cli` delegation provider, and the family delegation tool (`subagent_dsh`). The switch flips the composition live via the settings watcher.
