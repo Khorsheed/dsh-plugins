@@ -48,7 +48,7 @@ export function registerCodex(ctx: Context): void {
 }
 ```
 
-`login` is optional: a harness without one (e.g. dsh itself, which authenticates through the host instance's `DEEPSEEK_API_KEY` rather than a device-code flow) omits it, and `/dsh login` answers that the harness has no login flow instead of spawning a CLI. Such harnesses still report `status` through `isAuthenticated` and list sessions normally.
+`login` is optional: a harness without one (e.g. dsh itself, which authenticates through the host instance's `DEEPSEEK_API_KEY` rather than a device-code flow) omits it, and `/dsh login` answers that the harness has no login flow instead of spawning a CLI. Such harnesses still report `status` through `isAuthenticated` and list sessions normally. The status snapshot carries explicit `loginable`/`logoutable` capability flags derived from the harness definition, so surfaces (the settings section) never offer a login or logout action the harness would answer with an error.
 
 ## Delegation registry (resume carrier)
 

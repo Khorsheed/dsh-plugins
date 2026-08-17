@@ -22,6 +22,18 @@ function kimiStatus(authenticated: boolean): LocalAgentStatus {
   return { name: 'kimi', displayName: 'Kimi Code', authenticated, homeDir: '/h' }
 }
 
+/** A dsh-shaped harness: authenticated through host credentials, no login/logout. */
+function dshStatus(authenticated: boolean): LocalAgentStatus {
+  return {
+    name: 'dsh',
+    displayName: 'dsh',
+    authenticated,
+    homeDir: '/h',
+    loginable: false,
+    logoutable: false,
+  }
+}
+
 function props(
   over: Partial<LocalAgentSettingsProps> = {},
   current: SessionId | null = SESSION,
@@ -73,6 +85,20 @@ describe('LocalAgentSettingsSection', () => {
     render(<LocalAgentSettingsSection {...props()} />)
 
     expect(await screen.findByText(zh['settings.notAuthenticated'])).toBeTruthy()
+  })
+
+  it('offers no login or logout actions for a harness without them (dsh-shaped)', async () => {
+    const status = vi.fn().mockResolvedValue(dshStatus(true))
+    const runCommand = vi.fn()
+    render(<LocalAgentSettingsSection {...props({ status, runCommand })} />)
+
+    // Authenticated through host credentials: no login button, no logout
+    // button — the actions /dsh login|logout would answer with an error.
+    expect(await screen.findByText(zh['settings.authenticated'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['settings.login'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['settings.reauthorize'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['settings.logout'] })).toBeNull()
+    expect(runCommand).not.toHaveBeenCalled()
   })
 
   it('runs the login command and offers the authorization page link', async () => {

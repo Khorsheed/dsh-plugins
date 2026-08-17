@@ -30,6 +30,18 @@ export interface LocalAgentStatus {
   homeDir: string
   /** Subagent provider name, when the harness delegates. */
   delegationProvider?: string
+  /**
+   * Whether the harness declares a device-code login flow (`/<name> login`).
+   * A harness without one authenticates through the host instance (e.g. by
+   * resolving a credential), so surfaces must not offer a login action.
+   */
+  loginable?: boolean
+  /**
+   * Whether the harness declares a sign-out path (`/<name> logout`). A
+   * harness without one has no account to switch, so surfaces must not offer
+   * a logout action.
+   */
+  logoutable?: boolean
 }
 
 /** Roster row: enough of a harness for a client list. */
