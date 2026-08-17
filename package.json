@@ -10,7 +10,9 @@
     "test": "pnpm -r --if-present run test",
     "test:scripts": "vitest run scripts",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts"
+    "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts",
+    "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
+    "hooks:install": "node scripts/setup-hooks.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

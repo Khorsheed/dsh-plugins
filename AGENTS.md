@@ -22,6 +22,16 @@ Several agents work this repo at once. The rules below exist because of real inc
 - Tests run through `pnpm run test` / `pnpm --filter <pkg> test` only. Bare `vitest run` bypasses the source-plane alias preset (`build/vitest.ts`) and fails with misleading errors.
 - `DSH_HARNESS` (default `~/code/deepseek-harness`) seeds dev-time type/test resolution and typert generation. CI: clone the harness first, set the variable, and keep it current — a stale checkout tests yesterday's API surface.
 
+## Repo hygiene (pre-commit gate)
+
+This repo is public — a hygiene check runs on every commit (`.githooks/pre-commit`; install once per clone with `pnpm hooks:install`, which sets `core.hooksPath`). It fails the commit on anything a public repo should not carry, and can be run by hand:
+
+- `pnpm check:hygiene` — the staged set (what this commit would publish);
+- `pnpm check:hygiene --all` — every tracked file (full audit / CI);
+- `pnpm check:hygiene -- <path>…` — explicit paths.
+
+Checked: **absolute local paths** (`/Users/<name>/…`, `/home/<name>/…` other than the `/home/user` fixture placeholder, `C:\Users\…`), **credential-shaped strings** (API keys, private-key headers, GitHub tokens, `key = "long value"` assignments), and **tooling/scratch state** that must stay ignored (`.playwright-mcp/`, `scratch-*`, `*.tsbuildinfo`, `*.log`, `.DS_Store`, `node_modules/`, package `lib/`, `.env`). Sanitize machine-specific fixture content to `/home/user/…` before committing; keep the checker's own spec green via `pnpm test:scripts`.
+
 ## Package conventions
 
 - **Identity**: one package = one name = one loader entry id. The id goes in `cordis.patch.yml` (`name:` value must be quoted — `@` is YAML-reserved), the tsdown `clientBundle(id)`, and `src/invariant.ts`'s `PACKAGE_NAME`. All three move together on any rename.
