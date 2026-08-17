@@ -59,7 +59,7 @@ None; this package neither assembles nor sends a provider request.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — verified against the published tarball: `@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.6` exposes `conversation.input` (`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`, with `'steer'` in `InputSubmitMode`); the rest of the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ✅ full — verified against the published tarball: `@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.7` exposes `conversation.input` (`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`, with `'steer'` in `InputSubmitMode`); the rest of the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations and Deferred Work

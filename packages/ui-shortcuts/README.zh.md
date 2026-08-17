@@ -59,7 +59,7 @@ Escape 暂停是全局的，但让位于先消费该键的一方：已被消费�
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.6` 暴露 `conversation.input`(`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`,`InputSubmitMode` 含 `'steer'`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-client-ui-conversation@0.1.0-rc.7` 暴露 `conversation.input`(`SessionInputResolver.for(scope)` → `SessionInput.submit(mode)`,`InputSubmitMode` 含 `'steer'`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
 - 源码线(deepseek-harness master):✅
 
 ## Known Limitations and Deferred Work

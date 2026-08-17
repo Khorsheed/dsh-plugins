@@ -134,7 +134,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ⚠️ degraded — the composition-preflight restart gate rides the fork's `dsh preflight` command, which the npm release does not ship; on a host without it the guard proceeds with a notice, and every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ⚠️ degraded — the composition-preflight restart gate rides the fork's `dsh preflight` command, which the npm release does not ship; on a host without it the guard proceeds with a notice, and every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations and Deferred Work

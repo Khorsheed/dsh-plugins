@@ -81,7 +81,7 @@ pnpm test          # vitest:轨迹折叠 + 胶囊/抽屉组件测试
 
 ## 兼容性
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery);`@deepseek-ai/dsh-api-remotes` 仅为 `import type`,不产生运行时依赖。
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery);`@deepseek-ai/dsh-api-remotes` 仅为 `import type`,不产生运行时依赖。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制

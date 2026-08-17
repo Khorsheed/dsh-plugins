@@ -31,7 +31,7 @@ This package is a pure host-side addition: it registers one Remote service (moun
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ✅ full — the runtime touches only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery).
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations and Deferred Work

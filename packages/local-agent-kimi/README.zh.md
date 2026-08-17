@@ -99,7 +99,7 @@ Kimi 子会话是委派 Session 工作区内一个全新的一次性 `kimi -p` �
 
 ## 兼容性
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.6`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制与后续工作
