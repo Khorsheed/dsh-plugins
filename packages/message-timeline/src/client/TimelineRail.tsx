@@ -25,7 +25,7 @@ function nodeContent(node: { data: unknown }): readonly ContentBlock[] {
 }
 
 /** Breathing gap between the panel's right edge and the message flow (px). */
-const PANEL_GAP = 8
+const PANEL_GAP = 16
 /** Degraded width cap (fraction of the scrollport) while the flow probe is unanswered. */
 const DEGRADED_WIDTH_RATIO = 0.4
 
