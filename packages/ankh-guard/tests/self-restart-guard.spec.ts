@@ -10,7 +10,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ import {
   acknowledgeRestartRecord, pendingRestartRecord, readInterruptedSnapshot, restartContextText,
   writeInterruptedSnapshot,
 } from '../src/restart-context.ts'
-import { preflightInternals, resolvePreflightBin, runCli, type CliIo } from '../src/cli.ts'
+import { preflightInternals, resolveHarnessRoot, resolvePreflightBin, resolveRunnerCommand, runCli, type CliIo } from '../src/cli.ts'
 import {
   clearCredential, emptyState, lastGoodBootRevision, loadState, recordCredential, setCheckpoint,
   verifyCredential, type GuardState,
@@ -190,6 +190,13 @@ function stubPreflightBin(resolveBin: () => string | undefined): void {
   const original = preflightInternals.resolveBin
   preflightInternals.resolveBin = resolveBin
   cleanups.push(() => { preflightInternals.resolveBin = original })
+}
+
+/** Point the standalone-runner resolution at a fixed answer, restored after the test. */
+function stubPreflightRunner(resolveRunner: (harnessRoot: string) => string | undefined): void {
+  const original = preflightInternals.resolveRunner
+  preflightInternals.resolveRunner = resolveRunner
+  cleanups.push(() => { preflightInternals.resolveRunner = original })
 }
 
 describe('CLI', () => {
@@ -442,6 +449,33 @@ describe('composition preflight gate', () => {
     expect(resolvePreflightBin(foreignCli(tmpDir('guard-layout-')))).toBeUndefined()
   })
 
+  it('resolveHarnessRoot prefers the repo target, then DSH_HARNESS, then the conventional default', () => {
+    expect(resolveHarnessRoot('/repo')).toBe('/repo')
+    expect(resolveHarnessRoot(undefined, { DSH_HARNESS: '/env-harness' })).toBe('/env-harness')
+    expect(resolveHarnessRoot('', { DSH_HARNESS: '  ' })).toBe(join(homedir(), 'code/deepseek-harness'))
+  })
+
+  it('resolveRunnerCommand maps a harness with tsx, and degrades without it', () => {
+    // No tsx in the harness: unresolvable.
+    const noTsx = tmpDir('guard-harness-')
+    expect(resolveRunnerCommand(noTsx)).toBeUndefined()
+    // tsx present: the command forms, naming the harness tsx and this
+    // checkout's runner script (the runner always sits beside the CLI).
+    const withTsx = tmpDir('guard-harness-')
+    mkdirSync(join(withTsx, 'node_modules/tsx/dist/esm'), { recursive: true })
+    writeFileSync(join(withTsx, 'node_modules/tsx/dist/esm/index.mjs'), '')
+    const command = resolveRunnerCommand(withTsx)
+    expect(command).toBeDefined()
+    expect(command).toContain(withTsx)
+    expect(command).toContain('preflight-runner')
+    expect(command).toContain('tsx')
+    // The production seam resolves the same command for the live harness.
+    const live = preflightInternals.resolveRunner(resolveHarnessRoot(undefined, {}))
+    if (live !== undefined) {
+      expect(live).toContain('preflight-runner')
+    }
+  })
+
   it('preflight maps the subprocess verdict onto exit codes', async () => {
     stubPreflight('true')
     const pass = io()
@@ -490,6 +524,7 @@ describe('composition preflight gate', () => {
   it('an empty DSH_PREFLIGHT_COMMAND falls back to the resolved app bin', async () => {
     stubPreflight('')
     stubPreflightBin(() => 'true')
+    stubPreflightRunner(() => undefined)
     const out = io()
     expect(await runCli(['preflight', '--profile', "it's"], out.io)).toBe(0)
   })
@@ -497,6 +532,7 @@ describe('composition preflight gate', () => {
   it('preflight exits 3 with a clear message when no sibling dsh app exists', async () => {
     stubPreflight(undefined)
     stubPreflightBin(() => undefined)
+    stubPreflightRunner(() => undefined)
     const out = io()
     expect(await runCli(['preflight'], out.io)).toBe(3)
     expect(out.err.join('')).toContain('preflight unavailable outside the dsh app layout')
@@ -561,6 +597,7 @@ describe('composition preflight gate', () => {
     await runCli(['record', 'build', '--state-dir', join(home, 'state'), '--repo', repo], io().io)
     stubPreflight(undefined)
     stubPreflightBin(() => undefined)
+    stubPreflightRunner(() => undefined)
     const out = io()
     expect(await runCli(
       ['schedule-exit', '--port', '3099', '--delay-ms', '60000', '--state-dir', join(home, 'state'), '--repo', repo],

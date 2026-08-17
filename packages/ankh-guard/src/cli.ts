@@ -21,6 +21,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
+import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveRepoDir, resolveStateDir } from './defaults.ts'
@@ -256,8 +257,42 @@ export function resolvePreflightBin(cliFile: string = fileURLToPath(import.meta.
 }
 
 /** Replaceable seams for tests; production keeps the defaults. */
-export const preflightInternals: { resolveBin: () => string | undefined } = {
+export const preflightInternals: {
+  resolveBin: () => string | undefined
+  resolveRunner: (harnessRoot: string) => string | undefined
+} = {
   resolveBin: () => resolvePreflightBin(),
+  resolveRunner: (harnessRoot: string) => resolveRunnerCommand(harnessRoot),
+}
+
+/**
+ * The harness checkout the live instance boots from (and the preflight
+ * runner resolves the official published packages from): the `--repo` target
+ * when given, else `DSH_HARNESS`, else the conventional default.
+ */
+export function resolveHarnessRoot(optionRepoDir: string | undefined, env: Record<string, string | undefined> = process.env): string {
+  if (optionRepoDir !== undefined && optionRepoDir !== '') return optionRepoDir
+  const fromEnv = env.DSH_HARNESS
+  return fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : join(homedir(), 'code/deepseek-harness')
+}
+
+/**
+ * The standalone preflight runner command (see preflight-runner.ts): executed
+ * with the harness's own tsx so its dynamic imports resolve against the live
+ * checkout — no fork patch, no pinned dependency, follows host updates.
+ * Undefined when the harness tsx or the runner script is missing.
+ */
+export function resolveRunnerCommand(harnessRoot: string): string | undefined {
+  const tsx = join(harnessRoot, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs')
+  if (!existsSync(tsx)) return undefined
+  const here = dirname(fileURLToPath(import.meta.url))
+  const runner = existsSync(join(here, 'preflight-runner.ts'))
+    ? join(here, 'preflight-runner.ts')
+    : existsSync(join(here, 'preflight-runner.js'))
+      ? join(here, 'preflight-runner.js')
+      : undefined
+  if (runner === undefined) return undefined
+  return `node --import ${shellQuote(tsx)} ${shellQuote(runner)}`
 }
 
 /**
@@ -281,27 +316,43 @@ function shellQuote(word: string): string {
 }
 
 /**
- * Run the dsh app's preflight mode as a subprocess and classify its exit.
- * `DSH_PREFLIGHT_COMMAND` replaces the resolved bin wholesale — a shell
- * command run instead (test hook; also the escape hatch for exotic layouts).
+ * Run the composition preflight as a subprocess and classify its exit.
+ * Resolution order: `DSH_PREFLIGHT_COMMAND` override (test hook / exotic
+ * layouts) → the standalone runner (`preflight-runner.ts`, resolved from the
+ * live harness — no fork patch needed) → the fork's `dsh preflight` command
+ * when the sibling app layout is present.
  * @param profile - the dsh profile to dry-run.
  * @param timeoutMs - bound on the whole subprocess run; a timeout kills it.
+ * @param harnessRoot - harness checkout for the runner (default: DSH_HARNESS / ~/code/deepseek-harness).
  * @returns the classified outcome.
  */
-export async function runPreflightCheck(profile: string, timeoutMs: number): Promise<PreflightOutcome> {
+export async function runPreflightCheck(profile: string, timeoutMs: number, harnessRoot?: string): Promise<PreflightOutcome> {
   const override = process.env.DSH_PREFLIGHT_COMMAND
   let command: string
+  let usingRunner = false
   if (override !== undefined && override !== '') {
     command = override
   } else {
-    const bin = preflightInternals.resolveBin()
-    if (bin === undefined) return { kind: 'unavailable', output: '' }
-    command = `${bin} preflight --profile ${shellQuote(profile)}`
+    const root = harnessRoot ?? resolveHarnessRoot(undefined)
+    const runner = preflightInternals.resolveRunner(root)
+    if (runner !== undefined) {
+      command = `${runner} --profile ${shellQuote(profile)}`
+      usingRunner = true
+    } else {
+      const bin = preflightInternals.resolveBin()
+      if (bin === undefined) return { kind: 'unavailable', output: '' }
+      command = `${bin} preflight --profile ${shellQuote(profile)}`
+    }
   }
+  const harnessForRunner = harnessRoot ?? resolveHarnessRoot(undefined)
   return await new Promise((resolvePromise) => {
     let output = ''
     let timedOut = false
-    const child = spawn(command, { shell: true })
+    // The runner resolves the live harness from DSH_HARNESS; pin it so the
+    // subprocess agrees with the gate even when the caller's env differs.
+    const child = usingRunner
+      ? spawn(command, { shell: true, env: { ...process.env, DSH_HARNESS: harnessForRunner } })
+      : spawn(command, { shell: true })
     const append = (chunk: Buffer): void => {
       if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
     }
@@ -320,11 +371,11 @@ export async function runPreflightCheck(profile: string, timeoutMs: number): Pro
       } else if (code === 0) {
         resolvePromise({ kind: 'pass', output })
       } else if (code === 1) {
-        // A host CLI that predates the preflight subcommand also exits 1, with
-        // commander's unknown-command error. That host simply has no gate
-        // contract — degrade to unavailable instead of refusing every restart
-        // on a composition verdict nobody produced.
-        if (/unknown command/.test(output)) {
+        // The runner's exit 1 is always a real composition verdict. Only a
+        // host CLI that predates the preflight subcommand exits 1 with
+        // commander's unknown-command error — that host has no gate contract,
+        // degrade to unavailable instead of refusing every restart.
+        if (!usingRunner && /unknown command/.test(output)) {
           resolvePromise({ kind: 'unavailable', output })
         } else {
           resolvePromise({ kind: 'composition-failed', output })
@@ -362,10 +413,11 @@ function summarizeOutput(output: string): string {
  * @param profile - the profile to dry-run.
  * @param timeoutMs - bound on the preflight subprocess.
  * @param io - output sinks.
+ * @param harnessRoot - harness checkout for the standalone runner.
  * @returns whether the verb may proceed.
  */
-async function preflightGate(verb: string, profile: string, timeoutMs: number, io: CliIo): Promise<boolean> {
-  const outcome = await runPreflightCheck(profile, timeoutMs)
+async function preflightGate(verb: string, profile: string, timeoutMs: number, io: CliIo, harnessRoot?: string): Promise<boolean> {
+  const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot)
   switch (outcome.kind) {
     case 'pass':
       io.stdout(`composition preflight PASS (profile ${JSON.stringify(profile)})\n`)
@@ -533,7 +585,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return ok ? 0 : 1
     }
     case 'preflight': {
-      const outcome = await runPreflightCheck(resolveProfileName(options), options.timeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS)
+      const outcome = await runPreflightCheck(resolveProfileName(options), options.timeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, resolveHarnessRoot(options.repoDir))
       if (outcome.kind === 'unavailable') {
         io.stderr('preflight unavailable outside the dsh app layout\n')
         return 3
@@ -556,7 +608,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 1
       }
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
-      if (!(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io))) {
+      if (!(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
         return 1
       }
       // Graceful self-restart: wait out the delay so the scheduling agent's
@@ -685,7 +737,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 1
       }
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
-      if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io))) {
+      if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
         return 1
       }
       // Intentional-restart marker: the supervising watchdog runs the canary
