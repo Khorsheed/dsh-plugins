@@ -162,6 +162,48 @@ describe('codex-cli-provider run settlement', () => {
     expect(endData?.reason?.error?.code).toBe('UNKNOWN')
     await done
   })
+
+  it('settles error when the CLI exits 0 with an empty stream (silent failure, not success)', async () => {
+    const done = Promise.resolve({ exitCode: 0, signal: null })
+    const child = Session.create(SessionId('child-empty-codex'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const errors: string[] = []
+    const handle: SubprocessHandle = {
+      pid: 4243,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from([]),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startCodexCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      {
+        cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000,
+        spawn: () => handle, childSession: child, ctx,
+        onError: (error: Error) => { errors.push(error.message) },
+      },
+    )
+    const result = await run.result
+    // A zero exit with no parsed answer is an ERROR, never an empty success.
+    expect(result.stopReason).toBe('error')
+    expect(result.output).toEqual([])
+    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
+    expect(endData?.reason?.kind).toBe('error')
+    // The format-drift warning fired exactly once for the whole run, and the
+    // empty-answer throw separately flattened through onError.
+    expect(errors.filter(message => message.includes('parsed no codex events'))).toHaveLength(1)
+    expect(errors.filter(message => message.includes('produced no answer'))).toHaveLength(1)
+    await done
+  })
 })
 
 describe('codex-cli-provider child session record', () => {

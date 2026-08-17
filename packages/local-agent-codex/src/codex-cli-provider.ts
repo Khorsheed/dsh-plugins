@@ -472,7 +472,29 @@ export function startCodexCliRun(
           exitCode = outcome.exitCode
           throw new Error(`subagent-codex: codex exec exited with code ${String(outcome.exitCode)} via ${via}`)
         }
-        return { output: collectOutput(), stopReason: 'completed' as const }
+        // A zero exit with no parsed answer is a silent failure, not a
+        // success: the NDJSON stream yielded no agent_message (internal
+        // error, truncated stdout, or a schema drift — the exec --json event
+        // field names are not contract-backed). Throwing here settles 'error'
+        // through the seam instead of reporting an empty 'completed' (which
+        // the upstream settleRunResult does not re-check). The abort path is
+        // untouched: it settles 'aborted' through abortBranch before this
+        // branch is ever reached.
+        const parsed = parseCodexJsonStream(output)
+        if (parsed.lines.length === 0) {
+          // Format-drift early warning: a normally-exited stream with no
+          // item.completed at all means the parser and the CLI disagreed on
+          // the event shape. Warn once per run (not per line) without
+          // changing the settle semantics — the empty output above still
+          // reports 'error' either way.
+          spec.onError?.(new Error('subagent-codex: exited 0 but parsed no codex events — check the codex --json event schema'), 'error')
+          throw new Error('subagent-codex: codex exec exited 0 but produced no answer')
+        }
+        const answer = collectOutput()
+        if (answer.length === 0) {
+          throw new Error('subagent-codex: codex exec exited 0 but produced no answer')
+        }
+        return { output: answer, stopReason: 'completed' as const }
       }),
       processFailure,
       abortBranch,

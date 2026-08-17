@@ -523,7 +523,17 @@ export function startClaudeCliRun(
           exitCode = outcome.exitCode
           throw new Error(`subagent-claude: claude -p exited with code ${String(outcome.exitCode)} via ${via}`)
         }
-        return { output: collectOutput(), stopReason: 'completed' as const }
+        // A zero exit with no parsed answer is a silent failure, not a
+        // success: the stream-json yielded no reply text. Throwing here
+        // settles 'error' through the seam instead of reporting an empty
+        // 'completed' (which the upstream settleRunResult does not re-check).
+        // The abort path is untouched: it settles 'aborted' through
+        // abortBranch before this branch is ever reached.
+        const output = collectOutput()
+        if (output.length === 0) {
+          throw new Error('subagent-claude: claude -p exited 0 but produced no answer')
+        }
+        return { output, stopReason: 'completed' as const }
       }),
       processFailure,
       abortBranch,
