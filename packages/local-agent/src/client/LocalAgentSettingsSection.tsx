@@ -41,9 +41,13 @@ export interface LocalAgentSettingsInjected {
 export type LocalAgentSettingsProps =
   PropsRuntime<'settings.section'> & PropsLocale<typeof NS> & LocalAgentSettingsInjected
 
-/** Per-harness view state: the last status and the login prompt. */
+/** Per-harness view state: the last status, its capability flags, and the login prompt. */
 interface HarnessView {
   status: 'checking' | 'authenticated' | 'anonymous' | 'unavailable'
+  /** Whether the harness declares a login flow; absent keeps the current behavior. */
+  loginable?: boolean
+  /** Whether the harness declares a logout path; absent keeps the current behavior. */
+  logoutable?: boolean
   loginText?: string
   loginUrl?: string
 }
@@ -91,10 +95,15 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
     void status(id).then((probe) => {
       const statusKind = probe === undefined ? 'unavailable'
         : probe.authenticated ? 'authenticated' : 'anonymous'
+      const capabilities = probe === undefined
+        ? {}
+        : { loginable: probe.loginable ?? true, logoutable: probe.logoutable ?? true }
       setViews((prev) => {
         const current = prev[id]
         // A completed login drops the stale device prompt.
-        return { ...prev, [id]: statusKind === 'authenticated' ? { status: statusKind } : { ...current, status: statusKind } }
+        return { ...prev, [id]: statusKind === 'authenticated'
+          ? { status: statusKind, ...capabilities }
+          : { ...current, status: statusKind, ...capabilities } }
       })
       if (statusKind === 'authenticated') {
         setPendingLogins((prev) => {
@@ -221,6 +230,11 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
           const authenticated = status === 'authenticated'
           const pending = !registeredIds.has(harness.id)
           const loginPending = pendingLogins[harness.id] !== undefined
+          // A harness without a login/logout flow (dsh authenticates through
+          // the host credentials) must not offer the actions its command
+          // family would answer with an error.
+          const loginable = view?.loginable ?? true
+          const logoutable = view?.logoutable ?? true
           return (
             <li key={harness.id} className={pending ? `${css.rowCard} ${css.rowPending}` : css.rowCard}>
               <div className={css.rowHead}>
@@ -241,7 +255,7 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
                   {!pending && status === 'unavailable' && t('error')}
                 </span>
                 <span className={css.rowActions}>
-                  {authenticated && (
+                  {authenticated && logoutable && (
                     <button
                       type="button"
                       className={css.logoutButton}
@@ -250,16 +264,18 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
                       {t('settings.logout')}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className={css.loginButton}
-                    disabled={pending || loginPending}
-                    onClick={() => { startLogin(harness.id) }}
-                  >
-                    {pending
-                      ? t('settings.unsupported')
-                      : authenticated ? t('settings.reauthorize') : t('settings.login')}
-                  </button>
+                  {loginable && (
+                    <button
+                      type="button"
+                      className={css.loginButton}
+                      disabled={pending || loginPending}
+                      onClick={() => { startLogin(harness.id) }}
+                    >
+                      {pending
+                        ? t('settings.unsupported')
+                        : authenticated ? t('settings.reauthorize') : t('settings.login')}
+                    </button>
+                  )}
                 </span>
               </div>
               {view?.loginText !== undefined && (

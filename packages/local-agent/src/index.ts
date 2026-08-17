@@ -341,6 +341,11 @@ export class LocalAgentRegistry {
       displayName: harness.displayName,
       authenticated,
       homeDir,
+      // Explicit capability flags so surfaces never offer a login/logout
+      // action the harness would answer with an error (the dsh harness has
+      // neither).
+      loginable: harness.login !== undefined,
+      logoutable: harness.logout !== undefined,
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
     }
   }

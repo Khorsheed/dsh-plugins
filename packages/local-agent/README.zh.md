@@ -48,7 +48,7 @@ export function registerCodex(ctx: Context): void {
 }
 ```
 
-`login` 是可选的：没有登录流程的 harness（例如 dsh 自身——它通过宿主实例的 `DEEPSEEK_API_KEY` 认证，而非 device-code 流程）省略它，`/dsh login` 会回答"该 harness 无登录流程"而不是 spawn 一个 CLI。这类 harness 仍通过 `isAuthenticated` 报告 `status`，并正常列出会话。
+`login` 是可选的：没有登录流程的 harness（例如 dsh 自身——它通过宿主实例的 `DEEPSEEK_API_KEY` 认证，而非 device-code 流程）省略它，`/dsh login` 会回答"该 harness 无登录流程"而不是 spawn 一个 CLI。这类 harness 仍通过 `isAuthenticated` 报告 `status`，并正常列出会话。status 快照携带显式的 `loginable`/`logoutable` 能力标志（由 harness 定义推导），设置界面等表面因此不会提供会得到报错回复的登录/退出操作。
 
 ## 委派 registry（resume 载体）
 

@@ -157,6 +157,21 @@ describe('LocalAgentRegistry', () => {
     expectSuccess(execution, 'authenticated: no')
   })
 
+  it('reports the harness login/logout capabilities in the status', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('status-cap-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    // A harness with login and logout (kimi-shaped) reports both.
+    registry.register(harness({ logout: async () => {} }))
+    let status = await registry.statusOf('fake')
+    expect(status).toMatchObject({ loginable: true, logoutable: true })
+    // A harness without either (dsh-shaped) reports neither, so surfaces
+    // never offer the actions its command family would answer with an error.
+    registry.register(harness({ name: 'dshlike', login: undefined, logout: undefined }))
+    status = await registry.statusOf('dshlike')
+    expect(status).toMatchObject({ loginable: false, logoutable: false })
+    void ctx.commands.execute(agent, '/fake status', new AbortController().signal)
+  })
+
   it('rejects an unknown subcommand', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('bogus-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
