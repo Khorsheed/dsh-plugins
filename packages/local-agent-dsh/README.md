@@ -11,7 +11,7 @@ Unlike the other family harnesses, this one mounts **nothing model-visible by de
 - **OFF** (default): the instance keeps exactly the current behavior — delegation runs through the official in-process subagent tools. The model never sees a dsh delegation tool.
 - **ON**: the controller registers the `dsh` harness, the `dsh-cli` delegation provider, and the family delegation tool (`subagent_dsh`). The switch flips the composition live via the settings watcher.
 
-Because the official in-process subagent tools are base-bundle-owned, they stay outside the switch; OFF leaves only them, ON adds the dsh tool — the model never sees both at once.
+The official in-process subagent tools are base-bundle-owned and stay outside the switch: OFF leaves only them, ON adds `subagent_dsh` alongside them — two coexisting delegation shapes with different semantics (in-process continuable vs. separate CLI process), which the family tool description ('separate process, its own scoped home') makes distinguishable.
 
 ## How delegation works
 

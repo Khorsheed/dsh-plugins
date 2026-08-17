@@ -2,7 +2,7 @@
 
 ## 背景
 
-`@khorsheed/dsh-local-agent` 家族（kimi / codex / claude-code）缺本引擎自身的成员：把 dsh 自己作为本地 CLI 委派出去。dsh 成员与其他三个同形（scoped home、会话记录、委派 provider、resume），同时复用父实例已有的 `DEEPSEEK_API_KEY`——不需要新的登录流程。设置区（Settings → 本地 Agent 旁新增 DeepSeek 页）提供互斥开关：开 → 注册 dsh provider 与委派工具；关（默认）→ 委派只走官方 in-process subagent，模型绝不会同时看到两个重叠的委派工具。
+`@khorsheed/dsh-local-agent` 家族（kimi / codex / claude-code）缺本引擎自身的成员：把 dsh 自己作为本地 CLI 委派出去。dsh 成员与其他三个同形（scoped home、会话记录、委派 provider、resume），同时复用父实例已有的 `DEEPSEEK_API_KEY`——不需要新的登录流程。设置区（Settings → 本地 Agent 旁新增 DeepSeek 页）提供互斥开关：**关（默认）→ 只注册官方 in-process subagent，dsh 的 harness/provider/工具一律不挂载**；**开 → 额外注册 `subagent_dsh`（外部进程形态）与官方 in-process 工具并存**。互斥的是"dsh 注册与否"，不是"工具数量"——开时模型同时可见官方 subagent（in-process、continuable）与 subagent_dsh（独立 CLI 进程），两者语义不同，家族工具描述已明确"separate process, its own scoped home"以便模型区分。
 
 ## 采用方案
 
