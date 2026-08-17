@@ -6,24 +6,6 @@
 
 本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
-## 截图
-
-生产实例实拍(全部 13 个 bundle 已装,中文界面):
-
-| 能力 | 截图 |
-| --- | --- |
-| 会话总览(时间轴、标题编辑、消息操作、任务胶囊同屏) | <img src="docs/screenshots/01-chat-overview.png" width="480"> |
-| message-timeline · 历史消息时间轴(悬停展开) | <img src="docs/screenshots/02-message-timeline.png" width="480"> |
-| session-title-edit · 标题内联编辑 | <img src="docs/screenshots/03-session-title-edit.png" width="480"> |
-| message-tools · 用户消息操作(复制 / 编辑 / 撤回) | <img src="docs/screenshots/04-message-actions.png" width="480"> |
-| ui-file-preview · 「产物」tab 文件列表 | <img src="docs/screenshots/05-file-preview-tab.png" width="480"> |
-| ui-file-preview · 文件内容预览 | <img src="docs/screenshots/06-file-preview.png" width="480"> |
-| ui-shortcuts · 快捷键设置(键帽) | <img src="docs/screenshots/07-ui-shortcuts.png" width="480"> |
-| local-agent · 设置 → 本地 Agent(登录状态) | <img src="docs/screenshots/08-local-agent.png" width="480"> |
-| taskpilot · 后台任务胶囊(任务运行中) | <img src="docs/screenshots/09-taskpilot.png" width="480"> |
-| whalesong · 侧栏鲸鱼(任务运行时喷水) | <img src="docs/screenshots/10-whalesong.png" width="280"> |
-| whalesong · 任务运行中的 favicon | <img src="docs/screenshots/whalesong-favicon.svg" width="64"> |
-
 ## 全家桶速览
 
 | 包名(npm) | 面 | 行 id | 一句话特性 |
@@ -44,6 +26,47 @@
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
 
 版本为仓库内当前发布线,以 npm 实际发布为准。
+
+## 能力盘点
+
+一插件一行能力;截图列先用生产实例实拍占位,可随时替换为你的截图(同一插件的多行能力用空单元格归组)。
+
+| 插件 | 能力 | 截图 |
+| --- | --- | --- |
+| **对话控制** |||
+| `dsh-client-message-tools`<br>消息编辑 / 撤回 / 恢复 | 编辑:原位替换,模型在原位置读到新文本(带模型 chip,支持编辑链) | <img src="docs/screenshots/04-message-actions.png" width="360"> |
+| | 撤回:surface 替换,目标消息及其后内容离开模型上下文,投影为「已撤回 N 条消息」分隔线,原文回填草稿 | |
+| | 恢复:沿权威边界(`sourceEventSeqs`)尾部重放,渲染「已恢复」组 | |
+| `dsh-message-timeline`<br>历史消息时间轴 | 会话左缘悬浮时间轴:一行一条已加载用户消息,静止只显刻度,悬停展开、点击跳转、跟随阅读位置 | <img src="docs/screenshots/02-message-timeline.png" width="360"> |
+| `dsh-client-session-title-edit`<br>标题内联编辑 | 标题旁铅笔 → 内联输入,Enter 提交 / Esc 取消,走官方 `session.rename`,钉住用户来源标题 | <img src="docs/screenshots/03-session-title-edit.png" width="360"> |
+| **文件预览** |||
+| `dsh-file-preview`(宿主服务) | 只读 Remote 服务:`list` 折叠会话写入/编辑的文件(含嵌套 Code Mode)与每次改动的 diff,`read` 提供当前内容(图片走浏览器 URL) | — |
+| `dsh-client-ui-file-preview`(界面) | 「产物」tab:文件列表按最近活动倒序 | <img src="docs/screenshots/05-file-preview-tab.png" width="360"> |
+| | 文件内容预览:选中即看,改动记录逐条步进 diff,内容搜索高亮跳转 | <img src="docs/screenshots/06-file-preview.png" width="360"> |
+| | 回合变更卡片 + 文件抽屉:每个已完成回合末尾「N 个文件已修改」汇总;抽屉仅内容预览,支持「在文件夹中打开 / 在 IDE 中打开」 | — |
+| **本地编码 Agent 家族** |||
+| `dsh-local-agent`(家族核心) | 作用域 home:每个 harness 独立 `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`,不碰个人配置与凭据 | — |
+| | `/<harness> login / sessions / status / logout` 命令族(device-code / 浏览器 OAuth 登录) | — |
+| | 设置 → 本地 Agent 分区:roster 驱动的认证状态、网页登录、退出登录 | <img src="docs/screenshots/08-local-agent.png" width="360"> |
+| `dsh-local-agent-kimi` | Kimi Code harness:`kimi -p` 委派、`session_index.jsonl` 记账、resume 续聊 | — |
+| `dsh-local-agent-codex` | Codex harness:`codex exec` 委派、rollout 记账、resume 续聊 | — |
+| `dsh-local-agent-claude-code` | Claude Code harness:`claude -p --output-format json` 委派、项目文件记录、resume 续聊 | — |
+| `dsh-local-agent-tool-subagent` | 家族委派工具:官方 `subagent_*` schema + 可选 `resume` 续聊(句柄不进 prompt,按 parent+provider 校验) | — |
+| **任务与子 Agent 监控** |||
+| `dsh-taskpilot` | 后台任务胶囊:运行中在前、每秒计时、停止按钮 | <img src="docs/screenshots/09-taskpilot.png" width="360"> |
+| | 子 Agent 胶囊:完整谱系、运行时长与 token、中断按钮(深层授权直接父) | — |
+| | 详情抽屉:命令/类型/状态/耗时 + 从会话日志回放的执行轨迹 | — |
+| **状态氛围** |||
+| `dsh-whalesong` | favicon 水线气泡:任务运行时标签页图标动画 | <img src="docs/screenshots/whalesong-favicon.svg" width="48"> |
+| | 侧栏水滴:任务运行时侧栏鲸鱼喷水(尊重 `prefers-reduced-motion`) | <img src="docs/screenshots/10-whalesong.png" width="200"> |
+| | 提示音:完成三连滑音 / 阻塞上扬(WebAudio 合成) | — |
+| **效率工具** |||
+| `dsh-ui-shortcuts` | 三个固定动作 + 用户自选键位:暂停(Esc)、插队发送(Ctrl/Cmd+S)、新建会话(Ctrl/Cmd+O) | <img src="docs/screenshots/07-ui-shortcuts.png" width="360"> |
+| | `ctx.shortcuts` 注册表:任何插件可注册自己的键盘动作,免费获得设置项、重绑、持久化 | — |
+| **运维守护** |||
+| `dsh-ankh-guard` | 绿色凭证门禁:build+test 全绿才允许重启(凭证绑定 git HEAD,10 分钟窗口) | — |
+| | preflight 组合闸门:重启前子进程深干跑整棵插件树,起不来绝不停实例 | — |
+| | watchdog 无感重启:回滚到已知良好 + `guard-backup-*` 锚点 + 崩溃页 | — |
 
 ## 互相冲突吗?
 
