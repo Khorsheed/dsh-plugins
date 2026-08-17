@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-17-context-guard-compaction-button.md
-.agents/notes/implemented/feature/2026-08-17-context-guard-compaction-button.md: 04ed2a575d8493e64d4751a0f09829b09be0e681
-.agents/notes/implemented/feature/2026-08-17-context-guard-compaction-button.zh.md: 4d83d6fa7230f2b83034cc5ac0c53015e212aad1
+.agents/notes/implemented/feature/2026-08-17-context-guard-compaction-button.md: ff6793a770423a5520bd11550a31d0a01a4e47e7
+.agents/notes/implemented/feature/2026-08-17-context-guard-compaction-button.zh.md: 0d8fac008fe3915119d2970532f291d4c55bd479

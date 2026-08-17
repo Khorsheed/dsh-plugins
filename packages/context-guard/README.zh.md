@@ -17,7 +17,7 @@ dsh Web GUI 的主动式上下文窗口压缩守卫。浏览器半边贡献一�
 
 - **位置**：`conversation.input.right`（输入框工具栏、发送按钮之前）。在越过阈值前不渲染任何内容，越过后自动出现。
 - **数据**：官方 `contextPressure` 会话投影——`projectedTokens`（provider 上报的 prompt 样本随其后表面的有符号变动前移，因此压缩立即可见；旧日志回退到裸样本）与 `contextWindow`。
-- **公式**：`(projectedTokens + maxTokens) / contextWindow >= thresholdRatio` → 琥珀色按钮；`>= 1` → 红色按钮（预算已超出窗口：主请求从此被拒，但手动 `/compact` 仍然放得下——它的摘要调用只预留小输出上限——现在就点）。
+- **公式**：`(projectedTokens + maxTokens) / contextWindow >= thresholdRatio` → 琥珀色按钮，恒为警示色（一旦预算已超出窗口，提示文案随之切换：主请求从此被拒，但手动 `/compact` 仍然放得下——它的摘要调用只预留小输出上限——现在就点）。
 - **动作**：官方 `/compact` 命令通道（`remote.commands.execute` → 宿主 `ctx.commands` → `ctx.compaction.compactNow`），因此空闲门控、压缩锁与流程节点展示都由宿主负责。
 
 ## 配置

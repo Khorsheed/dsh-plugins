@@ -100,15 +100,16 @@ describe('CompactGuardButton', () => {
     expect(buttonOf(view.container)).not.toBeNull()
   })
 
-  it('turns red once the budget already exceeds the window', () => {
+  it('stays amber even when the budget already exceeds the window, with the overdue copy', () => {
     const { view } = renderGuard({
       pressure: { projectedTokens: 390_000, contextWindow: WINDOW },
       maxTokens: 20_000,
     })
-    // 390k + 20k = 410k > 400k — overdue.
+    // 390k + 20k = 410k > 400k — overdue budget, but the tint stays warning.
     const button = buttonOf(view.container)
     expect(button).not.toBeNull()
-    expect(button?.className).toContain('overdue')
+    expect(button?.className).toContain('warning')
+    expect(button?.getAttribute('aria-label')).toContain('exceeds the window')
   })
 
   it('reads the threshold and budget from the live settings section when served', () => {

@@ -47,17 +47,6 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
-/* Already over the window: the request will be rejected; compaction may no
-   longer run, so the state reads as an error, not a warning. */
-.overdue {
-  background: var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-label-primary-foreground);
-}
-
-.overdue:hover:not(:disabled) {
-  background: var(--dsw-alias-state-error-secondary);
-}
-
 .error {
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;

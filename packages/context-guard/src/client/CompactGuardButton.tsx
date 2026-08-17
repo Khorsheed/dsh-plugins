@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IconWarningOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls ui-conversation's SlotMap merge (the input.right seat and
 // its InputZone owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -70,26 +70,28 @@ export function CompactGuardButton({
 
   return (
     <span className={css.wrap}>
-      <button
-        type="button"
-        className={overdue ? `${css.button} ${css.overdue}` : `${css.button} ${css.warning}`}
-        aria-label={overdue
-          ? t('button.overdue.aria', { percent: String(reading.percent) })
-          : t('button.warning.aria', { percent: String(reading.percent) })}
-        title={overdue
+      <Tooltip
+        label={overdue
           ? t('button.overdue.title', { percent: String(reading.percent) })
-          : t('button.warning.title', {
-            percent: String(reading.percent),
-            maxTokens: String(effective.maxTokens),
-          })}
-        disabled={busy}
-        onClick={run}
+          : t('button.warning.title', { percent: String(reading.percent) })}
+        side="top"
+        delayMs={200}
       >
-        <span className={css.icon} aria-hidden>
-          <IconWarningOutline16 size={14} />
-        </span>
-        {t('button.label')}
-      </button>
+        <button
+          type="button"
+          className={`${css.button} ${css.warning}`}
+          aria-label={overdue
+            ? t('button.overdue.aria', { percent: String(reading.percent) })
+            : t('button.warning.aria', { percent: String(reading.percent) })}
+          disabled={busy}
+          onClick={run}
+        >
+          <span className={css.icon} aria-hidden>
+            <IconWarningOutline16 size={14} />
+          </span>
+          {t('button.label')}
+        </button>
+      </Tooltip>
       {/* Failure copy stays English (error-surface policy: not localized). */}
       {error !== null && (
         <span className={css.error} role="status" title={error}>

@@ -17,7 +17,7 @@ The guard surfaces the danger while the numbers are still inside the window: it 
 
 - **Seat**: `conversation.input.right` (the composer's tool row, before the send button). Renders nothing until the threshold is crossed, then appears automatically.
 - **Data**: the official `contextPressure` session projection — `projectedTokens` (the provider-reported prompt sample carried forward over the surface's signed movement since, so a compaction shows immediately; the bare sample is the fallback for logs whose projection predates that field) and `contextWindow`.
-- **Formula**: `(projectedTokens + maxTokens) / contextWindow >= thresholdRatio` → amber button; `>= 1` → red button (the budget already exceeds the window: the main request is rejected from here on, but a manual `/compact` still fits because its summarization call reserves only a small output cap — click it now).
+- **Formula**: `(projectedTokens + maxTokens) / contextWindow >= thresholdRatio` → amber button, always in the warning tint (the tooltip copy switches once the budget already exceeds the window: the main request is rejected from here on, but a manual `/compact` still fits because its summarization call reserves only a small output cap — click it now).
 - **Action**: the official `/compact` command channel (`remote.commands.execute` → host `ctx.commands` → `ctx.compaction.compactNow`), so the host owns idle-gating, the compaction lock, and the flow-node presentation.
 
 ## Configuration

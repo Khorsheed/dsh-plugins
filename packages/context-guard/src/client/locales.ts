@@ -4,9 +4,9 @@
 export const zh = {
   'button.label': '压缩',
   'button.warning.aria': '上下文即将占满（{percent}%，含输出预算）—— 点击压缩历史以释放空间',
-  'button.warning.title': '上下文 {percent}%（含 {maxTokens} 输出预算）已达阈值 —— 点击执行 /compact 压缩历史',
+  'button.warning.title': '上下文即将占满（{percent}%），建议及时压缩',
   'button.overdue.aria': '上下文 + 输出预算已超出窗口（{percent}%）—— 主请求会被拒绝，点击执行 /compact',
-  'button.overdue.title': '上下文 + 输出预算已达 {percent}%，请求会被拒绝 —— 点击执行 /compact',
+  'button.overdue.title': '上下文已超出窗口（{percent}%），建议及时压缩',
   'button.error': '压缩未执行',
   'settings.title': '压缩按钮时机',
   'settings.description': '调整压缩按钮何时出现；只影响按钮时机，不影响官方自动压缩',
@@ -41,9 +41,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'button.label': 'compact',
   'button.warning.aria': 'Context nearly full ({percent}%, output budget included) — click to compact history and free space',
-  'button.warning.title': 'Context {percent}% (incl. {maxTokens} output budget) crossed the threshold — click to run /compact on history',
+  'button.warning.title': 'Context nearly full ({percent}%) — consider compacting soon',
   'button.overdue.aria': 'Context + output budget exceeds the window ({percent}%) — the main request will be rejected; click to run /compact',
-  'button.overdue.title': 'Context + output budget is at {percent}%, requests will be rejected — click to run /compact',
+  'button.overdue.title': 'Context already exceeds the window ({percent}%) — consider compacting soon',
   'button.error': 'Compaction was not executed',
   'settings.title': 'Compact button timing',
   'settings.description': 'Tune when the compact button appears; only the button timing, never the official auto-compaction',
