@@ -38,5 +38,5 @@ Status: implemented
 
 ## Verification
 
-- 五个文件 36 个测试全绿：守卫判定数学（阈值阶梯、overdue 上限截断、未知输入退化，外加两条钉——256k 预留下的告警先于 provider 墙出现，overdue 恰好从墙处开始）、配置默认值与钳制（默认 `maxTokens` 256000）、中英键集一致、插槽注册与 fiber 卸载移除（HMR 安全）、注入面对 stub 命令 Remote 的三条 `/compact` 结果路径，以及按钮组件（出现条件、warning/overdue 样式、点击 → 注入动词、压缩被拒的错误状态）。
+- 五个文件 37 个测试全绿：守卫判定数学（阈值阶梯、overdue 上限截断、未知输入退化，外加几条钉——256k 预留下的告警先于 provider 墙出现，overdue 以**配置的**窗口为准——1,000,000 catalog 窗口下 544k 告警 / 744k overdue，都早于真实的 1,048,576 provider 墙）、配置默认值与钳制（默认 `maxTokens` 256000）、中英键集一致、插槽注册与 fiber 卸载移除（HMR 安全）、注入面对 stub 命令 Remote 的三条 `/compact` 结果路径，以及按钮组件（出现条件、warning/overdue 样式、点击 → 注入动词、压缩被拒的错误状态）。
 - `pnpm --filter @khorsheed/dsh-context-guard build`（tsc + tsdown）与 `typecheck` 全绿；产出的 `lib/client.js` 带客户端模块加载器要求的 `window.__ModuleLoader__.load` 注册头。

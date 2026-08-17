@@ -26,7 +26,7 @@ The guard surfaces the danger while the numbers are still inside the window: it 
 |---|---|---|
 | `enabled` | `true` | Master switch; false hides the guard entirely. |
 | `thresholdRatio` | `0.8` | Window fraction at which context + maxTokens shows the button (clamped to (0, 1]). |
-| `maxTokens` | `256000` | Output budget the next request reserves, in tokens (clamped to >= 1). Default matches the deepseek adapter's output cap — the reservation the main request makes; set to your model's configured max output if it differs. A larger cap makes the guard appear earlier, exactly where a real request starts being rejected. |
+| `maxTokens` | `256000` | Output budget the next request reserves, in tokens (clamped to >= 1). Default matches the deepseek adapter's output cap — the reservation the main request makes; set to your model's configured max output if it differs. A larger cap makes the guard appear earlier, exactly where a real request starts being rejected. The guard's precision hinges on how close the catalog's `contextWindow` is to the provider's real window: a smaller configured value is conservative (it warns earlier), while a larger one can let the red overdue state appear after the real rejection wall — prefer smaller over larger. |
 
 Example composition:
 

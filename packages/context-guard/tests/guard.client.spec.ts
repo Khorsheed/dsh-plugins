@@ -94,14 +94,32 @@ describe('guardReading', () => {
     expect(reading?.level).toBe('warning')
   })
 
-  it('turns overdue exactly at the provider wall (projected = window − maxTokens)', () => {
-    // The wall: the main request is rejected once projected + 256,000
-    // reaches the window. The guard must have been warning for the whole
-    // stretch below it, and turn red only at the wall itself.
+  it('turns overdue when the budget exceeds the CONFIGURED window', () => {
+    // overdue 以适配器配置的窗口为准；配置值小于 provider 真实窗口时会提前变红，这是安全方向。
     const reading = guardReading({
       projectedTokens: 1_048_576 - 256_000, contextWindow: 1_048_576, maxTokens: 256_000, thresholdRatio: 0.8,
     })
     expect(reading?.level).toBe('overdue')
     expect(reading?.percent).toBe(100)
+  })
+
+  it('warns at 544k and turns overdue at 744k against the configured window, ahead of the real provider wall', () => {
+    // Real deployment has two distinct windows: the adapter catalog configures
+    // contextWindow = 1,000,000 (the value the guard reads from the
+    // contextPressure projection), while the provider's real window is
+    // 1,048,576 (the number in the CONTEXT_WINDOW_EXCEEDED error). The guard
+    // keys off the CONFIGURED window, so with the 256k reservation the warning
+    // lights at 544,000 (0.8 × 1,000,000 − 256,000) and overdue at 744,000
+    // (1,000,000 − 256,000) — both before the real wall at 792,576. That lead
+    // is the safe direction: the guard never waits for the provider's number.
+    const warning = guardReading({
+      projectedTokens: 544_000, contextWindow: 1_000_000, maxTokens: 256_000, thresholdRatio: 0.8,
+    })
+    expect(warning?.level).toBe('warning')
+    const overdue = guardReading({
+      projectedTokens: 744_000, contextWindow: 1_000_000, maxTokens: 256_000, thresholdRatio: 0.8,
+    })
+    expect(overdue?.level).toBe('overdue')
+    expect(overdue?.percent).toBe(100)
   })
 })
