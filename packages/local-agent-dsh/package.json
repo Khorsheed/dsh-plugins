@@ -1,0 +1,95 @@
+{
+  "name": "@khorsheed/dsh-local-agent-dsh",
+  "description": "dsh harness for dsh-local-agent: delegate to dsh itself as a local CLI — scoped DSH_HOME under the shared homes root, one-shot sub-dsh runs visible in the 子代理 surface, caller-supplied session ids, resume across rounds, DeepSeek toggle in settings",
+  "version": "0.1.0-rc.6",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "directory": "packages/local-agent-dsh"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./records": {
+      "types": "./lib/types/records.d.ts",
+      "default": "./lib/records.js"
+    },
+    "./provision": {
+      "types": "./lib/types/provision.d.ts",
+      "default": "./lib/provision.js"
+    },
+    "./dsh-cli-provider": {
+      "types": "./lib/types/dsh-cli-provider.d.ts",
+      "default": "./lib/dsh-cli-provider.js"
+    },
+    "./src/*": "./src/*",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/records.js",
+    "lib/provision.js",
+    "lib/dsh-cli-provider.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
+    "@khorsheed/dsh-local-agent-tool-subagent": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-subagent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-loader-smoke": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-subagent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@types/node": "^26.2.0",
+    "vitest": "^4.1.10"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  }
+}

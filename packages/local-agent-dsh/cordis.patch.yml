@@ -1,0 +1,17 @@
+# The dsh-local-agent-dsh bundle patch: the dsh harness controller. Unlike the
+# other family bundles (kimi/codex/claude-code), this harness mounts nothing
+# model-visible unless the user flips the DeepSeek switch in Settings → 本地
+# Agent: the controller registers the `local-agent-dsh` settings namespace
+# (default off) and, while it is ON, registers the `dsh` harness, the `dsh-cli`
+# delegation provider, and the family delegation tool for it. While OFF — the
+# default — the instance keeps exactly the current behavior (official
+# in-process subagent tools only), so the model never sees both the dsh
+# delegation tool and the official subagent tool at once.
+#
+# The sub-dsh half lives in the sibling bundle
+# @khorsheed/dsh-local-agent-dsh-headless (its own profile under the scoped
+# home), which this package resolves and provisions.
+
+- insert:
+    - id: local-agent-dsh
+      name: '@khorsheed/dsh-local-agent-dsh'
