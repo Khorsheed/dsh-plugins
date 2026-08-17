@@ -26,7 +26,11 @@ export interface TimelineRailState {
   left: number
   /** Viewport y of the rail's top edge (below the session header). */
   top: number
-  /** Rail height in px (scrollport minus the composer seat). */
+  /**
+   * Rail height in px: the full column below the header, composer band
+   * included — the centering box counts the chat input box, so a short list
+   * centers over chat plus input instead of floating above the conversation.
+   */
   height: number
   /** Scrollport width in px (the degraded width cap when the flow probe fails). */
   scrollportWidth: number

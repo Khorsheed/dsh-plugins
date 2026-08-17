@@ -31,10 +31,15 @@ const IDLE: TimelineRailState = {
 
 /**
  * Measure the panel's viewport box from one scrollport: its rect inset by the
- * panel padding, minus the sticky composer seat at the bottom and the
- * conversation tab strip at the top. The tabs render just above the
- * scrollport, but centering reads against the whole window, so the strip
- * height leaves the box either way — otherwise the list sits visibly high.
+ * panel padding and the conversation tab strip at the top. The tabs render
+ * just above the scrollport, but centering reads against the whole window, so
+ * the strip height leaves the box either way — otherwise the list sits
+ * visibly high. The sticky composer seat is deliberately NOT subtracted: the
+ * centering box spans the full column below the header, so a short list
+ * centers over the chat plus the input band instead of floating above the
+ * conversation (the box is transparent and pointer-transparent at rest, so
+ * covering the input band changes nothing until the rows light up, and a
+ * short centered list stays inside the chat area anyway).
  * The scrollport's own width rides along for the width-cap fallback when the
  * message-flow probe is unanswered.
  * @param scrollport - the official conversation scrollport element.
@@ -44,8 +49,6 @@ const IDLE: TimelineRailState = {
 export function measureGeometry(scrollport: HTMLElement): { left: number; top: number; height: number; width: number } | null {
   const rect = scrollport.getBoundingClientRect()
   if (rect.width === 0 && rect.height === 0) return null
-  const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-  const composerHeight = composer?.getBoundingClientRect().height ?? 0
   let topInset = RAIL_VERTICAL_PADDING
   for (const tabs of scrollport.ownerDocument.querySelectorAll<HTMLElement>('[role="tablist"]')) {
     const tabsRect = tabs.getBoundingClientRect()
@@ -58,7 +61,7 @@ export function measureGeometry(scrollport: HTMLElement): { left: number; top: n
   return {
     left: rect.left + RAIL_LEFT_INSET,
     top: rect.top + topInset,
-    height: Math.max(0, rect.height - composerHeight - topInset - RAIL_VERTICAL_PADDING),
+    height: Math.max(0, rect.height - topInset - RAIL_VERTICAL_PADDING),
     width: rect.width,
   }
 }
