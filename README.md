@@ -37,8 +37,8 @@ Versions are the current workspace lines; the npm registry may have newer ones.
 
 There are **two exclusivity rules** worth remembering, and they are the only real conflicts in the whole pack:
 
-1. **`ui-shortcuts` is exclusive with the official `@deepseek-ai/dsh-client-ui-shortcuts`.** Both use the loader entry id `ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. The default web bundle does not include the official one, so this normally never bites.
-2. **`ankh-guard` must not be added as a profile bundle on a host that already mounts the `ankh-guard` row** (some official images do): the duplicate row id fails boot. Check `dsh.profile.bundles` first; if the row is already there, skip the add (or disable the duplicate instead of adding).
+1. **`ui-shortcuts` is exclusive with the official `@deepseek-ai/dsh-client-ui-shortcuts`.** Both use the loader entry id `ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. In practice the official one cannot even be installed: it was a fork-grown package, **never published to npm, and removed from the harness when it migrated into this repo** — the rule only guards against an old fork tarball lying around. The default web bundle never mounted a shortcuts row at all (not enabled, not disabled — simply absent).
+2. **`ankh-guard` must not be added as a profile bundle on a host that already mounts the `ankh-guard` row** (pre-migration fork images did, via the base bundle): the duplicate row id fails boot. Check `dsh.profile.bundles` first; if the row is already there, skip the add (or disable the duplicate instead of adding).
 
 And one namespace rule: exactly one composition may mount the `filePreview` Remote (ui-file-preview does); a double-mount logs loud but the rest of the plugin still registers.
 
@@ -202,7 +202,7 @@ Config (`enabled`, `volume`) hot-applies within one poll round-trip, no refresh.
 
 Three fixed actions, your keys: **pause the running turn** (`Esc` — same as the composer Stop), **steer-send the draft** (`Ctrl/Cmd+S`), **new session** (`Ctrl/Cmd+O`). Rebind in Settings → 通用 → 快捷键; preferences persist in `$DSH_HOME/settings.yaml`. The package also exposes a `ctx.shortcuts` registry so any plugin can contribute its own actions and get the settings row, rebinding, persistence, and conflict-free dispatch for free. All actions run through public services only.
 
-> ⚠️ **Exclusive with the official shortcuts package.** This package shares the loader entry id `ui-shortcuts` with `@deepseek-ai/dsh-client-ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one.
+> ⚠️ **Exclusive with the official shortcuts package.** This package shares the loader entry id `ui-shortcuts` with `@deepseek-ai/dsh-client-ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. The official package was fork-grown, never published to npm, and removed from the harness when this package migrated in, so there is nothing to install and ours alone is always safe. Note the roles are reversed from what you might expect: **this package *provides* the `ctx.shortcuts` registry** that any plugin can register actions into — the official one had no contribution seam at all.
 
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts`; key bindings remain in `settings.yaml` (delete the `ui-shortcuts` section to clear them).
 

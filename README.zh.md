@@ -37,8 +37,8 @@
 
 全包仅有的两条**排他规则**(也是仅有的真实冲突点):
 
-1. **`ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 互斥。** 两者 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。默认 web bundle 不含官方那个,所以通常不会踩到。
-2. **宿主已挂 `ankh-guard` 行的镜像不要再以 profile bundle 添加本包。** 重复行 id 会导致启动失败。先查 `dsh.profile.bundles`;已有该行就跳过 add(或禁用重复行)。
+1. **`ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 互斥。** 两者 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。实际上官方那个**根本无法安装**:它是 fork 自生包,**从未发布到 npm**,迁移进本仓库时已从 harness 删除——这条规则只防着旧 fork tarball 流落在外面。默认 web bundle 从来没有挂过任何 shortcuts 行(不是不启用,是压根不存在)。
+2. **宿主已挂 `ankh-guard` 行的镜像不要再以 profile bundle 添加本包。**(迁移前的 fork 镜像会经 base bundle 挂该行;当前 master 已移除。)重复行 id 会导致启动失败。先查 `dsh.profile.bundles`;已有该行就跳过 add(或禁用重复行)。
 
 另有一条命名空间规则:`filePreview` Remote 只能由一个组合挂载(ui-file-preview 负责);重复挂载会 log loud,但插件其余部分照常注册。
 
@@ -202,7 +202,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -c
 
 三个固定动作、键位用户自选:**暂停当前任务**(默认 `Esc`,与聊天框停止按钮同操作)、**插队发送草稿**(默认 `Ctrl/Cmd+S`)、**新建会话**(默认 `Ctrl/Cmd+O`)。设置 → 通用 → 快捷键中重绑/解绑/恢复默认;偏好持久化在 `$DSH_HOME/settings.yaml`。附带 `ctx.shortcuts` **动作注册表**:任何插件可以注册自己的键盘动作,免费获得设置项、重绑、持久化、无冲突分发。全部走公开服务(`conversation.cancel` / `conversation.input.submit('steer')` / `workspaces.startSession()`),对模型零影响。
 
-> ⚠️ **与官方快捷键包互斥。** 本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。
+> ⚠️ **与官方快捷键包互斥。** 本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。官方包是 fork 自生、从未发布到 npm,迁移时已从 harness 删除——实际无法安装,本包单独装永远安全。注意角色是反的:**本包*提供* `ctx.shortcuts` 注册表**(任何插件都可注册自己的动作),官方包没有任何供第三方注册的接缝。
 
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts`;键位保留在 `settings.yaml`(删除其中 `ui-shortcuts` 小节即清)。
 
