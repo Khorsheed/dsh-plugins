@@ -1,8 +1,8 @@
-# `@deepseek-ai/dsh-local-agent-kimi`
+# `@khorsheed/dsh-local-agent-kimi`
 
 [English](README.md) | 中文
 
-[local-agent 家族](../../local-agent/local-agent/README.md) 的 Kimi Code harness。bundle patch 注册 `kimi` harness（`KIMI_CODE_HOME` 作用域目录、`kimi login` device-code 流程、`session_index.jsonl` 记录），并把 `subagent_kimi` 工具行挂到 **profile 根**——`kimi-cli` 一次性 provider 在 harness 作用域目录下 spawn `kimi -p`，任意 agent preset 都能委派、无需逐 preset 变体。家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@deepseek-ai/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——单独安装本包也能挂载 core。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
+[local-agent 家族](../../local-agent/local-agent/README.md) 的 Kimi Code harness。bundle patch 注册 `kimi` harness（`KIMI_CODE_HOME` 作用域目录、`kimi login` device-code 流程、`session_index.jsonl` 记录），并把 `subagent_kimi` 工具行挂到 **profile 根**——`kimi-cli` 一次性 provider 在 harness 作用域目录下 spawn `kimi -p`，任意 agent preset 都能委派、无需逐 preset 变体。家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——单独安装本包也能挂载 core。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
 
 ## 前置依赖
 
@@ -11,12 +11,12 @@
 
 ## 安装
 
-家族 core 是独立 bundle（`@deepseek-ai/dsh-local-agent`）；与 harness bundle 一起安装，`local-agent` 行才会挂载（harness bundle 把 core 声明为依赖，但 `dsh plugin add` 只把直接依赖调和进 profile 的 bundles 层）：
+家族 core 是独立 bundle（`@khorsheed/dsh-local-agent`）；与 harness bundle 一起安装，`local-agent` 行才会挂载（harness bundle 把 core 声明为依赖，但 `dsh plugin add` 只把直接依赖调和进 profile 的 bundles 层）：
 
 ```sh
 # 1. Install the family core and this bundle into a profile.
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent-kimi
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 
 # 2. Restart the profile. The first start provisions the scoped home and
 #    removes any legacy `<base>-kimi` preset variants from earlier versions;
@@ -29,7 +29,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-local-agent-kimi
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-kimi
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
 移除 bundle 会注销 harness、其 `/<name>` 命令族、工具行与 UI 行。一个用户自有的目录会刻意保留：作用域目录（`$DSH_HOME/local-agent/kimi`）保住会话与凭据，重装后无需重新登录。删除它即可清除全部痕迹。

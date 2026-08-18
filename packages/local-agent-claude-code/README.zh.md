@@ -1,10 +1,10 @@
-# `@deepseek-ai/dsh-local-agent-claude-code`
+# `@khorsheed/dsh-local-agent-claude-code`
 
 [English](README.md) | 中文
 
 [local-agent 家族](../../local-agent/local-agent/README.md) 的 Claude Code harness。bundle patch 注册 `claude-code` harness（`CLAUDE_CONFIG_DIR` 作用域目录、`claude auth login` 浏览器流程、project 文件会话记录），并把 `subagent_claude_code_local` 工具行挂到 **profile 根**——`claude-local` 一次性 provider 在 harness 作用域目录下 spawn `claude -p --output-format json`，任意 agent preset 都能委派、无需逐 preset 变体。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
 
-> 家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@deepseek-ai/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——但 `dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，所以要与本包一起显式安装 core（两条命令）。claude 包刻意不重复插入该行——重复会挂载两次 core。
+> 家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——但 `dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，所以要与本包一起显式安装 core（两条命令）。claude 包刻意不重复插入该行——重复会挂载两次 core。
 
 ## 前置依赖
 
@@ -15,8 +15,8 @@
 
 ```sh
 # 1. Install the family core and this bundle into a profile.
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent-claude-code
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
 
 # 2. Restart the profile. The first start provisions the scoped home; the
 #    subagent_claude_code_local tool mounts at the profile root, so every
@@ -28,7 +28,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-local-agent-claude-code
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-claude-code
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
 ```
 
 移除 bundle 会注销 harness、其 `/<name>` 命令族、工具行与 UI 行。一个用户自有的目录会刻意保留：作用域目录（`$DSH_HOME/local-agent/claude-code`）保住配置，重装后无需重新登录。删除它即可清除全部痕迹。

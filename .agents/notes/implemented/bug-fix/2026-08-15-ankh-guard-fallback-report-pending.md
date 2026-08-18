@@ -10,7 +10,7 @@ When the initiating session did not resume within `fallbackGraceMs` (default 60s
 
 ## Decision
 
-Two-phase settlement for restart records in `packages/guard/ankh-guard`:
+Two-phase settlement for restart records in `packages/ankh-guard`:
 
 - `RestartRecord` gains `fallbackReportedAt`. Both fallback paths (grace-timer expiry and initiator-absent-from-persistence) deliver the full report but write only `fallbackReportedAt`; `pendingRestartRecord` still returns the record because settlement means `reportedAt` only.
 - On `agent/created`, a record with `fallbackReportedAt` and no `reportedAt` is settled by nobody but the initiator: its resume receives a short notice (`restartFallbackNoticeText` — restart time, outcome, and the fact that the full report went to another session), then `reportedAt` is written. The notice path is synchronous on the freshly read record, so a second restart (new `exitAt`, no `fallbackReportedAt`) takes the normal path and never receives a stale notice.
@@ -19,7 +19,7 @@ Two-phase settlement for restart records in `packages/guard/ankh-guard`:
 
 ## Verification
 
-`tests/self-restart-guard.spec.ts` (41 tests): the new cases cover fallback-does-not-settle, initiator-resume notice and settlement, no delivery to a third root in between, no stale notice after a record replacement, and the new grace default end-to-end (schema value plus fake-timer behavior). The four pre-existing fallback tests now assert pending-with-`fallbackReportedAt` instead of settlement. `tsc -b packages/guard/ankh-guard`, `oxlint`, and the translation-pairing and note-format gates pass.
+`tests/self-restart-guard.spec.ts` (41 tests): the new cases cover fallback-does-not-settle, initiator-resume notice and settlement, no delivery to a third root in between, no stale notice after a record replacement, and the new grace default end-to-end (schema value plus fake-timer behavior). The four pre-existing fallback tests now assert pending-with-`fallbackReportedAt` instead of settlement. `tsc -b packages/ankh-guard`, `oxlint`, and the translation-pairing and note-format gates pass.
 
 ## Alternatives considered
 

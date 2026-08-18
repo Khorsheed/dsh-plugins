@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/local-agent-kimi/README.md
-packages/local-agent-kimi/README.md: 9269ae012e4cad29518d4104b1cc6d81cd49e912
-packages/local-agent-kimi/README.zh.md: 3326dd4bf65349f1e1ba25b49cf49d03ec2f3c6d
+packages/local-agent-kimi/README.md: f25c9ed4158e742592d6fc7f324a5309403344f1
+packages/local-agent-kimi/README.zh.md: 330cf94a46e7516a915863353b7cddca46ad2a72

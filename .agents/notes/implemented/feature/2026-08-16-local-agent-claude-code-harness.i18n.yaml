@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-local-agent-claude-code-harness.md
-.agents/notes/implemented/feature/2026-08-16-local-agent-claude-code-harness.md: 3fade4c5a3aaba004355359475976db8f1b48e95
-.agents/notes/implemented/feature/2026-08-16-local-agent-claude-code-harness.zh.md: 388b83da15dc3265244d79dc715350e6b1de06a7
+.agents/notes/implemented/feature/2026-08-16-local-agent-claude-code-harness.md: 670e68fffcb78140f21eece735a1780ccb50e702
+.agents/notes/implemented/feature/2026-08-16-local-agent-claude-code-harness.zh.md: 4c6e89db1b5d4a606434b4eba98eb1b07998b9ba

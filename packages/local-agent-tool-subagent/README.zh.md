@@ -22,7 +22,7 @@ subagent 请求 descriptor schema（`subagent/descriptor`）是严格的：one-s
 
 ## 安装
 
-不单独安装：各 harness bundle（`@khorsheed/dsh-local-agent-kimi`、`-codex`、`-claude-code`）把本包声明为依赖，并在各自的 patch 里挂载工具行。安装任一 harness bundle 即带上本工具行；家族核心（`@deepseek-ai/dsh-local-agent`）也须一并安装（见该 bundle 的 README）。
+不单独安装：各 harness bundle（`@khorsheed/dsh-local-agent-kimi`、`-codex`、`-claude-code`）把本包声明为依赖，并在各自的 patch 里挂载工具行。安装任一 harness bundle 即带上本工具行；家族核心（`@khorsheed/dsh-local-agent`）也须一并安装（见该 bundle 的 README）。
 
 ## 卸载
 

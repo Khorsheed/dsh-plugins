@@ -15,7 +15,7 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-local-agent-claude-code`（`packages/bundle/local-agent-claude-code/`）是第三个 harness bundle，与 kimi/codex 同 seam 形状：
+`@khorsheed/dsh-local-agent-claude-code`（`packages/local-agent-claude-code/`）是第三个 harness bundle，与 kimi/codex 同 seam 形状：
 
 - **Harness** `claude-code`：`CLAUDE_CONFIG_DIR` 作用域目录，`login: { command: 'claude', args: ['auth', 'login'], capture: 'stdout' }`（浏览器 OAuth URL 呈现在会话中、CLI 后台轮询），records 来自 project 文件，`isAuthenticated` = 作用域 `.claude.json` 带 `oauthAccount`（轻量文件检查，绝不 spawn CLI），`logout` 删除作用域配置文件（macOS keychain 条目留给 `claude auth logout`，下次登录重写）。
 - **Provider** `claude-local`：作用域目录下的一次性 `claude -p [--dangerously-skip-permissions] --output-format json "<task>"`。JSON 结果行携带 `result`（最终回答）、`usage`（Anthropic 计数：`input_tokens` 未缓存、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`——各桶独立映射，无需减法）与 `session_id`。`--output-format json` 严格优于解析纯 stdout：一行确定性输出同时给出回答与记账。

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-file-preview
+# @khorsheed/dsh-file-preview
 
 [English](README.md) | 中文
 
@@ -8,7 +8,7 @@
 
 ```yaml
 - id: file-preview
-  name: '@deepseek-ai/dsh-file-preview'
+  name: '@khorsheed/dsh-file-preview'
   config:
     maxReadBytes: 524288
     maxFiles: 500
@@ -28,7 +28,7 @@
 
 ## 分享
 
-本包是纯宿主侧增量：它只注册一个 Remote 服务（由浏览器半经官方的 `ctx.remote.$mount` 通道挂载），不向其他包写入任何东西。浏览器半（`@deepseek-ai/dsh-client-ui-file-preview`）同样纯增量，只依赖官方扩展点。两个包都可独立分发，零改动组合进原版 dsh 核心。
+本包是纯宿主侧增量：它只注册一个 Remote 服务（由浏览器半经官方的 `ctx.remote.$mount` 通道挂载），不向其他包写入任何东西。浏览器半（`@khorsheed/dsh-client-ui-file-preview`）同样纯增量，只依赖官方扩展点。两个包都可独立分发，零改动组合进原版 dsh 核心。
 
 ## 兼容性
 

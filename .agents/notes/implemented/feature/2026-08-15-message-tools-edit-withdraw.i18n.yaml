@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-message-tools-edit-withdraw.md
-.agents/notes/implemented/feature/2026-08-15-message-tools-edit-withdraw.md: 5f1a658b372585ac53a75dca3de1317fe9146a3b
-.agents/notes/implemented/feature/2026-08-15-message-tools-edit-withdraw.zh.md: 4989cf6e46d1086ecb78d207f25020dff615452f
+.agents/notes/implemented/feature/2026-08-15-message-tools-edit-withdraw.md: c935e0879ee456ce10358048bc91e490dfc2521f
+.agents/notes/implemented/feature/2026-08-15-message-tools-edit-withdraw.zh.md: bae30ad0b1f2812e77bedd3d06afd2f37d346d56

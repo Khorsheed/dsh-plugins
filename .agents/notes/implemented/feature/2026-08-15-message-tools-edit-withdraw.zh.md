@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-插件落在 `packages/client/message-tools`(`@deepseek-ai/dsh-client-message-tools`)，单包双 face(host + client，沿用 api/remotes 的分离 tsconfig 模式）。
+插件落在 `packages/message-tools`(`@khorsheed/dsh-client-message-tools`)，单包双 face(host + client，沿用 api/remotes 的分离 tsconfig 模式）。
 
 - **撤回即 surface replacement。** host 的 `MessageToolsService extends TypertRemoteService` 暴露 `@Remote('withdraw')`：校验目标（仍在 live surface 上的 append-surface 用户消息）后追加一条 `user/message`,`surfaceOp: { op: 'replace', start, end }` 覆盖目标及整个 surface 尾部，`sourceEventSeqs` 引用每个被遮蔽节点，`source: { kind: 'plugin', plugin: 'message-tools' }`，随后 flush。模型侧通过与 compaction 相同的机制被完全隐藏。
 - **不引入新的 session 事件类型。** `Session.append` 自行赋 envelope，无法设置 `ignorable: true`；不在 `KNOWN_SESSION_EVENT_TYPES` 里的持久化事件类型会让 session-persistence 在重载时拒绝整个日志。replacement 事件本身就是审计轨迹。这取代了实验版的 `user/message/withdrawn` 标记事件。

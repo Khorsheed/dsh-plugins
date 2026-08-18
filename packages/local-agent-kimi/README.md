@@ -1,8 +1,8 @@
-# `@deepseek-ai/dsh-local-agent-kimi`
+# `@khorsheed/dsh-local-agent-kimi`
 
 English | [中文](README.zh.md)
 
-The Kimi Code harness of the [local-agent family](../../local-agent/local-agent/README.md). The bundle patch registers the `kimi` harness (`KIMI_CODE_HOME` scoped home, `kimi login` device-code flow, `session_index.jsonl` records) and mounts the `subagent_kimi` tool at the **profile root** — the `kimi-cli` one-shot provider spawns `kimi -p` under the harness's scoped home, so every agent preset can delegate without per-preset variants. The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@deepseek-ai/dsh-local-agent`'s own patch, which this bundle declares as a dependency — installing this bundle alone still mounts the core. The browser settings section ships with the family core's `./client` half (Settings → 本地 Agent), roster-driven per harness.
+The Kimi Code harness of the [local-agent family](../../local-agent/local-agent/README.md). The bundle patch registers the `kimi` harness (`KIMI_CODE_HOME` scoped home, `kimi login` device-code flow, `session_index.jsonl` records) and mounts the `subagent_kimi` tool at the **profile root** — the `kimi-cli` one-shot provider spawns `kimi -p` under the harness's scoped home, so every agent preset can delegate without per-preset variants. The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@khorsheed/dsh-local-agent`'s own patch, which this bundle declares as a dependency — installing this bundle alone still mounts the core. The browser settings section ships with the family core's `./client` half (Settings → 本地 Agent), roster-driven per harness.
 
 ## Prerequisites
 
@@ -11,12 +11,12 @@ The Kimi Code harness of the [local-agent family](../../local-agent/local-agent/
 
 ## Install
 
-The family core is its own bundle (`@deepseek-ai/dsh-local-agent`); install it together with the harness bundle so the `local-agent` row mounts (the harness bundle declares the core as a dependency, but `dsh plugin add` reconciles only direct dependencies into the profile's bundles layer):
+The family core is its own bundle (`@khorsheed/dsh-local-agent`); install it together with the harness bundle so the `local-agent` row mounts (the harness bundle declares the core as a dependency, but `dsh plugin add` reconciles only direct dependencies into the profile's bundles layer):
 
 ```sh
 # 1. Install the family core and this bundle into a profile.
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent-kimi
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 
 # 2. Restart the profile. The first start provisions the scoped home and
 #    removes any legacy `<base>-kimi` preset variants from earlier versions;
@@ -29,7 +29,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-local-agent-kimi
 ## Uninstall
 
 ```sh
-dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-kimi
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
 Removing the bundle unregisters the harness, its `/<name>` command family, the tool row, and the UI rows. One user-owned directory is left in place on purpose: the scoped home (`$DSH_HOME/local-agent/kimi`) keeps sessions and credentials so a reinstall needs no fresh login. Delete it to remove every trace.

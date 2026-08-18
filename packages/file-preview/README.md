@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-file-preview
+# @khorsheed/dsh-file-preview
 
 English | [中文](README.zh.md)
 
@@ -8,7 +8,7 @@ Read-only file-preview Remote service for web surfaces: `list` folds one session
 
 ```yaml
 - id: file-preview
-  name: '@deepseek-ai/dsh-file-preview'
+  name: '@khorsheed/dsh-file-preview'
   config:
     maxReadBytes: 524288
     maxFiles: 500
@@ -28,7 +28,7 @@ The service is a trusted, read-only capability: it reads whatever `ctx.fs` allow
 
 ## Sharing
 
-This package is a pure host-side addition: it registers one Remote service (mounted by its browser half through the official `ctx.remote.$mount` channel) and writes nothing into other packages. The browser half (`@deepseek-ai/dsh-client-ui-file-preview`) is equally additive and depends on official extension points only. Both packages distribute independently and compose into a stock dsh core with zero edits.
+This package is a pure host-side addition: it registers one Remote service (mounted by its browser half through the official `ctx.remote.$mount` channel) and writes nothing into other packages. The browser half (`@khorsheed/dsh-client-ui-file-preview`) is equally additive and depends on official extension points only. Both packages distribute independently and compose into a stock dsh core with zero edits.
 
 ## Compatibility
 

@@ -12,8 +12,8 @@ dsh agent 无法把工作委派给本机安装的编码 agent CLI（Kimi Code、
 
 家族由三个包 + 每个 harness 一个 bundle 组成，边界严格：
 
-- `@deepseek-ai/dsh-local-agent`（`packages/local-agent/local-agent/`）只拥有 harness 身份与生命周期：`ctx.localAgent` 注册表、共享 homes 根下每个 harness 一个 0700 作用域目录、`/<harness> login|sessions` 命令族，以及启动时交叉校验每个 harness `delegationProvider` 与已挂载 subagent provider 的不变式。委派刻意不属于本 seam。
-- 每个 harness bundle（首个：`packages/bundle/local-agent-kimi/` 的 `@deepseek-ai/dsh-local-agent-kimi`）向 core 注册一个 harness（作用域 env 名、device-code 登录调用、records 适配器），并向既有 `subagent` 能力挂载自己的 subagent-provider 行（讲 stdio ACP 的 CLI 用 subagent-acp），经 `localAgent.homeDir(name)` 读取作用域目录。两次注册、两个 seam、一份经交叉校验的契约。
+- `@khorsheed/dsh-local-agent`（`packages/local-agent/`）只拥有 harness 身份与生命周期：`ctx.localAgent` 注册表、共享 homes 根下每个 harness 一个 0700 作用域目录、`/<harness> login|sessions` 命令族，以及启动时交叉校验每个 harness `delegationProvider` 与已挂载 subagent provider 的不变式。委派刻意不属于本 seam。
+- 每个 harness bundle（首个：`packages/local-agent-kimi/` 的 `@khorsheed/dsh-local-agent-kimi`）向 core 注册一个 harness（作用域 env 名、device-code 登录调用、records 适配器），并向既有 `subagent` 能力挂载自己的 subagent-provider 行（讲 stdio ACP 的 CLI 用 subagent-acp），经 `localAgent.homeDir(name)` 读取作用域目录。两次注册、两个 seam、一份经交叉校验的契约。
 - `@deepseek-ai/dsh-client-ui-local-agent` 是共享浏览器半身：每个配置的 harness 一个会话标题栏下拉，经既有 commands Remote 拉取 `/<harness> sessions` 列表——零核心 RPC 新增。
 
 隔离基于目录：每个子进程都带着指向其作用域目录的 harness env 变量运行，凭据与会话绝不触碰用户原生安装。登录只走 device-code；URL 呈现在命令回复中、CLI 在后台轮询。委派产生的会话从作用域目录列出（Kimi 是 `session_index.jsonl`），因此"agent 能看到的会话"等于"它自己目录里的会话"。

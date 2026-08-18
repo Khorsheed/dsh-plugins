@@ -1,6 +1,6 @@
 # The dsh-local-agent-kimi bundle patch: register the Kimi harness and mount
 # its delegation tool. The family core row (`local-agent`, shared scoped-homes
-# root) ships in the framework bundle @deepseek-ai/dsh-local-agent's own patch,
+# root) ships in the framework bundle @khorsheed/dsh-local-agent's own patch,
 # which this bundle declares as a dependency — so installing this bundle alone
 # still mounts the core, and no two patches insert the same row id.
 #

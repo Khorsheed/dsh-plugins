@@ -15,7 +15,7 @@ The [local-agent family](2026-08-14-local-agent-family.md) had two harness sampl
 
 ## Decision
 
-`@deepseek-ai/dsh-local-agent-claude-code` (`packages/bundle/local-agent-claude-code/`) is the third harness bundle, same seam shape as kimi/codex:
+`@khorsheed/dsh-local-agent-claude-code` (`packages/local-agent-claude-code/`) is the third harness bundle, same seam shape as kimi/codex:
 
 - **Harness** `claude-code`: `CLAUDE_CONFIG_DIR` scoped home, `login: { command: 'claude', args: ['auth', 'login'], capture: 'stdout' }` (the browser OAuth URL surfaces in the session, CLI polls in the background), records from project files, `isAuthenticated` = scoped `.claude.json` carries an `oauthAccount` (light file check, never a CLI spawn), `logout` removes the scoped config file (the keychain entry on macOS is left for `claude auth logout` and rewritten on next login).
 - **Provider** `claude-local`: one-shot `claude -p [--dangerously-skip-permissions] --output-format json "<task>"` under the scoped home. The JSON result line carries `result` (final answer), `usage` (Anthropic counters: `input_tokens` uncached, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` — each maps to its own bucket, no subtraction), and `session_id`. `--output-format json` is strictly better than parsing plain stdout: one deterministic line yields both the answer and the accounting.
