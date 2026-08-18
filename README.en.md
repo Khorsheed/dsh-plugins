@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **14 packages** that extend the official web GUI. 13 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 14th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. The whole pack already runs together on the production profile, and nothing about the official UI is patched or replaced.
+Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **15 packages** that extend the official web GUI. 14 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 15th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. Of the 14 bundles, all but `@khorsheed/dsh-room` (WIP, not on production) already run together on the production profile, and nothing about the official UI is patched or replaced.
 
 This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
 
@@ -24,6 +24,7 @@ This README is the catalog: what each plugin does, how to load it, and exactly h
 | `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
 | `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
+| `@khorsheed/dsh-room` | host + client | `room` | Multi-agent **group-conversation sessions** (WIP): @-member dispatch, shared blackboard, members tab |
 
 Versions are the current workspace lines; the npm registry may have newer ones.
 
