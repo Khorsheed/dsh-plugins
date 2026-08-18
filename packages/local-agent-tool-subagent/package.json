@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent-tool-subagent",
   "description": "Family-owned subagent delegation tool over the ctx.subagents seam with optional one-shot resume: the model may pass the dsh child session id returned by the first delegation to continue the same CLI conversation in a later round",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "subagent"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent-tool-subagent"
   },
   "type": "module",

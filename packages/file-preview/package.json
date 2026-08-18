@@ -1,14 +1,20 @@
 {
   "name": "@khorsheed/dsh-file-preview",
   "description": "Read-only file-preview Remote service: lists the files a session wrote or edited and serves their current text content",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "file-preview"
+  ],
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/fs/file-preview"
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/file-preview"
   },
   "type": "module",
   "main": "lib/index.js",

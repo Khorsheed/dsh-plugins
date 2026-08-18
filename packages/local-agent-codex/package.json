@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent-codex",
   "description": "Codex harness for dsh-local-agent: scoped CODEX_HOME, one-shot codex exec delegation visible in the 子代理 surface, rollout-file session records",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "codex"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent-codex"
   },
   "type": "module",

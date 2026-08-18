@@ -16,7 +16,7 @@ Codex also differs from Kimi in three concrete ways that the harness shape had t
 
 ## Decision
 
-`@deepseek-ai/dsh-local-agent-codex` (`packages/bundle/local-agent-codex/`) is the second harness bundle, same seam shape as kimi:
+`@khorsheed/dsh-local-agent-codex` (`packages/local-agent-codex/`) is the second harness bundle, same seam shape as kimi:
 
 - **Harness** `codex`: `CODEX_HOME` scoped home, `login: { command: 'codex', args: ['login', '--device-auth'], capture: 'stdout' }` (the framework's new `capture` field), records from rollout files, `isAuthenticated` = `auth.json` present, `logout` removes the scoped `auth.json` (the CLI's own `codex logout` is not invoked; file removal is the harness contract's function form).
 - **Provisioning** writes a minimal scoped `config.toml` pinning `cli_auth_credentials_store = "file"` on first start (an existing config is respected untouched), so device-code credentials land in the scoped home's `auth.json`.

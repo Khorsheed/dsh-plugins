@@ -10,7 +10,7 @@ ankh-guard lived under two names: `@deepseek-ai/dsh-ankh-guard` in the deepseek-
 
 ## Decision
 
-The published identity is **`@khorsheed/dsh-ankh-guard`**; the publish source is the standalone repo `Khorsheed/dsh-ankh-guard` (local mirror at `$DSH_HOME/scratch/ankh-guard-ref`), synced from the monorepo package at publish time. The monorepo package keeps its `@deepseek-ai` family name — renaming inside the fork would fight the monorepo naming convention and churn the base bundle reference. Install documentation names the khorsheed package everywhere. The version line follows the official family (rc.6.x while the family is rc.6; rc.7 when the family ships).
+The published identity is **`@khorsheed/dsh-ankh-guard`**, and it is now the only package name: the package lives in the `dsh-plugins` monorepo at `packages/ankh-guard` (the single source of truth, published via `scripts/pack-dist.ts`), and the deepseek-harness in-tree family member was removed on 2026-08-16 (harness commit `48a9e1735d`, "chore: remove migrated plugin packages now hosted in dsh-plugins"). Install documentation names the khorsheed package everywhere. The version line follows the official family: the family shipped rc.7 (`@deepseek-ai/dsh@0.1.0-rc.7`), so the ankh-guard line moved to rc.7.x — package.json declares `0.1.0-rc.7` as the next-release line (npm latest is `0.1.0-rc.6.5`, the last rc.6-line cut).
 
 ## Alternatives considered
 
@@ -20,5 +20,5 @@ The published identity is **`@khorsheed/dsh-ankh-guard`**; the publish source is
 
 ## Consequences
 
-- One name per home: users install `@khorsheed/dsh-ankh-guard`; the monorepo composes `@deepseek-ai/dsh-ankh-guard` through the base bundle. Both patches insert the row id `ankh-guard`, so installing the khorsheed package onto an image that already composes the family member fails boot on a duplicate entry id — the READMEs carry that warning.
-- Publishing is a sync from the monorepo package to the standalone repo, then `npm publish` from there (the account's 2FA applies).
+- One name everywhere: users install `@khorsheed/dsh-ankh-guard`, and no current official image mounts a conflicting row — the published npm `@deepseek-ai/dsh-base` line never carried one (verified rc.6/rc.7 tarballs), and upstream master never had it; the base-bundle row existed only in the local deploy fork, which dropped it in the migration cleanup. The duplicate-id hazard survives only for compositions that still mount an `ankh-guard` row by other means; both READMEs and `cordis.patch.yml` carry that warning with a `--dump-config` check.
+- Publishing runs from this monorepo via `scripts/pack-dist.ts`, then `npm publish` (the account's 2FA applies).

@@ -16,7 +16,7 @@ Codex 与 Kimi 还有三处具体差异，harness 形状必须吸收或钉死：
 
 ## Decision
 
-`@deepseek-ai/dsh-local-agent-codex`（`packages/bundle/local-agent-codex/`）是第二个 harness bundle，与 kimi 采用相同的 seam 形状：
+`@khorsheed/dsh-local-agent-codex`（`packages/local-agent-codex/`）是第二个 harness bundle，与 kimi 采用相同的 seam 形状：
 
 - **Harness** `codex`：`CODEX_HOME` 作用域目录，`login: { command: 'codex', args: ['login', '--device-auth'], capture: 'stdout' }`（框架新增的 `capture` 字段），记录来自 rollout 文件，`isAuthenticated` = `auth.json` 存在，`logout` 删除作用域内的 `auth.json`（不调用 CLI 自带的 `codex logout`；文件删除就是 harness 契约的函数形态）。
 - **预置**：首次启动写入一份最小 scoped `config.toml`，钉死 `cli_auth_credentials_store = "file"`（已有 config 保持原样），让 device-code 凭据落进作用域目录的 `auth.json`。

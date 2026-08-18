@@ -1,6 +1,13 @@
 {
   "name": "@khorsheed/dsh-ui-shortcuts",
   "description": "Optional web shortcuts plugin: fixed actions (pause the running turn, steer-send the draft) with user-chosen key bindings",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "shortcuts",
+    "keyboard"
+  ],
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-session-title-edit
+# @khorsheed/dsh-client-session-title-edit
 
 English | [中文](README.zh.md)
 

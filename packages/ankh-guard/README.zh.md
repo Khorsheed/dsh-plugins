@@ -31,7 +31,7 @@ npm install @deepseek-ai/dsh                                 # the host (dsh web
 dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 ```
 
-包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（一个裸 `ankh-guard` 挂载行）自动并入 profile 的 bundles 层——不用手改 cordis.yml。源码安装：clone monorepo，包在 `packages/ankh-guard`（`pnpm install && pnpm run build`）。
+包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（一个裸 `ankh-guard` 挂载行）自动并入 profile 的 bundles 层——不用手改 cordis.yml。一个 caveat：一个组合里 `ankh-guard` 行 id 只能挂一次。官方镜像（已发布的 npm 线和 upstream master）都不挂这行，所以上面的 add 就是安装路径；而已经用其他方式挂了该 id 的组合——2026-08-16 之前的部署 fork 的 base bundle 就挂过——不能再 add 这个包，重复的 loader entry id 会炸 boot。拿不准就先查组合树：`dsh --profile web --dump-config | grep ankh-guard` 无输出即说明可以安全 add。源码安装：clone monorepo，包在 `packages/ankh-guard`（`pnpm install && pnpm run build`）。
 
 配置（全部可选）：`stateDir`（默认 `$DSH_HOME/state`，否则 `<cwd>/.dsh-guard-state`）、`repoDir`（默认进程 cwd）、`maxAgeMinutes`（凭证新鲜窗口，默认 10）、`reportRestartContext`（`followup` 自主报告 / `step` 骑下一次回合 / `off`，默认 `followup`）、`resumeInterrupted`（恢复被重启中断的会话并排入继续回合，默认 true）、`resumeDelayMs`（默认 5000）、`resumeMaxSnapshotAgeMs`（默认 600000）。
 

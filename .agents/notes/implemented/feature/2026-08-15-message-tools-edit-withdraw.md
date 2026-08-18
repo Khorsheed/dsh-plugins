@@ -10,7 +10,7 @@ The community message-tools experiment (outside the repo) gave user messages edi
 
 ## Decision
 
-The plugin lives at `packages/client/message-tools` (`@deepseek-ai/dsh-client-message-tools`), one package with a host face and a client face (the api/remotes split-tsconfig pattern).
+The plugin lives at `packages/message-tools` (`@khorsheed/dsh-client-message-tools`), one package with a host face and a client face (the api/remotes split-tsconfig pattern).
 
 - **Withdrawal is a surface replacement.** The host `MessageToolsService extends TypertRemoteService` exposes `@Remote('withdraw')`, which validates the target (append-surface user message still on the live surface) and appends a `user/message` with `surfaceOp: { op: 'replace', start, end }` covering the target and the whole surface tail, `sourceEventSeqs` citing every shadowed node, and `source: { kind: 'plugin', plugin: 'message-tools' }`, then flushes. The model side is fully hidden by the same mechanism compaction uses.
 - **No new session event types.** `Session.append` assigns the envelope and cannot set `ignorable: true`; a persisted event type unknown to `KNOWN_SESSION_EVENT_TYPES` makes session-persistence refuse the log on reload. The replacement event is the audit trail. This supersedes the experiment's `user/message/withdrawn` marker event.

@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-local-agent`
+# `@khorsheed/dsh-local-agent`
 
 [English](README.md) | 中文
 
@@ -16,7 +16,7 @@ core 本身就是 bundle：本包的 `cordis.patch.yml` 插入 `local-agent` 行
 
 ```yaml
 - id: local-agent
-  name: '@deepseek-ai/dsh-local-agent'
+  name: '@khorsheed/dsh-local-agent'
   config:
     homesRoot: !!js dshHomePath('local-agent')
 ```
@@ -27,7 +27,7 @@ harness bundle 向 core 注册，并挂载自己的委派行：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentSessionRecord } from '@deepseek-ai/dsh-local-agent'
+import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
 
 const listCodexSessions = async (homeDir: string): Promise<readonly LocalAgentSessionRecord[]> => []
 

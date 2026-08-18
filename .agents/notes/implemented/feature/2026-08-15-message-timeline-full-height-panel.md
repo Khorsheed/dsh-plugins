@@ -6,7 +6,7 @@ English | [中文](2026-08-15-message-timeline-full-height-panel.zh.md)
 
 ## Problem
 
-The message-timeline rail (`packages/client/message-timeline`) revealed its message list as a small hover card capped by `previewMaxWidth`/`previewMaxHeight` (360×320 by default), vertically centered next to the dot rail, so long conversations forced scrolling inside a small box. The card's own scroller also had no load-older trigger: paging only worked on the dot track, which is not the surface the reader scrolls. Meanwhile the store kept a `selectedKey` duplicating what the rail tracker already publishes as `activeKey` (the visible reading position) — a value the component never read.
+The message-timeline rail (`packages/message-timeline`) revealed its message list as a small hover card capped by `previewMaxWidth`/`previewMaxHeight` (360×320 by default), vertically centered next to the dot rail, so long conversations forced scrolling inside a small box. The card's own scroller also had no load-older trigger: paging only worked on the dot track, which is not the surface the reader scrolls. Meanwhile the store kept a `selectedKey` duplicating what the rail tracker already publishes as `activeKey` (the visible reading position) — a value the component never read.
 
 ## Decision
 

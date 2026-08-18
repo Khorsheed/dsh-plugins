@@ -1,7 +1,7 @@
 # The dsh-local-agent-codex bundle patch: delegate dsh agents to the local
 # Codex CLI under a scoped CODEX_HOME, and surface its session records. The
 # family core row (`local-agent`, shared scoped-homes root) ships in the
-# framework bundle @deepseek-ai/dsh-local-agent's own patch, which this bundle
+# framework bundle @khorsheed/dsh-local-agent's own patch, which this bundle
 # declares as a dependency — so installing this bundle alone still mounts the
 # core, and no two patches insert the same row id.
 #

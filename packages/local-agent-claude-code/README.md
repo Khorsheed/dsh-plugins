@@ -1,10 +1,10 @@
-# `@deepseek-ai/dsh-local-agent-claude-code`
+# `@khorsheed/dsh-local-agent-claude-code`
 
 English | [中文](README.zh.md)
 
 The Claude Code harness of the [local-agent family](../../local-agent/local-agent/README.md). The bundle patch registers the `claude-code` harness (`CLAUDE_CONFIG_DIR` scoped home, `claude auth login` browser flow, project-file session records) and mounts the `subagent_claude_code_local` tool at the **profile root** — the `claude-local` one-shot provider spawns `claude -p --output-format json` under the harness's scoped home, so every agent preset can delegate without per-preset variants. The browser settings section ships with the family core's `./client` half (Settings → 本地 Agent), roster-driven per harness.
 
-> The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@deepseek-ai/dsh-local-agent`'s own patch, which this bundle declares as a dependency — `dsh plugin add` reconciles only *direct* dependencies into the profile's bundles layer, so install the core bundle together with this one (two commands). The claude bundle deliberately does not re-insert that row — a duplicate would mount the core twice.
+> The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@khorsheed/dsh-local-agent`'s own patch, which this bundle declares as a dependency — `dsh plugin add` reconciles only *direct* dependencies into the profile's bundles layer, so install the core bundle together with this one (two commands). The claude bundle deliberately does not re-insert that row — a duplicate would mount the core twice.
 
 ## Prerequisites
 
@@ -15,8 +15,8 @@ The Claude Code harness of the [local-agent family](../../local-agent/local-agen
 
 ```sh
 # 1. Install the family core and this bundle into a profile.
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent
-dsh plugin --profile web add @deepseek-ai/dsh-local-agent-claude-code
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-claude-code
 
 # 2. Restart the profile. The first start provisions the scoped home; the
 #    subagent_claude_code_local tool mounts at the profile root, so every
@@ -28,7 +28,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-local-agent-claude-code
 ## Uninstall
 
 ```sh
-dsh plugin --profile web remove @deepseek-ai/dsh-local-agent-claude-code
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
 ```
 
 Removing the bundle unregisters the harness, its `/<name>` command family, the tool row, and the UI rows. One user-owned directory is left in place on purpose: the scoped home (`$DSH_HOME/local-agent/claude-code`) keeps the config so a reinstall needs no fresh login. Delete it to remove every trace.

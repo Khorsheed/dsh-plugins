@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-消息导览 rail(`packages/client/message-timeline`)此前把消息列表呈现在一张悬停小卡片里,受 `previewMaxWidth`/`previewMaxHeight` 限制(默认 360×320),垂直居中于圆点 rail 旁,长对话只能在小框内滚动。卡片自己的滚动区还没有加载更早历史的触发:翻页只在圆点轨道上生效,而读者实际滚动的是列表。同时 store 里的 `selectedKey` 与 rail tracker 发布的 `activeKey`(当前阅读位置)重复——组件从未读过后者。
+消息导览 rail(`packages/message-timeline`)此前把消息列表呈现在一张悬停小卡片里,受 `previewMaxWidth`/`previewMaxHeight` 限制(默认 360×320),垂直居中于圆点 rail 旁,长对话只能在小框内滚动。卡片自己的滚动区还没有加载更早历史的触发:翻页只在圆点轨道上生效,而读者实际滚动的是列表。同时 store 里的 `selectedKey` 与 rail tracker 发布的 `activeKey`(当前阅读位置)重复——组件从未读过后者。
 
 ## Decision
 

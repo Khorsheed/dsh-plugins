@@ -1,14 +1,20 @@
 {
   "name": "@khorsheed/dsh-client-ui-file-preview",
   "description": "Session file-preview side drawer: lists the files the session wrote or edited and previews their current content without opening an IDE",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "file-preview"
+  ],
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/client/ui-file-preview"
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/ui-file-preview"
   },
   "type": "module",
   "main": "lib/index.js",

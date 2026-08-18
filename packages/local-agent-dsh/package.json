@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent-dsh",
   "description": "dsh harness for dsh-local-agent: delegate to dsh itself as a local CLI — scoped DSH_HOME under the shared homes root, one-shot sub-dsh runs visible in the 子代理 surface, caller-supplied session ids, resume across rounds, DeepSeek toggle in settings",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "subagent"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent-dsh"
   },
   "type": "module",

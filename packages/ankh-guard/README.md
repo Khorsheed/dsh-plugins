@@ -31,7 +31,7 @@ npm install @deepseek-ai/dsh                                 # the host (dsh web
 dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 ```
 
-The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `ankh-guard` mount) into the profile's bundles layer — no hand-edited cordis.yml. From source: clone the monorepo; the package lives at `packages/ankh-guard` (`pnpm install && pnpm run build`).
+The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `ankh-guard` mount) into the profile's bundles layer — no hand-edited cordis.yml. One caveat: a composition may mount the `ankh-guard` row id only once. Official images (the published npm line and upstream master) mount no such row, so the add above is the install path; a composition that already mounts the id by other means — the pre-2026-08-16 deploy fork's base bundle did — must not also add the package, because a duplicate loader entry id fails boot. When in doubt, check the composed tree first: `dsh --profile web --dump-config | grep ankh-guard` printing nothing means the add is safe. From source: clone the monorepo; the package lives at `packages/ankh-guard` (`pnpm install && pnpm run build`).
 
 Config (all optional): `stateDir` (default `$DSH_HOME/state`, else `<cwd>/.dsh-guard-state`), `repoDir` (default the process cwd), `maxAgeMinutes` (credential freshness, default 10), `reportRestartContext` (`followup` autonomous report / `step` ride the next turn / `off`, default `followup`), `resumeInterrupted` (resume restart-interrupted sessions and queue a continue turn, default true), `resumeDelayMs` (default 5000), `resumeMaxSnapshotAgeMs` (default 600000).
 

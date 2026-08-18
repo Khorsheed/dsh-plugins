@@ -22,7 +22,7 @@ The subagent request descriptor schema (`subagent/descriptor`) is strict: one-sh
 
 ## Install
 
-Not installed directly: each harness bundle (`@khorsheed/dsh-local-agent-kimi`, `-codex`, `-claude-code`) declares this package as a dependency and mounts its tool row in its own patch. Install a harness bundle and this tool row comes along; the family core (`@deepseek-ai/dsh-local-agent`) must also be installed (see that bundle's README).
+Not installed directly: each harness bundle (`@khorsheed/dsh-local-agent-kimi`, `-codex`, `-claude-code`) declares this package as a dependency and mounts its tool row in its own patch. Install a harness bundle and this tool row comes along; the family core (`@khorsheed/dsh-local-agent`) must also be installed (see that bundle's README).
 
 ## Uninstall
 

@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-local-agent`
+# `@khorsheed/dsh-local-agent`
 
 English | [中文](README.zh.md)
 
@@ -16,7 +16,7 @@ The core is its own bundle: this package's `cordis.patch.yml` inserts the `local
 
 ```yaml
 - id: local-agent
-  name: '@deepseek-ai/dsh-local-agent'
+  name: '@khorsheed/dsh-local-agent'
   config:
     homesRoot: !!js dshHomePath('local-agent')
 ```
@@ -27,7 +27,7 @@ A harness bundle registers into the core and mounts its own delegation row:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import type { LocalAgentSessionRecord } from '@deepseek-ai/dsh-local-agent'
+import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
 
 const listCodexSessions = async (homeDir: string): Promise<readonly LocalAgentSessionRecord[]> => []
 
