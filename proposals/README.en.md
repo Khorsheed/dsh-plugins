@@ -31,7 +31,6 @@ Every capability in this repo ultimately ships as a **pluggable plugin**: `dsh p
 ```
 proposals/
   README.md / README.en.md   this file
-  backlog.md                 capability-gap pool (to-be-pluginified list; not a formal proposal)
   active/                    in-flight proposals: idea / planned / in-progress / blocked
   closed/                    closed: done / closed (abandoned / superseded / absorbed upstream)
 ```
@@ -75,7 +74,7 @@ Header (fixed machine-readable keys; keep in sync on any change):
 - **分类 / Classification**: plugin | seam | patch
 - **状态 / Status**: <one of the state-machine values> (blocked / closed append the reason in parentheses)
 - **最后更新 / Last updated**: YYYY-MM-DD
-- **查重结果 / Duplicate check**: <conclusion after searching active/ + closed/ + backlog.md + .agents/notes/ (incl. archived)>
+- **查重结果 / Duplicate check**: <conclusion after searching active/ + closed/ + .agents/notes/ (incl. archived)>
 - **官方依赖 / Official dependency**: pure plugin / needs contract extension (upstream candidate) / currently depends on patches (de-patching path: …)
 ```
 
@@ -93,15 +92,7 @@ Body skeleton (bespoke technical sections may be added in between):
 
 ## Duplicate-check rule
 
-Before creating a proposal, search: `active/` + `closed/` + `backlog.md` + `.agents/notes/` (incl. archived). If found → append to the existing file instead of creating a new one (same-intent increments update the same file; only a changed intent gets a new one); if unsure whether to open or extend → ask one line, it costs nothing.
-
-## Claiming from the backlog
-
-`backlog.md` is the **to-be-pluginified capability pool** (sedimented from a historical audit; see its header). To claim:
-
-1. Create `active/YYYY-MM-DD-<slug>.md` (format above, status `planned` or `idea`);
-2. Add a row to the README ledger table;
-3. Mark the item in `backlog.md` as "claimed → proposal `<slug>`" and move it out of the claimable area.
+Before creating a proposal, search: `active/` + `closed/` + `.agents/notes/` (incl. archived). If found → append to the existing file instead of creating a new one (same-intent increments update the same file; only a changed intent gets a new one); if unsure whether to open or extend → ask one line, it costs nothing.
 
 ## Relationship to other mechanisms
 
@@ -111,7 +102,7 @@ Before creating a proposal, search: `active/` + `closed/` + `backlog.md` + `.age
 
 ## Ledger
 
-> Empty at start (this system was established 2026-08-18). Historical capability gaps are registered in `backlog.md`; new proposals add a row here after being claimed.
+> Empty at start (this system was established 2026-08-18). The historical proposal archive stays in its original snapshot (dsh-salvage-2026-08-16, outside this repo) and is not imported; new proposals add a row here per the process above.
 
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|

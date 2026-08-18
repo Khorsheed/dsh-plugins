@@ -15,7 +15,6 @@ dsh-plugins 缺一层"能力意图"管理。Agent Note（`.agents/notes/`）记�
   ```
   proposals/
     README.md / README.en.md   管理规范（中文主文档 + 英文镜像，对齐根 README 惯例）
-    backlog.md                 能力缺口池：对历史提案快照的沉淀盘点
     active/                    进行中的提案：idea / planned / in-progress / blocked
     closed/                    done / closed（放弃 / 被取代 / 官方吸收）
   ```
@@ -25,8 +24,7 @@ dsh-plugins 缺一层"能力意图"管理。Agent Note（`.agents/notes/`）记�
 - **done 判定绑定可插拔交付**：`done` 要求能力以独立插件包交付（`dsh.bundle` 自挂载、`dsh plugin remove` 可卸）。依赖补丁的实现最多标 `verified`，**永远不算 done**，且必须写明去补丁化路径。被官方吸收 → `closed`。
 - **头部固定键、机器可读**（`分类 / Classification`、`状态 / Status`、`最后更新 / Last updated`、`查重结果 / Duplicate check`、`官方依赖 / Official dependency`），为将来的校验脚本留口，但**现在不加任何 gate**——这是轻量约定层。
 - **防停滞**：`idea`/`planned` 超 14 天未动，或 `verified` 超 7 天未转 `done` → 总表标 ⚠️ `stale`；三选一（升优先级 / closed 注明理由 / 保留注明理由）。每次工作会话开始先扫总表。
-- **与 Agent Note 衔接**：实施提案时的每次非平凡改动仍然要写 Agent Note（AGENTS.md 不变）；提案可选的「实现记录」小节登记相关 note / PR / 包名。提案不取代各包 `issues/`，也不取代发布计划。
-- **Backlog 池**：`backlog.md` 把历史盘点中所有"还没可插拔交付"的能力登记成清单（个人 setup 已实现项、计划/想法项，以及只在 docs 总览里出现的两个能力：dataseek 与 whalenap 等待内容），按迁移成本分组，另附"已插件化"对照表防止重复提案。认领 = 建 `active/` 文件 + 总表加行 + backlog 该项标注「已认领 → 提案 `<slug>`」。
+- **与 Agent Note 衔接**：实施提案时的每次非平凡改动仍然要写 Agent Note（AGENTS.md 不变）；提案可选的「实现记录」小节登记相关 note / PR / 包名。提案不取代各包 `issues/`，也不取代发布计划。首版随附的 `backlog.md` 能力缺口池**已按用户要求删除**（2026-08-18）：盘点出来的历史能力大部分不值得在本仓库做，所以仓库内不保留能力清单，历史档案留在原快照。
 
 ## Alternatives considered
 
@@ -40,7 +38,7 @@ Agent Note 回答"为什么这么改、放弃了什么"，针对单次决策；�
 
 ### 为什么不把 38 份历史提案文件复制进本仓库？
 
-它们是另一个语境（补丁流、个人化）的冻结快照；复制会引入过时细节，并制造一份必须同步的第二权威。真正有持久价值的是盘点结论——能力清单 + 当前实现形态 + 官方依赖判定——所以沉淀进 `backlog.md`。
+它们是另一个语境（补丁流、个人化）的冻结快照；复制会引入过时细节，并制造一份必须同步的第二权威。盘点摘要最初沉淀进 `backlog.md` 池，但用户判定其中大部分能力不值得在本仓库做，于是删除该文件，历史档案留在原快照——本仓库的提案从空白起步。
 
 ### 为什么现在不配提案头部校验脚本 / gate？
 
@@ -49,7 +47,7 @@ Agent Note 的 gate 是因为 README 承诺了机械强制且已观察到漂移�
 ## Consequences
 
 - 能力意图在仓库内有了单一入口，且 done 判定把"零官方改动"目标写进了判定规则：依赖补丁的实现不能冒充 done——这正是用户要的纪律（"实现后及时关闭"）。
-- 个人历史 backlog 以可认领清单的形式保留下来，不会随归档快照丢失；对照表防止重复提案。
+- 个人历史能力**不在本仓库跟踪**：用户判定大部分不值得在本仓库做，所以不保留能力缺口清单，归档快照是唯一记录。
 - 提案保持纯约定：无新脚本、无新 gate、无 pre-commit 改动——目录就是文档 + 一张总表，靠与 Agent Note 同款的"移动文件"纪律维护。
 - 任何在本仓库干活的 agent 开工前应扫 `proposals/README.md` 与总表，和扫 notes 树同一节奏。
 

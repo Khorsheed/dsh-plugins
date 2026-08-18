@@ -31,7 +31,6 @@ English | 中文
 ```
 proposals/
   README.md / README.en.md   本文件
-  backlog.md                 能力缺口池（待插件化清单，不占正式提案生命周期）
   active/                    进行中的提案：idea / planned / in-progress / blocked
   closed/                    已关闭：done / closed（放弃 / 被取代 / 官方吸收）
 ```
@@ -75,7 +74,7 @@ idea → planned → in-progress → verified → done（移入 closed/）
 - **分类**：plugin | seam | patch
 - **状态**：<状态机中的值>（blocked / closed 时括号内写原因）
 - **最后更新**：YYYY-MM-DD
-- **查重结果**：<搜过 active/ + closed/ + backlog.md + .agents/notes/（含 archived）的结论>
+- **查重结果**：<搜过 active/ + closed/ + .agents/notes/（含 archived）的结论>
 - **官方依赖**：纯插件 / 需契约扩展（upstream 候选）/ 当前依赖补丁（去补丁化路径：…）
 ```
 
@@ -93,15 +92,7 @@ idea → planned → in-progress → verified → done（移入 closed/）
 
 ## 查重铁律
 
-新建提案前必须搜过：`active/` + `closed/` + `backlog.md` + `.agents/notes/`（含 archived）。命中已有 → 追加原文件不新建（同意图增量更新同一份，不改意图才新建）；拿不准开新还是更新 → 问一句，一行成本。
-
-## 从 backlog 认领
-
-`backlog.md` 是**待插件化能力池**（历史盘点沉淀，见文件头部说明）。认领流程：
-
-1. 建 `active/YYYY-MM-DD-<slug>.md`（按上方格式，状态 `planned` 或 `idea`）；
-2. README 总表加一行；
-3. 在 `backlog.md` 该项标注「已认领 → 提案 `<slug>`」并移出待认领区。
+新建提案前必须搜过：`active/` + `closed/` + `.agents/notes/`（含 archived）。命中已有 → 追加原文件不新建（同意图增量更新同一份，不改意图才新建）；拿不准开新还是更新 → 问一句，一行成本。
 
 ## 与其他机制的关系
 
@@ -111,7 +102,7 @@ idea → planned → in-progress → verified → done（移入 closed/）
 
 ## 总表
 
-> 起步为空（本体系 2026-08-18 建立）。历史能力缺口已在 `backlog.md` 登记；新提案按上文流程认领后在此加行。
+> 起步为空（本体系 2026-08-18 建立）。历史提案档案留在原快照（dsh-salvage-2026-08-16，本仓库外），不迁入；新提案按上文流程在此加行。
 
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|
