@@ -3,11 +3,13 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
-import { isRoomLog, parseMentions, replay } from '../src/journal.ts'
+import { isRoomLog, parseMentions, pendingInstructions, previousCursor, replay } from '../src/journal.ts'
 
 /** The REAL composition: a cordis root, the real SessionStore plugin, and the package's own service plugin. */
 async function boot() {
   const ctx = new Context()
+  // The agents registry is an external service to this package; stub its face.
+  ctx.provide('agents', { get: () => undefined } as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   return { ctx, service: ctx.get('room') as RoomService }
@@ -118,6 +120,60 @@ describe('replay (pure journal fold)', () => {
     expect(isRoomLog([ev('room/created', { version: 1 })])).toBe(true)
     expect(isRoomLog([ev('room/note', { text: 'x' })])).toBe(false)
     expect(replay([ev('room/note', { text: 'x' })]).members).toEqual([])
+  })
+
+  it('member-updated folds a childSessionId onto the member (delegation handle journaled)', () => {
+    resetSeq()
+    const events = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+      ev('room/member-updated', { name: 'ada', childSessionId: 'child-1' }),
+    ]
+    expect(replay(events).members).toEqual([
+      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' },
+    ])
+  })
+})
+
+describe('previousCursor', () => {
+  it('finds the latest earlier dispatch naming the member', () => {
+    resetSeq()
+    const events = [
+      ev('room/dispatch', { targets: ['ada'], text: '一' }),          // 0
+      ev('room/dispatch', { targets: ['bill'], text: '二' }),         // 1
+      ev('room/dispatch', { targets: ['ada', 'bill'], text: '三' }),  // 2
+    ]
+    expect(previousCursor(events, 'ada', 2)).toBe(0)
+    expect(previousCursor(events, 'bill', 2)).toBe(1)
+    // First dispatch: no earlier cursor.
+    expect(previousCursor(events, 'ada', 0)).toBeUndefined()
+    expect(previousCursor(events, 'ghost', 2)).toBeUndefined()
+  })
+})
+
+describe('pendingInstructions', () => {
+  it('is initial before the first dispatch, silent after, update after an edit', () => {
+    resetSeq()
+    const added = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端' }), // 0
+    ]
+    expect(pendingInstructions(added, 'ada', undefined)).toEqual({ kind: 'initial', instructions: '后端' })
+
+    const dispatched = [...added, ev('room/dispatch', { targets: ['ada'], text: '干活' })] // 1
+    // Already carried by the dispatch at seq 1 (cursor 0...1 boundary).
+    expect(pendingInstructions(dispatched, 'ada', 1)).toBeUndefined()
+    expect(pendingInstructions(dispatched, 'ada', 0)).toBeUndefined()
+
+    const edited = [...dispatched, ev('room/member-updated', { name: 'ada', instructions: '后端 + 评审' })] // 2
+    expect(pendingInstructions(edited, 'ada', 1)).toEqual({ kind: 'update', instructions: '后端 + 评审' })
+    // The update still counts as initial when the member was never dispatched.
+    expect(pendingInstructions(edited, 'ada', undefined)).toEqual({ kind: 'initial', instructions: '后端 + 评审' })
+  })
+
+  it('is undefined without instructions', () => {
+    resetSeq()
+    const events = [ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' })]
+    expect(pendingInstructions(events, 'ada', undefined)).toBeUndefined()
+    expect(pendingInstructions(events, 'ghost', undefined)).toBeUndefined()
   })
 })
 

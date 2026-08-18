@@ -39,6 +39,12 @@ export interface RoomMemberAddedEvent {
 export interface RoomMemberUpdatedEvent {
   readonly name: string
   readonly instructions?: string
+  /**
+   * The CLI member's delegation handle, journaled when the member's first
+   * run starts (invite predates the handle; the dispatch engine appends this
+   * update so a reload reattaches the member to its child session).
+   */
+  readonly childSessionId?: SessionId
 }
 
 /** A member left the roster. */
@@ -153,6 +159,7 @@ export type RoomFailure =
   | { readonly code: 'member-not-found' }
   | { readonly code: 'empty-text' }
   | { readonly code: 'nothing-to-update' }
+  | { readonly code: 'local-agent-unavailable' }
   | { readonly code: 'unknown-targets'; readonly names: readonly string[] }
 
 /** isRoom probe: does this session carry the room marker? */
@@ -205,7 +212,7 @@ export interface RoomInviteRequest {
 export interface RoomInvitation {
   /** The accepted member name. */
   readonly name: string
-  /** True when a first task was supplied and still awaits the dispatch engine. */
+  /** True when a first task was supplied and dispatched with the invitation. */
   readonly pendingFirstTask: boolean
 }
 
@@ -268,4 +275,23 @@ export interface RoomPostReceipt {
 /** postMessage outcome. */
 export type RoomPostMessageResult =
   | { readonly ok: true; readonly value: RoomPostReceipt }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** cancel request: interrupt a member's in-flight run. */
+export interface RoomCancelRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** Member whose run should be cancelled. */
+  readonly name: string
+}
+
+/** cancel receipt. */
+export interface RoomCancellation {
+  /** True when an in-flight run was found and cancelled. */
+  readonly cancelled: boolean
+}
+
+/** cancel outcome. */
+export type RoomCancelResult =
+  | { readonly ok: true; readonly value: RoomCancellation }
   | { readonly ok: false; readonly error: RoomFailure }

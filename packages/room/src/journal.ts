@@ -13,6 +13,13 @@ import type {
   RoomBlackboardEntry, RoomMember, RoomMemberRun, RoomState,
 } from './types.ts'
 
+/**
+ * The addressing name of the room's own main agent, added to the roster at
+ * room creation: an equal member with no privilege — not @-addressed, it
+ * perceives nothing and says nothing. `main-agent` kind, never a provider.
+ */
+export const MAIN_AGENT_MEMBER = 'main'
+
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
   return events.some(event => event.type === 'room/created')
@@ -75,9 +82,11 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       case 'room/member-updated': {
         const member = byName.get(event.data.name)
         if (member === undefined) break
-        const updated: RoomMember = event.data.instructions === undefined
-          ? member
-          : { ...member, instructions: event.data.instructions }
+        const updated: RoomMember = {
+          ...member,
+          ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions },
+          ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
+        }
         byName.set(updated.name, updated)
         members[members.indexOf(member)] = updated
         break
@@ -130,4 +139,63 @@ export function replay(events: readonly SessionEvent[]): RoomState {
     cursors: [...cursors.entries()].map(([member, seq]) => ({ member, seq })),
     runs: [...runs.values()],
   }
+}
+
+/**
+ * The member's dispatch cursor as of JUST BEFORE a given dispatch event: the
+ * latest earlier dispatch naming them. The engine reads its blackboard
+ * increment from this cursor (the current dispatch's own text rides the
+ * prompt tail instead, so it is never duplicated into the increment).
+ * @param events - the session's event log.
+ * @param member - the dispatch target.
+ * @param beforeSeq - the current dispatch event's seq.
+ * @returns the previous dispatch seq, or undefined on the member's first dispatch.
+ */
+export function previousCursor(
+  events: readonly SessionEvent[],
+  member: string,
+  beforeSeq: number,
+): number | undefined {
+  let cursor: number | undefined
+  for (const event of events) {
+    if (event.type !== 'room/dispatch' || event.seq >= beforeSeq) continue
+    if (event.data.targets.includes(member)) cursor = event.seq
+  }
+  return cursor
+}
+
+/**
+ * The role-instructions carry for the next dispatch to a member: 'initial'
+ * when the member has never been dispatched (their instructions open the
+ * first prompt), 'update' when the latest member-added/member-updated event
+ * naming them postdates their dispatch cursor (an edit rides the next
+ * dispatch as a context update). Instructions events older than the cursor
+ * were already carried.
+ * @param events - the session's event log.
+ * @param member - the dispatch target.
+ * @param cursor - the member's pre-dispatch cursor ({@link previousCursor}).
+ * @returns the carry, or undefined when nothing needs carrying.
+ */
+export function pendingInstructions(
+  events: readonly SessionEvent[],
+  member: string,
+  cursor: number | undefined,
+): { readonly kind: 'initial' | 'update'; readonly instructions: string } | undefined {
+  let lastSeq: number | undefined
+  let lastInstructions: string | undefined
+  for (const event of events) {
+    if (event.type === 'room/member-added' && event.data.name === member
+      && event.data.instructions !== undefined) {
+      lastSeq = event.seq
+      lastInstructions = event.data.instructions
+    } else if (event.type === 'room/member-updated' && event.data.name === member
+      && event.data.instructions !== undefined) {
+      lastSeq = event.seq
+      lastInstructions = event.data.instructions
+    }
+  }
+  if (lastSeq === undefined || lastInstructions === undefined) return undefined
+  if (cursor === undefined) return { kind: 'initial', instructions: lastInstructions }
+  if (lastSeq > cursor) return { kind: 'update', instructions: lastInstructions }
+  return undefined
 }

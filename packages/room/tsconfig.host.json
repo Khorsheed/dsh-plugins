@@ -6,9 +6,12 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/adapter.ts",
+    "src/dispatch.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/journal.ts",
+    "src/tool.ts",
     "src/types.ts"
   ]
 }
