@@ -1,14 +1,20 @@
 {
   "name": "@khorsheed/dsh-client-message-tools",
   "description": "User-message edit (withdraw and resend) and withdrawal: the withdrawal writes a surface replacement that hides the message and everything after it from the model, with a chat divider marking the spot",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "messages"
+  ],
   "version": "0.4.9",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/client/message-tools"
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/message-tools"
   },
   "type": "module",
   "main": "lib/index.js",

@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent-kimi",
   "description": "Kimi Code harness for dsh-local-agent: scoped KIMI_CODE_HOME, one-shot kimi -p delegation visible in the 子代理 surface, session records and preset wiring",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "kimi"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent-kimi"
   },
   "type": "module",

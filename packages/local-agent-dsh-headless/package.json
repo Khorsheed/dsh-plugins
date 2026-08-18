@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent-dsh-headless",
   "description": "Sub-dsh headless bundle for the local-agent-dsh harness: a one-shot direct Agent/Session runner over dsh-base that accepts a caller-supplied --session-id (fresh create) or --resume (continuation), prints the final assistant text, and exits",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "headless"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent-dsh-headless"
   },
   "type": "module",

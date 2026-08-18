@@ -1,14 +1,21 @@
 {
   "name": "@khorsheed/dsh-local-agent-claude-code",
   "description": "Claude Code harness for dsh-local-agent: scoped CLAUDE_CONFIG_DIR, one-shot claude -p delegation visible in the 子代理 surface, project-file session records",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "claude-code"
+  ],
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/bundle/local-agent-claude-code"
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/local-agent-claude-code"
   },
   "type": "module",
   "main": "lib/index.js",

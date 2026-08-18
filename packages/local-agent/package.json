@@ -1,10 +1,17 @@
 {
   "name": "@khorsheed/dsh-local-agent",
   "description": "Local code-agent harness registry and glue: scoped homes, /<harness> login and sessions commands, delegation provider contracts, and the roster-driven browser settings section",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "local-agent",
+    "cli"
+  ],
   "version": "0.1.0-rc.6",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khorsheed/dsh-local-agent.git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
     "directory": "packages/local-agent"
   },
   "type": "module",
