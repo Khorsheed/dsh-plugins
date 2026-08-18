@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-ui-shortcuts",
-  "description": "Optional web shortcuts plugin: fixed actions (stop/retract the current activity, steer-send the draft) with user-chosen key bindings",
+  "description": "Optional web shortcuts plugin: fixed actions (pause the running turn, steer-send the draft) with user-chosen key bindings",
   "keywords": [
     "dsh",
     "dsh-plugin",

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-可选的 web 快捷键插件：三个固定动作——**停止/撤回当前活动**、**插队发送草稿**与**新建会话**——绑定到用户自选的键位。动作是固定的产品操作，键位由用户决定。默认：`Esc` 停止当前活动且撤回优先（刚发送、仍在排队等待的消息会被拉回输入框；没有排队消息时取消运行中的回合，与 composer 的 Stop 按钮同一取消操作），`Ctrl/Cmd+S` 以插队（steer）投递方式发送当前草稿，`Ctrl/Cmd+O` 新建会话（与侧边栏新会话按钮同一入口）。
+可选的 web 快捷键插件：三个固定动作——**暂停当前任务**、**插队发送草稿**与**新建会话**——绑定到用户自选的键位。动作是固定的产品操作，键位由用户决定。默认：`Esc` 全局暂停（与 composer 的 Stop 按钮相同的取消操作），`Ctrl/Cmd+S` 以插队（steer）投递方式发送当前草稿，`Ctrl/Cmd+O` 新建会话（与侧边栏新会话按钮同一入口）。
 
 ## 安装与卸载
 
@@ -20,7 +20,7 @@ dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 
 | 动作 | 默认键位 | 行为 |
 | --- | --- | --- |
-| 停止当前任务 | `Esc` | 停止当前活动，撤回优先。只要刚发送的消息仍在 host inbox 中排队（`placement: 'queued'`——代理尚未把它认领进回合：排在后端正在运行的回合之后、处于 maintenance、或跨越取消收敛期），动作就通过公开的 `conversation.updateQueue(..., { kind: 'remove' })` 移除最近一条排队发送，并把它的文本放回输入框（纯图片消息只移除不恢复草稿；非空草稿不会被覆盖）——即「撤销最后一次发送」，运行中的回合不受影响。没有排队消息时，则通过公开的 `conversation.cancel()` 取消运行中的回合——与 composer 的 Stop 按钮同一操作。普通会话与 continuable 子智能体可停止；one-shot 子智能体不可（与 Stop 按钮的可见性一致）。若移除与认领竞争失败（host 在快照读取与移除之间已认领该消息），则回退到取消分支。 |
+| 暂停当前任务 | `Esc` | 通过公开的 `conversation.cancel()` 取消当前会话运行中的回合——与 composer 的 Stop 按钮同一操作。普通会话与 continuable 子智能体可停止；one-shot 子智能体不可（与 Stop 按钮的可见性一致）。 |
 | 插队发送 | `Ctrl/Cmd+S` | 通过公开的 `conversation.input.for(scope).submit('steer')` 以 `steer` 投递方式发送当前草稿；绑定时抑制浏览器保存手势。仅草稿：空草稿保持静默无操作（插队整个队列仍是 `Cmd/Ctrl+Enter` 的手势）。 |
 | 新建会话 | `Ctrl/Cmd+O` | 通过公开的 `workspaces.startSession()` 新建会话——与侧边栏新会话按钮同一入口；绑定时抑制浏览器的打开文件手势。全局动作，不限定焦点位置。 |
 
@@ -47,11 +47,11 @@ ctx.effect(() => ctx.shortcuts.registerAction({
 
 ## Escape 分层
 
-Escape 停止/撤回是全局的，但让位于先消费该键的一方：已被消费的 keydown（`defaultPrevented`——composer 的斜杠菜单、popupSelect）、打开的弹层（模态框、菜单、设置面板用 Escape 关闭且不 `preventDefault`，事件分发期间它们的 DOM 仍在）、以及 composer 之外的可编辑目标（行内重命名、搜索框）。其余任何位置——composer 文本框、侧边栏、会话列表——Escape 都会先撤回排队的待发消息（若存在），否则取消运行中的回合。IME 组合输入与按住重复的按键不会触发任一动作。
+Escape 暂停是全局的，但让位于先消费该键的一方：已被消费的 keydown（`defaultPrevented`——composer 的斜杠菜单、popupSelect）、打开的弹层（模态框、菜单、设置面板用 Escape 关闭且不 `preventDefault`，事件分发期间它们的 DOM 仍在）、以及 composer 之外的可编辑目标（行内重命名、搜索框）。其余任何位置——composer 文本框、侧边栏、会话列表——Escape 都会暂停运行中的回合。IME 组合输入与按住重复的按键不会触发任一动作。
 
 ## Model Experience
 
-无。三个动作调用 composer 自身控件已在使用的公开动词（`conversation.cancel`、`conversation.updateQueue`、`conversation.input.submit`/`setDraft`）；此处没有任何内容到达模型请求。
+无。两个动作调用 composer 自身控件已在使用的公开动词（`conversation.cancel`、`conversation.input.submit`）；此处没有任何内容到达模型请求。
 
 #### KV Cache effect
 
@@ -65,6 +65,5 @@ Escape 停止/撤回是全局的，但让位于先消费该键的一方：已被
 ## Known Limitations and Deferred Work
 
 - **无用户自定义动作**——插件通过 `ctx.shortcuts` 贡献动作（见「给插件作者」）；任意的用户自定义动作（命令、开关等）暂不提供。
-- **Escape 撤回只触及排队中的消息**——host 已认领进运行回合的消息已在会话日志中落定（`user/message` 事件在回合启动那一刻就已追加），Escape 只能取消该回合，无法再把消息拉回来。拉回已认领的消息需要 host 侧能力，刻意不在本插件范围内。
 - **Ctrl/Cmd+S 仅草稿**——空草稿不做事；插件刻意把整队列插队留给 composer 的 `Cmd/Ctrl+Enter` 手势。
 - **无仓库内 e2e**——插件不在默认 bundle 中，因此没有 `apps/web` replay 场景；其接线由针对 fakes 的 apply 级浏览器 spec 覆盖。

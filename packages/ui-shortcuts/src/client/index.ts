@@ -1,33 +1,25 @@
 /**
  * Browser shortcuts plugin: the shortcut action registry provider plus three
- * built-in actions (stop/retract the current activity, steer-send the draft,
- * new session) bound to user-chosen keys. Pure UI over public services — the
+ * built-in actions (pause the running turn, steer-send the draft, new
+ * session) bound to user-chosen keys. Pure UI over public services — the
  * built-in handlers never reach ui-conversation internals, and every action
  * (built-in or contributed by another plugin through `ctx.shortcuts`) rides
  * the same registration path:
  *
  * - steer-send submits the current session's draft through the public
  *   `conversation.input.for(scope).submit('steer')` facade.
- * - pause stops the current session's activity, retract-first: while the
- *   just-sent message is still pending in the host inbox (placement 'queued'
- *   — the agent has not claimed it into a turn yet: queued behind a busy
- *   turn, during maintenance, or across cancel convergence), the action
- *   removes it and returns it to the composer ("undo the last send"); once
- *   nothing is pending it cancels the running turn through the
- *   scope-addressed `conversation.cancel()` (the same action as the
- *   composer's Stop button). Its layering is `yield`: Escape yields to a
- *   consumed keydown (`defaultPrevented` — the composer's slash menu,
- *   popupSelect), an open overlay (`[role="dialog"]/menu/listbox` — modals,
- *   menus, and the settings panel close on Escape without preventDefault),
- *   or a non-composer editable target (inline rename, search fields).
+ * - pause cancels the current session's running turn through the scope-addressed
+ *   `conversation.cancel()` (the same action as the composer's Stop button).
+ *   Its layering is `yield`: Escape yields to a consumed keydown
+ *   (`defaultPrevented` — the composer's slash menu, popupSelect), an open
+ *   overlay (`[role="dialog"]/menu/listbox` — modals, menus, and the settings
+ *   panel close on Escape without preventDefault), or a non-composer editable
+ *   target (inline rename, search fields).
  * - new-session starts a session through the public `workspaces.startSession()`
  *   (the same entry the sidebar New-session button calls). Its layering is
  *   `global`, like steer-send.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  AgentContext, ISessions, SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
 // merge (ctx.settingsScope), and the conversation service merge
 // (ctx.conversation) into this program.
@@ -107,27 +99,10 @@ function steerSendDraft(ctx: ClientContext): void {
 }
 
 /**
- * Pause the current session's activity, retract-first:
- *
- * 1. **Retract** — while the just-sent message is still pending in the host
- *    inbox (`placement === 'queued'`; the agent has not claimed it into a
- *    turn yet: queued behind a busy turn, during maintenance, or across
- *    cancel convergence), remove it through the public
- *    `conversation.updateQueue(..., { kind: 'remove' })` and return its text
- *    to the composer — the "undo the last send" gesture. Only the most
- *    recent pending send is retracted per press, and the running turn is
- *    left untouched; a text-less (image) message is removed without a draft
- *    restore, and a non-empty live draft is never clobbered.
- * 2. **Stop** — once nothing is pending, cancel the running turn through the
- *    scope-addressed `conversation.cancel()` (the Stop-button action),
- *    honoring the composer's Stop visibility: ordinary sessions and
- *    continuable children stop; one-shot subagents do not. Failures surface
- *    via the session snapshot's promptError, exactly as the composer's own
- *    stop path.
- *
- * A retract that races the claim (the host picked the message up between the
- * snapshot read and the removal) falls through to the stop arm with a fresh
- * snapshot — by then it is a running turn, and cancel is the only lever.
+ * Pause the current session's running turn (the Stop-button action), honoring
+ * the composer's Stop visibility: ordinary sessions and continuable children
+ * stop; one-shot subagents do not. Failures surface via the session snapshot's
+ * promptError, exactly as the composer's own stop path.
  * @param ctx - client root context.
  */
 function pauseCurrentTask(ctx: ClientContext): void {
@@ -137,64 +112,12 @@ function pauseCurrentTask(ctx: ClientContext): void {
   if (sessions === undefined || id === undefined) return
   const scope = sessions.scope(id)
   if (scope === undefined) return
-  const conversation = scope.get('conversation')
-  // v8 ignore next -- defensive: the plugin's inject list guarantees the conversation service.
-  if (conversation === undefined) return
-  const snapshot = sessions.binding(id)?.session.getSnapshot()
-  // v8 ignore next -- defensive: a resolvable scope implies a live binding.
-  if (snapshot === undefined) return
-
-  // Retract arm.
-  const pending = snapshot.queue.filter(item => item.placement === 'queued')
-  const target = pending[pending.length - 1]
-  if (target !== undefined) {
-    void conversation.updateQueue(target.id, { kind: 'remove' }).then(
-      () => { restorePendingDraft(scope, conversation, target) },
-      () => { stopRunningTurn(sessions, id) },
-    )
-    return
-  }
-
-  // Stop arm.
-  stopRunningTurn(sessions, id)
-}
-
-/**
- * Return one retracted pending message to the composer. Text-only messages
- * restore their full text; an image-only message has no editable text and
- * stays removed. A live draft that is no longer empty is never clobbered —
- * the user's newer typing wins, mirroring the composer's send-failure
- * restore discipline.
- * @param scope - the retracted message's session scope.
- * @param conversation - the scope-addressed conversation service.
- * @param message - the removed pending message.
- */
-function restorePendingDraft(
-  scope: AgentContext,
-  conversation: NonNullable<ClientContext['conversation']>,
-  message: { readonly text: string | null },
-): void {
-  if (message.text === null) return
-  const input = conversation.input.for(scope)
-  if (input.state.getSnapshot().draft !== '') return
-  input.setDraft(message.text)
-}
-
-/**
- * Cancel the current session's running turn (the Stop-button action),
- * honoring the composer's Stop visibility: ordinary sessions and continuable
- * children stop; one-shot subagents do not. Failures surface via the session
- * snapshot's promptError, exactly as the composer's own stop path.
- * @param sessions - the sessions service.
- * @param id - current session id.
- */
-function stopRunningTurn(sessions: ISessions, id: SessionId): void {
   const snapshot = sessions.binding(id)?.session.getSnapshot()
   // v8 ignore next -- defensive: a resolvable scope implies a live binding.
   if (snapshot === undefined) return
   if (!snapshot.running) return
   if (snapshot.subagent !== null && snapshot.subagent.address.mode !== 'continuable') return
-  const conversation = sessions.scope(id)?.get('conversation')
+  const conversation = scope.get('conversation')
   // v8 ignore next -- defensive: the plugin's inject list guarantees the conversation service.
   if (conversation === undefined) return
   void conversation.cancel().catch(() => {

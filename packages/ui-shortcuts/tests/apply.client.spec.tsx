@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 // apply wiring: the shortcut settings card registers, and the global keydown
 // listeners drive the public services — steer-send submits through
-// conversation.input, Escape retracts a still-pending queued message through
-// conversation.updateQueue (restoring its draft) and otherwise cancels the
-// running turn through the scope-addressed conversation face, gated on the
-// composer's own Escape layering (a consumed key, an outside target, IME
-// composition, repeats, capture mode, and unbound actions all stand down).
+// conversation.input, Escape-pause cancels through the scope-addressed
+// conversation face, gated on the composer's own Escape layering (a consumed
+// key, an outside target, IME composition, repeats, capture mode, and unbound
+// actions all stand down).
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
@@ -21,56 +20,20 @@ const SID = 's1' as SessionId
 type BenchOptions = {
   running?: boolean
   subagent?: ConversationSnapshot['subagent']
-  queue?: ConversationSnapshot['queue']
-  draft?: string
-}
-
-/** One pending queued message row (text-only) for the snapshot queue. */
-function queuedRow(id: string, text: string): ConversationSnapshot['queue'][number] {
-  return {
-    id: id as never,
-    messageId: `m-${id}` as never,
-    placement: 'queued',
-    content: [{ type: 'text', text }],
-    preview: text,
-    text,
-  }
-}
-
-/** One pending queued message row carrying an image block only (no editable text). */
-function imageRow(id: string): ConversationSnapshot['queue'][number] {
-  return {
-    id: id as never,
-    messageId: `m-${id}` as never,
-    placement: 'queued',
-    content: [{ type: 'image', attachment: { attachmentId: `att-${id}`, mime: 'image/png', size: 1 } } as never],
-    preview: '[image]',
-    text: null,
-  }
 }
 
 async function bench(over: BenchOptions = {}) {
   const runtime = await SlotTestRuntime.create()
   const submit = vi.fn()
   const cancel = vi.fn(() => Promise.resolve())
-  const updateQueue = vi.fn(() => Promise.resolve())
-  const setDraft = vi.fn()
-  let draft = over.draft ?? ''
   // The runtime provides a real workspaces service at root; shadow its
   // startSession with a spy (providing a second one fails loud).
   const startSession = vi.fn()
   const workspaces = runtime.ctx.get('workspaces') as { startSession: () => void } | undefined
   if (workspaces !== undefined) workspaces.startSession = startSession
   runtime.provide('conversation', {
-    input: {
-      for: () => ({
-        submit,
-        setDraft: (text: string) => { draft = text; setDraft(text) },
-        state: { getSnapshot: () => ({ draft }) },
-      }),
-    },
+    input: { for: () => ({ submit }) },
     cancel,
-    updateQueue,
   } as never)
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -85,10 +48,9 @@ async function bench(over: BenchOptions = {}) {
     snapshot: {
       running: over.running ?? false,
       ...(over.subagent !== undefined ? { subagent: over.subagent } : {}),
-      ...(over.queue !== undefined ? { queue: over.queue } : {}),
     },
   })
-  return { runtime, feature, slots: runtime.slots, submit, cancel, updateQueue, setDraft, startSession }
+  return { runtime, feature, slots: runtime.slots, submit, cancel, startSession }
 }
 
 /** The inject face the settings card entry serves (reaches the apply-built policy). */
@@ -295,76 +257,6 @@ describe('ui-shortcuts apply', () => {
     })
     expect(unbound.cancel).not.toHaveBeenCalled()
     await unbound.runtime.dispose()
-  })
-
-  it('Escape retracts the most recent pending queued message and restores its draft', async () => {
-    const b = await bench({ queue: [queuedRow('q1', 'first'), queuedRow('q2', 'second')] })
-    withComposerTextarea((textarea) => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    // Only the most recent pending send is removed (undo-the-last-send); the
-    // idle session has no running turn to cancel.
-    expect(b.updateQueue).toHaveBeenCalledTimes(1)
-    expect(b.updateQueue).toHaveBeenCalledWith('q2', { kind: 'remove' })
-    expect(b.cancel).not.toHaveBeenCalled()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(b.setDraft).toHaveBeenCalledWith('second')
-    await b.runtime.dispose()
-  })
-
-  it('Escape retracts the pending send while a turn runs and leaves the running turn alone', async () => {
-    const b = await bench({ running: true, queue: [queuedRow('q1', 'queued behind the busy turn')] })
-    withComposerTextarea((textarea) => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    expect(b.updateQueue).toHaveBeenCalledWith('q1', { kind: 'remove' })
-    // The running turn is not the retract target and keeps running.
-    expect(b.cancel).not.toHaveBeenCalled()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(b.setDraft).toHaveBeenCalledWith('queued behind the busy turn')
-    await b.runtime.dispose()
-  })
-
-  it('Escape retract never clobbers a live non-empty draft', async () => {
-    const b = await bench({ queue: [queuedRow('q1', 'sent message')], draft: 'newer typing' })
-    withComposerTextarea((textarea) => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    expect(b.updateQueue).toHaveBeenCalledWith('q1', { kind: 'remove' })
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(b.setDraft).not.toHaveBeenCalled()
-    await b.runtime.dispose()
-  })
-
-  it('Escape retract of an image-only message removes it without restoring a draft', async () => {
-    const b = await bench({ queue: [imageRow('q1')] })
-    withComposerTextarea((textarea) => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    expect(b.updateQueue).toHaveBeenCalledWith('q1', { kind: 'remove' })
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(b.setDraft).not.toHaveBeenCalled()
-    await b.runtime.dispose()
-  })
-
-  it('Escape falls through to the stop arm when the removal races the claim', async () => {
-    const b = await bench({ running: true, queue: [queuedRow('q1', 'already claimed')] })
-    b.updateQueue.mockRejectedValueOnce(
-      new Error('conversation.updateQueue failed: queue-item-not-found: queued item is no longer pending'),
-    )
-    withComposerTextarea((textarea) => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    expect(b.updateQueue).toHaveBeenCalledWith('q1', { kind: 'remove' })
-    await Promise.resolve()
-    await Promise.resolve()
-    // The claimed message is a running turn now: cancel is the only lever.
-    expect(b.cancel).toHaveBeenCalledTimes(1)
-    await b.runtime.dispose()
   })
 
   it('Escape stands down without a current session or with a current ghost', async () => {
