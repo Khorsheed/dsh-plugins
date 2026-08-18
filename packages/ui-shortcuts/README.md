@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Optional web shortcuts plugin: three fixed actions — **pause the running turn**, **steer-send the draft**, and **new session** — bound to user-chosen keys. The actions are fixed product operations; the keys are the user's. Defaults: `Esc` pauses globally (the same cancel as the composer's Stop button), `Ctrl/Cmd+S` sends the current draft with queue-jump (steer) delivery, `Ctrl/Cmd+O` starts a new session (the same entry as the sidebar New-session button).
+Optional web shortcuts plugin: three fixed actions — **stop/retract the current activity**, **steer-send the draft**, and **new session** — bound to user-chosen keys. The actions are fixed product operations; the keys are the user's. Defaults: `Esc` stops the current activity retract-first (a just-sent message still waiting in the queue is pulled back into the composer; with nothing pending it cancels the running turn, the same cancel as the composer's Stop button), `Ctrl/Cmd+S` sends the current draft with queue-jump (steer) delivery, `Ctrl/Cmd+O` starts a new session (the same entry as the sidebar New-session button).
 
 ## Install and uninstall
 
@@ -20,7 +20,7 @@ The row's node half registers the `ui-shortcuts` settings namespace; its browser
 
 | Action | Default | Behavior |
 | --- | --- | --- |
-| 暂停当前任务 (Pause current task) | `Esc` | Cancels the current session's running turn through the public `conversation.cancel()` — the same operation as the composer's Stop button. Ordinary sessions and continuable subagents stop; one-shot subagents do not (mirroring the Stop button's visibility). |
+| 停止当前任务 (Stop current task) | `Esc` | Stops the current activity, retract-first. While the just-sent message is still pending in the host inbox (`placement: 'queued'` — the agent has not claimed it into a turn yet: queued behind a busy turn, during maintenance, or across cancel convergence), the action removes the most recent pending send through the public `conversation.updateQueue(..., { kind: 'remove' })` and returns its text to the composer (an image-only message is removed without a draft restore; a non-empty live draft is never clobbered) — the "undo the last send" gesture, leaving the running turn untouched. Once nothing is pending it cancels the running turn through the public `conversation.cancel()` — the same operation as the composer's Stop button. Ordinary sessions and continuable subagents stop; one-shot subagents do not (mirroring the Stop button's visibility). A removal that races the claim (the host picked the message up between the snapshot read and the removal) falls through to the cancel arm. |
 | 插队发送 (Send with priority) | `Ctrl/Cmd+S` | Sends the current draft with `steer` delivery through the public `conversation.input.for(scope).submit('steer')` facade; the browser save gesture is suppressed while bound. Draft-only: an empty draft is a silent no-op (steering the whole queue stays `Cmd/Ctrl+Enter`'s gesture). |
 | 新建会话 (New session) | `Ctrl/Cmd+O` | Starts a new session through the public `workspaces.startSession()` — the same entry as the sidebar New-session button; the browser open-file gesture is suppressed while bound. A global action, independent of focus. |
 
@@ -47,11 +47,11 @@ The contribution's locale entries stay in the contributing plugin's own namespac
 
 ## Escape layering
 
-Escape pause is global and yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, and the settings panel close on Escape without `preventDefault`, and their DOM is still present during dispatch), or a non-composer editable target (inline rename, search fields). Everywhere else — the composer textarea, the sidebar, the session list — Escape pauses the running turn. IME composition and held-repeat keys never trigger any action.
+Escape stop/retract is global and yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, and the settings panel close on Escape without `preventDefault`, and their DOM is still present during dispatch), or a non-composer editable target (inline rename, search fields). Everywhere else — the composer textarea, the sidebar, the session list — Escape retracts the pending send if one exists, otherwise cancels the running turn. IME composition and held-repeat keys never trigger any action.
 
 ## Model Experience
 
-None. The actions call existing public verbs (`conversation.cancel`, `conversation.input.submit`) that the composer's own controls already use; nothing here reaches a model request.
+None. The actions call existing public verbs (`conversation.cancel`, `conversation.updateQueue`, `conversation.input.submit`/`setDraft`) that the composer's own controls already use; nothing here reaches a model request.
 
 #### KV Cache effect
 
@@ -65,5 +65,6 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **No user-defined actions** — plugins contribute actions through `ctx.shortcuts` (see *For plugin authors*); arbitrary user-defined actions (command lines, toggles) are not offered.
+- **Escape retract only reaches pending messages** — a message the host has already claimed into a running turn is durable in the session log (the `user/message` event is appended the moment the turn starts), so Escape can only cancel that turn, never pull the message back. Pulling back an already-admitted message would need host-side support and is deliberately out of scope for this plugin.
 - **Ctrl/Cmd+S is draft-only** — an empty draft does nothing; the plugin deliberately leaves whole-queue steering to the composer's `Cmd/Ctrl+Enter` gesture.
 - **No in-repo e2e** — the plugin is not in the default bundle, so it has no `apps/web` replay scenario; its wiring is covered by the apply-level browser spec against fakes.

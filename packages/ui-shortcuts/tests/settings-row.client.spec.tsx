@@ -100,7 +100,7 @@ function press(init: KeyboardEventInit): void {
 describe('ShortcutsRow', () => {
   it('describes the registered actions and hides reset and the default hint at defaults', () => {
     mount()
-    expect(screen.getByText('暂停当前任务')).toBeDefined()
+    expect(screen.getByText('停止当前任务')).toBeDefined()
     expect(screen.getByText('插队发送')).toBeDefined()
     expect(screen.getByText('新建会话')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Esc' })).toBeDefined()
