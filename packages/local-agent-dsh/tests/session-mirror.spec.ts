@@ -76,12 +76,17 @@ function twoRoundLines(): object[] {
 function writeSubDshSession(homeDir: string, id: string, lines: object[], compressed = false): void {
   const dir = join(homeDir, 'sessions', 'wd_test', id)
   mkdirSync(dir, { recursive: true })
-  const text = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
   if (compressed) {
-    writeFileSync(join(dir, 'session.jsonl.zstd'), zstdCompressSync(text))
-  } else {
-    writeFileSync(join(dir, 'session.jsonl'), text)
+    // Persist like the real store: one zstd frame per flush batch, so the
+    // reader must handle multi-frame concatenation (single-shot decompression
+    // would stop at the first frame — the bug this fixture guards).
+    const first = lines.slice(0, 3).map(line => JSON.stringify(line)).join('\n') + '\n'
+    const rest = lines.slice(3).map(line => JSON.stringify(line)).join('\n') + '\n'
+    writeFileSync(join(dir, 'session.jsonl.zstd'), Buffer.concat([zstdCompressSync(first), zstdCompressSync(rest)]))
+    return
   }
+  const text = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
+  writeFileSync(join(dir, 'session.jsonl'), text)
 }
 
 /** A child session pre-loaded with `rounds` turn boundaries, as the provider leaves it. */

@@ -31,6 +31,31 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
 
+/** Every zstd frame's little-endian magic number, marking a frame start in the stream. */
+const ZSTD_FRAME_MAGIC = 0xfd2fb528
+
+/**
+ * Decompress a multi-frame zstd session log. The persistence layer appends
+ * one frame per flush batch, and Node's single-shot `zstdDecompress` stops at
+ * the first frame's end (a streaming decoder does the same), so each frame
+ * start is scanned and decompressed independently. A magic-looking byte
+ * sequence inside compressed data fails decompression and is skipped.
+ * @param content - the raw `.zstd` file bytes.
+ * @returns the concatenated plaintext of every frame.
+ */
+async function decompressZstdFrames(content: Buffer): Promise<string> {
+  const parts: string[] = []
+  for (let offset = 0; offset + 4 <= content.length; offset += 1) {
+    if (content.readUInt32LE(offset) !== ZSTD_FRAME_MAGIC) continue
+    try {
+      parts.push((await decompressZstd(content.subarray(offset))).toString('utf8'))
+    } catch {
+      // Not a real frame start; keep scanning.
+    }
+  }
+  return parts.join('')
+}
+
 /**
  * Read a sub-dsh session's event log from the scoped home. The session lives
  * at `<homeDir>/sessions/<workspace>/<id>/` (the runner passes the bare uuid)
@@ -54,7 +79,7 @@ export async function readSubDshEvents(homeDir: string, sessionId: string): Prom
         let text: string
         try {
           const content = await readFile(join(dir, file))
-          text = file.endsWith('.zstd') ? (await decompressZstd(content)).toString('utf8') : content.toString('utf8')
+          text = file.endsWith('.zstd') ? await decompressZstdFrames(content) : content.toString('utf8')
         } catch {
           continue
         }
