@@ -93,3 +93,21 @@ export type LocalAgentDelegationIntent =
     /** The CLI session id the resume command continues. */
     readonly cliSessionId: string
   }
+
+/**
+ * Call options for the public delegation facade (`LocalAgentRegistry.start` /
+ * `resume`). The interface is deliberately additive: later milestones add
+ * `onProgress` and `reattach` fields without changing the existing ones.
+ */
+export interface DelegationCallOptions {
+  /**
+   * Child display label persisted with a session-backed child; omitted, the
+   * harness's own display name labels the delegation.
+   */
+  readonly label?: string
+  /**
+   * Caller-owned extra cancellation channel. It is fused with the facade's
+   * internal `cancel()` controller: aborting either cancels the run.
+   */
+  readonly signal?: AbortSignal
+}

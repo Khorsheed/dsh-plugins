@@ -23,7 +23,14 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
+  DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentRosterRow,
@@ -39,6 +46,7 @@ export const name = 'local-agent'
 export const inject = ['commands']
 
 export type {
+  DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentRosterRow,
@@ -152,6 +160,17 @@ function delegationIntentKey(parentSessionId: string, provider: string): string 
   return `${parentSessionId}\u0000${provider}`
 }
 
+/**
+ * Fuse the facade-owned cancel controller with an optional caller signal, so
+ * `cancel()` and the caller's own abort channel both reach the run.
+ * `AbortSignal.any` is the harness's own fusion primitive (agent-loop's resume
+ * uses it); either source aborts the run.
+ */
+function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
+  if (caller === undefined) return controller.signal
+  return AbortSignal.any([controller.signal, caller])
+}
+
 export const Config: z<Config> = z.object({
   homesRoot: z.string().required(),
   loginPromptTimeoutMs: z.number().default(10_000),
@@ -248,6 +267,20 @@ export class LocalAgentRegistry {
    * the first round's messages.
    */
   private readonly kimiMirrorOffsets = new Map<string, number>()
+  /**
+   * Facade-tracked in-flight runs by dsh child session id, so
+   * {@link LocalAgentRegistry.cancel} can abort a run started through
+   * {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume}. Each
+   * entry clears itself when the run's result settles (any stop reason).
+   */
+  private readonly runs = new Map<string, { controller: AbortController; run: SubagentRun }>()
+  /**
+   * Detach disposers for child sessions the facade reattached into the live
+   * store (see {@link LocalAgentRegistry.resume} step 5). Held for the plugin
+   * lifetime — the same lifecycle a provider-created child session has — and
+   * released together on plugin dispose.
+   */
+  private readonly reattachDisposers = new Map<string, () => void>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -258,7 +291,13 @@ export class LocalAgentRegistry {
     private readonly ctx: Context,
     private readonly homesRoot: string,
     private readonly loginPromptTimeoutMs: number,
-  ) {}
+  ) {
+    // Reattached child sessions leave the live store when the plugin unloads.
+    ctx.effect(() => () => {
+      for (const detach of this.reattachDisposers.values()) detach()
+      this.reattachDisposers.clear()
+    })
+  }
 
   /**
    * Absolute scoped home for one harness.
@@ -449,6 +488,35 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Remove one previously staged intent by reference, returning whether it was
+   * still queued. The delegation facade calls this when `ctx.subagents.start()`
+   * throws: an intent the provider never consumed must not linger in the FIFO,
+   * where the NEXT same-(parent, provider) start would misconsume it as its own
+   * (orphan-intent crosstalk). When the provider already consumed the intent
+   * before throwing, the removal is a no-op and the pairing stays intact.
+   * @param parentSessionId - the delegating parent session id.
+   * @param provider - the `ctx.subagents` provider name.
+   * @param intent - the exact intent object passed to
+   *   {@link stageDelegationIntent}.
+   * @returns whether the intent was removed (false when already consumed or
+   *   never staged).
+   */
+  unstageDelegationIntent(
+    parentSessionId: string,
+    provider: string,
+    intent: LocalAgentDelegationIntent,
+  ): boolean {
+    const key = delegationIntentKey(parentSessionId, provider)
+    const queue = this.delegationIntents.get(key)
+    if (queue === undefined) return false
+    const index = queue.indexOf(intent)
+    if (index === -1) return false
+    queue.splice(index, 1)
+    if (queue.length === 0) this.delegationIntents.delete(key)
+    return true
+  }
+
+  /**
    * Every recorded delegation, in recording order. The invariant companion
    * cross-checks each record's provider against the mounted subagent
    * providers so a provider rename cannot leave a stale resume mapping.
@@ -484,6 +552,180 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Read-only probe of the per-child resume lock. The delegation facade uses
+   * it to fail fast BEFORE staging an intent; the authoritative mutual
+   * exclusion stays with the provider's `acquireResumeLock` inside `start()`.
+   * @param childSessionId - the dsh child session id.
+   * @returns whether a resume of this child session is currently in flight.
+   */
+  isResumeLocked(childSessionId: string): boolean {
+    return this.resumeLocks.has(childSessionId)
+  }
+
+  /**
+   * Start a FRESH delegation on one subagent provider — the programmatic
+   * equivalent of the family tool's fresh call, for plugins acting on the
+   * user's behalf (room, orchestrators). One call performs the provider
+   * pre-check, resolves the live parent agent, stages exactly one
+   * `{ kind: 'fresh' }` intent, and starts the provider in the same
+   * synchronous flow, so the per-(parent, provider) FIFO pairing holds. When
+   * the start throws, the staged intent is rolled back via
+   * {@link unstageDelegationIntent} (a no-op once the provider consumed it).
+   *
+   * The returned run is tracked under its `run.id` (== the new dsh child
+   * session id) until `run.result` settles; {@link cancel} aborts it by that
+   * id. Note on trust: cordis plugins share one process, so the ownership
+   * checks here and in {@link resume} guard against caller MISTAKES, not
+   * against a malicious plugin — their real protection target is untrusted
+   * model text, which never carries the resume handle (first-class parameter
+   * + intent channel only).
+   * @param parentSessionId - the delegating parent session id; must have a
+   *   live agent (`ctx.agents.get`, a harness hard constraint).
+   * @param provider - the `ctx.subagents` provider name.
+   * @param prompt - the child user message content blocks.
+   * @param options - optional label and caller-owned abort signal.
+   * @returns the published subagent run.
+   * @throws when the subagents/agents service is not mounted, the provider is
+   *   not registered, or the parent session has no live agent — in every case
+   *   BEFORE anything is staged.
+   */
+  async start(
+    parentSessionId: string,
+    provider: string,
+    prompt: ContentBlock[],
+    options?: DelegationCallOptions,
+  ): Promise<SubagentRun> {
+    const subagents = this.requireSubagents()
+    this.requireProvider(subagents, provider)
+    const parent = this.requireLiveParent(parentSessionId)
+    const intent: LocalAgentDelegationIntent = { kind: 'fresh' }
+    this.stageDelegationIntent(parentSessionId, provider, intent)
+    const controller = new AbortController()
+    let run: SubagentRun
+    try {
+      run = await subagents.start(provider, {
+        prompt,
+        parent,
+        signal: fusedSignal(controller, options?.signal),
+        ...options?.label === undefined ? {} : { label: options.label },
+      })
+    } catch (error: unknown) {
+      this.unstageDelegationIntent(parentSessionId, provider, intent)
+      throw error
+    }
+    this.trackRun(run.id, controller, run)
+    return run
+  }
+
+  /**
+   * Resume a recorded delegation: continue the SAME CLI session inside the
+   * SAME dsh child session. One call performs, in order:
+   *
+   * 1. provider pre-check (`ctx.subagents.getProvider`) — fails loud WITHOUT
+   *    staging, so an unknown provider never leaves an orphan intent;
+   * 2. `resolveDelegation` ownership check (unchanged semantics): the handle
+   *    must name a delegation THIS parent session recorded through THIS
+   *    provider;
+   * 3. read-only resume-lock probe ({@link isResumeLocked}) — fails fast
+   *    without staging; the provider still takes the authoritative lock inside
+   *    its `start()`;
+   * 4. live parent agent resolution (`ctx.agents.get`) — a harness hard
+   *    constraint, since `ctx.subagents.start` requires a live parent;
+   * 5. child-session REATTACH when `ctx.sessions.get(childSessionId)` is
+   *    undefined (recipe below);
+   * 6. stage `{ kind: 'resume', childSessionId, cliSessionId }` and, in the
+   *    same synchronous flow, `await ctx.subagents.start(provider, …)`;
+   * 7. on start failure, roll the intent back via
+   *    {@link unstageDelegationIntent} (no-op once consumed);
+   * 8. on success, track the run under `childSessionId` for {@link cancel}
+   *    until `run.result` settles.
+   *
+   * **Reattach recipe** (callers replicating this flow — e.g. room — copy
+   * exactly this sequence):
+   *
+   * ```ts
+   * using prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))
+   * const detach = ctx.sessions.enter(prep.session)
+   * ```
+   *
+   * Hold `detach` for the plugin lifetime. The publication is ENTER-ONLY,
+   * deliberately WITHOUT `ctx.sessions.announce()`: `enter` installs the
+   * append-publication hooks and the store entry — everything the provider's
+   * liveness probe (`sessions.get`) and the transcript mirror's `session/event`
+   * broadcast need — while `announce` only emits `session/created`, whose
+   * semantics are NEW-session creation. A persisted child already fired
+   * `session/created` in its original lifetime (fresh delegations publish
+   * through `sessions.create()`), and re-firing would re-trigger creation
+   * listeners (apiproxy projections, per-session setup invariants) for a
+   * session being RESTORED, not created. The official agent resume
+   * (`agentLoop.resume` → publish) announces because it publishes a brand-new
+   * live agent+session pair for this process lifetime; a CLI provider's child
+   * is a pure transcript container with no agent on it, so only `enter`
+   * applies.
+   * @param parentSessionId - the delegating parent session id; must match the
+   *   recorded one and have a live agent.
+   * @param provider - the `ctx.subagents` provider that owns the CLI session.
+   * @param childSessionId - the dsh child session id from the first round (the
+   *   resume handle).
+   * @param prompt - the follow-up user message content blocks.
+   * @param options - optional label and caller-owned abort signal.
+   * @returns the published subagent run.
+   * @throws on unknown provider, unknown/foreign-parent/wrong-provider handle,
+   *   an in-flight resume of the same child, or a missing live parent agent —
+   *   all BEFORE anything is staged.
+   */
+  async resume(
+    parentSessionId: string,
+    provider: string,
+    childSessionId: string,
+    prompt: ContentBlock[],
+    options?: DelegationCallOptions,
+  ): Promise<SubagentRun> {
+    const subagents = this.requireSubagents()
+    this.requireProvider(subagents, provider)
+    const { cliSessionId } = this.resolveDelegation(childSessionId, { provider, parentSessionId })
+    if (this.isResumeLocked(childSessionId)) {
+      throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
+    }
+    const parent = this.requireLiveParent(parentSessionId)
+    await this.reattachChildSession(childSessionId)
+    const intent: LocalAgentDelegationIntent = { kind: 'resume', childSessionId, cliSessionId }
+    this.stageDelegationIntent(parentSessionId, provider, intent)
+    const controller = new AbortController()
+    let run: SubagentRun
+    try {
+      run = await subagents.start(provider, {
+        prompt,
+        parent,
+        signal: fusedSignal(controller, options?.signal),
+        ...options?.label === undefined ? {} : { label: options.label },
+      })
+    } catch (error: unknown) {
+      this.unstageDelegationIntent(parentSessionId, provider, intent)
+      throw error
+    }
+    this.trackRun(childSessionId, controller, run)
+    return run
+  }
+
+  /**
+   * Cancel an in-flight facade-started run by its dsh child session id: aborts
+   * the internal controller whose (fused) signal was passed to
+   * `ctx.subagents.start`, which is the canonical cancellation channel for a
+   * one-shot run. The provider settles the run with an `aborted`-class stop
+   * reason. A caller holding the `SubagentRun` may also `run.dispose()`.
+   * @param childSessionId - the dsh child session id of the run to cancel.
+   * @returns whether an in-flight run was found and signalled (false on a
+   *   miss — never a silent success, never a throw).
+   */
+  cancel(childSessionId: string): boolean {
+    const entry = this.runs.get(childSessionId)
+    if (entry === undefined) return false
+    entry.controller.abort()
+    return true
+  }
+
+  /**
    * Read the kimi transcript lines already mirrored into one child session,
    * so a resumed round mirrors only its delta instead of duplicating earlier
    * messages. Absent means the first round has not mirrored yet. Reads the
@@ -510,6 +752,69 @@ export class LocalAgentRegistry {
     if (record !== undefined) {
       this.delegations.set(childSessionId, { ...record, kimiMirroredLines: lines })
     }
+  }
+
+  /** Resolve the subagents service or fail loud naming the missing service. */
+  private requireSubagents(): SubagentRuntime {
+    const subagents = this.ctx.get('subagents')
+    if (subagents === undefined) {
+      throw new Error('localAgent: delegation requires the subagents service, which is not mounted (install a subagent provider plugin)')
+    }
+    return subagents
+  }
+
+  /** Fail loud on an unknown provider BEFORE any intent is staged. */
+  private requireProvider(subagents: SubagentRuntime, provider: string): void {
+    if (subagents.getProvider(provider) === undefined) {
+      throw new Error(`localAgent: subagent provider ${JSON.stringify(provider)} is not registered`)
+    }
+  }
+
+  /** Resolve the live parent Agent or fail loud (harness hard constraint). */
+  private requireLiveParent(parentSessionId: string): Agent {
+    const agents = this.ctx.get('agents')
+    if (agents === undefined) {
+      throw new Error('localAgent: delegation requires the agents service, which is not mounted')
+    }
+    const parent = agents.get(SessionId(parentSessionId))
+    if (parent === undefined) {
+      throw new Error(`localAgent: parent session ${parentSessionId} has no live agent; delegation requires a live parent agent`)
+    }
+    return parent
+  }
+
+  /**
+   * Restore a persisted child session into the live store when it is absent —
+   * the reattach recipe documented on {@link resume}. Enter-only on purpose;
+   * the detach disposer is held in {@link reattachDisposers} until plugin
+   * dispose.
+   */
+  private async reattachChildSession(childSessionId: string): Promise<void> {
+    const sessions = this.ctx.get('sessions')
+    if (sessions === undefined) {
+      throw new Error('localAgent: delegation requires the sessions service, which is not mounted')
+    }
+    if (sessions.get(SessionId(childSessionId)) !== undefined) return
+    if (this.reattachDisposers.has(childSessionId)) return
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
+    }
+    using preparation = await persistence.prepare(SessionId(childSessionId))
+    this.reattachDisposers.set(childSessionId, sessions.enter(preparation.session))
+  }
+
+  /**
+   * Track one facade-started run under its child session id for
+   * {@link cancel}; the entry clears itself when the run's result settles
+   * (any stop reason, resolved or rejected).
+   */
+  private trackRun(childSessionId: string, controller: AbortController, run: SubagentRun): void {
+    this.runs.set(childSessionId, { controller, run })
+    const clear = (): void => {
+      if (this.runs.get(childSessionId)?.run === run) this.runs.delete(childSessionId)
+    }
+    void run.result.then(clear, clear)
   }
 
   /**
