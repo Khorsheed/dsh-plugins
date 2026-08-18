@@ -29,10 +29,13 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { readKimiBaseUrl } from './provision.ts'
-import { mirrorKimiSession } from './session-mirror.ts'
+import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+/** Default interval between live transcript-mirror polls during a run. */
+export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
 
 /**
  * One-shot Kimi CLI subagent provider: every accepted fresh run starts a
@@ -221,6 +224,12 @@ export interface KimiCliRunSpec {
    * delegation so a later resume round can continue the session.
    */
   readonly onCliSessionId?: ((cliSessionId: string | undefined) => void) | undefined
+  /**
+   * Live-mirror poll interval during the run; absent disables nothing — the
+   * default ({@link DEFAULT_LIVE_MIRROR_INTERVAL_MS}) applies. Tests inject a
+   * small value.
+   */
+  readonly liveMirrorIntervalMs?: number | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -264,6 +273,38 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 }
 
 /**
+ * Mirror the transcript delta after the recorded offset, advance the offset,
+ * and report one `delta` progress per newly mirrored line. Shared by the live
+ * poll and the settle-time mirror so the two paths cannot drift. The offset
+ * read (`kimiMirroredLines`) and write (`setKimiMirroredLines`) are the same
+ * bookkeeping the settle path used before live mirroring existed.
+ * @param ctx - host context carrying localAgent and session persistence.
+ * @param childSession - the dsh child session being mirrored into.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @param kimiSessionId - the kimi session to mirror.
+ * @returns the mirror delta (new total + newly mirrored line texts).
+ */
+async function mirrorKimiDelta(
+  ctx: Context,
+  childSession: Session,
+  homeDir: string,
+  kimiSessionId: string | undefined,
+): Promise<KimiMirrorDelta> {
+  // Degrade without the localAgent service: the transcript still mirrors (the
+  // pre-live-mirror behavior for a bare context), only the offset bookkeeping
+  // and progress reporting drop out.
+  const localAgent = ctx.get('localAgent')
+  const fromLines = localAgent?.kimiMirroredLines(childSession.id) ?? 0
+  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines)
+  if (delta.texts.length === 0) return delta
+  localAgent?.setKimiMirroredLines(childSession.id, delta.total)
+  for (const text of delta.texts) {
+    localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
+  }
+  return delta
+}
+
+/**
  * Mirror the kimi session's transcript into the child session AFTER the CLI
  * process has exited, whatever its stop reason. A cancelled or failed round
  * still preserves whatever the wire already recorded (partial answer, tool
@@ -283,20 +324,10 @@ async function mirrorKimiAfterExit(
   try {
     const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
     if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
-    // A resume round mirrors only the delta after the recorded offset; a
-    // fresh round starts from zero. The mirror returns the new total
-    // transcript-line count, which becomes the next round's offset.
-    const fromLines = spec.resume === undefined
-      ? 0
-      : spec.ctx.localAgent.kimiMirroredLines(spec.childSession.id) ?? 0
-    const total = await mirrorKimiSession(
-      spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, fromLines,
-    )
-    spec.ctx.localAgent.setKimiMirroredLines(spec.childSession.id, total)
-    // Report the mirror AFTER the offset bookkeeping so observers reading
-    // kimiMirroredLines in response see the new value. The facade forwards
-    // this as `localAgent/run-progress` (event + per-call onProgress).
-    spec.ctx.localAgent.reportRunProgress(spec.childSession.id, { kind: 'mirror', mirroredLines: total })
+    const delta = await mirrorKimiDelta(spec.ctx, spec.childSession, spec.homeDir, kimiSessionId)
+    // Report the final mirrored-line count even when the live mirror already
+    // advanced the offset (empty delta): the settle report is authoritative.
+    spec.ctx.get('localAgent')?.reportRunProgress(spec.childSession.id, { kind: 'mirror', mirroredLines: delta.total })
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }
@@ -342,6 +373,51 @@ export function startKimiCliRun(
   // parsed for the mirror and the delegation record, never folded into output.
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+  // Live transcript mirroring: poll the kimi wire log while the run is in
+  // flight and mirror the delta through the SAME folding path the settle-time
+  // mirror uses, so a caller watching the child session sees progress instead
+  // of silence. The offset is the shared kimiMirroredLines bookkeeping, so the
+  // settle-time final mirror is a no-op when polling kept up. A poll failure
+  // never kills the run: it logs, and the settle mirror remains the fallback.
+  // All mirror passes (polls and the settle mirror) serialize through
+  // mirrorQueue so concurrent passes cannot fold overlapping ranges.
+  let mirrorQueue: Promise<void> = Promise.resolve()
+  const enqueueMirror = (task: () => Promise<void>): void => {
+    mirrorQueue = mirrorQueue.then(task)
+  }
+  if (spec.childSession !== undefined && spec.homeDir !== undefined && spec.ctx !== undefined) {
+    const childSession = spec.childSession
+    const homeDir = spec.homeDir
+    const mirrorCtx = spec.ctx
+    const poll = async (): Promise<void> => {
+      // A fresh run's session id arrives on stderr with the resume hint; skip
+      // the tick until it is known (the newest-session heuristic would risk
+      // cross-mirroring a concurrent delegation).
+      const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
+      if (kimiSessionId === undefined) return
+      const delta = await mirrorKimiDelta(mirrorCtx, childSession, homeDir, kimiSessionId)
+      if (delta.texts.length > 0) {
+        mirrorCtx.get('localAgent')?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+      }
+    }
+    const liveMirror = setInterval(() => {
+      enqueueMirror(async () => {
+        try {
+          await poll()
+        } catch (error: unknown) {
+          mirrorCtx.logger.warn(`subagent-kimi: live mirror poll failed: ${thrown(error).message}`)
+        }
+      })
+    }, spec.liveMirrorIntervalMs ?? DEFAULT_LIVE_MIRROR_INTERVAL_MS)
+    liveMirror.unref()
+    // Polling stops when the process exits; the settle mirror (enqueued below)
+    // runs the final fold afterwards through the same queue.
+    void child.done.then(
+      () => { clearInterval(liveMirror) },
+      () => { clearInterval(liveMirror) },
+    )
+  }
 
   const disposeProcess = async (): Promise<void> => {
     if (child.pid <= 0) {
@@ -442,9 +518,9 @@ export function startKimiCliRun(
   // the wire file, so it only reflects what kimi flushed before the kill.
   // Waits for the settle chain first (so turn/end is already appended) AND for
   // the process to actually exit (so the wire file is complete) before
-  // reading it.
+  // reading it. Enqueued behind any in-flight live poll on the mirror queue.
   void result.then(() => child.done).then(
-    () => mirrorKimiAfterExit(spec, stderr),
+    () => { enqueueMirror(() => mirrorKimiAfterExit(spec, stderr)) },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 
