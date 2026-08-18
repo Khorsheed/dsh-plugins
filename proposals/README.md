@@ -106,4 +106,5 @@ idea → planned → in-progress → verified → done（移入 closed/）
 
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|
-| — | （新提案放这里） | idea | — | — | — | — |
+| plugin | [通用数据集存储 + 任务管理（datasets / mission）](active/2026-08-18-datasets-mission-bench.md) | planned | 纯插件 | bench 私有仓库（题库 + run 模板） | 通用能力；agent 经模型工具读写，评测用法单立一章 | 2026-08-18 |
+| plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1 门面+reattach 配方 → M2 心跳 → M3 逐 provider 增量镜像 → M4 映射持久化+跨重启续跑 | 2026-08-18 |

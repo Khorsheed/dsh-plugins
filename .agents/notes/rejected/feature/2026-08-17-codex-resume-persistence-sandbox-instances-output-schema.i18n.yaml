@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md
+.agents/notes/rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md: a7d9f7635ecd2e62b1ee82a1af2a118b3d30ff6e
+.agents/notes/rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.zh.md: 0fa287ea15c49e07ddb341512db8d5abb7b4dd15

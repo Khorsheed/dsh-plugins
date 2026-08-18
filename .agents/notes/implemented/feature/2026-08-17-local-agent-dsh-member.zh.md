@@ -82,4 +82,4 @@ dsh 成员复用父实例解析出的 `DEEPSEEK_API_KEY`；登录流程只加表
 
 ## Deferred
 
-- 委派映射持久化（父实例重启后 resume）——与 kimi/codex 同限制（delegations 在内存），归入 codex 持久化提案批次（[codex resume persistence 提案](../../proposed/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.zh.md)）。
+- 委派映射持久化（父实例重启后 resume）——与 kimi/codex 同限制（delegations 在内存），归属 [local-agent 委派 API 提案](../../../proposals/active/2026-08-18-local-agent-delegation-api.md) 的 M4 里程碑。
