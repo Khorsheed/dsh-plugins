@@ -127,7 +127,102 @@ describe('codex-cli-provider run settlement', () => {
     const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
     expect(turns[1]!.data).toEqual({ turn: 1, reason: { kind: 'completed' } })
-    expect(append).toHaveBeenCalledWith(child.id, child.events)
+    // The live mirror persists during the run; the settle mirror persists the
+    // final event set (with turn/end) after exit — wait for that last write.
+    await vi.waitFor(() => {
+      expect(append).toHaveBeenCalledWith(child.id, child.events)
+    })
+    await done
+  })
+
+  it('mirrors the NDJSON stream live during the run and settles without duplicates', async () => {
+    const child = Session.create(SessionId('child-live-codex'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
+    ctx.provide('localAgent', {
+      reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
+        reports.push({ id, progress })
+      },
+    } as never)
+
+    // A controllable child: stdout stays open, done resolves when the test
+    // finishes the process.
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4245,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: '/tmp/codex-home' },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+
+    const emit = (...events: unknown[]): void => {
+      stdout.push(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    }
+    // First item only: the last line is held back until the terminal event
+    // (it is the usage carrier), so nothing is mirrored yet.
+    emit(
+      { type: 'thread.started', thread_id: 't1' },
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: '调查一下' } },
+    )
+
+    // A second item un-holds the first: the user prompt and the first reply
+    // mirror while the process is STILL running.
+    emit({ type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: 'ls', aggregated_output: 'a.txt' } })
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(reports.some(report => report.progress.kind === 'delta' && report.progress.text === '调查一下')).toBe(true)
+
+    // The terminal event flushes the held lines, usage riding the final one.
+    emit(
+      { type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: 'Task complete.' } },
+      { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 6, output_tokens: 4 } },
+    )
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(3)
+    })
+
+    // Settle: the live mirror already covered the stream — no duplicates.
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 3)).toBe(true)
+    })
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const texts = assistant.map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
+    expect(new Set(texts).size).toBe(texts.length)
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect((assistant[2]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     await done
   })
 

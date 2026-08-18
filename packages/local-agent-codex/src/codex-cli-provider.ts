@@ -256,6 +256,105 @@ export type CodexTranscriptLine =
   | { kind: 'text'; text: string }
   | { kind: 'tool'; name: string; detail?: string }
 
+/** Mutable fold state shared by the batch parse and the incremental parser. */
+interface CodexStreamFoldState {
+  readonly lines: CodexTranscriptLine[]
+  text: string | undefined
+  usage: TokenUsage | undefined
+  threadId: string | undefined
+  /** Whether the stream's terminal `turn.completed` event was folded. */
+  completed: boolean
+}
+
+/**
+ * Fold one NDJSON line into the stream state. Shared by
+ * {@link parseCodexJsonStream} (settle-time whole-stream parse) and
+ * {@link CodexStreamParser} (live incremental parse) so the two paths cannot
+ * drift.
+ */
+function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
+  const line = raw.trim()
+  if (line === '') return
+  let event: {
+    type?: string
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string }
+    usage?: unknown
+    thread_id?: unknown
+  }
+  try {
+    event = JSON.parse(line) as typeof event
+  } catch {
+    return
+  }
+  if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
+    state.threadId = event.thread_id
+    return
+  }
+  if (event.type === 'turn.completed') {
+    state.completed = true
+    if (event.usage !== undefined) state.usage = usageFromCodex(event.usage)
+    return
+  }
+  if (event.type !== 'item.completed' || event.item === undefined) return
+  const item = event.item
+  if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim() !== '') {
+    state.lines.push({ kind: 'think', text: item.text })
+  } else if (item.type === 'agent_message' && typeof item.text === 'string') {
+    state.lines.push({ kind: 'text', text: item.text })
+    state.text = item.text
+  } else if (item.type === 'command_execution') {
+    const command = typeof item.command === 'string' ? item.command : undefined
+    const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
+    if (command !== undefined || output !== undefined) {
+      state.lines.push({
+        kind: 'tool',
+        name: 'Bash',
+        ...command === undefined ? {} : { detail: command },
+        ...command !== undefined && output !== undefined && output.trim() !== '' ? { detail: `${command}\n${output}` } : {},
+      })
+    }
+  } else if (item.type === 'web_search_call') {
+    state.lines.push({ kind: 'tool', name: 'WebSearch' })
+  } else if (item.type === 'function_call_output') {
+    // A function/command result; attach to the previous tool line when one
+    // is pending (web search or command output).
+    const output = typeof item.output === 'string' ? item.output : undefined
+    if (output !== undefined && output.trim() !== '') {
+      const last = state.lines[state.lines.length - 1]
+      if (last !== undefined && last.kind === 'tool') {
+        state.lines[state.lines.length - 1] = {
+          ...last,
+          detail: last.detail === undefined ? output : `${last.detail}\n${output}`,
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Incremental `codex exec --json` parser: feed stdout chunks as they arrive
+ * and the folded transcript accumulates line by line. The last line is
+ * volatile until the terminal `turn.completed` — a `function_call_output`
+ * merges into a pending tool line — so live consumers hold it back (see the
+ * run's live mirror).
+ */
+export class CodexStreamParser implements CodexStreamFoldState {
+  private buffer = ''
+  readonly lines: CodexTranscriptLine[] = []
+  text: string | undefined
+  usage: TokenUsage | undefined
+  threadId: string | undefined
+  completed = false
+
+  /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
+  push(chunk: string): void {
+    this.buffer += chunk
+    const parts = this.buffer.split('\n')
+    this.buffer = parts.pop() ?? ''
+    for (const raw of parts) foldCodexStreamLine(this, raw)
+  }
+}
+
 /**
  * Parse a `codex exec --json` NDJSON event stream into an ordered transcript
  * (thinking, agent text, tool/command activity in event order), plus the final
@@ -274,72 +373,13 @@ export function parseCodexJsonStream(stream: string): {
   usage?: TokenUsage
   threadId?: string
 } {
-  const lines: CodexTranscriptLine[] = []
-  let text: string | undefined
-  let usage: TokenUsage | undefined
-  let threadId: string | undefined
-  for (const raw of stream.split('\n')) {
-    const line = raw.trim()
-    if (line === '') continue
-    let event: {
-      type?: string
-      item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string }
-      usage?: unknown
-      thread_id?: unknown
-    }
-    try {
-      event = JSON.parse(line) as typeof event
-    } catch {
-      continue
-    }
-    if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
-      threadId = event.thread_id
-      continue
-    }
-    if (event.type === 'turn.completed' && event.usage !== undefined) {
-      usage = usageFromCodex(event.usage)
-      continue
-    }
-    if (event.type !== 'item.completed' || event.item === undefined) continue
-    const item = event.item
-    if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim() !== '') {
-      lines.push({ kind: 'think', text: item.text })
-    } else if (item.type === 'agent_message' && typeof item.text === 'string') {
-      lines.push({ kind: 'text', text: item.text })
-      text = item.text
-    } else if (item.type === 'command_execution') {
-      const command = typeof item.command === 'string' ? item.command : undefined
-      const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
-      if (command !== undefined || output !== undefined) {
-        lines.push({
-          kind: 'tool',
-          name: 'Bash',
-          ...command === undefined ? {} : { detail: command },
-          ...command !== undefined && output !== undefined && output.trim() !== '' ? { detail: `${command}\n${output}` } : {},
-        })
-      }
-    } else if (item.type === 'web_search_call') {
-      lines.push({ kind: 'tool', name: 'WebSearch' })
-    } else if (item.type === 'function_call_output') {
-      // A function/command result; attach to the previous tool line when one
-      // is pending (web search or command output).
-      const output = typeof item.output === 'string' ? item.output : undefined
-      if (output !== undefined && output.trim() !== '') {
-        const last = lines[lines.length - 1]
-        if (last !== undefined && last.kind === 'tool') {
-          lines[lines.length - 1] = {
-            ...last,
-            detail: last.detail === undefined ? output : `${last.detail}\n${output}`,
-          }
-        }
-      }
-    }
-  }
+  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, completed: false }
+  for (const raw of stream.split('\n')) foldCodexStreamLine(state, raw)
   return {
-    lines,
-    ...text === undefined ? {} : { text },
-    ...usage === undefined ? {} : { usage },
-    ...threadId === undefined ? {} : { threadId },
+    lines: state.lines,
+    ...state.text === undefined ? {} : { text: state.text },
+    ...state.usage === undefined ? {} : { usage: state.usage },
+    ...state.threadId === undefined ? {} : { threadId: state.threadId },
   }
 }
 
@@ -406,8 +446,18 @@ export function startCodexCliRun(
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
   spec.childSession?.append('turn/start', { turn })
+  // Live mirror: fold the NDJSON stream as chunks arrive so the child session
+  // shows the run's progress before settle; the settle mirror below resumes
+  // from the live counters and stays a no-op when live mirroring kept up.
+  const liveMirror = spec.childSession !== undefined && spec.ctx !== undefined
+    ? createCodexLiveMirror(spec, task, turn)
+    : undefined
   let output = ''
-  child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
+  child.stdout?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString()
+    output += text
+    liveMirror?.push(text)
+  })
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
@@ -532,7 +582,7 @@ export function startCodexCliRun(
   // the settle chain first (so turn/end is already appended) AND for the
   // process to actually exit (so stdout is drained before parsing).
   void result.then(() => child.done).then(
-    () => mirrorCodexAfterExit(spec, task, turn, output),
+    () => mirrorCodexAfterExit(spec, task, turn, output, liveMirror),
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 
@@ -549,6 +599,109 @@ export function startCodexCliRun(
   }))
 }
 
+/** Fold one transcript line into the child session as one assistant step. */
+function appendCodexLine(
+  spec: CodexCliRunSpec,
+  turn: number,
+  step: number,
+  line: CodexTranscriptLine,
+  usage: TokenUsage | undefined,
+): void {
+  const blocks = line.kind === 'think'
+    ? [{ type: 'reasoning' as const, text: line.text }]
+    : line.kind === 'tool'
+      ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
+      : [{ type: 'text' as const, text: line.text }]
+  spec.childSession?.append('assistant/message', {
+    turn,
+    step,
+    message: createAssistantMessage({
+      content: blocks,
+      source: { provider: 'codex-local', model: 'codex' },
+    }),
+    ...usage === undefined ? {} : { usage },
+  }, { surfaceOp: 'append' })
+}
+
+/** The delta-progress text for one transcript line. */
+function codexLineText(line: CodexTranscriptLine): string {
+  return line.kind === 'tool'
+    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}`
+    : line.text
+}
+
+/**
+ * Per-run live mirror: folds stdout chunks incrementally and mirrors newly
+ * completed transcript lines into the child session as they arrive, so a
+ * caller watching the child session sees progress instead of silence until
+ * settle. The LAST line is held back until the stream's terminal
+ * `turn.completed`: it may still merge a trailing `function_call_output`, and
+ * it is the round's usage carrier (the settle fold attaches usage to the
+ * final line — same placement here). The counters are the settle path's
+ * offset: the final mirror resumes from them and is a no-op when live
+ * mirroring kept up. Failures are diagnostic-only and never kill the run.
+ */
+interface CodexLiveMirror {
+  /** Fold one stdout chunk and mirror the newly completed lines. */
+  push(chunk: string): void
+  /** Transcript lines mirrored so far (the settle path resumes from here). */
+  readonly mirroredLines: number
+  /** Whether the run's user/message was already appended. */
+  readonly userMirrored: boolean
+  /** Serialize one async mirror task behind the in-flight ones. */
+  enqueue(task: () => Promise<void>): Promise<void>
+}
+
+/** Create the per-run live mirror over the incremental parser. */
+function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number): CodexLiveMirror {
+  const parser = new CodexStreamParser()
+  const childSession = spec.childSession as Session
+  const ctx = spec.ctx as Context
+  let mirrored = 0
+  let userMirrored = false
+  let queue: Promise<void> = Promise.resolve()
+
+  const mirror: CodexLiveMirror = {
+    get mirroredLines() { return mirrored },
+    get userMirrored() { return userMirrored },
+    enqueue(task) {
+      queue = queue.then(task)
+      return queue
+    },
+    push(chunk) {
+      parser.push(chunk)
+      const upto = parser.completed ? parser.lines.length : parser.lines.length - 1
+      if (upto <= mirrored) return
+      void mirror.enqueue(async () => {
+        try {
+          const localAgent = ctx.get('localAgent')
+          if (!userMirrored) {
+            userMirrored = true
+            childSession.append('user/message', createUserMessage({
+              content: [{ type: 'text', text: task }],
+              source: { kind: 'user' },
+            }), { surfaceOp: 'append' })
+            localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
+          }
+          for (let index = mirrored; index < upto; index += 1) {
+            const line = parser.lines[index]
+            if (line === undefined) continue
+            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            appendCodexLine(spec, turn, index + 1, line, usage)
+            mirrored = index + 1
+            localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+          }
+          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
+        } catch (error: unknown) {
+          ctx.logger.warn(`subagent-codex: live mirror failed: ${thrown(error).message}`)
+        }
+      })
+    },
+  }
+  return mirror
+}
+
 /**
  * Mirror the delegation's user prompt and the codex event transcript into the
  * dsh subagent session, then persist. Runs detached from the settle race — the
@@ -562,41 +715,35 @@ export function startCodexCliRun(
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
  * @param parsed - the parsed NDJSON transcript, final output, and usage.
+ * @param fromLines - transcript lines the live mirror already appended.
+ * @param userMirrored - whether the live mirror already appended the prompt.
  */
 async function appendCodexResponse(
   spec: CodexCliRunSpec,
   task: string,
   turn: number,
   parsed: { lines: readonly CodexTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
+  fromLines = 0,
+  userMirrored = false,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
-  try {
-    spec.childSession.append('user/message', createUserMessage({
+  const childSession = spec.childSession
+  const localAgent = spec.ctx.get('localAgent')
+  if (!userMirrored) {
+    childSession.append('user/message', createUserMessage({
       content: [{ type: 'text', text: task }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    let step = 1
-    for (const line of parsed.lines) {
-      const blocks = line.kind === 'think'
-        ? [{ type: 'reasoning' as const, text: line.text }]
-        : line.kind === 'tool'
-          ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
-          : [{ type: 'text' as const, text: line.text }]
-      spec.childSession.append('assistant/message', {
-        turn,
-        step,
-        message: createAssistantMessage({
-          content: blocks,
-          source: { provider: 'codex-local', model: 'codex' },
-        }),
-        ...step === parsed.lines.length && parsed.usage !== undefined ? { usage: parsed.usage } : {},
-      }, { surfaceOp: 'append' })
-      step += 1
-    }
-    await spec.ctx.get('sessionPersistence')?.append(spec.childSession.id, spec.childSession.events)
-  } catch (error) {
-    spec.onError?.(thrown(error), 'error')
+    localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  let step = fromLines + 1
+  for (const line of parsed.lines.slice(fromLines)) {
+    appendCodexLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+    step += 1
+  }
+  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
 }
 
 /**
@@ -617,17 +764,27 @@ async function mirrorCodexAfterExit(
   task: string,
   turn: number,
   output: string,
+  live: CodexLiveMirror | undefined,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
-  try {
+  const work = async (): Promise<void> => {
     const parsed = parseCodexJsonStream(output)
     if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
-    if (parsed.lines.length === 0) return
+    const fromLines = live?.mirroredLines ?? 0
+    const userMirrored = live?.userMirrored ?? false
+    // Nothing streamed at all (e.g. the CLI died before the first item): keep
+    // the pre-live-mirror behavior of recording nothing.
+    if (parsed.lines.length === 0 && !userMirrored) return
     await appendCodexResponse(spec, task, turn, {
       lines: parsed.lines,
       output: collectOutputBlocks(parsed.text),
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
-    })
+    }, fromLines, userMirrored)
+  }
+  try {
+    // Behind the live mirror's queue so a flush in flight cannot interleave.
+    if (live === undefined) await work()
+    else await live.enqueue(work)
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }
