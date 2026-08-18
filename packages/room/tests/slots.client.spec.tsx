@@ -40,6 +40,8 @@ async function bench(options: { mountFails?: boolean } = {}) {
     })),
   }
   ctx.provide('remote.room', remote as never)
+  const conversationEvents = { register: vi.fn(() => () => {}) }
+  ctx.provide('conversationEvents', conversationEvents as never)
   const sessions = {
     open: vi.fn(),
     list: createSnapshotStore({
@@ -49,27 +51,29 @@ async function bench(options: { mountFails?: boolean } = {}) {
   }
   ctx.provide('sessions', sessions as never)
   const slots = ctx.get('slots') as SlotRegistry
-  // The three slot declarations as their owning packages declare them in production.
+  // The slot declarations as their owning packages declare them in production.
   slots.register({
     name: 'root',
     children: {
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
       'conversation.composer': { kind: 'chain', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session' },
     },
   } as never, () => null)
-  return { ctx, slots, remote, remoteService, sessions }
+  return { ctx, slots, remote, remoteService, sessions, conversationEvents }
 }
 
 describe('room client apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'remote', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'remote', 'conversationEvents', 'locale'])
   })
 
-  it('mounts the Remote and registers the three spike slot entries with the right shapes', async () => {
-    const { ctx, slots, remoteService } = await bench()
+  it('mounts the Remote, registers the three Definitions and the slot entries with the right shapes', async () => {
+    const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(3)
 
     const footer = slots.entries('sidebar.footer.action')
     expect(footer).toHaveLength(1)
@@ -87,6 +91,9 @@ describe('room client apply', () => {
     expect(views).toHaveLength(1)
     expect(views[0]!.options.id).toBe('room-members')
     expect((views[0]!.options.label as () => string)()).toBe('Members')
+
+    const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
+    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event'])
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {
@@ -95,6 +102,7 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.footer.action')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(3)
   })
 
   it('the footer action face creates a room through the Remote and opens it', async () => {
@@ -137,6 +145,7 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.footer.action')).toHaveLength(0)
     expect(slots.entries('conversation.composer')).toHaveLength(0)
     expect(slots.entries('conversation.view')).toHaveLength(0)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(0)
   })
 
   it('the footer action button triggers creation on click', async () => {

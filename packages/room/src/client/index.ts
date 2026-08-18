@@ -22,9 +22,14 @@ import { en, zh } from './locales.ts'
 import { NewRoomAction } from './NewRoomAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer } from './RoomComposer.tsx'
+import { RoomSpeechView } from './RoomSpeechView.tsx'
+import { RoomRunView } from './RoomRunView.tsx'
+import { RoomEventView } from './RoomEventView.tsx'
+import { roomEventDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomSubmitOutcome,
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomRunInjected, RoomSpeechInjected,
+  RoomSubmitOutcome,
 } from './slots.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
@@ -40,7 +45,7 @@ const NS = 'room'
  * Cordis property proxy only resolves services declared in `inject` or
  * provided by an ancestor fiber — declaring it would deadlock the loader.
  */
-export const inject = ['slots', 'sessions', 'remote', 'locale']
+export const inject = ['slots', 'sessions', 'remote', 'conversationEvents', 'locale']
 
 /**
  * Client plugin body: mount the Remote, start the store, register the
@@ -90,6 +95,18 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     return { ok: true, dispatched: result.value.parsed.targets.length > 0 }
   }
 
+  const openSession = (sessionId: SessionId): void => { ctx.sessions.open(sessionId) }
+  const cancelMember = async (sessionId: SessionId, member: string): Promise<void> => {
+    if (remote === undefined) return
+    const carried = await remote.cancel({ sessionId, name: member })
+    if (carried.ok) void roomStore.refresh(sessionId)
+  }
+
+  // The journal projections: claim the room/* events into chat nodes.
+  ctx.conversationEvents.register(roomSpeechDefinition)
+  ctx.conversationEvents.register(roomRunDefinition)
+  ctx.conversationEvents.register(roomEventDefinition)
+
   // The slots are declared by ui-sidebar / ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
   // each entry waits for the declaration instead of crashing the loader entry
@@ -134,6 +151,33 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       label: () => t('view.members'),
     },
     MembersView,
+  ))
+  // The three chat-node renderers, keyed behind the definitions above.
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-speech',
+      locale: NS,
+      inject: (): RoomSpeechInjected => ({ roomStore, openSession }),
+    },
+    RoomSpeechView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-run',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomRunInjected => ({
+        roomStore,
+        openSession,
+        cancelMember: member => cancelMember(sessionId, member),
+      }),
+    },
+    RoomRunView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: 'room-event', locale: NS },
+    RoomEventView,
   ))
 
   return async () => {

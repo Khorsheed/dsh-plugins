@@ -53,3 +53,38 @@ export type RoomComposerProps =
 export type MembersViewProps =
   PropsRuntime<'conversation.view'>
   & PropsLocale<'room'>
+
+/** Injected face of the member-speech chat node. */
+export interface RoomSpeechInjected {
+  /** The client-side room state store (provider/kind lookup for the identity row). */
+  readonly roomStore: RoomStore
+  /** Open a session (the speech's child-session jump). */
+  readonly openSession: (sessionId: SessionId) => void
+}
+
+/** Full props of the 'room-speech' chat-node renderer. */
+export type RoomSpeechViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-speech'>
+  & InjectFace<RoomSpeechInjected>
+  & PropsLocale<'room'>
+
+/** Injected face of the member-run chat node. */
+export interface RoomRunInjected {
+  /** The client-side room state store (the roster carries the jump target). */
+  readonly roomStore: RoomStore
+  /** Open a session (the whole-row jump into the member's child session). */
+  readonly openSession: (sessionId: SessionId) => void
+  /** Cancel the named member's in-flight run through the Remote. */
+  readonly cancelMember: (member: string) => Promise<void>
+}
+
+/** Full props of the 'room-run' chat-node renderer. */
+export type RoomRunViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-run'>
+  & InjectFace<RoomRunInjected>
+  & PropsLocale<'room'>
+
+/** Full props of the 'room-event' chat-node renderer. */
+export type RoomEventViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-event'>
+  & PropsLocale<'room'>

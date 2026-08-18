@@ -11,6 +11,17 @@ export const zh = {
   'composer.error.unknownTargets': '未知成员：{names}',
   'composer.error.generic': '发送失败，请重试',
   'member.kind.main': '主 agent',
+  'action.copy': '复制',
+  'action.copied': '已复制',
+  'speech.jump': '查看成员会话',
+  'run.working': '{member} 正在工作…',
+  'run.failed': '{member} 运行失败',
+  'run.stop': '停止',
+  'event.joined': '{member}（{provider}）加入了 room',
+  'event.joinedByAgent': ' · 由主 agent 邀请',
+  'event.left': '{member} 离开了 room',
+  'event.dispatch': '你 @{targets}：{text}',
+  'event.note': '你记录到黑板：{text}',
 } satisfies Record<string, string>
 
 /** The room namespace key union. */
@@ -34,4 +45,15 @@ export const en = {
   'composer.error.unknownTargets': 'Unknown members: {names}',
   'composer.error.generic': 'Could not send; please retry',
   'member.kind.main': 'main agent',
+  'action.copy': 'Copy',
+  'action.copied': 'Copied',
+  'speech.jump': 'Open the member session',
+  'run.working': '{member} is working…',
+  'run.failed': "{member}'s run failed",
+  'run.stop': 'Stop',
+  'event.joined': '{member} ({provider}) joined the room',
+  'event.joinedByAgent': ' · invited by the main agent',
+  'event.left': '{member} left the room',
+  'event.dispatch': 'You @{targets}: {text}',
+  'event.note': 'You noted to the blackboard: {text}',
 } satisfies Record<RoomKey, string>
