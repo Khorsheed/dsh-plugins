@@ -35,6 +35,8 @@
     "lib/*.js",
     "lib/types/**/*.d.ts",
     "scripts/dsh-watchdog.sh",
+    "scripts/install-launchd.sh",
+    "scripts/install-systemd.sh",
     "cordis.patch.yml"
   ],
   "license": "MIT",

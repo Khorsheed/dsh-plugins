@@ -95,7 +95,7 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 - **A — 纯 guard**：无外部监督者；实例在自我重启前用 `supervise` 采用 watchdog。最简单，但意外崩溃后没有东西拉回宿主。
 - **B — 纯 launchd/systemd**：launcher 用 KeepAlive 拥有端口。抗崩溃，但自我修改重启不受凭证闸门约束。
-- **C — 分层（推荐）**：launchd 监督 watchdog，watchdog 监督实例。每端口一个拥有者，且拥有者也被监督。macOS：`scripts/install-launchd.sh --start "CMD"` 生成 `com.dsh.watchdog.plist`（`ProgramArguments` 以前台方式跑 CLI）装进 `~/Library/LaunchAgents` 并 bootstrap；`--force` 替换正在运行的 detached watchdog；`--uninstall` 移除任务。systemd：等价的 KeepAlive unit 跑同一条命令：
+- **C — 分层（推荐）**：launchd 监督 watchdog，watchdog 监督实例。每端口一个拥有者，且拥有者也被监督。macOS：`scripts/install-launchd.sh --start "CMD"` 生成 `com.dsh.watchdog.plist`（`ProgramArguments` 以前台方式跑 CLI）装进 `~/Library/LaunchAgents` 并 bootstrap；`--force` 替换正在运行的 detached watchdog；`--uninstall` 移除任务。systemd：`scripts/install-systemd.sh --start "CMD"` 生成用户单元 `~/.config/systemd/user/dsh-watchdog.service` 并 enable——`Restart=on-failure` 对应 launchd 的 `SuccessfulExit: false`，`StartLimitIntervalSec=0` 关掉启动频率限制（默认值会把反复重启的单元置为 failed 并停止重试，等于监督静默终止），`--print` 只输出单元不碰 systemctl，`--force`/`--uninstall` 同 launchd 版。用户单元在会话结束后停止；要跨登录存活需要管理员执行 `loginctl enable-linger <user>`。两个平台跑的是同一条命令：
 
 ```sh
 # launchd/systemd job (KeepAlive) runs this; the CLI process IS the watchdog:
