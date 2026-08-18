@@ -145,7 +145,41 @@ describe('mirrorDshSession', () => {
 
   it('is a no-op when the sub-dsh session never materialized', async () => {
     const child = childWithRounds('child-3', 1)
-    await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toBeUndefined()
+    await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toEqual({ texts: [], total: 0 })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(0)
+  })
+
+  it('mirrors incrementally: a second pass appends only the round’s new events', async () => {
+    const home = tempHome()
+    // Round 1 mid-run: task and first reply flushed; more arrives later.
+    writeSubDshSession(home, 'child-4', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('第一轮任务', 'user'),
+      assistantLine(1, '第一条回复'),
+    ])
+    const child = childWithRounds('child-4', 1)
+    const first = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
+    expect(first).toEqual({ texts: ['第一轮任务', 'thinking 1第一条回复'], total: 2 })
+
+    // The live pass returned; the log grows (second reply), and the next pass
+    // mirrors only the delta — the settle-time pass after it is a pure no-op.
+    writeSubDshSession(home, 'child-4', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('第一轮任务', 'user'),
+      assistantLine(1, '第一条回复'),
+      assistantLine(1, '第二条回复'),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const second = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
+    expect(second).toEqual({ texts: ['thinking 1第二条回复'], total: 3 })
+    const third = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
+    expect(third).toEqual({ texts: [], total: 3 })
+
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(2)
+    const texts = assistant.map(event => JSON.stringify(event.data))
+    expect(new Set(texts).size).toBe(texts.length)
   })
 })

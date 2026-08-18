@@ -38,6 +38,9 @@ import { mirrorDshSession } from './session-mirror.ts'
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/** Default interval between live session-mirror polls during a run. */
+export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
+
 
 /**
  * One-shot dsh CLI subagent provider: every accepted fresh run starts a fresh
@@ -195,6 +198,11 @@ export interface DshCliRunSpec {
    * the same child session under the given turn number.
    */
   readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
+  /**
+   * Live-mirror poll interval during the run; absent applies the default
+   * ({@link DEFAULT_LIVE_MIRROR_INTERVAL_MS}). Tests inject a small value.
+   */
+  readonly liveMirrorIntervalMs?: number | undefined
 }
 
 /** Validate and join the one-shot task before crossing the process boundary. */
@@ -244,7 +252,7 @@ export function dshLaunchArgv(config: LocalAgentDshConfig): readonly string[] {
  * @param spec - workspace, scoped home, child session, and resume facts.
  * @returns the published run after the child starts.
  */
-async function startDshCliRun(
+export async function startDshCliRun(
   request: SubagentStartRequest,
   spec: DshCliRunSpec & { config: LocalAgentDshConfig; ctx: Context },
 ): Promise<SubagentRun> {
@@ -288,6 +296,40 @@ async function startDshCliRun(
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+  // Live session mirroring: poll the sub-dsh session log while the run is in
+  // flight and mirror new events through the SAME mirrorDshSession path the
+  // settle mirror uses (its already-mirrored prefix skip makes the settle
+  // pass a no-op when polling kept up). A poll failure never kills the run:
+  // mirrorDshSession degrades to a warn internally and the settle mirror
+  // remains the fallback. All mirror passes serialize through mirrorQueue.
+  let mirrorQueue: Promise<unknown> = Promise.resolve()
+  const enqueueMirror = (task: () => Promise<unknown>): void => {
+    mirrorQueue = mirrorQueue.then(task)
+  }
+  const mirrorAndReport = async (childSession: Session, alwaysReport: boolean): Promise<void> => {
+    const delta = await mirrorDshSession(ctx, childSession, spec.homeDir, spec.sessionId)
+    const localAgent = ctx.get('localAgent')
+    if (localAgent === undefined) return
+    if (delta.texts.length === 0 && !alwaysReport) return
+    for (const text of delta.texts) {
+      localAgent.reportRunProgress(childSession.id, { kind: 'delta', text })
+    }
+    localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+  }
+  if (spec.childSession !== undefined) {
+    const childSession = spec.childSession
+    const liveMirror = setInterval(() => {
+      enqueueMirror(() => mirrorAndReport(childSession, false))
+    }, spec.liveMirrorIntervalMs ?? DEFAULT_LIVE_MIRROR_INTERVAL_MS)
+    liveMirror.unref()
+    // Polling stops when the process exits; the settle mirror (enqueued below)
+    // runs the final pass afterwards through the same queue.
+    void child.done.then(
+      () => { clearInterval(liveMirror) },
+      () => { clearInterval(liveMirror) },
+    )
+  }
 
   const disposeProcess = async (): Promise<void> => {
     if (child.pid <= 0) {
@@ -389,7 +431,10 @@ async function startDshCliRun(
   void result.then(() => child.done).then(
     () => {
       if (spec.childSession !== undefined) {
-        return mirrorDshSession(ctx, spec.childSession, spec.homeDir, spec.sessionId)
+        const childSession = spec.childSession
+        // The settle pass reports the final mirror count even when polling
+        // already covered the round (empty delta): it is authoritative.
+        return enqueueMirror(() => mirrorAndReport(childSession, true))
       }
       return undefined
     },
