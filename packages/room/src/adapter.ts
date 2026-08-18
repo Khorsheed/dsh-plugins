@@ -43,6 +43,40 @@ export function probeLocalAgent(ctx: Context): LocalAgentFacade | undefined {
     : undefined
 }
 
+/** One roster row as the registry's roster() returns it. */
+export interface LocalAgentRosterRowProbe {
+  readonly name: string
+  readonly displayName: string
+}
+
+/** One harness status as the registry's statusOf() returns it. */
+export interface LocalAgentStatusProbe {
+  readonly authenticated: boolean
+  /** The subagent provider name the harness delegates through, when it has one. */
+  readonly delegationProvider?: string
+}
+
+/** The roster slice of the localAgent registry (older than the M1 facade). */
+export interface LocalAgentRosterSlice {
+  roster(): readonly LocalAgentRosterRowProbe[]
+  statusOf(name: string): Promise<LocalAgentStatusProbe>
+}
+
+/**
+ * Probe the registry's roster slice (independent of the delegation facade:
+ * a core without M1 still serves the roster, and the invite dialog greys
+ * undispatchable providers instead of hiding them).
+ * @param ctx - host context.
+ * @returns the roster slice, or undefined.
+ */
+export function probeLocalAgentRoster(ctx: Context): LocalAgentRosterSlice | undefined {
+  const service = ctx.get('localAgent') as Record<string, unknown> | undefined
+  if (service === undefined || service === null) return undefined
+  return typeof service['roster'] === 'function' && typeof service['statusOf'] === 'function'
+    ? service as unknown as LocalAgentRosterSlice
+    : undefined
+}
+
 /**
  * Extract a member's reply text from a settled run: the text blocks of its
  * final output, joined. Non-text blocks (images etc.) are dropped — the

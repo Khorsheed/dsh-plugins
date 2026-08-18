@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from './types.ts'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { probeLocalAgent } from './adapter.ts'
+import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay } from './journal.ts'
 import { roomInviteTool } from './tool.ts'
@@ -31,7 +31,9 @@ import type {
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
+  RoomListProvidersRequest,
   RoomPostMessageRequest, RoomPostMessageResult,
+  RoomProviderInfo, RoomProviderList,
   RoomRemoveMemberRequest, RoomRemoveMemberResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
 } from './types.ts'
@@ -122,6 +124,34 @@ export class RoomService extends TypertRemoteService {
     session.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
     await this.ctx.sessions.flush(session)
     return { sessionId: session.id }
+  }
+
+  /**
+   * List the invitable CLI providers: the local-agent roster with each
+   * harness's auth state, plus the delegation-facade verdict (absent facade =
+   * CLI members undispatchable; the dialog greys the section instead of
+   * failing). Harnesses without a delegation provider are record-only and
+   * are not invitable.
+   * @param _request - no parameters.
+   * @returns the provider list and the facade verdict.
+   */
+  @Remote('listProviders')
+  async listProviders(_request: RoomListProvidersRequest): Promise<RoomProviderList> {
+    const localAgentAvailable = probeLocalAgent(this.ctx) !== undefined
+    const roster = probeLocalAgentRoster(this.ctx)
+    if (roster === undefined) return { localAgentAvailable, providers: [] }
+    const providers: RoomProviderInfo[] = []
+    for (const row of roster.roster()) {
+      const status = await roster.statusOf(row.name)
+      // A harness without a delegation provider cannot carry a CLI member.
+      if (status.delegationProvider === undefined) continue
+      providers.push({
+        provider: status.delegationProvider,
+        displayName: row.displayName,
+        authenticated: status.authenticated,
+      })
+    }
+    return { localAgentAvailable, providers }
   }
 
   /**

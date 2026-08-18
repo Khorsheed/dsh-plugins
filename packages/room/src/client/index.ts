@@ -28,9 +28,10 @@ import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomRunInjected, RoomSpeechInjected,
-  RoomSubmitOutcome,
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomRunInjected,
+  RoomSpeechInjected, RoomSubmitOutcome,
 } from './slots.ts'
+import type { RoomFailure } from '../types.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
 export type RoomRemote = TypertRemoteNamespaceMap['room']
@@ -102,6 +103,50 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     if (carried.ok) void roomStore.refresh(sessionId)
   }
 
+  /** Map a structured RoomFailure to the dialog's localized copy. */
+  const failureText = (error: RoomFailure): string => {
+    switch (error.code) {
+      case 'duplicate-name': return t('invite.error.duplicate')
+      case 'invalid-name': return t('invite.error.invalid')
+      case 'local-agent-unavailable': return t('invite.error.unavailable')
+      default: return t('invite.error.generic')
+    }
+  }
+  const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
+    roomStore,
+    openSession,
+    cancelMember: member => cancelMember(sessionId, member),
+    removeMember: async (member) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.removeMember({ sessionId, name: member })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    updateMember: async (member, instructions) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.updateMember({ sessionId, name: member, instructions })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    invite: async (values) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.invite({ sessionId, ...values })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true, pendingFirstTask: carried.value.value.pendingFirstTask }
+    },
+    listProviders: async () => {
+      if (remote === undefined) return undefined
+      const carried = await remote.listProviders({})
+      return carried.ok ? carried.value : undefined
+    },
+  })
+
   // The journal projections: claim the room/* events into chat nodes.
   ctx.conversationEvents.register(roomSpeechDefinition)
   ctx.conversationEvents.register(roomRunDefinition)
@@ -149,6 +194,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       order: 20,
       locale: NS,
       label: () => t('view.members'),
+      inject: (sessionId: SessionId): RoomMembersInjected => membersFace(sessionId),
     },
     MembersView,
   ))

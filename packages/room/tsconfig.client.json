@@ -17,6 +17,7 @@
     "src/client/nodes.ts",
     "src/client/room-store.ts",
     "src/client/slots.ts",
+    "src/client/InviteDialog.tsx",
     "src/client/NewRoomAction.tsx",
     "src/client/MembersView.tsx",
     "src/client/RoomComposer.tsx",

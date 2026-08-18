@@ -295,3 +295,22 @@ export interface RoomCancellation {
 export type RoomCancelResult =
   | { readonly ok: true; readonly value: RoomCancellation }
   | { readonly ok: false; readonly error: RoomFailure }
+
+/** listProviders request (no parameters). */
+export interface RoomListProvidersRequest {}
+
+/** One invitable CLI provider. */
+export interface RoomProviderInfo {
+  /** The provider id invite/dispatch uses (the harness's delegationProvider). */
+  readonly provider: string
+  readonly displayName: string
+  /** Whether the harness's scoped home holds usable credentials. */
+  readonly authenticated: boolean
+}
+
+/** listProviders result: the facade verdict plus the roster. */
+export interface RoomProviderList {
+  /** False when the local-agent delegation facade is absent (CLI members undispatchable). */
+  readonly localAgentAvailable: boolean
+  readonly providers: readonly RoomProviderInfo[]
+}

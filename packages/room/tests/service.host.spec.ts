@@ -8,6 +8,8 @@ import type { LocalAgentFacade } from '../src/adapter.ts'
 interface BenchOptions {
   /** false: no localAgent service at all (facade probe misses). */
   facade?: boolean
+  /** Full override of the localAgent stub (roster slice etc.); wins over facade. */
+  localAgent?: Record<string, unknown>
 }
 
 /**
@@ -34,7 +36,8 @@ async function boot(options: BenchOptions = {}) {
     })),
     cancel: vi.fn(() => false),
   }
-  if (options.facade !== false) ctx.provide('localAgent', facade as never)
+  const localAgent = options.localAgent ?? (options.facade === false ? undefined : facade)
+  if (localAgent !== undefined) ctx.provide('localAgent', localAgent as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   return { ctx, service: ctx.get('room') as RoomService, facade }
@@ -192,5 +195,33 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.cancel({ sessionId, name: 'ghost' }))
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { runs: [] } })
+  })
+
+  it('listProviders reflects the roster, auth state, and delegation capability', async () => {
+    const localAgent = {
+      start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),
+      roster: () => [
+        { name: 'kimi', displayName: 'Kimi Code' },
+        { name: 'rec', displayName: 'Record Only' },
+      ],
+      statusOf: vi.fn(async (name: string) => name === 'kimi'
+        ? { authenticated: true, delegationProvider: 'kimi' as const }
+        : { authenticated: false }),
+    }
+    const { service } = await boot({ localAgent })
+    expect(await service.listProviders({})).toEqual({
+      localAgentAvailable: true,
+      // The record-only harness (no delegationProvider) is not invitable.
+      providers: [{ provider: 'kimi', displayName: 'Kimi Code', authenticated: true }],
+    })
+  })
+
+  it('listProviders degrades: no facade → unavailable; facade without roster slice → empty list', async () => {
+    const without = await boot({ facade: false })
+    expect(await without.service.listProviders({})).toEqual({ localAgentAvailable: false, providers: [] })
+
+    // The default facade stub carries no roster/statusOf.
+    const partial = await boot()
+    expect(await partial.service.listProviders({})).toEqual({ localAgentAvailable: true, providers: [] })
   })
 })

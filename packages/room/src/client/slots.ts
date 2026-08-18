@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
+import type { RoomProviderList } from '../types.ts'
 import type { RoomStore } from './room-store.ts'
 
 /** Injected action face of the sidebar footer action. */
@@ -52,7 +53,44 @@ export type RoomComposerProps =
 /** Full props of the 'conversation.view' members-tab entry. */
 export type MembersViewProps =
   PropsRuntime<'conversation.view'>
+  & InjectFace<RoomMembersInjected>
   & PropsLocale<'room'>
+
+/** A mutation outcome with a localized failure message. */
+export type RoomMutationOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly message: string }
+
+/** The invite form's values (sessionId binds at inject time). */
+export interface RoomInviteValues {
+  readonly provider: string
+  readonly name: string
+  readonly instructions?: string
+  readonly firstTask?: string
+}
+
+/** The invite outcome: the receipt's pendingFirstTask picks the success copy. */
+export type RoomInviteOutcome =
+  | { readonly ok: true; readonly pendingFirstTask: boolean }
+  | { readonly ok: false; readonly message: string }
+
+/** Injected face of the members tab. */
+export interface RoomMembersInjected {
+  /** The client-side room state store (roster + runs). */
+  readonly roomStore: RoomStore
+  /** Open a session (the member's child-session trajectory jump). */
+  readonly openSession: (sessionId: SessionId) => void
+  /** Cancel the named member's in-flight run. */
+  readonly cancelMember: (member: string) => Promise<void>
+  /** Remove the named member from the roster. */
+  readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
+  /** Rewrite the named member's role instructions. */
+  readonly updateMember: (member: string, instructions: string) => Promise<RoomMutationOutcome>
+  /** Invite a CLI member. */
+  readonly invite: (values: RoomInviteValues) => Promise<RoomInviteOutcome>
+  /** List the invitable providers (undefined on transport failure). */
+  readonly listProviders: () => Promise<RoomProviderList | undefined>
+}
 
 /** Injected face of the member-speech chat node. */
 export interface RoomSpeechInjected {
