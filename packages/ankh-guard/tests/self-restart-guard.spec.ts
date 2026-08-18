@@ -789,6 +789,16 @@ describe('supervise', () => {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
     }
+    // A watchdog is setsid'd and detached: nothing reaps it when a test fails
+    // before its own `stop()`, so it outlives the run and keeps respawning a
+    // fake instance forever. Registering here makes teardown unconditional;
+    // `stop` stays on the return value for tests that stop it mid-test (it is
+    // idempotent — killing an already-dead pid is caught).
+    // unshift, not push: `tmpDir` already registered the rmSync of `home`, and
+    // a watchdog that is still alive when its WD_HOME is removed recreates
+    // `state/` under the deleted directory.
+    cleanups.unshift(stop)
+    cleanups.push(restore)
     return { home, restore, stop }
   }
 
@@ -855,6 +865,61 @@ describe('supervise', () => {
       env.restore()
     }
   })
+
+  it('claims the pidfile atomically — concurrent watchdogs leave exactly one supervisor', async () => {
+    // The CLI check above serializes two SEQUENTIAL supervise calls. This
+    // covers the script's own claim, which is what a simultaneous start races
+    // on: with a check-then-write claim several racers pass the liveness test
+    // before any of them writes, and the port ends up with more than one
+    // supervisor.
+    const home = tmpDir('guard-race-')
+    mkdirSync(join(home, 'state'), { recursive: true })
+    mkdirSync(join(home, 'home'), { recursive: true })
+    const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
+    const port = 20000 + Math.floor(Math.random() * 15000)
+    const killTree = (pid: number): void => {
+      let children: number[] = []
+      try {
+        children = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' })
+          .split('\n').map(Number).filter((n) => Number.isInteger(n) && n > 0)
+      } catch { /* pgrep exits 1 when the pid has no children */ }
+      for (const child of children) killTree(child)
+      try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+    }
+    // One launcher backgrounding all racers from a single shell: they reach the
+    // claim within the same few milliseconds. Spawning them one-by-one from
+    // node staggers them by enough process-setup time that the first racer has
+    // already written the pidfile, which hides the very race under test.
+    const launcher = spawn('bash', ['-c', 'for _ in 1 2 3 4 5 6 7 8; do bash "$0" --supervise >/dev/null 2>&1 & done; wait', script], {
+      env: { ...process.env, WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' },
+      stdio: 'ignore',
+    })
+    // unshift for the same reason as `supervisedEnv`: the survivor must die
+    // before `tmpDir` removes the WD_HOME it keeps writing into. The racers are
+    // NOT setsid'd (they share this process's group), so reap the tree by pid.
+    cleanups.unshift(() => { if (launcher.pid !== undefined) killTree(launcher.pid) })
+    const survivors = (): number[] => {
+      try {
+        return execFileSync('pgrep', ['-P', String(launcher.pid)], { encoding: 'utf8' })
+          .split('\n').map(Number).filter((n) => Number.isInteger(n) && n > 0)
+      } catch { return [] } // pgrep exits 1 once every racer but the winner is gone
+    }
+    // Settle on a STABLE count rather than on the first reading of 1: while the
+    // launcher is still forking, `pgrep -P` legitimately reports one racer, and
+    // stopping there would pass before the race has even happened.
+    const start = Date.now()
+    let last = -1
+    let unchangedSince = start
+    while (Date.now() - start < 20_000) {
+      await new Promise((resolve) => { setTimeout(resolve, 500) })
+      const count = survivors().length
+      if (count !== last) { last = count; unchangedSince = Date.now() }
+      else if (Date.now() - unchangedSince >= 2_000 && Date.now() - start >= 3_000) break
+    }
+    expect(survivors()).toHaveLength(1)
+    expect(readFileSync(join(home, 'state', 'watchdog.pid'), 'utf8').trim())
+      .toBe(String(survivors()[0]))
+  }, 30_000)
 
   it('schedule-exit refuses without a credential (the gate)', async () => {
     const env = supervisedEnv()
@@ -1133,6 +1198,62 @@ describe('supervise', () => {
       expect(log).not.toContain('giving up')
       expect(currentHead(repo)).toBe(head)
       expect(existsSync(join(env.home, 'state', 'watchdog-gave-up'))).toBe(false)
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+    // Six spawn-and-fail cycles do not fit in vitest's 5 s default, which the
+    // 20 s deadline above already assumed.
+  }, 30_000)
+
+  it('counts an EADDRINUSE on a foreign port as a boot failure instead of retrying forever', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = 20000 + Math.floor(Math.random() * 15000)
+    const foreign = port + 1
+    const stateDir = join(env.home, 'state')
+    mkdirSync(stateDir, { recursive: true })
+    const head = currentHead(repo)
+    recordCredential(stateDir, { scope: 'build+test', revision: head ?? '', command: '' }, NOW)
+    // A start command aimed at a port this watchdog does not own. Freeing the
+    // supervised port cannot release the foreign one, so the port-race escape
+    // hatch must NOT apply: it skips the failure counter, and taking it here
+    // respawned the instance in a tight loop that never backed off, never gave
+    // up, and never surfaced the misconfiguration.
+    const counter = join(env.home, 'attempts')
+    const boom = join(env.home, 'foreign-eaddr.js')
+    writeFileSync(boom, `
+      const fs = require('node:fs')
+      const count = fs.existsSync(${JSON.stringify(counter)}) ? Number(fs.readFileSync(${JSON.stringify(counter)}, 'utf8')) : 0
+      fs.writeFileSync(${JSON.stringify(counter)}, String(count + 1))
+      console.error('Error: listen EADDRINUSE: address already in use 127.0.0.1:${foreign}')
+      process.exit(1)
+    `)
+    try {
+      const startCmd = `"${process.execPath}" "${boom}"`
+      const sup = io()
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
+        sup.io,
+      )).toBe(0)
+      const logPath = join(stateDir, 'watchdog.log')
+      const deadline = Date.now() + 20_000
+      let log = ''
+      while (Date.now() < deadline) {
+        log = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+        if (log.includes('other than the supervised')) break
+        await new Promise((resolve) => { setTimeout(resolve, 300) })
+      }
+      expect(log).toContain('other than the supervised')
+      expect(log).toContain('instance failed to come up')
+      // The counted failures carry the backoff, so attempts stay in single
+      // digits over this window; the uncounted retry loop reached dozens.
+      const attempts = Number(readFileSync(counter, 'utf8'))
+      expect(attempts).toBeLessThanOrEqual(5)
+      // The command line is wrong, not the checkout — the rollback stays unspent.
+      expect(log).not.toContain('rolling repo back')
+      expect(currentHead(repo)).toBe(head)
     } finally {
       env.stop()
       await killListener(port)
