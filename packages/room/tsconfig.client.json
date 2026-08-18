@@ -8,9 +8,12 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
   },
   "files": [
+    "src/css-modules.d.ts",
     "src/types.ts",
     "src/client/index.ts",
     "src/client/locales.ts",
+    "src/client/member-color.ts",
+    "src/client/room-store.ts",
     "src/client/slots.ts",
     "src/client/NewRoomAction.tsx",
     "src/client/MembersView.tsx",

@@ -1,7 +1,8 @@
 /**
- * Slot-facing types of the room client half: the injected action face and the
- * composed props of its three spike slot entries.
+ * Slot-facing types of the room client half: the injected action faces and
+ * the composed props of its slot entries.
  */
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.footer.action').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -9,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
+import type { RoomStore } from './room-store.ts'
 
 /** Injected action face of the sidebar footer action. */
 export interface NewRoomInjected {
@@ -22,14 +24,29 @@ export type NewRoomActionProps =
   & InjectFace<NewRoomInjected>
   & PropsLocale<'room'>
 
-/**
- * Full props of the 'conversation.composer' chain entry. The Step 0 selector
- * never claims the composer, so `matched` is null and the component never
- * renders; Step 5 narrows the match to a dispatch payload.
- */
+/** What a composer submit made of the message. */
+export type RoomSubmitOutcome =
+  | { readonly ok: true; readonly dispatched: boolean }
+  | { readonly ok: false; readonly message: string }
+
+/** Injected face of the composer takeover entry. */
+export interface RoomComposerInjected {
+  /** The client-side room state store (sync reads + subscription). */
+  readonly roomStore: RoomStore
+  /** Post a message into the room and refresh the store on success. */
+  readonly submit: (sessionId: SessionId, text: string) => Promise<RoomSubmitOutcome>
+}
+
+/** The composer takeover match: the session is a cached room. */
+export interface RoomComposerMatch {
+  readonly room: true
+}
+
+/** Full props of the 'conversation.composer' chain entry. */
 export type RoomComposerProps =
   PropsRuntime<'conversation.composer'>
-  & { matched: null }
+  & { matched: RoomComposerMatch }
+  & InjectFace<RoomComposerInjected>
   & PropsLocale<'room'>
 
 /** Full props of the 'conversation.view' members-tab entry. */

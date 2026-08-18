@@ -1,14 +1,13 @@
 /**
  * room client plugin, browser half. Mounts the room Remote through the
- * official `ctx.remote.$mount` channel and registers the three Step 0 spike
- * slot entries: the sidebar footer「+ New room」action, a never-claiming
- * `conversation.composer` chain entry (registration-shape spike; the real
- * @-mention takeover is Step 5), and the placeholder 成员
- * `conversation.view` tab. Composing this plugin out of cordis.yml removes
- * every surface it adds.
+ * official `ctx.remote.$mount` channel, feeds the client-side RoomStore, and
+ * registers the slot entries: the sidebar footer「+ New room」action, the
+ * `conversation.composer` chain takeover (claims the composer exactly when
+ * the current session is a cached room), and the 成员 `conversation.view`
+ * tab. Composing this plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API merge for the room namespace.
@@ -23,7 +22,10 @@ import { en, zh } from './locales.ts'
 import { NewRoomAction } from './NewRoomAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer } from './RoomComposer.tsx'
-import type { NewRoomInjected } from './slots.ts'
+import { RoomStore } from './room-store.ts'
+import type {
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomSubmitOutcome,
+} from './slots.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
 export type RoomRemote = TypertRemoteNamespaceMap['room']
@@ -41,8 +43,8 @@ const NS = 'room'
 export const inject = ['slots', 'sessions', 'remote', 'locale']
 
 /**
- * Client plugin body: mount the Remote, register the dictionaries, and
- * inject the three slot entries.
+ * Client plugin body: mount the Remote, start the store, register the
+ * dictionaries, and inject the slot entries.
  * @param ctx - client root context.
  * @returns disposer unwinding the mounted Remote namespace.
  */
@@ -56,15 +58,36 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // unmounted namespace with a typed RPC error).
     ctx.logger.error(error)
   }
-  const remote = ctx.get('remote.room') as RoomRemote
+  const remote = ctx.get('remote.room') as RoomRemote | undefined
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'room: dictionaries')
   const t = ctx.locale.bind(NS)
 
+  const roomStore = new RoomStore(ctx, remote)
+  ctx.effect(() => roomStore.start(), 'room: store')
+
   const createRoom = async (): Promise<void> => {
+    if (remote === undefined) throw new Error('room: remote namespace unavailable')
     const carried = await remote.createRoom({})
     if (!carried.ok) throw new Error(`room.createRoom transport: ${carried.error.code}`)
     ctx.sessions.open(carried.value.sessionId)
+    // Seed the cache immediately: the freshly opened room must not flash the
+    // official composer while the list-driven first pull is in flight.
+    void roomStore.refresh(carried.value.sessionId)
+  }
+
+  const submit = async (sessionId: SessionId, text: string): Promise<RoomSubmitOutcome> => {
+    if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
+    const carried = await remote.postMessage({ sessionId, text })
+    if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
+    const result = carried.value
+    if (!result.ok) {
+      return result.error.code === 'unknown-targets'
+        ? { ok: false, message: t('composer.error.unknownTargets', { names: result.error.names.join(' ') }) }
+        : { ok: false, message: t('composer.error.generic') }
+    }
+    void roomStore.refresh(sessionId)
+    return { ok: true, dispatched: result.value.parsed.targets.length > 0 }
   }
 
   // The slots are declared by ui-sidebar / ui-conversation, whose apply order
@@ -80,10 +103,24 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     },
     NewRoomAction,
   ))
-  // Step 0: registration-shape spike only — select never claims the composer.
-  // TODO(step-5): parse @-mentions and take over dispatch here.
+  // The composer takeover: claim exactly the cached-room sessions, at the
+  // ui-subagent precedence (-10), below pending-interaction takeovers (the
+  // approval panel's priority 1 wins while a question/approval waits). A
+  // cache miss declines — the freshly opened room shows the official bar for
+  // the first pull's duration (accepted, see room-store.ts).
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
-    { name: 'conversation.composer', select: () => null, locale: NS },
+    {
+      name: 'conversation.composer',
+      priority: -10,
+      locale: NS,
+      select: (owner): RoomComposerMatch | null => {
+        const sessionId = owner.session?.sessionId
+        return sessionId !== undefined && roomStore.isRoomCached(sessionId) === true
+          ? { room: true }
+          : null
+      },
+      inject: (): RoomComposerInjected => ({ roomStore, submit }),
+    },
     RoomComposer,
   ))
   // Registration-time text (the tab label) reads through the bound translate

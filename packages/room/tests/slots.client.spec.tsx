@@ -1,13 +1,21 @@
 // @vitest-environment jsdom
-/** The browser half's apply: Remote mount, the three spike slot entries, teardown. */
-import { describe, expect, it, vi } from 'vitest'
+/** The browser half's apply: Remote mount, the slot entries, store wiring, teardown. */
+import { describe, expect, it, vi, afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { apply, inject } from '../src/client/index.ts'
 import { NewRoomAction } from '../src/client/NewRoomAction.tsx'
-import type { NewRoomInjected } from '../src/client/slots.ts'
+import type { NewRoomInjected, RoomComposerInjected } from '../src/client/slots.ts'
+import type { RoomState } from '../src/types.ts'
+
+afterEach(() => {
+  cleanup()
+})
+
+/** An empty room state as the host's getState returns it. */
+export const EMPTY_ROOM: RoomState = { members: [], blackboard: [], cursors: [], runs: [] }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub services. */
 async function bench(options: { mountFails?: boolean } = {}) {
@@ -22,10 +30,23 @@ async function bench(options: { mountFails?: boolean } = {}) {
   ctx.provide('remote', remoteService as never)
   const remote = {
     createRoom: vi.fn(async () => ({ ok: true as const, value: { sessionId: 'room-1' } })),
-    isRoom: vi.fn(async () => ({ ok: true as const, value: false })),
+    isRoom: vi.fn(async ({ sessionId }: { sessionId: string }) => ({
+      ok: true as const, value: sessionId === 'room-1',
+    })),
+    getState: vi.fn(async () => ({ ok: true as const, value: { ok: true as const, value: EMPTY_ROOM } })),
+    postMessage: vi.fn(async () => ({
+      ok: true as const,
+      value: { ok: true as const, value: { parsed: { targets: [], text: 'x' }, seq: 1 } },
+    })),
   }
   ctx.provide('remote.room', remote as never)
-  const sessions = { open: vi.fn() }
+  const sessions = {
+    open: vi.fn(),
+    list: createSnapshotStore({
+      ids: [] as string[], byId: {}, current: undefined as string | undefined, phase: 'pending',
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+    }),
+  }
   ctx.provide('sessions', sessions as never)
   const slots = ctx.get('slots') as SlotRegistry
   // The three slot declarations as their owning packages declare them in production.
@@ -56,7 +77,8 @@ describe('room client apply', () => {
 
     const composer = slots.entries('conversation.composer')
     expect(composer).toHaveLength(1)
-    // Step 0: the chain selector never claims the composer.
+    expect(composer[0]!.options.priority).toBe(-10)
+    // The chain selector declines while nothing is cached (no session here).
     const select = (composer[0] as { select?: (owner: object) => unknown }).select
     expect(select).toBeTypeOf('function')
     expect(select!({})).toBeNull()
@@ -91,6 +113,20 @@ describe('room client apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
     const face = (slots.entries('sidebar.footer.action')[0]!.inject as unknown as () => NewRoomInjected)()
     await expect(face.createRoom()).rejects.toThrow('transport')
+  })
+
+  it('the composer selector claims exactly the cached-room sessions', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.composer')[0]!
+    const select = (entry as unknown as { select: (owner: object) => unknown }).select
+    // No session, or an uncached one: decline (the official bar stays).
+    expect(select({ interactions: [], session: undefined })).toBeNull()
+    expect(select({ interactions: [], session: { sessionId: 'plain' } })).toBeNull()
+    // Prime the cache through the injected store (the isRoom stub: only 'room-1' is a room).
+    const face = (entry.inject as unknown as () => RoomComposerInjected)()
+    await face.roomStore.ensure('room-1' as never)
+    expect(select({ interactions: [], session: { sessionId: 'room-1' } })).toEqual({ room: true })
   })
 
   it('collapses every contribution on teardown', async () => {

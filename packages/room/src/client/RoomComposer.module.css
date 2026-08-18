@@ -1,0 +1,124 @@
+/* Room composer: mirrors the official InputBar's geometry (same margins,
+   corner radius, layered surface) with --dsw-alias-* semantic tokens only;
+   every token carries a fallback chain, so dark mode rides the aliases. */
+
+.frame {
+  position: relative;
+  margin: 0 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+}
+
+.area {
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  caret-color: var(--dsw-alias-label-primary, #1f2329);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  min-height: 44px;
+  max-height: 160px;
+}
+
+.area::placeholder {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.send {
+  border: none;
+  border-radius: 8px;
+  padding: 4px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-on-accent, #ffffff);
+  background: var(--dsw-alias-bg-accent, #3370ff);
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.menu {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  margin: 0 0 6px;
+  padding: 4px;
+  list-style: none;
+  min-width: 180px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 1;
+}
+
+.item,
+.itemActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  background: transparent;
+  cursor: pointer;
+}
+
+.itemActive {
+  background: var(--dsw-alias-bg-hover, rgba(127, 127, 127, 0.14));
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.notice {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-text-error, #d9363e);
+}
