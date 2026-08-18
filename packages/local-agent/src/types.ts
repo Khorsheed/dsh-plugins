@@ -95,9 +95,33 @@ export type LocalAgentDelegationIntent =
   }
 
 /**
+ * One progress update for a delegation run. Providers report the data-bearing
+ * kinds ({@link reportRunProgress} on the registry — the facade only forwards);
+ * the facade itself emits the `heartbeat` kind while a facade-tracked run is
+ * in flight, so a caller can render "in progress" without any provider
+ * support.
+ */
+export type LocalAgentRunProgress =
+  | {
+    readonly kind: 'heartbeat'
+    /** Milliseconds since the facade started tracking the run. */
+    readonly elapsedMs: number
+  }
+  | {
+    readonly kind: 'mirror'
+    /** Total CLI transcript lines mirrored into the child session so far. */
+    readonly mirroredLines: number
+  }
+  | {
+    readonly kind: 'delta'
+    /** A live transcript increment (M3; not yet emitted by any provider). */
+    readonly text: string
+  }
+
+/**
  * Call options for the public delegation facade (`LocalAgentRegistry.start` /
- * `resume`). The interface is deliberately additive: later milestones add
- * `onProgress` and `reattach` fields without changing the existing ones.
+ * `resume`). The interface is deliberately additive: later milestones extend
+ * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
   /**
@@ -110,4 +134,17 @@ export interface DelegationCallOptions {
    * internal `cancel()` controller: aborting either cancels the run.
    */
   readonly signal?: AbortSignal
+  /**
+   * Per-call progress callback: receives the same {@link LocalAgentRunProgress}
+   * payloads the `localAgent/run-progress` cordis event carries, routed to the
+   * tracked run this call started. For callers that cannot conveniently
+   * subscribe to cordis events.
+   */
+  readonly onProgress?: (event: LocalAgentRunProgress) => void
+  /**
+   * `resume` only: when the child session is not live, reattach it from
+   * persistence (the default, true). Pass `false` to fail loud instead — the
+   * pre-facade behavior — leaving the absent session untouched.
+   */
+  readonly reattach?: boolean
 }

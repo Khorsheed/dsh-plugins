@@ -132,6 +132,7 @@ room 插件 `inject: ['localAgent']` 可选化（缺席则 CLI 成员能力降�
 ## 实现记录
 
 - **M1 已落地**（2026-08-18，`local-agent-delegation-api` 分支）：门面 `start` / `resume` / `cancel` + `unstageDelegationIntent` + `isResumeLocked` + reattach 配方（enter-only，不写 `announce`，理由与证据见 note 与 `resume` doc comment）+ 15 个门面单测。Agent Note：`.agents/notes/implemented/feature/2026-08-18-local-agent-delegation-facade.md`（含 zh 对照与 sidecar）。
+- **M2 已落地**（2026-08-19）：`reportRunProgress` provider 上报通道 + `localAgent/run-progress` cordis 事件 + 门面心跳（5s、unref、settle/卸载即停，不携带 provider 数据）+ `opts.onProgress` 路由 + `opts.reattach` 开关；kimi provider 在 settle 后镜像处上报 `{ kind: 'mirror', mirroredLines }`。设计修正（评审）：心跳不读 `kimiMirroredLines`，进度一律 provider 上报、门面只转发。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-run-progress.md`（含 zh 对照与 sidecar）。
 - 需求来源：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方设想；本提案交付后更新该 note 的 Requirement 一节为已满足）。
 - 评审记录：room 侧第一轮评审（2026-08-18）指出跨重启续跑链路的两个断点（映射未持久化、子会话不在场），已吸收——现状一节补充核实结论，M1 增加 reattach 配方，M4 吸收原 codex 持久化 note 第 1 条；方法名经评审定为 `resume`（沿用家族既有术语），不引入 `continue`。
 - 废弃：`.agents/notes/rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md`——第 1 条并入本提案 M4，第 2、3 条（双 sandbox 实例、output-schema）随之废弃，需要时另立 note。

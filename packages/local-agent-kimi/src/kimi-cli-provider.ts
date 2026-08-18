@@ -293,6 +293,10 @@ async function mirrorKimiAfterExit(
       spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, fromLines,
     )
     spec.ctx.localAgent.setKimiMirroredLines(spec.childSession.id, total)
+    // Report the mirror AFTER the offset bookkeeping so observers reading
+    // kimiMirroredLines in response see the new value. The facade forwards
+    // this as `localAgent/run-progress` (event + per-call onProgress).
+    spec.ctx.localAgent.reportRunProgress(spec.childSession.id, { kind: 'mirror', mirroredLines: total })
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }

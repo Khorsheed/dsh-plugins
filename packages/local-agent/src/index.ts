@@ -34,6 +34,7 @@ import type {
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentRosterRow,
+  LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
 } from './types.ts'
@@ -50,6 +51,7 @@ export type {
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentRosterRow,
+  LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
 } from './types.ts'
@@ -155,6 +157,9 @@ export interface Config {
 /** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
 export const REPLACE_LOGIN_GRACE_MS = 5_000
 
+/** Heartbeat interval for facade-tracked in-flight runs. */
+export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
+
 /** One delegation-intent queue per (parent session, provider). */
 function delegationIntentKey(parentSessionId: string, provider: string): string {
   return `${parentSessionId}\u0000${provider}`
@@ -204,6 +209,18 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'localAgent/harness-removed'(name: string): void
+    /**
+     * Progress for one delegation run. The facade emits `heartbeat` payloads
+     * while a facade-tracked run is in flight; providers report the
+     * data-bearing kinds through `LocalAgentRegistry.reportRunProgress` and
+     * the registry re-emits them here (reports for sessions with no
+     * facade-tracked run still emit, so a provider-only run stays
+     * observable).
+     * @param childSessionId - the dsh child session id of the run.
+     * @param progress - the progress payload.
+     * @mode emit
+     */
+    'localAgent/run-progress'(childSessionId: string, progress: LocalAgentRunProgress): void
   }
 }
 
@@ -270,10 +287,18 @@ export class LocalAgentRegistry {
   /**
    * Facade-tracked in-flight runs by dsh child session id, so
    * {@link LocalAgentRegistry.cancel} can abort a run started through
-   * {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume}. Each
-   * entry clears itself when the run's result settles (any stop reason).
+   * {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume} and
+   * the caller's `onProgress` receives the run's reports. Each entry clears
+   * itself (and its heartbeat timer) when the run's result settles (any stop
+   * reason).
    */
-  private readonly runs = new Map<string, { controller: AbortController; run: SubagentRun }>()
+  private readonly runs = new Map<string, {
+    controller: AbortController
+    run: SubagentRun
+    onProgress: ((event: LocalAgentRunProgress) => void) | undefined
+    startedAt: number
+    heartbeat: ReturnType<typeof setInterval>
+  }>()
   /**
    * Detach disposers for child sessions the facade reattached into the live
    * store (see {@link LocalAgentRegistry.resume} step 5). Held for the plugin
@@ -292,8 +317,10 @@ export class LocalAgentRegistry {
     private readonly homesRoot: string,
     private readonly loginPromptTimeoutMs: number,
   ) {
-    // Reattached child sessions leave the live store when the plugin unloads.
+    // Reattached child sessions leave the live store, and in-flight run
+    // heartbeats stop, when the plugin unloads.
     ctx.effect(() => () => {
+      for (const entry of this.runs.values()) clearInterval(entry.heartbeat)
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
     })
@@ -613,7 +640,7 @@ export class LocalAgentRegistry {
       this.unstageDelegationIntent(parentSessionId, provider, intent)
       throw error
     }
-    this.trackRun(run.id, controller, run)
+    this.trackRun(run.id, controller, run, options?.onProgress)
     return run
   }
 
@@ -632,7 +659,8 @@ export class LocalAgentRegistry {
    * 4. live parent agent resolution (`ctx.agents.get`) — a harness hard
    *    constraint, since `ctx.subagents.start` requires a live parent;
    * 5. child-session REATTACH when `ctx.sessions.get(childSessionId)` is
-   *    undefined (recipe below);
+   *    undefined (recipe below; `opts.reattach === false` disables this step
+   *    and fails loud on a non-live child instead);
    * 6. stage `{ kind: 'resume', childSessionId, cliSessionId }` and, in the
    *    same synchronous flow, `await ctx.subagents.start(provider, …)`;
    * 7. on start failure, roll the intent back via
@@ -688,7 +716,15 @@ export class LocalAgentRegistry {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }
     const parent = this.requireLiveParent(parentSessionId)
-    await this.reattachChildSession(childSessionId)
+    if (options?.reattach === false) {
+      // Explicit opt-out: the pre-facade behavior — fail loud on a child that
+      // is not live instead of restoring it from persistence.
+      if (this.ctx.get('sessions')?.get(SessionId(childSessionId)) === undefined) {
+        throw new Error(`localAgent: child session ${childSessionId} is not live and reattach is disabled`)
+      }
+    } else {
+      await this.reattachChildSession(childSessionId)
+    }
     const intent: LocalAgentDelegationIntent = { kind: 'resume', childSessionId, cliSessionId }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -704,7 +740,7 @@ export class LocalAgentRegistry {
       this.unstageDelegationIntent(parentSessionId, provider, intent)
       throw error
     }
-    this.trackRun(childSessionId, controller, run)
+    this.trackRun(childSessionId, controller, run, options?.onProgress)
     return run
   }
 
@@ -806,15 +842,47 @@ export class LocalAgentRegistry {
 
   /**
    * Track one facade-started run under its child session id for
-   * {@link cancel}; the entry clears itself when the run's result settles
-   * (any stop reason, resolved or rejected).
+   * {@link cancel} and progress routing; the entry (and its heartbeat timer)
+   * clears itself when the run's result settles (any stop reason, resolved or
+   * rejected). While tracked, the facade emits a `heartbeat` progress every
+   * {@link RUN_PROGRESS_HEARTBEAT_MS}; the timer is unref'd so it never keeps
+   * the process alive.
    */
-  private trackRun(childSessionId: string, controller: AbortController, run: SubagentRun): void {
-    this.runs.set(childSessionId, { controller, run })
+  private trackRun(
+    childSessionId: string,
+    controller: AbortController,
+    run: SubagentRun,
+    onProgress: ((event: LocalAgentRunProgress) => void) | undefined,
+  ): void {
+    const startedAt = Date.now()
+    const heartbeat = setInterval(() => {
+      this.reportRunProgress(childSessionId, { kind: 'heartbeat', elapsedMs: Date.now() - startedAt })
+    }, RUN_PROGRESS_HEARTBEAT_MS)
+    heartbeat.unref()
+    this.runs.set(childSessionId, { controller, run, onProgress, startedAt, heartbeat })
     const clear = (): void => {
-      if (this.runs.get(childSessionId)?.run === run) this.runs.delete(childSessionId)
+      const entry = this.runs.get(childSessionId)
+      if (entry?.run !== run) return
+      clearInterval(entry.heartbeat)
+      this.runs.delete(childSessionId)
     }
     void run.result.then(clear, clear)
+  }
+
+  /**
+   * The provider-facing progress reporting channel: a provider reports a
+   * run's data-bearing progress (mirror counts now, live deltas with M3), and
+   * the registry forwards it — as the `localAgent/run-progress` cordis event,
+   * and to the `onProgress` callback when the child session has a
+   * facade-tracked run. Reports for untracked child sessions still emit the
+   * event (a provider-only run must stay observable) and invoke no callback.
+   * The facade's own heartbeat rides the same path.
+   * @param childSessionId - the dsh child session id of the running delegation.
+   * @param progress - the progress payload.
+   */
+  reportRunProgress(childSessionId: string, progress: LocalAgentRunProgress): void {
+    this.ctx.emit('localAgent/run-progress', childSessionId, progress)
+    this.runs.get(childSessionId)?.onProgress?.(progress)
   }
 
   /**

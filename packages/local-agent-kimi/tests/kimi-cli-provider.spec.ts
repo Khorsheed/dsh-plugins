@@ -88,6 +88,43 @@ describe('kimi-cli-provider run settlement', () => {
     await done
   })
 
+  it('reports the settle-time mirror as a mirror progress event', async () => {
+    const homeDir = wireHome('run-progress-1')
+    const child = Session.create(SessionId('child-run-progress-1'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    const reportRunProgress = vi.fn()
+    ctx.provide('localAgent', {
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+      reportRunProgress,
+    } as never)
+    const { handle, done } = stubChild('run-progress-1')
+
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startKimiCliRun(request, {
+      cwd: '/tmp',
+      env: { KIMI_CODE_HOME: homeDir },
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      homeDir,
+      ctx,
+    })
+    expect((await run.result).stopReason).toBe('completed')
+    // The report fires after the post-exit mirror; the fixture wire.jsonl has
+    // two transcript lines.
+    await vi.waitFor(() => {
+      expect(reportRunProgress).toHaveBeenCalledWith(child.id, { kind: 'mirror', mirroredLines: 2 })
+    })
+    await done
+  })
+
   it('settles error and closes the turn with an error reason', async () => {
     const done = Promise.resolve({ exitCode: 1, signal: null })
     const child = Session.create(SessionId('child-kimi-error'))
@@ -181,6 +218,7 @@ describe('kimi-cli-provider child session record', () => {
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
     } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in record test') } } as never)
@@ -217,6 +255,7 @@ describe('kimi-cli-provider child session record', () => {
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
     } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned') } } as never)
@@ -259,6 +298,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
@@ -312,6 +352,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
@@ -352,6 +393,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: (childSessionId: string) => {
         if (locked) return false
@@ -432,6 +474,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: () => true,
       releaseResumeLock: (childSessionId: string) => { releases.push(childSessionId) },
