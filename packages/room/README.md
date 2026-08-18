@@ -20,15 +20,15 @@ The package is self-mounting: `dsh.bundle.patch` inserts the `room` loader row, 
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ⚠️ degraded —
-  - **CLI members are unavailable**: they require the local-agent family's public delegation facade (`start`/`resume`/`cancel`, the M1 of `proposals/active/2026-08-18-local-agent-delegation-api.md`), which no published `@khorsheed/dsh-local-agent` carries yet. Invite answers `local-agent-unavailable`; the main-agent member and every other surface work.
-  - **Persisted room sessions do not survive a restart** (both host lines): session-persistence refuses a log containing event types outside its generated in-repo catalog (`KNOWN_SESSION_EVENT_TYPES`) unless the event is marked `ignorable`, and the append API never marks plugin events — so a room session reopened after a host restart fails to load. Live sessions are unaffected. The durable fix is an upstream known-event-types registration surface (the catalog defers it "until such a consumer exists"; room is that consumer).
-- source line (deepseek-harness master): ⚠️ same two items — the slot/Remote/Definition surfaces room uses are all present, the two degradations above apply identically.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ⚠️ degraded — **CLI members are unavailable**: they require the local-agent family's public delegation facade (`start`/`resume`/`cancel`, the M1 of `proposals/active/2026-08-18-local-agent-delegation-api.md`, merged on this repo's main), which no published `@khorsheed/dsh-local-agent` carries yet. Invite answers `local-agent-unavailable`; the main-agent member and every other surface work.
+- source line (deepseek-harness master): ✅ full — with the local-agent family (M1 or later) mounted for CLI members.
+
+**Persistence**: room registers its eight `room/*` event types into the harness's `KNOWN_SESSION_EVENT_TYPES` catalog at apply time (a one-cast `Set.add`; the catalog's own header defers a registration surface for out-of-repo plugins "until such a consumer exists" — room is that consumer, and this is the surface's temporary form, to be migrated when the official one lands). A persisted room session reloads on any build with room mounted, and stays refused — safely, by design — on builds without it.
 
 ## Known Limitations and Deferred Work
 
 - **No realtime room-state subscription**: the client store pulls `getState` on entry and after own mutations, and polls every 2s only while the current room has a running member. Another client's (or a tool's) writes surface within one poll tick at most.
 - **Full blackboard increment, no windowing**: every dispatch carries the member's whole unread increment; long rooms with many members multiply CLI-side token cost. A window/summary policy is deferred.
 - **Member-to-member @ is not wired**: a member reply containing `@other` does not yet surface a human-confirmed pending-dispatch card (phase-2 seam).
-- **Cross-restart CLI continuation** additionally needs the family facade's M4 (delegation-mapping persistence); without it a restarted host cannot resume a member's CLI conversation even after the session-reload limitation above is fixed.
+- **Cross-restart CLI continuation** needs the family facade's M4 (delegation-mapping persistence): after a host restart the room session itself reloads, but `resolveDelegation` misses the in-memory mapping, so a member's next dispatch fails its run until M4 lands.
 - **Member visual identity is replicated chrome**: `.refChip`, the IconActions row, and the ToolRow sweep are not exported plugin API; room replicates their styles. Upstream visual drift is a maintenance tax — cosmetic, acceptable.

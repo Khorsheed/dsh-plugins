@@ -15,6 +15,10 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
+// The persistence read path refuses logs carrying event types outside this
+// catalog; registering the room vocabulary declares that a room-mounted build
+// understands them (see ROOM_EVENT_TYPES in journal.ts).
+import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context.
 import type {} from '@deepseek-ai/dsh-agent'
 // Type-only: pulls the `room/*` SessionEventMap merges.
@@ -23,7 +27,7 @@ import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
-import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay } from './journal.ts'
+import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import { roomInviteTool } from './tool.ts'
 import type {
   RoomCancelRequest, RoomCancelResult,
@@ -39,7 +43,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
-export { MAIN_AGENT_MEMBER } from './journal.ts'
+export { MAIN_AGENT_MEMBER, ROOM_EVENT_TYPES } from './journal.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -79,6 +83,11 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
+    // Join the persistence catalog BEFORE any room event can be appended:
+    // the read path refuses logs with out-of-catalog types, so a room written
+    // by this build reloads only because the vocabulary is registered here.
+    const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
+    for (const type of ROOM_EVENT_TYPES) catalog.add(type)
     this.engine = new DispatchEngine(ctx)
     // The tools registry is probed, not injected: a composition without it
     // loses the model-facing invitation path but keeps every other surface.

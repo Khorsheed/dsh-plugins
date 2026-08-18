@@ -20,15 +20,15 @@ dsh plugin add @khorsheed/dsh-room
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.7`）：⚠️ 降级——
-  - **CLI 成员不可用**：CLI 成员依赖 local-agent 家族的公开委派门面（`start`/`resume`/`cancel`，即 `proposals/active/2026-08-18-local-agent-delegation-api.md` 的 M1），已发布的 `@khorsheed/dsh-local-agent` 尚未携带（npm 上尚无该包）。invite 返回 `local-agent-unavailable`；主 agent 成员与其余所有面正常。
-  - **持久化的 room 会话跨重启不可重载**（两条 host 线同）：session-persistence 拒绝解释含有其生成目录（`KNOWN_SESSION_EVENT_TYPES`，仅含仓内事件类型）之外类型、且未标 `ignorable` 的日志，而 append API 不会给插件事件打这个标记——所以 host 重启后重新打开 room 会话会加载失败。存活会话不受影响。治本需要上游提供 known-event-types 注册面（目录注释推迟到"出现消费方"——room 就是这个消费方）。
-- 源码线（deepseek-harness master）：⚠️ 同样两项——room 用到的 slot/Remote/Definition 面全部存在，上述两项降级原样适用。
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.7`）：⚠️ 降级——**CLI 成员不可用**：CLI 成员依赖 local-agent 家族的公开委派门面（`start`/`resume`/`cancel`，即 `proposals/active/2026-08-18-local-agent-delegation-api.md` 的 M1，已合入本仓 main），已发布的 `@khorsheed/dsh-local-agent` 尚未携带（npm 上尚无该包）。invite 返回 `local-agent-unavailable`；主 agent 成员与其余所有面正常。
+- 源码线（deepseek-harness master）：✅ 完整——CLI 成员需挂载 M1 及以后的 local-agent 家族。
+
+**持久化**：room 在 apply 时把 8 种 `room/*` 事件类型登记进 harness 的 `KNOWN_SESSION_EVENT_TYPES` 目录（一次带断言的 `Set.add`；该目录头部注释把仓外插件的注册面推迟到"出现消费方"——room 就是这个消费方，此处是该注册面的临时形态，上游出正式 surface 后迁移）。持久化的 room 会话在任何装了 room 的 build 上可重载；在未装 room 的 build 上依然被拒绝——这是安全语义，原样保留。
 
 ## 已知限制与缓建项
 
 - **无实时 room 状态订阅**：client store 在进入时和自身 mutation 后拉 `getState`，且仅在当前 room 有运行中成员时每 2s 轮询。其他客户端（或工具）的写入至多一个轮询周期内可见。
 - **黑板全量增量、无窗口裁剪**：每次派发携带该成员的全部未读增量；成员多的长 room 会放大 CLI 侧 token 成本。窗口/摘要策略缓建。
 - **成员间 @ 未接线**：成员回复里的 `@other` 还不会浮现人类确认的待派发卡片（二期接缝）。
-- **跨重启 CLI 续跑**还需要家族门面的 M4（委派映射持久化）；否则即使上面的会话重载限制修好，重启后的 host 也无法续跑成员的 CLI 会话。
+- **跨重启 CLI 续跑**需要家族门面的 M4（委派映射持久化）：host 重启后 room 会话本身可重载，但 `resolveDelegation` 在内存映射上 miss，成员的下一次派发会失败，直到 M4 落地。
 - **成员视觉身份是复刻的 chrome**：`.refChip`、IconActions 行、ToolRow 扫光都不是导出的插件 API，room 复刻其样式。上游视觉漂移是维护税——属外观层，可接受。

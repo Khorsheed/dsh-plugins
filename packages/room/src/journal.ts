@@ -20,6 +20,29 @@ import type {
  */
 export const MAIN_AGENT_MEMBER = 'main'
 
+/**
+ * Every `room/*` session-event type this package introduces. Room registers
+ * them into the harness's KNOWN_SESSION_EVENT_TYPES persistence catalog at
+ * apply time (see the RoomService constructor): the catalog's read-path
+ * refusal exists so a build that does NOT understand an event type never
+ * silently mangles the log — a build with room mounted understands these, so
+ * registration is the semantically correct declaration, and a build without
+ * room keeps refusing them. The catalog's own header defers a registration
+ * surface for out-of-repo plugins "until such a consumer exists"; this
+ * in-place add is that surface's temporary form — migrate to the official
+ * one when it lands upstream.
+ */
+export const ROOM_EVENT_TYPES = [
+  'room/created',
+  'room/member-added',
+  'room/member-updated',
+  'room/member-removed',
+  'room/dispatch',
+  'room/note',
+  'room/speech',
+  'room/run-state',
+] as const
+
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
   return events.some(event => event.type === 'room/created')
