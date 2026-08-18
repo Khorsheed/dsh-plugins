@@ -1,6 +1,12 @@
 {
   "name": "@khorsheed/dsh-room",
-  "description": "Room: a normal dsh session marked as a multi-agent group conversation, whose standard chat UI hosts several peer agents addressed by @-mention (Step 0/1 spike + scaffold)",
+  "description": "Room: a normal dsh session marked as a multi-agent group conversation — the standard chat UI hosts peer agents addressed by @-mention over a shared blackboard, with a members tab and CLI members delegated through the local-agent family",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "multi-agent"
+  ],
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -57,7 +63,7 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "degraded on both host lines: CLI members need the local-agent delegation facade (family M1, unpublished — invite answers local-agent-unavailable, main-agent member works); persisted room sessions do not survive a host restart (room/* custom events are outside session-persistence's KNOWN_SESSION_EVENT_TYPES catalog and append never marks them ignorable, so reload refuses the log — needs the upstream registration surface)"
+      "notes": "CLI members need the local-agent family with the M1 delegation facade (merged on this repo's main, npm publication pending) — without it invite answers local-agent-unavailable and the main-agent member carries the room; room's room/* event types are registered into the persistence catalog at apply time (temporary form of the catalog's deferred out-of-repo registration surface), so persisted rooms reload wherever room is mounted"
     }
   },
   "scripts": {
@@ -87,7 +93,13 @@
     "@deepseek-ai/dsh-subagent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "@khorsheed/dsh-local-agent": "workspace:*",
     "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@khorsheed/dsh-local-agent": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -103,9 +115,11 @@
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-subagent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "@khorsheed/dsh-local-agent": "workspace:*",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",

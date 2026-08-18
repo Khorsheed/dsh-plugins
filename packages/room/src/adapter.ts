@@ -1,30 +1,23 @@
 /**
  * The room's ONLY coupling point to the local-agent family's delegation
- * facade (`proposals/active/2026-08-18-local-agent-delegation-api.md`, M1).
- * No static dependency on @khorsheed/dsh-local-agent: the facade is probed
- * through `ctx.get('localAgent')` at dispatch time, and a missing or
- * incomplete facade degrades the CLI-member capability (structured
- * `local-agent-unavailable` at invite, journaled `failed` runs at dispatch)
- * while the main-agent member keeps working.
+ * facade (`proposals/active/2026-08-18-local-agent-delegation-api.md`, M1
+ * landed as `LocalAgentRegistry.start/resume/cancel`). The TYPES come from a
+ * type-only import of the family core (drift-checked at compile time); the
+ * RUNTIME stays a probe — `ctx.get('localAgent')` plus method-existence
+ * checks — so a composition without the family degrades the CLI-member
+ * capability (structured `local-agent-unavailable` at invite, journaled
+ * `failed` runs at dispatch) while the main-agent member keeps working.
  * @module @khorsheed/dsh-room/adapter
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 
-/**
- * The facade shape room consumes. Field types intentionally mirror the family
- * proposal's M1 signature (parentSessionId-keyed, prompt as content blocks,
- * the resume handle never inside prompt text).
- */
-export interface LocalAgentFacade {
-  /** Fresh delegation; the returned run's id IS the new child session id. */
-  start(parentSessionId: string, provider: string, prompt: ContentBlock[]): Promise<SubagentRun>
-  /** Continue a member's CLI conversation in its recorded child session. */
-  resume(parentSessionId: string, provider: string, childSessionId: string, prompt: ContentBlock[]): Promise<SubagentRun>
-  /** Cancel an in-flight run by child session id; false when nothing was in flight. */
-  cancel(childSessionId: string): boolean
-}
+/** The delegation-facade slice room consumes (the family's public M1 API). */
+export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'>
+
+/** The roster slice of the registry (older than the M1 facade). */
+export type LocalAgentRosterSlice = Pick<LocalAgentRegistry, 'roster' | 'statusOf'>
 
 /** The methods a service must carry to quack like the facade. */
 const FACADE_METHODS = ['start', 'resume', 'cancel'] as const
@@ -41,25 +34,6 @@ export function probeLocalAgent(ctx: Context): LocalAgentFacade | undefined {
   return FACADE_METHODS.every(method => typeof service[method] === 'function')
     ? service as unknown as LocalAgentFacade
     : undefined
-}
-
-/** One roster row as the registry's roster() returns it. */
-export interface LocalAgentRosterRowProbe {
-  readonly name: string
-  readonly displayName: string
-}
-
-/** One harness status as the registry's statusOf() returns it. */
-export interface LocalAgentStatusProbe {
-  readonly authenticated: boolean
-  /** The subagent provider name the harness delegates through, when it has one. */
-  readonly delegationProvider?: string
-}
-
-/** The roster slice of the localAgent registry (older than the M1 facade). */
-export interface LocalAgentRosterSlice {
-  roster(): readonly LocalAgentRosterRowProbe[]
-  statusOf(name: string): Promise<LocalAgentStatusProbe>
 }
 
 /**

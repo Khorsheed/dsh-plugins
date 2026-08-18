@@ -142,6 +142,23 @@ async function buildOverlay(): Promise<void> {
       cpSync(join(repoRoot, pkg.dir, config), join(target, config))
     }
   }
+  // The harness tsconfig.base.json maps only @deepseek-ai/*; overlaid packages
+  // must also resolve each other's @khorsheed/* specifiers (cross-package
+  // TYPE-only imports, e.g. room reading the local-agent facade's types).
+  // The overlay is scratch, so patching the copied base is safe.
+  const basePath = join(overlay, 'tsconfig.base.json')
+  const baseParsed = ts.parseConfigFileTextToJson(basePath, readFileSync(basePath, 'utf8'))
+  if (baseParsed.error !== undefined) {
+    throw new Error(`gen-typert: cannot parse harness tsconfig.base.json: ${ts.flattenDiagnosticMessageText(baseParsed.error.messageText, '\n')}`)
+  }
+  const base = baseParsed.config as { compilerOptions?: { paths?: Record<string, string[]> } }
+  const paths: Record<string, string[]> = { ...base.compilerOptions?.paths }
+  for (const pkg of TYPERT_PACKAGES) {
+    paths[pkg.name] = [`./${pkg.dir}/src/index.ts`]
+    paths[`${pkg.name}/*`] = [`./${pkg.dir}/src/*`]
+  }
+  base.compilerOptions = { ...base.compilerOptions, paths }
+  writeFileSync(basePath, `${JSON.stringify(base, null, 2)}\n`)
   const aggregatePath = join(overlay, 'tsconfig.host.json')
   const parsed = ts.parseConfigFileTextToJson(aggregatePath, readFileSync(aggregatePath, 'utf8'))
   if (parsed.error !== undefined) {
