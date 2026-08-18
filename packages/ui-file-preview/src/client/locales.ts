@@ -22,6 +22,8 @@ export type FilePreviewKey =
   | 'drawer.openIde'
   | 'drawer.action.folder'
   | 'drawer.action.ide'
+  | 'drawer.copyPath'
+  | 'drawer.copied'
   | 'drawer.empty'
   | 'drawer.listError'
   | 'drawer.count'
@@ -70,6 +72,8 @@ export const zh: Record<FilePreviewKey, string> = {
   'drawer.openIde': '在 IDE 打开',
   'drawer.action.folder': '文件夹',
   'drawer.action.ide': 'IDE',
+  'drawer.copyPath': '复制路径',
+  'drawer.copied': '已复制',
   'drawer.empty': '这个会话还没有写过文件',
   'drawer.listError': '文件列表加载失败',
   'drawer.count': '{count} 个文件',
@@ -112,6 +116,8 @@ export const en: Record<FilePreviewKey, string> = {
   'drawer.openIde': 'Open in IDE',
   'drawer.action.folder': 'Folder',
   'drawer.action.ide': 'IDE',
+  'drawer.copyPath': 'Copy path',
+  'drawer.copied': 'Copied',
   'drawer.empty': 'This session has not written any files yet',
   'drawer.listError': 'Failed to load the file list',
   'drawer.count': '{count} files',

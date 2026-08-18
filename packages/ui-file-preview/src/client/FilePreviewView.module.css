@@ -131,6 +131,36 @@
   flex-direction: column;
 }
 
+/* The selected file's gesture row (copy path + host open folder/IDE), mirroring
+   the drawer header's actions; the preview scrolls below it. */
+.previewActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+.action {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
 .empty {
   padding: 16px 12px;
   font-size: 12px;

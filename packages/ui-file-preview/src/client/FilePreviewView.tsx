@@ -1,7 +1,11 @@
 /** Conversation view tab: the session's touched files (list) with inline preview. */
 
 import { useEffect, useMemo, useState } from 'react'
+import {
+  IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilePreviewViewProps } from './contract.ts'
+import { useCopyPathFeedback } from './copy-path.ts'
 import { FilePreviewPane } from './FilePreviewPane.tsx'
 import { basename, highlightMatch, matchesQuery, parentPath, relativeToCwd, sortByLatest } from './path-utils.ts'
 import css from './FilePreviewView.module.css'
@@ -18,7 +22,11 @@ import css from './FilePreviewView.module.css'
  * @param props - composed props (runtime + store + injected + locale shares).
  */
 export function FilePreviewView(props: FilePreviewViewProps) {
-  const { sessionId, useSessions, useStore, listFiles, readFile, t } = props
+  const {
+    sessionId, useSessions, useStore, listFiles, readFile,
+    isLoopback, openExternal, revealFolder, copyPath, t,
+  } = props
+  const { useHostDescription } = props
   const actions = props.actions
   const list = useStore(s => s.list)
   const listLoading = useStore(s => s.listLoading)
@@ -29,6 +37,11 @@ export function FilePreviewView(props: FilePreviewViewProps) {
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
+  // Clipboard writes work in any browser context, so the copy gesture is
+  // never gated; only the host-open gestures (folder / IDE) need a desktop —
+  // same gate the drawer and the official row use.
+  const { copied, onCopy } = useCopyPathFeedback(copyPath, selectedPath)
+  const canOpenExternal = isLoopback && useHostDescription(description => description?.canOpenPath === true)
   // Component-private view state: the name-filter search term.
   const [search, setSearch] = useState('')
   // Latest activity first: the fold keeps first-seen order. The list shows
@@ -127,6 +140,36 @@ export function FilePreviewView(props: FilePreviewViewProps) {
         </nav>
       </div>
       <section className={css.preview}>
+        {selectedPath !== null && (
+          <div className={css.previewActions}>
+            <button
+              type="button" className={css.action} onClick={onCopy}
+              title={copied ? t('drawer.copied') : t('drawer.copyPath')}
+              aria-label={copied ? t('drawer.copied') : t('drawer.copyPath')}
+            >
+              {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+              {copied ? t('drawer.copied') : t('drawer.copyPath')}
+            </button>
+            {canOpenExternal && (
+              <>
+                <button
+                  type="button" className={css.action} onClick={() => { revealFolder(selectedPath) }}
+                  title={t('drawer.openFolder')} aria-label={t('drawer.openFolder')}
+                >
+                  <IconFolderOpenOutline16 size={14} />
+                  {t('drawer.action.folder')}
+                </button>
+                <button
+                  type="button" className={css.action} onClick={() => { openExternal(selectedPath) }}
+                  title={t('drawer.openIde')} aria-label={t('drawer.openIde')}
+                >
+                  <IconCodeOutline16 size={14} />
+                  {t('drawer.action.ide')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {previewLoading && <div className={css.empty}>{t('drawer.loading')}</div>}
         {!previewLoading && previewError !== null && <div className={css.empty}>{t('drawer.kind.error')}</div>}
         {!previewLoading && previewError === null && selectedPath !== null && preview !== null && (

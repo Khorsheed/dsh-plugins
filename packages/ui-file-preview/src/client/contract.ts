@@ -25,6 +25,18 @@ export interface FilePreviewViewInjected {
   listFiles: (sessionId: SessionId) => Promise<RemoteResult<FilePreviewList>>
   /** Fetch one file's current content (one RPC, host-capped). */
   readFile: (sessionId: SessionId, path: string) => Promise<RemoteResult<FilePreviewRead>>
+  /** Whether the browser itself is connected over loopback. */
+  isLoopback: boolean
+  hooks: {
+    /** Current generation's Host description, bound by the slot renderer. */
+    hostDescription: HostDescriptionSource
+  }
+  /** Open one path with the host OS default application (the "Open in IDE" gesture). */
+  openExternal: (path: string) => void
+  /** Open one path's parent folder in the host file manager (the "Show in folder" gesture). */
+  revealFolder: (path: string) => void
+  /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
+  copyPath: (path: string) => Promise<boolean>
 }
 
 /** Full props of the file view entry (runtime + store + injected + locale shares). */
@@ -50,6 +62,8 @@ export interface FilePreviewDrawerInjected {
   openExternal: (path: string) => void
   /** Open one path's parent folder in the host file manager (the "Show in folder" gesture). */
   revealFolder: (path: string) => void
+  /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
+  copyPath: (path: string) => Promise<boolean>
 }
 
 /** Full props of the link-click drawer entry (runtime + store + injected + locale shares). */

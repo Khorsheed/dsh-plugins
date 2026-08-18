@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.md
+.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.md: 3dd2c8096703b5baf410c6e80eb25bb9ae96f4fb
+.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.zh.md: bee51fc7fed7ea0790d5e66ba11e378725e0aba4

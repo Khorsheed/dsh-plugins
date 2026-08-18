@@ -28,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import filePreviewRemote from '@khorsheed/dsh-file-preview/remote'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FilePreviewDrawer } from './FilePreviewDrawer.tsx'
 import { FilePreviewView } from './FilePreviewView.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
@@ -75,16 +76,24 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const controller = new FilePreviewController()
   const connection = ctx.get('connection') as ConnectionHandle
   const sessions: ISessions = ctx.sessions
-  // Host open gestures resolve the display path against the CURRENT session's
-  // cwd at call time (the drawer only ever previews the current session).
-  const openOnHost = (path: string): void => {
+  // Path verbs (open / reveal / copy) resolve the recorded display path
+  // against a session's cwd at call time — the tool may have recorded it
+  // relative to the session cwd. The drawer only ever previews the CURRENT
+  // session; the file view knows its own session id and resolves against
+  // that one, never the current.
+  const sessionCwd = (sessionId: SessionId | undefined): string | undefined => {
     const snapshot = sessions.list.getSnapshot()
-    const cwd = snapshot.current === undefined ? undefined : snapshot.byId[snapshot.current]?.cwd
-    void ctx.workspaces.openPath(resolveWorkspacePath(cwd, path)).catch(() => {
+    if (sessionId !== undefined) return snapshot.byId[sessionId]?.cwd
+    return snapshot.current === undefined ? undefined : snapshot.byId[snapshot.current]?.cwd
+  }
+  const openOnHost = (sessionId: SessionId | undefined, path: string): void => {
+    void ctx.workspaces.openPath(resolveWorkspacePath(sessionCwd(sessionId), path)).catch(() => {
       // Host/OS open failures stay silent in the drawer; the native app
       // surfaces its own error dialog when the path is unusable.
     })
   }
+  const copyPathFor = (sessionId: SessionId | undefined, path: string): Promise<boolean> =>
+    writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path))
   // The namespace is registered by $mount above; `ctx.remote.filePreview`
   // cannot see it (the property proxy walks the fiber chain, and the namespace
   // lives in the sibling fiber $mount spawned), so read it from the global
@@ -105,6 +114,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       return {
         listFiles: (sid: SessionId) => remote.list(sid),
         readFile: (sid: SessionId, path: string) => remote.read(sid, path),
+        isLoopback: connection.isLoopback,
+        hooks: { hostDescription: connection.hostDescription },
+        openExternal: (path) => { openOnHost(sessionId, path) },
+        revealFolder: (path) => { openOnHost(sessionId, parentPath(path) || '.') },
+        copyPath: (path) => copyPathFor(sessionId, path),
       }
     },
   }, FilePreviewView))
@@ -145,8 +159,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         readFile: (sid: SessionId, path: string) => remote.read(sid, path),
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
-        openExternal: openOnHost,
-        revealFolder: (path) => { openOnHost(parentPath(path) || '.') },
+        openExternal: (path) => { openOnHost(undefined, path) },
+        revealFolder: (path) => { openOnHost(undefined, parentPath(path) || '.') },
+        copyPath: (path) => copyPathFor(undefined, path),
       }
     },
   }, FilePreviewDrawer))

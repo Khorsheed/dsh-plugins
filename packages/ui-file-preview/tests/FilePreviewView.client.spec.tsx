@@ -33,6 +33,9 @@ interface Harness {
   actions: Instance['actions']
   listFiles: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
+  openExternal: ReturnType<typeof vi.fn>
+  revealFolder: ReturnType<typeof vi.fn>
+  copyPath: ReturnType<typeof vi.fn>
 }
 
 function makeHarness(): Harness {
@@ -42,10 +45,18 @@ function makeHarness(): Harness {
     actions: instance.actions,
     listFiles: vi.fn(),
     readFile: vi.fn(),
+    openExternal: vi.fn(),
+    revealFolder: vi.fn(),
+    copyPath: vi.fn(async () => true),
   }
 }
 
-function renderView(h: Harness, t?: (key: string, params?: Record<string, unknown>) => string) {
+function renderView(
+  h: Harness,
+  t?: (key: string, params?: Record<string, unknown>) => string,
+  opts: { canOpen?: boolean } = {},
+) {
+  const canOpen = opts.canOpen ?? true
   const props: FilePreviewViewProps = {
     sessionId: 's1' as SessionId,
     useSession: undefined as never,
@@ -61,6 +72,11 @@ function renderView(h: Harness, t?: (key: string, params?: Record<string, unknow
     actions: h.actions,
     listFiles: h.listFiles as unknown as FilePreviewViewProps['listFiles'],
     readFile: h.readFile as unknown as FilePreviewViewProps['readFile'],
+    isLoopback: canOpen,
+    useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canOpen })) as never,
+    openExternal: h.openExternal as never,
+    revealFolder: h.revealFolder as never,
+    copyPath: h.copyPath as never,
     t: t ?? ((key: string) => key),
   }
   return render(<FilePreviewView {...props} />)
@@ -219,6 +235,73 @@ describe('FilePreviewView', () => {
     act(() => { row.click() })
     expect(await screen.findByText('hello world')).toBeTruthy()
     expect(h.readFile).toHaveBeenCalledWith('s1', '/work/notes.md')
+  })
+
+  it('shows the selected file\'s gesture row and routes copy/folder/IDE with its path', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/notes.md', kind: 'text', content: 'x', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('notes.md')
+    act(() => { row.click() })
+    await screen.findByText('drawer.copyPath')
+    act(() => { screen.getByLabelText('drawer.copyPath').click() })
+    await act(async () => {})
+    expect(h.copyPath).toHaveBeenCalledWith('/work/notes.md')
+    expect(screen.getByLabelText('drawer.copied')).toBeTruthy()
+    act(() => { screen.getByLabelText('drawer.openFolder').click() })
+    expect(h.revealFolder).toHaveBeenCalledWith('/work/notes.md')
+    act(() => { screen.getByLabelText('drawer.openIde').click() })
+    expect(h.openExternal).toHaveBeenCalledWith('/work/notes.md')
+  })
+
+  it('does not claim a copy the host declined', async () => {
+    const h = makeHarness()
+    h.copyPath.mockResolvedValue(false)
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/notes.md', kind: 'text', content: 'x', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('notes.md')
+    act(() => { row.click() })
+    await screen.findByText('drawer.copyPath')
+    act(() => { screen.getByLabelText('drawer.copyPath').click() })
+    await act(async () => {})
+    expect(h.copyPath).toHaveBeenCalledWith('/work/notes.md')
+    expect(screen.queryByLabelText('drawer.copied')).toBeNull()
+  })
+
+  it('gates the host-open gestures but keeps copy when the host cannot open paths', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/notes.md', kind: 'text', content: 'x', truncated: false } })
+    renderView(h, undefined, { canOpen: false })
+    const row = await screen.findByText('notes.md')
+    act(() => { row.click() })
+    await screen.findByText('drawer.copyPath')
+    expect(screen.getByLabelText('drawer.copyPath')).toBeTruthy()
+    expect(screen.queryByLabelText('drawer.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('drawer.openIde')).toBeNull()
+  })
+
+  it('hides the gesture row while no file is selected', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    renderView(h)
+    await screen.findByText('notes.md')
+    expect(screen.queryByLabelText('drawer.copyPath')).toBeNull()
+    expect(screen.queryByLabelText('drawer.openFolder')).toBeNull()
   })
 
   it('shows the current content by default and steps the recorded diffs', async () => {

@@ -32,6 +32,7 @@ interface Harness {
   readFile: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
   revealFolder: ReturnType<typeof vi.fn>
+  copyPath: ReturnType<typeof vi.fn>
 }
 
 function makeHarness(): Harness {
@@ -43,6 +44,7 @@ function makeHarness(): Harness {
     readFile: vi.fn(async () => ({ ok: true, value: { path: 'x', kind: 'text', content: 'x', truncated: false } })),
     openExternal: vi.fn(),
     revealFolder: vi.fn(),
+    copyPath: vi.fn(async () => true),
   }
 }
 
@@ -63,6 +65,7 @@ function renderDrawer(h: Harness, opts: { current?: string | undefined; canOpen?
     useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canOpen })) as never,
     openExternal: h.openExternal as never,
     revealFolder: h.revealFolder as never,
+    copyPath: h.copyPath as never,
     t: (key: string) => key,
   }
   return render(<FilePreviewDrawer {...props} />)
@@ -150,6 +153,43 @@ describe('FilePreviewDrawer', () => {
     expect(h.revealFolder).toHaveBeenCalledWith('/work/a.md')
     act(() => { screen.getByLabelText('drawer.openIde').click() })
     expect(h.openExternal).toHaveBeenCalledWith('/work/a.md')
+  })
+
+  it('copies the selected path and flips to the copied label on success', async () => {
+    const h = makeHarness()
+    renderDrawer(h)
+    act(() => { h.actions.openPath('/work/a.md') })
+    await screen.findByText('drawer.title')
+    act(() => { screen.getByLabelText('drawer.copyPath').click() })
+    await act(async () => {})
+    expect(h.copyPath).toHaveBeenCalledWith('/work/a.md')
+    expect(screen.getByLabelText('drawer.copied')).toBeTruthy()
+  })
+
+  it('does not claim a copy the host declined', async () => {
+    const h = makeHarness()
+    h.copyPath.mockResolvedValue(false)
+    renderDrawer(h)
+    act(() => { h.actions.openPath('/work/a.md') })
+    await screen.findByText('drawer.title')
+    act(() => { screen.getByLabelText('drawer.copyPath').click() })
+    await act(async () => {})
+    expect(h.copyPath).toHaveBeenCalledWith('/work/a.md')
+    // The label stays on the idle copy state — no false success feedback.
+    expect(screen.queryByLabelText('drawer.copied')).toBeNull()
+  })
+
+  it('keeps copy available without a selection hidden and host-open gestures gated', async () => {
+    const h = makeHarness()
+    renderDrawer(h, { canOpen: false })
+    act(() => { h.actions.openPath('/work/a.md') })
+    await screen.findByText('drawer.title')
+    // Clipboard works in any browser context; only the host gestures are gated.
+    expect(screen.getByLabelText('drawer.copyPath')).toBeTruthy()
+    expect(screen.queryByLabelText('drawer.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('drawer.openIde')).toBeNull()
+    act(() => { h.actions.close() })
+    expect(screen.queryByLabelText('drawer.copyPath')).toBeNull()
   })
 
   it('hides the host-open gestures when the host cannot open paths', async () => {
