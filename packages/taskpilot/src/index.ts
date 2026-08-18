@@ -8,7 +8,7 @@
  * `ctx.jobs`, `ctx.subagents`, and `ctx.commands` are the standard services
  * every composition already mounts.
  *
- * @module dsh-taskpilot
+ * @module @khorsheed/dsh-taskpilot
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -20,7 +20,7 @@ import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
 
-export const name = 'dsh-taskpilot'
+export const name = 'taskpilot'
 export const inject = ['commands', 'jobs', 'subagents', 'agents']
 
 export function apply(ctx: Context): void {

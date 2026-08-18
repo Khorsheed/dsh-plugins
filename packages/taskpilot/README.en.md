@@ -72,7 +72,7 @@ None (all defaults). The capsules register at `conversation.input.dock` order 30
 
 ```sh
 pnpm install
-pnpm run build     # tsc emits types (lib/types + lib/types/client), tsdown bundles (index.js + client.js)
+pnpm run build     # tsc emits types (lib/types + lib/types/client), tsdown bundles (index.js + invariant.js + client.js)
 pnpm run typecheck # host + client aggregates (mirrors the product split; avoids ctx merge conflicts)
 pnpm test          # vitest: trail folding + capsule/drawer component tests
 ```

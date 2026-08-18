@@ -72,7 +72,7 @@ cd dsh-taskpilot && pnpm install && pnpm run build && pnpm test
 
 ```sh
 pnpm install
-pnpm run build     # tsc 出类型(lib/types + lib/types/client)+ tsdown 打包(index.js + client.js)
+pnpm run build     # tsc 出类型(lib/types + lib/types/client)+ tsdown 打包(index.js + invariant.js + client.js)
 pnpm run typecheck # host + client 两个 aggregate(与产品一致,避免 host/client 的 ctx merge 冲突)
 pnpm test          # vitest:轨迹折叠 + 胶囊/抽屉组件测试
 ```
