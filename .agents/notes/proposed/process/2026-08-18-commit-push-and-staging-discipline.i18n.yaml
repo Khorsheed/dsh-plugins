@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of the
-# last confirmed-consistent state. Both languages carry equal authority; after
-# editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/process/2026-08-18-commit-push-and-staging-discipline.md
-.agents/notes/proposed/process/2026-08-18-commit-push-and-staging-discipline.md: 4535c62b578a516187d17eaac68846b54be5bc10
-.agents/notes/proposed/process/2026-08-18-commit-push-and-staging-discipline.zh.md: 0564f7d5b272f3f427bf6522156a75bd34e2b377
