@@ -265,6 +265,111 @@ export type ClaudeTranscriptLine =
   | { kind: 'text'; text: string }
   | { kind: 'tool'; name: string; detail?: string; result?: string }
 
+/** Mutable fold state shared by the batch parse and the incremental parser. */
+interface ClaudeStreamFoldState {
+  readonly lines: ClaudeTranscriptLine[]
+  text: string | undefined
+  usage: TokenUsage | undefined
+  sessionId: string | undefined
+  error: string | undefined
+  /** Whether the stream's terminal `result` event was folded. */
+  completed: boolean
+}
+
+/**
+ * Fold one NDJSON line into the stream state. Shared by
+ * {@link parseClaudeStreamJson} (settle-time whole-stream parse) and
+ * {@link ClaudeStreamParser} (live incremental parse) so the two paths cannot
+ * drift.
+ */
+function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
+  const line = raw.trim()
+  if (line === '') return
+  let event: {
+    type?: string
+    message?: { content?: unknown[]; type?: string }
+    is_error?: unknown
+    error?: unknown
+    usage?: unknown
+    session_id?: unknown
+    result?: unknown
+  }
+  try {
+    event = JSON.parse(line) as typeof event
+  } catch {
+    return
+  }
+  if (event.type === 'system' && typeof event.session_id === 'string') {
+    state.sessionId = event.session_id
+    return
+  }
+  if (event.type === 'result') {
+    state.completed = true
+    if (event.is_error === true) {
+      state.error = typeof event.error === 'string' ? event.error : 'claude -p reported an error'
+    }
+    if (typeof event.session_id === 'string') state.sessionId = event.session_id
+    if (event.usage !== undefined) state.usage = usageFromClaude(event.usage)
+    return
+  }
+  if (event.type !== 'assistant' && event.type !== 'user') return
+  const blocks = event.message?.content ?? []
+  for (const block of blocks) {
+    if (typeof block !== 'object' || block === null) continue
+    const record = block as Record<string, unknown>
+    const kind = record['type']
+    if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
+      state.lines.push({ kind: 'text', text: record['text'] as string })
+      // The final assistant text block is the run output.
+      if (event.type === 'assistant') state.text = record['text'] as string
+    } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
+      state.lines.push({ kind: 'think', text: record['thinking'] as string })
+    } else if (kind === 'tool_use') {
+      const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
+      const detail = inputDetail(record['input'])
+      state.lines.push({
+        kind: 'tool',
+        name,
+        ...detail === undefined ? {} : { detail },
+      })
+    } else if (kind === 'tool_result') {
+      const content = record['content']
+      const resultText = toolResultText(content)
+      if (resultText !== undefined && resultText.trim() !== '') {
+        const last = state.lines[state.lines.length - 1]
+        if (last !== undefined && last.kind === 'tool') {
+          state.lines[state.lines.length - 1] = { ...last, result: resultText }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Incremental `claude --output-format stream-json` parser: feed stdout chunks
+ * as they arrive and the folded transcript accumulates line by line. The last
+ * line is volatile until the terminal `result` event — a `tool_result` merges
+ * into a pending tool line — so live consumers hold it back (see the run's
+ * live mirror).
+ */
+export class ClaudeStreamParser implements ClaudeStreamFoldState {
+  private buffer = ''
+  readonly lines: ClaudeTranscriptLine[] = []
+  text: string | undefined
+  usage: TokenUsage | undefined
+  sessionId: string | undefined
+  error: string | undefined
+  completed = false
+
+  /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
+  push(chunk: string): void {
+    this.buffer += chunk
+    const parts = this.buffer.split('\n')
+    this.buffer = parts.pop() ?? ''
+    for (const raw of parts) foldClaudeStreamLine(this, raw)
+  }
+}
+
 /**
  * Parse a `claude -p --verbose --output-format stream-json` NDJSON stream.
  * Each line is one event: `system` init (carries the session id), `assistant`
@@ -285,78 +390,21 @@ export function parseClaudeStreamJson(output: string): {
   error?: string
   sessionId?: string
 } {
-  const lines: ClaudeTranscriptLine[] = []
-  let text: string | undefined
-  let usage: TokenUsage | undefined
-  let sessionId: string | undefined
-  let error: string | undefined
-  for (const raw of output.split('\n')) {
-    const line = raw.trim()
-    if (line === '') continue
-    let event: {
-      type?: string
-      message?: { content?: unknown[]; type?: string }
-      is_error?: unknown
-      error?: unknown
-      usage?: unknown
-      session_id?: unknown
-      result?: unknown
-    }
-    try {
-      event = JSON.parse(line) as typeof event
-    } catch {
-      continue
-    }
-    if (event.type === 'system' && typeof event.session_id === 'string') {
-      sessionId = event.session_id
-      continue
-    }
-    if (event.type === 'result') {
-      if (event.is_error === true) {
-        error = typeof event.error === 'string' ? event.error : 'claude -p reported an error'
-      }
-      if (typeof event.session_id === 'string') sessionId = event.session_id
-      if (event.usage !== undefined) usage = usageFromClaude(event.usage)
-      continue
-    }
-    if (event.type !== 'assistant' && event.type !== 'user') continue
-    const blocks = event.message?.content ?? []
-    for (const block of blocks) {
-      if (typeof block !== 'object' || block === null) continue
-      const record = block as Record<string, unknown>
-      const kind = record['type']
-      if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
-        lines.push({ kind: 'text', text: record['text'] as string })
-        // The final assistant text block is the run output.
-        if (event.type === 'assistant') text = record['text'] as string
-      } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
-        lines.push({ kind: 'think', text: record['thinking'] as string })
-      } else if (kind === 'tool_use') {
-        const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
-        const detail = inputDetail(record['input'])
-        lines.push({
-          kind: 'tool',
-          name,
-          ...detail === undefined ? {} : { detail },
-        })
-      } else if (kind === 'tool_result') {
-        const content = record['content']
-        const resultText = toolResultText(content)
-        if (resultText !== undefined && resultText.trim() !== '') {
-          const last = lines[lines.length - 1]
-          if (last !== undefined && last.kind === 'tool') {
-            lines[lines.length - 1] = { ...last, result: resultText }
-          }
-        }
-      }
-    }
+  const state: ClaudeStreamFoldState = {
+    lines: [],
+    text: undefined,
+    usage: undefined,
+    sessionId: undefined,
+    error: undefined,
+    completed: false,
   }
+  for (const raw of output.split('\n')) foldClaudeStreamLine(state, raw)
   return {
-    lines,
-    ...text === undefined ? {} : { text },
-    ...usage === undefined ? {} : { usage },
-    ...error === undefined ? {} : { error },
-    ...sessionId === undefined ? {} : { sessionId },
+    lines: state.lines,
+    ...state.text === undefined ? {} : { text: state.text },
+    ...state.usage === undefined ? {} : { usage: state.usage },
+    ...state.error === undefined ? {} : { error: state.error },
+    ...state.sessionId === undefined ? {} : { sessionId: state.sessionId },
   }
 }
 
@@ -459,8 +507,18 @@ export function startClaudeCliRun(
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
   spec.childSession?.append('turn/start', { turn })
+  // Live mirror: fold the stream-json as chunks arrive so the child session
+  // shows the run's progress before settle; the settle mirror below resumes
+  // from the live counters and stays a no-op when live mirroring kept up.
+  const liveMirror = spec.childSession !== undefined && spec.ctx !== undefined
+    ? createClaudeLiveMirror(spec, task, turn)
+    : undefined
   let output = ''
-  child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
+  child.stdout?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString()
+    output += text
+    liveMirror?.push(text)
+  })
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
@@ -578,7 +636,7 @@ export function startClaudeCliRun(
   // resumable. Waits for the settle chain first (so turn/end is already
   // appended) AND for the process to actually exit (so stdout is drained).
   void result.then(() => child.done).then(
-    () => mirrorClaudeAfterExit(spec, task, turn, output),
+    () => mirrorClaudeAfterExit(spec, task, turn, output, liveMirror),
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 
@@ -595,6 +653,112 @@ export function startClaudeCliRun(
   }))
 }
 
+/** Fold one transcript line into the child session as one assistant step. */
+function appendClaudeLine(
+  spec: ClaudeCliRunSpec,
+  turn: number,
+  step: number,
+  line: ClaudeTranscriptLine,
+  usage: TokenUsage | undefined,
+): void {
+  const blocks = line.kind === 'think'
+    ? [{ type: 'reasoning' as const, text: line.text }]
+    : line.kind === 'tool'
+      ? [{
+        type: 'text' as const,
+        text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
+      }]
+      : [{ type: 'text' as const, text: line.text }]
+  spec.childSession?.append('assistant/message', {
+    turn,
+    step,
+    message: createAssistantMessage({
+      content: blocks,
+      source: { provider: 'claude-local', model: 'claude' },
+    }),
+    ...usage === undefined ? {} : { usage },
+  }, { surfaceOp: 'append' })
+}
+
+/** The delta-progress text for one transcript line. */
+function claudeLineText(line: ClaudeTranscriptLine): string {
+  return line.kind === 'tool'
+    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
+    : line.text
+}
+
+/**
+ * Per-run live mirror: folds stdout chunks incrementally and mirrors newly
+ * completed transcript lines into the child session as they arrive, so a
+ * caller watching the child session sees progress instead of silence until
+ * settle. The LAST line is held back until the stream's terminal `result`
+ * event: it may still merge a trailing `tool_result`, and it is the round's
+ * usage carrier (the settle fold attaches usage to the final line — same
+ * placement here). The counters are the settle path's offset: the final
+ * mirror resumes from them and is a no-op when live mirroring kept up.
+ * Failures are diagnostic-only and never kill the run.
+ */
+interface ClaudeLiveMirror {
+  /** Fold one stdout chunk and mirror the newly completed lines. */
+  push(chunk: string): void
+  /** Transcript lines mirrored so far (the settle path resumes from here). */
+  readonly mirroredLines: number
+  /** Whether the run's user/message was already appended. */
+  readonly userMirrored: boolean
+  /** Serialize one async mirror task behind the in-flight ones. */
+  enqueue(task: () => Promise<void>): Promise<void>
+}
+
+/** Create the per-run live mirror over the incremental parser. */
+function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: number): ClaudeLiveMirror {
+  const parser = new ClaudeStreamParser()
+  const childSession = spec.childSession as Session
+  const ctx = spec.ctx as Context
+  let mirrored = 0
+  let userMirrored = false
+  let queue: Promise<void> = Promise.resolve()
+
+  const mirror: ClaudeLiveMirror = {
+    get mirroredLines() { return mirrored },
+    get userMirrored() { return userMirrored },
+    enqueue(task) {
+      queue = queue.then(task)
+      return queue
+    },
+    push(chunk) {
+      parser.push(chunk)
+      const upto = parser.completed ? parser.lines.length : parser.lines.length - 1
+      if (upto <= mirrored) return
+      void mirror.enqueue(async () => {
+        try {
+          const localAgent = ctx.get('localAgent')
+          if (!userMirrored) {
+            userMirrored = true
+            childSession.append('user/message', createUserMessage({
+              content: [{ type: 'text', text: task }],
+              source: { kind: 'user' },
+            }), { surfaceOp: 'append' })
+            localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
+          }
+          for (let index = mirrored; index < upto; index += 1) {
+            const line = parser.lines[index]
+            if (line === undefined) continue
+            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            appendClaudeLine(spec, turn, index + 1, line, usage)
+            mirrored = index + 1
+            localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+          }
+          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
+        } catch (error: unknown) {
+          ctx.logger.warn(`subagent-claude: live mirror failed: ${thrown(error).message}`)
+        }
+      })
+    },
+  }
+  return mirror
+}
+
 /**
  * Mirror the delegation's user prompt and the claude stream transcript into
  * the dsh subagent session, then persist. Runs detached from the settle race —
@@ -607,44 +771,35 @@ export function startClaudeCliRun(
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number (1 for a fresh round, incremented on resume).
  * @param parsed - the parsed stream transcript, final output, and usage.
+ * @param fromLines - transcript lines the live mirror already appended.
+ * @param userMirrored - whether the live mirror already appended the prompt.
  */
 async function appendClaudeResponse(
   spec: ClaudeCliRunSpec,
   task: string,
   turn: number,
   parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
+  fromLines = 0,
+  userMirrored = false,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
-  try {
-    spec.childSession.append('user/message', createUserMessage({
+  const childSession = spec.childSession
+  const localAgent = spec.ctx.get('localAgent')
+  if (!userMirrored) {
+    childSession.append('user/message', createUserMessage({
       content: [{ type: 'text', text: task }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    let step = 1
-    for (const line of parsed.lines) {
-      const blocks = line.kind === 'think'
-        ? [{ type: 'reasoning' as const, text: line.text }]
-        : line.kind === 'tool'
-          ? [{
-            type: 'text' as const,
-            text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
-          }]
-          : [{ type: 'text' as const, text: line.text }]
-      spec.childSession.append('assistant/message', {
-        turn,
-        step,
-        message: createAssistantMessage({
-          content: blocks,
-          source: { provider: 'claude-local', model: 'claude' },
-        }),
-        ...step === parsed.lines.length && parsed.usage !== undefined ? { usage: parsed.usage } : {},
-      }, { surfaceOp: 'append' })
-      step += 1
-    }
-    await spec.ctx.get('sessionPersistence')?.append(spec.childSession.id, spec.childSession.events)
-  } catch (error) {
-    spec.onError?.(thrown(error), 'error')
+    localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  let step = fromLines + 1
+  for (const line of parsed.lines.slice(fromLines)) {
+    appendClaudeLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+    step += 1
+  }
+  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
 }
 
 /**
@@ -665,18 +820,28 @@ async function mirrorClaudeAfterExit(
   task: string,
   turn: number,
   output: string,
+  live: ClaudeLiveMirror | undefined,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
-  try {
+  const work = async (): Promise<void> => {
     const parsed = parseClaudeStreamJson(output)
     if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
-    if (parsed.lines.length === 0) return
+    const fromLines = live?.mirroredLines ?? 0
+    const userMirrored = live?.userMirrored ?? false
+    // Nothing streamed at all (e.g. the CLI died before the first event):
+    // keep the pre-live-mirror behavior of recording nothing.
+    if (parsed.lines.length === 0 && !userMirrored) return
     const trimmed = parsed.text?.trim()
     await appendClaudeResponse(spec, task, turn, {
       lines: parsed.lines,
       output: trimmed === undefined || trimmed === '' ? [] : [{ type: 'text', text: trimmed }],
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
-    })
+    }, fromLines, userMirrored)
+  }
+  try {
+    // Behind the live mirror's queue so a flush in flight cannot interleave.
+    if (live === undefined) await work()
+    else await live.enqueue(work)
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
   }
