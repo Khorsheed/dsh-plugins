@@ -32,6 +32,10 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
     calls.push({ method: 'read', args })
     return { ok: true, value: { path: 'a.md', kind: 'text', content: 'x', truncated: false } }
   })
+  const reveal = vi.fn(async (...args: unknown[]) => {
+    calls.push({ method: 'reveal', args })
+    return { ok: true, value: { revealed: true } }
+  })
   class RemoteService extends Service {
     constructor(serviceCtx: Context) {
       super(serviceCtx, 'remote')
@@ -44,7 +48,7 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
   // `ctx.get('remote.filePreview')` after the mount settles).
   const mount = vi.fn(async () => () => {})
   Object.assign(ctx.remote, { $mount: mount })
-  ctx.provide('remote.filePreview', { list, read })
+  ctx.provide('remote.filePreview', { list, read, reveal })
   ctx.provide('sessions', {
     list: { getSnapshot: () => ({ current, byId: current === undefined ? {} : { [current]: { cwd: '/work' } } }) },
   })
@@ -68,7 +72,7 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, list, read, mount, openPath }
+  return { ctx, fiber, calls, list, read, reveal, mount, openPath }
 }
 
 /** The view entry's inject factory, called the way the outlet would. */
@@ -161,7 +165,7 @@ describe('ui-file-preview browser plugin', () => {
     expect(drawerStore.getSnapshot().selectedPath).toBe('notes.md')
   })
 
-  it('routes the drawer host-open gestures through workspaces.openPath', async () => {
+  it('routes the drawer open gesture through workspaces.openPath and reveal through the Remote', async () => {
     const b = await bench()
     const { injected } = drawerApi(b)
     if (injected === undefined) throw new Error('drawer inject missing')
@@ -169,13 +173,43 @@ describe('ui-file-preview browser plugin', () => {
     injected.revealFolder('/work/docs/a.md')
     injected.revealFolder('a.md')
     expect(b.openPath).toHaveBeenCalledWith('/work/docs/a.md')
-    expect(b.openPath).toHaveBeenCalledWith('/work/docs')
-    // A rootless path reveals the session cwd itself (the official show-folder behavior).
-    expect(b.openPath).toHaveBeenCalledWith('/work/.')
+    // Reveal selects through the Remote against the current session; a
+    // successful reveal never falls back to the parent-folder open.
+    expect(b.reveal).toHaveBeenCalledWith('s1', '/work/docs/a.md')
+    expect(b.reveal).toHaveBeenCalledWith('s1', 'a.md')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(b.openPath).not.toHaveBeenCalledWith('/work/docs')
+    expect(b.openPath).not.toHaveBeenCalledWith('/work/.')
     // A host-side open failure stays silent (the native app owns the error dialog).
     b.openPath.mockRejectedValueOnce(new Error('denied'))
     injected.openExternal('/work/a.md')
     await new Promise(resolve => setTimeout(resolve, 0))
+    await b.fiber.dispose()
+  })
+
+  it('falls back to opening the parent folder when reveal cannot select', async () => {
+    const b = await bench()
+    b.reveal.mockResolvedValue({ ok: false, error: { code: 'x', message: 'no select-capable file manager' } })
+    const { injected } = drawerApi(b)
+    if (injected === undefined) throw new Error('drawer inject missing')
+    injected.revealFolder('/work/docs/a.md')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(b.openPath).toHaveBeenCalledWith('/work/docs')
+    injected.revealFolder('a.md')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    // A rootless path reveals the session cwd itself (the official show-folder behavior).
+    expect(b.openPath).toHaveBeenCalledWith('/work/.')
+    await b.fiber.dispose()
+  })
+
+  it('reveals nothing without a current session (no session handle, no fallback)', async () => {
+    const b = await bench({ current: undefined })
+    const { injected } = drawerApi(b)
+    if (injected === undefined) throw new Error('drawer inject missing')
+    injected.revealFolder('/work/docs/a.md')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(b.reveal).not.toHaveBeenCalled()
+    expect(b.openPath).not.toHaveBeenCalled()
     await b.fiber.dispose()
   })
 

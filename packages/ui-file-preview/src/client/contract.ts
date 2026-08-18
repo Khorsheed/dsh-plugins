@@ -33,7 +33,7 @@ export interface FilePreviewViewInjected {
   }
   /** Open one path with the host OS default application (the "Open in IDE" gesture). */
   openExternal: (path: string) => void
-  /** Open one path's parent folder in the host file manager (the "Show in folder" gesture). */
+  /** Reveal one path in the host file manager, opening its folder and selecting the file (the "Show in folder" gesture; falls back to opening the parent folder when the host cannot select). */
   revealFolder: (path: string) => void
   /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
   copyPath: (path: string) => Promise<boolean>
@@ -60,7 +60,7 @@ export interface FilePreviewDrawerInjected {
   }
   /** Open one path with the host OS default application (the "Open in IDE" gesture). */
   openExternal: (path: string) => void
-  /** Open one path's parent folder in the host file manager (the "Show in folder" gesture). */
+  /** Reveal one path in the host file manager, opening its folder and selecting the file (the "Show in folder" gesture; falls back to opening the parent folder when the host cannot select). */
   revealFolder: (path: string) => void
   /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
   copyPath: (path: string) => Promise<boolean>

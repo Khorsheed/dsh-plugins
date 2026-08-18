@@ -94,6 +94,23 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
   const copyPathFor = (sessionId: SessionId | undefined, path: string): Promise<boolean> =>
     writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path))
+  // "Show in folder": reveal the file in the host file manager (open its
+  // folder and select it — Finder/Explorer/a select-capable file manager).
+  // The host resolves the display path against the session cwd and selects
+  // when it can; when the file is gone or the platform cannot select, fall
+  // back to opening the parent folder (the pre-reveal behavior) so the
+  // gesture always lands somewhere visible. The drawer only ever previews
+  // the CURRENT session; the file view knows its own session id.
+  const revealFolder = (sessionId: SessionId | undefined, path: string): void => {
+    const sid = sessionId ?? sessions.list.getSnapshot().current
+    if (sid === undefined) return
+    void remote.reveal(sid, path).then((result) => {
+      if (result.ok && result.value.revealed) return
+      openOnHost(sessionId, parentPath(path) || '.')
+    }).catch(() => {
+      openOnHost(sessionId, parentPath(path) || '.')
+    })
+  }
   // The namespace is registered by $mount above; `ctx.remote.filePreview`
   // cannot see it (the property proxy walks the fiber chain, and the namespace
   // lives in the sibling fiber $mount spawned), so read it from the global
@@ -117,7 +134,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
         openExternal: (path) => { openOnHost(sessionId, path) },
-        revealFolder: (path) => { openOnHost(sessionId, parentPath(path) || '.') },
+        revealFolder: (path) => { revealFolder(sessionId, path) },
         copyPath: (path) => copyPathFor(sessionId, path),
       }
     },
@@ -160,7 +177,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
         openExternal: (path) => { openOnHost(undefined, path) },
-        revealFolder: (path) => { openOnHost(undefined, parentPath(path) || '.') },
+        revealFolder: (path) => { revealFolder(undefined, path) },
         copyPath: (path) => copyPathFor(undefined, path),
       }
     },

@@ -73,3 +73,16 @@ export interface FilePreviewConfig {
   /** Cap on the number of entries `list` returns. */
   readonly maxFiles?: number
 }
+
+/** Outcome of a `filePreview.reveal` call (the "show in folder" gesture). */
+export type FilePreviewReveal =
+  | {
+    /** The host file manager opened the file's folder with the file selected. */
+    readonly revealed: true
+  }
+  | {
+    /** The file could not be revealed; the caller opens the parent folder instead. */
+    readonly revealed: false
+    /** Why: `missing` = the recorded path does not resolve to an existing target; `select-failed` = the host could not select the file. */
+    readonly reason: 'missing' | 'select-failed'
+  }
