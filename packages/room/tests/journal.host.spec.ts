@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
+import { isRoomLog, parseMentions, replay } from '../src/journal.ts'
 
 /** The REAL composition: a cordis root, the real SessionStore plugin, and the package's own service plugin. */
 async function boot() {
@@ -36,5 +38,102 @@ describe('RoomService journal (real composition)', () => {
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     expect(await service.isRoom({ sessionId: plain.id })).toBe(false)
     expect(await service.isRoom({ sessionId: SessionId('nope') })).toBe(false)
+  })
+})
+
+let seq = 0
+/** A log-only journal event with a fresh seq. */
+function ev(type: string, data: unknown): SessionEvent {
+  const event = { type, seq, time: 1000, data }
+  seq += 1
+  return event as SessionEvent
+}
+
+function resetSeq(): void {
+  seq = 0
+}
+
+describe('replay (pure journal fold)', () => {
+  it('folds the full vocabulary: roster, blackboard order, cursors, run states', () => {
+    resetSeq()
+    const events = [
+      ev('room/created', { version: 1 }),                                                    // 0
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端' }), // 1
+      ev('room/member-added', { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' }),                     // 2
+      ev('room/member-updated', { name: 'ada', instructions: '后端 + 接口评审' }),           // 3
+      ev('room/dispatch', { targets: ['ada', 'bill'], text: '出方案' }),                     // 4
+      ev('room/note', { text: '以上先放着' }),                                               // 5
+      ev('room/speech', { member: 'ada', text: '方案 A', durationMs: 1200 }),                // 6
+      ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),             // 7
+      ev('room/dispatch', { targets: ['ada'], text: '按方案 A 实现' }),                      // 8
+      ev('room/run-state', { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }), // 9
+    ]
+    const state = replay(events)
+    expect(state.members).toEqual([
+      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端 + 接口评审' },
+      { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
+    ])
+    expect(state.blackboard).toEqual([
+      { kind: 'dispatch', seq: 4, targets: ['ada', 'bill'], text: '出方案' },
+      { kind: 'note', seq: 5, text: '以上先放着' },
+      { kind: 'speech', seq: 6, member: 'ada', text: '方案 A', durationMs: 1200 },
+      { kind: 'dispatch', seq: 8, targets: ['ada'], text: '按方案 A 实现' },
+    ])
+    // The cursor tracks the LATEST dispatch naming the member.
+    expect(state.cursors).toEqual([{ member: 'ada', seq: 8 }, { member: 'bill', seq: 4 }])
+    // The latest run-state event wins.
+    expect(state.runs).toEqual([{ member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }])
+  })
+
+  it('member-removed cleans the roster, the cursor, and the run state', () => {
+    resetSeq()
+    const events = [
+      ev('room/created', { version: 1 }),
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+      ev('room/dispatch', { targets: ['ada'], text: '干活' }),
+      ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),
+      ev('room/member-removed', { name: 'ada' }),
+    ]
+    const state = replay(events)
+    expect(state.members).toEqual([])
+    expect(state.cursors).toEqual([])
+    expect(state.runs).toEqual([])
+  })
+
+  it('duplicate member-added keeps the first record; updates/removals of unknown members are dropped', () => {
+    resetSeq()
+    const events = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'codex', invitedBy: 'agent' }),
+      ev('room/member-updated', { name: 'ghost', instructions: 'x' }),
+      ev('room/member-removed', { name: 'ghost' }),
+    ]
+    expect(replay(events).members).toEqual([
+      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
+    ])
+  })
+
+  it('isRoomLog keys on the marker only', () => {
+    resetSeq()
+    expect(isRoomLog([ev('room/created', { version: 1 })])).toBe(true)
+    expect(isRoomLog([ev('room/note', { text: 'x' })])).toBe(false)
+    expect(replay([ev('room/note', { text: 'x' })]).members).toEqual([])
+  })
+})
+
+describe('parseMentions', () => {
+  it('parses no mention, one mention, and a fan-out', () => {
+    expect(parseMentions('随便聊聊')).toEqual({ targets: [], text: '随便聊聊' })
+    expect(parseMentions('@ada 看下这个')).toEqual({ targets: ['ada'], text: '看下这个' })
+    expect(parseMentions('@ada @bill 对齐一下')).toEqual({ targets: ['ada', 'bill'], text: '对齐一下' })
+  })
+
+  it('dedupes repeated mentions and treats inline @ as plain text', () => {
+    expect(parseMentions('@ada @ada 说')).toEqual({ targets: ['ada'], text: '说' })
+    expect(parseMentions('问 @ada 一下')).toEqual({ targets: [], text: '问 @ada 一下' })
+  })
+
+  it('a bare mention leaves an empty body', () => {
+    expect(parseMentions('@ada')).toEqual({ targets: ['ada'], text: '' })
   })
 })
