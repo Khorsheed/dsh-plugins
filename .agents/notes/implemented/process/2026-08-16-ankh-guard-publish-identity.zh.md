@@ -10,7 +10,7 @@ ankh-guard 曾有两个名字：monorepo 里的 `@deepseek-ai/dsh-ankh-guard`（
 
 ## Decision
 
-发布身份是 **`@khorsheed/dsh-ankh-guard`**，而且现在它是唯一的包名：包位于 `dsh-plugins` monorepo 的 `packages/ankh-guard`（单一事实来源，经 `scripts/pack-dist.ts` 发布），deepseek-harness 的树内家族成员已于 2026-08-16 移除（harness 提交 `48a9e1735d`,“chore: remove migrated plugin packages now hosted in dsh-plugins”）。安装文档一律写 khorsheed 名。版本线跟随官方家族（家族 rc.6 时跟 rc.6.x；家族发 rc.7 时跟 rc.7）。
+发布身份是 **`@khorsheed/dsh-ankh-guard`**，而且现在它是唯一的包名：包位于 `dsh-plugins` monorepo 的 `packages/ankh-guard`（单一事实来源，经 `scripts/pack-dist.ts` 发布），deepseek-harness 的树内家族成员已于 2026-08-16 移除（harness 提交 `48a9e1735d`,“chore: remove migrated plugin packages now hosted in dsh-plugins”）。安装文档一律写 khorsheed 名。版本线跟随官方家族：家族已发 rc.7(`@deepseek-ai/dsh@0.1.0-rc.7`),ankh-guard 线随之进入 rc.7.x——package.json 已声明 `0.1.0-rc.7` 为下一条发布线(npm 最新为 `0.1.0-rc.6.5`,即 rc.6 线的最后一刀)。
 
 ## Alternatives considered
 
