@@ -72,6 +72,11 @@ const TYPERT_PACKAGES: readonly TypertPackage[] = [
     name: '@khorsheed/dsh-local-agent',
     hostConfigs: ['tsconfig.host.json'],
   },
+  {
+    dir: 'packages/room',
+    name: '@khorsheed/dsh-room',
+    hostConfigs: ['tsconfig.host.json'],
+  },
 ]
 
 interface RemoteArtifact {

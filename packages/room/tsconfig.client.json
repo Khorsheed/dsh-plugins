@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": [
+    "src/types.ts",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/slots.ts",
+    "src/client/NewRoomAction.tsx",
+    "src/client/MembersView.tsx",
+    "src/client/RoomComposer.tsx"
+  ]
+}
