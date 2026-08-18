@@ -18,7 +18,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -174,6 +174,54 @@ function delegationIntentKey(parentSessionId: string, provider: string): string 
 function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
   if (caller === undefined) return controller.signal
   return AbortSignal.any([controller.signal, caller])
+}
+
+/**
+ * The per-harness append-only delegation-mapping log inside the harness's
+ * scoped home (`<homeDir>/<harness>/delegations.jsonl`): one JSON record per
+ * line, the last line per childSessionId wins — the same replace semantics as
+ * {@link LocalAgentRegistry.recordDelegation}. The file grows without
+ * rotation (accepted; same growth class as session_index/rollout files).
+ */
+export const DELEGATIONS_FILENAME = 'delegations.jsonl'
+
+/**
+ * Parse one `delegations.jsonl` line into a delegation record, or `undefined`
+ * when the line is malformed or names a different provider than the harness
+ * being loaded (a foreign or stale line must never fail registration).
+ * @param line - one raw line of the file.
+ * @param provider - the loading harness's delegation provider.
+ * @returns the record, or undefined to skip the line.
+ */
+function parseDelegationLine(
+  line: string,
+  provider: string | undefined,
+): LocalAgentDelegationRecord | undefined {
+  let value: unknown
+  try {
+    value = JSON.parse(line)
+  } catch {
+    return undefined
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (provider === undefined || record['provider'] !== provider) return undefined
+  const childSessionId = record['childSessionId']
+  const parentSessionId = record['parentSessionId']
+  const cliSessionId = record['cliSessionId']
+  if (typeof childSessionId !== 'string' || childSessionId === '') return undefined
+  if (typeof parentSessionId !== 'string' || parentSessionId === '') return undefined
+  if (typeof cliSessionId !== 'string' || cliSessionId === '') return undefined
+  const kimiMirroredLines = record['kimiMirroredLines']
+  return {
+    childSessionId,
+    provider,
+    parentSessionId,
+    cliSessionId,
+    ...typeof kimiMirroredLines === 'number' && Number.isFinite(kimiMirroredLines)
+      ? { kimiMirroredLines }
+      : {},
+  }
 }
 
 export const Config: z<Config> = z.object({
@@ -351,6 +399,9 @@ export class LocalAgentRegistry {
     // chmod enforces the exact bits.
     mkdirSync(homeDir, { recursive: true })
     chmodSync(homeDir, 0o700)
+    // Restore this harness's persisted delegation mappings before the harness
+    // becomes visible: a resume after a host restart resolves them.
+    this.loadDelegations(harness)
     this.harnesses.set(harness.name, harness)
     const commandDisposer = this.ctx.commands.register({
       name: harness.name,
@@ -430,12 +481,15 @@ export class LocalAgentRegistry {
    * settles, so a later resume round can continue the same CLI session. The
    * provider learns the CLI session id only from the settled round's output,
    * so recording happens post-settle. A duplicate child session id replaces
-   * the earlier record: a resumed child keeps one mapping.
+   * the earlier record: a resumed child keeps one mapping. The record is also
+   * appended to the owning harness's `delegations.jsonl` (last line per child
+   * session wins), so a host restart keeps the mapping resolvable.
    * @param record - the delegation's dsh child session id, provider, owning
    *   parent session id, and CLI session id.
    */
   recordDelegation(record: LocalAgentDelegationRecord): void {
     this.delegations.set(record.childSessionId, record)
+    this.persistDelegation(record)
   }
 
   /**
@@ -786,7 +840,11 @@ export class LocalAgentRegistry {
     this.kimiMirrorOffsets.set(childSessionId, lines)
     const record = this.delegations.get(childSessionId)
     if (record !== undefined) {
-      this.delegations.set(childSessionId, { ...record, kimiMirroredLines: lines })
+      const updated = { ...record, kimiMirroredLines: lines }
+      this.delegations.set(childSessionId, updated)
+      // Keep the persisted record's offset current so a post-restart resume
+      // mirrors only its delta instead of re-mirroring earlier rounds.
+      this.persistDelegation(updated)
     }
   }
 
@@ -891,6 +949,58 @@ export class LocalAgentRegistry {
     const harness = this.harnesses.get(name)
     if (harness === undefined) throw new Error(`localAgent: unknown harness ${name}`)
     return harness
+  }
+
+  /**
+   * Append one delegation record to the owning harness's `delegations.jsonl`.
+   * Durability is synchronous (recording happens once per fresh-round settle)
+   * and best-effort: a provider with no claiming harness or a filesystem
+   * failure keeps the in-memory record and warns — recording must never break
+   * a settling run.
+   */
+  private persistDelegation(record: LocalAgentDelegationRecord): void {
+    const harness = [...this.harnesses.values()]
+      .find(candidate => candidate.delegationProvider === record.provider)
+    if (harness === undefined) {
+      this.ctx.logger.warn(
+        `localAgent: no registered harness claims provider ${JSON.stringify(record.provider)}; the delegation for child session ${record.childSessionId} stays in memory only`,
+      )
+      return
+    }
+    try {
+      appendFileSync(join(this.homeDir(harness.name), DELEGATIONS_FILENAME), `${JSON.stringify(record)}\n`)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`localAgent: failed to persist the delegation for child session ${record.childSessionId}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Load one harness's persisted delegation mappings into the in-memory maps.
+   * Runs synchronously inside {@link register} before `localAgent/harness-added`
+   * fires. Malformed or foreign-provider lines skip with a warn; the last line
+   * per child session wins (matching {@link recordDelegation}'s replace
+   * semantics), and a record's `kimiMirroredLines` restores the mirror offset.
+   */
+  private loadDelegations(harness: LocalAgentHarness): void {
+    let text: string
+    try {
+      text = readFileSync(join(this.homeDir(harness.name), DELEGATIONS_FILENAME), 'utf8')
+    } catch {
+      // No mappings persisted yet.
+      return
+    }
+    for (const line of text.split('\n')) {
+      if (line.trim() === '') continue
+      const record = parseDelegationLine(line, harness.delegationProvider)
+      if (record === undefined) {
+        this.ctx.logger.warn(`localAgent: skipping a malformed or foreign line in ${harness.name}/${DELEGATIONS_FILENAME}`)
+        continue
+      }
+      this.delegations.set(record.childSessionId, record)
+      if (record.kimiMirroredLines !== undefined) {
+        this.kimiMirrorOffsets.set(record.childSessionId, record.kimiMirroredLines)
+      }
+    }
   }
 
   /** Dispatch `/login`, `/status`, and `/sessions` for one harness. */

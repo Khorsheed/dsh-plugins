@@ -52,7 +52,7 @@ export function registerCodex(ctx: Context): void {
 
 ## Delegation registry (resume carrier)
 
-Beyond harness identity, the registry owns the family's **delegation registry**: a per-child-session record of which provider and CLI session a delegation used, plus a per-(parent, provider) FIFO of delegation intents. The family tool (`@khorsheed/dsh-local-agent-tool-subagent`, mounted by each harness bundle's patch) stages exactly one intent per call before `ctx.subagents.start()`, and the owning provider consumes exactly one per start — so fresh and resume rounds stay paired even under parallel delegation. A resume round's handle (the dsh child session id) resolves through the registry, which rejects a handle naming an unknown child, another parent's session, or the wrong provider. The subagent request descriptor cannot carry the target (its schema rejects unknown fields), so this service is the family-internal carrier; the same records will feed a future stop registry.
+Beyond harness identity, the registry owns the family's **delegation registry**: a per-child-session record of which provider and CLI session a delegation used, plus a per-(parent, provider) FIFO of delegation intents. The family tool (`@khorsheed/dsh-local-agent-tool-subagent`, mounted by each harness bundle's patch) stages exactly one intent per call before `ctx.subagents.start()`, and the owning provider consumes exactly one per start — so fresh and resume rounds stay paired even under parallel delegation. A resume round's handle (the dsh child session id) resolves through the registry, which rejects a handle naming an unknown child, another parent's session, or the wrong provider. The subagent request descriptor cannot carry the target (its schema rejects unknown fields), so this service is the family-internal carrier; the same records will feed a future stop registry. The mappings persist per harness in an append-only `delegations.jsonl` under the harness's scoped home (last line per child session wins, and the kimi mirror offset rides the record), so a resume handle survives a host restart.
 
 ## Model Experience
 
@@ -79,4 +79,5 @@ Registry metadata and command replies never enter a model request and do not aff
 
 - **Login is a captured prompt** — the web GUI has no interactive terminal surface, so the device-code URL is surfaced in the command reply while the CLI polls in the background; a terminal-backed login for CLI surfaces is deferred.
 - **Homes root placement** — the default `$DSH_HOME/local-agent` predates a formal `var/state` layout; revisit when the harness home layout is standardized.
+- **Delegation log growth** — each harness's `delegations.jsonl` is append-only with no rotation (the same growth class as session_index/rollout files); rotation/cleanup is deferred.
 - **One-sample shape** — the harness contract is induced from Kimi; a Codex spike (records adapter + login probe) should precede freezing the shape.
