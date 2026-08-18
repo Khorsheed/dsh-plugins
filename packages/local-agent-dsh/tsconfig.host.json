@@ -10,6 +10,7 @@
     "src/invariant.ts",
     "src/records.ts",
     "src/provision.ts",
-    "src/dsh-cli-provider.ts"
+    "src/dsh-cli-provider.ts",
+    "src/session-mirror.ts"
   ]
 }

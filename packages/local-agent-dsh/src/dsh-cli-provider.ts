@@ -33,6 +33,7 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentDshConfig } from './index.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
+import { mirrorDshSession } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -377,6 +378,23 @@ async function startDshCliRun(
     }
     return settled
   })
+
+  // After the child EXITS — however it ended (completed, killed by dispose, or
+  // crashed) — mirror whatever the sub-dsh session already produced into the
+  // dsh subagent session, so every round preserves its conversation and real
+  // token usage instead of showing turn boundaries only. Waits for the settle
+  // chain first (so turn/end is already appended) AND for the process to
+  // actually exit (the sub-dsh flushed its session before exiting) before
+  // reading.
+  void result.then(() => child.done).then(
+    () => {
+      if (spec.childSession !== undefined) {
+        return mirrorDshSession(ctx, spec.childSession, spec.homeDir, spec.sessionId)
+      }
+      return undefined
+    },
+    () => { /* child.done rejects only on infra faults; nothing to mirror */ },
+  )
 
   return Promise.resolve(subprocessRunHandle({
     // A session-backed run's id is the child session id (the seam's local-run
