@@ -2,6 +2,7 @@
  * tab switch. Content only — the file view tab remains the browse surface. */
 
 import { useEffect } from 'react'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -28,6 +29,11 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
   const current = useSessions(s => s.current)
+  // The header shows the selected file's host-resolved absolute path (the
+  // same spelling copy/open/reveal act on), so the path is visible at a
+  // glance; the generic title remains the no-selection fallback.
+  const currentCwd = useSessions(s => s.current === undefined ? undefined : s.byId[s.current]?.cwd)
+  const displayPath = selectedPath === null ? undefined : resolveWorkspacePath(currentCwd, selectedPath)
   // Clipboard writes work in any browser context, so the copy gesture is
   // never gated; only the host-open gestures (folder / IDE) need a desktop.
   const { copied, onCopy } = useCopyPathFeedback(copyPath, selectedPath)
@@ -80,7 +86,7 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
   return (
     <div className={css.drawer} role="dialog" aria-label={t('drawer.title')}>
       <header className={css.header}>
-        <div className={css.title}>{t('drawer.title')}</div>
+        <div className={css.title} title={displayPath}>{displayPath ?? t('drawer.title')}</div>
         <div className={css.headerActions}>
           {selectedPath !== null && (
             <button

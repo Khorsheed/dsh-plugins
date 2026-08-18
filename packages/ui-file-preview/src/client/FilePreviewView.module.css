@@ -131,14 +131,33 @@
   flex-direction: column;
 }
 
-/* The selected file's gesture row (copy path + host open folder/IDE), mirroring
-   the drawer header's actions; the preview scrolls below it. */
+/* The selected file's header: resolved path on the left, the gesture buttons
+   (copy path + host open folder/IDE) on the right — the drawer header's
+   layout, so both surfaces read the same. */
+.previewHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 0;
+}
+
+.previewPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .previewActions {
   display: flex;
   flex: none;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px 0;
 }
 
 .action {

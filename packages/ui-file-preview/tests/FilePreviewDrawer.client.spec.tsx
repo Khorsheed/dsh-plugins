@@ -86,9 +86,24 @@ describe('FilePreviewDrawer', () => {
     renderDrawer(h)
     act(() => { h.actions.open() })
     expect(screen.getByText('drawer.previewEmpty')).toBeTruthy()
+    // Without a selection the header keeps the generic title.
+    expect(screen.getByText('drawer.title')).toBeTruthy()
     // The list still loads (it supplies the diff); no file read is issued.
     expect(h.listFiles).toHaveBeenCalledTimes(1)
     expect(h.readFile).not.toHaveBeenCalled()
+  })
+
+  it('shows the selected file\'s resolved path in the header', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({ ok: true, value: { entries: [], asOfSeq: 0, truncated: false } })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: 'a.md', kind: 'text', content: 'x', truncated: false } })
+    renderDrawer(h)
+    // A relative recorded path resolves against the current session cwd — the
+    // same spelling copy/open/reveal act on, so the header shows the real path.
+    act(() => { h.actions.openPath('a.md') })
+    await screen.findByRole('dialog')
+    expect(screen.getByText('/work/a.md')).toBeTruthy()
+    expect(screen.queryByText('drawer.title')).toBeNull()
   })
 
   it('does not fetch without a current session', () => {
@@ -114,7 +129,7 @@ describe('FilePreviewDrawer', () => {
     h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/a.md', kind: 'text', content: 'current', truncated: false } })
     renderDrawer(h)
     act(() => { h.actions.openPath('/work/a.md') })
-    expect(await screen.findByText('drawer.title')).toBeTruthy()
+    expect(await screen.findByRole('dialog')).toBeTruthy()
     // Content is the default view; the recorded change lives behind the tab.
     expect(await screen.findByText('current')).toBeTruthy()
     act(() => { screen.getByText(/drawer\.tab\.diff/).click() })
@@ -139,7 +154,7 @@ describe('FilePreviewDrawer', () => {
     h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/a.md', kind: 'text', content: 'x', truncated: false } })
     const { container } = renderDrawer(h)
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     act(() => { screen.getByLabelText('drawer.close').click() })
     expect(container.firstChild).toBeNull()
   })
@@ -148,7 +163,7 @@ describe('FilePreviewDrawer', () => {
     const h = makeHarness()
     renderDrawer(h)
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     act(() => { screen.getByLabelText('drawer.openFolder').click() })
     expect(h.revealFolder).toHaveBeenCalledWith('/work/a.md')
     act(() => { screen.getByLabelText('drawer.openIde').click() })
@@ -159,7 +174,7 @@ describe('FilePreviewDrawer', () => {
     const h = makeHarness()
     renderDrawer(h)
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     act(() => { screen.getByLabelText('drawer.copyPath').click() })
     await act(async () => {})
     expect(h.copyPath).toHaveBeenCalledWith('/work/a.md')
@@ -171,7 +186,7 @@ describe('FilePreviewDrawer', () => {
     h.copyPath.mockResolvedValue(false)
     renderDrawer(h)
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     act(() => { screen.getByLabelText('drawer.copyPath').click() })
     await act(async () => {})
     expect(h.copyPath).toHaveBeenCalledWith('/work/a.md')
@@ -183,7 +198,7 @@ describe('FilePreviewDrawer', () => {
     const h = makeHarness()
     renderDrawer(h, { canOpen: false })
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     // Clipboard works in any browser context; only the host gestures are gated.
     expect(screen.getByLabelText('drawer.copyPath')).toBeTruthy()
     expect(screen.queryByLabelText('drawer.openFolder')).toBeNull()
@@ -196,7 +211,7 @@ describe('FilePreviewDrawer', () => {
     const h = makeHarness()
     renderDrawer(h, { canOpen: false })
     act(() => { h.actions.openPath('/work/a.md') })
-    await screen.findByText('drawer.title')
+    await screen.findByRole('dialog')
     expect(screen.queryByLabelText('drawer.openFolder')).toBeNull()
     expect(screen.queryByLabelText('drawer.openIde')).toBeNull()
   })
