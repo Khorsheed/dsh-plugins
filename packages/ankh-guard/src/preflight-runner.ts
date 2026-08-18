@@ -33,7 +33,7 @@
  * @module @khorsheed/dsh-ankh-guard/preflight-runner
  */
 
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -62,15 +62,127 @@ const HARNESS_PACKAGE_DIRS: Record<string, string> = {
   '@deepseek-ai/dsh-cmdline': 'packages/boot/cmdline',
 }
 
-/** Dynamically import an official published package from the live harness checkout. */
+/**
+ * Whether this runtime can import TypeScript sources (the runner is launched
+ * through tsx; a plain-node consumer of the published package cannot).
+ */
+function canImportTypeScript(): boolean {
+  return process.execArgv.some(arg => arg.includes('tsx'))
+}
+
+/**
+ * Dynamically import a harness package from the live checkout, SOURCE FIRST:
+ * a source-launched prod instance (tsx … apps/cli/src/bin.ts) boots the
+ * source, so the preflight engine must be the source too — a stale `lib/`
+ * must never make the preflight greener than the real boot. The built entry
+ * is the fallback for harnesses that ship only artifacts.
+ *
+ * The composition layers below (bundle layers, user layers, overlays, the
+ * agent-presets roots, the telemetry switch) mirror the launcher's private
+ * composeProfile — upstream does not export it, so this assembly is a
+ * documented drift window; the `dsh dump-config` comparison test in
+ * tests/preflight-drift.spec.ts is the tripwire that catches upstream
+ * composition changes.
+ * @param root - harness checkout root.
+ * @param name - package name (a key of {@link HARNESS_PACKAGE_DIRS}).
+ * @returns the imported module.
+ */
 async function loadHarnessPackage(root: string, name: string): Promise<Record<string, unknown>> {
   const relative = HARNESS_PACKAGE_DIRS[name]
   if (relative === undefined) throw new Error(`no known harness layout entry for ${name}`)
   const base = join(root, relative)
+  const source = join(base, 'src', 'index.ts')
+  if (canImportTypeScript() && existsSync(source)) {
+    try {
+      return await import(pathToFileURL(source).href) as Record<string, unknown>
+    } catch (error) {
+      // A broken source import (syntax error, unresolved workspace dep) is
+      // EXACTLY what the next source boot would hit — surface it as a
+      // composition verdict, never silently fall back to a stale build.
+      throw new Error(`harness source ${source} failed to import (this is what a source boot would hit): ${String(error)}`, { cause: error })
+    }
+  }
   const manifest = JSON.parse(readFileSync(join(base, 'package.json'), 'utf8')) as { main?: string }
   const entry = manifest.main ?? 'lib/index.js'
   const module = await import(pathToFileURL(join(base, entry)).href)
   return module as Record<string, unknown>
+}
+
+/** Thrown for harness-side load failures — preflight infrastructure, never a composition verdict. */
+class PreflightInfraError extends Error {}
+
+/** The composed composition of one profile for a preflight (or a drift check). */
+export interface PreflightComposition {
+  /** The full patch stack in application order, BEFORE the port-0 overlay. */
+  patches: unknown[]
+  /** Composed rows by entry id. */
+  rows: Map<string, { id?: unknown; config?: Record<string, unknown> }>
+  /** The profile directory (the include root's anchor). */
+  profileDir: string
+}
+
+/**
+ * Compose one profile's full patch stack through the launcher's layering —
+ * bundle layers in `dsh.profile.bundles` order, the profile user layer, the
+ * home-level user layer, `--patch` overlays, the agent-presets roots overlay,
+ * then the telemetry switch. Exported so the drift tripwire can compare this
+ * assembly against the launcher's own dump without booting anything.
+ * @param profile - the profile name (same resolution as `--profile`).
+ * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param root - harness checkout root.
+ * @returns the patch stack and composed rows.
+ */
+export async function composePreflightPatches(
+  profile: string,
+  patchFiles: readonly string[],
+  root: string,
+): Promise<PreflightComposition> {
+  let appBoot: Record<string, unknown>
+  let homePaths: Record<string, unknown>
+  try {
+    appBoot = await loadHarnessPackage(root, '@deepseek-ai/dsh-app-boot')
+    homePaths = await loadHarnessPackage(root, '@deepseek-ai/dsh-home-paths')
+  } catch (error) {
+    throw new PreflightInfraError(`harness packages unavailable under ${root}: ${String(error)}`, { cause: error })
+  }
+  const composeEntries = appBoot.composeEntries as (layers: readonly unknown[][], warn?: (msg: string) => void) => Array<{ id?: unknown; config?: Record<string, unknown> }>
+  const healProfilesModuleFallback = appBoot.healProfilesModuleFallback as (anchor: string) => void
+  const loadOptionalPatches = appBoot.loadOptionalPatches as (bin: string, file: string) => unknown[] | undefined
+  const loadOverlayPatches = appBoot.loadOverlayPatches as (bin: string, file: string) => unknown[]
+  const loadProfile = appBoot.loadProfile as (bin: string, name: string, anchor: string, home: string, opts: { userLayer?: boolean }) => {
+    dir: string
+    patches: unknown[]
+    layers: Array<{ patches: unknown[] }>
+  }
+  const resolveDshHome = homePaths.resolveDshHome as (configured?: string) => string
+  const anchor = fileURLToPath(new URL('../package.json', import.meta.url))
+  const home = resolveDshHome()
+  healProfilesModuleFallback(anchor)
+  const composed = loadProfile(NAME, profile, anchor, home, { userLayer: true })
+  const homePatches = loadOptionalPatches(NAME, join(home, HOME_PATCH_FILENAME)) ?? []
+  const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const bundlePatches = composed.layers.flatMap(layer => layer.patches)
+  const patches = [...bundlePatches, ...composed.patches, ...homePatches, ...overlays]
+  const rows = new Map<string, { id?: unknown; config?: Record<string, unknown> }>()
+  for (const row of composeEntries([bundlePatches, composed.patches, homePatches, overlays])) {
+    if (typeof row.id === 'string') rows.set(row.id, row)
+  }
+  const composedOverlays = [...overlays]
+  if (rows.has('agent-presets')) {
+    composedOverlays.push({
+      id: 'agent-presets',
+      config: {
+        ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
+        roots: [{ path: join(root, 'apps/cli/config/agent-presets/'), trust: 'system' }],
+      },
+    })
+  }
+  const telemetryPatch = (process.env.DSH_TELEMETRY_DISABLED ?? '') !== '' && rows.has(TELEMETRY_ROW_ID)
+    ? { id: TELEMETRY_ROW_ID, disabled: true }
+    : undefined
+  if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
+  patches.push(...composedOverlays)
+  return { patches, rows, profileDir: composed.dir }
 }
 
 interface ClientArtifactRegistry {
@@ -115,29 +227,10 @@ export async function runPreflight(
   // Environment loading sits outside the composition pipeline; a failure here
   // is preflight infrastructure, not a verdict on the tree.
   let appBoot: Record<string, unknown>
-  try {
-    appBoot = await loadHarnessPackage(root, '@deepseek-ai/dsh-app-boot')
-  } catch (error) {
-    process.stderr.write(`preflight could not execute (harness packages unavailable under ${root}): ${
-      error instanceof Error ? error.message : String(error)}\n`)
-    return 3
-  }
-  const boot = appBoot.boot as (bin: string, config: string, patches?: unknown[], prepare?: (ctx: { provide?: (key: string, value: unknown) => void }) => void | Promise<void>) => Promise<{ fiber: { dispose(): Promise<unknown> } }>
-  const composeEntries = appBoot.composeEntries as (layers: readonly unknown[][], warn?: (msg: string) => void) => Array<{ id?: unknown; config?: Record<string, unknown> }>
-  const healProfilesModuleFallback = appBoot.healProfilesModuleFallback as (anchor: string) => void
-  const loadLayeredEnv = appBoot.loadLayeredEnv as (bin: string) => unknown
-  const loadOptionalPatches = appBoot.loadOptionalPatches as (bin: string, file: string) => unknown[] | undefined
-  const loadOverlayPatches = appBoot.loadOverlayPatches as (bin: string, file: string) => unknown[]
-  const loadProfile = appBoot.loadProfile as (bin: string, name: string, anchor: string, home: string, opts: { userLayer?: boolean }) => {
-    dir: string
-    patches: unknown[]
-    layers: Array<{ patches: unknown[] }>
-  }
-  let homePaths: Record<string, unknown>
   let launchEnvironment: Record<string, unknown>
   let cmdline: Record<string, unknown>
   try {
-    homePaths = await loadHarnessPackage(root, '@deepseek-ai/dsh-home-paths')
+    appBoot = await loadHarnessPackage(root, '@deepseek-ai/dsh-app-boot')
     launchEnvironment = await loadHarnessPackage(root, '@deepseek-ai/dsh-launch-environment')
     cmdline = await loadHarnessPackage(root, '@deepseek-ai/dsh-cmdline')
   } catch (error) {
@@ -145,7 +238,8 @@ export async function runPreflight(
       error instanceof Error ? error.message : String(error)}\n`)
     return 3
   }
-  const resolveDshHome = homePaths.resolveDshHome as (configured?: string) => string
+  const boot = appBoot.boot as (bin: string, config: string, patches?: unknown[], prepare?: (ctx: { provide?: (key: string, value: unknown) => void }) => void | Promise<void>) => Promise<{ fiber: { dispose(): Promise<unknown> } }>
+  const loadLayeredEnv = appBoot.loadLayeredEnv as (bin: string) => unknown
   const launchEnvironmentKey = launchEnvironment.DSH_LAUNCH_ENVIRONMENT_KEY as string
   const provideCmdline = cmdline.provideCmdline as (ctx: unknown, options: { args: readonly string[]; exit: () => void }) => void
 
@@ -158,37 +252,9 @@ export async function runPreflight(
     return 3
   }
   try {
-    // The same composition path as the real launcher: bundle layers in
-    // `dsh.profile.bundles` order, the profile user layer, the home-level
-    // user layer, `--patch` overlays, the agent-presets roots overlay, then
-    // the telemetry switch.
-    const anchor = fileURLToPath(new URL('../package.json', import.meta.url))
-    const home = resolveDshHome()
-    healProfilesModuleFallback(anchor)
-    const composed = loadProfile(NAME, profile, anchor, home, { userLayer: true })
-    const homePatches = loadOptionalPatches(NAME, join(home, HOME_PATCH_FILENAME)) ?? []
-    const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-    const bundlePatches = composed.layers.flatMap(layer => layer.patches)
-    const patches = [...bundlePatches, ...composed.patches, ...homePatches, ...overlays]
-    const rows = new Map<string, { id?: unknown; config?: Record<string, unknown> }>()
-    for (const row of composeEntries([bundlePatches, composed.patches, homePatches, overlays])) {
-      if (typeof row.id === 'string') rows.set(row.id, row)
-    }
-    const composedOverlays = [...overlays]
-    if (rows.has('agent-presets')) {
-      composedOverlays.push({
-        id: 'agent-presets',
-        config: {
-          ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
-          roots: [{ path: join(root, 'apps/cli/config/agent-presets/'), trust: 'system' }],
-        },
-      })
-    }
-    const telemetryPatch = (process.env.DSH_TELEMETRY_DISABLED ?? '') !== '' && rows.has(TELEMETRY_ROW_ID)
-      ? { id: TELEMETRY_ROW_ID, disabled: true }
-      : undefined
-    if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-    patches.push(...composedOverlays)
+    const composed = await composePreflightPatches(profile, patchFiles, root)
+    const patches = [...composed.patches]
+    const rows = composed.rows
 
     // Never collide with the live instance on its configured port: 0 asks the
     // OS for a free one. A patch's config REPLACES the row's config, so merge
@@ -201,7 +267,7 @@ export async function runPreflight(
       })
     }
 
-    const rootConfig = join(composed.dir, PROFILE_ROOT_FILENAME)
+    const rootConfig = join(composed.profileDir, PROFILE_ROOT_FILENAME)
     // Cloned for the same insert-aliasing reason the launcher documents: boot
     // application mutates rows by reference.
     const ctx = await boot(NAME, rootConfig, structuredClone(patches), (hostCtx) => {
@@ -220,6 +286,10 @@ export async function runPreflight(
     process.stdout.write(`preflight PASS: profile ${JSON.stringify(profile)} boots clean\n`)
     return 0
   } catch (error) {
+    if (error instanceof PreflightInfraError) {
+      process.stderr.write(`preflight could not execute (${error.message})\n`)
+      return 3
+    }
     // boot() already disposed the partial tree and labelled the failure stage;
     // print the whole chain so the guard's diagnostics name the broken layer.
     process.stderr.write(`preflight FAIL: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`)
