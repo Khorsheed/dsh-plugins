@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-context-guard",
-  "description": "Proactive context-window compaction guard: shows a compact button in the composer when the next request's projected context plus its max output budget crosses a configured share of the model's context window, so you can compact before context + maxTokens overflows the window (the official 80% auto-compaction excludes the output budget and can therefore fire too late)",
+  "description": "Context-window compaction reminder: a compact button appears in the composer once context occupancy (the same number the context ring shows) crosses a configurable fraction of the model's context window, so you can compact before requests hit the provider's rejection wall (which sits below 100% occupancy because the request reserves output tokens)",
   "version": "0.1.0-rc.6",
   "publishConfig": {
     "access": "public"

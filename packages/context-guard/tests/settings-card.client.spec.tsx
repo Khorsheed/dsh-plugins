@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
  * The settings card in the plugin configuration tab: collapsible chrome,
- * staged two-field editing, save writes through the shared settingsScope,
- * per-field reset reverts to the composition layer, and the overridden badge
- * tracks the user layer.
+ * staged single-field editing, save writes through the shared settingsScope,
+ * reset reverts to the composition layer, and the overridden badge tracks the
+ * user layer.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -45,13 +45,13 @@ function makeSnapshot(value: ContextGuardConfig | undefined, user?: Record<strin
 function renderCard(initial?: Partial<ContextGuardConfig>): CardHarness {
   const set = vi.fn(async (field: string, next: unknown) => {
     snapshot = makeSnapshot(
-      { thresholdRatio: 0.8, maxTokens: 256_000, ...(snapshot.value ?? {}), [field]: next },
+      { thresholdRatio: 0.8, ...(snapshot.value ?? {}), [field]: next },
       { ...(snapshot.user ?? {}), [field]: next },
     )
     for (const listener of listeners) listener()
   })
   const unset = vi.fn(async (field: string) => {
-    const nextValue = { ...(snapshot.value ?? { thresholdRatio: 0.8, maxTokens: 256_000 }) }
+    const nextValue = { ...(snapshot.value ?? { thresholdRatio: 0.8 }) }
     delete (nextValue as Record<string, unknown>)[field]
     const nextUser = { ...(snapshot.user ?? {}) }
     delete nextUser[field]
@@ -59,7 +59,7 @@ function renderCard(initial?: Partial<ContextGuardConfig>): CardHarness {
     for (const listener of listeners) listener()
   })
   let snapshot: SettingsScopeSnapshot<ContextGuardConfig> = makeSnapshot(
-    { thresholdRatio: 0.8, maxTokens: 256_000, ...initial },
+    { thresholdRatio: 0.8, ...initial },
     initial === undefined ? undefined : {},
   )
   const listeners = new Set<() => void>()
@@ -90,10 +90,10 @@ function headerButton(container: HTMLElement): HTMLButtonElement {
 }
 
 /** Buttons by their localized label text (class names are CSS-module hashed). */
-function buttonByText(container: HTMLElement, text: string, index = 0): HTMLButtonElement {
+function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button'))
-    .filter(candidate => candidate.textContent?.trim() === text)[index]
-  if (button === undefined) throw new Error(`button "${text}" #${index} missing`)
+    .find(candidate => candidate.textContent?.trim() === text)
+  if (button === undefined) throw new Error(`button "${text}" missing`)
   return button
 }
 
@@ -112,38 +112,35 @@ describe('ContextGuardSettingsCard', () => {
     expect(view.container.querySelector('li')).toBeNull()
   })
 
-  it('discloses the two fields on open, prefilled from the section', () => {
-    const { view } = renderCard({ thresholdRatio: 0.6, maxTokens: 16_000 })
+  it('discloses the single field on open, prefilled from the section', () => {
+    const { view } = renderCard({ thresholdRatio: 0.6 })
     fireEvent.click(headerButton(view.container))
     const inputs = inputsOf(view.container)
-    expect(inputs).toHaveLength(2)
+    expect(inputs).toHaveLength(1)
     expect(inputs[0]!.value).toBe('0.6')
-    expect(inputs[1]!.value).toBe('16000')
   })
 
-  it('writes both fields through the scope on save', async () => {
+  it('writes the ratio through the scope on save', async () => {
     const { view, scope } = renderCard()
     fireEvent.click(headerButton(view.container))
     const inputs = inputsOf(view.container)
     fireEvent.change(inputs[0]!, { target: { value: '0.7' } })
-    fireEvent.change(inputs[1]!, { target: { value: '32000' } })
     fireEvent.click(buttonByText(view.container, 'Save'))
     await act(async () => { await Promise.resolve() })
     expect(scope.set).toHaveBeenCalledWith('thresholdRatio', 0.7)
-    expect(scope.set).toHaveBeenCalledWith('maxTokens', 32000)
   })
 
-  it('reverts one field to the composition layer through unset', async () => {
+  it('reverts the ratio to the composition layer through unset', async () => {
     const { view, scope } = renderCard()
     fireEvent.click(headerButton(view.container))
-    fireEvent.click(buttonByText(view.container, 'Reset', 1))
+    fireEvent.click(buttonByText(view.container, 'Reset'))
     await act(async () => { await Promise.resolve() })
-    expect(scope.unset).toHaveBeenCalledWith('maxTokens')
+    expect(scope.unset).toHaveBeenCalledWith('thresholdRatio')
   })
 
-  it('marks fields the user layer carries as overridden', () => {
+  it('marks the field as overridden when the user layer carries it', () => {
     const useConfig = () => makeSnapshot(
-      { thresholdRatio: 0.7, maxTokens: 256_000 },
+      { thresholdRatio: 0.7 },
       { thresholdRatio: 0.7 },
     )
     const view = render(<ContextGuardSettingsCard {...{ useConfig, scope: IDLE_SCOPE, t } as unknown as ContextGuardSettingsCardProps} />)

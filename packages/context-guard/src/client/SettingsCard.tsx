@@ -39,7 +39,6 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
   const value = snapshot.status === 'ready' ? snapshot.value : undefined
   const [open, setOpen] = useState(false)
   const [threshold, setThreshold] = useState<FieldDraft>({ text: '', invalid: false })
-  const [maxTokens, setMaxTokens] = useState<FieldDraft>({ text: '', invalid: false })
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const aliveRef = useRef(true)
@@ -58,7 +57,6 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
     if (seededRevision.current === snapshot.revision) return
     seededRevision.current = snapshot.revision ?? null
     setThreshold({ text: String(value.thresholdRatio), invalid: false })
-    setMaxTokens({ text: String(value.maxTokens), invalid: false })
     setSaved(false)
     setError(false)
     return () => {
@@ -68,24 +66,18 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
 
   if (snapshot.status === 'unavailable') return null
 
-  const write = (draft: FieldDraft, field: keyof ContextGuardConfig, min: number, max: number): void => {
+  const write = (draft: FieldDraft, min: number, max: number): void => {
     const parsed = parseNumber(draft.text)
-    const invalid = !Number.isFinite(parsed) || parsed < min || parsed > max
-    if (field === 'thresholdRatio') setThreshold({ text: draft.text, invalid })
-    else setMaxTokens({ text: draft.text, invalid })
+    setThreshold({ text: draft.text, invalid: !Number.isFinite(parsed) || parsed < min || parsed > max })
   }
 
   const save = (): void => {
-    if (threshold.invalid || maxTokens.invalid || snapshot.writable !== true) return
+    if (threshold.invalid || snapshot.writable !== true) return
     const ratio = parseNumber(threshold.text)
-    const tokens = parseNumber(maxTokens.text)
-    if (!Number.isFinite(ratio) || !Number.isFinite(tokens)) return
+    if (!Number.isFinite(ratio)) return
     setError(false)
     setSaved(false)
-    void Promise.all([
-      scope.set('thresholdRatio', ratio),
-      scope.set('maxTokens', tokens),
-    ]).then(() => {
+    void scope.set('thresholdRatio', ratio).then(() => {
       if (!aliveRef.current) return
       setSaved(true)
     }, () => {
@@ -94,17 +86,16 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
     })
   }
 
-  const reset = (field: keyof ContextGuardConfig): void => {
+  const reset = (): void => {
     setError(false)
     setSaved(false)
-    void scope.unset(field).catch(() => {
+    void scope.unset('thresholdRatio').catch(() => {
       if (aliveRef.current) setError(true)
     })
   }
 
   const title = t('settings.title')
   const dirty = threshold.text !== String(value?.thresholdRatio ?? '')
-    || maxTokens.text !== String(value?.maxTokens ?? '')
 
   return (
     <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
@@ -137,34 +128,13 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
                 max="1"
                 value={threshold.text}
                 aria-label={t('settings.field.threshold')}
-                onChange={(event) => { write({ text: event.target.value, invalid: false }, 'thresholdRatio', 0.01, 1) }}
+                onChange={(event) => { write({ text: event.target.value, invalid: false }, 0.01, 1) }}
               />
-              <button type="button" className={css.reset} onClick={() => { reset('thresholdRatio') }}>
+              <button type="button" className={css.reset} onClick={reset}>
                 {t('settings.reset')}
               </button>
             </span>
             <span className={css.hint}>{t('settings.field.threshold.hint')}</span>
-          </label>
-          <label className={css.field}>
-            <span className={css.fieldHead}>
-              <span className={css.fieldName}>{t('settings.field.maxTokens')}</span>
-              {overridden(snapshot, 'maxTokens') && <span className={css.badge}>{t('settings.overridden')}</span>}
-            </span>
-            <span className={css.inputRow}>
-              <input
-                className={maxTokens.invalid ? `${css.input} ${css.inputInvalid}` : css.input}
-                type="number"
-                step="1"
-                min="1"
-                value={maxTokens.text}
-                aria-label={t('settings.field.maxTokens')}
-                onChange={(event) => { write({ text: event.target.value, invalid: false }, 'maxTokens', 1, Number.MAX_SAFE_INTEGER) }}
-              />
-              <button type="button" className={css.reset} onClick={() => { reset('maxTokens') }}>
-                {t('settings.reset')}
-              </button>
-            </span>
-            <span className={css.hint}>{t('settings.field.maxTokens.hint')}</span>
           </label>
           <span className={css.footer}>
             <span className={css.status}>
@@ -178,7 +148,6 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
               onClick={() => {
                 if (value === undefined) return
                 setThreshold({ text: String(value.thresholdRatio), invalid: false })
-                setMaxTokens({ text: String(value.maxTokens), invalid: false })
                 setSaved(false)
                 setError(false)
               }}
@@ -188,7 +157,7 @@ export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSe
             <button
               type="button"
               className={css.save}
-              disabled={!dirty || threshold.invalid || maxTokens.invalid || snapshot.writable !== true}
+              disabled={!dirty || threshold.invalid || snapshot.writable !== true}
               onClick={save}
             >
               {t('settings.save')}

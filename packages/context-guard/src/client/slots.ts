@@ -18,10 +18,8 @@ import type { ContextGuardConfig } from './config.ts'
 
 /** Injected action face of the composer-tool-row entry. */
 export interface ContextGuardInjected {
-  /** Resolved window fraction at which the guard turns on; the boot-time fallback. */
+  /** Resolved context-occupancy fraction at which the guard turns on; the boot-time fallback. */
   thresholdRatio: number
-  /** Resolved output budget the next request reserves, in tokens; the boot-time fallback. */
-  maxTokens: number
   /**
    * Run the official `/compact` command against this session's agent —
    * the same command the user would type, so the host owns the lifecycle

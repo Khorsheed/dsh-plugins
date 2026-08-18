@@ -1,14 +1,10 @@
 # context-guard bundle patch: inserts the plugin row into the composing
 # profile. The client half is discovered through the package.json dsh.client
-# block; there is no host half, so this row only activates the browser entry.
-#
-# maxTokens is pinned explicitly (not left to the schema default) because it
-# is the load-bearing number: the guard must model the MAIN request's output
-# reservation (256000, the deepseek adapter default). The pre-256000 default
-# (8192, the summarizer's cap) made the button appear only after the provider
-# wall — the guard's own dead-zone regression.
+# block; the host half registers the settings namespace the settings card
+# edits. The reminder ratio defaults to 0.8 (matching compaction-basic's
+# pressure threshold); the settings card can lower it — the README explains
+# why (the provider rejection wall is window − output cap, so a request can
+# fail before occupancy alone reaches 80%).
 - insert:
     - id: context-guard
       name: '@khorsheed/dsh-context-guard'
-      config:
-        maxTokens: 256000

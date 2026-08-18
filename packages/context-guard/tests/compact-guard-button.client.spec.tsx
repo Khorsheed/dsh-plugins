@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The composer-tool-row compact button: appears automatically once the next
- * request's budget crosses the threshold (and not before), carries the
- * warning/overdue states, and drives the injected /compact verb.
+ * The composer-tool-row compact button: appears automatically once the
+ * context occupancy (the same figure the composer's ring shows) crosses the
+ * threshold (and not before), stays in the amber tint at every level, and
+ * drives the injected /compact verb.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -16,8 +17,6 @@ afterEach(() => {
 })
 
 const WINDOW = 400_000
-/** Mirrors the plugin's injected default: the main request's 256k output reservation. */
-const DEFAULT_MAX_TOKENS = 256_000
 
 /** Locale seat stub: the English dictionary, params ignored (presence tests). */
 const t = ((key: string) => en[key as keyof typeof en] ?? key) as CompactGuardButtonProps['t']
@@ -31,10 +30,9 @@ interface Pressure {
 function renderGuard(overrides: {
   pressure?: Pressure
   thresholdRatio?: number
-  maxTokens?: number
   compactNow?: () => Promise<string | null>
   /** Settings-scope snapshot the `useConfig` hook serves; undefined value falls back to the props. */
-  configValue?: { thresholdRatio: number; maxTokens: number }
+  configValue?: { thresholdRatio: number }
 } = {}) {
   const pressure = overrides.pressure
   const useProjection = (key: string) => (key === 'contextPressure' ? pressure : undefined)
@@ -52,7 +50,6 @@ function renderGuard(overrides: {
     useProjection,
     useConfig,
     thresholdRatio: overrides.thresholdRatio ?? 0.8,
-    maxTokens: overrides.maxTokens ?? DEFAULT_MAX_TOKENS,
     compactNow,
     t,
   } as unknown as CompactGuardButtonProps
@@ -75,14 +72,14 @@ describe('CompactGuardButton', () => {
   })
 
   it('renders nothing below the threshold', () => {
-    const { view } = renderGuard({ pressure: { projectedTokens: 60_000, contextWindow: WINDOW } })
-    // 60k + 256k = 316k < 320k — below 80%.
+    const { view } = renderGuard({ pressure: { projectedTokens: 300_000, contextWindow: WINDOW } })
+    // 300k / 400k = 75% — below 80%.
     expect(buttonOf(view.container)).toBeNull()
   })
 
-  it('appears automatically once context + maxTokens crosses the threshold', () => {
-    const { view } = renderGuard({ pressure: { projectedTokens: 72_000, contextWindow: WINDOW } })
-    // 72k + 256k = 328k >= 320k — warning, even though context alone is 18%.
+  it('appears automatically once occupancy crosses the threshold', () => {
+    const { view } = renderGuard({ pressure: { projectedTokens: 320_001, contextWindow: WINDOW } })
+    // 320k / 400k = 80.0% — warning, the same occupancy the ring would show.
     const button = buttonOf(view.container)
     expect(button).not.toBeNull()
     expect(button?.className).toContain('warning')
@@ -91,34 +88,33 @@ describe('CompactGuardButton', () => {
   it('uses the provider-projected figure when present', () => {
     // projectedTokens carries the surface's movement since the sample; the
     // button must react to it, not to the stale bare sample. At a 20%
-    // threshold, the projected 85k crosses while the bare-sample 70k would not.
+    // threshold, projected 85k (21.25%) crosses while bare-sample 60k would not.
     const { view } = renderGuard({
-      pressure: { pressureTokens: 60_000, projectedTokens: 75_000, contextWindow: WINDOW },
-      maxTokens: 10_000,
+      pressure: { pressureTokens: 60_000, projectedTokens: 85_000, contextWindow: WINDOW },
       thresholdRatio: 0.2,
     })
     expect(buttonOf(view.container)).not.toBeNull()
   })
 
-  it('stays amber even when the budget already exceeds the window, with the overdue copy', () => {
+  it('stays amber even when occupancy reaches the whole window', () => {
     const { view } = renderGuard({
-      pressure: { projectedTokens: 390_000, contextWindow: WINDOW },
-      maxTokens: 20_000,
+      pressure: { projectedTokens: 410_000, contextWindow: WINDOW },
     })
-    // 390k + 20k = 410k > 400k — overdue budget, but the tint stays warning.
+    // 410k / 400k = 102.5% — overdue floor, but the tint stays warning and the
+    // aria carries the single occupancy-based label (template, params stubbed).
     const button = buttonOf(view.container)
     expect(button).not.toBeNull()
     expect(button?.className).toContain('warning')
-    expect(button?.getAttribute('aria-label')).toContain('exceeds the window')
+    expect(button?.getAttribute('aria-label')).toContain('Context at')
   })
 
-  it('reads the threshold and budget from the live settings section when served', () => {
-    // The fallback maxTokens (256k) would show the button at 72k+256k = 328k;
-    // the settings section overrides it with 10k, so 72k+10k = 82k stays below
-    // the 80% threshold (320k) and the button must NOT appear.
+  it('reads the threshold from the live settings section when served', () => {
+    // The fallback threshold (0.8) would show the button at 320k/400k = 80%;
+    // the settings section raises it to 0.9, so the same occupancy stays below
+    // and the button must NOT appear.
     const { view } = renderGuard({
-      pressure: { projectedTokens: 72_000, contextWindow: WINDOW },
-      configValue: { thresholdRatio: 0.8, maxTokens: 10_000 },
+      pressure: { projectedTokens: 320_000, contextWindow: WINDOW },
+      configValue: { thresholdRatio: 0.9 },
     })
     expect(buttonOf(view.container)).toBeNull()
   })
@@ -126,7 +122,7 @@ describe('CompactGuardButton', () => {
   it('runs the injected compact verb on click', () => {
     const compactNow = vi.fn<() => Promise<string | null>>().mockResolvedValue(null)
     const { view } = renderGuard({
-      pressure: { projectedTokens: 72_000, contextWindow: WINDOW },
+      pressure: { projectedTokens: 340_000, contextWindow: WINDOW },
       compactNow,
     })
     fireEvent.click(buttonOf(view.container)!)
@@ -137,7 +133,7 @@ describe('CompactGuardButton', () => {
     const compactNow = vi.fn<() => Promise<string | null>>()
       .mockResolvedValue('agent is busy (BUSY)')
     const { view } = renderGuard({
-      pressure: { projectedTokens: 72_000, contextWindow: WINDOW },
+      pressure: { projectedTokens: 340_000, contextWindow: WINDOW },
       compactNow,
     })
     fireEvent.click(buttonOf(view.container)!)

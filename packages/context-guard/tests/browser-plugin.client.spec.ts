@@ -40,7 +40,7 @@ function stubScope(initial?: Partial<ContextGuardConfig>) {
   const unset = vi.fn(async () => {})
   let value: ContextGuardConfig | undefined = initial === undefined
     ? undefined
-    : { thresholdRatio: 0.8, maxTokens: 256_000, ...initial }
+    : { thresholdRatio: 0.8, ...initial }
   let user: Record<string, unknown> | undefined = initial === undefined ? undefined : {}
   let revision = 1
   const listeners = new Set<() => void>()
@@ -60,13 +60,13 @@ function stubScope(initial?: Partial<ContextGuardConfig>) {
       return () => { listeners.delete(listener) }
     },
     set: async (field, next) => {
-      value = { ...(value ?? { thresholdRatio: 0.8, maxTokens: 256_000 }), [field]: next } as ContextGuardConfig
+      value = { ...(value ?? { thresholdRatio: 0.8 }), [field]: next } as ContextGuardConfig
       user = { ...(user ?? {}), [field]: next }
       revision += 1
       publish()
     },
     unset: async (field) => {
-      value = { ...(value ?? { thresholdRatio: 0.8, maxTokens: 256_000 }) } as ContextGuardConfig
+      value = { ...(value ?? { thresholdRatio: 0.8 }) } as ContextGuardConfig
       delete (value as Record<string, unknown>)[field]
       user = { ...(user ?? {}) }
       delete user[field]
@@ -169,10 +169,9 @@ describe('context-guard browser half', () => {
   })
 
   it('carries the resolved fallback config on the button inject face', async () => {
-    const { ctx } = await bench({ thresholdRatio: 0.6, maxTokens: 16_000 })
+    const { ctx } = await bench({ thresholdRatio: 0.6 })
     const face = buttonInjectedFor(ctx, KNOWN)
     expect(face.thresholdRatio).toBe(0.6)
-    expect(face.maxTokens).toBe(16_000)
   })
 
   it('executes the official /compact command, returning null when admitted', async () => {
@@ -201,17 +200,16 @@ describe('context-guard node half', () => {
   it('registers the settings namespace, validates the section, and disposes it', async () => {
     const ctx = new Context()
     await ctx.plugin(MemorySettings).await()
-    const fiber = ctx.plugin({ apply: applyNode }, { maxTokens: 12_345 })
+    const fiber = ctx.plugin({ apply: applyNode }, { thresholdRatio: 0.7 })
     await fiber.await()
     const ns = settingsNamespace(CONTEXT_GUARD_NS)
     expect(ctx.settings.describe().map(row => row.ns)).toContain(ns)
     // The composition entry becomes the section's base layer: the resolved
-    // section carries the composed maxTokens over the schema default.
-    await ctx.settings.update(ns, { thresholdRatio: 0.6, maxTokens: 12_345 })
-    expect(ctx.settings.get(ns)).toEqual({ thresholdRatio: 0.6, maxTokens: 12_345 })
+    // section carries the composed threshold over the schema default.
+    await ctx.settings.update(ns, { thresholdRatio: 0.6 })
+    expect(ctx.settings.get(ns)).toEqual({ thresholdRatio: 0.6 })
     // Out-of-schema values are rejected.
     await expect(ctx.settings.update(ns, { thresholdRatio: 2 })).rejects.toThrow()
-    await expect(ctx.settings.update(ns, { maxTokens: 0 })).rejects.toThrow()
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
   })

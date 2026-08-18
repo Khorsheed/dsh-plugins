@@ -13,8 +13,7 @@
 
 import z from '@deepseek-ai/schemastery'
 
-/** Section shape: the fraction of the window at which the button appears, plus the output budget it reserves. */
+/** Section shape: the context-occupancy fraction at which the button appears. */
 export const ContextGuardSettingsSchema = z.object({
   thresholdRatio: z.number().min(0.01).max(1).default(0.8),
-  maxTokens: z.number().step(1).min(1).default(256_000),
 })

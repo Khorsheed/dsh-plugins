@@ -88,7 +88,6 @@ export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>):
     locale: NS,
     inject: (sessionId: SessionId): ContextGuardInjected => ({
       thresholdRatio: fallback.thresholdRatio,
-      maxTokens: fallback.maxTokens,
       // Failure strings stay English (error-surface policy: not localized).
       compactNow: async () => {
         const result = await ctx.remote.commands.execute(sessionId, '/compact')

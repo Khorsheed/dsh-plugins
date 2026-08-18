@@ -2,43 +2,41 @@
 
 English | [中文](README.zh.md)
 
-Proactive context-window compaction guard for the dsh web GUI. The browser half contributes one `conversation.input.right` entry — a compact button inside the composer's tool row that appears automatically when the **next request's budget** crosses a configured share of the model's context window. Clicking it runs the official `/compact` command, so you compact early, while a compaction can still run. The guard needs no new RPC and no edits to core packages; composing this plugin out of cordis.yml removes every surface it adds. The `/client` exports are the plugin body (`apply`/`inject`) and the `CompactGuardButtonProps` / `ContextGuardSettingsCardProps` types.
+A context-window compaction reminder for the dsh web GUI. The browser half contributes one `conversation.input.right` entry — a compact button inside the composer's tool row that appears automatically once the **context occupancy** (the same number the composer's context ring shows) crosses a configured share of the model's context window. Clicking it runs the official `/compact` command. The settings page offers one tunable (Settings → Plugins → "压缩提醒时机 / Compaction reminder timing"): the occupancy fraction at which the button appears. The guard needs no new RPC and no edits to core packages; composing this plugin out of cordis.yml removes every surface it adds. The `/client` exports are the plugin body (`apply`/`inject`) and the `CompactGuardButtonProps` / `ContextGuardSettingsCardProps` types.
 
-## Why it exists: the failure the official auto-compaction leaves unannounced
+## Why it exists: reminding you before the wall the meter does not show
 
-The official compaction-basic engine compacts at `agent/pre-step` once the token-meter estimate crosses 80% of the context window. Two properties of that check leave a window where the provider rejects the main loop's requests with no in-UI warning:
+The official compaction-basic engine auto-compacts at `agent/pre-step` once the token-meter estimate crosses 80% of the context window. Two properties of that picture leave requests that can fail **before** the meter shows 80%:
 
-1. **The check excludes the output budget.** A provider rejects a request when `prompt + max_tokens > context_length`. The official pressure check compares only the meter's context estimate against 80% of the window, so a request whose prompt sits below 80% but whose prompt + output budget exceeds the window fails with `CONTEXT_WINDOW_EXCEEDED`. The overflow recovery then compacts and retries — its summarization call reserves only its own small output cap, so the replay still fits and the retry succeeds — but the user pays a failed send first, and on an idle session nothing signals that the next send will fail. A long tool-calling turn widens this: each step's output and tool results are appended while the danger stays invisible in the estimate.
-2. **The meter deliberately underprices.** The token-meter estimator "systematically underprices CJK text and JSON schemas", so a CJK-heavy or schema-heavy session can sit under the 80% estimate while the provider-side count is already past the point where `context + maxTokens` fits.
+1. **The rejection wall sits below 100% occupancy.** A provider rejects a request when `prompt + max_tokens > context_length` — the request reserves output tokens. With the deepseek adapter's defaults (window 1,000,000, output cap 256,000), the wall is at ~74.4% occupancy, far below both 100% and the official 80% compaction point. A CJK-heavy or schema-heavy session makes it worse: the estimator "systematically underprices CJK text and JSON schemas", so the provider-side count is higher than the ring shows.
+2. **The official auto-compaction only runs between steps.** On an idle session nothing signals that the next send will fail, and during a long tool-calling turn the output keeps accumulating.
 
-The guard surfaces the danger while the numbers are still inside the window: it adds the configured output budget (the main request's reservation) to the projected context and shows the button once the sum crosses the threshold — so you compact early, while the summarization call still fits.
+The guard is a reminder on top of the ring: at the default ratio (0.8) it appears exactly when the official engine would compact anyway; **lower the ratio (e.g. 0.6–0.7) to be reminded earlier** — while the summarization call of a manual `/compact` still fits comfortably.
 
 ## How it works
 
-- **Seat**: `conversation.input.right` (the composer's tool row, before the send button). Renders nothing until the threshold is crossed, then appears automatically.
+- **Seat**: `conversation.input.right` (the composer's tool row, before the send button). Renders nothing until the threshold is crossed, then appears automatically in the amber warning tint.
 - **Data**: the official `contextPressure` session projection — `projectedTokens` (the provider-reported prompt sample carried forward over the surface's signed movement since, so a compaction shows immediately; the bare sample is the fallback for logs whose projection predates that field) and `contextWindow`.
-- **Formula**: `(projectedTokens + maxTokens) / contextWindow >= thresholdRatio` → amber button, always in the warning tint (the tooltip copy switches once the budget already exceeds the window: the main request is rejected from here on, but a manual `/compact` still fits because its summarization call reserves only a small output cap — click it now).
+- **Formula**: `projectedTokens / contextWindow >= thresholdRatio` → the button appears. This is the **same occupancy the composer's context ring shows** — one number, no confusion.
 - **Action**: the official `/compact` command channel (`remote.commands.execute` → host `ctx.commands` → `ctx.compaction.compactNow`), so the host owns idle-gating, the compaction lock, and the flow-node presentation.
 
 ## Configuration
 
-The two tunables are editable in the GUI: **Settings → Plugins → "压缩按钮时机 / Compact button timing"** — the card writes the shared `context-guard` settings section, and the button reacts to the saved values live, with no restart. The YAML composition entry below is the section's base layer: values the card does not override come from it, and both stack over the schema defaults.
+One tunable, editable in the GUI (Settings → Plugins → "压缩提醒时机 / Compaction reminder timing") and live — the button reacts to a saved value with no restart. The YAML composition entry below is the settings section's base layer; values the card does not override come from it.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `thresholdRatio` | `0.8` | Window fraction at which context + maxTokens shows the button (clamped to (0, 1]). |
-| `maxTokens` | `256000` | Output budget the next request reserves, in tokens (clamped to >= 1). Default matches the deepseek adapter's output cap — the reservation the main request makes; set to your model's configured max output if it differs. A larger cap makes the guard appear earlier, exactly where a real request starts being rejected. The guard's precision hinges on how close the catalog's `contextWindow` is to the provider's real window: a smaller configured value is conservative (it warns earlier), while a larger one can let the red overdue state appear after the real rejection wall — prefer smaller over larger. |
-
-**These two fields tune ONLY when the compact button appears.** The official compaction engine (compaction-basic) reads its own `thresholdRatio` / `maxTokens` / `auto` configuration and never touches this section — real compaction timing is not affected by these knobs.
+| `thresholdRatio` | `0.8` | Context occupancy fraction at which the compact button appears (clamped to (0, 1]). Lower it to be reminded earlier — the provider rejection wall sits below 100% occupancy because the request reserves output tokens (see above). |
 
 Example composition (becomes the card's base layer):
 
 ```yaml
 plugins:
   context-guard:
-    thresholdRatio: 0.75
-    maxTokens: 32768
+    thresholdRatio: 0.65
 ```
+
+**This field tunes ONLY when the button appears.** The official compaction engine (compaction-basic) reads its own `thresholdRatio` / `auto` configuration and never touches this section — real compaction timing is not affected.
 
 ## Model Experience
 
@@ -61,6 +59,6 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- **`maxTokens` is configured, not discovered.** The host resolves the effective output cap asynchronously (`ctx.llm.resolveModelInfo().defaultMaxTokens`), and a session projection cannot await an async resolution, so the plugin reads the configured budget (from the settings card or the base layer). If your model's cap differs from the default, set `maxTokens`; a conservative smaller value only makes the button appear earlier, which is safe — an early compaction always fits.
-- **The button is a warning, not a guarantee.** Between "button appears" and "click", the context may keep growing; the host's `/compact` may report `busy` while the agent is running, and the compaction summary is subject to the same window fit as any request.
+- **The button is a reminder, not a guarantee.** Between "button appears" and "click", the context may keep growing; the host's `/compact` may report `busy` while the agent is running, and the compaction summary is subject to the same window fit as any request.
+- **The output cap is not exposed in the UI.** The rejection wall depends on the model's output budget (`window − maxTokens`), which is a model property, not a user preference; the README carries the math and the "lower the ratio" guidance instead of a second confusing knob.
 - **No auto-compaction.** The plugin only surfaces the manual action; the official 80% auto-compaction keeps running unchanged, and a compacted-away guard button disappears as soon as the projection reflects the shrunken surface.
