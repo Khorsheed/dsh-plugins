@@ -32,4 +32,4 @@ room 插件的端到端验收（scratch profile、真实 kimi CLI 派发）暴�
 - room 会话 id 变为 `session-<uuid>`（调用方铸造，apiproxy 形态），不再是 store 的顺序 `session-<n>`。
 - 新增官方 peer 依赖：`@deepseek-ai/dsh-agent-presets`（preset 解析/挂载、`resolveSessionPreset`）与 `@deepseek-ai/dsh-session-persistence`（`inspect` 探测）；两者都在服务层探测，缺席时降级为修复前行为。
 - 修复前创建的 room（存活会话、无 agent、同一 boot）派发仍会响亮失败——journal 已携带那些 `failed` 运行；本修复不做原地补救。
-- 本修复未覆盖：侧栏「+ 新 room」流程不传 `cwd`，而 kimi provider 要求父会话带 `cwd`——浏览器里创建的 room 要等客户端补上 workspace/cwd 继承（NewRoomAction 注释已标注）后才能派发 CLI 成员。
+- 侧栏「+ 新 room」现已继承工作区 cwd（`fix(room): inherit workspace cwd when creating a room`）：当前会话的 cwd → 其所在 workspace 的 path → 最近 workspace 投影——即官方 `startSession` 的顺序。无可继承项时拒绝创建并给出本地化指引（先打开一个工作区会话）；CLI provider 在父会话 cwd 里运行，无 cwd 的 room 永远养不了 CLI 成员。

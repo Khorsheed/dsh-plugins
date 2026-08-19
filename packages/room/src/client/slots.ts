@@ -13,10 +13,20 @@ import type {} from './locales.ts'
 import type { RoomProviderList } from '../types.ts'
 import type { RoomStore } from './room-store.ts'
 
+/** A mutation outcome with a localized failure message. */
+export type RoomMutationOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly message: string }
+
 /** Injected action face of the sidebar footer action. */
 export interface NewRoomInjected {
-  /** Create a room session through the Remote and open it. */
-  createRoom: () => Promise<void>
+  /**
+   * Create a room session through the Remote and open it. The request carries
+   * the inherited workspace cwd (CLI members need the parent session's
+   * working directory); without one the outcome carries the localized
+   * guidance and nothing is created.
+   */
+  createRoom: () => Promise<RoomMutationOutcome>
 }
 
 /** Full props of the 'sidebar.footer.action' entry. */
@@ -55,11 +65,6 @@ export type MembersViewProps =
   PropsRuntime<'conversation.view'>
   & InjectFace<RoomMembersInjected>
   & PropsLocale<'room'>
-
-/** A mutation outcome with a localized failure message. */
-export type RoomMutationOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly message: string }
 
 /** The invite form's values (sessionId binds at inject time). */
 export interface RoomInviteValues {

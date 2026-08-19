@@ -7,6 +7,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { apply, inject } from '../src/client/index.ts'
 import { NewRoomAction } from '../src/client/NewRoomAction.tsx'
+import { en } from '../src/client/locales.ts'
 import type { NewRoomInjected, RoomComposerInjected } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
@@ -18,7 +19,15 @@ afterEach(() => {
 export const EMPTY_ROOM: RoomState = { members: [], blackboard: [], cursors: [], runs: [] }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub services. */
-async function bench(options: { mountFails?: boolean } = {}) {
+async function bench(options: {
+  mountFails?: boolean
+  /** Current session id and its cwd (undefined cwd = a session without one). */
+  current?: { id: string; cwd?: string }
+  /** Workspace rows the client list carries. */
+  workspaces?: { workspaceId: string; path: string; sessionIds: string[] }[]
+  /** The recent-workspace projection. */
+  recentWorkspaceId?: string
+} = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -45,11 +54,26 @@ async function bench(options: { mountFails?: boolean } = {}) {
   const sessions = {
     open: vi.fn(),
     list: createSnapshotStore({
-      ids: [] as string[], byId: {}, current: undefined as string | undefined, phase: 'pending',
+      ids: options.current === undefined ? [] as string[] : [options.current.id],
+      byId: options.current === undefined
+        ? {}
+        : { [options.current.id]: { ...(options.current.cwd === undefined ? {} : { cwd: options.current.cwd }) } },
+      current: options.current?.id as string | undefined,
+      phase: 'pending',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     }),
   }
   ctx.provide('sessions', sessions as never)
+  const workspaces = {
+    list: createSnapshotStore({
+      items: options.workspaces ?? [],
+      archivedSessionIds: [],
+      state: 'idle', phase: 'pending', error: null,
+      baselinesReady: true,
+      recentWorkspaceId: options.recentWorkspaceId as string | undefined,
+    }),
+  }
+  ctx.provide('workspaces', workspaces as never)
   const slots = ctx.get('slots') as SlotRegistry
   // The slot declarations as their owning packages declare them in production.
   slots.register({
@@ -66,7 +90,7 @@ async function bench(options: { mountFails?: boolean } = {}) {
 
 describe('room client apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'remote', 'conversationEvents', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale'])
   })
 
   it('mounts the Remote, registers the three Definitions and the slot entries with the right shapes', async () => {
@@ -105,22 +129,60 @@ describe('room client apply', () => {
     expect(slots.entries('conversation.chat.node')).toHaveLength(3)
   })
 
-  it('the footer action face creates a room through the Remote and opens it', async () => {
-    const { ctx, slots, remote, sessions } = await bench()
+  it('the footer action face creates a room through the Remote and opens it, inheriting the current session cwd', async () => {
+    const { ctx, slots, remote, sessions } = await bench({ current: { id: 's-1', cwd: '/home/user/work' } })
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = slots.entries('sidebar.footer.action')[0]!
     const face = (entry.inject as unknown as () => NewRoomInjected)()
-    await face.createRoom()
-    expect(remote.createRoom).toHaveBeenCalledWith({})
+    const outcome = await face.createRoom()
+    expect(outcome).toEqual({ ok: true })
+    expect(remote.createRoom).toHaveBeenCalledWith({ cwd: '/home/user/work' })
     expect(sessions.open).toHaveBeenCalledWith('room-1')
   })
 
-  it('the footer action face rejects on a transport failure', async () => {
+  it('the footer action face falls back to the current session workspace, then the recent workspace', async () => {
+    // Current session has no cwd of its own: the holding workspace's path wins.
+    const held = await bench({
+      current: { id: 's-1' },
+      workspaces: [
+        { workspaceId: 'ws-1', path: '/home/user/held', sessionIds: ['s-1'] },
+        // The recency fallback exists but the holding workspace outranks it.
+        { workspaceId: 'ws-2', path: '/home/user/recent', sessionIds: [] },
+      ],
+      recentWorkspaceId: 'ws-2',
+    })
+    await held.ctx.plugin({ inject: [...inject], apply }).await()
+    const heldFace = (held.slots.entries('sidebar.footer.action')[0]!.inject as unknown as () => NewRoomInjected)()
+    await heldFace.createRoom()
+    expect(held.remote.createRoom).toHaveBeenCalledWith({ cwd: '/home/user/held' })
+
+    // No current session: the recent workspace's path is the fallback.
+    const recent = await bench({
+      workspaces: [{ workspaceId: 'ws-2', path: '/home/user/recent', sessionIds: [] }],
+      recentWorkspaceId: 'ws-2',
+    })
+    await recent.ctx.plugin({ inject: [...inject], apply }).await()
+    const recentFace = (recent.slots.entries('sidebar.footer.action')[0]!.inject as unknown as () => NewRoomInjected)()
+    await recentFace.createRoom()
+    expect(recent.remote.createRoom).toHaveBeenCalledWith({ cwd: '/home/user/recent' })
+  })
+
+  it('the footer action face refuses creation without an inheritable cwd (Remote never called)', async () => {
     const { ctx, slots, remote } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const face = (slots.entries('sidebar.footer.action')[0]!.inject as unknown as () => NewRoomInjected)()
+    const outcome = await face.createRoom()
+    expect(outcome).toEqual({ ok: false, message: en['action.error.noWorkspace'] })
+    expect(remote.createRoom).not.toHaveBeenCalled()
+  })
+
+  it('the footer action face reports a transport failure as an outcome', async () => {
+    const { ctx, slots, remote } = await bench({ current: { id: 's-1', cwd: '/home/user/work' } })
     remote.createRoom.mockResolvedValueOnce({ ok: false, error: { code: 'offline' } } as never)
     await ctx.plugin({ inject: [...inject], apply }).await()
     const face = (slots.entries('sidebar.footer.action')[0]!.inject as unknown as () => NewRoomInjected)()
-    await expect(face.createRoom()).rejects.toThrow('transport')
+    const outcome = await face.createRoom()
+    expect(outcome).toEqual({ ok: false, message: expect.any(String) })
   })
 
   it('the composer selector claims exactly the cached-room sessions', async () => {
@@ -149,9 +211,16 @@ describe('room client apply', () => {
   })
 
   it('the footer action button triggers creation on click', async () => {
-    const createRoom = vi.fn(async () => {})
+    const createRoom = vi.fn(async () => ({ ok: true as const }))
     render(<NewRoomAction wide createRoom={createRoom} t={((key: string) => key) as never} />)
     fireEvent.click(screen.getByRole('button', { name: 'action.newRoom' }))
     expect(createRoom).toHaveBeenCalledTimes(1)
+  })
+
+  it('the footer action button surfaces a refused creation as an error line', async () => {
+    const createRoom = vi.fn(async () => ({ ok: false as const, message: 'action.error.noWorkspace' }))
+    render(<NewRoomAction wide createRoom={createRoom} t={((key: string) => key) as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'action.newRoom' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('action.error.noWorkspace')
   })
 })

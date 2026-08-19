@@ -28,7 +28,7 @@ import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomRunInjected,
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome, RoomRunInjected,
   RoomSpeechInjected, RoomSubmitOutcome,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
@@ -40,13 +40,36 @@ export type RoomRemote = TypertRemoteNamespaceMap['room']
 const NS = 'room'
 
 /**
- * Required services: slots, sessions, the remote channel, and the locale
- * service. `remote.room` is deliberately NOT an inject: this plugin both
+ * Required services: slots, sessions, workspaces, the remote channel, and the
+ * locale service. `remote.room` is deliberately NOT an inject: this plugin both
  * mounts the namespace (through `$mount` below) and consumes it, and the
  * Cordis property proxy only resolves services declared in `inject` or
  * provided by an ancestor fiber — declaring it would deadlock the loader.
  */
-export const inject = ['slots', 'sessions', 'remote', 'conversationEvents', 'locale']
+export const inject = ['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale']
+
+/**
+ * The cwd a new room inherits, mirroring the official startSession's
+ * workspace choice: the current session's own cwd, then the workspace
+ * holding the current session, then the recent-workspace projection. CLI
+ * members run their process in the parent (room) session's cwd, so a room
+ * without one cannot host them — undefined refuses creation instead.
+ */
+export function inheritCwd(ctx: ClientContext): string | undefined {
+  const sessions = ctx.sessions.list.getSnapshot()
+  const current = sessions.current
+  if (current !== undefined) {
+    const entry = sessions.byId[current]
+    if (entry?.cwd !== undefined && entry.cwd !== '') return entry.cwd
+  }
+  const workspaces = ctx.workspaces.list.getSnapshot()
+  const holding = current === undefined
+    ? undefined
+    : workspaces.items.find(item => item.sessionIds.includes(current))
+  const target = holding
+    ?? workspaces.items.find(item => item.workspaceId === workspaces.recentWorkspaceId)
+  return target?.path
+}
 
 /**
  * Client plugin body: mount the Remote, start the store, register the
@@ -72,14 +95,19 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
 
-  const createRoom = async (): Promise<void> => {
-    if (remote === undefined) throw new Error('room: remote namespace unavailable')
-    const carried = await remote.createRoom({})
-    if (!carried.ok) throw new Error(`room.createRoom transport: ${carried.error.code}`)
+  const createRoom = async (): Promise<RoomMutationOutcome> => {
+    if (remote === undefined) return { ok: false, message: t('action.error.generic') }
+    const cwd = inheritCwd(ctx)
+    // No inheritable cwd: CLI members would fail every dispatch (the provider
+    // runs in the parent session's working directory) — refuse with guidance.
+    if (cwd === undefined) return { ok: false, message: t('action.error.noWorkspace') }
+    const carried = await remote.createRoom({ cwd })
+    if (!carried.ok) return { ok: false, message: t('action.error.generic') }
     ctx.sessions.open(carried.value.sessionId)
     // Seed the cache immediately: the freshly opened room must not flash the
     // official composer while the list-driven first pull is in flight.
     void roomStore.refresh(carried.value.sessionId)
+    return { ok: true }
   }
 
   const submit = async (sessionId: SessionId, text: string): Promise<RoomSubmitOutcome> => {

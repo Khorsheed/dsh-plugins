@@ -3,6 +3,8 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'action.newRoom': '新建 Room',
+  'action.error.noWorkspace': '请先打开一个工作区会话：room 需要继承它的工作目录（CLI 成员在其中运行）',
+  'action.error.generic': '创建 room 失败，请重试',
   'view.members': '成员',
   'members.empty': '暂无成员',
   'composer.placeholder': '发消息到黑板；@ 成员以派发',
@@ -68,6 +70,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'action.newRoom': 'New room',
+  'action.error.noWorkspace': 'Open a workspace session first: the room inherits its working directory (CLI members run in it)',
+  'action.error.generic': 'Could not create the room; please retry',
   'view.members': 'Members',
   'members.empty': 'No members yet',
   'composer.placeholder': 'Post to the blackboard; @ a member to dispatch',
