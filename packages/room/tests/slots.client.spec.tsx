@@ -83,6 +83,7 @@ async function bench(options: {
       'conversation.composer': { kind: 'chain', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
       'conversation.chat.node': { kind: 'keyed', scope: 'session' },
+      'conversation.input.dock': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   return { ctx, slots, remote, remoteService, sessions, conversationEvents }
@@ -118,6 +119,12 @@ describe('room client apply', () => {
 
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
     expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay'])
+
+    // The task board joins the input dock (the official todo strip's seat).
+    const dock = slots.entries('conversation.input.dock')
+    expect(dock).toHaveLength(1)
+    expect(dock[0]!.options.id).toBe('room-tasks')
+    expect(dock[0]!.options.order).toBe(10)
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {
@@ -208,6 +215,7 @@ describe('room client apply', () => {
     expect(slots.entries('conversation.composer')).toHaveLength(0)
     expect(slots.entries('conversation.view')).toHaveLength(0)
     expect(slots.entries('conversation.chat.node')).toHaveLength(0)
+    expect(slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
   it('the footer action button triggers creation on click', async () => {

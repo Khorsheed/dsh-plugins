@@ -28,9 +28,10 @@ import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
+import { RoomTaskDock } from './RoomTaskDock.tsx'
 import type {
   NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome,
-  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected,
+  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -143,6 +144,25 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       if (remote === undefined) return
       const carried = await remote.dismissRelay({ sessionId, relayId })
       if (carried.ok) void roomStore.refresh(sessionId)
+    },
+  })
+
+  /** The task-board actions (sessionId binds per entry inject). */
+  const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
+    roomStore,
+    addTask: async (member, title) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.addTask({ sessionId, member, title })
+      if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    closeTask: async (taskId) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.closeTask({ sessionId, taskId })
+      if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
     },
   })
 
@@ -277,6 +297,21 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
     },
     RoomRelayView,
+  ))
+  // The task board: a `conversation.input.dock` row above the composer card —
+  // the same seat as the official todo strip (which stacks: dock is a list
+  // slot, entries render in ascending order, each hiding itself when empty).
+  // The board is the human's journal-driven management view; it renders only
+  // while the current session is a cached room.
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
+    {
+      name: 'conversation.input.dock',
+      id: 'room-tasks',
+      order: 10,
+      locale: NS,
+      inject: (sessionId: SessionId): RoomTasksInjected => tasksFace(sessionId),
+    },
+    RoomTaskDock,
   ))
 
   return async () => {
