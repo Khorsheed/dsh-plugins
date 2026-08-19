@@ -29,7 +29,7 @@ import messageToolsRemote from '@khorsheed/dsh-client-message-tools/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { installDomHider } from './dom-hider.ts'
 import { mergedDraft } from './backfill.ts'
-import { editInPlace, waitForTurnSettled } from './edit-in-place.ts'
+import { editInPlace, waitForTurnSettled, withdrawInPlace } from './edit-in-place.ts'
 import { en, zh } from './locales.ts'
 import {
   editedMessageDefinition, restoredAssistantMessageDefinition, restoredMessageDefinition, withdrawnDividerDefinition,
@@ -158,9 +158,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     }
     // After a cancel, `running` flips false BEFORE the turn's teardown
     // finishes landing (cancelled tool results persist after the flip,
-    // turn/end last); the edit replacement's span must cover all of it, so
-    // wait for the turn to actually close. Bounded: a turn that never
-    // settles rejects instead of letting the edit race the stragglers.
+    // turn/end last); a replacement's span must cover all of it, so wait
+    // for the turn to actually close. Bounded: a turn that never settles
+    // rejects instead of letting the edit/withdraw race the stragglers.
     const waitIdle = (): Promise<void> =>
       waitForTurnSettled(() => ctx.sessions.binding(sessionId)?.session.getSnapshot())
     return {
@@ -169,7 +169,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         waitIdle,
         edit: () => edit(targetSeq, text),
       }, ctx.sessions.binding(sessionId)?.session.getSnapshot().running === true),
-      withdrawMessage: withdraw,
+      withdrawMessage: targetSeq => withdrawInPlace({
+        cancel: () => conversation.cancel(),
+        waitIdle,
+        withdraw: () => withdraw(targetSeq),
+      }, ctx.sessions.binding(sessionId)?.session.getSnapshot().running === true),
       backfillDraft: (text) => { backfill(sessionId, text) },
       modelsAvailable: directory !== undefined,
       loadModels: () => {

@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import { editInPlace, turnSettled, waitForTurnSettled, type TurnSettleSnapshot } from '../src/client/edit-in-place.ts'
+import {
+  editInPlace, turnSettled, waitForTurnSettled, withdrawInPlace, type TurnSettleSnapshot,
+} from '../src/client/edit-in-place.ts'
 
 function steps() {
   return {
     cancel: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     waitIdle: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     edit: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  }
+}
+
+function withdrawSteps() {
+  return {
+    cancel: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    waitIdle: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    withdraw: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   }
 }
 
@@ -49,6 +59,49 @@ describe('editInPlace', () => {
     await expect(editInPlace(s, true)).rejects.toThrow('timed out')
     expect(s.cancel).toHaveBeenCalledTimes(1)
     expect(s.edit).not.toHaveBeenCalled()
+  })
+})
+
+describe('withdrawInPlace', () => {
+  it('cancels the running turn, waits for the settle, then withdraws (in order)', async () => {
+    const s = withdrawSteps()
+    const order: string[] = []
+    s.cancel.mockImplementation(() => { order.push('cancel'); return Promise.resolve() })
+    s.waitIdle.mockImplementation(() => { order.push('waitIdle'); return Promise.resolve() })
+    s.withdraw.mockImplementation(() => { order.push('withdraw'); return Promise.resolve() })
+    await withdrawInPlace(s, true)
+    expect(order).toEqual(['cancel', 'waitIdle', 'withdraw'])
+  })
+
+  it('never cancels an idle session', async () => {
+    const s = withdrawSteps()
+    await withdrawInPlace(s, false)
+    expect(s.cancel).not.toHaveBeenCalled()
+    expect(s.waitIdle).not.toHaveBeenCalled()
+    expect(s.withdraw).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects without withdrawing when the cancel fails', async () => {
+    const s = withdrawSteps()
+    s.cancel.mockRejectedValue(new Error('cancel denied'))
+    await expect(withdrawInPlace(s, true)).rejects.toThrow('cancel denied')
+    expect(s.waitIdle).not.toHaveBeenCalled()
+    expect(s.withdraw).not.toHaveBeenCalled()
+  })
+
+  it('propagates a withdraw failure after a clean cancel', async () => {
+    const s = withdrawSteps()
+    s.withdraw.mockRejectedValue(new Error('already-withdrawn'))
+    await expect(withdrawInPlace(s, true)).rejects.toThrow('already-withdrawn')
+    expect(s.cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects without withdrawing when the settle wait fails or times out', async () => {
+    const s = withdrawSteps()
+    s.waitIdle.mockRejectedValue(new Error('message-tools: timed out waiting for the cancelled turn to settle'))
+    await expect(withdrawInPlace(s, true)).rejects.toThrow('timed out')
+    expect(s.cancel).toHaveBeenCalledTimes(1)
+    expect(s.withdraw).not.toHaveBeenCalled()
   })
 })
 
