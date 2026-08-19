@@ -1,6 +1,7 @@
 /** Conversation view tab: the session's touched files (list) with inline preview. */
 
 import { useEffect, useMemo, useState } from 'react'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -37,6 +38,10 @@ export function FilePreviewView(props: FilePreviewViewProps) {
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
+  // The preview header shows the selected file's host-resolved absolute path
+  // (the same spelling copy/open/reveal act on), so the path is visible at a
+  // glance, with the gesture buttons on the right — the drawer header's layout.
+  const displayPath = selectedPath === null ? undefined : resolveWorkspacePath(cwd, selectedPath)
   // Clipboard writes work in any browser context, so the copy gesture is
   // never gated; only the host-open gestures (folder / IDE) need a desktop —
   // same gate the drawer and the official row use.
@@ -141,33 +146,36 @@ export function FilePreviewView(props: FilePreviewViewProps) {
       </div>
       <section className={css.preview}>
         {selectedPath !== null && (
-          <div className={css.previewActions}>
-            <button
-              type="button" className={css.action} onClick={onCopy}
-              title={copied ? t('drawer.copied') : t('drawer.copyPath')}
-              aria-label={copied ? t('drawer.copied') : t('drawer.copyPath')}
-            >
-              {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
-              {copied ? t('drawer.copied') : t('drawer.copyPath')}
-            </button>
-            {canOpenExternal && (
-              <>
-                <button
-                  type="button" className={css.action} onClick={() => { revealFolder(selectedPath) }}
-                  title={t('drawer.openFolder')} aria-label={t('drawer.openFolder')}
-                >
-                  <IconFolderOpenOutline16 size={14} />
-                  {t('drawer.action.folder')}
-                </button>
-                <button
-                  type="button" className={css.action} onClick={() => { openExternal(selectedPath) }}
-                  title={t('drawer.openIde')} aria-label={t('drawer.openIde')}
-                >
-                  <IconCodeOutline16 size={14} />
-                  {t('drawer.action.ide')}
-                </button>
-              </>
-            )}
+          <div className={css.previewHeader}>
+            <div className={css.previewPath} title={displayPath}>{displayPath}</div>
+            <div className={css.previewActions}>
+              <button
+                type="button" className={css.action} onClick={onCopy}
+                title={copied ? t('drawer.copied') : t('drawer.copyPath')}
+                aria-label={copied ? t('drawer.copied') : t('drawer.copyPath')}
+              >
+                {copied ? <IconCheckOutline16 size={14} /> : <IconCopyOutline16 size={14} />}
+                {copied ? t('drawer.copied') : t('drawer.copyPath')}
+              </button>
+              {canOpenExternal && (
+                <>
+                  <button
+                    type="button" className={css.action} onClick={() => { revealFolder(selectedPath) }}
+                    title={t('drawer.openFolder')} aria-label={t('drawer.openFolder')}
+                  >
+                    <IconFolderOpenOutline16 size={14} />
+                    {t('drawer.action.folder')}
+                  </button>
+                  <button
+                    type="button" className={css.action} onClick={() => { openExternal(selectedPath) }}
+                    title={t('drawer.openIde')} aria-label={t('drawer.openIde')}
+                  >
+                    <IconCodeOutline16 size={14} />
+                    {t('drawer.action.ide')}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
         {previewLoading && <div className={css.empty}>{t('drawer.loading')}</div>}

@@ -248,6 +248,9 @@ describe('FilePreviewView', () => {
     const row = await screen.findByText('notes.md')
     act(() => { row.click() })
     await screen.findByText('drawer.copyPath')
+    // The preview header shows the file's resolved path (left) beside the
+    // gesture buttons (right), mirroring the drawer header.
+    expect(screen.getByText('/work/notes.md')).toBeTruthy()
     act(() => { screen.getByLabelText('drawer.copyPath').click() })
     await act(async () => {})
     expect(h.copyPath).toHaveBeenCalledWith('/work/notes.md')
@@ -256,6 +259,21 @@ describe('FilePreviewView', () => {
     expect(h.revealFolder).toHaveBeenCalledWith('/work/notes.md')
     act(() => { screen.getByLabelText('drawer.openIde').click() })
     expect(h.openExternal).toHaveBeenCalledWith('/work/notes.md')
+  })
+
+  it('resolves a relative recorded path for the preview header', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: 'a.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: 'a.md', kind: 'text', content: 'x', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('a.md')
+    act(() => { row.click() })
+    await screen.findByText('drawer.copyPath')
+    // 'a.md' resolves against the session cwd (/work) to the absolute path.
+    expect(screen.getByText('/work/a.md')).toBeTruthy()
   })
 
   it('does not claim a copy the host declined', async () => {

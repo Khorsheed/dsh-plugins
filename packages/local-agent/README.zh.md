@@ -52,7 +52,7 @@ export function registerCodex(ctx: Context): void {
 
 ## 委派 registry（resume 载体）
 
-除 harness 身份之外，registry 还持有家族的**委派 registry**：每个子会话一条记录，记下该委派用的 provider 与 CLI 会话，以及按 (parent, provider) 分组的委派 intent FIFO。家族工具（`@khorsheed/dsh-local-agent-tool-subagent`，由各 harness bundle 的 patch 挂载）在每次调用 `ctx.subagents.start()` 前恰好 stage 一个 intent，归属 provider 每次 start 恰好消费一个——因此即使并行委派，fresh 轮与 resume 轮也能正确配对。resume 轮的句柄（dsh 子会话 id）经 registry 解析，凡是未知子会话、他人 parent 的会话、或错误 provider 的句柄都会被拒绝。subagent 请求 descriptor 无法携带该目标（其 schema 拒绝未知字段），因此本服务就是家族内部的载体；同一份记录未来也会喂给 stop registry。
+除 harness 身份之外，registry 还持有家族的**委派 registry**：每个子会话一条记录，记下该委派用的 provider 与 CLI 会话，以及按 (parent, provider) 分组的委派 intent FIFO。家族工具（`@khorsheed/dsh-local-agent-tool-subagent`，由各 harness bundle 的 patch 挂载）在每次调用 `ctx.subagents.start()` 前恰好 stage 一个 intent，归属 provider 每次 start 恰好消费一个——因此即使并行委派，fresh 轮与 resume 轮也能正确配对。resume 轮的句柄（dsh 子会话 id）经 registry 解析，凡是未知子会话、他人 parent 的会话、或错误 provider 的句柄都会被拒绝。subagent 请求 descriptor 无法携带该目标（其 schema 拒绝未知字段），因此本服务就是家族内部的载体；同一份记录未来也会喂给 stop registry。映射按 harness 持久化在该 harness 作用域目录下的 append-only `delegations.jsonl`（同一子会话最后一行生效，kimi 镜像 offset 随记录同行），resume 句柄因此能跨宿主重启存活。
 
 ## Model Experience
 
@@ -79,4 +79,5 @@ registry 元数据与命令回复从不进入模型请求、不影响其缓存�
 
 - **登录为抓取式 prompt**——web GUI 没有交互式终端面，device-code URL 通过命令回复呈现、CLI 在后台轮询；面向 CLI 面的终端式登录留待后续。
 - **homes 根位置**——默认 `$DSH_HOME/local-agent` 先于 formal 的 `var/state` 布局；待 harness home 布局标准化后再议。
+- **委派日志增长**——每个 harness 的 `delegations.jsonl` 只增不减、无轮转（与 session_index/rollout 文件同级增长）；轮转/清理留待后续。
 - **单样本形状**——harness 契约由 Kimi 归纳；冻结形状前应先做 Codex spike（records 适配器 + 登录探测）。

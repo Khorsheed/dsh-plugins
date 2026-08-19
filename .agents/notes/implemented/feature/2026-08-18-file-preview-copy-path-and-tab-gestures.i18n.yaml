@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.md
-.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.md: e81274c94fd9757ba09c49a23aac5b4267adc415
-.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.zh.md: 1708faebf00f1fc5a7aa7d33f3d7876b94a60ecb
+.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.md: 6514ff1cbdab99e94b90f708193b3eb4b8344c68
+.agents/notes/implemented/feature/2026-08-18-file-preview-copy-path-and-tab-gestures.zh.md: 9e0cdca7e99cee81683ba07885b3e6d385456c69

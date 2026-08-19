@@ -101,31 +101,58 @@ export async function readSubDshEvents(homeDir: string, sessionId: string): Prom
   return undefined
 }
 
+/** The result of one dsh session-mirror pass. */
+export interface DshMirrorDelta {
+  /** Text of each event this pass newly mirrored (delta progress payloads). */
+  texts: string[]
+  /** Total round events mirrored into the child session after this pass. */
+  total: number
+}
+
+/** Flatten a mirrored message event's content to plain text for delta progress. */
+function mirroredEventText(event: SessionEvent): string {
+  // user/message carries content directly; assistant/message wraps it in `message`.
+  const data = event.data as {
+    content?: readonly { type?: string; text?: string }[]
+    message?: { content?: readonly { type?: string; text?: string }[] }
+  }
+  const content = data.message?.content ?? data.content ?? []
+  return content
+    .filter(block => (block.type === 'text' || block.type === 'reasoning') && typeof block.text === 'string')
+    .map(block => block.text as string)
+    .join('')
+}
+
 /**
  * Mirror the current round's events from the sub-dsh session into the child
- * session, then persist. Runs after the child process exits (however it
- * ended), so it reflects what the sub-dsh flushed before the kill — an
- * aborted round still preserves its partial work and real usage. All failures
- * degrade to a warn: the delegation result is already settled.
+ * session, then persist. Runs both from the provider's live poll (while the
+ * sub-dsh writes its log in batches — a torn final zstd frame is skipped
+ * until the next pass) and after the child process exits (the settle pass);
+ * the round's already-mirrored prefix in the child session is the offset, so
+ * the settle pass is a no-op when polling kept up. An aborted round still
+ * preserves its partial work and real usage. All failures degrade to a warn:
+ * the delegation result is already settled.
  * @param ctx - host context carrying session persistence.
  * @param childSession - the parent-side dsh subagent session.
  * @param homeDir - the `dsh` harness's scoped home.
  * @param subSessionId - the sub-dsh session id (same uuid as the child session).
+ * @returns the newly mirrored events' texts and the round's mirrored total.
  */
 export async function mirrorDshSession(
   ctx: Context,
   childSession: Session,
   homeDir: string,
   subSessionId: string,
-): Promise<void> {
+): Promise<DshMirrorDelta> {
+  const empty: DshMirrorDelta = { texts: [], total: 0 }
   try {
     const events = await readSubDshEvents(homeDir, subSessionId)
-    if (events === undefined) return
+    if (events === undefined) return empty
     // The round mirrors the sub-dsh turn with the same number: the parent's
     // turn/start count IS this round's number (appended before spawn), and the
     // sub-dsh numbers its turns identically across fresh and resume rounds.
     const round = childSession.events.filter(event => event.type === 'turn/start').length
-    if (round === 0) return
+    if (round === 0) return empty
     let start = -1
     let end = events.length
     for (let index = 0; index < events.length; index += 1) {
@@ -140,22 +167,43 @@ export async function mirrorDshSession(
         break
       }
     }
-    if (start === -1) return
-    for (const event of events.slice(start, end)) {
+    if (start === -1) return empty
+    // The child session's messages after its last turn/start are this round's
+    // already-mirrored prefix (a live poll may have appended them); skip it so
+    // the settle pass never duplicates what polling mirrored. The span is
+    // filtered to APPENDABLE events first — scaffolding user messages
+    // (non-'user' sources) never cross, so they must not occupy skip
+    // positions either.
+    let lastTurnStart = -1
+    for (let index = 0; index < childSession.events.length; index += 1) {
+      if (childSession.events[index]?.type === 'turn/start') lastTurnStart = index
+    }
+    const mirrored = childSession.events.slice(lastTurnStart + 1)
+      .filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+      .length
+    const span = events.slice(start, end)
+      .filter(event =>
+        (event.type === 'user/message' && event.data.source.kind === 'user')
+        || event.type === 'assistant/message')
+      .slice(mirrored)
+    const texts: string[] = []
+    for (const event of span) {
       if (event.type === 'user/message') {
-        // Only the caller's task crosses; the sub-dsh's own scaffolding
-        // (agent-instructions/plugin/skill-catalog user messages) stays behind.
-        if (event.data.source.kind === 'user') {
-          childSession.append('user/message', event.data, { surfaceOp: 'append' })
-        }
+        childSession.append('user/message', event.data, { surfaceOp: 'append' })
+        texts.push(mirroredEventText(event))
       } else if (event.type === 'assistant/message') {
         // Verbatim copy: content blocks (text/reasoning) and usage ride the
         // event's own fields, so the tokenUsage projection counts the round.
         childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
+        texts.push(mirroredEventText(event))
       }
     }
-    await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+    if (texts.length > 0) {
+      await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+    }
+    return { texts, total: mirrored + texts.length }
   } catch (error) {
     ctx.logger.warn(`subagent-dsh: session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
+    return empty
   }
 }

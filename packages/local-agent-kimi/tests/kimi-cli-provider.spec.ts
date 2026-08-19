@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -85,6 +85,139 @@ describe('kimi-cli-provider run settlement', () => {
     })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(append).toHaveBeenCalledWith(child.id, child.events)
+    await done
+  })
+
+  it('reports the settle-time mirror as a mirror progress event', async () => {
+    const homeDir = wireHome('run-progress-1')
+    const child = Session.create(SessionId('child-run-progress-1'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    const reportRunProgress = vi.fn()
+    ctx.provide('localAgent', {
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+      reportRunProgress,
+    } as never)
+    const { handle, done } = stubChild('run-progress-1')
+
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startKimiCliRun(request, {
+      cwd: '/tmp',
+      env: { KIMI_CODE_HOME: homeDir },
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      homeDir,
+      ctx,
+    })
+    expect((await run.result).stopReason).toBe('completed')
+    // The report fires after the post-exit mirror; the fixture wire.jsonl has
+    // two transcript lines.
+    await vi.waitFor(() => {
+      expect(reportRunProgress).toHaveBeenCalledWith(child.id, { kind: 'mirror', mirroredLines: 2 })
+    })
+    await done
+  })
+
+  it('mirrors transcript growth live during the run and settles without duplicates', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'kimi-live-'))
+    const dir = join(homeDir, 'sessions', 'wd_tmp_abc', 'session_1ec0de')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    const wire = join(dir, 'agents', 'main', 'wire.jsonl')
+    const userLine = JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '建个文件' }] } })
+    const thinkLine = JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', part: { type: 'think', think: '先看看目录' } } })
+    const textLine = JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', part: { type: 'text', text: '任务完成。' } } })
+    writeFileSync(wire, `${userLine}\n${thinkLine}\n`)
+
+    const child = Session.create(SessionId('child-live-1'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+    const offsets = new Map<string, number>()
+    const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
+    ctx.provide('localAgent', {
+      kimiMirroredLines: (id: string) => offsets.get(id),
+      setKimiMirroredLines: (id: string, lines: number) => { offsets.set(id, lines) },
+      reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
+        reports.push({ id, progress })
+      },
+    } as never)
+
+    // A controllable child: streams stay open, done resolves when the test
+    // finishes the process.
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4244,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startKimiCliRun(request, {
+      cwd: '/tmp',
+      env: { KIMI_CODE_HOME: homeDir },
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      homeDir,
+      ctx,
+      liveMirrorIntervalMs: 20,
+    })
+    stderr.push('kimi version 0.33.0\nTo resume this session: kimi -r session_1ec0de\n')
+
+    // A live poll mirrors the initial wire while the process is STILL running.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    expect(reports.some(report => report.progress.kind === 'delta')).toBe(true)
+
+    // The wire grows mid-run; the next poll mirrors only the new line.
+    appendFileSync(wire, `${textLine}\n`)
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
+    // Step numbering continues across live batches within the turn.
+    const steps = child.events
+      .filter(event => event.type === 'assistant/message')
+      .map(event => (event.data as { step?: number }).step)
+    expect(steps).toEqual([1, 2])
+
+    // Settle: the live mirror already advanced the offset, so the final mirror
+    // is a no-op — no duplicated messages.
+    stdout.push('• done\n')
+    stdout.push(null)
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 3)).toBe(true)
+    })
+    const texts = child.events
+      .filter(event => event.type === 'assistant/message')
+      .map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
+    expect(new Set(texts).size).toBe(texts.length)
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(offsets.get(child.id)).toBe(3)
     await done
   })
 
@@ -181,6 +314,7 @@ describe('kimi-cli-provider child session record', () => {
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
     } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in record test') } } as never)
@@ -217,6 +351,7 @@ describe('kimi-cli-provider child session record', () => {
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
     } as never)
     ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned') } } as never)
@@ -259,6 +394,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
@@ -312,6 +448,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
@@ -352,6 +489,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: (childSessionId: string) => {
         if (locked) return false
@@ -432,6 +570,7 @@ describe('kimi-cli-provider resume round', () => {
       }),
       recordDelegation: () => {},
       setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
       acquireResumeLock: () => true,
       releaseResumeLock: (childSessionId: string) => { releases.push(childSessionId) },

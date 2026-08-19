@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -10,8 +10,8 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
-import { LOCAL_AGENT_SERVICE } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentDelegationIntent } from '@khorsheed/dsh-local-agent'
+import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentDelegationIntent, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
 
 const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
@@ -345,6 +345,123 @@ describe('LocalAgentRegistry delegation facade', () => {
     it('returns false for an unknown child session id', async () => {
       const h = await mountFacade()
       expect(h.registry.cancel('child-missing')).toBe(false)
+    })
+  })
+
+  describe('run progress', () => {
+    it('emits a heartbeat while a run is in flight and stops at settle', async () => {
+      vi.useFakeTimers()
+      try {
+        const h = await mountFacade()
+        h.enterParent(PARENT)
+        const events: [string, LocalAgentRunProgress][] = []
+        h.ctx.on('localAgent/run-progress', (id, progress) => { events.push([id, progress]) })
+        const controllable = makeRun('child-hb')
+        h.setStartHandler((request) => {
+          h.consumeIntent(request)
+          return controllable.run
+        })
+
+        await h.registry.start(PARENT, PROVIDER, PROMPT)
+        expect(events).toHaveLength(0)
+        await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS)
+        expect(events).toHaveLength(1)
+        expect(events[0]?.[0]).toBe('child-hb')
+        expect(events[0]?.[1].kind).toBe('heartbeat')
+        await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS)
+        expect(events).toHaveLength(2)
+
+        // Settle stops the heartbeat.
+        controllable.settle({ stopReason: 'completed', output: [] })
+        await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS * 3)
+        expect(events).toHaveLength(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('routes provider reports to the tracked run onProgress and the cordis event', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      const seenA: LocalAgentRunProgress[] = []
+      const seenB: LocalAgentRunProgress[] = []
+      const cordisEvents: [string, LocalAgentRunProgress][] = []
+      h.ctx.on('localAgent/run-progress', (id, progress) => { cordisEvents.push([id, progress]) })
+      const runs = [makeRun('child-a').run, makeRun('child-b').run]
+      h.setStartHandler((request) => {
+        h.consumeIntent(request)
+        const run = runs.shift()
+        if (run === undefined) throw new Error('unexpected extra start')
+        return run
+      })
+      await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seenA.push(progress) } })
+      await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seenB.push(progress) } })
+
+      h.registry.reportRunProgress('child-a', { kind: 'mirror', mirroredLines: 12 })
+
+      expect(seenA).toEqual([{ kind: 'mirror', mirroredLines: 12 }])
+      expect(seenB).toEqual([])
+      expect(cordisEvents).toEqual([['child-a', { kind: 'mirror', mirroredLines: 12 }]])
+    })
+
+    it('emits the cordis event for reports on untracked child sessions', async () => {
+      const h = await mountFacade()
+      const cordisEvents: [string, LocalAgentRunProgress][] = []
+      h.ctx.on('localAgent/run-progress', (id, progress) => { cordisEvents.push([id, progress]) })
+
+      // A resumed run tracked only by the provider must stay observable.
+      expect(() => h.registry.reportRunProgress('child-untracked', { kind: 'mirror', mirroredLines: 3 })).not.toThrow()
+      expect(cordisEvents).toEqual([['child-untracked', { kind: 'mirror', mirroredLines: 3 }]])
+    })
+
+    it('stops heartbeats when the plugin disposes', async () => {
+      vi.useFakeTimers()
+      try {
+        const h = await mountFacade()
+        h.enterParent(PARENT)
+        const events: [string, LocalAgentRunProgress][] = []
+        h.ctx.on('localAgent/run-progress', (id, progress) => { events.push([id, progress]) })
+        await h.registry.start(PARENT, PROVIDER, PROMPT)
+        await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS)
+        expect(events).toHaveLength(1)
+
+        await h.fiber.dispose()
+        await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS * 3)
+        expect(events).toHaveLength(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('reattach opt-out', () => {
+    it('reattach:false fails loud on a non-live child and stages nothing', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      h.registry.recordDelegation({
+        childSessionId: 'child-1', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-42',
+      })
+      expect(h.ctx.sessions.get(SessionId('child-1'))).toBeUndefined()
+
+      await expect(h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { reattach: false }))
+        .rejects.toThrow(/is not live and reattach is disabled/)
+
+      expectNothingStaged(h.registry)
+      expect(h.prepared).toEqual([])
+    })
+
+    it('reattach:false resumes normally when the child is already live', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      h.registry.recordDelegation({
+        childSessionId: 'child-1', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-42',
+      })
+      h.ctx.sessions.create(SessionId('child-1'))
+
+      await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { reattach: false })
+
+      expect(h.prepared).toEqual([])
+      expect(h.consumed).toEqual([{ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'cli-42' }])
     })
   })
 })

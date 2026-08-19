@@ -4,7 +4,7 @@
  * failure and abort settlement.
  */
 
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -13,7 +13,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { LocalAgentDelegationIntent } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
-import { DshCliProvider, dshLaunchArgv } from '../src/dsh-cli-provider.ts'
+import { DshCliProvider, dshLaunchArgv, startDshCliRun } from '../src/dsh-cli-provider.ts'
 
 /** A stub child that prints the final answer, then exits 0. */
 function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
@@ -60,11 +60,13 @@ function mount(options: {
   capture: Capture
   records: ReturnType<typeof vi.fn>
   locks: { acquired: string[]; released: string[] }
+  reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[]
 } {
   const homeDir = mkdtempSync(join(tmpdir(), 'dsh-provider-'))
   const capture: Capture = {}
   const records = vi.fn()
   const locks = { acquired: [] as string[], released: [] as string[] }
+  const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
   const ctx = new Context()
   ctx.provide('localAgent', {
     homeDir: () => homeDir,
@@ -76,6 +78,9 @@ function mount(options: {
       return options.lockAcquired ?? true
     },
     releaseResumeLock: (id: string) => { locks.released.push(id) },
+    reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
+      reports.push({ id, progress })
+    },
   })
   ctx.provide('subprocess', {
     spawn: (spec: { argv: readonly string[]; env: Readonly<Record<string, string>>; cwd: string }) => {
@@ -93,7 +98,7 @@ function mount(options: {
     get: () => options.liveChild,
   })
   ctx.provide('logger', { warn: () => {}, info: () => {} })
-  return { ctx, homeDir, capture, records, locks }
+  return { ctx, homeDir, capture, records, locks, reports }
 }
 
 /** The resolved request shape the provider consumes. */
@@ -159,6 +164,78 @@ describe('dsh-cli-provider fresh run', () => {
       cliSessionId: sessionId,
     })
     await run.dispose()
+  })
+
+  it('mirrors the sub-dsh session live during the run and settles without duplicates', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'dsh-live-'))
+    const child = Session.create(SessionId('child-live-dsh'))
+    const ctx = new Context()
+    ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
+    const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
+    ctx.provide('localAgent', {
+      reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
+        reports.push({ id, progress })
+      },
+    } as never)
+
+    // A controllable child: stdout stays open, done resolves when the test
+    // finishes the process.
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4247,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    ctx.provide('subprocess', { spawn: () => handle })
+
+    const run = await startDshCliRun(request() as never, {
+      cwd: '/tmp',
+      homeDir,
+      childSession: child,
+      sessionId: 'sub-live-1',
+      liveMirrorIntervalMs: 20,
+      config: {},
+      ctx,
+    })
+
+    // The sub-dsh flushes its first exchange mid-run.
+    const dir = join(homeDir, 'sessions', 'wd_test', 'sub-live-1')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.jsonl'), [
+      JSON.stringify({ type: 'session', version: 0, id: 'sub-live-1' }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+      JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' } }),
+      JSON.stringify({ type: 'assistant/message', seq: 2, time: 3, data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条回复' }], source: { provider: 'deepseek-official', model: 'm' } } } }),
+    ].join('\n') + '\n')
+
+    // A live poll mirrors it while the process is STILL running.
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    expect(reports.some(report => report.progress.kind === 'delta' && report.progress.text === '第一条回复')).toBe(true)
+
+    // Settle: the already-mirrored prefix skip makes the final pass a no-op.
+    stdout.push('final answer\n')
+    stdout.push(null)
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reports.some(report => report.progress.kind === 'mirror')).toBe(true)
+    })
+    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    await done
   })
 
   it('rejects a parent session with no working directory', async () => {

@@ -122,7 +122,101 @@ describe('claude-cli-provider run settlement', () => {
     expect(assistant[1]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
     const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
-    expect(append).toHaveBeenCalledWith(child.id, child.events)
+    // The live mirror persists during the run; the settle mirror persists the
+    // final event set (with turn/end) after exit — wait for that last write.
+    await vi.waitFor(() => {
+      expect(append).toHaveBeenCalledWith(child.id, child.events)
+    })
+    await done
+  })
+
+  it('mirrors the stream-json live during the run and settles without duplicates', async () => {
+    const child = Session.create(SessionId('child-live-claude'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
+    ctx.provide('localAgent', {
+      reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
+        reports.push({ id, progress })
+      },
+    } as never)
+
+    // A controllable child: stdout stays open, done resolves when the test
+    // finishes the process.
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4246,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startClaudeCliRun(request, {
+      cwd: '/tmp',
+      env: {},
+      permissionMode: 'normal',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+
+    const emit = (...events: unknown[]): void => {
+      stdout.push(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    }
+    // The tool_use line is held back as the volatile last line; its
+    // tool_result merges into it before anything mirrors.
+    emit(
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'echo hi' } }] } },
+    )
+    emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'hi' }] } })
+
+    // The next line un-holds the merged tool line: the user prompt and the
+    // tool step mirror while the process is STILL running.
+    emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'Task complete.' }] } })
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    const firstAssistant = child.events.filter(event => event.type === 'assistant/message')
+    expect((firstAssistant[0]!.data as { message: { content: unknown } }).message.content)
+      .toEqual([{ type: 'text', text: '[工具 Bash] echo hi → hi' }])
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(reports.some(report => report.progress.kind === 'delta')).toBe(true)
+
+    // The terminal result flushes the held text line with the round's usage.
+    emit({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 2, output_tokens: 5 } })
+    await vi.waitFor(() => {
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
+
+    // Settle: the live mirror already covered the stream — no duplicates.
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 2)).toBe(true)
+    })
+    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(2)
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
     await done
   })
 
