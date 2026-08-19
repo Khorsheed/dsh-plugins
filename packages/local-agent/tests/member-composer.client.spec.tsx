@@ -40,14 +40,19 @@ function owner(session: Partial<ConversationSnapshot> | undefined): ComposerChai
 function props(
   over: Partial<MemberComposerProps> = {},
   running = false,
+  usage?: { uncachedInputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number },
 ): MemberComposerProps {
   const snapshot = { running } as ConversationSnapshot
   function useSession<T>(select: (state: ConversationSnapshot) => T): T {
     return select(snapshot)
   }
+  function useProjection(key: string): unknown {
+    return key === 'tokenUsage' ? usage : undefined
+  }
   return {
     matched: { childSessionId: CHILD },
     useSession,
+    useProjection,
     memberOf: () => Promise.resolve(MEMBER),
     promptMember: () => Promise.resolve({ ok: true } satisfies LocalAgentPromptResult),
     stopMember: () => Promise.resolve(true),
@@ -165,5 +170,47 @@ describe('MemberComposer', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } })
     expect(send.disabled).toBe(true)
     expect(promptMember).not.toHaveBeenCalled()
+  })
+
+  describe('stats line', () => {
+    const USAGE = { uncachedInputTokens: 100, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 0 }
+
+    it('renders nothing when the session has no token usage', async () => {
+      const { container } = render(<MemberComposer {...props()} />)
+      await screen.findByRole('textbox')
+      expect(container.querySelector('[data-member-stats]')).toBeNull()
+    })
+
+    it('computes the cache-hit share over the three billing buckets and shows token totals', async () => {
+      // 300 cache-read over 400 billed input = 75%.
+      const { container } = render(<MemberComposer {...props({}, false, USAGE)} />)
+      await screen.findByRole('textbox')
+
+      const stats = container.querySelector('[data-member-stats]')
+      expect(stats).not.toBeNull()
+      expect(stats!.textContent).toContain(zh['member.stats.cacheHit'].replace('{percent}', '75'))
+      expect(stats!.textContent).toContain(
+        zh['member.stats.tokens'].replace('{input}', '400').replace('{output}', '50'),
+      )
+    })
+
+    it('formats token totals compactly and drops the cache group when no input was billed', async () => {
+      const usage = { uncachedInputTokens: 0, outputTokens: 1_234_567, cacheReadTokens: 0, cacheWriteTokens: 0 }
+      const { container } = render(<MemberComposer {...props({}, false, usage)} />)
+      await screen.findByRole('textbox')
+
+      const stats = container.querySelector('[data-member-stats]')
+      expect(stats).not.toBeNull()
+      expect(stats!.textContent).not.toContain('缓存命中')
+      expect(stats!.textContent).toContain('1.2M')
+    })
+
+    it('never shows the stats line on the degraded read-only panel', async () => {
+      const memberOf = vi.fn().mockResolvedValue(null)
+      const { container } = render(<MemberComposer {...props({ memberOf }, false, USAGE)} />)
+
+      expect(await screen.findByText(zh['member.readonly.title'])).toBeTruthy()
+      expect(container.querySelector('[data-member-stats]')).toBeNull()
+    })
   })
 })

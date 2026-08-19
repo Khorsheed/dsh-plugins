@@ -94,6 +94,18 @@
   padding: 0 8px 6px;
 }
 
+/* Stats strip inside the card: quiet 12px tertiary like the official
+   StatsLine, replacing the dock line the elected fallback hides. */
+.stats {
+  padding: 0 16px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .primary {
   display: grid;
   place-items: center;
