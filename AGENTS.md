@@ -50,6 +50,7 @@ A second whole-tree checker, `pnpm check:plugins` (`scripts/check-plugin-indepen
 - Semver per package, independent lines. Before publishing, check the registry (`npm view <name> version`): the new version must exceed it. Publishing at or below the published version fails 403/409.
 - Publish via `scripts/pack-dist.ts` (`--family` rewrites scopes in peer deps) and verify the tarball before `npm publish`.
 - The version in package.json is the next-release line; bump it when cutting a release, not per commit.
+- The full pre-publish checklist and the failure-modes table live in [docs/publishing.md](docs/publishing.md) — follow it, do not improvise.
 
 ## Ops
 
