@@ -24,6 +24,15 @@ describe('rescopePackageJson', () => {
     expect(out['repository']).toBeUndefined()
   })
 
+  it('strips lifecycle scripts — they reference the repo toolchain, absent in staging and on consumers', () => {
+    const out = rescopePackageJson({
+      name: '@deepseek-ai/dsh-x',
+      version: '0.1.0-rc.5',
+      scripts: { prepare: 'npm run build', build: 'tsc && tsdown', test: 'vitest run' },
+    }, '@khorsheed/dsh-x', '0.1.0')
+    expect(out.scripts).toBeUndefined()
+  })
+
   it('renames family peers to the dist scope and ranges them on the dist version', () => {
     const family = new Map([['@deepseek-ai/dsh-file-preview', '@khorsheed/dsh-file-preview']])
     const out = rescopePackageJson({

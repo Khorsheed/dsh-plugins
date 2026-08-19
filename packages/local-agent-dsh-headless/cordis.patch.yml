@@ -59,7 +59,8 @@
         serverName: dsh-member
         transport: stdio
         command: !!js process.execPath
-        args: !!js [process.env.DSH_MEMBER_BRIDGE_ENTRY ?? '']
+        args:
+          - !!js process.env.DSH_MEMBER_BRIDGE_ENTRY || ''
         cwd: !!js process.cwd()
         env:
           DSH_MEMBER_SOCKET: !!js process.env.DSH_MEMBER_SOCKET ?? ''

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ChatConversationViewNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
@@ -72,7 +73,7 @@ function directoryState(over: Partial<ModelDirectoryState> = {}): ModelDirectory
 function props(over: {
   node?: ChatConversationViewNode
   snapshotNodes?: readonly ChatConversationViewNode[]
-  loadImage?: (attachment: unknown) => Promise<string>
+  renderMessageImages?: (owner: { images: readonly { attachment?: { name?: string } }[]; align: 'start' | 'end' }) => ReactNode
   editMessage?: (seq: number, text: string) => Promise<void>
   withdrawMessage?: (seq: number) => Promise<void>
   backfillDraft?: (text: string) => void
@@ -86,7 +87,7 @@ function props(over: {
   const directory = over.directory ?? directoryState()
   return {
     node,
-    loadImage: over.loadImage ?? vi.fn(async () => 'blob:image'),
+    renderMessageImages: over.renderMessageImages ?? vi.fn(() => null),
     t,
     useSession: (select: (snapshot: ConversationSnapshot) => unknown) => select(snapshot),
     editMessage: over.editMessage ?? vi.fn(async () => {}),
@@ -162,18 +163,23 @@ describe('UserMessageView images and extra blocks', () => {
     attachmentId: 'a1', mediaType: 'image/png', bytes: 10, width: 200, height: 100, name: 'photo.png',
   }
 
-  it('loads image blocks through the gallery next to the bubble text', async () => {
-    const loadImage = vi.fn(async () => 'blob:photo')
+  /** Stand-in for the rc8 attachment-slot renderer: one <img> per owned image. */
+  const galleryStub = (owner: { images: readonly { attachment?: { name?: string } }[] }): ReactNode => (
+    <>{owner.images.map((image, index) => <img key={index} alt={image.attachment?.name ?? 'image'} />)}</>
+  )
+
+  it('renders image blocks through the owner-prop attachment slot next to the bubble text', async () => {
+    const renderMessageImages = vi.fn(galleryStub)
     const node = userNode([{ type: 'text', text: '看图' }, { type: 'image', attachment }])
-    render(<UserMessageView {...props({ node, loadImage })} />)
+    render(<UserMessageView {...props({ node, renderMessageImages })} />)
     expect(screen.getByText('看图')).toBeTruthy()
-    expect(loadImage).toHaveBeenCalled()
+    expect(renderMessageImages).toHaveBeenCalledWith({ images: [{ attachment }], align: 'end' })
     expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy()
   })
 
   it('omits the bubble for an image-only message', async () => {
     const node = userNode([{ type: 'image', attachment }])
-    render(<UserMessageView {...props({ node })} />)
+    render(<UserMessageView {...props({ node, renderMessageImages: vi.fn(galleryStub) })} />)
     expect(await screen.findByRole('img')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /附加内容块/ })).toBeNull()
   })

@@ -93,6 +93,10 @@ export function rescopePackageJson(
   delete out.dependencies
   delete out['publishConfig']
   delete out['repository']
+  // Lifecycle hooks reference the repo build toolchain, which exists neither
+  // in the staging dir (pnpm pack would run `prepare` there) nor on
+  // consumers' machines — dist manifests carry no scripts.
+  delete out.scripts
   for (const section of ['peerDependencies', 'devDependencies'] as const) {
     const deps = out[section]
     if (deps === undefined) continue

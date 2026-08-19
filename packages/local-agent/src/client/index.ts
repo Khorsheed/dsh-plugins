@@ -44,7 +44,7 @@ export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /** The run-command face for user-initiated login/logout/preset actions. */
 function runCommand(ctx: ClientContext, sessionId: SessionId, line: string): Promise<string | undefined> {
-  return ctx.remote.commands.execute(sessionId, line).then(result => (result.ok ? result.value?.result.text : undefined))
+  return ctx.remote.commands.execute(sessionId, line, []).then(result => (result.ok ? result.value?.result.text : undefined))
 }
 
 /**

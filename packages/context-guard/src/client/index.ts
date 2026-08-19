@@ -90,7 +90,7 @@ export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>):
       thresholdRatio: fallback.thresholdRatio,
       // Failure strings stay English (error-surface policy: not localized).
       compactNow: async () => {
-        const result = await ctx.remote.commands.execute(sessionId, '/compact')
+        const result = await ctx.remote.commands.execute(sessionId, '/compact', [])
         if (!result.ok) return `${result.error.message} (${result.error.code})`
         if (result.value === undefined) return 'unknown command: /compact'
         return null

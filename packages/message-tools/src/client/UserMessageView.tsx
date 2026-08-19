@@ -2,10 +2,12 @@
  * Shadow user-message renderer (keys 'user' and 'steering', priority -1; also
  * the plugin's own 'message-tools-edited' and 'message-tools-restored' rows):
  * a visual clone of the official bubble chrome — ui-conversation ships no
- * public components, so the structure is replicated against
- * ui-primitives/ui-attachment platform modules — plus the copy/edit/withdraw
- * action row and the「已编辑」/「已恢复」labels. User messages inside a
- * withdrawn span render nothing; the withdrawal divider marks the spot.
+ * public components, so the structure is replicated against ui-primitives
+ * platform modules, with historical images rendered through the owner-prop
+ * `renderMessageImages` attachment slot (rc8 contract) — plus the
+ * copy/edit/withdraw action row and the「已编辑」/「已恢复」labels. User
+ * messages inside a withdrawn span render nothing; the withdrawal divider
+ * marks the spot.
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual, type ConversationSnapshot, type UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
@@ -13,7 +15,6 @@ import {
   Button, IconCheckOutline16, IconCopyOutline16, IconEditOutline16,
   JsonBlock, MessageText, RiskConfirmation, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ImageGallery, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
 import { IconUndoOutline16 } from './icons.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'
@@ -70,18 +71,6 @@ function projectUserText(text: string): ReactNode {
   if (parts.length === 0) return <MessageText text={text} />
   if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
   return <>{parts}</>
-}
-
-/** Resolve the message-image strings from this plugin's namespace. */
-function imageLabels(t: Translate): MessageImageLabels {
-  return {
-    image: t('image.label'),
-    open: t('image.openOriginal'),
-    openNamed: label => t('image.openOriginalLabel', { label }),
-    loading: t('image.loading'),
-    loadFailed: t('image.loadFailed'),
-    lightbox: { dialog: t('image.preview'), close: t('image.closePreview') },
-  }
 }
 
 /** Copy action: the copy icon swaps to a short-lived check after a successful write. */
@@ -184,7 +173,7 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
-  node, loadImage, t, useSession, editMessage, withdrawMessage, backfillDraft,
+  node, renderMessageImages, t, useSession, editMessage, withdrawMessage, backfillDraft,
   useModelDirectory, modelsAvailable, loadModels, selectModel,
 }: UserMessageViewProps): ReactNode {
   const ranges = useSession(selectHiddenRanges, shallowEqual)
@@ -251,7 +240,7 @@ export const UserMessageView = memo(function UserMessageView({
         {node.kind === 'message-tools-restored' && (
           <div className={css.editedLabel}>{t('withdrawn.restored')}</div>
         )}
-        <ImageGallery images={images} load={loadImage} align="end" labels={imageLabels(t)} />
+        {images.length > 0 ? renderMessageImages({ images, align: 'end' }) : null}
         {showBubble && (
           <div className={css.bubble}>
             {projectUserText(text)}
