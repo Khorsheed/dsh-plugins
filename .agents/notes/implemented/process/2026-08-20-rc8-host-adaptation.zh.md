@@ -17,7 +17,7 @@ Status: implemented
 
 - **四个包适配，六处调用/渲染点**:context-guard(/compact 动作）、local-agent（设置的登录/登出/preset 命令）、taskpilot(stop/interrupt 动词）为新 `images` 参数传 `[]`;message-tools 的 `UserMessageView` 改用 owner-prop `renderMessageImages({ images, align: 'end' })` 渲染历史图片，移除对 `dsh-client-ui-attachment` 的 import（及其 peer/dev 依赖）和旧 gallery 消费的本插件 `image.*` 语言键。测试同步更新到新契约。
 - **这四个包的 `dsh.compat.minHost` 提到 `0.1.0-rc.8`**——minHost 是经验证的地板（依 rc.7 同步笔记的语义），而这四个包的地板真的移动了：当前构建在 rc.6/rc.7 宿主上会出错。其余包保持 `0.1.0-rc.6`(rc.7→rc.8 审计显示它们消费的面无变化或纯增量）。
-- **开发基线迁到 rc.8**：所有包的 `@deepseek-ai/dsh-*` devDependencies 解析 `^0.1.0-rc.8`(`dsh-client-web-react` 除外——它没有 rc.8);peer 范围按约定保持宽线 `^0.1.0-rc.6`;lockfile 已刷新（151 个 rc.8 包，零旧线第二副本）。
+- **开发基线迁到 rc.8**：所有包的 `@deepseek-ai/dsh-*` devDependencies 解析 `^0.1.0-rc.8`(`dsh-client-web-react` 除外——它没有 rc.8);peer 范围按约定保持宽线 `^0.1.0-rc.6`;lockfile 已刷新（151 个 rc.8 包，零旧线第二副本）。**`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 必须随宿主线一起换**：本次适配最初只升了 lockfile、没重写 rc.7 时代的排除列表，导致全部 rc.8 包都落在供应链策略的发布时间窗口内——主 checkout 彻底无法 `pnpm install`，直到按 lockfile 里实际的 75 条 rc.8 记录重写排除列表才恢复（`3a5e07d`，与 rc.7 时 `3743226` 的处理相同）。今后每次升宿主线都必须带这一步。
 - **部署检出**(`~/code/deepseek-harness`)：沿用 rc.7 程序——guard 检查点、备份分支 `deploy-pre-rc8`、硬重置到上游 rc.8 发布合并、经 preflight 门禁由 `schedule-exit` 触发看门狗重启。taskpilot 的类型解析自该检出（`scripts/sync-harness-paths.mjs`)，所以它的构建在重置后才转绿。
 - **纯净实例**(`~/.dsh-vanilla/toolchain`):npm 安装 `@deepseek-ai/dsh@0.1.0-rc.8`，在 3081 提供零插件的 rc.8 基线。
 - **README Compatibility 段**在全部 17 个既有包中重新标注到 rc.8 线（中英双语，sidecar 重录）;local-agent 家族三个缺该段的 README 补齐了。其他 agent 新增的包（datasets、mission、lab）留给各自负责人。
