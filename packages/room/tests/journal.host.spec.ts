@@ -244,4 +244,8 @@ describe('parseRelayDirective (the fallback notification channel)', () => {
   it('tolerates trailing blank lines after the directive', () => {
     expect(parseRelayDirective('做完了。\n@bill 请接手\n\n')).toEqual({ to: 'bill', content: '请接手' })
   })
+
+  it('tolerates an indented trailing line (models indent under their own list style)', () => {
+    expect(parseRelayDirective('• 收到通知。\n\n  @ada 收到，请把接口文档发我')).toEqual({ to: 'ada', content: '收到，请把接口文档发我' })
+  })
 })

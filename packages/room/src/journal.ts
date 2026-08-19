@@ -78,14 +78,16 @@ export function parseMentions(raw: string): { readonly targets: readonly string[
  * The fallback notification channel: a member reply's TRAILING own line of
  * the form `@name <content>` (the format the roster injection teaches).
  * Only the last line counts — an `@name` inside prose is a mention, not a
- * notification. The caller checks the target against the roster.
+ * notification. Leading whitespace on that line is tolerated (models indent
+ * under their own bullet/list style). The caller checks the target against
+ * the roster.
  * @param text - the member's reply text.
  * @returns the parsed directive, or undefined.
  */
 export function parseRelayDirective(text: string): { readonly to: string; readonly content: string } | undefined {
   const trimmed = text.trimEnd()
   if (trimmed === '') return undefined
-  const last = trimmed.slice(trimmed.lastIndexOf('\n') + 1)
+  const last = trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart()
   const match = /^@(\S+)\s+(\S[\s\S]*)$/.exec(last)
   if (match === null) return undefined
   return { to: match[1]!, content: match[2]!.trim() }
