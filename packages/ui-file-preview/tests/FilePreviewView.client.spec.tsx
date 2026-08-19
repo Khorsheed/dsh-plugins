@@ -515,6 +515,30 @@ describe('FilePreviewView', () => {
     expect(screen.getByText('count')).toBeTruthy()
   })
 
+  it('renders HTML in a sandboxed iframe by default and toggles to source', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<h1>Hello</h1>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    // Render view is the default: a fully sandboxed iframe carrying the
+    // document (no scripts/forms — the official pipeline keeps HTML literal,
+    // so the render view is the plugin's own sandboxed channel).
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('srcdoc')).toBe('<h1>Hello</h1>')
+      expect(frame?.getAttribute('sandbox')).toBe('')
+    })
+    // The toggle flips to the source code view.
+    act(() => { screen.getByText('preview.htmlSource').click() })
+    expect(await screen.findByText('<h1>Hello</h1>')).toBeTruthy()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {
     const h = makeHarness()
     h.listFiles.mockResolvedValue({

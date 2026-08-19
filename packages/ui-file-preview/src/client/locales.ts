@@ -12,6 +12,9 @@ export type FilePreviewKey =
   | 'preview.search.noMatch'
   | 'preview.search.prev'
   | 'preview.search.next'
+  | 'preview.htmlToggle'
+  | 'preview.htmlSource'
+  | 'preview.htmlRender'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -72,6 +75,9 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.search.noMatch': '没有匹配内容',
   'preview.search.prev': '上一个匹配',
   'preview.search.next': '下一个匹配',
+  'preview.htmlToggle': 'HTML 视图',
+  'preview.htmlSource': '源码',
+  'preview.htmlRender': '渲染',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
@@ -126,6 +132,9 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.search.noMatch': 'No matching content',
   'preview.search.prev': 'Previous match',
   'preview.search.next': 'Next match',
+  'preview.htmlToggle': 'HTML view',
+  'preview.htmlSource': 'Source',
+  'preview.htmlRender': 'Render',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',

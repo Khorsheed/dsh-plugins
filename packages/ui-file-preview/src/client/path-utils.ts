@@ -61,6 +61,15 @@ export function relativeToCwd(path: string, cwd: string | undefined): string {
   return path.startsWith(rooted) ? path.slice(rooted.length) : path
 }
 
+/** Whether a path names an HTML document (`.html`/`.htm`), offered a
+ * sandboxed render view alongside the source view. */
+export function isHtmlPath(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  const ext = path.slice(dot).toLowerCase()
+  return ext === '.html' || ext === '.htm'
+}
+
 /** Map a file extension to a prism language name for CodeBlock, or undefined to auto-detect. */
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
   '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
