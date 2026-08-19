@@ -61,6 +61,11 @@
 
 **两包边界与 SW 所有权**：包 B **独立可用**（自带最小 SW，含 push / notificationclick 处理——不装包 A 也能在浏览器收推送）；包 A 专注缓存与安装。两者都注册 SW 时所有权在实现期对齐（如包 A 的 `sw.js` 经 `importScripts` 组合包 B 的 push 模块，或注册入口统一由 tapIndex 注入），README 写明"独立可用、共存协商"。**不装包 A 时包 B 推送可用；不装包 B 时包 A 安装 + 离线壳可用。**
 
+**平台支持条件（iPhone 与 Android 不同）**：
+- **Android（Chrome）**：任意网页可直接订阅 Web Push，无前置条件。
+- **iPhone（iOS 16.4+，Safari）**：**必须先"添加到主屏"成为 Web App，再在其中请求通知权限**，普通 Safari 标签页不能收推送——与包 A 天然配套，iPhone 用户路径固定为「包 A 安装提示 → 添加到主屏 → Web App 内授权通知 → 收推送」，README 写明该路径。
+- **iOS < 16.4**：不支持 Web Push，由 M4 bot 通道（IM 平台推送，与 iOS 版本无关）兜底。
+
 - **依赖面**：`webServer.tapIndex` / `webServer.register`（公开）、session 事件（公开）、`ctx.credentials`（公开）、Push API（浏览器标准）——零官方改动。
 
 ### M3 移动 UI 适配（纯插件；降级路径即最终形态）
@@ -94,7 +99,7 @@
 ## 验收标准（done 判定，绑定可插拔交付）
 
 1. **M1**：手机在非同一 WiFi（4G/5G）可访问完整 Web UI；无 token 请求在网关层被拒（实测 401/403）；dsh 进程零代码改动（仅配置）。→ done。
-2. **M2**：Chrome/Safari 可将 dsh 安装为主屏 App、全屏运行；任务完成推送到达且点击深链回正确会话；**两包独立可装可卸——不装包 A 时包 B 推送仍工作，反之亦然**。→ done。
+2. **M2**：Chrome/Safari 可将 dsh 安装为主屏 App、全屏运行；任务完成推送到达且点击深链回正确会话；**两包独立可装可卸——不装包 A 时包 B 推送仍工作（Android），反之亦然**；**iPhone（iOS 16.4+）实测：添加到主屏后推送可达，普通标签页不可达（README 写明路径）**。→ done。
 3. **M3**：手机视口（实测 390px）下单栏沉浸可用；官方样式变更导致覆盖失效时静默降回三栏（单元 spec 覆盖 fallback 路径）；`dsh plugin add` / `remove` 可装可卸、热卸载干净。→ done（体验上限 = 单栏沉浸，README 如实说明）。
 4. **M4**：bot 问 → 答端到端；主动推送到达；深链回会话正确。→ done。
 5. 每包 `pnpm run build && pnpm run test` 绿；双语 README + Compatibility 段 + `dsh.compat`；Agent Note 三件套。
@@ -104,5 +109,5 @@
 - **不做进程内登录页**：认证完全依赖网关前置（basic-auth / Tailscale 身份）——单用户场景的可接受取舍；若未来出现多用户需求，只能等官方提供 seam 或更换部署形态，提案届时重开。
 - **移动 UI 上限为单栏沉浸**：无法改 AppFrame 内部结构，抽屉导航 / 底部输入栏等形态不做；CSS 覆盖依赖官方 DOM 结构，按 last-resort 纪律带 fallback，失效静默降回三栏，绝不破坏布局。
 - **宿主机器必须保持开机在线**（Tailscale 免费版 100 设备 / 3 用户，单用户无虞）——这是"随时随地"的唯一前提，文档写明。
-- **Web Push 依赖系统通知权限**，用户可关；Bot 通道作为互补，两者不互斥。
+- **Web Push 依赖系统通知权限，且 iPhone 必须先"添加到主屏"（iOS 16.4+）才能收推送，iOS < 16.4 完全不支持**——用户可关权限、旧 iPhone 无解；M4 bot 通道（IM 平台推送）作为与 iOS 版本无关的兜底，两者不互斥。
 - **放弃**：原生 App（Tauri / Capacitor）商店分发——单用户场景 ROI 低，且移动适配照样躲不掉，留待需求出现；不做离线全量数据（仅离线壳）；不做多用户 / 团队体系。
