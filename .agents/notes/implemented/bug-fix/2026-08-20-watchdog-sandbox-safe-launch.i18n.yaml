@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-watchdog-sandbox-safe-launch.md
+.agents/notes/implemented/bug-fix/2026-08-20-watchdog-sandbox-safe-launch.md: 1c45553ad122a9c77ccdd2a2327f61732891d425
+.agents/notes/implemented/bug-fix/2026-08-20-watchdog-sandbox-safe-launch.zh.md: 623410d4f21d923ea8455d61e494000a1646d451
