@@ -1,7 +1,7 @@
 # 通用版本化数据集存储（datasets）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（M1 已交付，见实现记录）
 - **最后更新**：2026-08-19
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived），无重复；本提案由 `datasets-mission` 合并提案拆出（姊妹提案：[通用任务管理 mission](2026-08-19-mission-tasks.md)；首个消费方：[受控实验单元 lab](2026-08-19-lab-experiment-units.md)）
 - **官方依赖**：纯插件（所需契约均已实测存在：`ctx.commands`、`ctx.tools`、session log-only 自定义事件；内容即 git 仓库，无额外持久化依赖）
@@ -147,7 +147,7 @@ suites/harness-comparison/
 
 ## 实现记录
 
-（实施时追加 Agent Note / PR / 包名）
+- **M1 已交付**（2026-08-19，commit `d8cc48f`）：布局约定（JSON descriptor）+ 会话绑定（log-only session 事件）+ 服务/CLI/工具三面 + worktree 管理（sparse-checkout 限层、去重、lock/prune、flock）+ invariant；39 测试全绿。Agent Note：`.agents/notes/implemented/feature/2026-08-19-datasets-store-m1.md`（含偏离说明：JSON descriptor、CLI bind 离线写日志、put_item 白名单收紧）。待办：活 profile 的 `dsh plugin add` 冒烟（验收 1、2 的实例部分）。
 
 ## 验收标准（done 判定）
 

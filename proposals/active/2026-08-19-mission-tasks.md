@@ -1,7 +1,7 @@
 # 通用任务管理（mission）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（M1 已交付，见实现记录）
 - **最后更新**：2026-08-19
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived），无重复；本提案由 `datasets-mission` 合并提案拆出（姊妹提案：[通用版本化数据集存储 datasets](2026-08-19-datasets-store.md)；消费方：[受控实验单元 lab](2026-08-19-lab-experiment-units.md)）
 - **官方依赖**：纯插件（所需契约均已实测存在：`ctx.commands`、`ctx.tools`、`ctx.provide`/`ctx.get`、`ctx.sessions`/`ctx.subagents.listChildren`；持久化走 ankh-guard 先例的自管 JSON，不依赖仅 web profile 挂载的 storageDomain）
@@ -321,7 +321,7 @@ matrix: { tasks: from-dataset, players: [A-codex, B-claude-code, C-kimi, D-dsh],
 
 ## 实现记录
 
-（实施时追加 Agent Note / PR / 包名）
+- **M1 已交付**（2026-08-19，commit `a014417`）：store（手写锁 + 原子写 + 追加数据目录）+ 声明式状态机与三种 guard + 手写 JSON Schema 子集校验器 + run lint + simple 模板与隐式 run + 五桶投影 + checkpoint + 服务面全方法集 + 12 个模型工具 + CLI；48 测试全绿。Agent Note：`.agents/notes/implemented/feature/2026-08-19-mission-m1.md`（含偏离说明：JSON 模板、simple 模板 releasableStates 为空、retry 不幂等、submit 预校验语义）。待办：活 profile 冒烟（验收 1）。
 
 ## 验收标准（done 判定）
 
