@@ -113,6 +113,9 @@ describe('DatasetsView', () => {
     fireEvent.click(row)
     expect(await screen.findByText('i1')).toBeTruthy()
     expect(h.listDatasets).toHaveBeenCalledWith('s1', 'alpha')
+    // Item metadata renders as quiet chips, never the raw JSON string.
+    expect(await screen.findByText('difficulty: hard')).toBeTruthy()
+    expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
     const file = await screen.findByText('task.md')
@@ -153,6 +156,31 @@ describe('DatasetsView', () => {
     await waitFor(() => {
       expect(h.instance.getSnapshot().refreshRev).toBe(1)
     })
+  })
+
+  it('a JSON file previews through the official JsonTree inside the block chrome', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
+      ok: true as const,
+      value: dataset === undefined ? DATASETS : {
+        kind: 'items' as const,
+        dataset: DATASETS.datasets[0]!,
+        items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
+      },
+    }))
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { content: '{\"difficulty\":\"hard\",\"tags\":[\"a\"]}\n', commit: 'a4f9c2e0000' },
+    })
+    renderView(h)
+    fireEvent.click(await screen.findByText('alpha'))
+    fireEvent.click(await screen.findByText('i1'))
+    fireEvent.click(await screen.findByText('meta.json'))
+    // The document view carries the official block chrome's format banner.
+    expect(await screen.findByText('json')).toBeTruthy()
+    // The JsonTree inspector renders the parsed keys, not the source text.
+    expect(await screen.findByText('difficulty:')).toBeTruthy()
+    expect(screen.queryByText('\"tags\"')).toBeNull()
   })
 
   it('a failed read surfaces the error message', async () => {

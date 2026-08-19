@@ -27,6 +27,18 @@ export type DatasetsKey =
   | 'preview.empty'
   | 'preview.loading'
   | 'preview.error'
+  | 'tree.fileCount'
+  | 'tree.moreMeta'
+  | 'json.copyValue'
+  | 'json.copyJson'
+  | 'json.copyPath'
+  | 'json.copyPrettyJson'
+  | 'json.copyCompactJson'
+  | 'json.copied'
+  | 'json.copyFailed'
+  | 'json.collapseNode'
+  | 'json.expandNode'
+  | 'json.copyButtonTitle'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -59,6 +71,18 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.empty': '在左侧选择一个文件查看内容',
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
+  'tree.fileCount': '{count} 个文件',
+  'tree.moreMeta': '+{count}',
+  'json.copyValue': '复制值',
+  'json.copyJson': '复制 JSON',
+  'json.copyPath': '复制属性路径',
+  'json.copyPrettyJson': '复制格式化 JSON',
+  'json.copyCompactJson': '复制紧凑 JSON',
+  'json.copied': '已复制',
+  'json.copyFailed': '复制失败',
+  'json.collapseNode': '折叠 JSON 节点',
+  'json.expandNode': '展开 JSON 节点',
+  'json.copyButtonTitle': '{action}；右键查看更多复制选项',
 }
 
 /** English dictionary. */
@@ -85,4 +109,16 @@ export const en: Record<DatasetsKey, string> = {
   'preview.empty': 'Select a file on the left to preview it',
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
+  'tree.fileCount': '{count} files',
+  'tree.moreMeta': '+{count}',
+  'json.copyValue': 'Copy value',
+  'json.copyJson': 'Copy JSON',
+  'json.copyPath': 'Copy property path',
+  'json.copyPrettyJson': 'Copy pretty JSON',
+  'json.copyCompactJson': 'Copy compact JSON',
+  'json.copied': 'Copied',
+  'json.copyFailed': 'Copy failed',
+  'json.collapseNode': 'Collapse JSON node',
+  'json.expandNode': 'Expand JSON node',
+  'json.copyButtonTitle': '{action}; right-click for copy options',
 }

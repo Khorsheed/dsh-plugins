@@ -1,6 +1,9 @@
 /* Conversation datasets view: binding bar on top, then a two-pane browser
    (dataset/item tree + content preview) filling the bounded view area; each
-   pane scrolls independently. */
+   pane scrolls independently. The tree follows the official row language
+   (sidebar session list, directory browser): 28px pill rows, 6px radius,
+   transparent → interactive hover/active tokens, 14px chevrons, quiet
+   tertiary annotations, ellipsis everywhere. */
 
 .view {
   display: flex;
@@ -29,6 +32,7 @@
   gap: 8px;
   min-width: 0;
   font-size: 12px;
+  line-height: 18px;
 }
 
 .bindingRepo {
@@ -51,24 +55,14 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.action {
-  flex: none;
-  padding: 2px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.action:hover {
-  border-color: var(--dsw-static-deepseek-500);
-}
-
 .notice {
-  color: var(--dsw-alias-label-danger, #d43f3a);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .bindForm {
@@ -81,25 +75,7 @@
 .bindFormTitle {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-}
-
-.bindInput {
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  outline: none;
-  background: var(--dsw-alias-bg-base);
-  font-size: 12px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.bindInput:focus {
-  border-color: var(--dsw-static-deepseek-500);
-}
-
-.bindInput::placeholder {
-  color: var(--dsw-alias-label-tertiary);
+  line-height: 18px;
 }
 
 .bindFormActions {
@@ -119,7 +95,7 @@
   flex: none;
   flex-direction: column;
   gap: 2px;
-  width: 260px;
+  width: 264px;
   min-width: 0;
   min-height: 0;
   padding: 8px 8px calc(8px + var(--dsh-datasets-bottom-clearance, 0px));
@@ -131,6 +107,7 @@
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .dataset {
@@ -138,110 +115,122 @@
   flex-direction: column;
 }
 
-.datasetRow {
+/* One disclosure row (dataset or item): the official 28px pill. */
+.row {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 4px 8px 4px 4px;
   border: none;
   border-radius: 6px;
-  background: none;
+  background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
 }
 
-.datasetRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.twisty {
+.chevron {
   flex: none;
-  width: 12px;
+  display: grid;
+  place-items: center;
+  width: 14px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.datasetId {
+.rowTitle {
   overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.datasetName {
+.rowNote {
+  flex: 1;
   overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.datasetCount {
+.rowCount {
   flex: none;
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
+/* Item rows indent one chevron slot under their dataset. */
 .item {
   display: flex;
   flex-direction: column;
-  padding-left: 12px;
 }
 
-.itemRow {
+.item > .row {
+  padding-left: 22px;
+}
+
+.metaPills {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.itemRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
-}
-
-.itemId {
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.itemMeta {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.layer {
+/* Layer groups sit under the item label: a quiet group header with the file
+   count, then the layer-relative file rows. */
+.layerGroup {
   display: flex;
   flex-direction: column;
-  padding-left: 20px;
+  padding-left: 40px;
 }
 
-.layerRow {
-  padding: 2px 8px;
+.layerHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 2px 8px 2px 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+}
+
+.layerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fileRow {
   display: block;
+  flex: none;
   overflow: hidden;
-  padding: 2px 8px 2px 20px;
+  width: 100%;
+  height: 26px;
+  padding: 3px 8px;
   border: none;
   border-radius: 6px;
-  background: none;
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-  font-family: var(--dsw-alias-font-mono, monospace);
+  line-height: 20px;
+  font-family: var(--ds-font-family-code);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -249,11 +238,13 @@
 }
 
 .fileRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
-.fileRowSelected {
-  background: var(--dsw-alias-bg-selected, rgba(0, 0, 0, 0.08));
+.fileRowSelected,
+.fileRowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-interactive-bg-hover));
   color: var(--dsw-alias-label-primary);
 }
 
@@ -273,25 +264,28 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .previewPath {
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-alias-font-mono, monospace);
+  font-family: var(--ds-font-family-code);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .previewCommit {
   flex: none;
+  margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-alias-font-mono, monospace);
+  font-family: var(--ds-font-family-code);
+  font-variant-numeric: tabular-nums;
 }
 
 .previewScroll {
   flex: 1;
   min-height: 0;
-  padding: 12px 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
+  padding: 0 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow: auto;
 }

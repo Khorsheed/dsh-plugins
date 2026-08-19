@@ -7,10 +7,18 @@
  * official reader primitives (see preview.tsx). All data comes from the
  * injected Remote callbacks; the whitelist the binding declares is enforced
  * host-side, so the tree only ever shows what the session may see.
+ *
+ * The visual language follows the official trees (sidebar session list,
+ * directory browser): 28px pill rows on the interactive hover/active tokens,
+ * 14px chevrons, quiet tertiary annotations, and official Button/Input/Pill
+ * atoms for the chrome.
  */
 
 import { useEffect, useState } from 'react'
-import type { DatasetBinding, ItemRecord, ListItemsResult } from '../types.ts'
+import {
+  Button, IconChevronDownOutline14, IconChevronRightOutline14, Input, Pill,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
@@ -20,6 +28,32 @@ import css from './DatasetsView.module.css'
 function parseList(raw: string): string[] | undefined {
   const list = raw.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
   return list.length === 0 ? undefined : list
+}
+
+/** At most this many metadata chips show inline; the rest collapse into a +N pill. */
+const MAX_META_PILLS = 3
+
+/** One metadata entry as quiet chip text: scalars inline, containers summarized. */
+function metaPillText(key: string, value: unknown): string {
+  if (Array.isArray(value)) return `${key} [${value.length}]`
+  if (value !== null && typeof value === 'object') return `${key} {…}`
+  return `${key}: ${String(value)}`
+}
+
+/** An item's metadata as quiet chips — never the raw JSON string. */
+function MetaPills(props: { metadata: JsonObject; t: DatasetsViewProps['t'] }) {
+  const { metadata, t } = props
+  const entries = Object.entries(metadata)
+  if (entries.length === 0) return null
+  const shown = entries.slice(0, MAX_META_PILLS)
+  const rest = entries.length - shown.length
+  const full = JSON.stringify(metadata, null, 2)
+  return (
+    <span className={css.metaPills} title={full}>
+      {shown.map(([key, value]) => <Pill key={key}>{metaPillText(key, value)}</Pill>)}
+      {rest > 0 && <Pill>{t('tree.moreMeta', { count: rest })}</Pill>}
+    </span>
+  )
 }
 
 /**
@@ -54,33 +88,37 @@ function BindingForm(props: {
       }}
     >
       <div className={css.bindFormTitle}>{t('binding.form.title')}</div>
-      <input
-        className={css.bindInput}
+      <Input
         value={repo}
         onChange={event => { setRepo(event.target.value) }}
         placeholder={t('binding.form.repo')}
         aria-label={t('binding.form.repo')}
       />
-      <input
-        className={css.bindInput}
+      <Input
         value={datasets}
         onChange={event => { setDatasets(event.target.value) }}
         placeholder={t('binding.form.datasets')}
         aria-label={t('binding.form.datasets')}
       />
-      <input
-        className={css.bindInput}
+      <Input
         value={layers}
         onChange={event => { setLayers(event.target.value) }}
         placeholder={t('binding.form.layers')}
         aria-label={t('binding.form.layers')}
       />
       <div className={css.bindFormActions}>
-        <button type="submit" className={css.action}>{t('binding.form.submit')}</button>
-        <button type="button" className={css.action} onClick={onCancel}>{t('binding.form.cancel')}</button>
+        <Button type="submit" variant="primary" size="sm">{t('binding.form.submit')}</Button>
+        <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
       </div>
     </form>
   )
+}
+
+/** A dataset/item row chevron: the official 14px disclosure glyphs. */
+function Chevron(props: { open: boolean }) {
+  return props.open
+    ? <IconChevronDownOutline14 className={css.chevron} />
+    : <IconChevronRightOutline14 className={css.chevron} />
 }
 
 /** One item's layer/file tree (files are the leaf rows that drive the preview). */
@@ -89,23 +127,23 @@ function ItemNode(props: {
   item: ItemRecord
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, selection, onSelect } = props
+  const { dataset, item, selection, onSelect, t } = props
   const [open, setOpen] = useState(false)
   return (
     <div className={css.item}>
-      <button type="button" className={css.itemRow} onClick={() => { setOpen(!open) }}>
-        <span className={css.twisty}>{open ? '▾' : '▸'}</span>
-        <span className={css.itemId}>{item.id}</span>
-        {item.metadata !== undefined && (
-          <span className={css.itemMeta} title={JSON.stringify(item.metadata, null, 2)}>
-            {JSON.stringify(item.metadata)}
-          </span>
-        )}
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        <span className={css.rowTitle}>{item.id}</span>
+        {item.metadata !== undefined && <MetaPills metadata={item.metadata} t={t} />}
       </button>
       {open && Object.entries(item.layers).map(([layer, paths]) => (
-        <div key={layer} className={css.layer}>
-          <div className={css.layerRow}>{layer} ({paths.length})</div>
+        <div key={layer} className={css.layerGroup}>
+          <div className={css.layerHeader}>
+            <span className={css.layerName}>{layer}</span>
+            <span className={css.rowCount}>{t('tree.fileCount', { count: paths.length })}</span>
+          </div>
           {paths.map((path) => {
             const selected = selection !== null
               && selection.dataset === dataset && selection.item === item.id
@@ -250,12 +288,12 @@ export function DatasetsView(props: DatasetsViewProps) {
                 {' · '}
                 {binding.layers !== undefined ? binding.layers.join(', ') : t('binding.allLayers')}
               </span>
-              <button type="button" className={css.action} onClick={() => { setFormOpen(true) }}>
+              <Button size="sm" onClick={() => { setFormOpen(true) }}>
                 {t('binding.edit')}
-              </button>
-              <button type="button" className={css.action} onClick={clearBinding}>
+              </Button>
+              <Button size="sm" onClick={clearBinding}>
                 {t('binding.unbind')}
-              </button>
+              </Button>
             </div>
           )
           : (
@@ -263,9 +301,9 @@ export function DatasetsView(props: DatasetsViewProps) {
               <span className={css.bindingNone}>
                 {bindingLoaded ? t('binding.none') : t('list.loading')}
               </span>
-              <button type="button" className={css.action} onClick={() => { setFormOpen(true) }}>
+              <Button size="sm" variant="outline" onClick={() => { setFormOpen(true) }}>
                 {t('binding.bind')}
-              </button>
+              </Button>
             </div>
           )}
         {notice !== null && <div className={css.notice}>{notice}</div>}
@@ -296,13 +334,14 @@ export function DatasetsView(props: DatasetsViewProps) {
               <div key={dataset.id} className={css.dataset}>
                 <button
                   type="button"
-                  className={css.datasetRow}
+                  className={css.row}
                   onClick={() => { actions.expand(expanded ? null : dataset.id) }}
+                  aria-expanded={expanded}
                 >
-                  <span className={css.twisty}>{expanded ? '▾' : '▸'}</span>
-                  <span className={css.datasetId}>{dataset.id}</span>
-                  {dataset.name !== undefined && <span className={css.datasetName}>{dataset.name}</span>}
-                  <span className={css.datasetCount}>{t('list.itemCount', { count: dataset.itemCount })}</span>
+                  <Chevron open={expanded} />
+                  <span className={css.rowTitle}>{dataset.id}</span>
+                  {dataset.name !== undefined && <span className={css.rowNote}>{dataset.name}</span>}
+                  <span className={css.rowCount}>{t('list.itemCount', { count: dataset.itemCount })}</span>
                 </button>
                 {expanded && (items[dataset.id] ?? []).map(item => (
                   <ItemNode
@@ -311,6 +350,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                     item={item}
                     selection={selection}
                     onSelect={(next) => { actions.select(next) }}
+                    t={t}
                   />
                 ))}
               </div>
@@ -339,6 +379,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                 key={`${selection.item}/${selection.layer}/${selection.path}`}
                 path={selection.path}
                 content={preview.content}
+                t={t}
               />
             </div>
           )}

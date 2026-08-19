@@ -1,0 +1,45 @@
+/* Preview renderer styles: every document view (markdown / JSON tree) sits in
+   the same block chrome the official code and diff views use — a rounded
+   surface with a small format banner — so previews read as one family (the
+   products tab's scheme, replicated over official primitives). */
+
+.structured {
+  margin: 12px 0;
+  overflow: hidden;
+  background: var(--dsw-alias-markdown-code-block);
+  border-radius: 12px;
+}
+
+.structuredBanner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 6px 14px;
+  background: var(--dsw-alias-markdown-code-block-banner);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.structuredInfo {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.structuredBody {
+  padding: 12px 16px;
+  /* The official markdown typography is chat-sized (16px body, 24px h1) and
+     reads large inside a preview pane. Scale it down to a preview scale (14px
+     body), scoped to this pane's body so the chat is untouched. The tokens
+     mirror the theme's markdown font shorthand set. */
+  --dsw-font-markdown-base: 400 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-base-strong: 600 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-base-italic: italic 400 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-h1: 600 21px/30px var(--dsw-font-family);
+  --dsw-font-markdown-h2: 600 19px/28px var(--dsw-font-family);
+  --dsw-font-markdown-h3: 600 17px/26px var(--dsw-font-family);
+  --dsw-font-markdown-h4: 600 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-table: 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-table-head: 500 13px/22px var(--dsw-font-family);
+  --dsw-font-markdown-code: 12px/20px var(--ds-font-family-code);
+}
