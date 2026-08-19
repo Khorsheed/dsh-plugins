@@ -121,6 +121,7 @@ ctx.slots.inject('conversation.composer', () =>
 ## 实现记录
 
 - 底座提案：`proposals/active/2026-08-18-local-agent-delegation-api.md`（M1–M4 已合 main）。
+- M1 通道 + M2 composer 已落地（worktree 分支 `local-agent-member-channel`，commit `e6b516b` / `670210d`）：`memberOf` / `promptMember` / `stopMember` Remote、registry `getDelegation` 访问器、`conversation.composer` chain 条目（priority -20）与 MemberComposer（含降级只读渲染）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-channel.md`。
 - 评审记录：room 第二轮评审（2026-08-19）提出双向通道诉求；其 `prepareContinuable` 手段经 harness 源码核实不可行（§0），本提案为替代路线。2026-08-19 增补：room 明确成员互通知（CLI → CLI）为更高频场景，并入 M3。room 第三轮评审指出原 §3 直发与验收标准的闸门条款矛盾，修正为闸门交接（room 在场 → 交给 room 闸门；缺席/非 room → 直发），闸门所有权单一归于 room。
 - 背景 note：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方）。
 
