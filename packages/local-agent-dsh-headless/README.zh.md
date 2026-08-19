@@ -4,6 +4,12 @@
 
 `local-agent-dsh` harness 的子 dsh 一次性应用 bundle：基于 `dsh-base` 的直接 core Agent/Session 驱动，接受**调用方提供的会话 id**——`--session-id <id>` 用该确切 id 新建会话，`--resume <id>` 续接该 id 的既有会话——打印最终助手文本后退出。它是官方 `@deepseek-ai/dsh-headless` bundle 的兄弟版本，唯一区别是会话 id 归谁所有。
 
+## 挂载纪律
+
+**绝不要把这个 bundle 加进交互式 profile 的 `bundles`。** 它的 patch 携带子 profile 专属行——persona 覆盖、`hmr` 禁用、`tools` mode 覆盖、`code-runtime` insert、member-bridge MCP 行——挂进交互式组合会撞 `code-runtime` 重复 id，并把覆盖泄漏进真实用户会话。这个 bundle 只会被组合进 `headless-local-agent-dsh` 子 profile，由父侧 `local-agent-dsh` provider 在运行时自动 provision 到 dsh harness 的 scoped home 下（`provisionDshSubProfile`：子 profile 自己的 `package.json`、patch 层、bundle symlink 都在那里生成）——任何地方都不需要手工挂载。若确需主 profile 安全的形态，另拆一份 patch，不要复用这份。
+
+patch 改动落地前必须做启动级验证（对组合了本 bundle 的 profile 跑 `dsh preflight`，或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败，早于任何插件代码运行。`tests/patch.spec.ts` 在仓内钉住形状，但启动验证才是权威闸。
+
 ## 为什么用调用方提供的会话 id
 
 local-agent 家族需要在多次委派之间续接**同一个** dsh 对话。父级 provider 生成一个 uuid，并在每一轮传同一个值：fresh 轮用它创建子 dsh 会话，之后的 resume 轮恰好续接该会话。id 以调用参数传递，绝不经过 stdout——子 dsh stdout 保持格式纯净，没有分隔符前缀，也不会把恰好长得像 id 的任务回答误解析成会话 id。

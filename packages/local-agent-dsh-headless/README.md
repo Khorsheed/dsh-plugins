@@ -4,6 +4,12 @@
 
 The sub-dsh one-shot app bundle for the `local-agent-dsh` harness: a direct core Agent/Session runner over `dsh-base` that accepts a **caller-supplied session id** — `--session-id <id>` creates a fresh session with exactly that id, `--resume <id>` continues the existing session with that id — prints the final assistant text, and exits. It is the sibling of the official `@deepseek-ai/dsh-headless` bundle, differing only in who owns the session id.
 
+## Mounting discipline
+
+**Never add this bundle to an interactive profile's `bundles`.** Its patch carries sub-profile-only rows — a persona override, `hmr` disabled, a `tools` mode override, a `code-runtime` insert, and the member-bridge MCP row — that collide with an interactive composition (duplicate `code-runtime` id) and leak overrides into real user sessions. The bundle is composed ONLY into the `headless-local-agent-dsh` sub-profile, which the parent `local-agent-dsh` provider auto-provisions under the dsh harness's scoped home (`provisionDshSubProfile`): its own `package.json`, patch layer, and bundle symlink are written there at runtime — there is nothing to mount by hand anywhere. If a main-profile-safe variant is ever needed, split a separate patch instead of reusing this one.
+
+Patch edits must be boot-verified before landing (`dsh preflight` against a profile composing this bundle, or one real sub-dsh launch): the `!!js` tag is scalar-only and a mistagged collection fails at profile boot, before any plugin code runs. `tests/patch.spec.ts` pins the shape in-repo, but the boot check is the authoritative gate.
+
 ## Why a caller-supplied session id
 
 The local-agent family needs to continue the *same* dsh conversation across delegations. The parent provider generates one uuid and passes the same value on every round: the fresh round creates the sub-dsh session with it, and each resume round continues exactly that session. The id travels as an invocation flag, never through stdout — the sub-dsh stdout stays format-pure, with no delimiter prefix and no risk of a task answer that happens to contain an id-like string being misparsed.
