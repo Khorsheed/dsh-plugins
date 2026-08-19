@@ -34,8 +34,8 @@ describe('session-mirror', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const flush = vi.fn(async () => true)
+    ctx.provide('sessions', { flush })
 
     await mirrorKimiSession(ctx, child, home)
 
@@ -52,8 +52,9 @@ describe('session-mirror', () => {
     ])
     // assistant events attribute the kimi route
     expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'k3' })
-    // the mirrored batch reaches persistence
-    expect(append).toHaveBeenCalledWith(child.id, events)
+    // durability goes through the session store's flush barrier (the
+    // persistence coordinator buffers every appended event via session/event)
+    expect(flush).toHaveBeenCalledWith(child)
   })
 
   it('attaches the wire usage record to the final assistant message', async () => {
@@ -160,8 +161,8 @@ describe('session-mirror resume deltas', () => {
 
     const child = Session.create(SessionId('child-resume'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const flush = vi.fn(async () => true)
+    ctx.provide('sessions', { flush })
     // Round 1 mirrors what the wire contained then (turn/start already opened
     // by the provider, so the base turn is 1).
     child.append('turn/start', { turn: 1 })
@@ -208,8 +209,8 @@ describe('session-mirror resume deltas', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-offset'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const flush = vi.fn(async () => true)
+    ctx.provide('sessions', { flush })
 
     const total = await mirrorKimiSession(ctx, child, home, 's1', 0)
     expect(total).toBeGreaterThan(0)

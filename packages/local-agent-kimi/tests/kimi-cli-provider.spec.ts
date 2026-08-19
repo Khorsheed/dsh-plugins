@@ -56,8 +56,8 @@ describe('kimi-cli-provider run settlement', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-run-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const flush = vi.fn(async () => true)
+    ctx.provide('sessions', { flush })
     const { handle, done } = stubChild('run-1')
 
     const request = {
@@ -84,7 +84,7 @@ describe('kimi-cli-provider run settlement', () => {
       expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
     })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    expect(append).toHaveBeenCalledWith(child.id, child.events)
+    expect(flush).toHaveBeenCalledWith(child)
     await done
   })
 
@@ -652,8 +652,8 @@ describe('kimi-cli-provider abort path', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-abort-1'))
     const ctx = new Context()
-    const append = vi.fn(async () => {})
-    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const flush = vi.fn(async () => true)
+    ctx.provide('sessions', { flush })
     const hanging = hangingChild('run-1')
 
     const controller = new AbortController()
@@ -703,7 +703,7 @@ describe('kimi-cli-provider abort path', () => {
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '任务完成。' }])
     expect(assistant[0]!.data.usage).toBeUndefined()
-    expect(append).toHaveBeenCalled()
+    expect(flush).toHaveBeenCalled()
     await hanging.done
   })
 

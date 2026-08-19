@@ -62,8 +62,13 @@ export interface KimiMirrorDelta {
 /**
  * Mirror one kimi session's transcript into the dsh subagent session: each
  * user prompt becomes a `user/message`, each assistant reply (including
- * folded thinking and tool activity) an `assistant/message`, then the events
- * are appended to persistence so the child session is viewable.
+ * folded thinking and tool activity) an `assistant/message`, then the
+ * session store's flush barrier carries the appended events to durability
+ * (the persistence coordinator already buffers them via `session/event`,
+ * so `sessions.flush` writes exactly the pending delta — a direct
+ * `sessionPersistence.append` of the FULL event log double-writes and
+ * violates its contiguous-batch contract once the coordinator's cursor has
+ * moved past 0, e.g. after a host restart).
  *
  * A resumed round (or a live poll) passes the already-mirrored
  * transcript-line count so only the delta is appended — re-mirroring earlier
@@ -198,8 +203,7 @@ export async function mirrorKimiSessionDelta(
       texts.push(lineBlocks(line).map(block => block.type === 'text' || block.type === 'reasoning' ? block.text : '').join(''))
     }
   }
-  const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.events)
+  await ctx.get('sessions')?.flush(childSession)
   return { total: newTotal, texts }
 }
 
