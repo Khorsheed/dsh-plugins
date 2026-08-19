@@ -278,12 +278,17 @@ export class RoomService extends TypertRemoteService {
 
   /**
    * Validate and journal an invitation: the name must be parseable by the
-   * composer @-grammar and unique, the provider non-blank, and (CLI members
-   * are undispatchable without it) the local-agent facade must be probed.
-   * A first task is journaled as a `room/dispatch` (auto-opening the member's
-   * in_progress task) and handed to the engine immediately — the receipt's
-   * `pendingFirstTask` means "dispatched". Shared by the Remote surface
-   * (`invitedBy: 'human'`) and the room_invite tool (`invitedBy: 'agent'`).
+   * composer @-grammar and unique, the provider non-blank AND a registered
+   * delegation provider (the classic slip is the harness name `kimi` where
+   * the family registered `kimi-cli` — validated against the roster's
+   * `delegationProvider` set, the same probe listProviders serves; a roster-
+   * less core skips the check, degrading to the old accept-anything), and
+   * (CLI members are undispatchable without it) the local-agent facade must
+   * be probed. A first task is journaled as a `room/dispatch` (auto-opening
+   * the member's in_progress task) and handed to the engine immediately —
+   * the receipt's `pendingFirstTask` means "dispatched". Shared by the
+   * Remote surface (`invitedBy: 'human'`) and the room_invite tool
+   * (`invitedBy: 'agent'`).
    * @param request - room session, provider, name, optional cwd, instructions and first task.
    * @param invitedBy - the invitation's origin.
    * @returns the invitation receipt, or a rejection.
@@ -304,6 +309,20 @@ export class RoomService extends TypertRemoteService {
     }
     if (probeLocalAgent(this.ctx) === undefined) {
       return { ok: false, error: { code: 'local-agent-unavailable' } }
+    }
+    const roster = probeLocalAgentRoster(this.ctx)
+    if (roster !== undefined) {
+      // The same delegationProvider set listProviders serves: invite accepts
+      // exactly what dispatch can resolve, and the rejection carries the
+      // legal set so a model caller can self-correct (rename and retry).
+      const available: string[] = []
+      for (const row of roster.roster()) {
+        const status = await roster.statusOf(row.name)
+        if (status.delegationProvider !== undefined) available.push(status.delegationProvider)
+      }
+      if (!available.includes(request.provider)) {
+        return { ok: false, error: { code: 'unknown-provider', provider: request.provider, available } }
+      }
     }
     loaded.session.append('room/member-added', {
       name: request.name,

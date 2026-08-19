@@ -172,6 +172,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
       case 'local-agent-unavailable': return t('invite.error.unavailable')
+      case 'unknown-provider':
+        return t('invite.error.unknownProvider', {
+          provider: error.provider,
+          available: error.available.join(', ') || '—',
+        })
       default: return t('invite.error.generic')
     }
   }

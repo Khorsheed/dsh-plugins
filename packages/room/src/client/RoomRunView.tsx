@@ -4,8 +4,9 @@
  * prefers-reduced-motion fallback). The WHOLE row jumps into the member's
  * child session (looked up from the room store's roster — run events carry
  * no handle), and a trailing stop button cancels through the Remote. A
- * failed run stays as a dim error row; done/cancelled are hidden by the
- * Definition and never reach here.
+ * failed run stays as a dim error row with the journaled reason (truncated,
+ * the full text on hover); done/cancelled are hidden by the Definition and
+ * never reach here.
  */
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { IconStopFill16, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -53,6 +54,9 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
         {failed ? t('run.failed', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
       <span className={css.elapsed} aria-hidden>· {formatDurationMs(elapsed)}</span>
+      {failed && data.error !== undefined && (
+        <span className={css.reason} title={data.error}>{data.error}</span>
+      )}
       {!failed && (
         <Tooltip label={t('run.stop')} side="bottom">
           <button

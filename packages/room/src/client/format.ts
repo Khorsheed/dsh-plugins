@@ -1,12 +1,14 @@
 /** Small clock/duration formatters for the room chat chrome. */
 
 /**
- * The honest run/dispatch duration: sub-second as `0.x s`, then whole
- * seconds, then `m:ss`.
+ * The honest run/dispatch duration: sub-100ms as `<0.1s` (a flat `0.0s`
+ * reads as "nothing happened" on an instant failure), sub-10s as `0.x s`,
+ * then whole seconds, then `m:ss`.
  * @param ms - the duration in milliseconds.
  * @returns the formatted duration.
  */
 export function formatDurationMs(ms: number): string {
+  if (ms < 100) return '<0.1s'
   if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`
   const seconds = Math.round(ms / 1000)
   if (seconds < 60) return `${seconds}s`

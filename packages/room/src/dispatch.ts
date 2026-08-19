@@ -92,6 +92,11 @@ function assemblePrompt(
   return { prompt: sections.join('\n\n'), carried }
 }
 
+/** The human-readable reason a run failed (Error message, else String()). */
+function faultMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * The per-room dispatch engine. Owned by the RoomService; all state lives in
  * the journal except the in-process FIFO queues (a restart simply has no
@@ -151,9 +156,10 @@ export class DispatchEngine {
       }
     } catch (error: unknown) {
       // Any engine-level fault (adapter throw, followup throw) fails the run
-      // loud in the journal; the queue chain continues.
+      // loud in the journal; the queue chain continues. The message rides the
+      // failed edge so the UI's dim row can say WHY.
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
-      await this.settle(room, memberName, startedAt, 'failed')
+      await this.settle(room, memberName, startedAt, 'failed', faultMessage(error))
     }
   }
 
@@ -177,7 +183,7 @@ export class DispatchEngine {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
-      await this.settle(room, member.name, startedAt, 'failed')
+      await this.settle(room, member.name, startedAt, 'failed', 'the room session has no live agent')
       return
     }
     const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
@@ -204,7 +210,7 @@ export class DispatchEngine {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
       this.ctx.logger.warn(`room: cannot dispatch to "${member.name}": local-agent facade unavailable`)
-      await this.settle(room, member.name, startedAt, 'failed')
+      await this.settle(room, member.name, startedAt, 'failed', 'the local-agent delegation facade is unavailable')
       return
     }
     // Roster invariant: cli members always carry a provider (invite enforces).
@@ -254,7 +260,7 @@ export class DispatchEngine {
     } else if (result.stopReason === 'aborted') {
       await this.settle(room, member.name, startedAt, 'cancelled')
     } else {
-      await this.settle(room, member.name, startedAt, 'failed')
+      await this.settle(room, member.name, startedAt, 'failed', `the member run ended with stopReason "${result.stopReason}"`)
     }
   }
 
@@ -263,16 +269,18 @@ export class DispatchEngine {
    * run (same startedAt) to a terminal state — the first terminal edge wins.
    * A settle also closes the member's open in_progress task (the dispatch
    * auto-opened it): done on a completed run, cancelled on an abort; a failed
-   * run leaves the task for the human.
+   * run leaves the task for the human. A failed settle carries the human-
+   * readable reason on the edge (the client's dim row surfaces it).
    */
   private async settle(
     room: Session, memberName: string, startedAt: number,
-    state: 'done' | 'cancelled' | 'failed',
+    state: 'done' | 'cancelled' | 'failed', error?: string,
   ): Promise<void> {
     const current = replay(room.events).runs.find(entry => entry.member === memberName)
     if (current !== undefined && current.startedAt === startedAt && current.state !== 'running') return
     room.append('room/run-state', {
       member: memberName, state, startedAt, elapsedMs: Date.now() - startedAt,
+      ...error === undefined ? {} : { error },
     })
     if (state === 'done' || state === 'cancelled') {
       for (const task of replay(room.events).tasks) {

@@ -33,12 +33,17 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       + 'from the provider so two instances of one provider can coexist. The instructions are the '
       + 'member\'s role briefing, prepended to its first dispatch and persisted in its own CLI '
       + 'session from then on. Give a firstTask to put the member to work immediately, or omit it '
-      + 'to have the member join idle.',
+      + 'to have the member join idle. The provider must be a registered delegation provider id — '
+      + 'an unknown one is rejected with the list of available ids, so retry with one of those.',
     parameters: {
       provider: {
         type: 'string',
         required: true,
-        description: 'The local-agent CLI provider id (e.g. kimi / claude-code / codex).',
+        description:
+          'The local-agent delegation provider id (e.g. kimi-cli / codex-cli / claude-code) — the '
+          + 'delegation id the family registered, which may differ from the harness\'s display '
+          + 'name. When unsure, call without firstTask first: an unknown id is rejected with the '
+          + 'list of available providers to retry with.',
       },
       name: {
         type: 'string',
@@ -93,7 +98,13 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
             ? ' Names must be non-empty and free of whitespace and "@"; retry with a valid name.'
             : result.error.code === 'local-agent-unavailable'
               ? ' The local-agent delegation facade is not mounted; CLI members cannot join right now.'
-              : ''
+              : result.error.code === 'unknown-provider'
+                ? ` Unknown delegation provider "${result.error.provider}" (it must be the family's delegation provider id, not the harness's display name). Available: ${
+                  result.error.available.length === 0
+                    ? 'none (no harness with a delegation provider is registered)'
+                    : result.error.available.join(', ')
+                }. Retry with one of the available providers.`
+                : ''
         return { text: `Could not invite "${args.name}": ${result.error.code}.${hint}` }
       }
       return {

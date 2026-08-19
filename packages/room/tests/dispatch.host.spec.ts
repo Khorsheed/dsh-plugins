@@ -290,7 +290,11 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main 在吗' })
     await bench.service.engine.idle()
     const state = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(state).toMatchObject({ ok: true, value: { runs: [{ member: 'main', state: 'failed' }] } })
+    // The failed edge carries the reason (the client's dim row surfaces it).
+    expect(state).toMatchObject({
+      ok: true,
+      value: { runs: [{ member: 'main', state: 'failed', error: 'the room session has no live agent' }] },
+    })
     // A failed run leaves the auto-opened task open for the human.
     expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'main', status: 'in_progress' }] } })
   })
@@ -304,7 +308,34 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 干活' })
     await bench.service.engine.idle()
     const state = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(state).toMatchObject({ ok: true, value: { runs: [{ member: 'ada', state: 'failed' }] } })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { runs: [{ member: 'ada', state: 'failed', error: 'the local-agent delegation facade is unavailable' }] },
+    })
+  })
+
+  it('an adapter throw fails the run with the fault message on the edge', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockRejectedValue(new Error('unknown delegation provider "kimi"'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '干活' })
+    await bench.service.engine.idle()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { runs: [{ member: 'ada', state: 'failed', error: 'unknown delegation provider "kimi"' }] },
+    })
+  })
+
+  it('a non-completed, non-aborted stopReason fails the run with the reason on the edge', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', '', 'error'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '干活' })
+    await bench.service.engine.idle()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { runs: [{ member: 'ada', state: 'failed', error: 'the member run ended with stopReason "error"' }] },
+    })
   })
 
   it('journals the running and done edges with the SAME startedAt (the client fold key)', async () => {

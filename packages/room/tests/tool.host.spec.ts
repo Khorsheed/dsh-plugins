@@ -4,19 +4,26 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
-import type { LocalAgentFacade } from '../src/adapter.ts'
 import { stubAgents } from './agents-stub.ts'
 
 /** The REAL composition plus a stubbed tools registry capturing the registered definition. */
 async function boot() {
   const ctx = new Context()
   stubAgents(ctx)
-  const facade: LocalAgentFacade = {
+  // Production-faithful stub: the family's registry serves the roster slice
+  // alongside the M1 facade, so invite validates against the delegation
+  // provider ids (`kimi-cli`, `codex-cli` — NOT the harness names).
+  const localAgent = {
     start: vi.fn(async () => new Promise(() => {}) as never),
     resume: vi.fn(async () => new Promise(() => {}) as never),
     cancel: vi.fn(() => false),
+    roster: () => [
+      { name: 'kimi', displayName: 'Kimi Code' },
+      { name: 'codex', displayName: 'Codex' },
+    ],
+    statusOf: vi.fn(async (name: string) => ({ authenticated: true, delegationProvider: `${name}-cli` })),
   }
-  ctx.provide('localAgent', facade as never)
+  ctx.provide('localAgent', localAgent as never)
   const tools = { register: vi.fn((_tool: ToolDefinition) => () => {}) }
   ctx.provide('tools', tools as never)
   await ctx.plugin(SessionStore)
@@ -61,27 +68,47 @@ describe('room_invite tool (real composition)', () => {
     const { sessionId } = await service.createRoom({})
     const room = ctx.sessions.get(sessionId)!
     const text = await call(tool, {
-      provider: 'kimi', name: 'ada', instructions: '负责 API',
+      provider: 'kimi-cli', name: 'ada', instructions: '负责 API',
     }, execFor(room))
     expect(text).toContain('ada')
     expect(text).toContain('joined')
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
       ok: true,
-      value: { members: [{ name: 'main' }, { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'agent', instructions: '负责 API' }] },
+      value: { members: [{ name: 'main' }, { name: 'ada', kind: 'cli', provider: 'kimi-cli', invitedBy: 'agent', instructions: '负责 API' }] },
     })
+  })
+
+  it('returns a self-correcting error text on an unknown provider (the harness-name slip)', async () => {
+    const { ctx, service, tool } = await boot()
+    const { sessionId } = await service.createRoom({})
+    const room = ctx.sessions.get(sessionId)!
+    // The real-machine bug: the model passed the harness name "kimi".
+    const text = await call(tool, { provider: 'kimi', name: 'ada', instructions: '后端' }, execFor(room))
+    expect(text).toContain('unknown-provider')
+    expect(text).toContain('"kimi"')
+    // The legal set is in the text, so the model can rename and retry.
+    expect(text).toContain('kimi-cli')
+    expect(text).toContain('codex-cli')
+    expect(text).toContain('Retry')
+    // Nothing was journaled.
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({ ok: true, value: { members: [{ name: 'main' }] } })
+    // The self-correction the text enables: rename and retry succeeds.
+    const retried = await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(room))
+    expect(retried).toContain('joined')
   })
 
   it('returns a retryable error text on a name collision and an invalid name', async () => {
     const { ctx, service, tool } = await boot()
     const { sessionId } = await service.createRoom({})
     const room = ctx.sessions.get(sessionId)!
-    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
 
-    const duplicate = await call(tool, { provider: 'codex', name: 'ada', instructions: 'x' }, execFor(room))
+    const duplicate = await call(tool, { provider: 'codex-cli', name: 'ada', instructions: 'x' }, execFor(room))
     expect(duplicate).toContain('duplicate-name')
     expect(duplicate).toContain('retry')
-    const invalid = await call(tool, { provider: 'kimi', name: 'a b', instructions: 'x' }, execFor(room))
+    const invalid = await call(tool, { provider: 'kimi-cli', name: 'a b', instructions: 'x' }, execFor(room))
     expect(invalid).toContain('invalid-name')
   })
 })

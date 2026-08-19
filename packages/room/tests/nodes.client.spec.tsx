@@ -118,9 +118,10 @@ describe('room node Definitions', () => {
       .toMatchObject({ visibility: 'hidden', data: { state: 'cancelled' } })
     const failed = roomRunDefinition.update(
       contextOf(started) as never,
-      { event: ev('room/run-state', 4, { member: 'ada', state: 'failed', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never,
+      { event: ev('room/run-state', 4, { member: 'ada', state: 'failed', startedAt: 100, error: 'boom' }), role: 'update', location: { kind: 'unresolved' } } as never,
     )
-    expect(roomRunDefinition.buildViewNode!(contextOf(failed))).toMatchObject({ data: { state: 'failed' } })
+    expect(roomRunDefinition.buildViewNode!(contextOf(failed)))
+      .toMatchObject({ data: { state: 'failed', error: 'boom' } })
   })
 
   it('a settled run folds away through the REAL assembler live path (regression: null withdrawal threw)', () => {
@@ -272,7 +273,8 @@ describe('RoomRunView', () => {
     vi.setSystemTime(10_000)
     const { openSession } = await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 10_000, state: 'running' })
     expect(screen.getByText('ada 正在工作…')).toBeDefined()
-    expect(screen.getByText('· 0.0s')).toBeDefined()
+    // Sub-100ms reads as <0.1s, never a flat 0.0s.
+    expect(screen.getByText('· <0.1s')).toBeDefined()
     act(() => { vi.advanceTimersByTime(2_000) })
     expect(screen.getByText('· 2.0s')).toBeDefined()
 
@@ -292,6 +294,18 @@ describe('RoomRunView', () => {
     await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 1_000, state: 'failed', elapsedMs: 500 })
     expect(screen.getByText('ada 运行失败')).toBeDefined()
     expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+  })
+
+  it('a failed run shows the journaled reason (truncated, full text on hover)', async () => {
+    await bench({
+      seq: 3, time: 1003, member: 'ada', startedAt: 1_000, state: 'failed', elapsedMs: 6,
+      error: 'unknown delegation provider "kimi"',
+    })
+    expect(screen.getByText('ada 运行失败')).toBeDefined()
+    // The 6ms failure reads <0.1s, never 0.0s.
+    expect(screen.getByText('· <0.1s')).toBeDefined()
+    const reason = screen.getByText('unknown delegation provider "kimi"')
+    expect(reason.getAttribute('title')).toBe('unknown delegation provider "kimi"')
   })
 })
 

@@ -200,6 +200,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           state: event.data.state,
           startedAt: event.data.startedAt,
           ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
+          ...event.data.error === undefined ? {} : { error: event.data.error },
         })
         break
       }

@@ -140,6 +140,42 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
   })
 
+  it('invite rejects a provider outside the roster delegation set, carrying the legal list', async () => {
+    // The classic slip: the harness name `kimi` where the family registered
+    // the delegation provider `kimi-cli`.
+    const localAgent = {
+      start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),
+      roster: () => [
+        { name: 'kimi', displayName: 'Kimi Code' },
+        { name: 'codex', displayName: 'Codex' },
+        { name: 'rec', displayName: 'Record Only' },
+      ],
+      statusOf: vi.fn(async (name: string) => name === 'rec'
+        ? { authenticated: true }
+        : { authenticated: true, delegationProvider: `${name}-cli` }),
+    }
+    const { service, sessionId } = await bootRoom({ localAgent })
+    const rejected = await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    expect(rejected).toEqual({
+      ok: false,
+      // The record-only harness (no delegationProvider) is not a legal value.
+      error: { code: 'unknown-provider', provider: 'kimi', available: ['kimi-cli', 'codex-cli'] },
+    })
+    // Nothing is journaled: the roster stays the seated main agent only.
+    expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
+    // The legal id goes through.
+    expect(await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' }))
+      .toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: false } })
+  })
+
+  it('invite skips the provider check when the core predates the roster slice (degrade, never explode)', async () => {
+    // The default facade stub carries no roster/statusOf: validation is
+    // impossible, so invite keeps the old accept-anything behavior.
+    const { service, sessionId } = await bootRoom()
+    expect(await service.invite({ sessionId, provider: 'anything', name: 'ada' }))
+      .toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: false } })
+  })
+
   it('updateMember rewrites instructions and validates its inputs', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada', instructions: '后端' })

@@ -42,6 +42,17 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
+/* The failed run's journaled reason: shrinks with an ellipsis, the full
+   message rides the hover tooltip (title). */
+.reason {
+  flex: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-text-error, #d9363e);
+}
+
 .stop {
   display: inline-flex;
   align-items: center;

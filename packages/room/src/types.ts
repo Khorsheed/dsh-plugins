@@ -99,6 +99,12 @@ export interface RoomRunStateEvent {
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
   readonly startedAt: number
   readonly elapsedMs?: number
+  /**
+   * Why the run failed (terminal `failed` edges only): the engine's caught
+   * fault message, surfaced by the client's dim failure row. Optional so old
+   * journal events replay fine.
+   */
+  readonly error?: string
 }
 
 /** A relay's lifecycle states (see the design note's notification channel). */
@@ -211,6 +217,8 @@ export interface RoomMemberRun {
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
   readonly startedAt: number
   readonly elapsedMs?: number
+  /** Why the run failed (failed edges only), when the edge carried one. */
+  readonly error?: string
 }
 
 /**
@@ -236,6 +244,13 @@ export type RoomFailure =
   | { readonly code: 'empty-text' }
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
+  /**
+   * The provider is not any harness's delegation provider (the classic slip:
+   * the harness name `kimi` instead of the delegation provider `kimi-cli`).
+   * Carries the legal set so the caller (the room_invite tool's model caller,
+   * the dialog) can self-correct.
+   */
+  | { readonly code: 'unknown-provider'; readonly provider: string; readonly available: readonly string[] }
   | { readonly code: 'unknown-targets'; readonly names: readonly string[] }
   /** postMessage without any leading @-mention (bare messages belong to the official submit path). */
   | { readonly code: 'no-targets' }

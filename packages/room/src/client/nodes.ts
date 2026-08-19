@@ -41,6 +41,8 @@ export interface RoomRunData {
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
   /** Settled run milliseconds (terminal edges only). */
   readonly elapsedMs?: number
+  /** Why the run failed (failed terminal edges only). */
+  readonly error?: string
 }
 
 /** Chat node data of one boundary line (member join/leave). */
@@ -167,6 +169,7 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
       ...context.state,
       state: event.data.state,
       ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
+      ...event.data.error === undefined ? {} : { error: event.data.error },
     }
   },
   buildViewNode: context => viewNode(context, 'room-run',

@@ -87,6 +87,22 @@ describe('replay (pure journal fold)', () => {
     expect(state.runs).toEqual([{ member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }])
   })
 
+  it('a failed run-state edge folds its error; old error-less edges replay fine', () => {
+    resetSeq()
+    const failed = replay([
+      ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),
+      ev('room/run-state', { member: 'ada', state: 'failed', startedAt: 100, elapsedMs: 6, error: 'unknown provider' }),
+    ])
+    expect(failed.runs).toEqual([
+      { member: 'ada', state: 'failed', startedAt: 100, elapsedMs: 6, error: 'unknown provider' },
+    ])
+    // A pre-error-field journal (old build wrote the failed edge without one).
+    const legacy = replay([
+      ev('room/run-state', { member: 'ada', state: 'failed', startedAt: 100, elapsedMs: 6 }),
+    ])
+    expect(legacy.runs).toEqual([{ member: 'ada', state: 'failed', startedAt: 100, elapsedMs: 6 }])
+  })
+
   it('member-removed cleans the roster and the run state; relays and tasks stay as history', () => {
     resetSeq()
     const events = [
