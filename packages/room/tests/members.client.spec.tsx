@@ -63,6 +63,7 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
   await roomStore.ensure(SESSION)
   const face = {
     roomStore,
+    roomCwd: '/home/user/room',
     openSession: vi.fn(),
     cancelMember: vi.fn(async () => {}),
     removeMember: vi.fn(async () => ({ ok: true as const })),
@@ -88,9 +89,10 @@ describe('MembersView', () => {
     expect(mainRow.textContent).toContain('主 agent')
     expect(mainRow.textContent).not.toContain('编辑')
     expect(mainRow.textContent).not.toContain('移除')
-    // ada: provider, idle, trajectory + edit + remove.
+    // ada: provider, role instructions, idle, trajectory + edit + remove.
     const adaRow = screen.getByText('ada').closest('div')!
     expect(adaRow.textContent).toContain('kimi')
+    expect(adaRow.textContent).toContain('后端')
     expect(adaRow.textContent).toContain('空闲')
     expect(adaRow.textContent).toContain('轨迹→')
     expect(adaRow.textContent).toContain('编辑')
@@ -152,16 +154,35 @@ describe('MembersView', () => {
     expect(dialog.textContent).toContain('置灰的 provider 未登录')
 
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    // The cwd field: empty = inherit the room cwd (the placeholder); a value
+    // rides the invite as the member's own working directory.
+    const cwdInput = screen.getByText('工作目录（可选）')
+      .closest('label')!.querySelector('input')!
+    expect((cwdInput as HTMLInputElement).placeholder).toBe('/home/user/room')
+    fireEvent.change(cwdInput, { target: { value: '/home/user/web' } })
     const textareas = dialog.querySelectorAll('textarea')
     fireEvent.change(textareas[0]!, { target: { value: '前端' } })
     fireEvent.change(textareas[1]!, { target: { value: '搭页面' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({
-        provider: 'kimi', name: 'cathy', instructions: '前端', firstTask: '搭页面',
+        provider: 'kimi', name: 'cathy', instructions: '前端', cwd: '/home/user/web', firstTask: '搭页面',
       })
     })
     await screen.findByText('已邀请 cathy 并开始工作')
+  })
+
+  it('omits cwd from the invite when the field is left empty (inherit)', async () => {
+    const { face } = await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code')
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(dialog.querySelector('textarea')!, { target: { value: '前端' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', instructions: '前端' })
+    })
   })
 
   it('shows the host rejection inside the dialog and keeps it open', async () => {

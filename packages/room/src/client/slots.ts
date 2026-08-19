@@ -84,6 +84,8 @@ export type RoomInviteOutcome =
 export interface RoomMembersInjected {
   /** The client-side room state store (roster + runs). */
   readonly roomStore: RoomStore
+  /** The room session's own cwd (the invite dialog's cwd placeholder). */
+  readonly roomCwd?: string | undefined
   /** Open a session (the member's child-session trajectory jump). */
   readonly openSession: (sessionId: SessionId) => void
   /** Cancel the named member's in-flight run. */

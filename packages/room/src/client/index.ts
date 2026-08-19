@@ -177,6 +177,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    // The room session's own cwd: the invite dialog's cwd field placeholder
+    // (empty = inherit). Read at inject time; a later cwd change refreshes
+    // with the next view mount.
+    roomCwd: ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd,
     openSession,
     cancelMember: member => cancelMember(sessionId, member),
     removeMember: async (member) => {

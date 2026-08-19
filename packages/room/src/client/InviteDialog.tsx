@@ -4,8 +4,9 @@
  * local-agent roster; logged-out providers greyed with login guidance, an
  * absent facade degrades the whole section to a hint), display name (client
  * precheck plus the host's structured duplicate/invalid errors), role
- * instructions, and an optional first task. Edit mode reuses the card with
- * only the instructions field.
+ * instructions, a member-level cwd (empty = inherit the room session's cwd,
+ * shown as the placeholder), and an optional first task. Edit mode reuses
+ * the card with only the instructions field.
  */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
@@ -19,6 +20,7 @@ export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
   readonly instructions: string
+  readonly cwd: string
   readonly firstTask: string
 }
 
@@ -30,6 +32,8 @@ export interface InviteDialogProps {
   readonly providers?: readonly RoomProviderInfo[] | undefined
   /** False = the delegation facade is absent (invite mode). */
   readonly localAgentAvailable: boolean
+  /** The room session's cwd (the empty-cwd placeholder, invite mode). */
+  readonly inheritedCwd?: string | undefined
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -42,11 +46,12 @@ function validName(name: string): boolean {
 
 /** The invite/edit modal card. */
 export function InviteDialog({
-  mode, member, providers, localAgentAvailable, onSubmit, onClose, t,
+  mode, member, providers, localAgentAvailable, inheritedCwd, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState('')
   const [instructions, setInstructions] = useState(member?.instructions ?? '')
+  const [cwd, setCwd] = useState('')
   const [firstTask, setFirstTask] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -75,7 +80,9 @@ export function InviteDialog({
     setBusy(true)
     setError(null)
     try {
-      const outcome = await onSubmit({ provider: chosen, name, instructions: instructions.trim(), firstTask: firstTask.trim() })
+      const outcome = await onSubmit({
+        provider: chosen, name, instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+      })
       if (!outcome.ok) {
         setError(outcome.message)
         return
@@ -132,6 +139,16 @@ export function InviteDialog({
                 onChange={event => { setName(event.target.value) }}
               />
               <span className={css.hint}>{t('invite.nameHint')}</span>
+            </label>
+            <label className={css.field}>
+              <span className={css.label}>{t('invite.cwd')}</span>
+              <input
+                className={css.input}
+                value={cwd}
+                placeholder={inheritedCwd ?? ''}
+                onChange={event => { setCwd(event.target.value) }}
+              />
+              <span className={css.hint}>{t('invite.cwdHint')}</span>
             </label>
           </>
         )}

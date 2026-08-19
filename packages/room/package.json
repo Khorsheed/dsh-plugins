@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-room",
-  "description": "Room: a normal dsh session marked as a multi-agent group conversation — the standard chat UI hosts peer agents addressed by @-mention over a shared blackboard, with a members tab and CLI members delegated through the local-agent family",
+  "description": "Room: a normal dsh session marked as a multi-agent group conversation — the standard chat UI hosts peer agents addressed by @-mention, with roster+notification prompts (no blackboard), a human-gated member relay channel, a journal-driven task board, a members tab, and CLI members delegated through the local-agent family",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -63,7 +63,7 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "CLI members need the local-agent family with the M1 delegation facade (merged on this repo's main, npm publication pending) — without it invite answers local-agent-unavailable and the main-agent member carries the room; room's room/* event types are registered into the persistence catalog at apply time (temporary form of the catalog's deferred out-of-repo registration surface), so persisted rooms reload wherever room is mounted"
+      "notes": "CLI members need the local-agent family with the M1 delegation facade (merged on this repo's main, npm publication pending) — without it invite answers local-agent-unavailable and the main-agent member carries the room; structured member-to-member notifications additionally need the family's member-channel bridge (proposal 2026-08-19, in flight) — without it the fallback channel (a reply's trailing own-line @name) carries them; member-level cwd is roster-recorded until the facade's R2 per-call override lands; room's room/* event types are registered into the persistence catalog at apply time (temporary form of the catalog's deferred out-of-repo registration surface), so persisted rooms reload wherever room is mounted"
     }
   },
   "scripts": {

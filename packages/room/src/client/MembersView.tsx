@@ -20,7 +20,7 @@ type DialogState = { readonly mode: 'invite' } | { readonly mode: 'edit'; readon
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, openSession, cancelMember, removeMember, updateMember, invite, listProviders, t,
+  sessionId, roomStore, roomCwd, openSession, cancelMember, removeMember, updateMember, invite, listProviders, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -62,6 +62,7 @@ export function MembersView({
       provider: values.provider,
       name: values.name,
       instructions: values.instructions,
+      ...values.cwd === '' ? {} : { cwd: values.cwd },
       ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
     })
     if (outcome.ok) {
@@ -92,6 +93,11 @@ export function MembersView({
             <span className={css.hint}>
               {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
             </span>
+            {member.instructions !== undefined && (
+              <span className={css.instructions} title={member.instructions}>
+                {member.instructions}
+              </span>
+            )}
             <span className={failed ? css.statusFailed : css.status}>
               {running
                 ? `${t('members.status.running')} · ${formatDurationMs(Date.now() - (run?.startedAt ?? Date.now()))}`
@@ -149,6 +155,7 @@ export function MembersView({
           member={dialog.mode === 'edit' ? dialog.member : undefined}
           providers={providers?.providers}
           localAgentAvailable={providers?.localAgentAvailable ?? true}
+          inheritedCwd={roomCwd}
           onSubmit={submitDialog}
           onClose={() => { setDialog(null) }}
           t={t}
