@@ -67,7 +67,7 @@ export type {
   LocalAgentMemberMessage,
   MemberMessageOutcome,
   RoomMemberMessageGate,
-  RoomMemberMessageResult,
+  RoomMemberMessageReceipt,
 } from './types.ts'
 
 /** Per-harness session listing: reads the harness's own records format. */

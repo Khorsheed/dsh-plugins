@@ -19,12 +19,12 @@ Status: implemented
 **鸭子类型的 room 闸门**——room 实现以持有派发闸门的契约，经 `ctx.get('room')` 探针加 `typeof` 检查发现，不 import 任何 room 包（independence checker 因此无需新 sanction）：
 
 ```ts
-receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageResult>
-// { claimed: true, receipt } —— room 持有派发；回执原样透传给 A
-// { claimed: false }         —— 父会话非本 room 实例管理；家族直发
+receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
+// 返回 'sent' | 'pending-confirm' | 'busy' —— room 持有派发；回执原样透传给 A
+// 抛错                                  —— 拒绝：父会话非本 room 实例管理；家族直发
 ```
 
-`LocalAgentMemberMessage` 为 `{ from: LocalAgentDelegationView, to, content, parentSessionId }`。抛错的闸门记日志并视为拒绝。家族侧回执：`sent` / `busy`（B 的 resume 锁占用）/ `error: <原因>`（如父会话不在线）。直发 prompt 带出处标注（`成员 <harness>（会话 <childSessionId>）转告：…`）及指名 A 子会话 id 的回复提示——绝不含 CLI 会话 resume 句柄。
+`LocalAgentMemberMessage` 为 `{ from: string, to, content, parentSessionId, provenance }`——提案冻结的形状（`{ from, to, content, parentSessionId, provenance }`，回执原样透传）。`from` 是发送方的 dsh 子会话 id（桥无法说花名册名字——只有 room 持有花名册，由 room 把两端解析为名字）；完整委派视图作为 `provenance` 随行。抛错的闸门记日志并视为拒绝。家族侧回执：`sent` / `busy`（B 的 resume 锁占用）/ `error: <原因>`（如父会话不在线）。直发 prompt 带出处标注（`成员 <harness>（会话 <childSessionId>）转告：…`）及指名 A 子会话 id 的回复提示——绝不含 CLI 会话 resume 句柄。（M3 初版曾漂移为 `{ claimed, receipt }` 信封且 `from` 带委派视图对象——room 原样 journal `from`，一次真实桥接调用把对象写进了 room journal，导致走线上校验的 `getState` 拒绝该状态。room × member-channel 联合验收发现后契约对齐到 room 的冻结形状，room 侧同时对该无类型边界加运行时校验。）
 
 **provider 注入，kimi 先行**（`packages/local-agent-kimi/src/member-bridge-config.ts`）：kimi 唯一的 MCP 配置面是 scoped home 共享的 `$KIMI_CODE_HOME/mcp.json`（已对官方文档核实：无逐次调用的配置 flag，且只有条目自身的 `env` 有文档保证到达 server 子进程——CLI 的进程 env 不是可靠通道）。同一文件被并发 run 共享，排除单一可变条目，因此 provider 写入**每 run 一条 server 条目** `dsh-member-<token8>`，socket 路径与 token 置于其 `env`——构造上无竞态——settle 时剪除，并在每次写入时清理其他家族条目（宿主崩溃残留）。kimi 文档化的 mid-session 语义保证两者安全：配置编辑不中断已打开的会话。挂载的 core 早于成员通道时经 `typeof registry.registerMemberRun` 探针发现，run 与此前完全一致地继续（declare-and-degrade）。
 
