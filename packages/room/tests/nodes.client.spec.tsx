@@ -118,13 +118,15 @@ describe('room node Definitions', () => {
     expect(roomRunDefinition.buildViewNode!(contextOf(failed))).toMatchObject({ data: { state: 'failed' } })
   })
 
-  it('room-event claims boundaries and human dispatches, skipping the auto-seated main agent', () => {
+  it('room-event claims boundaries only: no dispatch, no user/message, no auto-seated main agent', () => {
     const joined = ev('room/member-added', 1, { name: 'bill', kind: 'cli', provider: 'claude-code', invitedBy: 'agent' })
     const mainSeated = ev('room/member-added', 0, { name: 'main', kind: 'main-agent', invitedBy: 'human' })
     expect(roomEventDefinition.match(joined)).toEqual({ id: '1', role: 'start' })
     expect(roomEventDefinition.match(mainSeated)).toBeNull()
     expect(roomEventDefinition.match(ev('room/member-removed', 2, { name: 'bill' }))).toEqual({ id: '2', role: 'start' })
-    expect(roomEventDefinition.match(ev('room/dispatch', 3, { targets: ['ada'], text: '干活' }))).toEqual({ id: '3', role: 'start' })
+    // Dispatch records are bookkeeping: the human's @-message renders through
+    // the official user node (postMessage also appends a user/message).
+    expect(roomEventDefinition.match(ev('room/dispatch', 3, { targets: ['ada'], text: '干活' }))).toBeNull()
     expect(roomEventDefinition.match(ev('room/created', 0, { version: 1 }))).toBeNull()
     expect(roomEventDefinition.match(ev('room/run-state', 5, { member: 'ada', state: 'running', startedAt: 1 }))).toBeNull()
     // The dropped blackboard note is legacy: never claimed.
@@ -134,6 +136,16 @@ describe('room node Definitions', () => {
     expect(state).toEqual({
       seq: 1, time: 1001, sub: 'member-added', member: 'bill', invitedBy: 'agent', provider: 'claude-code',
     })
+  })
+
+  it('no room Definition claims a user/message event (the official user node owns it)', () => {
+    const message = ev('user/message', 9, {
+      id: 'm1', role: 'user', content: [{ type: 'text', text: '@ada 出方案' }], source: { kind: 'user' },
+    })
+    expect(roomSpeechDefinition.match(message)).toBeNull()
+    expect(roomRunDefinition.match(message)).toBeNull()
+    expect(roomEventDefinition.match(message)).toBeNull()
+    expect(roomRelayDefinition.match(message)).toBeNull()
   })
 
   it('room-relay keys on the relay id: the gate row folds its resolutions in place', () => {
@@ -242,15 +254,12 @@ describe('RoomEventView', () => {
     render(<RoomEventView {...props} />)
   }
 
-  it('renders the join/leave/dispatch lines', () => {
+  it('renders the join/leave lines', () => {
     bench({ seq: 1, time: 1001, sub: 'member-added', member: 'bill', provider: 'claude-code', invitedBy: 'agent' })
     expect(screen.getByText('bill（claude-code）加入了 room · 由主 agent 邀请')).toBeDefined()
     cleanup()
     bench({ seq: 2, time: 1002, sub: 'member-removed', member: 'bill' })
     expect(screen.getByText('bill 离开了 room')).toBeDefined()
-    cleanup()
-    bench({ seq: 3, time: 1003, sub: 'dispatch', targets: ['ada', 'bill'], text: '对齐接口' })
-    expect(screen.getByText('你 @ada @bill：对齐接口')).toBeDefined()
   })
 })
 

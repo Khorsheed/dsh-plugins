@@ -17,7 +17,7 @@ Status: proposed
 ### 会话与成员模型
 
 - 创建 room（`sidebar.footer.action` 里的 `+ 新 room` 入口）就是创建一个普通会话并 append 一条 `room/created` 自定义事件——它是 room 的身份标记，也是其日志的根。名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。
-- 会话自己的主 agent 是无特权成员。**不带 @ 的消息就是跟主 agent 的正常对话**（composer 放行给官方提交路径）；**@ 是派发触发器**。主 agent 因此天然感知人的非派发消息（它们是普通 `user/message` 事件），对成员发言零感知。
+- 会话自己的主 agent 是无特权成员。**不带 @ 的消息就是跟主 agent 的正常对话**（composer 放行给官方提交路径）；**@ 是派发触发器**。主 agent 因此天然感知人的全部消息——裸消息与 @ 派发文本都是普通 `user/message` 事件（@ 派发由 host 侧 append，不唤醒主 agent，但进它的模型可见历史，主 agent 能据此推测名册与任务），对成员回复零感知。
 - 外部成员（如 `@ada`）是 local-agent 家族 CLI provider 的委派：一个 dsh 子会话（`parentSession = room 会话`），通过家族 resume 注册表跨轮延续。每个成员保持自己私有的 CLI 上下文；子会话里的镜像 transcript 是完整轨迹。
 - **成员级 `cwd`**：成员合法地可能与 room 会话在不同工作目录干活（主 agent 在仓库 A，CLI 成员在仓库 B）。邀请弹窗带 cwd 字段（缺省继承 room 会话的 cwd）；投递需要门面层的覆盖参数（下方需求 R2）。
 
@@ -113,7 +113,11 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 
 ### Why not 把成员产出写成 room 会话里模型可见的事件？
 
-那样主 agent 能"免费"感知成员活动，但代价是被迫全程旁听：上下文灌水，而且主 agent 可能对成员产出自作主张接话。成员发言保持模型不可见；主 agent 天然看得到人的非派发消息（裸消息作为正常回合放行），这恰好是合适的感知下限。
+那样主 agent 能"免费"感知成员活动，但代价是被迫全程旁听：上下文灌水，而且主 agent 可能对成员产出自作主张接话。成员发言保持模型不可见；主 agent 天然看得到人的全部消息（裸消息作为正常回合放行，@ 派发文本作为 `user/message` 进历史但不唤醒），这恰好是合适的感知下限。
+
+### Why not @ 派发消息标 plugin source（message-tools 先例）？
+
+初稿如此（`source: { kind: 'plugin', plugin: '@khorsheed/dsh-room' }`）。核实官方 messageDefinition 后否决：append 面 `user/message` 只要 `source.kind !== 'user'` 就一律归类为 **context 节点**——渲染成折叠的注入披露行，不是用户气泡；message-tools 的 restore 气泡是它自己的 Definition 加 DOM hider 掩盖重影的产物，不是 plugin source 的默认待遇。而派发文本确实是人在 composer 里敲的，`kind: 'user'` 是实话（apiproxy 的 user-rpc 同样是 kind 'user' 挂额外字段），官方分类器据此给出用户气泡，零自绘。append 本身不唤醒主 agent——回合只由 prompt/followup 驱动，agent 是日志的写者而非监听者；附带效应仅有两处且都如实：会话列表按最近人类发言排序（人确实说话了）、首条消息触发标题生成（与普通会话首发一致）。
 
 ### Why not 在 session-store 层面做新的会话类型？
 
@@ -122,7 +126,7 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 ## Acceptance criteria
 
 - `+ 新 room` 创建流程产出一个以 room 形态打开的会话（重开时从 `room/created` 事件恢复身份）；视图导航有成员 tab；有任务时 dock 出现任务板。
-- 不带 @ 的消息产生正常的主 agent 回合；`@ada <任务>` 派发（首轮 fresh、之后 resume——子会话 transcript 验证）；未知成员结构化拒绝；两个成员并行、同一成员串行。
+- 不带 @ 的消息产生正常的主 agent 回合；`@ada <任务>` 派发（首轮 fresh、之后 resume——子会话 transcript 验证），且 @ 消息本身作为标准 `user/message` 渲染为官方用户气泡、进入主 agent 的模型可见历史但不唤醒它；未知成员结构化拒绝；两个成员并行、同一成员串行。
 - 每次派发的 prompt 含名册、该成员的待收通知、本次文本——**且无滚动流水账、无任务板摘要**（绝不重发成员已见过的内容，成员也不感知 room 全景）。
 - 邀请弹窗：provider 列表反映 `localAgent.roster()` 登录态；cwd 缺省继承 room 会话且按成员生效（门面 R2）；角色指令可在子会话首轮验证拼在最前。主 agent 的 `room_invite` 工具产出完全相同的成员记录；重名或含 `@`/空白的名字以工具错误拒绝。
 - 成员的 `member_message` 桥接调用（桥接缺席时为回复末尾独占行的 `@名字 <内容>`）到达 room 闸门；人确认即把通知派发给收件人；忽略即丢弃。未确认的转派不触达任何人，且发送方收到的回执是 `pending-confirm` 而非 `sent`。

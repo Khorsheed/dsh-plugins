@@ -170,13 +170,15 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
       .toEqual({ ok: false, error: { code: 'no-targets' } })
     // Nothing is journaled: the rejection is pure defense.
-    expect(ctx.sessions.get(sessionId)!.events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
+    const events = ctx.sessions.get(sessionId)!.events
+    expect(events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
+    expect(events.some(event => event.type === 'user/message')).toBe(false)
     expect(await service.postMessage({ sessionId, text: '   ' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
-  it('postMessage with mentions appends a dispatch, auto-opens tasks, and validates the roster', async () => {
-    const { service, sessionId } = await bootRoom()
+  it('postMessage with mentions logs a standard user/message (the official bubble) plus the dispatch bookkeeping, auto-opens tasks, and validates the roster', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
 
@@ -189,6 +191,28 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'unknown-targets', names: ['ghost'] } })
     expect(await service.postMessage({ sessionId, text: '@ada' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
+
+    const events = ctx.sessions.get(sessionId)!.events
+    // The human's raw text (mentions included) lands as a human-sourced
+    // append-surface user/message — the official user bubble claims it, and
+    // the main agent's next turn reads it. The append wakes nothing.
+    const messages = events.filter(event => event.type === 'user/message')
+    expect(messages.map(event => ({
+      text: (event.data as { content: Array<{ text: string }> }).content[0]!.text,
+      source: (event.data as { source: unknown }).source,
+      surfaceOp: (event as { surfaceOp?: unknown }).surfaceOp,
+    }))).toEqual([
+      { text: '@ada 出方案', source: { kind: 'user' }, surfaceOp: 'append' },
+      { text: '@ada @bill 对齐接口', source: { kind: 'user' }, surfaceOp: 'append' },
+    ])
+    // The dispatch record stays as bookkeeping (tasks, cursors, replay).
+    const dispatches = events.filter(event => event.type === 'room/dispatch')
+    expect(dispatches.map(event => event.data)).toEqual([
+      { targets: ['ada'], text: '出方案' },
+      { targets: ['ada', 'bill'], text: '对齐接口' },
+    ])
+    // The user/message precedes its dispatch record (bubble above bookkeeping).
+    expect(events.indexOf(messages[0]!)).toBeLessThan(events.indexOf(dispatches[0]!))
 
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({

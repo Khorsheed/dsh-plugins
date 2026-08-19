@@ -3,12 +3,12 @@
  * `room/*` journal events into chat nodes — `room-speech` (a member's
  * reply), `room-run` (a run's running edge, updated by its terminal edge:
  * done/cancelled vanish, failed stays as a dim error row), `room-event`
- * (boundary lines: member joined/left, plus the human's own dispatch
- * messages — the composer appends journal events for @-messages, which
- * otherwise never appear in the flow), and `room-relay` (the member-to-
+ * (boundary lines: member joined/left), and `room-relay` (the member-to-
  * member notification gate row, folding resolved edges in place). The
  * auto-seated main agent's member-added is bookkeeping, not a boundary
- * event, and is not claimed.
+ * event, and is not claimed. `room/dispatch` is deliberately NOT claimed:
+ * the human's @-message lands as a standard `user/message` event (see
+ * RoomService.postMessage) and renders through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -43,23 +43,19 @@ export interface RoomRunData {
   readonly elapsedMs?: number
 }
 
-/** Chat node data of one boundary line (member join/leave) or human dispatch. */
+/** Chat node data of one boundary line (member join/leave). */
 export interface RoomEventData {
   /** Seq of the source event. */
   readonly seq: number
   /** Unix epoch ms from the event. */
   readonly time: number
-  readonly sub: 'member-added' | 'member-removed' | 'dispatch'
-  /** The joining/leaving member (member-added/member-removed). */
+  readonly sub: 'member-added' | 'member-removed'
+  /** The joining/leaving member. */
   readonly member?: string
   /** The joining member's provider (member-added, cli members). */
   readonly provider?: string
   /** Who invited the joining member (member-added). */
   readonly invitedBy?: 'human' | 'agent'
-  /** Addressed members (dispatch). */
-  readonly targets?: readonly string[]
-  /** The human's text (dispatch). */
-  readonly text?: string
 }
 
 /** Chat node data of one member-to-member notification relay row. */
@@ -82,7 +78,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
     'room-speech': RoomSpeechData
     /** room: a member run's live row (running; failed stays dim). */
     'room-run': RoomRunData
-    /** room: a boundary line (join/leave) or the human's own dispatch. */
+    /** room: a boundary line (join/leave). */
     'room-event': RoomEventData
     /** room: a member-to-member notification relay (gate row). */
     'room-relay': RoomRelayData
@@ -179,8 +175,9 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
 
 /**
  * The boundary Definition: one single-event Context per member-added (cli
- * members only — the auto-seated main agent is skipped), member-removed, or
- * dispatch event.
+ * members only — the auto-seated main agent is skipped) or member-removed
+ * event. `room/dispatch` stays unclaimed: the human's @-message renders
+ * through the official user node (it is also appended as `user/message`).
  */
 export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
   kind: 'room-event',
@@ -190,7 +187,6 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
       case 'room/member-added':
         return event.data.kind === 'main-agent' ? null : { id: String(event.seq), role: 'start' as const }
       case 'room/member-removed':
-      case 'room/dispatch':
         return { id: String(event.seq), role: 'start' as const }
       default:
         return null
@@ -210,10 +206,8 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
         }
       case 'room/member-removed':
         return { seq: event.seq, time: event.time, sub: 'member-removed', member: event.data.name }
-      case 'room/dispatch':
-        return { seq: event.seq, time: event.time, sub: 'dispatch', targets: event.data.targets, text: event.data.text }
       default:
-        throw new Error('room-event start requires a room boundary/dispatch event')
+        throw new Error('room-event start requires a room boundary event')
     }
   },
   update: context => context.state,

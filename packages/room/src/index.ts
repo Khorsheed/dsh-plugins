@@ -28,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import { composeRoomAgent, inspectCold, roomSessionPreset } from './agent-setup.ts'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
 // Type-only: pulls the `tools` ToolRuntime merge onto Context (deferred inject).
@@ -379,10 +380,19 @@ export class RoomService extends TypertRemoteService {
   /**
    * Post a human @-message into the room: leading `@name` tokens address
    * members (a `room/dispatch` journal record, executed by the engine, and
-   * one auto-opened in_progress task per target). A BARE message is a
-   * structured `no-targets` rejection — defense only: the room composer
-   * releases bare messages to the official submit path (a normal main-agent
-   * turn) and never calls this Remote without an @-mention.
+   * one auto-opened in_progress task per target). The human's raw text is
+   * FIRST appended as a standard `user/message` (source kind 'user' — the
+   * human typed it; the official messageDefinition classifies any other kind
+   * as a collapsed context-injection row, not the user bubble), so the words
+   * render as the official user bubble and enter the main agent's
+   * model-visible history. The append wakes nothing: turns start from
+   * prompt/followup calls, never from log appends (the agent is the log's
+   * writer, not a watcher). The `room/dispatch` record stays as pure
+   * bookkeeping (task board, dispatch cursors, replay) — it no longer drives
+   * any chat node. A BARE message is a structured `no-targets` rejection —
+   * defense only: the room composer releases bare messages to the official
+   * submit path (a normal main-agent turn) and never calls this Remote
+   * without an @-mention.
    * @param request - room session and raw composer text.
    * @returns the parse receipt, or a rejection.
    */
@@ -397,6 +407,10 @@ export class RoomService extends TypertRemoteService {
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = parsed.targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
+    loaded.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: request.text.trim() }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
     const dispatch = loaded.session.append('room/dispatch', { targets: parsed.targets, text: parsed.text })
     for (const target of parsed.targets) {
       loaded.session.append('room/task-added', {

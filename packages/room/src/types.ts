@@ -67,10 +67,13 @@ export interface RoomMemberRemovedEvent {
 }
 
 /**
- * A human @-message: the dispatch record. Journaled for UI projection and
- * replay (chat-flow lines, task auto-open); it no longer feeds any prompt —
- * a member's prompt is role instructions + roster + notifications + the
- * dispatch text, never a running log.
+ * A human @-message: the dispatch record. Pure bookkeeping — the task
+ * auto-open, the engine's instruction cursors, and replay. It drives NO chat
+ * node: the human's words land as a standard `user/message` event (appended
+ * alongside, see RoomService.postMessage) and render as the official user
+ * bubble. It never feeds any prompt either — a member's prompt is role
+ * instructions + roster + notifications + the dispatch text, never a running
+ * log.
  */
 export interface RoomDispatchEvent {
   readonly targets: readonly string[]
@@ -155,7 +158,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/member-updated': RoomMemberUpdatedEvent
     /** Roster mutation: a member left. */
     'room/member-removed': RoomMemberRemovedEvent
-    /** Dispatch record: a human @-message (UI projection + task auto-open). */
+    /** Dispatch record: a human @-message (bookkeeping: task auto-open, dispatch cursors). */
     'room/dispatch': RoomDispatchEvent
     /** Member speech mirror (UI projection; never re-injected into prompts). */
     'room/speech': RoomSpeechEvent

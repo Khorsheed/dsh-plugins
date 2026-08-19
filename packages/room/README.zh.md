@@ -4,7 +4,7 @@
 
 Room 是一个被标记为多 agent 群聊的普通 dsh 会话：标准聊天 UI 中容纳若干通过 @ 提及寻址的对等成员，人类是中枢。room 的全部状态——身份、名册、派发记录、通知转派、任务板、运行态——都是 room 会话上的自定义会话事件（`room/*`）journal，由纯函数 replay 折叠；host 侧是 `room` Typert Remote 服务（`createRoom` / `isRoom` / `getState` / `invite` / `updateMember` / `removeMember` / `postMessage` / `confirmRelay` / `dismissRelay` / `addTask` / `closeTask` / `cancel` / `listProviders`），client 侧经 `ctx.remote.$mount` 挂载生成的 Remote 面，只注册官方 slot/Definition 条目——装进任何 profile 都不需要改动核心包。
 
-派发：room 输入框开头的 `@name` token 寻址成员（多个 @ 扇出）；裸消息（开头无 @）放行给官方提交路径——即 room 自己的主 agent 的普通回合（host 侧 postMessage 对裸消息返回结构化 `no-targets` 错误，纯防御）。@ 补全只列已有成员——纯寻址，不做邀请。**没有黑板**：每次成员派发携带的 prompt 恰好四样——成员的角色指令（首轮注入；之后的编辑作为"指令更新"随下一次派发携带）、名册（谁存在，附通知协议）、寻址到该成员的已确认未投递通知、本次消息文本。成员不感知 room 的流水账；它们自己的 CLI 会话（resume 链）持有工作记忆。同成员派发串行（家族 resume 锁本来就只允许每子会话一个在飞 resume）；不同成员并行。
+派发：room 输入框开头的 `@name` token 寻址成员（多个 @ 扇出）；裸消息（开头无 @）放行给官方提交路径——即 room 自己的主 agent 的普通回合（host 侧 postMessage 对裸消息返回结构化 `no-targets` 错误，纯防御）。@ 消息本身由 host 落一条标准 `user/message` 事件（source 为 `user`）——官方用户气泡渲染它，主 agent 的下一回合读得到它——append 而已，不唤醒。@ 补全只列已有成员——纯寻址，不做邀请。**没有黑板**：每次成员派发携带的 prompt 恰好四样——成员的角色指令（首轮注入；之后的编辑作为"指令更新"随下一次派发携带）、名册（谁存在，附通知协议）、寻址到该成员的已确认未投递通知、本次消息文本。成员不感知 room 的流水账；它们自己的 CLI 会话（resume 链）持有工作记忆。同成员派发串行（家族 resume 锁本来就只允许每子会话一个在飞 resume）；不同成员并行。
 
 成员：会话自己的主 agent 在创建 room 时以平等成员（`main`）入座——裸消息经官方提交路径天然到达它，成员活动对它默认模型不可见（自定义事件不进 `deriveMessages()`）。CLI 成员是 local-agent 家族的委派：首次派发开一个全新子会话（`parentSession` = room 会话），后续派发续跑同一条 CLI 会话，委派句柄记进 journal（`room/member-updated` 带 `childSessionId`），重开可重挂。成员 tab（`成员` 视图）管名册——行级的名字/provider/角色指令/状态 + 耗时、轨迹跳转、中断、指令编辑、移除——以及邀请弹窗（provider 列表反映 local-agent 名册的登录态，未登录置灰；**cwd 字段**留空 = 继承 room 会话 cwd——记进名册，暂不下发门面，等家族的按调用 cwd 覆盖落地）。主 agent 也能邀请：模型工具 `room_invite` 走同一 invite 路径，记 `invitedBy: 'agent'`。
 
@@ -12,7 +12,7 @@ Room 是一个被标记为多 agent 群聊的普通 dsh 会话：标准聊天 UI
 
 任务板：人的管理视图，与其他一切一样由 journal 驱动（`room/task-*`）。@ 派发自动在目标成员名下开 in_progress 任务（title = 派发文本截断）；成员 speech settle 闭任务（完成 → done，中断 → cancelled；失败的运行留给人）。`conversation.input.dock` 上的任务板条——与官方 todo 条同一坑位、彼此叠加共存——按成员分组，支持添加/关闭。任务板不进任何成员的 prompt。
 
-聊天流：成员回复渲染为身份行（成员色圆点 + 名字胶囊 + provider）+ 无框 markdown + 复刻官方 IconActions 的操作行（复制、子会话跳转、真实耗时、hover 淡入时间戳——刻意无分支、无 TPS）；运行中的成员是 ToolRow 同构 24px 行（StateDot +「ada 正在工作… · 12s」+ 扫光，带 `prefers-reduced-motion` 兜底），整行点击跳子会话，行尾停止按钮接 `cancel`；加入/离开、人自己的派发与已完结的转派渲染为 compaction 式 dim 单行。
+聊天流：成员回复渲染为身份行（成员色圆点 + 名字胶囊 + provider）+ 无框 markdown + 复刻官方 IconActions 的操作行（复制、子会话跳转、真实耗时、hover 淡入时间戳——刻意无分支、无 TPS）；运行中的成员是 ToolRow 同构 24px 行（StateDot +「ada 正在工作… · 12s」+ 扫光，带 `prefers-reduced-motion` 兜底），整行点击跳子会话，行尾停止按钮接 `cancel`；加入/离开与已完结的转派渲染为 compaction 式 dim 单行；人自己的 @ 消息渲染为官方用户气泡（postMessage 在 `room/dispatch` 簿记旁同时落一条标准 `user/message`，簿记不产出任何聊天节点）。
 
 ## 安装
 
