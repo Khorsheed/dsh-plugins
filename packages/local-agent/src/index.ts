@@ -831,8 +831,13 @@ export class LocalAgentRegistry {
    * exactly this sequence):
    *
    * ```ts
-   * using prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))
-   * const detach = ctx.sessions.enter(prep.session)
+   * const prep = await ctx.sessionPersistence.prepare(SessionId(childSessionId))
+   * try {
+   *   const detach = ctx.sessions.enter(prep.session)
+   *   await ctx.sessions.flush(prep.session)  // binds the coordinator (consumes the reservation)
+   * } finally {
+   *   prep[Symbol.dispose]()
+   * }
    * ```
    *
    * Hold `detach` for the plugin lifetime. The publication is ENTER-ONLY,
@@ -999,8 +1004,22 @@ export class LocalAgentRegistry {
     if (persistence === undefined) {
       throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
     }
-    using preparation = await persistence.prepare(SessionId(childSessionId))
-    this.reattachDisposers.set(childSessionId, sessions.enter(preparation.session))
+    const preparation = await persistence.prepare(SessionId(childSessionId))
+    try {
+      this.reattachDisposers.set(childSessionId, sessions.enter(preparation.session))
+      // The publication is ENTER-ONLY (no announce — see resume's doc
+      // comment), so the persistence coordinator never hears session/created
+      // for the restored child; and preparation disposal would release its
+      // reservation as a REUSABLE ready entry, making every later coordinator
+      // contact (session/event buffering, flush) throw "persisted state
+      // already owns this identity" — the reattached child silently never
+      // persisted again. Flush immediately instead: the coordinator's initFor
+      // consumes the reservation (attachPrepared), after which the release
+      // below is a no-op.
+      await sessions.flush(preparation.session)
+    } finally {
+      preparation[Symbol.dispose]()
+    }
   }
 
   /**

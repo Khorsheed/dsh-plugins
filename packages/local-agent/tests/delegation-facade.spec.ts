@@ -169,6 +169,38 @@ describe('LocalAgentRegistry delegation facade', () => {
     expect(run.id).toBeDefined()
   })
 
+  it('flushes right after the reattach enter so the persistence coordinator consumes the reservation', async () => {
+    // Regression: the reservation from sessionPersistence.prepare() was
+    // released as a REUSABLE ready entry at preparation disposal, and every
+    // later coordinator contact (session/event buffering, flush) threw
+    // "persisted state already owns this identity" — a reattached child
+    // silently never persisted again. The reattach now flushes immediately
+    // after enter, letting the coordinator consume the reservation.
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    h.registry.recordDelegation({
+      childSessionId: 'child-1',
+      provider: PROVIDER,
+      parentSessionId: PARENT,
+      cliSessionId: 'cli-42',
+    })
+    const flushed: string[] = []
+    const store = h.ctx.sessions
+    const originalFlush = store.flush.bind(store)
+    store.flush = (async (session: never) => {
+      flushed.push((session as { id: string }).id)
+      return originalFlush(session)
+    }) as typeof store.flush
+
+    await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT)
+
+    const child = h.ctx.sessions.get(SessionId('child-1'))!
+    expect(flushed).toContain('child-1')
+    // A post-reattach append + flush cycle works (the coordinator is bound).
+    child.append('subagent/descriptor', { version: 2, mode: 'one-shot', provider: PROVIDER, label: 'fake' })
+    await expect(store.flush(child)).resolves.toBeDefined()
+  })
+
   it('does not reattach when the child session is already live', async () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
