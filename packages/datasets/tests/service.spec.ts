@@ -2,7 +2,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BindingSession } from '../src/binding.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from '../src/service.ts'
@@ -10,16 +9,20 @@ import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo 
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
+let bindingsRoot: string | undefined
 
 afterEach(() => {
   if (repo !== undefined) cleanup(repo.dir)
   if (worktreeRoot !== undefined) rmSync(worktreeRoot, { recursive: true, force: true })
+  if (bindingsRoot !== undefined) rmSync(bindingsRoot, { recursive: true, force: true })
   repo = undefined
   worktreeRoot = undefined
+  bindingsRoot = undefined
 })
 
 const service = () => createDatasetsService({
   worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+  bindingsRoot: bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
 })
 
 /** Scope over the fixture repo with a `visible`-only layer whitelist. */
@@ -132,18 +135,33 @@ describe('put_item', () => {
 })
 
 describe('live-session binding through the service', () => {
-  it('bind/fold/unbind against a structural session', () => {
-    const events: SessionEvent[] = []
-    const session: BindingSession = {
-      events,
-      append(type, data) {
-        events.push({ type, seq: events.length, time: Date.now(), data } as SessionEvent)
-      },
+  it('bind/read/unbind against a structural session — and NEVER touches the session log', () => {
+    // Regression guard for the resume-poisoning bug: the persistence read
+    // path refuses to rebuild a session whose log holds an event type outside
+    // the harness's generated known-types set unless the envelope carries
+    // `ignorable: true`, and `Session.append()` offers no way to set that
+    // marker (the downstream registration surface is deferred upstream) — so
+    // this package must persist NO session events at all. A fake session
+    // whose append throws proves the binding paths never call it.
+    const session: BindingSession & { append: () => never } = {
+      id: 's1',
+      append: () => { throw new Error('session.append must never be called') },
     }
     const s = service()
     s.bind(session, { repoPath: '/repo', layers: ['visible'] })
     expect(s.binding(session)).toEqual({ repoPath: '/repo', layers: ['visible'] })
     s.unbind(session)
     expect(s.binding(session)).toBeUndefined()
+  })
+
+  it('the binding survives a service re-create (a restart)', () => {
+    const root = bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-'))
+    const session: BindingSession = { id: 's1' }
+    service().bind(session, { repoPath: '/repo', datasets: ['alpha'] })
+    const restarted = createDatasetsService({
+      worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+      bindingsRoot: root,
+    })
+    expect(restarted.binding(session)).toEqual({ repoPath: '/repo', datasets: ['alpha'] })
   })
 })

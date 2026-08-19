@@ -13,16 +13,16 @@
  *     `read` prints the raw file content, `worktree path` prints the path)
  *   worktree path    — acquire the managed whole-layer view (sparse-checkout-limited)
  *   worktree prune   — unlock + remove every managed worktree of a repository
- *   bind / unbind    — write a session's binding (offline; see the safety note
- *     in session-log.ts: only for sessions no running instance has open)
+ *   bind / unbind    — write a session's binding (the plugin-owned store is
+ *     read per call, so binding a LIVE session is race-free)
  */
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { validateBinding } from './binding.ts'
+import { readBinding, validateBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
-import { resolveSessionsRoot, resolveWorktreeRoot } from './defaults.ts'
+import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
 import { formatList, formatShow } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
-import { appendOfflineBinding, readOfflineBinding } from './session-log.ts'
 import { pruneManagedWorktrees } from './worktree.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
@@ -40,9 +40,9 @@ commands:
   snapshot --dataset D [--repo R] [--commit C]
   worktree path --dataset D [--repo R] [--commit C] [--layers a,b] [--worktree-root DIR]
   worktree prune --repo R [--worktree-root DIR]
-  bind --session ID --repo R [--datasets a,b] [--layers x,y] [--sessions-root DIR]
-  unbind --session ID [--sessions-root DIR]
-  binding --session ID [--sessions-root DIR]
+  bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
+  unbind --session ID [--state-root DIR]
+  binding --session ID [--state-root DIR]
 flags:
   --repo R           dataset repository (default: $DSH_DATASETS_REPO)
   --commit C         pinned commit (default: HEAD)
@@ -54,7 +54,7 @@ flags:
   --datasets a,b     binding dataset whitelist (bind)
   --session ID       session id (bind/unbind/binding)
   --worktree-root DIR  managed worktree root (default: $DSH_HOME/state/datasets/worktrees)
-  --sessions-root DIR  session-log root (default: $DSH_HOME/sessions)
+  --state-root DIR     plugin state root (default: $DSH_HOME/state/datasets)
 `
 
 /** Parsed CLI invocation. */
@@ -113,7 +113,8 @@ export async function runCli(
   }
   const { command, flags } = parsed
   const worktreeRoot = resolveWorktreeRoot(flags['worktree-root'])
-  const service = createDatasetsService({ worktreeRoot })
+  const bindingsRoot = join(resolveStateRoot(flags['state-root']), 'bindings')
+  const service = createDatasetsService({ worktreeRoot, bindingsRoot })
   const scope = (): DatasetScope => resolveScope(
     flags['repo'] !== undefined ? { repo: flags['repo'] } : {},
     undefined,
@@ -190,21 +191,21 @@ export async function runCli(
           ...(csv(flags['datasets']) !== undefined ? { datasets: csv(flags['datasets']) } : {}),
           ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) } : {}),
         })
-        const seq = await appendOfflineBinding(resolveSessionsRoot(flags['sessions-root']), session, binding)
-        io.stdout(`bound session ${session} to ${binding.repoPath} (event seq ${seq})\n`)
+        writeBinding(bindingsRoot, session, binding)
+        io.stdout(`bound session ${session} to ${binding.repoPath}\n`)
         return 0
       }
       case 'unbind': {
         const session = flags['session']
         if (session === undefined) return usageError(io, 'unbind requires --session ID')
-        const seq = await appendOfflineBinding(resolveSessionsRoot(flags['sessions-root']), session, null)
-        io.stdout(`cleared the binding of session ${session} (event seq ${seq})\n`)
+        writeBinding(bindingsRoot, session, null)
+        io.stdout(`cleared the binding of session ${session}\n`)
         return 0
       }
       case 'binding': {
         const session = flags['session']
         if (session === undefined) return usageError(io, 'binding requires --session ID')
-        const binding = await readOfflineBinding(resolveSessionsRoot(flags['sessions-root']), session)
+        const binding = readBinding(bindingsRoot, session)
         io.stdout(`${binding === undefined ? 'null' : JSON.stringify(binding)}\n`)
         return 0
       }

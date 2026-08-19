@@ -16,7 +16,6 @@
     "src/invariant.ts",
     "src/remote.ts",
     "src/service.ts",
-    "src/session-log.ts",
     "src/types.ts",
     "src/worktree.ts"
   ]

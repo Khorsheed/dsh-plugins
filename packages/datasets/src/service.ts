@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  appendBinding, bindingFromEvents, validateBinding, type BindingSession, type DatasetBinding,
+  readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
   assertSafeRelativePath, assertValidName, datasetDir, DatasetsError, itemDir, ITEM_METADATA,
@@ -185,6 +185,8 @@ export interface DatasetsService {
 export interface DatasetsServiceOptions {
   /** Managed worktree root. */
   worktreeRoot: string
+  /** Binding store root (`<stateRoot>/bindings`). */
+  bindingsRoot: string
 }
 
 /** Wrap a git failure as a domain error where the cause is clear. */
@@ -389,16 +391,16 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
 
     bind(session, binding) {
       const validated = validateBinding(binding)
-      appendBinding(session, validated)
+      writeBinding(options.bindingsRoot, session.id, validated)
       return validated
     },
 
     unbind(session) {
-      appendBinding(session, null)
+      writeBinding(options.bindingsRoot, session.id, null)
     },
 
     binding(session) {
-      return bindingFromEvents(session.events)
+      return readBinding(options.bindingsRoot, session.id)
     },
   }
 }

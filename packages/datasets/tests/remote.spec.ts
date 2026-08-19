@@ -1,39 +1,36 @@
 /**
  * The datasets Remote service: session binding resolution through the agent
  * parameter, whitelist enforcement on the Remote read paths (the SAME service
- * core as the tools), and bind/unbind writes landing as session events.
+ * core as the tools), and bind/unbind writes landing in the plugin-owned
+ * binding store.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { BindingSession, DatasetsBindingChange } from '../src/binding.ts'
+import type { BindingSession } from '../src/binding.ts'
 import { DatasetsRemoteService } from '../src/remote.ts'
 import { createDatasetsService } from '../src/service.ts'
 import { cleanup, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
 let worktreeRoot: string | undefined
+let bindingsRoot: string | undefined
 
 afterEach(() => {
   if (repo !== undefined) cleanup(repo.dir)
   if (worktreeRoot !== undefined) rmSync(worktreeRoot, { recursive: true, force: true })
+  if (bindingsRoot !== undefined) rmSync(bindingsRoot, { recursive: true, force: true })
   repo = undefined
   worktreeRoot = undefined
+  bindingsRoot = undefined
 })
 
-/** A minimal live-session fake: the event log plus the append verb. */
-function fakeSession(): BindingSession & { events: SessionEvent[] } {
-  const events: SessionEvent[] = []
-  return {
-    events,
-    append(type: 'datasets/binding', data: DatasetsBindingChange) {
-      events.push({ type, data } as SessionEvent)
-    },
-  }
+/** A minimal live-session fake: the binding store keys on the id alone. */
+function fakeSession(): BindingSession {
+  return { id: 's1' }
 }
 
 function agentOf(session: BindingSession): Agent {
@@ -45,6 +42,7 @@ async function bench(defaultRepo = '') {
   const ctx = new Context()
   ctx.provide('datasets', createDatasetsService({
     worktreeRoot: worktreeRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-wt-')),
+    bindingsRoot: bindingsRoot ??= mkdtempSync(join(tmpdir(), 'dsh-datasets-bind-')),
   }))
   const fiber = ctx.plugin(DatasetsRemoteService, { defaultRepo })
   await fiber.await()
@@ -53,19 +51,16 @@ async function bench(defaultRepo = '') {
 }
 
 describe('DatasetsRemoteService', () => {
-  it('bind writes a session event, binding folds it, unbind tombstones it', async () => {
+  it('bind records the binding, binding reads it, unbind clears it', async () => {
     const { fiber, remote } = await bench()
-    const session = fakeSession()
-    const agent = agentOf(session)
+    const agent = agentOf(fakeSession())
     expect(remote.binding(agent)).toBeNull()
 
     const recorded = remote.bind(agent, { repoPath: '/repo', layers: ['visible'] })
     expect(recorded).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    expect(session.events).toHaveLength(1)
     expect(remote.binding(agent)).toEqual({ repoPath: '/repo', layers: ['visible'] })
 
     expect(remote.unbind(agent)).toBeNull()
-    expect(session.events).toHaveLength(2)
     expect(remote.binding(agent)).toBeNull()
     await fiber.dispose()
   })

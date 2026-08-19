@@ -43,7 +43,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 ## 会话绑定
 
-每个会话可绑定自己的数据集仓库，存为 log-only session 事件（`datasets/binding`，沿用 `goal/change` 先例）——随会话持久化、可在日志中审计：
+每个会话可绑定自己的数据集仓库，存为插件自管的持久化状态文件——插件状态根下每会话一条 JSON 记录（`$DSH_HOME/state/datasets/bindings/`，否则 `<cwd>/.dsh-datasets/bindings/`）：
 
 ```ts
 { repoPath: string, datasets?: string[], layers?: string[] }
@@ -51,7 +51,9 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 `datasets` 限定可见的数据集 id；`layers` 是层白名单。缺省字段即「全部」。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
 
-绑定**写入**是人的操作：会话存活时用 `/datasets bind`，离线时用 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。带显式 `repo` 参数的工具调用不依赖绑定（绑定存在时白名单仍然生效）；既无显式 repo 又无绑定又无配置默认时，工具明确报错并提示如何绑定。
+**为什么不是 session 事件**：初版把绑定存为 log-only `datasets/binding` session 事件，但 harness 的持久化读路径会拒绝重建「日志含有其生成的已知类型集之外的事件类型、且 envelope 未带 `ignorable: true`」的会话——下游（仓外）插件的事件类型按构造不在该集合内（注册面上游 deferred），而 `Session.append()` 无法设置该标记。本插件追加的任何自定义类型事件都会让会话在重启后不可读，因此绑定迁到插件自管存储（每次调用现读，所以 CLI 写存活会话的绑定也无竞争）。代价：fork 出的会话以未绑定开始；删除会话会留下一条孤儿记录。
+
+绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。带显式 `repo` 参数的工具调用不依赖绑定（绑定存在时白名单仍然生效）；既无显式 repo 又无绑定又无配置默认时，工具明确报错并提示如何绑定。
 
 白名单是会话级约束，不是安全边界：同机的人可改绑定，有 shell 的 agent 可读原仓库。它防的是误取和流程串味，不防恶意。
 
@@ -81,12 +83,12 @@ dsh-datasets read --dataset D --item I --layer L --path P [--commit C]
 dsh-datasets snapshot --dataset D
 dsh-datasets worktree path --dataset D [--layers a,b] [--worktree-root DIR]
 dsh-datasets worktree prune --repo R [--worktree-root DIR]
-dsh-datasets bind --session ID --repo R [--datasets a,b] [--layers x,y] [--sessions-root DIR]
-dsh-datasets unbind --session ID [--sessions-root DIR]
-dsh-datasets binding --session ID [--sessions-root DIR]
+dsh-datasets bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
+dsh-datasets unbind --session ID [--state-root DIR]
+dsh-datasets binding --session ID [--state-root DIR]
 ```
 
-`bind`/`unbind` 把绑定事件直接追加到会话的 JSONL 日志（plain 与 zstd 帧两种布局都支持；日志根缺省 `$DSH_HOME/sessions`）。**安全**：向正在运行的实例已打开的会话追加会与后端的内存序号竞争——只绑定未存活的会话；存活路径是 `/datasets bind`。
+`bind`/`unbind` 写插件自管的绑定存储（`--state-root` 缺省 `$DSH_HOME/state/datasets`；绑定在其 `bindings/` 子目录下）。存储每次调用现读，因此绑定一个运行中实例已打开的会话也无竞争——该会话的下一次工具调用即可看到新绑定。
 
 ## Slash 命令
 
@@ -118,6 +120,6 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，但本包依赖链上没有可用的 YAML 解析器、也刻意不为此加依赖，v1 读 `dataset.json`/`item.json`。未来若引入 YAML 能力可两者兼容。
 - **item 元数据不按 `itemMetaSchema` 校验**——schema 仅声明、形状校验为对象并透传；对 item 元数据做完整 JSON-Schema 校验需要引入本包不接受的校验器依赖。
 - **会话 tab 的预览经 RPC 读整个文件**——`read` 返回完整文件内容、无字节上限（与工具同语义）；超大层文件更适合走 `worktree_path` 消费。
-- **CLI `bind` 刻意仅离线**——它直接追加会话日志（安全注记见上）；绑定存活会话走 slash 命令或 web tab。
+- **fork 出的会话以未绑定开始**——绑定按会话 id 归档在插件自管存储里，不随 fork 继承；删除会话会留下其绑定记录（无害，一个小 JSON 文件）。
 - **被消费方写脏的 worktree 由 `worktree prune` 重建**——只读契约由消费方的挂载（`:ro`）强制，插件不强制。
 - **`worktree prune` 需要 `--repo`**——注册表是 `git worktree list`，按仓库管理；已删除仓库残留的托管根手工清理。

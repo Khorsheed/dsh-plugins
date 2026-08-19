@@ -14,7 +14,6 @@
     "src/defaults.ts",
     "src/git.ts",
     "src/service.ts",
-    "src/session-log.ts",
     "src/types.ts",
     "src/worktree.ts",
     "src/client/index.ts",

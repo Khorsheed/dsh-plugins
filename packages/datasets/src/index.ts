@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-datasets
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 // Type-only: pulls the commands Context merge into the program.
 import type {} from '@deepseek-ai/dsh-commands'
@@ -18,7 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
-import { resolveWorktreeRoot } from './defaults.ts'
+import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
 import { formatList, formatShow } from './format.ts'
 import {
   createDatasetsService, resolveScope, type DatasetScope, type DatasetsService,
@@ -86,7 +87,10 @@ function jsonOutput(): {
 }
 
 export function apply(ctx: Context, config: DatasetsPluginConfig): void {
-  const service = createDatasetsService({ worktreeRoot: resolveWorktreeRoot(config.worktreeRoot) })
+  const service = createDatasetsService({
+    worktreeRoot: resolveWorktreeRoot(config.worktreeRoot),
+    bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
+  })
   ctx.provide('datasets', service)
   const defaultRepo = config.repo ?? ''
   // The web session tab's data face: the same service core behind a Typert

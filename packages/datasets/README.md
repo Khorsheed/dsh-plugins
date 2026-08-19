@@ -43,7 +43,7 @@ The plugin provides the `ctx.datasets` service for other plugins to consume opti
 
 ## The session binding
 
-Each session may bind its own dataset repository, stored as a log-only session event (`datasets/binding`, the `goal/change` precedent) — it persists with the session and is auditable in its log:
+Each session may bind its own dataset repository, stored as a plugin-owned durable state file — one JSON record per session under the plugin state root (`$DSH_HOME/state/datasets/bindings/`, else `<cwd>/.dsh-datasets/bindings/`):
 
 ```ts
 { repoPath: string, datasets?: string[], layers?: string[] }
@@ -51,7 +51,9 @@ Each session may bind its own dataset repository, stored as a log-only session e
 
 `datasets` restricts which dataset ids are visible; `layers` is the layer whitelist. Absent fields mean "everything". The whitelist is enforced on **every** tool read path — `list`/`show` filter to it, `read` rejects outside it, and `worktree_path` intersects with it (an empty intersection is an error; the sparse-checkout physically omits disallowed layer directories).
 
-Binding **writes** are human operations: `/datasets bind` in a live session, or `dsh-datasets bind` for an offline one. Agent tools only resolve the binding — which datasets an agent may use is decided by the human. Tool calls with an explicit `repo` argument do not need a binding (the whitelist still applies when one exists); with neither an explicit repo nor a binding nor a configured default, tools fail loud and say how to bind.
+**Why not a session event**: the binding was a log-only `datasets/binding` session event in the first cut, but the harness's persistence read path refuses to rebuild a session whose log contains an event type outside its generated known-types set unless the envelope carries `ignorable: true` — a downstream plugin's event types are outside that set by construction (the registration surface is deferred upstream), and `Session.append()` offers no way to set the marker. Any custom-typed event this plugin appended made the session unresumable, so the binding moved to the plugin's own store (read per call, so a CLI write to a live session's binding is race-free). The trade: a forked session starts unbound, and deleting a session leaves an orphan record behind.
+
+Binding **writes** are human operations: `/datasets bind` in a live session, the web tab's binding bar, or `dsh-datasets bind` from a script. Agent tools only resolve the binding — which datasets an agent may use is decided by the human. Tool calls with an explicit `repo` argument do not need a binding (the whitelist still applies when one exists); with neither an explicit repo nor a binding nor a configured default, tools fail loud and say how to bind.
 
 The whitelist is a session-level constraint, not a security boundary: a same-machine human can rebind, and an agent with shell access can read the original repository. It prevents accidental fetches and workflow cross-contamination, not malice.
 
@@ -81,12 +83,12 @@ dsh-datasets read --dataset D --item I --layer L --path P [--commit C]
 dsh-datasets snapshot --dataset D
 dsh-datasets worktree path --dataset D [--layers a,b] [--worktree-root DIR]
 dsh-datasets worktree prune --repo R [--worktree-root DIR]
-dsh-datasets bind --session ID --repo R [--datasets a,b] [--layers x,y] [--sessions-root DIR]
-dsh-datasets unbind --session ID [--sessions-root DIR]
-dsh-datasets binding --session ID [--sessions-root DIR]
+dsh-datasets bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
+dsh-datasets unbind --session ID [--state-root DIR]
+dsh-datasets binding --session ID [--state-root DIR]
 ```
 
-`bind`/`unbind` append the binding event directly to the session's JSONL log (plain and zstd-frame layouts both supported; the root defaults to `$DSH_HOME/sessions`). **Safety**: appending to a session a running instance has open races the backend's in-memory sequence counter — only bind sessions that are not live; the live path is `/datasets bind`.
+`bind`/`unbind` write the plugin-owned binding store (`--state-root` defaults to `$DSH_HOME/state/datasets`; bindings live under its `bindings/` subdirectory). The store is read per call, so binding a session a running instance has open is race-free — the next tool call in that session sees the new binding.
 
 ## Slash commands
 
@@ -118,6 +120,6 @@ This section mirrors the `dsh.compat` field in package.json; the two move togeth
 - **Descriptors are JSON, not YAML** — the layout convention calls them `dataset.yml`/`item.yml`, but no YAML parser is available on this package's dependency chain and adding one is deliberately out of scope, so v1 reads `dataset.json`/`item.json`. A future YAML-capable line can accept both.
 - **Item metadata is not validated against `itemMetaSchema`** — the schema is declared, shape-checked as an object, and passed through; full JSON-Schema validation of item metadata needs a validator dependency this package does not take.
 - **The session tab's preview reads whole files over RPC** — `read` serves full file content with no byte cap (the same semantics as the tool); very large layer files are better consumed through `worktree_path`.
-- **CLI `bind` is offline-only by design** — it appends to the session log directly (see the safety note above); binding a live session goes through the slash command or the web tab.
+- **A forked session starts unbound** — the binding is filed under the session id in the plugin-owned store and does not follow a fork; deleting a session leaves its binding record behind (harmless, one small JSON file).
 - **A worktree a consumer dirtied is rebuilt by `worktree prune`** — the read-only contract is enforced by the consumer's mount (`:ro`), not by the plugin.
 - **`worktree prune` needs `--repo`** — the registry is `git worktree list`, which is per-repository; orphaned roots of deleted repositories are removed by hand.

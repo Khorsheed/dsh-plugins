@@ -95,25 +95,20 @@ describe('worktree verbs', () => {
   })
 })
 
-describe('bind verbs (offline session log)', () => {
-  it('bind then binding then unbind round-trips through the log', async () => {
-    // A managed worktree is irrelevant here; hand-roll a minimal plain log.
-    const root = join(scratchDir(), 'sessions')
-    const { encodeSegment } = await import('../src/session-log.ts')
-    const logDir = join(root, 'project', encodeSegment('s1'))
-    const { mkdirSync, writeFileSync } = await import('node:fs')
-    mkdirSync(logDir, { recursive: true })
-    writeFileSync(join(logDir, 'session.jsonl'),
-      `${JSON.stringify({ type: 'session', version: 1, id: 's1', createdAt: 1, delegationDepth: 0 })}\n`, 'utf8')
+describe('bind verbs (plugin-owned binding store)', () => {
+  it('bind then binding then unbind round-trips through the store', async () => {
+    const root = join(scratchDir(), 'state')
 
-    const bind = await run(['bind', '--session', 's1', '--repo', '/repo', '--layers', 'visible', '--sessions-root', root])
+    const bind = await run(['bind', '--session', 's1', '--repo', '/repo', '--layers', 'visible', '--state-root', root])
     expect(bind.code).toBe(0)
-    const binding = await run(['binding', '--session', 's1', '--sessions-root', root])
+    const binding = await run(['binding', '--session', 's1', '--state-root', root])
     expect(JSON.parse(binding.out)).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    const unbind = await run(['unbind', '--session', 's1', '--sessions-root', root])
+    const unbind = await run(['unbind', '--session', 's1', '--state-root', root])
     expect(unbind.code).toBe(0)
-    expect((await run(['binding', '--session', 's1', '--sessions-root', root])).out.trim()).toBe('null')
-    expect((await run(['bind', '--session', 's1', '--sessions-root', root])).code).toBe(2)
-    expect((await run(['bind', '--session', 'ghost', '--repo', '/r', '--sessions-root', root])).code).toBe(1)
+    expect((await run(['binding', '--session', 's1', '--state-root', root])).out.trim()).toBe('null')
+    expect((await run(['bind', '--session', 's1', '--state-root', root])).code).toBe(2)
+    // Binding a session id the CLI cannot verify just files the record (the
+    // store keys on the id alone); an invalid binding still fails loud.
+    expect((await run(['bind', '--session', 'ghost', '--repo', '/r', '--state-root', root])).code).toBe(0)
   })
 })
