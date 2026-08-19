@@ -36,3 +36,4 @@ Status: implemented
 - ankh-guard 的降级 preflight 项维持降级：rc.8 仍未导出 `composeProfile`。
 - 官方的 `@deepseek-ai/dsh-subagent-codex` / `dsh-subagent-claude-code`（可选 bundle,dsh-base 默认不挂载）与 local-agent 家族只在一次性委派上重叠；家族的作用域 home、跨轮 resume、会话记录与设置 UI 仍是差异化，且 provider/工具命名不冲突。
 - **老 harness 检出升宿主线的残留坑**:`git reset --hard` 只清跟踪文件，新线里被删除或迁出的包的目录会以 `node_modules`/`lib` 残留存活。tsdown 的 workspace 枚举是目录 glob(`packages/*/*`)，每个残骸目录都变成一个幻影"包"（名字经配置回落取自根包）；若残骸没有构建好的 `lib/types`，整个构建以 `Cannot find entry` 中止。部署检出带了 13 个幻影（迁出的社区插件、退役的 `web-react`/`schema-form`)，镜像 2 个——均已清理。今后更新检出时，构建前应先扫掉没有 `package.json` 的 `packages/*/*` 目录。
+- 跟进（2026-08-20）：适配改了 local-agent 的源码但漏了测试——`local-agent.spec.ts` 仍以 rc.7 的实参个数调用 `commands.execute`（17 个失败），客户端 locale 用例仍假设默认语言是 zh，而 rc.8 的初始语言跟随浏览器（jsdom 报 en-US）。修复：测试为 images 传 `[]`，locale 用例显式 `setLocale('zh')` 固定。教训：升宿主线后要逐包跑全量测试，而不只是跑源码改过的包。
