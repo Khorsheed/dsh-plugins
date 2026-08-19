@@ -231,6 +231,32 @@ describe('RoomService Remote surface (real composition)', () => {
     })).rejects.toThrow()
   })
 
+  it('receiveMemberMessage resolves child-session-id endpoints to roster names and rejects malformed messages', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.invite({ sessionId, provider: 'codex', name: 'bill' })
+    // The bridge addresses the sender by its child session id (only room owns
+    // the roster); the dispatch engine records it through member-updated.
+    ctx.sessions.get(sessionId)!.append('room/member-updated', { name: 'ada', childSessionId: SessionId('child-ada') })
+    ctx.sessions.get(sessionId)!.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
+
+    const receipt = await service.receiveMemberMessage({
+      from: SessionId('child-ada'), to: 'child-bill', content: '接口定稿', parentSessionId: sessionId,
+    })
+    expect(receipt).toBe('pending-confirm')
+    expect(await service.getState({ sessionId })).toMatchObject({
+      ok: true,
+      value: { relays: [{ from: 'ada', to: 'bill', state: 'pending' }] },
+    })
+
+    // A malformed message (the untyped bridge boundary) throws instead of
+    // poisoning the journal — the bridge falls back to direct delivery.
+    await expect(service.receiveMemberMessage({
+      from: { childSessionId: 'child-ada' }, to: 'bill', content: 'x', parentSessionId: sessionId,
+    } as never)).rejects.toThrow('malformed member message')
+    expect((await service.getState({ sessionId }))).toMatchObject({ ok: true, value: { relays: [{ content: '接口定稿' }] } })
+  })
+
   it('confirmRelay dispatches the notification to the recipient; dismissRelay drops it', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })

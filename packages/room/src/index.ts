@@ -412,21 +412,36 @@ export class RoomService extends TypertRemoteService {
 
   /**
    * The notification gate entry, verbatim-frozen contract for the local-agent
-   * family bridge (`ctx.get('room')` + duck-typed call). Phase 1's gate is
-   * ALWAYS human confirmation: the relay is journaled pending and the sender
-   * receives 'pending-confirm' (never 'sent' — the bridge keeps the member's
-   * conclusion honest). A non-room parent session throws: the bridge treats
-   * a rejection as "room does not claim this" and delivers directly.
+   * family bridge (`ctx.get('room')` + duck-typed call). The call crosses an
+   * untyped package boundary, so the message shape is validated at runtime:
+   * a malformed message throws (the bridge treats a rejection as "room does
+   * not claim this" and delivers directly) instead of poisoning the journal.
+   * `from`/`to` arrive as roster names OR member child session ids (the
+   * bridge cannot speak names for the sender — only room owns the roster);
+   * both are normalized to roster names when resolvable, so the pending card
+   * and the delivery text (`{from} 给你的通知: …`) read as names. Phase 1's
+   * gate is ALWAYS human confirmation: the relay is journaled pending and
+   * the sender receives 'pending-confirm' (never 'sent' — the bridge keeps
+   * the member's conclusion honest). A non-room parent session throws.
    * @param request - sender, recipient, content, the shared parent session, provenance.
    * @returns the gate receipt.
    */
   async receiveMemberMessage(request: RoomMemberMessage): Promise<RoomMemberMessageReceipt> {
+    if (typeof request?.from !== 'string' || typeof request.to !== 'string'
+      || typeof request.content !== 'string' || typeof request.parentSessionId !== 'string') {
+      throw new Error('room: malformed member message (from/to/content/parentSessionId must be strings)')
+    }
     const loaded = await this.ensureLive(request.parentSessionId)
     if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
+    const resolveName = (endpoint: string): string => {
+      const byName = loaded.state.members.find(member => member.name === endpoint)
+      if (byName !== undefined) return byName.name
+      return loaded.state.members.find(member => member.childSessionId === endpoint)?.name ?? endpoint
+    }
     loaded.session.append('room/relay', {
       id: randomUUID(),
-      from: request.from,
-      to: request.to,
+      from: resolveName(request.from),
+      to: resolveName(request.to),
       content: request.content,
       ...request.provenance === undefined ? {} : { provenance: request.provenance },
     })
