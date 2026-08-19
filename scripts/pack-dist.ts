@@ -21,13 +21,29 @@
  */
 import { execFileSync } from 'node:child_process'
 import {
-  cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 
 /** Files copied from the package root into the staging dir when present. */
 const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'cordis.patch.yml']
+
+/**
+ * Payload paths from the package's `files` field beyond what staging already
+ * copies verbatim (the root documents above and lib/) — e.g. ankh-guard's
+ * `scripts/dsh-watchdog.sh` and its supervisor installers, which the watchdog
+ * cannot ship without. Glob entries are skipped: the lib globs are covered by
+ * the recursive lib/ copy, and no package currently files anything else
+ * globbed.
+ */
+export function filesDeclaredExtras(files: readonly string[] = []): string[] {
+  return files.filter(entry =>
+    !entry.includes('*')
+    && entry !== 'lib'
+    && !entry.startsWith('lib/')
+    && !(STAGED_ROOT_FILES as readonly string[]).includes(entry))
+}
 
 export interface PackDistOptions {
   /** Workspace package directory (must contain src/ and a built lib/). */
@@ -46,6 +62,7 @@ export interface PackDistOptions {
 export type PackageJson = Record<string, unknown> & {
   name: string
   version: string
+  files?: string[]
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
@@ -157,6 +174,16 @@ export function packDist(options: PackDistOptions): string {
       if (existsSync(join(packageDir, file))) cpSync(join(packageDir, file), join(staging, file))
     }
     cpSync(join(packageDir, 'lib'), join(staging, 'lib'), { recursive: true })
+    // Every other path the manifest's `files` declares (scripts/, assets, …)
+    // must ship too — staging only root docs + lib once dropped ankh-guard's
+    // watchdog script from the tarball it was about to publish.
+    for (const extra of filesDeclaredExtras(pkg.files)) {
+      const source = join(packageDir, extra)
+      if (!existsSync(source)) continue
+      const dest = join(staging, extra)
+      mkdirSync(dirname(dest), { recursive: true })
+      cpSync(source, dest, { recursive: true })
+    }
     writeFileSync(join(staging, 'package.json'), `${JSON.stringify(rescopePackageJson(pkg, distName, options.version, family), null, 2)}\n`)
 
     const patchPath = join(staging, 'cordis.patch.yml')
