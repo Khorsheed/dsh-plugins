@@ -37,6 +37,14 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 运行时需要：`node`、`bash`、macOS/Linux 上的 `lsof`（发现监听者；`--pid` 可绕过），以及 `pgrep`（回收后代进程：watchdog 的 `free_port`/清理与 `restart` 的强杀升级都遍历子进程树，而不是假设进程组）。消费者无需构建——发布的 `lib/` 就是可运行产物。
 
+## 已知安装坑
+
+- **从 GitHub 安装会现场构建。** `dsh plugin add github:…` 会 clone 并跑 `prepare`（完整 devDependencies 安装 + 构建）。npm 发布版（`@khorsheed/dsh-ankh-guard`）自带构建好的 `lib/`——除非刻意要跟仓库最新代码，否则优先用 npm 版。
+- **pnpm 默认拦截依赖的构建脚本。** add 因构建脚本拦截失败时，把工具链条目加进 `allowBuilds` 后重试。
+- **npm 缓存有 root 属主文件**（历史上用过一次 `sudo npm …`）会让 prepare 构建 EPERM：`sudo chown -R $(id -u):$(id -g) ~/.npm`。
+- **`--start` 不在你的 cwd 里跑。** watchdog 启动前会 `cd` 到 dsh home（否则 `/tmp`），所以启动命令必须自包含——绝对路径，或命令里显式 `cd`。
+- **从沙箱会话里采用的监督会继承沙箱。** 从 workspace-write 沙箱里 spawn 的 watchdog 会把沙箱 profile 传给之后每次拉起的实例（嵌套 sandbox-exec 失败，每条命令退化成审批）。长期部署请用分层形态（launchd/systemd 安装器），让 watchdog 链从沙箱外启动。
+
 ## 命令行
 
 主要接口是 CLI，实例宕机也能用。安装后用 `dsh-ankh-guard` bin（或 `node lib/cli.js`）。所有命令带 `--state-dir "$DSH_HOME/state" --repo "$PWD"`。
