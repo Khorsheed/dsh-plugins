@@ -68,6 +68,8 @@
 
 - **依赖面**：`webServer.tapIndex` / `webServer.register`（公开）、session 事件（公开）、`ctx.credentials`（公开）、Push API（浏览器标准）——零官方改动。
 
+**与 M1 的依赖关系（验收依赖，非实现依赖）**：M2 的插件开发在本机 `localhost`（浏览器视为 secure context）即可完成，**与 M1 并行**；但 SW / Web Push / beforeinstallprompt 只在 secure context 下工作（HTTPS 或 localhost），**手机经 `http://<LAN-IP>` 访问时 SW 不会注册、PWA 不可安装、推送不可用**（页面看似正常，极易误判）。因此 M2 的**真机端到端验收必须已有 M1 的 HTTPS 端点**（Tailscale `ts.net` 或同类）。
+
 ### M3 移动 UI 适配（纯插件；降级路径即最终形态）
 
 官方 `ui-layout` 不可修改、也不提交 upstream 需求，**完整移动布局不可达**。本部件交付移动适配插件 `@khorsheed/dsh-mobile-ui`，以可插拔方式把三栏压成手机可用单栏，**上限为"单栏沉浸"**：
