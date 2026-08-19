@@ -78,6 +78,106 @@ export interface LocalAgentDelegationRecord {
 }
 
 /**
+ * The member-channel view of one delegation, projected by the gateway's
+ * `memberOf` Remote for the composer: everything the browser needs to decide
+ * "this child session is a family member" and to label it, without the
+ * CLI-session resume handle (which never leaves the host).
+ */
+export interface LocalAgentDelegationView {
+  /** The dsh subagent child session id. */
+  childSessionId: string
+  /** The `ctx.subagents` provider name that owns the CLI session. */
+  provider: string
+  /** The delegating parent session id that created the child. */
+  parentSessionId: string
+  /** The owning harness's human display name, when a harness claims the provider. */
+  harnessDisplayName?: string
+}
+
+/**
+ * Result of one user-initiated member prompt (`promptMember` Remote). Facade
+ * failures (unknown delegation, parent not live, resume locked, …) arrive as
+ * structured errors for the composer to render inline, never as raw exceptions
+ * over the wire.
+ */
+export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * One member-to-member notification handed to the room gate (and recorded as
+ * the delivery's provenance). `from` carries the sender's delegation view —
+ * never the CLI-session resume handle.
+ */
+export interface LocalAgentMemberMessage {
+  /** The sending member's delegation view (resolved from its run token). */
+  from: LocalAgentDelegationView
+  /**
+   * The raw `to` argument: a member's dsh child session id, or — only
+   * meaningful to a claiming room — a member name from the room roster.
+   */
+  to: string
+  /** The notification text. */
+  content: string
+  /** The parent session both members belong to. */
+  parentSessionId: string
+}
+
+/**
+ * The room gate's answer to a member notification: `claimed: true` means room
+ * owns the delivery (pending-confirm card, auto-dispatch, or refusal) and the
+ * receipt passes back to the sender verbatim; `claimed: false` declines (the
+ * parent session is not a room this instance manages) and the family
+ * direct-sends.
+ */
+export type RoomMemberMessageResult =
+  | { readonly claimed: true; readonly receipt: string }
+  | { readonly claimed: false }
+
+/**
+ * Duck-typed shape of the room service's member-message gate, probed via
+ * `ctx.get('room')` — deliberately NO import of any room package, so the
+ * optional local-agent → room edge needs no inter-plugin dependency and no
+ * independence-checker sanction: room absent or declining is invisible to the
+ * family path. Room implements this shape to own the dispatch gate.
+ */
+export interface RoomMemberMessageGate {
+  receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageResult>
+}
+
+/**
+ * Outcome of one `member_message` delivery. Channel-level failures (unknown or
+ * expired token, foreign pid, unknown member) are `ok: false` tool errors;
+ * delivery verdicts — including a failed direct send — are receipts the sender
+ * can quote in its conclusion: `sent` / `pending-confirm` / `busy` /
+ * `error: <reason>` (or whatever a claiming room returns, passed verbatim).
+ */
+export type MemberMessageOutcome =
+  | { readonly ok: true; readonly receipt: string }
+  | { readonly ok: false; readonly error: string }
+
+/** Environment variable carrying the member-bridge socket path (spawn env → bridge). */
+export const MEMBER_BRIDGE_SOCKET_ENV = 'DSH_MEMBER_SOCKET'
+
+/** Environment variable carrying the per-run member-bridge token. */
+export const MEMBER_BRIDGE_TOKEN_ENV = 'DSH_MEMBER_TOKEN'
+
+/**
+ * One in-flight CLI run registered for the member channel: the per-run token's
+ * resolution target. The token is minted at run start (fresh or resume),
+ * cross-checked against the spawned CLI's pid, and invalidated when the run
+ * settles — a member's identity is never self-reported.
+ */
+export interface LocalAgentMemberRun {
+  /** The dsh child session id of the run (its member identity). */
+  childSessionId: string
+  /** The delegating parent session id. */
+  parentSessionId: string
+  /** The `ctx.subagents` provider name running the CLI. */
+  provider: string
+  /** The spawned CLI process pid, bound right after spawn. */
+  cliPid?: number
+}
+
+/**
  * What one delegation tool call intends for the provider's next `start()`.
  * The tool stages exactly one intent per call before awaiting
  * `ctx.subagents.start()`, and the provider consumes exactly one per start,

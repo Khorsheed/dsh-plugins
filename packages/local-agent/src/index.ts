@@ -18,8 +18,10 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { appendFileSync, chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
@@ -33,12 +35,14 @@ import type {
   DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
+  LocalAgentMemberRun,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
+import { MemberChannel } from './member-channel.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'local-agent'
@@ -50,10 +54,20 @@ export type {
   DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
+  LocalAgentDelegationView,
+  LocalAgentMemberRun,
+  LocalAgentPromptResult,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
+} from './types.ts'
+
+export type {
+  LocalAgentMemberMessage,
+  MemberMessageOutcome,
+  RoomMemberMessageGate,
+  RoomMemberMessageResult,
 } from './types.ts'
 
 /** Per-harness session listing: reads the harness's own records format. */
@@ -159,6 +173,9 @@ export const REPLACE_LOGIN_GRACE_MS = 5_000
 
 /** Heartbeat interval for facade-tracked in-flight runs. */
 export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
+
+/** Socket filename of the member-bridge listener, under the shared homes root. */
+export const MEMBER_BRIDGE_SOCKET_FILENAME = 'member-bridge.sock'
 
 /** One delegation-intent queue per (parent session, provider). */
 function delegationIntentKey(parentSessionId: string, provider: string): string {
@@ -332,6 +349,12 @@ export class LocalAgentRegistry {
    * the first round's messages.
    */
   private readonly kimiMirrorOffsets = new Map<string, number>()
+  /**
+   * In-flight runs registered with the member channel, by per-run token. The
+   * bridge MCP server presents its token (and parent pid) on every callback;
+   * entries are invalidated on the run's settle path.
+   */
+  private readonly memberRuns = new Map<string, LocalAgentMemberRun>()
   /**
    * Facade-tracked in-flight runs by dsh child session id, so
    * {@link LocalAgentRegistry.cancel} can abort a run started through
@@ -608,6 +631,21 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Read-only lookup of one delegation by its dsh child session id — the
+   * member channel's membership check. Unlike {@link resolveDelegation} this
+   * never throws and performs no ownership assertion: the gateway composes it
+   * with {@link resume} (whose ownership checks are unchanged) for the
+   * human-opened child session, where the record itself is the authorization
+   * source.
+   * @param childSessionId - the dsh child session id.
+   * @returns the record, or undefined when this child was never delegated
+   *   through the family.
+   */
+  getDelegation(childSessionId: string): LocalAgentDelegationRecord | undefined {
+    return this.delegations.get(childSessionId)
+  }
+
+  /**
    * Acquire the resume lock for one child session. A dsh child session may
    * have only one in-flight resume: the provider takes the lock before
    * spawning the resume CLI and releases it when the run settles, so a second
@@ -641,6 +679,73 @@ export class LocalAgentRegistry {
    */
   isResumeLocked(childSessionId: string): boolean {
     return this.resumeLocks.has(childSessionId)
+  }
+
+  /**
+   * Register one CLI run with the member channel and mint its per-run token.
+   * The provider calls this before spawning the CLI (fresh and resume rounds
+   * alike) and injects the token into the bridge MCP server's environment; the
+   * token is how the host resolves which run — and therefore which member — a
+   * bridge callback belongs to, so a member's identity is never self-reported.
+   * @param run - the run's member identity (child session, parent, provider).
+   * @returns the minted token, invalidated by {@link unregisterMemberRun}.
+   */
+  registerMemberRun(run: Omit<LocalAgentMemberRun, 'cliPid'>): string {
+    const token = randomUUID()
+    this.memberRuns.set(token, { ...run })
+    return token
+  }
+
+  /**
+   * Bind the spawned CLI's pid to a registered run. The bridge (the CLI's MCP
+   * child) reports its parent pid with every callback; the host cross-checks it
+   * against this binding, so a sibling run's bridge entry — visible in a shared
+   * scoped home's MCP config — cannot be used to impersonate another member.
+   * @param token - the run's member-channel token.
+   * @param cliPid - the spawned CLI process pid.
+   */
+  bindMemberRunPid(token: string, cliPid: number): void {
+    const run = this.memberRuns.get(token)
+    if (run !== undefined) this.memberRuns.set(token, { ...run, cliPid })
+  }
+
+  /**
+   * Resolve a member-channel token to its run, or undefined when the token is
+   * unknown or already invalidated (the run settled).
+   * @param token - the token the bridge presented.
+   * @returns the registered run, or undefined.
+   */
+  resolveMemberRun(token: string): LocalAgentMemberRun | undefined {
+    return this.memberRuns.get(token)
+  }
+
+  /**
+   * Invalidate a run's member-channel token on its settle path (any stop
+   * reason). A bridge callback arriving after settle is an unknown token.
+   * @param token - the token to invalidate.
+   */
+  unregisterMemberRun(token: string): void {
+    this.memberRuns.delete(token)
+  }
+
+  /**
+   * The loopback socket path the member-bridge listener owns. Providers inject
+   * it into the bridge's environment so the stdio MCP server knows where to
+   * call back.
+   * @returns the unix socket path under the shared homes root.
+   */
+  memberBridgeSocketPath(): string {
+    return join(this.homesRoot, MEMBER_BRIDGE_SOCKET_FILENAME)
+  }
+
+  /**
+   * The stdio MCP server entry for the member bridge, for providers to write
+   * into their CLI's scoped MCP config. The bridge script ships inside this
+   * package and runs under the same Node that runs the host.
+   * @returns the command + args declaring the bridge server.
+   */
+  memberBridgeCommand(): { command: string; args: string[] } {
+    return { command: process.execPath, args: [fileURLToPath(new URL('./member-bridge.js', import.meta.url))] }
   }
 
   /**
@@ -1160,6 +1265,12 @@ export function apply(ctx: Context, config: Config): void {
   // the registry, so it mounts after the provide above. Service registration
   // follows the owning fiber, so unload unregisters it automatically.
   new LocalAgentGateway(ctx)
+  // The member channel's loopback listener (bridge MCP servers call back here).
+  // Degrade, don't explode: a failed bind leaves member_message failing with a
+  // tool error while everything else works.
+  const memberChannel = new MemberChannel(ctx, registry, registry.memberBridgeSocketPath())
+  void memberChannel.start()
+  ctx.effect(() => () => { void memberChannel.dispose() })
   ctx.commands.register({
     name: 'local-agent',
     description: 'list the registered local code-agent harnesses',

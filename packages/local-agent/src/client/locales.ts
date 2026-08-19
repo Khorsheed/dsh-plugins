@@ -30,6 +30,15 @@ export const zh = {
   'settings.unsupported': '待支持',
   'settings.rosterFailed': '无法读取本地 Agent 列表，请重试',
   'settings.retry': '重试',
+  'member.checking': '正在确认成员身份…',
+  'member.readonly.title': '一次性子代理记录',
+  'member.readonly.body': '一次性任务不支持后续消息，可在这里查看完整执行记录。',
+  'member.title': '{harness} 成员',
+  'member.placeholder': '给成员发消息，继续同一会话…',
+  'member.send': '发送',
+  'member.stop': '停止',
+  'member.running': '成员运行中…',
+  'member.sendFailed': '发送失败，请重试',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -59,6 +68,15 @@ export const en: Record<LocalAgentKey, string> = {
   'settings.unsupported': 'Coming soon',
   'settings.rosterFailed': 'Could not read the local-agent roster; retry',
   'settings.retry': 'Retry',
+  'member.checking': 'Checking membership…',
+  'member.readonly.title': 'One-shot subagent record',
+  'member.readonly.body': 'One-shot tasks do not accept follow-up messages; the full run record is available here.',
+  'member.title': '{harness} member',
+  'member.placeholder': 'Message the member to continue the same session…',
+  'member.send': 'Send',
+  'member.stop': 'Stop',
+  'member.running': 'Member running…',
+  'member.sendFailed': 'Send failed; try again',
 }
 
 /** Key domain of the `local-agent` namespace (zh is the source of truth). */

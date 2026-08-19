@@ -107,4 +107,6 @@ Before creating a proposal, search: `active/` + `closed/` + `.agents/notes/` (in
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|
 | plugin | [通用数据集存储 + 任务管理（datasets / mission）](active/2026-08-18-datasets-mission-bench.md) | planned | 纯插件 | bench 私有仓库（题库 + run 模板） | 通用能力；agent 经模型工具读写，评测用法单立一章 | 2026-08-18 |
-| plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1 门面+reattach 配方 → M2 心跳 → M3 逐 provider 增量镜像 → M4 映射持久化+跨重启续跑 | 2026-08-18 |
+| plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1–M4 代码已落地（未推送），待真实 profile 验收 | 2026-08-19 |
+| plugin | [local-agent 成员双向通道（可写 composer + promptMember + 成员互通知）](active/2026-08-19-local-agent-member-channel.md) | planned | 纯插件 | local-agent-delegation-api（底座 M1–M4） | room 二轮评审立项；替代不可行的 prepareContinuable 路线（§0 存档）；M3 = CLI→CLI 成员互通知（room 高频场景） | 2026-08-19 |
+| plugin | [移动端接入（mobile-access）](active/2026-08-19-mobile-access.md) | planned | 纯插件 | 无 | 随时随地访问完整 Web UI（保留全部插件能力）；M1 网关认证 / M2 PWA+推送 / M3 移动 UI 适配 / M4 bot 通道 | 2026-08-19 |

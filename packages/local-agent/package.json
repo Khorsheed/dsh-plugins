@@ -17,6 +17,9 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
+  "bin": {
+    "dsh-local-agent-member-bridge": "lib/member-bridge.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -66,6 +69,7 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/member-bridge.js",
     "lib/client.js",
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
