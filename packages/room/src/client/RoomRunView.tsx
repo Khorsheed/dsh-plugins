@@ -4,7 +4,7 @@
  * prefers-reduced-motion fallback). The WHOLE row jumps into the member's
  * child session (looked up from the room store's roster — run events carry
  * no handle), and a trailing stop button cancels through the Remote. A
- * failed run stays as a dim error row; done/cancelled dematerialize in the
+ * failed run stays as a dim error row; done/cancelled are hidden by the
  * Definition and never reach here.
  */
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
@@ -25,7 +25,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   // The run events carry no delegation handle; the roster record does.
   const childSessionId = state?.members.find(entry => entry.name === data.member)?.childSessionId
-  // The Definition dematerializes done/cancelled; guard the same states here.
+  // The Definition hides done/cancelled; guard the same states here.
   if (data.state === 'done' || data.state === 'cancelled') return null
 
   const failed = data.state === 'failed'

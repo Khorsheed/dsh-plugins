@@ -307,6 +307,18 @@ describe('DispatchEngine (real composition)', () => {
     expect(state).toMatchObject({ ok: true, value: { runs: [{ member: 'ada', state: 'failed' }] } })
   })
 
+  it('journals the running and done edges with the SAME startedAt (the client fold key)', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', '搞定'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '干活' })
+    await bench.service.engine.idle()
+    const edges = bench.ctx.sessions.get(bench.sessionId)!.events
+      .filter(event => event.type === 'room/run-state')
+      .map(event => event.data as { state: string; startedAt: number })
+    expect(edges.map(edge => edge.state)).toEqual(['running', 'done'])
+    expect(edges[1]!.startedAt).toBe(edges[0]!.startedAt)
+  })
+
   it('cancel journals one terminal cancelled edge and the settle path does not double-append', async () => {
     const bench = await bootRoom()
     const flight = deferred<SubagentResult>()

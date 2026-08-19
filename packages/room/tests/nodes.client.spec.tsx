@@ -2,8 +2,10 @@
 /** The room chat-flow nodes: Definition claiming/lifecycle and the renderers. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { ConversationNodeAssembler, createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type {
+  ChatConversationViewNode, ClientContext, ConversationViewDefinition, SessionId,
+} from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
@@ -104,18 +106,63 @@ describe('room node Definitions', () => {
       { event: done, role: 'update', location: { kind: 'unresolved' } } as never,
     )
     expect(settled).toEqual({ seq: 3, time: 1003, member: 'ada', startedAt: 100, state: 'done', elapsedMs: 900 })
-    // done/cancelled dematerialize; failed stays.
-    expect(roomRunDefinition.buildViewNode!(contextOf(settled))).toBeNull()
+    // done/cancelled hide in place (the assembler forbids withdrawing a
+    // materialized node with null); failed stays visible.
+    expect(roomRunDefinition.buildViewNode!(contextOf(settled)))
+      .toMatchObject({ visibility: 'hidden', data: { state: 'done' } })
     const cancelled = roomRunDefinition.update(
       contextOf(started) as never,
       { event: ev('room/run-state', 4, { member: 'ada', state: 'cancelled', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never,
     )
-    expect(roomRunDefinition.buildViewNode!(contextOf(cancelled))).toBeNull()
+    expect(roomRunDefinition.buildViewNode!(contextOf(cancelled)))
+      .toMatchObject({ visibility: 'hidden', data: { state: 'cancelled' } })
     const failed = roomRunDefinition.update(
       contextOf(started) as never,
       { event: ev('room/run-state', 4, { member: 'ada', state: 'failed', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never,
     )
     expect(roomRunDefinition.buildViewNode!(contextOf(failed))).toMatchObject({ data: { state: 'failed' } })
+  })
+
+  it('a settled run folds away through the REAL assembler live path (regression: null withdrawal threw)', () => {
+    // A minimal chat-target view keeping the latest node per key.
+    const chatView: ConversationViewDefinition = {
+      target: 'chat',
+      create: () => {
+        const nodes = new Map<string, ChatConversationViewNode>()
+        const snapshot = () => [...nodes.values()]
+        return {
+          empty: snapshot(),
+          replace: ({ nodes: list }: { nodes: readonly ChatConversationViewNode[] }) => {
+            nodes.clear()
+            for (const node of list) nodes.set(node.key, node)
+            return snapshot()
+          },
+          apply: ({ upserts }: { upserts: readonly ChatConversationViewNode[] }) => {
+            for (const node of upserts) nodes.set(node.key, node)
+            return snapshot()
+          },
+        }
+      },
+    }
+    const assembler = new ConversationNodeAssembler(
+      { entries: () => [roomRunDefinition], fallbackEntry: () => undefined },
+      { entries: () => [chatView] },
+    )
+    const running = ev('room/run-state', 3, { member: 'ada', state: 'running', startedAt: 100 })
+    const done = ev('room/run-state', 4, { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 })
+    // Open on the running edge (the live row materializes)…
+    assembler.replaceWindow([{ event: running, view: undefined }], false)
+    assembler.flush()
+    let chat = assembler.snapshot('chat') as ChatConversationViewNode[]
+    expect(chat).toHaveLength(1)
+    expect(chat[0]).toMatchObject({ kind: 'room-run', visibility: 'visible', data: { state: 'running' } })
+    // …then the terminal edge lands live: the row must fold away WITHOUT the
+    // assembler's "withdrew materialized target" throw freezing the session.
+    assembler.append({ event: done, view: undefined })
+    expect(() => assembler.flush()).not.toThrow()
+    chat = assembler.snapshot('chat') as ChatConversationViewNode[]
+    expect(chat).toHaveLength(1)
+    expect(chat[0]).toMatchObject({ kind: 'room-run', visibility: 'hidden', data: { state: 'done', elapsedMs: 900 } })
   })
 
   it('room-event claims boundaries only: no dispatch, no user/message, no auto-seated main agent', () => {

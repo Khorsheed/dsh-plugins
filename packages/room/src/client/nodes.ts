@@ -2,7 +2,7 @@
  * Room chat-flow projections: the Definitions claiming the room session's
  * `room/*` journal events into chat nodes — `room-speech` (a member's
  * reply), `room-run` (a run's running edge, updated by its terminal edge:
- * done/cancelled vanish, failed stays as a dim error row), `room-event`
+ * done/cancelled hide in place, failed stays as a dim error row), `room-event`
  * (boundary lines: member joined/left), and `room-relay` (the member-to-
  * member notification gate row, folding resolved edges in place). The
  * auto-seated main agent's member-added is bookkeeping, not a boundary
@@ -89,6 +89,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 function viewNode<State extends { readonly seq: number }>(
   context: ConversationNodeContext<State>,
   kind: string,
+  visibility: 'visible' | 'hidden' = 'visible',
 ): ChatConversationViewNode | null {
   if (context.state === undefined) return null
   return {
@@ -98,7 +99,7 @@ function viewNode<State extends { readonly seq: number }>(
     target: 'chat',
     anchorSeq: context.state.seq,
     location: context.start?.location ?? { kind: 'unresolved' },
-    visibility: 'visible',
+    visibility,
     data: context.state,
   } as ChatConversationViewNode
 }
@@ -133,8 +134,11 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
  * The member-run Definition: one Context per run (matched on
  * member+startedAt), started by the running edge and updated by its terminal
  * edge. A running run renders the live row; a failed run stays as a dim
- * error row; done/cancelled dematerialize (the speech row or the cancel's
- * own affordances carry the outcome).
+ * error row; done/cancelled hide the row IN PLACE — the assembler's live
+ * incremental flush forbids withdrawing a materialized node with null (the
+ * withdrawal contract is the same key with `visibility: 'hidden'`; a null
+ * there throws and freezes the session's whole chat pipeline), while the
+ * speech row or the cancel's own affordances carry the outcome.
  */
 export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
   kind: 'room-run',
@@ -165,12 +169,10 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
       ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
     }
   },
-  buildViewNode: (context) => {
-    // Terminal edges dematerialize the row — except a failure, which stays.
-    if (context.state !== undefined
-      && (context.state.state === 'done' || context.state.state === 'cancelled')) return null
-    return viewNode(context, 'room-run')
-  },
+  buildViewNode: context => viewNode(context, 'room-run',
+    context.state !== undefined && (context.state.state === 'done' || context.state.state === 'cancelled')
+      ? 'hidden'
+      : 'visible'),
 }
 
 /**
