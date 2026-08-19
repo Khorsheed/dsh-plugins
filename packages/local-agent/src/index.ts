@@ -50,6 +50,8 @@ export type {
   DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
+  LocalAgentDelegationView,
+  LocalAgentPromptResult,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
@@ -605,6 +607,21 @@ export class LocalAgentRegistry {
    */
   listDelegations(): readonly LocalAgentDelegationRecord[] {
     return [...this.delegations.values()]
+  }
+
+  /**
+   * Read-only lookup of one delegation by its dsh child session id — the
+   * member channel's membership check. Unlike {@link resolveDelegation} this
+   * never throws and performs no ownership assertion: the gateway composes it
+   * with {@link resume} (whose ownership checks are unchanged) for the
+   * human-opened child session, where the record itself is the authorization
+   * source.
+   * @param childSessionId - the dsh child session id.
+   * @returns the record, or undefined when this child was never delegated
+   *   through the family.
+   */
+  getDelegation(childSessionId: string): LocalAgentDelegationRecord | undefined {
+    return this.delegations.get(childSessionId)
   }
 
   /**

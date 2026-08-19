@@ -78,6 +78,31 @@ export interface LocalAgentDelegationRecord {
 }
 
 /**
+ * The member-channel view of one delegation, projected by the gateway's
+ * `memberOf` Remote for the composer: everything the browser needs to decide
+ * "this child session is a family member" and to label it, without the
+ * CLI-session resume handle (which never leaves the host).
+ */
+export interface LocalAgentDelegationView {
+  /** The dsh subagent child session id. */
+  childSessionId: string
+  /** The `ctx.subagents` provider name that owns the CLI session. */
+  provider: string
+  /** The delegating parent session id that created the child. */
+  parentSessionId: string
+  /** The owning harness's human display name, when a harness claims the provider. */
+  harnessDisplayName?: string
+}
+
+/**
+ * Result of one user-initiated member prompt (`promptMember` Remote). Facade
+ * failures (unknown delegation, parent not live, resume locked, …) arrive as
+ * structured errors for the composer to render inline, never as raw exceptions
+ * over the wire.
+ */
+export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
+
+/**
  * What one delegation tool call intends for the provider's next `start()`.
  * The tool stages exactly one intent per call before awaiting
  * `ctx.subagents.start()`, and the provider consumes exactly one per start,
