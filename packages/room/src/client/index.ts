@@ -3,7 +3,9 @@
  * official `ctx.remote.$mount` channel, feeds the client-side RoomStore, and
  * registers the slot entries: the sidebar footer「+ New room」action, the
  * `conversation.composer` chain takeover (claims the composer exactly when
- * the current session is a cached room), and the 成员 `conversation.view`
+ * the current session is a cached room — and renders the task board plus the
+ * session stats row itself, because both of their official homes ride the
+ * fallback tree the takeover hides), and the 成员 `conversation.view`
  * tab. Composing this plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
@@ -28,7 +30,6 @@ import { RoomEventView } from './RoomEventView.tsx'
 import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
-import { RoomTaskDock } from './RoomTaskDock.tsx'
 import type {
   NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome,
   RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTasksInjected,
@@ -242,7 +243,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // ui-subagent precedence (-10), below pending-interaction takeovers (the
   // approval panel's priority 1 wins while a question/approval waits). A
   // cache miss declines — the freshly opened room shows the official bar for
-  // the first pull's duration (accepted, see room-store.ts).
+  // the first pull's duration (accepted, see room-store.ts). The injected
+  // face also carries the task-board actions: the takeover renders the board
+  // itself, because its `conversation.input.dock` seat hides with the
+  // official fallback.
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
     {
       name: 'conversation.composer',
@@ -254,7 +258,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           ? { room: true }
           : null
       },
-      inject: (): RoomComposerInjected => ({ roomStore, submit }),
+      inject: (sessionId: SessionId): RoomComposerInjected => ({ ...tasksFace(sessionId), submit }),
     },
     RoomComposer,
   ))
@@ -307,22 +311,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     },
     RoomRelayView,
   ))
-  // The task board: a `conversation.input.dock` row above the composer card —
-  // the same seat as the official todo strip (which stacks: dock is a list
-  // slot, entries render in ascending order, each hiding itself when empty).
-  // The board is the human's journal-driven management view; it renders only
-  // while the current session is a cached room.
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
-    {
-      name: 'conversation.input.dock',
-      id: 'room-tasks',
-      order: 10,
-      locale: NS,
-      inject: (sessionId: SessionId): RoomTasksInjected => tasksFace(sessionId),
-    },
-    RoomTaskDock,
-  ))
-
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
   }

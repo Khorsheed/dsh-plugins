@@ -26,6 +26,7 @@
     "src/client/RoomRelayView.tsx",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
+    "src/client/RoomStatsLine.tsx",
     "src/client/RoomTaskDock.tsx"
   ]
 }

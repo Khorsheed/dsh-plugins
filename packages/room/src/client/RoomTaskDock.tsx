@@ -1,10 +1,12 @@
 /**
- * The room task board: a `conversation.input.dock` entry — the same seat the
- * official todo strip occupies (a full-width row above the composer card,
- * stacked with it when both have content). The board is the HUMAN's
- * management view of the journal-driven `room/task-*` fold: tasks grouped by
- * member, close buttons on open rows, and an add row. It never enters any
- * member's prompt. Renders only while the current session is a cached room.
+ * The room task board strip, rendered by the RoomComposer itself above the
+ * input card — the posture of the official todo strip (a full-width row
+ * above the composer card), but NOT a `conversation.input.dock` entry: that
+ * seat lives inside the official composer fallback, which the room's
+ * composer takeover hides, so a dock registration would never be visible in
+ * a room session. The board is the HUMAN's management view of the
+ * journal-driven `room/task-*` fold: tasks grouped by member, close buttons
+ * on open rows, and an add row. It never enters any member's prompt.
  */
 import { useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import type { RoomTask } from '../types.ts'

@@ -29,6 +29,14 @@
   line-height: 18px;
 }
 
+/* The in-composer home of the task board strip: the same width axis as the
+   card below it (its former `conversation.input.dock` seat rode the hidden
+   official fallback). */
+.dock {
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width, 780px);
+}
+
 .card {
   box-sizing: border-box;
   position: relative; /* mention menu positioning context */

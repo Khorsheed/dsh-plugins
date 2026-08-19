@@ -1,6 +1,7 @@
-/* Task board dock strip: the TodoPanel posture — a full-width collapsible
-   row above the composer card, no background/border/divider, alias tokens
-   only. */
+/* Task board strip: the TodoPanel posture — a full-width collapsible row
+   above the composer card, no background/border/divider, alias tokens only.
+   Rendered inside the RoomComposer (its former `conversation.input.dock`
+   seat hides with the official fallback under the composer takeover). */
 
 .root {
   display: flex;

@@ -120,11 +120,10 @@ describe('room client apply', () => {
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
     expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay'])
 
-    // The task board joins the input dock (the official todo strip's seat).
-    const dock = slots.entries('conversation.input.dock')
-    expect(dock).toHaveLength(1)
-    expect(dock[0]!.options.id).toBe('room-tasks')
-    expect(dock[0]!.options.order).toBe(10)
+    // The task board no longer occupies the input dock: that seat hides with
+    // the official fallback under the composer takeover, so the takeover
+    // renders the board itself and the dock stays untouched.
+    expect(slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {
@@ -201,7 +200,8 @@ describe('room client apply', () => {
     expect(select({ interactions: [], session: undefined })).toBeNull()
     expect(select({ interactions: [], session: { sessionId: 'plain' } })).toBeNull()
     // Prime the cache through the injected store (the isRoom stub: only 'room-1' is a room).
-    const face = (entry.inject as unknown as () => RoomComposerInjected)()
+    // The composer inject binds the task-board actions to the session id.
+    const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
     await face.roomStore.ensure('room-1' as never)
     expect(select({ interactions: [], session: { sessionId: 'room-1' } })).toEqual({ room: true })
   })

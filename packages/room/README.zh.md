@@ -10,7 +10,7 @@ Room 是一个被标记为多 agent 群聊的普通 dsh 会话：标准聊天 UI
 
 成员间通知：家族桥接调 room 的闸门入口 `receiveMemberMessage({ from, to, content, parentSessionId, provenance })`（逐字冻结的契约）；桥接缺席时，回复**末尾独占行**的 `@名字 <内容>`（名册注入教的格式）被检出为同一条待转派。一阶段闸门恒为人工确认：转派以 pending 行出现在聊天流（`⇢ ada → bill: …` 加 [确认派发] [忽略]），发送方收到的回执诚实地是 `pending-confirm`（不是 `sent`）；确认后通知作为收件人续轮投递（`{from} 给你的通知: …`），收件人自己的会话收到 prompt 后转派折叠为 `sent`——投递失败的转派会随收件人的下一次派发进入其通知区重投。
 
-任务板：人的管理视图，与其他一切一样由 journal 驱动（`room/task-*`）。@ 派发自动在目标成员名下开 in_progress 任务（title = 派发文本截断）；成员 speech settle 闭任务（完成 → done，中断 → cancelled；失败的运行留给人）。`conversation.input.dock` 上的任务板条——与官方 todo 条同一坑位、彼此叠加共存——按成员分组，支持添加/关闭。任务板不进任何成员的 prompt。
+任务板：人的管理视图，与其他一切一样由 journal 驱动（`room/task-*`）。@ 派发自动在目标成员名下开 in_progress 任务（title = 派发文本截断）；成员 speech settle 闭任务（完成 → done，中断 → cancelled；失败的运行留给人）。输入卡片上方的任务板条——由 composer 接管组件自己渲染，因为 `conversation.input.dock` 坑位随被接管的官方 fallback 隐藏——按成员分组，支持添加/关闭。任务板不进任何成员的 prompt。composer 接管同样在卡片下方复刻会话统计行（轮/步、耗时、TTFT/tok·s、缓存命中、输入/输出 token），数据来自 `sessionStats`/`tokenUsage` 投影——是 room 会话主 agent 自己的数字，不是全 room 汇总。
 
 聊天流：成员回复渲染为身份行（成员色圆点 + 名字胶囊 + provider）+ 无框 markdown + 复刻官方 IconActions 的操作行（复制、子会话跳转、真实耗时、hover 淡入时间戳——刻意无分支、无 TPS）；运行中的成员是 ToolRow 同构 24px 行（StateDot +「ada 正在工作… · 12s」+ 扫光，带 `prefers-reduced-motion` 兜底），整行点击跳子会话，行尾停止按钮接 `cancel`；加入/离开与已完结的转派渲染为 compaction 式 dim 单行；人自己的 @ 消息渲染为官方用户气泡（postMessage 在 `room/dispatch` 簿记旁同时落一条标准 `user/message`，簿记不产出任何聊天节点）。
 

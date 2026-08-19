@@ -12,6 +12,13 @@
  * the InputBar's Enter key drives), so it becomes an ordinary main-agent
  * turn. A structured rejection (unknown targets) shows as an inline error
  * line.
+ *
+ * Because the takeover hides the official fallback tree, the two surfaces
+ * that normally live there are re-homed INTO this component: the task board
+ * (RoomTaskDock strip above the card — its `conversation.input.dock` seat is
+ * display:none under a takeover) and the session stats row (RoomStatsLine
+ * below the card — the official StatsLine rides the fallback's composer
+ * dock).
  */
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
@@ -19,6 +26,8 @@ import {
 import { parseMentions } from '../journal.ts'
 import type { RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
+import { RoomStatsLine } from './RoomStatsLine.tsx'
+import { RoomTaskDock } from './RoomTaskDock.tsx'
 import css from './RoomComposer.module.css'
 
 interface ActiveMention {
@@ -41,7 +50,9 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
 }
 
 /** The room composer takeover component. */
-export function RoomComposer({ sessionId, inputActions, roomStore, submit, t }: RoomComposerProps): ReactNode {
+export function RoomComposer({
+  sessionId, inputActions, roomStore, submit, addTask, closeTask, useProjection, t,
+}: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -136,6 +147,12 @@ export function RoomComposer({ sessionId, inputActions, roomStore, submit, t }: 
 
   return (
     <div className={css.root}>
+      {/* The task board's dock seat is hidden with the official fallback, so
+          the takeover renders the strip itself, on the same card-width
+          column axis. */}
+      <div className={css.dock}>
+        <RoomTaskDock sessionId={sessionId} roomStore={roomStore} addTask={addTask} closeTask={closeTask} t={t} />
+      </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       <div className={css.card}>
         {mention !== null && candidates.length > 0 && (
@@ -189,6 +206,11 @@ export function RoomComposer({ sessionId, inputActions, roomStore, submit, t }: 
           </button>
         </div>
       </div>
+      {/* The stats row's home (the official composer dock) is hidden with the
+          fallback; re-rendered here from the same projections. The framework
+          omits the seat entirely on a host without the projection subsystem —
+          degrade to no row. */}
+      {useProjection !== undefined && <RoomStatsLine useProjection={useProjection} t={t} />}
     </div>
   )
 }

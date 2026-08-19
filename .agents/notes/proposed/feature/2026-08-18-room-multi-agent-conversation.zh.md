@@ -39,7 +39,7 @@ Status: proposed
 ### 任务板——协调工件
 
 - room 维护一块**持久任务板**：每成员的任务及状态（`pending` / `in_progress` / `done` / `cancelled`）。由 journal 驱动（`room/task-*` 自定义事件），与其他一切一样跨重载 replay 恢复。
-- **人的管理面**：渲染在 room 会话的 `conversation.input.dock` slot（官方给"输入框上方独占一行"留的缝——与官方 todo 条同一坑位形态），按成员分组。人可以在上面添加、调整优先级、改派、关闭任务。**任务板只是人的管理视图，不进任何成员的 prompt**——成员间的协调靠消息携带与通知协议，不靠全景注入。
+- **人的管理面**：渲染在 room 会话输入卡片上方的一条，按成员分组。它保持官方 todo 条的形态（"输入框上方独占一行"），但不是 `conversation.input.dock` 条目：该 slot 在官方 composer fallback 树内，room 的 `conversation.composer` 接管会把它整棵隐藏（display:none），所以接管组件（RoomComposer）自己渲染任务板——会话统计行（RoomStatsLine，照官方 StatsLine 用 `sessionStats`/`tokenUsage` 投影复刻）同理内嵌在卡片下方，而不是挂在 fallback 的 composer dock 上。人可以在上面添加、调整优先级、改派、关闭任务。**任务板只是人的管理视图，不进任何成员的 prompt**——成员间的协调靠消息携带与通知协议，不靠全景注入。
 - **不用 `todo/write`**：官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板不能寄生这个语义。任务进板来自派发（@ 派发开任务；成员的完成发言闭任务）和人的显式编辑。
 - **成员自己的 todo 留在各自会话里**：CLI 成员内部的 todo 清单由家族镜像进其子会话（需求 R3），在那里的官方 todo 条上原生渲染，互不干扰。
 
@@ -62,11 +62,11 @@ Status: proposed
   - *操作行*：用 CSS Modules 复刻 `MessageIconActions` 的 chrome，图标用 `dsh-client-ui-primitives` 里同一批 16px 图标——**复制**、**会话跳转**（进成员子会话）、诚实的**耗时**（派发→settle）、hover 淡入的**时间戳**。刻意缺席：**分支/fork**（`forkAt` fork 的是 *room* 会话——对名册与 resume 锁的语义未定义）和 **TPS/TTFT**（CLI 进程一轮没有令牌流，假造数字不如没有）。核实的 harness 版本里官方集合是 复制/分支/runMs/TTFT/TPS/hover 时间戳——没有点赞/点踩。
 - **运行中状态** = 与 ToolRow 同构的 24px disclosure 行（StateDot + `ada 正在工作… · 12s` + 扫光动画，带 `prefers-reduced-motion` 兜底；家族的实时 transcript 镜像给行尾跟截断摘要）。**整行是跳转子会话的链接**，行尾停止按钮接 `localAgent.cancel`。
 - **边界事件**（成员加入/离开、转派记录）= compaction 标记式 dim 单行。message-tools 的 `WithdrawnDividerView` 是验证过的社区模板。
-- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。
+- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。官方坑位是被 composer 接管隐藏的 dock slot 的面（任务板、统计行），一律由 RoomComposer 自己渲染，不再注册进 `conversation.input.dock` / `conversation.composer.dock`。
 
 ### 成员管理：成员 tab 与邀请
 
-- room 会话的视图导航（对话/轨迹那一排）上用 `conversation.view` slot 增加**成员 tab**。它是纯成员管理：名册行（色点、名字、provider/harness、模型——能拿到才显示，CLI 成员的模型在它 scoped home 的配置里、可能不上报，则不显示——角色指令、状态 + 耗时，行级 `[编辑]` `[轨迹→]`，运行中 `[中断]`，`[移除]`）和邀请入口。任务不在这里——任务在 dock 任务板。
+- room 会话的视图导航（对话/轨迹那一排）上用 `conversation.view` slot 增加**成员 tab**。它是纯成员管理：名册行（色点、名字、provider/harness、模型——能拿到才显示，CLI 成员的模型在它 scoped home 的配置里、可能不上报，则不显示——角色指令、状态 + 耗时，行级 `[编辑]` `[轨迹→]`，运行中 `[中断]`，`[移除]`）和邀请入口。任务不在这里——任务在输入卡片上方的任务板条。
 - **邀请弹窗**：provider 选择（候选来自 `ctx.localAgent.roster()`，未登录的置灰并给登录引导）、显示名、角色指令、**cwd**（缺省继承 room 会话的）、可选的首个任务。确认即写名册事件——填了首个任务则立即发 fresh 委派（角色指令拼在 prompt 前）；留空则成员入列待命。
 - **角色指令机制，实话实说**：家族 CLI provider 是 `cli -p` 一次性进程，没有 system prompt 通道。room 把角色指令拼进首轮派发的 prompt 最前面——经 resume 链留在成员自己的 CLI 会话里，效果等价——后续编辑则作为一条上下文更新随下一次派发带入（`你的角色指令更新为：…`）。主 agent 成员不配角色指令，它保持会话自己的设定。
 - **主 agent 邀请**：room 在 room 会话里注册模型工具 `room_invite({ provider, name, instructions, firstTask?, cwd? })`。人用自然语言交代（"请个后端工程师进来负责 API"），主 agent 自己定 provider、自己写角色指令、自己起名字（ada/bill/cathy 风格）；调用落到与弹窗相同的 room 服务 invite 函数，产出完全一样的成员记录。命名规则：room 内唯一、不含空白和 `@`（composer 的 @ 解析必须可工作）、显示名与 provider 解耦（`ada (kimi-cli)`），同一个 provider 的两个实例可以共存。
@@ -97,7 +97,7 @@ Status: proposed
 
 ### Why not 任务板建在官方 `todo/write` 机制上？
 
-官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板会被主 agent 的下一回合抹掉，且与平铺单会话语义相抵。任务板复用同一**坑位形态**（输入框上方的 `conversation.input.dock` 条）但用自己的 journal 驱动数据。成员自己的 todo 仍以真 `todo/write` 镜像进子会话（需求 R3），官方条原生渲染。
+官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板会被主 agent 的下一回合抹掉，且与平铺单会话语义相抵。任务板复用同一**坑位形态**（输入框上方的一条，就座在官方 todo 条的位置）但用自己的 journal 驱动数据。成员自己的 todo 仍以真 `todo/write` 镜像进子会话（需求 R3），官方条原生渲染。
 
 ### Why not 用独立 room 视图（`conversation.view` tab）做合并时间线？
 
