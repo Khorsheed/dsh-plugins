@@ -7,6 +7,7 @@ import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-prev
 import { CodeBlock, DiffBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { languageFor } from './path-utils.ts'
+import { structuredPreview } from './structured.tsx'
 import css from './FilePreviewPane.module.css'
 
 /** Content-search state handed to the text preview body. */
@@ -65,22 +66,27 @@ function MarkedContent({ content, search }: { content: string; search: ContentSe
  * except markdown files, which render through the official MarkdownText
  * pipeline (the same renderer the chat uses — headings, tables, emphasis,
  * links, images, footnotes, math) so the preview reads like the document, not
- * its source. A content search switches any text read to the raw marked-lines
- * view so matches stay visible regardless of rendering. */
+ * its source, and JSON/CSV files, which render through their structured forms
+ * (JsonTree inspector / markdown table) when parseable. A content search
+ * switches any text read to the raw marked-lines view so matches stay visible
+ * regardless of rendering. */
 function PreviewBody(props: { read: FilePreviewRead; t: TranslateNS<'filePreview'>; search?: ContentSearch }) {
   const { read, t, search } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
       const markdown = languageFor(read.path) === 'markdown'
+      const structured = search !== undefined && search.query !== '' && search.matches.length > 0
+        ? null
+        : structuredPreview(read.path, content, t)
       return (
         <div className={css.previewScroll}>
           {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
           {search !== undefined && search.query !== '' && search.matches.length > 0
             ? <MarkedContent content={content} search={search} />
-            : markdown
+            : structured ?? (markdown
               ? <MarkdownText text={content} />
-              : <CodeBlock code={content} lang={languageFor(read.path)} />}
+              : <CodeBlock code={content} lang={languageFor(read.path)} />)}
         </div>
       )
     }

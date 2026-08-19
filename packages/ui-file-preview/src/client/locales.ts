@@ -24,6 +24,16 @@ export type FilePreviewKey =
   | 'drawer.action.ide'
   | 'drawer.copyPath'
   | 'drawer.copied'
+  | 'json.copyValue'
+  | 'json.copyJson'
+  | 'json.copyPath'
+  | 'json.copyPrettyJson'
+  | 'json.copyCompactJson'
+  | 'json.copied'
+  | 'json.copyFailed'
+  | 'json.collapseNode'
+  | 'json.expandNode'
+  | 'json.copyButtonTitle'
   | 'drawer.empty'
   | 'drawer.listError'
   | 'drawer.count'
@@ -74,6 +84,16 @@ export const zh: Record<FilePreviewKey, string> = {
   'drawer.action.ide': 'IDE',
   'drawer.copyPath': '复制路径',
   'drawer.copied': '已复制',
+  'json.copyValue': '复制值',
+  'json.copyJson': '复制 JSON',
+  'json.copyPath': '复制属性路径',
+  'json.copyPrettyJson': '复制格式化 JSON',
+  'json.copyCompactJson': '复制紧凑 JSON',
+  'json.copied': '已复制',
+  'json.copyFailed': '复制失败',
+  'json.collapseNode': '折叠 JSON 节点',
+  'json.expandNode': '展开 JSON 节点',
+  'json.copyButtonTitle': '{action}；右键查看更多复制选项',
   'drawer.empty': '这个会话还没有写过文件',
   'drawer.listError': '文件列表加载失败',
   'drawer.count': '{count} 个文件',
@@ -118,6 +138,16 @@ export const en: Record<FilePreviewKey, string> = {
   'drawer.action.ide': 'IDE',
   'drawer.copyPath': 'Copy path',
   'drawer.copied': 'Copied',
+  'json.copyValue': 'Copy value',
+  'json.copyJson': 'Copy JSON',
+  'json.copyPath': 'Copy property path',
+  'json.copyPrettyJson': 'Copy pretty JSON',
+  'json.copyCompactJson': 'Copy compact JSON',
+  'json.copied': 'Copied',
+  'json.copyFailed': 'Copy failed',
+  'json.collapseNode': 'Collapse JSON node',
+  'json.expandNode': 'Expand JSON node',
+  'json.copyButtonTitle': '{action}; right-click for copy options',
   'drawer.empty': 'This session has not written any files yet',
   'drawer.listError': 'Failed to load the file list',
   'drawer.count': '{count} files',

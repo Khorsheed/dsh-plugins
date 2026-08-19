@@ -458,6 +458,57 @@ describe('FilePreviewView', () => {
     expect(screen.getByText('b')).toBeTruthy()
   })
 
+  it('renders JSON files through the JsonTree inspector', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/config.json', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { path: '/work/config.json', kind: 'text', content: '{"name": "demo", "count": 2}', truncated: false },
+    })
+    renderView(h)
+    const row = await screen.findByText('config.json')
+    act(() => { row.click() })
+    // JsonTree renders the string value with its quotes and the number value.
+    expect(await screen.findByText('"demo"')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+  })
+
+  it('falls back to the code view when JSON does not parse', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/broken.json', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/broken.json', kind: 'text', content: '{ not json', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('broken.json')
+    act(() => { row.click() })
+    // Invalid JSON keeps the literal code view.
+    expect(await screen.findByText('{ not json')).toBeTruthy()
+  })
+
+  it('renders CSV files as a table', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/data.csv', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { path: '/work/data.csv', kind: 'text', content: 'name,count\nalpha,1\nbeta,2', truncated: false },
+    })
+    renderView(h)
+    const row = await screen.findByText('data.csv')
+    act(() => { row.click() })
+    // The delimited file renders as a table — cells, not the raw source.
+    expect(await screen.findByText('alpha')).toBeTruthy()
+    expect(screen.getByText('beta')).toBeTruthy()
+    expect(screen.getByText('count')).toBeTruthy()
+  })
+
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {
     const h = makeHarness()
     h.listFiles.mockResolvedValue({
