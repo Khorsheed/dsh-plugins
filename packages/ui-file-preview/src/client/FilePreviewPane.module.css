@@ -141,6 +141,38 @@
   padding: 0 1px;
 }
 
+/* Structured document views (markdown / JSON tree / CSV table) share the block
+   chrome the code and diff views use — rounded code-block surface with a small
+   format banner — so every preview reads as one family instead of floating
+   text. The body scrolls with the outer previewScroll; the banner pins to the
+   frame's top edge (overflow hidden clips it to the radius). */
+.structured {
+  margin: 12px 0;
+  overflow: hidden;
+  background: var(--dsw-alias-markdown-code-block);
+  border-radius: 12px;
+}
+
+.structuredBanner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 6px 14px;
+  background: var(--dsw-alias-markdown-code-block-banner);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.structuredInfo {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.structuredBody {
+  padding: 12px 16px;
+}
+
 /* The changes-tab step control: one pill grouping ◀ position ▶ (the arrows
    never separate — a lone trailing arrow reads as decoration, not a button),
    clamped at both ends of the change chain. */

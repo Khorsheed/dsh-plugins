@@ -448,8 +448,10 @@ describe('FilePreviewView', () => {
     renderView(h)
     const row = await screen.findByText('readme.md')
     act(() => { row.click() })
+    // The document view sits in the block frame with a format banner.
+    expect(await screen.findByText('markdown')).toBeTruthy()
     // Bold renders as <strong> — the raw '**' markers are gone.
-    expect(await screen.findByText('bold')).toBeTruthy()
+    expect(screen.getByText('bold')).toBeTruthy()
     expect(screen.queryByText(/\*\*bold\*\*/)).toBeNull()
     // The GFM table renders its cells.
     expect(screen.getByText('1')).toBeTruthy()
@@ -471,8 +473,10 @@ describe('FilePreviewView', () => {
     renderView(h)
     const row = await screen.findByText('config.json')
     act(() => { row.click() })
+    // The tree sits in the block frame with its format banner.
+    expect(await screen.findByText('json')).toBeTruthy()
     // JsonTree renders the string value with its quotes and the number value.
-    expect(await screen.findByText('"demo"')).toBeTruthy()
+    expect(screen.getByText('"demo"')).toBeTruthy()
     expect(screen.getByText('2')).toBeTruthy()
   })
 
@@ -503,8 +507,10 @@ describe('FilePreviewView', () => {
     renderView(h)
     const row = await screen.findByText('data.csv')
     act(() => { row.click() })
-    // The delimited file renders as a table — cells, not the raw source.
-    expect(await screen.findByText('alpha')).toBeTruthy()
+    // The delimited file renders as a table — cells, not the raw source —
+    // inside the block frame with its format banner.
+    expect(await screen.findByText('csv')).toBeTruthy()
+    expect(screen.getByText('alpha')).toBeTruthy()
     expect(screen.getByText('beta')).toBeTruthy()
     expect(screen.getByText('count')).toBeTruthy()
   })

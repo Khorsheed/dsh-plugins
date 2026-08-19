@@ -67,26 +67,43 @@ function MarkedContent({ content, search }: { content: string; search: ContentSe
  * pipeline (the same renderer the chat uses — headings, tables, emphasis,
  * links, images, footnotes, math) so the preview reads like the document, not
  * its source, and JSON/CSV files, which render through their structured forms
- * (JsonTree inspector / markdown table) when parseable. A content search
- * switches any text read to the raw marked-lines view so matches stay visible
- * regardless of rendering. */
+ * (JsonTree inspector / markdown table) when parseable. Every document view
+ * (markdown included) sits in the same block chrome the code and diff views
+ * use — a rounded surface with a small format banner — so the previews read
+ * as one family. A content search switches any text read to the raw
+ * marked-lines view so matches stay visible regardless of rendering. */
 function PreviewBody(props: { read: FilePreviewRead; t: TranslateNS<'filePreview'>; search?: ContentSearch }) {
   const { read, t, search } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
-      const markdown = languageFor(read.path) === 'markdown'
-      const structured = search !== undefined && search.query !== '' && search.matches.length > 0
+      const searching = search !== undefined && search.query !== '' && search.matches.length > 0
+      // The document-form body (structured JSON/CSV, or rendered markdown),
+      // or null when the file has none — the code view then renders.
+      const documentBody = searching
         ? null
         : structuredPreview(read.path, content, t)
+          ?? (languageFor(read.path) === 'markdown' ? <MarkdownText text={content} /> : null)
+      // The frame's format label mirrors CodeBlock's infostring: the prism
+      // language when the map knows it ('markdown', 'json'), else the bare
+      // extension ('csv', 'tsv').
+      const dot = read.path.lastIndexOf('.')
+      const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
         <div className={css.previewScroll}>
           {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
-          {search !== undefined && search.query !== '' && search.matches.length > 0
+          {searching
             ? <MarkedContent content={content} search={search} />
-            : structured ?? (markdown
-              ? <MarkdownText text={content} />
-              : <CodeBlock code={content} lang={languageFor(read.path)} />)}
+            : documentBody !== null
+              ? (
+                <div className={css.structured}>
+                  <div className={css.structuredBanner}>
+                    <span className={css.structuredInfo}>{documentLabel}</span>
+                  </div>
+                  <div className={css.structuredBody}>{documentBody}</div>
+                </div>
+              )
+              : <CodeBlock code={content} lang={languageFor(read.path)} />}
         </div>
       )
     }
