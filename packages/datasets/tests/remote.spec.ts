@@ -76,12 +76,12 @@ describe('DatasetsRemoteService', () => {
     const agent = agentOf(fakeSession())
     remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
-    const datasets = await remote.list(agent)
+    const datasets = await remote.list(agent, {})
     if (datasets.kind !== 'datasets') throw new Error('expected datasets result')
     expect(datasets.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
     expect(datasets.datasets[0]?.layers).toEqual(['visible'])
 
-    const items = await remote.list(agent, 'alpha')
+    const items = await remote.list(agent, { dataset: 'alpha' })
     if (items.kind !== 'items') throw new Error('expected items result')
     const i1 = items.items.find(item => item.id === 'i1')
     expect(Object.keys(i1?.layers ?? {})).toEqual(['visible'])
@@ -112,7 +112,7 @@ describe('DatasetsRemoteService', () => {
     const agent = agentOf(fakeSession())
     remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
-    const result = await remote.show(agent, 'alpha', 'i1')
+    const result = await remote.show(agent, { dataset: 'alpha', item: 'i1' })
     expect(result.commit).toBe(repo.commit)
     expect(result.dataset.layers).toEqual(['visible'])
     expect((result.descriptor['extra'] as Record<string, unknown>)['passthrough']).toBe(true)
@@ -124,11 +124,11 @@ describe('DatasetsRemoteService', () => {
   it('fails loud with no binding and no default, and falls back to the configured default repo', async () => {
     repo = makeFixtureRepo()
     const unbound = await bench()
-    await expect(unbound.remote.list(agentOf(fakeSession()))).rejects.toMatchObject({ code: 'NO_REPO' })
+    await expect(unbound.remote.list(agentOf(fakeSession()), {})).rejects.toMatchObject({ code: 'NO_REPO' })
     await unbound.fiber.dispose()
 
     const withDefault = await bench(repo.dir)
-    const result = await withDefault.remote.list(agentOf(fakeSession()))
+    const result = await withDefault.remote.list(agentOf(fakeSession()), {})
     if (result.kind !== 'datasets') throw new Error('expected datasets result')
     expect(result.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
     await withDefault.fiber.dispose()
@@ -140,10 +140,10 @@ describe('DatasetsRemoteService', () => {
     const agent = agentOf(fakeSession())
     remote.bind(agent, { repoPath: repo.dir, datasets: ['beta'] })
 
-    const result = await remote.list(agent)
+    const result = await remote.list(agent, {})
     if (result.kind !== 'datasets') throw new Error('expected datasets result')
     expect(result.datasets.map(summary => summary.id)).toEqual(['beta'])
-    await expect(remote.show(agent, 'alpha')).rejects.toMatchObject({ code: 'DATASET_NOT_FOUND' })
+    await expect(remote.show(agent, { dataset: 'alpha' })).rejects.toMatchObject({ code: 'DATASET_NOT_FOUND' })
     await fiber.dispose()
   })
 })

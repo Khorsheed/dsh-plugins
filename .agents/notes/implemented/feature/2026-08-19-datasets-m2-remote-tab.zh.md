@@ -22,12 +22,13 @@ Status: implemented
 
 - **拆一个独立的 `@khorsheed/dsh-client-ui-datasets` 伴侣包（file-preview/ui-file-preview 式拆分）**——否决：那对拆分存在是因为 host 半可被其他 UI 独立消费；datasets tab 是 Remote 的唯一消费方，单包让身份三角、绑定语义与线类型保持在一个可评审单元内。双 face 单包先例是 message-tools。
 - **自由形态线叶子用 JSON 字符串编码（`metadataJson`、`descriptorJson`）**——否决：线格式看似有损、每个消费方都要 parse；把叶子类型收紧为 `JsonObject` 是精确的，与官方边界词汇一致，代价只是 `JSON.parse` 处的两个 cast。
-- **所有 Remote 方法用请求对象参数（message-tools 形态）**——读取侧否决：生成器支持 `list(agent, dataset?, commit?)` 可选位置参数（已在生成产物中验证），tab 调用点更简洁；`read` 保持服务内核的 `ReadQuery` 对象不变。
+- **所有 Remote 方法用请求对象参数（message-tools 形态）**——读取侧最初否决（改用可选位置参数 `list(agent, dataset?, commit?)`，调用点更简洁），**活实例冒烟后采纳**：生成器接受可选位置参数，但网关 client 代理按调用方实传个数转发并强制精确 arity（`client api: datasets/list expected 3 argument(s), got 2`），省略尾部可选参是类型系统诱导的运行时失败。`list`/`show` 改收 `ListRequest`/`ShowRequest` 对象（对象内可选字段在线上方真正可选）；`read` 保持服务内核的 `ReadQuery` 对象。
 - **经新的特许边复用 ui-file-preview 的预览 pane**——否决：pane 的 props 要求会话写入 fold 的 entry 形状；datasets 文件是没有 turn/step/diff 词汇的 git 对象，所谓「复用」会变成 import 背后的重实现。
 
 ## Consequences
 
 - Remote 线词汇从真实服务类型生成：tab 与工具之间未来的任何漂移在生成期失败，而不是运行时。
+- **精确 arity 是网关不变量，不是类型层的**：Remote client 调用必须传满每个声明过的位置参数（任何可选项都进请求对象）。单测 bench 是 stub namespace 的，只有活实例冒烟能抓到 arity 失配——tab 的首次冒烟正好抓到一个。
 - `ItemRecord.metadata` / `DatasetDescriptor.raw` 现在是 `JsonObject`——纯类型层收紧（运行时值不变）；写 `Record<string, unknown>` 的消费方照常编译（JsonObject 可赋给它）。
 - 对 `scripts/gen-typert.mts` 的修改必然落在 `packages/datasets/` 之外：生成器的共享类型元数据要求单批次全集运行，包必须注册进中央列表（该文件头部注释记录了原因）。
 - tab 经 RPC 读整个文件、无字节上限（工具语义）；README 的 Known Limitations 把大文件消费方指向 `worktree_path`。

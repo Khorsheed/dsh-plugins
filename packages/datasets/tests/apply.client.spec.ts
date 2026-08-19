@@ -82,9 +82,9 @@ describe('datasets client apply', () => {
     expect(remote.unbind).toHaveBeenCalledWith('s1')
 
     await face.listDatasets('s1')
-    expect(remote.list).toHaveBeenCalledWith('s1', undefined)
+    expect(remote.list).toHaveBeenCalledWith('s1', {})
     await face.listDatasets('s1', 'alpha')
-    expect(remote.list).toHaveBeenCalledWith('s1', 'alpha')
+    expect(remote.list).toHaveBeenCalledWith('s1', { dataset: 'alpha' })
 
     const query = { dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md' }
     await face.readFile('s1', query)

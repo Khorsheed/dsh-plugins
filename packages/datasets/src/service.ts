@@ -121,6 +121,29 @@ export interface ReadResult {
   commit: string
 }
 
+/**
+ * `datasets/list` Remote request. Optional fields ride INSIDE the object on
+ * purpose: the gateway's client proxy forwards exactly as many values as the
+ * caller passed and requires exact descriptor arity, so optional positional
+ * parameters are a runtime trap (the type marks them optional, the wire does
+ * not) — object fields are genuinely optional.
+ */
+export interface ListRequest {
+  /** When given, list this dataset's items instead of datasets. */
+  dataset?: string
+  /** Pinned commit (default HEAD). */
+  commit?: string
+}
+
+/** `datasets/show` Remote request (same optional-fields-in-object rule as ListRequest). */
+export interface ShowRequest {
+  dataset: string
+  /** When given, show just this item. */
+  item?: string
+  /** Pinned commit (default HEAD). */
+  commit?: string
+}
+
 /** `datasets_put_item` input. `metadata` replaces item.json; files upsert. */
 export interface PutItemInput {
   dataset: string

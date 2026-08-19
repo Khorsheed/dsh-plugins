@@ -14,7 +14,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { DatasetBinding } from './binding.ts'
 import {
   resolveScope, type DatasetScope, type DatasetsService,
-  type ListDatasetsResult, type ListItemsResult, type ReadQuery, type ReadResult, type ShowResult,
+  type ListDatasetsResult, type ListItemsResult, type ListRequest,
+  type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -97,29 +98,29 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
 
   /**
    * List the bound scope's datasets, or one dataset's items with their
-   * metadata and whitelist-filtered layer files.
+   * metadata and whitelist-filtered layer files. The selectors ride in a
+   * request object: the gateway's client proxy enforces exact positional
+   * arity, so optional fields belong inside an object, never in the
+   * positional tail.
    * @param agent - owning live agent; its session binding resolves the scope.
-   * @param dataset - when given, list this dataset's items instead of datasets.
-   * @param commit - pinned commit (default: the repository HEAD).
+   * @param request - optional dataset selector and commit pin.
    * @returns dataset summaries or one dataset's item records.
    */
   @Remote('list')
-  async list(agent: Agent, dataset?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult> {
-    return await this.datasets.list(this.scope(agent), dataset, commit)
+  async list(agent: Agent, request: ListRequest): Promise<ListDatasetsResult | ListItemsResult> {
+    return await this.datasets.list(this.scope(agent), request.dataset, request.commit)
   }
 
   /**
    * Show one item (or every item) of a dataset: summary, descriptor
    * passthrough, and the whitelist-filtered layer-file listing.
    * @param agent - owning live agent; its session binding resolves the scope.
-   * @param dataset - the dataset id.
-   * @param item - when given, show just this item.
-   * @param commit - pinned commit (default: the repository HEAD).
+   * @param request - the dataset id, an optional item selector, and a commit pin.
    * @returns the dataset detail at the resolved commit.
    */
   @Remote('show')
-  async show(agent: Agent, dataset: string, item?: string, commit?: string): Promise<ShowResult> {
-    return await this.datasets.show(this.scope(agent), dataset, item, commit)
+  async show(agent: Agent, request: ShowRequest): Promise<ShowResult> {
+    return await this.datasets.show(this.scope(agent), request.dataset, request.item, request.commit)
   }
 
   /**
