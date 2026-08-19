@@ -124,6 +124,7 @@ ctx.slots.inject('conversation.composer', () =>
 - M1 通道 + M2 composer 已落地（worktree 分支 `local-agent-member-channel`，commit `e6b516b` / `670210d`）：`memberOf` / `promptMember` / `stopMember` Remote、registry `getDelegation` 访问器、`conversation.composer` chain 条目（priority -20）与 MemberComposer（含降级只读渲染）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-channel.md`。
 - M3 成员互通知已落地（kimi 先行）：桥接 MCP server（无依赖 stdio JSON-RPC，`member_message(to, text)`）、宿主 loopback listener、每 run token + CLI pid 交叉校验、同父校验、闸门交接（鸭子类型 `room.receiveMemberMessage` 探针，零 room 依赖、checker 无需新 sanction）、家族直发（busy 回执 + 出处标注 prompt）。kimi 注入走 `$KIMI_CODE_HOME/mcp.json` 每 run 条目（`dsh-member-<token8>`，settle 剪除）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-notification.md`。**provider 状态**：kimi ✅；codex 待做（共享 config.toml 需 TOML 手术，树中无 parser）；claude-code 待做（`--mcp-config` + `-p` 模式权限路径需对真实 CLI 核实）；dsh 待做（需 harness 自身 MCP client 能力）。room 侧 `receiveMemberMessage` 由 room 提案自行实现（非本提案交付物）。
 - 评审记录：room 第二轮评审（2026-08-19）提出双向通道诉求；其 `prepareContinuable` 手段经 harness 源码核实不可行（§0），本提案为替代路线。2026-08-19 增补：room 明确成员互通知（CLI → CLI）为更高频场景，并入 M3。room 第三轮评审指出原 §3 直发与验收标准的闸门条款矛盾，修正为闸门交接（room 在场 → 交给 room 闸门；缺席/非 room → 直发），闸门所有权单一归于 room。
+- 协议约定（room 评审确认）：通知协议说明保持双轨表述——「优先用 `member_message` 工具，没工具时用名册注入约定的独占行格式」。codex/claude/dsh 桥接落地后该表述不变，桥接只是让工具轨可用，独占行轨作为永久降级保留。
 - 背景 note：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方）。
 
 ## 验收标准（done 判定，绑定可插拔交付）
