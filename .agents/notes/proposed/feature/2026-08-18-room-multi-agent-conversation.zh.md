@@ -45,9 +45,12 @@ Status: proposed
 
 ### 通知：成员间转派（一阶段：人工确认）
 
-- 成员寻址另一个成员的方式：在回复**末尾独占一行**写 `@名字 <内容>`（该格式写进名册注入，因此行文中的"提到"与"通知"在机械上可区分）。
-- 投影成员发言时，room 检出定向行并在 journal 记录一条待转派（`from`、`to`、`content`），在聊天流里渲染为确认行（`[确认派发] [忽略]`）。只有人确认才触发转派，其 prompt 携带该通知（`ada 给你的通知: …`）。
-- 二期把闸门调成 `auto` 并加级联预算（每条人类消息最多 N 轮转派、禁止无正文变化的往复、预算耗尽降级回确认）。这个接缝日后长成真正的 agent 对 agent 对话——local-agent 的 continuable 需求（R1）是它的官方语义终态。
+- **主通道（桥接）**：local-agent 家族的 member-channel 提案（`proposals/active/2026-08-19-local-agent-member-channel.md`）给成员 CLI 注入桥接 MCP 工具 `member_message(to, text)`（每 run 一次性 token 鉴权、host 侧同父校验）——结构化工具调用，run 中途即可发，身份不可伪造。
+- **闸门交接**：家族 bridge 投递前探测 `ctx.get('room')`；父会话是 room 时不直发，调 room 的接收方法 `room.receiveMemberMessage({ from, to, content, parentSessionId, provenance })`，由 room 判定归属并按闸门配置决定**待确认卡**还是**自动派发**；room 缺席或父会话非 room，家族直发。闸门所有权单一归于 room。
+- **回执透传**：闸门结果（`sent` / `pending-confirm` / `busy`）经桥接返回给发送方成员，让它的结论诚实（"已通知，待房间主人确认" ≠ "已送达"）。
+- **降级通道（文本解析）**：桥接缺席时（旧版本家族、非家族成员），room 检出成员回复**末尾独占行**的 `@名字 <内容>` 作为待转派（该格式写进名册注入，行文中"提到"与"通知"机械可区分）。
+- 待转派记录进 journal（`from`、`to`、`content`、出处），聊天流渲染为确认行（`[确认派发] [忽略]`）；确认后投递为收件人续轮的 prompt（`ada 给你的通知: …`）。
+- 二期把闸门调成 `auto` 并加级联预算（每条人类消息最多 N 轮转派、禁止无正文变化的往复、预算耗尽降级回确认）。
 
 ### UI：成员发言、运行中状态、边界事件
 
@@ -72,7 +75,7 @@ Status: proposed
 
 委派门面（`start` / `resume` / `cancel`、reattach 配方、进度事件、`delegations.jsonl` 持久化——提案 `proposals/active/2026-08-18-local-agent-delegation-api.md`，M1–M4）**已交付并验收**。三条新需求，已提交家族评估：
 
-> **R1——continuable 成员（先评估可行性）**：为家族 CLI provider 实现官方 continuable 子代理接口（`prepareContinuable`），让成员子会话成为双向通道：人直接打开成员会话说话（followup → resume 一轮），远期 agent 间转派也搭官方 `followup` 语义的车。语义映射看起来是直的：`followup` → resume 一轮；FIFO 投递 → 现有每子会话 resume 锁；`interrupt` → 门面的 `cancel`；冷恢复 → reattach 配方 + `delegations.jsonl`。已知边界请确认或纠正：CLI 进程在 run 之外无法主动发声，`reportFrom` 只能用"最终输出里的定向行"模拟而非真正的异步主动消息；无流式、实时 transcript 镜像是部分弥补；成员会话的官方只读 composer（ui-subagent 的 takeover）需要变可写——官方没口子的话社区侧可用 composer chain 优先级遮蔽（message-tools 先例），但先听家族判断。
+> **R1——双向成员通道**：~~实现官方 continuable 接口~~——经家族评审否决（`prepareContinuable` 只返回种子数据，continuation manager 自行创建进程内 dsh Agent，与 CLI 无关；官方 README 亦留白 host-user continuation），**已由 member-channel 提案承接**：可写 composer（chain priority 遮蔽只读接管）+ `promptMember`/`stopMember` Remote + 桥接 MCP 成员互通知。room 侧配合点：暴露 `receiveMemberMessage` 闸门入口（见「通知」一节）；R1 不再向 continuable 方向提需求。
 >
 > **R2——单次调用 cwd 覆盖**：`DelegationCallOptions` 加 `cwd?: string`，provider 优先于 `parent.session.header.cwd` 使用。room 成员合法地在不同目录工作。
 >
