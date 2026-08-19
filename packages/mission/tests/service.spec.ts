@@ -119,11 +119,14 @@ describe('service face (ctx.mission)', () => {
   it('mounts through the cordis plugin and serves the fine-grained methods', async () => {
     const ctx = new Context()
     const registered: string[] = []
+    const commands: string[] = []
     ctx.provide('tools', { register: (def: { name: string }) => { registered.push(def.name); return () => {} } })
     ctx.provide('systemPrompt', { section: () => () => {} })
+    ctx.provide('commands', { register: (def: { name: string }) => { commands.push(def.name); return () => {} } })
     apply(ctx, { dataDir: join(dir, 'plugin-data') })
     const mission = ctx.get('mission') as MissionService
     expect(mission).toBeInstanceOf(MissionService)
+    expect(commands).toEqual(['mission'])
     expect(registered.sort()).toEqual([
       'mission_annotate', 'mission_attest', 'mission_create', 'mission_get', 'mission_is_releasable',
       'mission_list', 'mission_retry', 'mission_run_create', 'mission_run_list', 'mission_run_status',

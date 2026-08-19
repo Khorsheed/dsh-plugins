@@ -4,7 +4,7 @@
 
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
-里程碑 M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI。slash 命令与 run bundle 导出属 M2；会话 tab 属 M4。
+里程碑 M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；M2 补上 `/mission` slash 面。run bundle 导出是 M2 的剩余部分；会话 tab 属 M4。
 
 ## 工作方式
 
@@ -87,12 +87,26 @@ dsh-mission retry MISSION_ID [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚本使用
 ```
 
+## slash 命令
+
+一个 `/mission` 命令加子命令，是同一服务内核上的薄封装（面向人，与面向 agent 的模型工具、面向脚本的 CLI 并列）：
+
+```text
+/mission queue [--run ID] [--bucket ready|scheduled|blocked|active|done] [--all]
+/mission run list
+/mission run status RUN_ID
+/mission run create --template FILE [--id ID] [--meta JSON]
+/mission retry MISSION_ID [--run ID]
+```
+
+`queue` 渲染五桶队列表（id / 标题 / 桶 / 模板状态 / 计划阻塞 / 时长），附「持有 resource 未 releasable」警示；默认只显示**本会话**的 run（`originSession` 过滤），`--all` 看全部，`--run` 指定一个。`run status` 打印与 CLI 相同的投影表。`run create` 把调用会话记为 run 的 `originSession`；写操作在 history 里记为 `slash:<sessionId>`。用法错误返回 usage 文本。**export 尚不是 slash 命令**——它随泄题闸在 M2 剩余部分落地。
+
 ## Compatibility
 
-- npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI 在发布版宿主上全部可用。
+- npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。
 - source line（deepseek-harness master，fork 或 upstream）：✅——同上。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令属 M2，且需要交互式 UI adapter（web/TUI）——headless profile 将没有 slash，工具、服务面、CLI 不受影响；会话 tab（M4）仅 web。两者在本线尚不存在。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。run bundle 导出（M2 剩余部分，含泄题闸与 expectedNs 完整性报告）与 web 会话 tab（M4）在本线尚不存在。
 
 ## Known Limitations and Deferred Work
 
@@ -100,4 +114,4 @@ dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚
 - **`retry` 天然不幂等**——每次调用都真实新开一个 attempt。其余所有写操作幂等（相同参数重复提交 = no-op）。
 - **锁对 pid 复用是尽力而为**——stale 锁在 pid 已死或锁龄超 60 秒时回收；窗口内 pid 被复用最多等到 10 秒锁超时。在预期写密度下足够；存储层可换 sqlite 而不动数据模型。
 - **每个模板恰一个初始态**——mission 的起点必须无歧义；终态数量任意。
-- **M2/M4 范围**——slash 命令、bundle 导出（含泄题闸与 expectedNs 完整性报告）、web 会话 tab 已在提案中设计，此处刻意缺席。
+- **M2/M4 范围**——bundle 导出（含泄题闸与 expectedNs 完整性报告）与 web 会话 tab 已在提案中设计，此处刻意缺席；slash 面已交付但不含 export。

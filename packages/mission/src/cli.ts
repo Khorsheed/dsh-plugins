@@ -117,8 +117,8 @@ function parseLabels(parsed: Parsed): Record<string, string> | undefined {
   return labels
 }
 
-/** Render one mission row for tables. */
-function rowLine(view: MissionView): string {
+/** Render one mission row for tables (shared by the CLI and the slash face). */
+export function rowLine(view: MissionView): string {
   const labels = Object.entries(view.labels).map(([k, v]) => `${k}=${v}`).join(',')
   const plan: string[] = []
   if (view.dependsOn !== undefined && view.dependsOn.length > 0) {
@@ -134,16 +134,30 @@ function rowLine(view: MissionView): string {
   ].join(' ').trimEnd()
 }
 
-function printStatus(io: CliIo, service: MissionService, runId: string): void {
+/**
+ * Render the five-bucket status table of one run as text — shared by the CLI
+ * (`run status`) and the slash face (`/mission run status`).
+ * @param service - the mission service over the data root.
+ * @param runId - the run to project.
+ * @returns the table text (no trailing newline).
+ */
+export function renderStatus(service: MissionService, runId: string): string {
   const status = service.runStatus(runId)
   const run = status.run
-  io.stdout(`run ${run.id}${run.templateName !== undefined ? ` (template ${run.templateName})` : ''} state=${run.state} missions=${run.missions}\n`)
-  io.stdout(`${'id'.padEnd(16)}${'bucket'.padEnd(10)}${'state'.padEnd(12)}${'labels'.padEnd(18)}plan\n`)
-  for (const row of status.rows) io.stdout(`${rowLine(row)}\n`)
-  io.stdout(`buckets: ${Object.entries(status.buckets).map(([b, ids]) => `${b}=${ids.length}`).join('  ')}\n`)
+  const lines = [
+    `run ${run.id}${run.templateName !== undefined ? ` (template ${run.templateName})` : ''} state=${run.state} missions=${run.missions}`,
+    `${'id'.padEnd(16)}${'bucket'.padEnd(10)}${'state'.padEnd(12)}${'labels'.padEnd(18)}plan`,
+    ...status.rows.map(row => rowLine(row)),
+    `buckets: ${Object.entries(status.buckets).map(([b, ids]) => `${b}=${ids.length}`).join('  ')}`,
+  ]
   if (status.unreleased.length > 0) {
-    io.stdout(`⚠ holding resource but not releasable: ${status.unreleased.join(', ')}\n`)
+    lines.push(`⚠ holding resource but not releasable: ${status.unreleased.join(', ')}`)
   }
+  return lines.join('\n')
+}
+
+function printStatus(io: CliIo, service: MissionService, runId: string): void {
+  io.stdout(`${renderStatus(service, runId)}\n`)
 }
 
 function missionDetail(run: RunRecord, missionId: string): unknown {

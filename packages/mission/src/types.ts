@@ -189,4 +189,6 @@ export interface MissionView {
   releasable: boolean
   /** True while the current attempt holds `refs.resource` without being releasable. */
   resourceHeld: boolean
+  /** Epoch ms when the current state was entered (the queue view's duration column). */
+  enteredCurrentAt: number
 }

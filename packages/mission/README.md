@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Generic task management for the dsh ecosystem: a **mission** is one work item — state, labels, plan data (dependencies / one-shot schedule), attempts, opaque resource references, an artifact index, and append-only namespaced annotations; a **run** is a batch of missions created from a template. The template declares a state machine, the run freezes it, and every mission enforces it: declaration *is* enforcement — undeclared transitions fail loud, guards are deterministic, and nothing ever transitions automatically.
 
-Milestone M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI. Slash commands and run-bundle export are M2; the session tab is M4.
+Milestone M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI; M2 adds the `/mission` slash face. Run-bundle export is the rest of M2; the session tab is M4.
 
 ## How it works
 
@@ -87,12 +87,26 @@ dsh-mission retry MISSION_ID [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # exit 0/1, for teardown scripts
 ```
 
+## Slash commands
+
+One `/mission` command with subcommands, a thin adapter over the same service kernel (humans, alongside the model tools for agents and the CLI for scripts):
+
+```text
+/mission queue [--run ID] [--bucket ready|scheduled|blocked|active|done] [--all]
+/mission run list
+/mission run status RUN_ID
+/mission run create --template FILE [--id ID] [--meta JSON]
+/mission retry MISSION_ID [--run ID]
+```
+
+`queue` renders the five-bucket queue table (id / title / bucket / template state / plan-blocked / duration) with the held-but-unreleasable warning; it defaults to THIS session's runs (`originSession` filter), `--all` widens to every run, `--run` names one. `run status` prints the same projection table as the CLI. `run create` records the calling session as the run's `originSession`; writes are attributed `slash:<sessionId>` in history. Usage errors answer with the usage text. **Export is not a slash command yet** — it lands with the leak gate in the rest of M2.
+
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, and CLI all work on the published host.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host.
 - source line (deepseek-harness master, fork or upstream): ✅ — same.
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands land in M2 and will need an interactive UI adapter (web/TUI) — headless profiles will not have them, while tools, the service face, and the CLI stay fully functional; the session tab (M4) will be web-only. Neither exists in this line yet.
+Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. Run-bundle export (the rest of M2, with the leak gate and expectedNs completeness report) and the web session tab (M4) do not exist in this line yet.
 
 ## Known Limitations and Deferred Work
 
@@ -100,4 +114,4 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands l
 - **`retry` is not idempotent by nature** — every call opens a real new attempt. All other writes are idempotent (identical repeats are no-ops).
 - **The lock is best-effort against pid reuse** — a stale lock is reclaimed when its pid is dead or it is older than 60 s; a recycled pid inside that window can wait up to the 10 s lock timeout. Fine at the expected write density; the store can move to sqlite without touching the data model.
 - **One initial state per template** — missions must start unambiguously; terminal states may be any number.
-- **M2/M4 scope** — slash commands, bundle export (with the leak gate and expectedNs completeness report), and the web session tab are designed in the proposal and deliberately absent here.
+- **M2/M4 scope** — bundle export (with the leak gate and expectedNs completeness report) and the web session tab are designed in the proposal and deliberately absent here; the slash face shipped without export.

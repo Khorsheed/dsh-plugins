@@ -56,6 +56,7 @@ export function viewOf(mission: MissionRecord, run: RunRecord, now: number): Mis
     blockedOn,
     releasable,
     resourceHeld: attempt.refs.resource !== undefined && !releasable,
+    enteredCurrentAt: attempt.enteredAt[attempt.state] ?? run.createdAt,
   }
   if (mission.title !== undefined) view.title = mission.title
   if (mission.dependsOn !== undefined) view.dependsOn = mission.dependsOn
