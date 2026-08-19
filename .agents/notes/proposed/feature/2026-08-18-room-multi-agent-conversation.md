@@ -26,20 +26,20 @@ A new package (working name `@khorsheed/dsh-room`). **A room is a normal dsh ses
 - A `conversation.composer` chain contribution parses the input: text opening with `@name` tokens dispatches to those members (multiple @ fan out); **anything else passes through untouched to the official composer behavior** (a normal main-agent turn). The composer @-menu lists only existing members — pure addressing, never invitation.
 - Dispatch to a CLI member goes through the local-agent delegation facade (`ctx.localAgent.start` / `.resume` / `.cancel`); the room's CLI-member path sits behind one adapter interface and is absent when the facade is missing — `ctx.get('localAgent')` probe plus method-existence check, so room installs and runs with the main agent as its only member. The main agent is not in the dispatch loop. Runs are async: per-member dispatch is FIFO (the family resume lock allows one in-flight resume per child session), different members run in parallel.
 
-### Member context: roster + task board (no ambient transcript)
+### Member context: roster + notifications (no ambient transcript, no global view)
 
-There is no blackboard. An earlier draft carried a rolling transcript digest into every dispatch; it was cut — quadratic context cost, and a dumb relay of everything is worse than a smart note from the sender. Each dispatch's prompt carries instead:
+There is no blackboard, and no member perceives the room's full picture. An earlier draft carried a rolling transcript digest into every dispatch; it was cut — quadratic context cost, and a dumb relay of everything is worse than a smart note from the sender. Each dispatch's prompt carries only three things:
 
-1. **The roster**: member names, providers, and one-line roles, so a member knows who else exists and can be notified.
-2. **The task board digest**: every member's tasks with status (see below), so a member knows who is doing what before deciding to notify anyone.
-3. The dispatch text itself, plus any pending **notifications addressed to this member** (below).
+1. **The roster**: member names, providers, and one-line roles — knowing who exists is the whole prerequisite for being able to @ anyone; knowing what others are doing is not.
+2. **Notifications**: pending notifications addressed to this member (below).
+3. The dispatch text itself.
 
-The member's own private CLI context (resume chain) holds its working memory; the room never re-sends history the member already saw.
+Coordination knowledge travels inside messages, not injections: in "@ada 设计 API，做完告诉 bill", "tell bill when done" is part of the task text; ada records it in its *own* todo list (its own session, mirrored per R3) and emits the notification when done — the room's mechanism only delivers it. The member's own private CLI context (resume chain) holds its working memory; the room never re-sends history the member already saw.
 
 ### Task board — the coordination artifact
 
 - The room keeps a **persistent task board**: assignments per member with status (`pending` / `in_progress` / `done` / `cancelled`). It is journal-driven (`room/task-*` custom events), so it survives reload and replay like everything else.
-- **Human management surface**: rendered in the room session via the `conversation.input.dock` slot (the official seam for "a line of its own above the composer" — the same posture as the official todo strip), grouped by member. The human can add, reprioritize, reassign, and close tasks there.
+- **Human management surface**: rendered in the room session via the `conversation.input.dock` slot (the official seam for "a line of its own above the composer" — the same posture as the official todo strip), grouped by member. The human can add, reprioritize, reassign, and close tasks there. **The board is the human's management view only — it is never injected into a member's prompt**: coordination rides the messages and the notification protocol, not a panoramic injection.
 - **Not `todo/write`**: the official todo panel is the agent's per-turn working plan and is cleared on the next `turn/start` — a persistent multi-member board must not parasitize that semantics. Member tasks enter the board from dispatches (a @-dispatch opens a task; the member's finished speech closes it) and from explicit human edits.
 - **Members' own todos stay in their own sessions**: a CLI member's internal todo list is mirrored into its child session by the family (Requirement R3) and rendered there by the official todo strip, untouched.
 
@@ -90,7 +90,7 @@ Semantically it is almost exactly the room's member model, but no production pro
 
 ### Why not a blackboard (rolling transcript digest injected into every dispatch)?
 
-The first-cut design. Cut after review: it multiplies context cost by member count, delays everything to the recipient's next wake-up, and — decisively — a notification written by the sender who knows what the recipient needs beats a mechanical digest of everything. The roster + task-board injection preserves the only part with real value (ambient awareness of *who* and *what*, not *what was said verbatim*), and directed notifications carry the content. Journal events remain as UI projection and replay; nothing is deleted, one consumption path is.
+The first-cut design. Cut after review: it multiplies context cost by member count, delays everything to the recipient's next wake-up, and — decisively — a notification written by the sender who knows what the recipient needs beats a mechanical digest of everything. The roster-only injection preserves the one prerequisite for addressing (knowing who exists); directed notifications carry the content. Journal events remain as UI projection and replay; nothing is deleted, one consumption path is.
 
 ### Why not build the task board on the official `todo/write` mechanism?
 
@@ -120,7 +120,7 @@ Session header schema is official and fixed; a `room/created` custom event deliv
 
 - A `+ New room` creation flow yields a session that opens as a room (identity recovered from the `room/created` event on reload); the view navigation gains a members tab; the dock shows the task board once tasks exist.
 - A message without @ produces a normal main-agent turn; `@ada <task>` dispatches (fresh first, resume after — verified in the child session transcript); unknown members are rejected with a structured error; two members run in parallel while two dispatches to the same member serialize.
-- Every dispatch prompt contains the roster, the task-board digest, pending notifications for that member, and the dispatch text — and **no rolling transcript** (a member is never re-sent what it already saw).
+- Every dispatch prompt contains the roster, pending notifications for that member, and the dispatch text — and **no rolling transcript, no task-board digest** (a member is never re-sent what it already saw, and never sees the room's global view).
 - Invitation dialog: provider list reflects `localAgent.roster()` login state; cwd defaults to the room session's and is honored per member (facade R2); role instructions are verifiably prepended in the child session's first turn. The main agent's `room_invite` tool produces an identical member record; duplicate or `@`/whitespace-containing names are rejected with a tool error.
 - A member's directed own-line `@name <content>` produces a pending-relay row; human confirmation dispatches the notification to the addressee; dismissal drops it. Unconfirmed relays never reach anyone.
 - Task board: a dispatch opens a task under the member, a finished speech closes it; the human can add/reassign/close tasks in the dock strip; the board survives reload via journal replay.
