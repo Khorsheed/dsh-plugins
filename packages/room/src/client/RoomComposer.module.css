@@ -1,101 +1,168 @@
-/* Room composer: mirrors the official InputBar's geometry (same margins,
-   corner radius, layered surface) with --dsw-alias-* semantic tokens only;
-   every token carries a fallback chain, so dark mode rides the aliases. */
+/* Room composer: the official InputBar skin (harness ui-conversation
+   skeleton/InputBar.module.css, figma Input_Bottom 75:8208) — same centered
+   column constraint, card geometry, tokens, and 34px info-fill send circle.
+   Every token reference carries a fallback chain, so dark mode rides the
+   aliases and the box still renders sanely outside the theme sheet. The
+   mention menu mirrors the ui-primitives Menu card
+   (figma MenuDropdown 122:9481). */
 
-.frame {
-  position: relative;
-  margin: 0 24px 20px;
+.root {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  /* Same clearance axis as the official bar; the bottom gradient mask is
+     owned by the chat scroller. */
+  padding: 0 var(--dsh-composer-side-clearance, 16px) 8px;
 }
 
-.box {
-  position: relative;
+/* Structured rejection line: the InputBar notice strip in its error tone,
+   riding the same card-width axis. */
+.error {
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width, 780px);
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover-danger, rgba(236, 19, 19, 0.05));
+  color: var(--dsw-alias-state-error-primary, rgb(236, 19, 19));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.card {
+  box-sizing: border-box;
+  position: relative; /* mention menu positioning context */
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
-  border-radius: 14px;
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  /* figma Input 75:8208: 12px between the text area and the button row; 10px
+     top pad on the card before the input text. */
+  gap: 12px;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width, 780px);
+  padding-top: 10px;
+  /* Input stroke: black/0.10 light, white/0.06 dark — the l2-darkmode-thin
+     pair. Fill: the input surface token (elevated in dark). */
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
+  border-radius: 22px;
+  background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-1, #ffffff));
+  box-shadow: var(--dsw-shadow-lv2, 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04));
+  font-size: 16px;
+  line-height: 24px;
+  /* Elevated surface in dark, same as the official card: the textarea
+     scrolls once it hits its height cap, so the thumb takes the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.4));
 }
 
-.area {
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  resize: none;
   border: none;
   outline: none;
-  resize: none;
   background: transparent;
+  /* figma .InputText 34:10434: pl 16 / pr 12 / pt 4. */
+  padding: 4px 12px 0 16px;
+  font-family: var(--dsw-font-family, inherit);
+  font-size: inherit;
+  line-height: inherit;
   color: var(--dsw-alias-label-primary, #1f2329);
-  caret-color: var(--dsw-alias-label-primary, #1f2329);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  min-height: 44px;
+  /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
+  caret-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  min-height: 52px; /* the 2-line floor (figma min-h 52 = ~2 × 24 line + 4pt) */
   max-height: 160px;
+  overflow-y: auto;
 }
 
-.area::placeholder {
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+/* figma 34:10434: #ADB2B8 light / #81858C dark — the caption pair exactly. */
+.input::placeholder {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  user-select: none;
 }
 
+/* The room box has no left tools; the row only seats the send circle. */
 .row {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  padding: 0 8px 6px;
 }
 
-.send {
+/* Primary send (figma IconButton 34:10465): 34px circle, #3964FE light /
+   #679EFE dark — the info-fill pair (500→400), NOT button-primary (ink);
+   white glyph; empty text = 0.4 opacity. */
+.primary {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
   border: none;
-  border-radius: 8px;
-  padding: 4px 14px;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-on-accent, #ffffff);
-  background: var(--dsw-alias-bg-accent, #3370ff);
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill, rgb(65, 118, 230));
+  /* Static white, not the foreground token: the arrow stays white on the
+     blue fill in both themes (design 34:10465). */
+  color: #fff;
   cursor: pointer;
+  transition: background-color 100ms ease;
 }
 
-.send:disabled {
-  opacity: 0.45;
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-info-hover, rgb(103, 158, 254));
+}
+
+.primary:disabled {
+  opacity: 0.4;
   cursor: default;
 }
 
+/* @-completion card (figma MenuDropdown 122:9481): menu surface, r12,
+   inverted hairline border, shadow-lv3, 4px inset padding. */
 .menu {
   position: absolute;
   bottom: 100%;
   left: 8px;
   margin: 0 0 6px;
+  box-sizing: border-box;
   padding: 4px;
   list-style: none;
-  min-width: 180px;
+  min-width: 218px;
+  max-width: 360px;
   max-height: 220px;
   overflow-y: auto;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0));
+  border-radius: 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow:
+    var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08));
   z-index: 1;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.4));
 }
 
+/* Menu cell (figma .Menu_cell, dense): r10, gap 8 between the leading dot /
+   name / trailing hint. */
 .item,
 .itemActive {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
   border: none;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 13px;
-  line-height: 18px;
-  text-align: left;
-  color: var(--dsw-alias-label-primary, #1f2329);
+  border-radius: 10px;
   background: transparent;
   cursor: pointer;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  color: var(--dsw-alias-label-primary, #1f2329);
 }
 
+.item:hover,
 .itemActive {
-  background: var(--dsw-alias-bg-hover, rgba(127, 127, 127, 0.14));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));
 }
 
 .dot {
@@ -108,17 +175,6 @@
 .hint {
   margin-left: auto;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.notice {
-  font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.error {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-text-error, #d9363e);
 }

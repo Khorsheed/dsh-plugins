@@ -23,7 +23,7 @@ Status: proposed
 
 ### 派发与路由
 
-- 一个 `conversation.composer` chain 贡献解析输入：以 `@名字` token 开头的文本派发给这些成员（多个 @ 各自分发）；**其余原样放行给官方 composer 行为**（正常的主 agent 回合）。composer 的 @ 菜单只列已有成员——纯寻址，不承担邀请。
+- 一个 `conversation.composer` chain 贡献解析输入：以 `@名字` token 开头的文本派发给这些成员（多个 @ 各自分发）；**其余原样放行给官方 composer 行为**（正常的主 agent 回合）。composer 的 @ 菜单只列已有成员——纯寻址，不承担邀请。takeover 穿官方 InputBar 的皮（`packages/room/src/client/RoomComposer.module.css`）：同样的居中列宽约束（`--dsh-composer-side-clearance` / `--dsh-composer-card-max-width`）、卡片几何（22px 圆角、`--dsw-alias-border-l2-darkmode-thin` 描边、`--dsw-specific-input-major` 填充、shadow-lv2）、textarea 度量（16/24、`4px 12px 0 16px` 内边距、caption 色 placeholder、business-primary 光标），以及 34px info-fill 圆形发送钮配官方上箭头字形——每个 token 都带 fallback 链。@ 菜单对齐 ui-primitives 的 Menu 卡片（menu 表面、r12、inverted 发丝边框、shadow-lv3、dense 单元格）。
 - 向 CLI 成员派发走 local-agent 委派门面（`ctx.localAgent.start` / `.resume` / `.cancel`）；room 的 CLI 成员路径收敛在一个 adapter 接口后面，门面缺席时整体降级——`ctx.get('localAgent')` 探针加方法存在性检查，room 只带主 agent 成员也能装能跑。主 agent 不在派发环路里。运行是异步的：同一成员的派发串行（家族 resume 锁保证每个子会话同时只有一个 in-flight resume），不同成员天然并行。
 
 ### 成员上下文：名册 + 通知（无环境流水账，无全景）
