@@ -72,6 +72,10 @@ export interface FilePreviewConfig {
   readonly maxReadBytes?: number
   /** Cap on the number of entries `list` returns. */
   readonly maxFiles?: number
+  /** Whether the bash-write collector watches sessions for files bash wrote
+   * (heredocs, `>` redirects, `tee`, `sed -i`) and adds them to `list`. On by
+   * default; disable to keep the list log-derived only. */
+  readonly captureBashWrites?: boolean
 }
 
 /** Outcome of a `filePreview.reveal` call (the "show in folder" gesture). */

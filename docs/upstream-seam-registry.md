@@ -20,9 +20,9 @@
 ### S2. bash/子进程写入的文件不进任何日志结构
 
 - **需求**：bash 工具（cat heredoc、sed -i、python 脚本）写入的文件出现在产物视图。实测：whalesong 游戏会话十几个 HTML 产物几乎全走 bash,fold 完全不可见。
-- **现状绕行**："B 通道 + A 采集"混合——监听 `tools/result` 提取 bash 命令里的写入候选（重定向/tee/sed -i/cp/mv/python open 等高精确模式）,`fs.stat` 事后验证（宁缺毋滥），追加 log-only 会话事件（`ignorable: true`)，宿主 fold 多读一个事件类型。
-- **退役条件**：官方 bash 工具在结果 meta 带写入路径（小改，首选），或执行层（沙箱/子进程）落文件写入事件（大改，根治）。官方落地后采集器整体退役，fold 改读官方数据。
-- **状态**：待实施（@khorsheed/dsh-file-preview 宿主半）。
+- **现状绕行**："B 通道 + A 采集"——宿主侧采集器监听 `session/event`，从 `tool/call`（bash）命令里提取高精度写入候选（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`；`cp`/`mv`/`python open` 暂缓），`$VAR`/`~`/相对路径按宿主 env + 会话 cwd 展开，`tool/result` 落定后 `fs.stat` 验证（宁缺毋滥），存入按会话的内存登记表；`list` 把登记表并入 fold 结果；`session/created` 重放会话历史重建登记表（宿主重启不丢）。**不做**"追加 log-only 会话事件"：官方 `Session.append` 无法写入 `ignorable: true`，而持久化读回拒绝未知的非 ignorable 事件类型——插件事件进日志会毒化整个会话的读回（这本身是新的上游缝，见退役条件第三项）。
+- **退役条件**：官方 bash 工具在结果 meta 带写入路径（小改，首选）；或执行层（沙箱/子进程）落文件写入事件（大改，根治）；或会话库提供插件事件类型的注册/`ignorable` 通道（日志追加方案才有落点）。官方落地后采集器整体退役，fold 改读官方数据。
+- **状态**：绕行中（已实施，@khorsheed/dsh-file-preview 宿主半）。
 
 ### S3. Code Mode 嵌套派发无 diff 数据
 
