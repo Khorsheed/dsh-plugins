@@ -17,7 +17,7 @@ import {
 import {
   assertSafeRelativePath, assertValidName, datasetDir, DatasetsError, itemDir, ITEM_METADATA,
   listDatasetIds, listItems, loadDescriptor, loadItem, summarizeDataset,
-  validateDescriptor, type DatasetSummary, type ItemRecord,
+  validateDescriptor, type DatasetSummary, type ItemRecord, type JsonObject,
 } from './dataset.ts'
 import { repoToplevel, resolveCommit, showFile } from './git.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
@@ -91,7 +91,7 @@ export interface ListDatasetsResult {
 export interface ShowResult {
   dataset: DatasetSummary
   /** The whole descriptor, passthrough. */
-  descriptor: Record<string, unknown>
+  descriptor: JsonObject
   /** One item when `item` was given, else every item (layer-filtered). */
   items: ItemRecord[]
   commit: string
@@ -113,6 +113,12 @@ export interface ReadQuery {
   path: string
   /** Pinned commit (default HEAD). */
   commit?: string
+}
+
+/** `datasets_read` result: the file content and the commit it was read from. */
+export interface ReadResult {
+  content: string
+  commit: string
 }
 
 /** `datasets_put_item` input. `metadata` replaces item.json; files upsert. */
@@ -139,8 +145,8 @@ export interface WorktreeOptions {
 export interface DatasetsService {
   list(scope: DatasetScope, datasetId?: string, commit?: string): Promise<ListDatasetsResult | ListItemsResult>
   show(scope: DatasetScope, datasetId: string, itemId?: string, commit?: string): Promise<ShowResult>
-  describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<Record<string, unknown>>
-  read(scope: DatasetScope, query: ReadQuery): Promise<{ content: string; commit: string }>
+  describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<JsonObject>
+  read(scope: DatasetScope, query: ReadQuery): Promise<ReadResult>
   snapshot(scope: DatasetScope, datasetId: string, commit?: string): Promise<DatasetSnapshot>
   worktreePath(scope: DatasetScope, datasetId: string, options?: WorktreeOptions): Promise<ManagedWorktree>
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>

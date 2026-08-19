@@ -39,7 +39,7 @@ The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` 
 
 Config (all optional): `repo` (default dataset repository when a call has no explicit `repo` and the session has no binding; default none) and `worktreeRoot` (managed worktree root override; default `$DSH_HOME/state/datasets/worktrees`, else `<cwd>/.dsh-datasets/worktrees`).
 
-The plugin provides the `ctx.datasets` service for other plugins to consume optionally, registers the seven `datasets_*` model tools and the `/datasets` slash command, and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load.
+The plugin provides the `ctx.datasets` service for other plugins to consume optionally, registers the seven `datasets_*` model tools and the `/datasets` slash command, mounts the `datasetsRemote` Typert Remote service (the web session tab's data face), and (when the composition mounts `@khorsheed/dsh-datasets/invariant`) checks the managed worktree root's structural integrity at load.
 
 ## The session binding
 
@@ -97,11 +97,19 @@ dsh-datasets binding --session ID [--sessions-root DIR]
 /datasets unbind
 ```
 
+## The session tab (web)
+
+<!-- screenshot placeholder: docs/screenshots/…-datasets-tab.png (pending) -->
+
+On web profiles the plugin contributes a **`datasets` tab** to the conversation's view ring (beside chat and trajectory) — the session's dataset binding and browser. The tab is pure navigation: a binding bar on top (the current binding with its dataset/layer whitelists, plus bind / edit-whitelist / unbind gestures — binding writes stay human operations here exactly as on the slash path), a dataset → item → layer → file tree on the left, and a content preview on the right. The preview is delegated to the official reader primitives — markdown renders through the official `MarkdownText` pipeline (the same renderer the chat uses), every other file through the official `CodeBlock` syntax highlighter; there is no self-rolled renderer in this package.
+
+The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace `datasets`) over the same service core as the tools: `binding` / `bind` / `unbind` / `list` / `show` / `read`, each resolving the session binding from the calling agent, so the binding's layer whitelist is enforced on the Remote path exactly as on the tool path. The browser half mounts the namespace through the official `ctx.remote.$mount` channel.
+
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events) is stable across the line.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable across the line.
 - source line (deepseek-harness master): ✅.
-- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the model tools and the CLI stay fully functional.
+- ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the model tools and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
 
 This section mirrors the `dsh.compat` field in package.json; the two move together.
 
@@ -109,7 +117,7 @@ This section mirrors the `dsh.compat` field in package.json; the two move togeth
 
 - **Descriptors are JSON, not YAML** — the layout convention calls them `dataset.yml`/`item.yml`, but no YAML parser is available on this package's dependency chain and adding one is deliberately out of scope, so v1 reads `dataset.json`/`item.json`. A future YAML-capable line can accept both.
 - **Item metadata is not validated against `itemMetaSchema`** — the schema is declared, shape-checked as an object, and passed through; full JSON-Schema validation of item metadata needs a validator dependency this package does not take.
-- **The session tab is M2** — browsing UI on `conversation.view`, with previews delegated to the official file reader, is designed but not in this line; TUI has no tab mechanism either way.
-- **CLI `bind` is offline-only by design** — it appends to the session log directly (see the safety note above); binding a live session goes through the slash command.
+- **The session tab's preview reads whole files over RPC** — `read` serves full file content with no byte cap (the same semantics as the tool); very large layer files are better consumed through `worktree_path`.
+- **CLI `bind` is offline-only by design** — it appends to the session log directly (see the safety note above); binding a live session goes through the slash command or the web tab.
 - **A worktree a consumer dirtied is rebuilt by `worktree prune`** — the read-only contract is enforced by the consumer's mount (`:ro`), not by the plugin.
 - **`worktree prune` needs `--repo`** — the registry is `git worktree list`, which is per-repository; orphaned roots of deleted repositories are removed by hand.

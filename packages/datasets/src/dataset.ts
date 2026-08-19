@@ -19,7 +19,11 @@
  * dependency chain, and adding one is deliberately out of scope (see README
  * Known Limitations).
  */
+import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { listFiles, showFile } from './git.ts'
+
+/** A JSON object (constrained — every value here is JSON.parse output). */
+export type JsonObject = Record<string, JsonValue>
 
 /** Root directory every dataset lives under. */
 export const DATASETS_DIR = 'datasets'
@@ -72,15 +76,15 @@ export interface DatasetDescriptor {
   /** Declared item-metadata JSON Schema; shape-checked as an object, never interpreted. */
   itemMetaSchema?: Record<string, unknown>
   /** The parsed descriptor exactly as committed. */
-  raw: Record<string, unknown>
+  raw: JsonObject
 }
 
 /** One item's metadata plus its files, grouped by layer. */
 export interface ItemRecord {
   id: string
   /** Parsed `item.json` (a plain object), absent when the item has none. */
-  metadata?: Record<string, unknown>
-  /** Layer name → repo-relative file paths (sorted). */
+  metadata?: JsonObject
+  /** Layer name → layer-relative file paths (sorted). */
   layers: Record<string, string[]>
 }
 
@@ -185,7 +189,7 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
     ...(name !== undefined ? { name } : {}),
     layers: decls,
     ...(itemMetaSchema !== undefined ? { itemMetaSchema: itemMetaSchema as Record<string, unknown> } : {}),
-    raw: value,
+    raw: value as JsonObject,
   }
 }
 
@@ -280,7 +284,7 @@ export async function loadItem(repo: string, commit: string, datasetId: string, 
     ;(layers[layer] ??= []).push(rel.slice(slash + 1))
   }
   for (const paths of Object.values(layers)) paths.sort()
-  let metadata: Record<string, unknown> | undefined
+  let metadata: JsonObject | undefined
   if (owned.includes(ITEM_METADATA)) {
     const origin = `${dir}/${ITEM_METADATA}`
     const text = await showFile(repo, commit, origin)
@@ -288,7 +292,7 @@ export async function loadItem(repo: string, commit: string, datasetId: string, 
       try {
         const parsed: unknown = JSON.parse(text)
         if (!isPlainObject(parsed)) throw new Error('item metadata must be a JSON object')
-        metadata = parsed
+        metadata = parsed as JsonObject
       } catch (error) {
         throw new DatasetsError(`${origin}: ${String(error)}`, 'SHAPE_INVALID')
       }

@@ -39,7 +39,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 配置（均可选）：`repo`（调用既无显式 `repo` 会话也无绑定时的默认数据集仓库；缺省无）与 `worktreeRoot`（托管 worktree 根覆盖；缺省 `$DSH_HOME/state/datasets/worktrees`，否则 `<cwd>/.dsh-datasets/worktrees`）。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，注册七个 `datasets_*` 模型工具和 `/datasets` slash 命令，并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，注册七个 `datasets_*` 模型工具和 `/datasets` slash 命令，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。
 
 ## 会话绑定
 
@@ -97,11 +97,19 @@ dsh-datasets binding --session ID [--sessions-root DIR]
 /datasets unbind
 ```
 
+## 会话 tab（web）
+
+<!-- 截图占位：docs/screenshots/…-datasets-tab.png（待补） -->
+
+web profile 下插件向会话的视图环贡献 **`datasets` tab**（与 chat、trajectory 并列）——本会话数据集的绑定与浏览。tab 只做导航：顶部绑定条（当前绑定及其数据集/layers 白名单，加绑定 / 改白名单 / 解绑——绑定写入在这里同样只是人的操作，与 slash 路径一致），左侧数据集 → item → 层 → 文件树，右侧内容预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线渲染（与 chat 同一个渲染器），其余文件经官方 `CodeBlock` 语法高亮；本包没有任何自研渲染器。
+
+tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `list` / `show` / `read`，每个方法都从调用方 agent 解析会话绑定，因此绑定的层白名单在 Remote 路径上与工具路径同等强制。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace。
+
 ## Compatibility
 
-- npm release 线（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件）在该线上稳定。
+- npm release 线（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。
 - source 线（deepseek-harness master）：✅。
-- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，模型工具与 CLI 不受影响。
+- ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，模型工具与 CLI 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 
@@ -109,7 +117,7 @@ dsh-datasets binding --session ID [--sessions-root DIR]
 
 - **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，但本包依赖链上没有可用的 YAML 解析器、也刻意不为此加依赖，v1 读 `dataset.json`/`item.json`。未来若引入 YAML 能力可两者兼容。
 - **item 元数据不按 `itemMetaSchema` 校验**——schema 仅声明、形状校验为对象并透传；对 item 元数据做完整 JSON-Schema 校验需要引入本包不接受的校验器依赖。
-- **会话 tab 属 M2**——基于 `conversation.view` 的浏览 UI（预览复用官方文件阅读器）已完成设计但不在本线；TUI 本来也没有 tab 机制。
-- **CLI `bind` 刻意仅离线**——它直接追加会话日志（安全注记见上）；绑定存活会话走 slash 命令。
+- **会话 tab 的预览经 RPC 读整个文件**——`read` 返回完整文件内容、无字节上限（与工具同语义）；超大层文件更适合走 `worktree_path` 消费。
+- **CLI `bind` 刻意仅离线**——它直接追加会话日志（安全注记见上）；绑定存活会话走 slash 命令或 web tab。
 - **被消费方写脏的 worktree 由 `worktree prune` 重建**——只读契约由消费方的挂载（`:ro`）强制，插件不强制。
 - **`worktree prune` 需要 `--repo`**——注册表是 `git worktree list`，按仓库管理；已删除仓库残留的托管根手工清理。

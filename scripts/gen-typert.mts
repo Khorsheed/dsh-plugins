@@ -12,7 +12,7 @@
  * monorepo into this repo (harness commit "remove migrated plugin packages"),
  * so generation runs against a scratch OVERLAY: an APFS clonefile copy of the
  * harness checkout (packages, vendor, native, apps, node_modules, face
- * tsconfigs) with this repo's three packages copied in as real directories
+ * tsconfigs) with this repo's typert packages copied in as real directories
  * (the analyzer realpaths package roots, so symlinks would be filtered out)
  * and referenced from the overlay's tsconfig.host.json. The overlay root
  * keeps the harness layout, so the harness tsconfig.base.json source-plane
@@ -66,6 +66,11 @@ const TYPERT_PACKAGES: readonly TypertPackage[] = [
     dir: 'packages/file-preview',
     name: '@khorsheed/dsh-file-preview',
     hostConfigs: ['tsconfig.json'],
+  },
+  {
+    dir: 'packages/datasets',
+    name: '@khorsheed/dsh-datasets',
+    hostConfigs: ['tsconfig.host.json'],
   },
   {
     dir: 'packages/local-agent',

@@ -2,9 +2,10 @@
  * Generic versioned dataset storage over git repositories: layered items,
  * commit-pinned reads straight from git objects, deduplicated sparse-checkout
  * worktree views for whole-layer consumption, and per-session bindings whose
- * layer whitelist is enforced on every read path. Three faces share one
- * service core: the model tools (first citizen), the `dsh-datasets` CLI, and
- * the `/datasets` slash command. The plugin never interprets descriptor
+ * layer whitelist is enforced on every read path. Four faces share one
+ * service core: the model tools (first citizen), the `dsh-datasets` CLI, the
+ * `/datasets` slash command, and the Typert Remote data face behind the web
+ * session tab (wire namespace `datasets`). The plugin never interprets descriptor
  * semantics and never copies content out of the repository.
  *
  * @module @khorsheed/dsh-datasets
@@ -22,6 +23,7 @@ import { formatList, formatShow } from './format.ts'
 import {
   createDatasetsService, resolveScope, type DatasetScope, type DatasetsService,
 } from './service.ts'
+import { DatasetsRemoteService } from './remote.ts'
 
 /** Plugin configuration. */
 export interface DatasetsPluginConfig {
@@ -87,6 +89,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
   const service = createDatasetsService({ worktreeRoot: resolveWorktreeRoot(config.worktreeRoot) })
   ctx.provide('datasets', service)
   const defaultRepo = config.repo ?? ''
+  // The web session tab's data face: the same service core behind a Typert
+  // Remote (wire namespace `datasets`), session bindings resolved per call.
+  ctx.plugin(DatasetsRemoteService, { defaultRepo })
 
   /** Scope for one tool call: explicit args first, then the session binding. */
   const scopeFor = (exec: { agent?: { session: import('./binding.ts').BindingSession } }, args: { repo?: string }): DatasetScope => {
