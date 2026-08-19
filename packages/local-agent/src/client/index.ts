@@ -15,14 +15,19 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@khorsheed/dsh-local-agent/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: the 'conversation.composer' SlotMap merge (chain registration).
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import localAgentRemote from '@khorsheed/dsh-local-agent/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { LocalAgentSettingsSection, type LocalAgentSettingsInjected } from './LocalAgentSettingsSection.tsx'
+import { MemberComposer, selectCliMember, type MemberComposerInjected } from './MemberComposer.tsx'
 import { en, NS, zh, type LocalAgentKey } from './locales.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 export type { LocalAgentSettingsInjected, LocalAgentSettingsProps } from './LocalAgentSettingsSection.tsx'
 export type { LocalAgentSettingsRowOwnerProps } from './slot-contract.ts'
+export type { MemberComposerInjected, MemberComposerMatch, MemberComposerProps } from './MemberComposer.tsx'
+export { selectCliMember } from './MemberComposer.tsx'
 
 /** The mounted local-agent gateway namespace, read back from the global store. */
 export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGateway']
@@ -84,6 +89,27 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         runCommand: (target, line) => runCommand(ctx, target, line),
       }),
     }, LocalAgentSettingsSection),
+  )
+  // The member composer: a one-shot subagent session that the family delegated
+  // gets a writable box (send = facade resume via the promptMember Remote);
+  // any other one-shot session gets the same read-only panel the official
+  // takeover would render. Priority -20 runs the selector before ui-subagent's
+  // read-only takeover (-10) — chain election is ascending, first non-null
+  // wins — and the degraded branch makes the takeover a strict subset of this
+  // entry, so electing first never changes a non-member session's UX.
+  ctx.slots.inject(
+    'conversation.composer',
+    () => ctx.slots.register({
+      name: 'conversation.composer',
+      priority: -20,
+      locale: NS,
+      select: selectCliMember,
+      inject: (): MemberComposerInjected => ({
+        memberOf: childSessionId => gateway.memberOf(childSessionId).then(result => (result.ok ? result.value : undefined)),
+        promptMember: (childSessionId, text) => gateway.promptMember(childSessionId, text).then(result => (result.ok ? result.value : undefined)),
+        stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),
+      }),
+    }, MemberComposer),
   )
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
