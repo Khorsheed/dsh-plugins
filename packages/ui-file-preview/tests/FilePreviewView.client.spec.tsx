@@ -430,6 +430,48 @@ describe('FilePreviewView', () => {
     expect(await screen.findByText('current')).toBeTruthy()
   })
 
+  it('renders markdown files through the official renderer (bold, table)', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/readme.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: {
+        path: '/work/readme.md',
+        kind: 'text',
+        content: '**bold**\n\n| a | b |\n| - | - |\n| 1 | 2 |',
+        truncated: false,
+      },
+    })
+    renderView(h)
+    const row = await screen.findByText('readme.md')
+    act(() => { row.click() })
+    // Bold renders as <strong> — the raw '**' markers are gone.
+    expect(await screen.findByText('bold')).toBeTruthy()
+    expect(screen.queryByText(/\*\*bold\*\*/)).toBeNull()
+    // The GFM table renders its cells.
+    expect(screen.getByText('1')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+    expect(screen.getByText('a')).toBeTruthy()
+    expect(screen.getByText('b')).toBeTruthy()
+  })
+
+  it('keeps non-markdown text in the syntax-highlighted code view', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.txt', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/notes.txt', kind: 'text', content: '**not bold** here', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('notes.txt')
+    act(() => { row.click() })
+    // A non-markdown text file keeps its literal source — no markdown parse.
+    expect(await screen.findByText('**not bold** here')).toBeTruthy()
+  })
+
   it('shows the recorded path for a missing file', async () => {
     const h = makeHarness()
     h.listFiles.mockResolvedValue({

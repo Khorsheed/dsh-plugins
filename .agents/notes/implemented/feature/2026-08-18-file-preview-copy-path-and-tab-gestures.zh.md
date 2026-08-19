@@ -18,6 +18,8 @@ Status: implemented
 
 **"在文件夹中打开"现在会选中文件。** 宿主打开器（`host.openPath`）只会用默认应用打开路径——没有"在文件夹中选中"的语义——所以宿主半边新增了 `filePreview.reveal` Remote 方法独占 reveal：它通过 `ctx.fs` 以会话 cwd 为基准解析展示路径，把规范化路径交给无 shell 的原生派发（`@deepseek-ai/dsh-native-command`）：macOS `open -R`（Finder 选中）、Windows `explorer /select,<path>`（Explorer 选中）、WSL 先用 `wslpath` 转 Windows 路径、桌面 Linux 依次尝试 `nautilus` / `dolphin` / `nemo` `--select`。客户端的 `revealFolder` 动词现在调用 `remote.reveal(sessionId, path)`；宿主回答 `revealed: false`（文件缺失、没有可选中的文件管理器）或调用失败时，回退为通过既有 `openOnHost` 打开父文件夹——reveal 之前的行为——手势总能落在可见处。宿主方法只是尽力而为的能力，不是门禁：客户端对整组文件夹/IDE 手势仍用 loopback + `canOpenPath` 门禁。reveal 派发携带可注入的平台事实以支持确定性测试，服务构造函数也为原生 runner 留了 seam。
 
+**Markdown 预览按文档渲染。** 共享预览面板此前把所有文本读取（含 `.md`）都用 `CodeBlock` 当作语法高亮源码展示，表格和强调只能看到字面记号。现在 `*.md`/`*.mdx` 读取改走官方 `MarkdownText` 管线（聊天区同一渲染器——标题、表格、加粗/斜体、链接、脚注、数学公式），其余文本文件保持代码视图；内容搜索时任何文本仍切换到原始匹配行视图，命中始终可见。该渲染器与聊天区信任的是同一套不信任内容安全管线，无需额外消毒。面板由抽屉与 tab 共享，两个表面都会渲染 markdown。
+
 ## 备选方案
 
 - **文件列表里每行一个复制按钮。** 否决：行是紧凑的 名称/目录/轮次 网格，每行一个按钮会污染可能触顶服务上限的列表；选中文件的手势行与抽屉头部一致，复制目标也更明确。
