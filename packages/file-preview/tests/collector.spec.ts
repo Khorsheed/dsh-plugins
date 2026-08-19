@@ -135,3 +135,31 @@ describe('FilePreviewService.list with the collector', () => {
     expect(list.entries).toEqual([])
   })
 })
+
+describe('FilePreviewService.turnFiles', () => {
+  it('returns per-turn groups with exact turn attribution and captured merge', async () => {
+    const ctx = new Context()
+    Object.assign(ctx, { fs: makeFs(['/tmp/bash.html']) })
+    const service = new FilePreviewService(ctx)
+    const write2 = {
+      type: 'tool/call', seq: 1, time: 0,
+      data: { turn: 2, step: 1, callId: 'w2', name: 'write', arguments: JSON.stringify({ file_path: '/work/a.md', content: 'x' }) },
+    } as unknown as SessionEvent
+    const edit5 = {
+      type: 'tool/call', seq: 2, time: 0,
+      data: { turn: 5, step: 1, callId: 'w5', name: 'edit', arguments: JSON.stringify({ file_path: '/work/a.md', new_string: 'y', old_string: 'x' }) },
+    } as unknown as SessionEvent
+    // write/edit live in the session history (the fold's source); the bash
+    // call/result flow through the event firehose to the collector.
+    const session = fakeSession('s1', '/work', [write2, edit5])
+    ctx.emit('session/event', session, toolCall('b1', 'cat > /tmp/bash.html', 3, 5))
+    ctx.emit('session/event', session, toolResult('b1', 4))
+    await flush()
+    const map = service.turnFiles({ session } as unknown as Agent)
+    const turn2 = map.turns.find(group => group.turn === 2)
+    const turn5 = map.turns.find(group => group.turn === 5)
+    // Exact attribution: turn 2 has the write, turn 5 has the edit AND the bash capture.
+    expect(turn2?.files.map(file => file.path)).toEqual(['/work/a.md'])
+    expect(turn5?.files.map(file => file.path).sort()).toEqual(['/tmp/bash.html', '/work/a.md'])
+  })
+})

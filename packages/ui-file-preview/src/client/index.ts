@@ -37,22 +37,23 @@ import { interceptMentionClicks } from './mention-intercept.ts'
 import { FilePreviewController, type FilePreviewActions } from './panel-service.ts'
 import { en, NS, zh } from './locales.ts'
 import { parentPath } from './path-utils.ts'
-import { turnFilesDefinition, selectTurnFiles } from './turn-files.ts'
-import type { FilePreviewDrawerInjected, FilePreviewRemote, FilePreviewViewInjected } from './contract.ts'
+import { createTurnFilesLoader } from './turn-files-cache.ts'
+import { selectTurnFiles } from './turn-files.ts'
+import type { FilePreviewDrawerInjected, FilePreviewRemote, FilePreviewTurnRowInjected, FilePreviewViewInjected } from './contract.ts'
 
 export { FilePreviewDrawer, FilePreviewView, FilePreviewController }
 
-/** Required services: slots, sessions, the remote channel, conversation node
- * registration, and the copy. `remote.filePreview` is deliberately NOT an
- * inject: this plugin both mounts the namespace (through `$mount` below) and
- * consumes it, and the Cordis property proxy only resolves services declared
- * in `inject` or provided by an ancestor fiber. Declaring it would deadlock
- * the loader (the fiber waits for the service, which only this apply's
- * `$mount` can provide); the property proxy cannot see the sibling namespace
- * fiber `$mount` spawns. The mount is awaited and the namespace is then read
- * back from the global store with `ctx.get`, which resolves any active
- * provider in the same isolation scope. */
-export const inject = ['slots', 'sessions', 'workspaces', 'connection', 'remote', 'conversationEvents', 'locale']
+/** Required services: slots, sessions, the remote channel, and the locale. The
+ * `remote.filePreview` namespace is deliberately NOT an inject: this plugin
+ * both mounts the namespace (through `$mount` below) and consumes it, and the
+ * Cordis property proxy only resolves services declared in `inject` or
+ * provided by an ancestor fiber. Declaring it would deadlock the loader (the
+ * fiber waits for the service, which only this apply's `$mount` can provide);
+ * the property proxy cannot see the sibling namespace fiber `$mount` spawns.
+ * The mount is awaited and the namespace is then read back from the global
+ * store with `ctx.get`, which resolves any active provider in the same
+ * isolation scope. */
+export const inject = ['slots', 'sessions', 'workspaces', 'connection', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the panel
@@ -71,7 +72,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     ctx.logger.error(error)
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-file-preview: dictionaries')
-  ctx.conversationEvents.register(turnFilesDefinition)
   const t = ctx.locale.bind(NS)
   const controller = new FilePreviewController()
   const connection = ctx.get('connection') as ConnectionHandle
@@ -118,6 +118,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // inject closures, so a lazy `ctx.remote.filePreview` read at call time
   // never trips the property proxy.
   const remote = ctx.get('remote.filePreview') as FilePreviewRemote
+  // The turn card's host-fed loader: one RPC warms every turn rendered so far
+  // (the host returns the whole per-turn map, cached by the log watermark).
+  const turnFilesLoader = createTurnFilesLoader(remote)
 
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
@@ -143,15 +146,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     // Priority -1: the chain elects the first non-null select in ascending
-    // priority order, so this entry wins over the official deliverables entry
-    // (default priority 0) on every turn their vocabularies overlap — and
-    // selectTurnFiles unions that vocabulary in, so the official row never
-    // mounts. See the TODO(official-opener-seam) on selectTurnFiles.
+    // priority order. selectTurnFiles claims EVERY turn unconditionally (the
+    // card is an async shell whose visibility its host fetch decides), so the
+    // official produced-files entry never mounts. See the
+    // TODO(official-opener-seam) note: the row still opens the drawer in place.
     priority: -1,
     select: selectTurnFiles,
     locale: NS,
-    inject: () => ({
+    inject: (): FilePreviewTurnRowInjected => ({
       openDrawer: (path: string) => { controller.openDrawer(path) },
+      turnFiles: (sessionId: SessionId, turn: number) => turnFilesLoader(sessionId, turn),
     }),
   }, TurnFileRow))
 

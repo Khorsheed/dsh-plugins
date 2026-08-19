@@ -19,13 +19,14 @@
 
 ## 服务契约
 
-`ctx.filePreview`（wire 命名空间 `filePreview`）暴露三个生成的 Remote 方法：
+`ctx.filePreview`（wire 命名空间 `filePreview`）暴露四个生成的 Remote 方法：
 
 - `list(agent)` — 对 `agent.session.events` 的纯折叠：`read`、`write`、`edit`（三者都用 `file_path` 参数键）工具的每条 `tool/call` 都贡献一个展示路径，这些工具的已完结 `tool/code-dispatch`（嵌套 Code Mode 调用）同样计入——失败的派发不记录，且因派发事件不带 turn/step，条目借用最外层根调用的位置。重复路径原地刷新其操作与位置，保持首次出现顺序。`write`/`edit` 的 `tool/result` 若携带 `diffs` 演示元数据，则把每次改动按事件序追加到条目的 `diffs`（各带 seq/turn/step），`lastDiff` 保留为最后一次改动，并在后续读取中全部保留。响应携带条目、最后扫描的 seq，以及是否触达 `maxFiles` 上限。折叠本身不访问文件系统；`captureBashWrites` 开启时，条目并入采集器验证过的 bash 写入路径（见配置）。
 - `read(agent, path, signal)` — 以 `agent.session.header.cwd` 为基准解析 `path`，把文件的当前内容以 `kind: 'text'` 返回（超过 `maxReadBytes` 时截断并标记 `truncated`）；路径是图片且存在 web 宿主时返回 `kind: 'image'` 及浏览器可加载的 `url`；否则返回分类提示：`binary`（二进制扩展名或解码文本含 NUL 字节）、`missing`（文件不存在）、`too-large`（后端报告的大小超过上限）、`error`（解析/stat/解码失败，含消息）。二进制扩展名绝不读取。图片字节走专门的宿主路由（`/file-preview-image/<sessionId>/<path>`，仅当组合了可选的 `webServer` 与 `agents` 服务时注册），让浏览器原生加载而不撑大 RPC 通道；无 web 宿主时图片读取返回 `binary`。
 - `reveal(agent, path, signal)` — 通过 `ctx.fs` 以 `agent.session.header.cwd` 为基准解析 `path`，然后在宿主文件管理器中打开该文件的所在文件夹并选中它，全程无 shell，走 `@deepseek-ai/dsh-native-command`：macOS `open -R`（Finder）、Windows `explorer /select,<path>`（Explorer）、WSL 先用 `wslpath` 转成 Windows 路径、桌面 Linux 依次尝试支持选中的文件管理器（`nautilus` / `dolphin` / `nemo` `--select`）。文件管理器选中文件时返回 `{ revealed: true }`；记录路径解析不到存在的目标时返回 `{ revealed: false, reason: 'missing' }`，没有可用的文件管理器时返回 `'select-failed'`——此时调用方改为打开父文件夹，手势总能落在可见处。原生 reveal 只把路径交给宿主 OS，服务不写入任何东西。
+- `turnFiles(agent)` — 每个回合的文件变更，回合卡片的单一事实源，与 `list` 同源（write/edit 调用、借用根调用 turn 的 Code Mode 派发、result diff meta 的 render-intent 路径——这些也会登记进 `list`——以及按各自 turn 并入的 bash 捕获）。与 `list` 不同，路径**不**去重到最后一次：同一文件在两个回合都改过，两个回合的分组里都有它——每张卡片精确列出该回合改了什么。逐回合行数增减由 result diff 求和（新建/覆盖时 removed 未知）。按回合折叠按会话缓存、由日志水位线失效，重复卡片拉取不会重新折叠；响应携带水位线供客户端自缓存。
 
-该服务是受信任的只读能力：它能读取 `ctx.fs` 允许会话访问的一切，因此组合它就等于授予对会话文件系统视图的预览权限——它不是安全边界。服务不产生任何会话事件，也不维护按会话的缓存。
+该服务是受信任的只读能力：它能读取 `ctx.fs` 允许会话访问的一切，因此组合它就等于授予对会话文件系统视图的预览权限——它不是安全边界。服务不产生任何会话事件；它唯一持有的按会话状态是按回合折叠缓存（水位线失效）与 bash 采集器的已验证写入登记表。
 
 ## 分享
 
