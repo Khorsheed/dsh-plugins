@@ -29,4 +29,5 @@ Status: implemented
 
 - 回归覆盖：`reportRestartContext: 'off'` 下中断会话仍被 resume 并注入 continue；`schedule-exit` 在非 `<home>/state` 的显式 state dir 下 marker 和结果文件都落在该目录。
 - 第二轮评审跟进（同日）：`supervise` 不再从 state 目录猜测实例的 home——`DSH_HOME` 未设时要求显式 `--home`，响亮拒绝（猜出来的 home 会让实例读错 profile/凭据目录）；`buildResumeOptions` 在 `agentDefaultModel` 存在但解析不出完整 provider/model 时告警（静默降级的止血；真正的修——加 peerDep + `import type` 拉声明合并——留给重构轮）；preflight drift tripwire 的 home 探测默认到 `~/.dsh`，在部署机器上真正运行而不是静默 skip（对 rc.8 验证通过）；测试端口改用 `freePort()`（bind 0）取代 `20000 + random`。
+- 第三轮（同日）：`--home` 现在优先于 `DSH_HOME`（`resolveWdHome`）——CLI 里其他解析器全是旗标压环境变量，安装器自己的 `--home` 也是如此；两个安装器生成的单元现在显式传 `--home`，单元自解释且不怕环境被剥离。drift tripwire 按安装器的链解析 home（`DSH_WD_HOME` → `DSH_HOME` → `~/.dsh-official`，否则 `~/.dsh`），并把探测到的 home 写进测试名——哨兵盯的是部署真正在跑的那棵组合树（对生产上 23 行 patch 的大树验证通过）。两侧 README 已补 `--home` 文档。
 - 以下项目仍是有意识地不修，而非遗漏：除上述告警外的结构类型/`as` 清理与 `checkPort`/`resolveHarnessRoot` 去重（无行为变化，记为重构候选）、`~/code/deepseek-harness` 默认值（仓库级约定，可用 `DSH_HARNESS`/`--repo` 覆盖）、`DSH_PREFLIGHT_COMMAND` 作为门禁旁路（测试钩子；守护本就不是针对"能设置实例环境变量的操作者"的安全边界——README 的信任说明已记录）、单文件测试套件的拆分（覆盖是真实的，慢但真实）。

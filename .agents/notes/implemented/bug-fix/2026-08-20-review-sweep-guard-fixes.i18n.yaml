@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-review-sweep-guard-fixes.md
-.agents/notes/implemented/bug-fix/2026-08-20-review-sweep-guard-fixes.md: 6466b85a4c458433686551dbac83fc861e4f9602
-.agents/notes/implemented/bug-fix/2026-08-20-review-sweep-guard-fixes.zh.md: 6a8e35c40e20aabe0442a105f242fe736b0b75d8
+.agents/notes/implemented/bug-fix/2026-08-20-review-sweep-guard-fixes.md: ea2f1f3a5acf1bcadfb518d096f6a15095ba078b
+.agents/notes/implemented/bug-fix/2026-08-20-review-sweep-guard-fixes.zh.md: 9fb1ead599d23753e6b5d8edd0a08a13fc4b6544
