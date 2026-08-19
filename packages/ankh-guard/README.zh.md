@@ -134,7 +134,7 @@ dsh-ankh-guard restart \
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):⚠️ 降级——组合 preflight 门禁需要一份 harness checkout 来解析官方包;独立 npm 安装没有它时守护放行并提示,其余能力(restart/supervise 门禁、watchdog、回滚到已知良好点)全部完整。
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：⚠️ 降级——一切可用，但可选的 composition-preflight 门禁仍是手工镜像 `composeProfile`（带漂移绊线测试），因为 rc.8 仍未导出它；没有 harness 检出时门禁退化为提示。其余能力在 npm 线上完整。
 - 源码线(deepseek-harness master,fork 或上游):✅——门禁通过独立的 `preflight-runner` 运行(从在线 checkout 解析已发布的 `@deepseek-ai/dsh-app-boot` 等),不再需要 fork 补丁。
 
 ## Known Limitations and Deferred Work

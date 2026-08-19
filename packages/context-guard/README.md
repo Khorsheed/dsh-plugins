@@ -54,7 +54,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ✅ full — the plugin touches only the official public stable surface (slots, the `contextPressure` projection, the commands Remote, the settings surface, locale, cordis 4.x, schemastery).
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations and Deferred Work

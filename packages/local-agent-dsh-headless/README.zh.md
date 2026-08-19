@@ -40,3 +40,8 @@ dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       # r
 
 - 子 dsh 会话存储在其自己的 `$DSH_HOME`（harness 的 scoped home）下，子 dsh 会话绝不会出现在父实例的会话列表里。
 - 此 composition 里不装任何 `local-agent` 家族 bundle：base 自带的 in-process subagent 工具保留，但这里没有任何东西再 spawn 一个 dsh。
+
+## Compatibility
+
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——rc.7→rc.8 API 审计（2026-08-20）确认本插件消费的所有面（slot、核心服务、核心事件、cordis 4.x、schemastery）均无变化或纯增量，无需改动源码。
+- 源码线（deepseek-harness master）：✅

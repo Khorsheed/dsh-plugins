@@ -40,3 +40,8 @@ With neither flag, the runner generates its own `session-<uuid>` id (the officia
 
 - The sub-dsh session store lives under its own `$DSH_HOME` (the harness's scoped home), so sub-dsh sessions never appear in the parent instance's session list.
 - No `local-agent` family bundles belong in this composition: base's own in-process subagent tools stay, but nothing here spawns another dsh.
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
+- source line (deepseek-harness master): ✅

@@ -134,7 +134,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ⚠️ degraded — the composition-preflight gate needs a harness checkout to resolve the official packages from; on a standalone npm install without one the guard proceeds with a notice, and every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ⚠️ degraded — everything works, but the optional composition-preflight gate still mirrors `composeProfile` by hand (with a drift tripwire test) because rc.8 still does not export it; without a harness checkout the gate reports a notice instead of running. All other capabilities are intact on the npm line.
 - source line (deepseek-harness master, fork or upstream): ✅ — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
 ## Known Limitations and Deferred Work

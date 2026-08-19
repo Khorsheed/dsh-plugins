@@ -60,7 +60,7 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 
 ## 兼容性
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-session@0.1.0-rc.7` 导出 `./surface` 子路径(含 `isAppendSurfaceEvent` / `isReplacementSurfaceEvent`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：chat-node owner props 移除了 `loadImage`，改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制与延后工作
