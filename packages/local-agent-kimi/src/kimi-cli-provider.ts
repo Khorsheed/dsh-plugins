@@ -28,6 +28,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.ts'
 
@@ -53,6 +55,54 @@ export class KimiCliProvider implements SubagentProvider {
 
   constructor(private readonly ctx: Context) {}
 
+  /**
+   * Register one run with the member channel and declare the bridge MCP server
+   * in the scoped home's mcp.json (per-run entry, socket + token in its env).
+   * Returns the bind/release handles, or undefined when the mounted core
+   * predates the member channel (declare-and-degrade: the run proceeds
+   * exactly as before). `bind` records the spawned CLI pid (the bridge's
+   * parentage cross-check); `release` invalidates the token and prunes the
+   * config entry on any settle path.
+   */
+  private memberRun(
+    childSessionId: string,
+    parentSessionId: string,
+    homeDir: string,
+  ): { bind(pid: number): void; release(): void } | undefined {
+    const registry = this.ctx.localAgent
+    if (
+      typeof registry.registerMemberRun !== 'function'
+      || typeof registry.memberBridgeSocketPath !== 'function'
+      || typeof registry.memberBridgeCommand !== 'function'
+    ) return undefined
+    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
+    const key = memberBridgeServerKey(token)
+    try {
+      injectMemberBridge(homeDir, key, registry.memberBridgeCommand(), {
+        [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+        [MEMBER_BRIDGE_TOKEN_ENV]: token,
+      })
+    } catch (error: unknown) {
+      registry.unregisterMemberRun(token)
+      this.ctx.logger.warn(`subagent-kimi: member bridge config injection failed: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
+    }
+    let released = false
+    return {
+      bind: pid => registry.bindMemberRunPid(token, pid),
+      release: () => {
+        if (released) return
+        released = true
+        registry.unregisterMemberRun(token)
+        try {
+          removeMemberBridge(homeDir, key)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`subagent-kimi: member bridge config cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      },
+    }
+  }
+
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
     if (parentCwd === undefined) {
@@ -76,6 +126,9 @@ export class KimiCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
+    // Member channel: register this run and declare the bridge MCP before the
+    // spawn, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id, homeDir)
     let childSession: Session | undefined
     try {
       // Strict global read, never the caller-scope `ctx.sessions` proxy: the
@@ -112,30 +165,39 @@ export class KimiCliProvider implements SubagentProvider {
     // it actually used.
     const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-kimi: delegating via ${baseUrl ?? 'kimi default endpoint'}`)
-    return startKimiCliRun(request, {
-      cwd: parentCwd,
-      env: { KIMI_CODE_HOME: homeDir },
-      endpointLabel: baseUrl,
-      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-      spawn: spec => this.ctx.subprocess.spawn(spec),
-      onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-      },
-      childSession,
-      homeDir,
-      ctx: this.ctx,
-      // The first round records the kimi session id so a later resume round
-      // can continue it; the mirror offset starts at zero.
-      onCliSessionId: (cliSessionId) => {
-        if (cliSessionId === undefined) return
-        this.ctx.localAgent.recordDelegation({
-          childSessionId: runId,
-          provider: this.name,
-          parentSessionId: request.parent.session.id,
-          cliSessionId,
-        })
-      },
-    })
+    try {
+      const run = await startKimiCliRun(request, {
+        cwd: parentCwd,
+        env: { KIMI_CODE_HOME: homeDir },
+        endpointLabel: baseUrl,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: spec => this.ctx.subprocess.spawn(spec),
+        onError: (error: unknown, stopReason) => {
+          this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+        },
+        onSpawned: (pid) => { member?.bind(pid) },
+        childSession,
+        homeDir,
+        ctx: this.ctx,
+        // The first round records the kimi session id so a later resume round
+        // can continue it; the mirror offset starts at zero.
+        onCliSessionId: (cliSessionId) => {
+          if (cliSessionId === undefined) return
+          this.ctx.localAgent.recordDelegation({
+            childSessionId: runId,
+            provider: this.name,
+            parentSessionId: request.parent.session.id,
+            cliSessionId,
+          })
+        },
+      })
+      // The member-channel token dies with the run, whatever its stop reason.
+      if (member !== undefined) void run.result.then(member.release, member.release)
+      return run
+    } catch (error) {
+      member?.release()
+      throw error
+    }
   }
 
   /** Resume round: continue the recorded kimi session inside the existing child session. */
@@ -154,6 +216,9 @@ export class KimiCliProvider implements SubagentProvider {
         `subagent-kimi: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
+    // Member channel: register the resume round (same child session, fresh
+    // per-run token) and declare the bridge MCP before the spawn.
+    const member = this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -175,18 +240,26 @@ export class KimiCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
+        onSpawned: (pid) => { member?.bind(pid) },
         childSession,
         homeDir,
         ctx: this.ctx,
         resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
       })
       void run.result.then(
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
       )
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+      member?.release()
       throw error
     }
   }
@@ -206,6 +279,8 @@ export interface KimiCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
+  readonly onSpawned?: (pid: number) => void
   /** dsh subagent session recording this delegation; its transcript is mirrored after settle. */
   readonly childSession?: Session | undefined
   /** The `kimi` harness's scoped home, read for the transcript to mirror. */
@@ -366,6 +441,7 @@ export function startKimiCliRun(
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
+  spec.onSpawned?.(child.pid)
 
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
