@@ -5,19 +5,21 @@
  * a textarea (Enter sends, Shift+Enter newlines), a send button, and the
  * @-completion menu listing ONLY existing roster members (pure addressing —
  * invitation lives in the members tab). Mention parsing mirrors the host's
- * parseMentions: only leading `@name` tokens address. A bare message is a
- * blackboard note and says so; a structured rejection (unknown targets)
- * shows as an inline error line.
+ * parseMentions: only leading `@name` tokens address. A bare message (no
+ * leading @) is NOT room business: it is released to the official submit
+ * path — the takeover writes the text into the session's official input
+ * machine (`inputActions.setDraft` + `inputActions.submit()`, the same entry
+ * the InputBar's Enter key drives), so it becomes an ordinary main-agent
+ * turn. A structured rejection (unknown targets) shows as an inline error
+ * line.
  */
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
+import { parseMentions } from '../journal.ts'
 import type { RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import css from './RoomComposer.module.css'
-
-/** The fade-out lifetime of the blackboard-note hint. */
-const NOTICE_MS = 3_000
 
 interface ActiveMention {
   /** The partial name after the trailing `@`. */
@@ -39,12 +41,11 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
 }
 
 /** The room composer takeover component. */
-export function RoomComposer({ sessionId, roomStore, submit, t }: RoomComposerProps): ReactNode {
+export function RoomComposer({ sessionId, inputActions, roomStore, submit, t }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [noted, setNoted] = useState(false)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
   const areaRef = useRef<HTMLTextAreaElement | null>(null)
   const members = state?.members ?? []
@@ -76,6 +77,17 @@ export function RoomComposer({ sessionId, roomStore, submit, t }: RoomComposerPr
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (text === '' || busy) return
+    // Bare message: release to the official submit path — a normal turn of
+    // the room's own main agent. The takeover never journals it; the official
+    // pipeline (queue admission, adjudication, delivery) owns it from here.
+    if (parseMentions(text).targets.length === 0) {
+      inputActions.setDraft(text)
+      inputActions.submit()
+      setDraft('')
+      setMention(null)
+      setError(null)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -86,11 +98,6 @@ export function RoomComposer({ sessionId, roomStore, submit, t }: RoomComposerPr
       }
       setDraft('')
       setMention(null)
-      if (!outcome.dispatched) {
-        // A bare message reaches nobody: say where it went, briefly.
-        setNoted(true)
-        setTimeout(() => { setNoted(false) }, NOTICE_MS)
-      }
     } finally {
       setBusy(false)
     }
@@ -129,7 +136,6 @@ export function RoomComposer({ sessionId, roomStore, submit, t }: RoomComposerPr
 
   return (
     <div className={css.frame}>
-      {noted && <div className={css.notice} role="status">{t('composer.noted')}</div>}
       <div className={css.box}>
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label="members">

@@ -6,11 +6,11 @@ import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/c
 import { ROOM_POLL_INTERVAL_MS, RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import type { RoomState } from '../src/types.ts'
 
-const IDLE_ROOM: RoomState = { members: [], blackboard: [], cursors: [], runs: [] }
+const IDLE_ROOM: RoomState = { members: [], relays: [], tasks: [], runs: [] }
 const RUNNING_ROOM: RoomState = {
   members: [{ name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }],
-  blackboard: [],
-  cursors: [],
+  relays: [],
+  tasks: [],
   runs: [{ member: 'ada', state: 'running', startedAt: 1 }],
 }
 

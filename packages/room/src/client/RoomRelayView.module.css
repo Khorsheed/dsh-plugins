@@ -1,0 +1,37 @@
+/* Relay gate row: the RoomEventView register (one dim single-line row) plus
+   two inline action buttons while the relay is pending. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.action {
+  flex: none;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-alias-label-primary, rgba(30, 30, 30, 1));
+}

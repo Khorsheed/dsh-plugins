@@ -35,17 +35,16 @@ export type NewRoomActionProps =
   & InjectFace<NewRoomInjected>
   & PropsLocale<'room'>
 
-/** What a composer submit made of the message. */
-export type RoomSubmitOutcome =
-  | { readonly ok: true; readonly dispatched: boolean }
-  | { readonly ok: false; readonly message: string }
-
 /** Injected face of the composer takeover entry. */
 export interface RoomComposerInjected {
   /** The client-side room state store (sync reads + subscription). */
   readonly roomStore: RoomStore
-  /** Post a message into the room and refresh the store on success. */
-  readonly submit: (sessionId: SessionId, text: string) => Promise<RoomSubmitOutcome>
+  /**
+   * Dispatch an @-message into the room and refresh the store on success.
+   * Bare messages never reach here — the composer releases them to the
+   * official submit path (useInput/inputActions) itself.
+   */
+  readonly submit: (sessionId: SessionId, text: string) => Promise<RoomMutationOutcome>
 }
 
 /** The composer takeover match: the session is a cached room. */
@@ -71,6 +70,8 @@ export interface RoomInviteValues {
   readonly provider: string
   readonly name: string
   readonly instructions?: string
+  /** Member-level working directory (omitted = inherits the room session's cwd). */
+  readonly cwd?: string
   readonly firstTask?: string
 }
 
@@ -130,4 +131,36 @@ export type RoomRunViewProps =
 /** Full props of the 'room-event' chat-node renderer. */
 export type RoomEventViewProps =
   PropsRuntime<'conversation.chat.node', 'room-event'>
+  & PropsLocale<'room'>
+
+/** Injected face of the relay (member notification) chat node. */
+export interface RoomRelayInjected {
+  /** The client-side room state store (member colors come from the roster order). */
+  readonly roomStore: RoomStore
+  /** Confirm a pending relay (dispatches the notification to the recipient). */
+  readonly confirmRelay: (relayId: string) => Promise<void>
+  /** Dismiss a pending relay (the notification never reaches anyone). */
+  readonly dismissRelay: (relayId: string) => Promise<void>
+}
+
+/** Full props of the 'room-relay' chat-node renderer. */
+export type RoomRelayViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-relay'>
+  & InjectFace<RoomRelayInjected>
+  & PropsLocale<'room'>
+
+/** Injected face of the input-dock task board. */
+export interface RoomTasksInjected {
+  /** The client-side room state store (tasks ride the replayed state). */
+  readonly roomStore: RoomStore
+  /** Add a pending task to a member's lane. */
+  readonly addTask: (member: string, title: string) => Promise<RoomMutationOutcome>
+  /** Close an open task (done). */
+  readonly closeTask: (taskId: string) => Promise<RoomMutationOutcome>
+}
+
+/** Full props of the 'conversation.input.dock' task-board entry. */
+export type RoomTaskDockProps =
+  PropsRuntime<'conversation.input.dock'>
+  & InjectFace<RoomTasksInjected>
   & PropsLocale<'room'>

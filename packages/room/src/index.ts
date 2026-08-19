@@ -8,7 +8,10 @@
  * executed by the DispatchEngine: main-agent members get a plugin-sourced
  * followup on the room's own agent, CLI members go through the probed
  * local-agent delegation facade (absent facade = degraded CLI capability,
- * never a boot failure).
+ * never a boot failure). The member-notification gate lives here too: the
+ * local-agent bridge duck-type-calls `receiveMemberMessage` (service face via
+ * ctx.provide, off the wire), the human confirms/dismisses through the
+ * confirmRelay/dismissRelay Remotes.
  * @module @khorsheed/dsh-room
  */
 import { randomUUID } from 'node:crypto'
@@ -35,14 +38,18 @@ import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import { roomInviteTool } from './tool.ts'
 import type {
+  RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
+  RoomCloseTaskRequest, RoomCloseTaskResult,
   RoomCreateRequest, RoomCreateResult, RoomFailure,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
   RoomListProvidersRequest,
+  RoomMemberMessage, RoomMemberMessageReceipt,
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomProviderInfo, RoomProviderList,
+  RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
 } from './types.ts'
@@ -52,7 +59,12 @@ export { MAIN_AGENT_MEMBER, ROOM_EVENT_TYPES } from './journal.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Room Remote owned by the room plugin. */
+    /**
+     * Room service owned by the room plugin: the Typert Remote gateway AND
+     * the in-process service face the local-agent bridge duck-type-calls
+     * (`receiveMemberMessage`). TypertRemoteService's Service base provides
+     * it under 'room'.
+     */
     room: RoomService
   }
 }
@@ -72,10 +84,16 @@ function validName(name: string): boolean {
   return name !== '' && !/\s/.test(name) && !name.includes('@')
 }
 
+/** A task title is the dispatch text's first line, truncated. */
+function taskTitle(text: string): string {
+  const first = text.trim().split('\n', 1)[0] ?? ''
+  return first.length > 60 ? `${first.slice(0, 60)}…` : first
+}
+
 /**
- * room Remote service: room creation, roster management, the human message
- * intake, and run cancellation. A room IS a normal session; the journal is
- * its only state.
+ * room Remote service: room creation, roster management, the human @-message
+ * intake, the notification gate, the task board, and run cancellation. A
+ * room IS a normal session; the journal is its only state.
  */
 export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
@@ -244,8 +262,8 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Replay the room's journal into the derived state (roster, blackboard,
-   * dispatch cursors, run states).
+   * Replay the room's journal into the derived state (roster, notification
+   * relays, task board, run states).
    * @param request - room session identity.
    * @returns the replayed state, or a rejection from the closed failure union.
    */
@@ -261,11 +279,11 @@ export class RoomService extends TypertRemoteService {
    * Validate and journal an invitation: the name must be parseable by the
    * composer @-grammar and unique, the provider non-blank, and (CLI members
    * are undispatchable without it) the local-agent facade must be probed.
-   * A first task is journaled as a `room/dispatch` and handed to the engine
-   * immediately — the receipt's `pendingFirstTask` means "dispatched".
-   * Shared by the Remote surface (`invitedBy: 'human'`) and the room_invite
-   * tool (`invitedBy: 'agent'`).
-   * @param request - room session, provider, name, optional instructions and first task.
+   * A first task is journaled as a `room/dispatch` (auto-opening the member's
+   * in_progress task) and handed to the engine immediately — the receipt's
+   * `pendingFirstTask` means "dispatched". Shared by the Remote surface
+   * (`invitedBy: 'human'`) and the room_invite tool (`invitedBy: 'agent'`).
+   * @param request - room session, provider, name, optional cwd, instructions and first task.
    * @param invitedBy - the invitation's origin.
    * @returns the invitation receipt, or a rejection.
    */
@@ -292,23 +310,27 @@ export class RoomService extends TypertRemoteService {
       provider: request.provider,
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
+      ...request.cwd === undefined || request.cwd.trim() === '' ? {} : { cwd: request.cwd.trim() },
     })
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {
       firstTaskSeq = loaded.session.append('room/dispatch', {
         targets: [request.name], text: request.firstTask,
       }).seq
+      loaded.session.append('room/task-added', {
+        id: randomUUID(), member: request.name, title: taskTitle(request.firstTask), status: 'in_progress',
+      })
     }
     await this.ctx.sessions.flush(loaded.session)
     if (request.firstTask !== undefined && firstTaskSeq !== undefined) {
-      this.engine.dispatch(loaded.session, request.name, request.firstTask, firstTaskSeq)
+      this.engine.dispatch(loaded.session, request.name, request.firstTask, { dispatchSeq: firstTaskSeq })
     }
     return { ok: true, value: { name: request.name, pendingFirstTask: request.firstTask !== undefined } }
   }
 
   /**
    * Invite a CLI member (the human path; see inviteMember).
-   * @param request - room session, provider, name, optional instructions and first task.
+   * @param request - room session, provider, name, optional cwd, instructions and first task.
    * @returns the invitation receipt, or a rejection.
    */
   @Remote('invite')
@@ -355,10 +377,12 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Post a human message into the room: leading `@name` tokens address
-   * members (a `room/dispatch` blackboard entry, executed by the engine), a
-   * bare message is a blackboard-only `room/note`. Every target must be on
-   * the roster.
+   * Post a human @-message into the room: leading `@name` tokens address
+   * members (a `room/dispatch` journal record, executed by the engine, and
+   * one auto-opened in_progress task per target). A BARE message is a
+   * structured `no-targets` rejection — defense only: the room composer
+   * releases bare messages to the official submit path (a normal main-agent
+   * turn) and never calls this Remote without an @-mention.
    * @param request - room session and raw composer text.
    * @returns the parse receipt, or a rejection.
    */
@@ -368,21 +392,130 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     const parsed = parseMentions(request.text)
-    if (parsed.targets.length === 0) {
-      const note = loaded.session.append('room/note', { text: request.text.trim() })
-      await this.ctx.sessions.flush(loaded.session)
-      return { ok: true, value: { parsed, seq: note.seq } }
-    }
+    if (parsed.targets.length === 0) return { ok: false, error: { code: 'no-targets' } }
     if (parsed.text === '') return { ok: false, error: { code: 'empty-text' } }
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = parsed.targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
     const dispatch = loaded.session.append('room/dispatch', { targets: parsed.targets, text: parsed.text })
+    for (const target of parsed.targets) {
+      loaded.session.append('room/task-added', {
+        id: randomUUID(), member: target, title: taskTitle(parsed.text), status: 'in_progress',
+      })
+    }
     await this.ctx.sessions.flush(loaded.session)
     for (const target of parsed.targets) {
-      this.engine.dispatch(loaded.session, target, parsed.text, dispatch.seq)
+      this.engine.dispatch(loaded.session, target, parsed.text, { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed, seq: dispatch.seq } }
+  }
+
+  /**
+   * The notification gate entry, verbatim-frozen contract for the local-agent
+   * family bridge (`ctx.get('room')` + duck-typed call). Phase 1's gate is
+   * ALWAYS human confirmation: the relay is journaled pending and the sender
+   * receives 'pending-confirm' (never 'sent' — the bridge keeps the member's
+   * conclusion honest). A non-room parent session throws: the bridge treats
+   * a rejection as "room does not claim this" and delivers directly.
+   * @param request - sender, recipient, content, the shared parent session, provenance.
+   * @returns the gate receipt.
+   */
+  async receiveMemberMessage(request: RoomMemberMessage): Promise<RoomMemberMessageReceipt> {
+    const loaded = await this.ensureLive(request.parentSessionId)
+    if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
+    loaded.session.append('room/relay', {
+      id: randomUUID(),
+      from: request.from,
+      to: request.to,
+      content: request.content,
+      ...request.provenance === undefined ? {} : { provenance: request.provenance },
+    })
+    await this.ctx.sessions.flush(loaded.session)
+    return 'pending-confirm'
+  }
+
+  /**
+   * Confirm a pending relay: journal the confirmed edge and dispatch the
+   * notification to the recipient as a continuation (`{from} 给你的通知:
+   * {content}`); the engine marks the relay sent once the recipient's own
+   * session receives the prompt.
+   * @param request - room session, relay id.
+   * @returns the resolution receipt, or a rejection.
+   */
+  @Remote('confirmRelay')
+  async confirmRelay(request: RoomRelayResolveRequest): Promise<RoomRelayResolveResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const relay = loaded.state.relays.find(entry => entry.id === request.relayId)
+    if (relay === undefined) return { ok: false, error: { code: 'relay-not-found' } }
+    if (relay.state !== 'pending') return { ok: false, error: { code: 'relay-not-pending' } }
+    if (!loaded.state.members.some(member => member.name === relay.to)) {
+      return { ok: false, error: { code: 'member-not-found' } }
+    }
+    loaded.session.append('room/relay-resolved', { id: relay.id, state: 'confirmed' })
+    await this.ctx.sessions.flush(loaded.session)
+    this.engine.dispatch(loaded.session, relay.to, `${relay.from} 给你的通知: ${relay.content}`, {
+      relayIds: [relay.id],
+    })
+    return { ok: true, value: { relayId: relay.id } }
+  }
+
+  /**
+   * Dismiss a pending relay: the notification never reaches anyone.
+   * @param request - room session, relay id.
+   * @returns the resolution receipt, or a rejection.
+   */
+  @Remote('dismissRelay')
+  async dismissRelay(request: RoomRelayResolveRequest): Promise<RoomRelayResolveResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const relay = loaded.state.relays.find(entry => entry.id === request.relayId)
+    if (relay === undefined) return { ok: false, error: { code: 'relay-not-found' } }
+    if (relay.state !== 'pending') return { ok: false, error: { code: 'relay-not-pending' } }
+    loaded.session.append('room/relay-resolved', { id: relay.id, state: 'dismissed' })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: { relayId: relay.id } }
+  }
+
+  /**
+   * Add a task to a member's board lane (the human's management entry; @-
+   * dispatches auto-open in_progress tasks, this opens a pending one).
+   * @param request - room session, member, title.
+   * @returns the new task's id, or a rejection.
+   */
+  @Remote('addTask')
+  async addTask(request: RoomAddTaskRequest): Promise<RoomAddTaskResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (!loaded.state.members.some(member => member.name === request.member)) {
+      return { ok: false, error: { code: 'member-not-found' } }
+    }
+    if (request.title.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    const id = randomUUID()
+    loaded.session.append('room/task-added', {
+      id, member: request.member, title: request.title.trim(), status: 'pending',
+    })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: { id } }
+  }
+
+  /**
+   * Close an open task (done by default, or cancelled).
+   * @param request - room session, task id, optional closing status.
+   * @returns the closed task's id, or a rejection.
+   */
+  @Remote('closeTask')
+  async closeTask(request: RoomCloseTaskRequest): Promise<RoomCloseTaskResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const task = loaded.state.tasks.find(entry => entry.id === request.taskId)
+    if (task === undefined) return { ok: false, error: { code: 'task-not-found' } }
+    if (task.status === 'done' || task.status === 'cancelled') {
+      return { ok: false, error: { code: 'task-closed' } }
+    }
+    loaded.session.append('room/task-updated', { id: task.id, status: request.status ?? 'done' })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: { id: task.id } }
   }
 
   /**
@@ -409,6 +542,14 @@ export class RoomService extends TypertRemoteService {
       loaded.session.append('room/run-state', {
         member: request.name, state: 'cancelled', startedAt: running?.startedAt ?? Date.now(),
       })
+      // The engine's settle no-ops behind this edge, so the task closing the
+      // settle would have done happens here: the dispatch-opened in_progress
+      // task cancels with its run.
+      for (const task of loaded.state.tasks) {
+        if (task.member === request.name && task.status === 'in_progress') {
+          loaded.session.append('room/task-updated', { id: task.id, status: 'cancelled' })
+        }
+      }
       await this.ctx.sessions.flush(loaded.session)
       return { ok: true, value: { cancelled: true } }
     }

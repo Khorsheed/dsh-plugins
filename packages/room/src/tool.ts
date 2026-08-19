@@ -54,6 +54,10 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         type: 'string',
         description: 'Optional first task, dispatched to the member as soon as it joins.',
       },
+      cwd: {
+        type: 'string',
+        description: 'Optional working directory for the member (empty: inherits the room session\'s cwd).',
+      },
     },
     output: {
       schema: {
@@ -80,6 +84,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         name: args.name,
         instructions: args.instructions,
         ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
+        ...args.cwd === undefined ? {} : { cwd: args.cwd },
       }, 'agent')
       if (!result.ok) {
         const hint = result.error.code === 'duplicate-name'

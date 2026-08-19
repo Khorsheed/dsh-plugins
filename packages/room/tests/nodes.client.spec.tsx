@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The room chat-flow nodes: Definition claiming/lifecycle and the three renderers. */
+/** The room chat-flow nodes: Definition claiming/lifecycle and the renderers. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -7,15 +7,18 @@ import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/c
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  roomEventDefinition, roomRunDefinition, roomSpeechDefinition,
-  type RoomEventData, type RoomRunData, type RoomSpeechData,
+  roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
+  type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
 } from '../src/client/nodes.ts'
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
 import { RoomRunView } from '../src/client/RoomRunView.tsx'
 import { RoomEventView } from '../src/client/RoomEventView.tsx'
+import { RoomRelayView } from '../src/client/RoomRelayView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
-import type { RoomEventViewProps, RoomRunViewProps, RoomSpeechViewProps } from '../src/client/slots.ts'
+import type {
+  RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
+} from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
 afterEach(() => {
@@ -44,8 +47,8 @@ const STATE: RoomState = {
     { name: 'main', kind: 'main-agent', invitedBy: 'human' },
     { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' as SessionId },
   ],
-  blackboard: [],
-  cursors: [],
+  relays: [],
+  tasks: [],
   runs: [],
 }
 
@@ -74,7 +77,7 @@ describe('room node Definitions', () => {
   it('room-speech claims room/speech events only and materializes the node', () => {
     const event = ev('room/speech', 7, { member: 'ada', text: '方案 A', childSessionId: 'child-1', durationMs: 1200 })
     expect(roomSpeechDefinition.match(event)).toEqual({ id: '7', role: 'start' })
-    expect(roomSpeechDefinition.match(ev('room/note', 1, { text: 'x' }))).toBeNull()
+    expect(roomSpeechDefinition.match(ev('room/dispatch', 1, { targets: [], text: 'x' }))).toBeNull()
     expect(roomSpeechDefinition.match(ev('user/message', 2, {}))).toBeNull()
 
     const state = roomSpeechDefinition.start(contextOf(undefined), matchOf(event), undefined as never)
@@ -115,21 +118,43 @@ describe('room node Definitions', () => {
     expect(roomRunDefinition.buildViewNode!(contextOf(failed))).toMatchObject({ data: { state: 'failed' } })
   })
 
-  it('room-event claims boundaries and human messages, skipping the auto-seated main agent', () => {
+  it('room-event claims boundaries and human dispatches, skipping the auto-seated main agent', () => {
     const joined = ev('room/member-added', 1, { name: 'bill', kind: 'cli', provider: 'claude-code', invitedBy: 'agent' })
     const mainSeated = ev('room/member-added', 0, { name: 'main', kind: 'main-agent', invitedBy: 'human' })
     expect(roomEventDefinition.match(joined)).toEqual({ id: '1', role: 'start' })
     expect(roomEventDefinition.match(mainSeated)).toBeNull()
     expect(roomEventDefinition.match(ev('room/member-removed', 2, { name: 'bill' }))).toEqual({ id: '2', role: 'start' })
     expect(roomEventDefinition.match(ev('room/dispatch', 3, { targets: ['ada'], text: '干活' }))).toEqual({ id: '3', role: 'start' })
-    expect(roomEventDefinition.match(ev('room/note', 4, { text: '笔记' }))).toEqual({ id: '4', role: 'start' })
     expect(roomEventDefinition.match(ev('room/created', 0, { version: 1 }))).toBeNull()
     expect(roomEventDefinition.match(ev('room/run-state', 5, { member: 'ada', state: 'running', startedAt: 1 }))).toBeNull()
+    // The dropped blackboard note is legacy: never claimed.
+    expect(roomEventDefinition.match(ev('room/note', 6, { text: '旧' }))).toBeNull()
 
     const state = roomEventDefinition.start(contextOf(undefined), matchOf(joined), undefined as never)
     expect(state).toEqual({
       seq: 1, time: 1001, sub: 'member-added', member: 'bill', invitedBy: 'agent', provider: 'claude-code',
     })
+  })
+
+  it('room-relay keys on the relay id: the gate row folds its resolutions in place', () => {
+    const relay = ev('room/relay', 3, { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
+    const resolved = ev('room/relay-resolved', 4, { id: 'r1', state: 'sent' })
+    expect(roomRelayDefinition.match(relay)).toEqual({ id: 'r1', role: 'start' })
+    expect(roomRelayDefinition.match(resolved)).toEqual({ id: 'r1', role: 'update' })
+    expect(roomRelayDefinition.match(ev('room/speech', 5, { member: 'ada', text: 'x' }))).toBeNull()
+
+    const started = roomRelayDefinition.start(contextOf(undefined), matchOf(relay), undefined as never)
+    expect(started).toEqual({
+      seq: 3, time: 1003, relayId: 'r1', from: 'ada', to: 'bill', content: '接口定稿', state: 'pending',
+    })
+    expect(roomRelayDefinition.buildViewNode!(contextOf(started))).toMatchObject({ kind: 'room-relay' })
+
+    const updated = roomRelayDefinition.update(
+      contextOf(started) as never,
+      { event: resolved, role: 'update', location: { kind: 'unresolved' } } as never,
+    )
+    expect(updated).toEqual({ ...started, seq: 4, state: 'sent' })
+    expect(roomRelayDefinition.buildViewNode!(contextOf(updated))).toMatchObject({ data: { state: 'sent' } })
   })
 })
 
@@ -217,7 +242,7 @@ describe('RoomEventView', () => {
     render(<RoomEventView {...props} />)
   }
 
-  it('renders the join/leave/dispatch/note lines', () => {
+  it('renders the join/leave/dispatch lines', () => {
     bench({ seq: 1, time: 1001, sub: 'member-added', member: 'bill', provider: 'claude-code', invitedBy: 'agent' })
     expect(screen.getByText('bill（claude-code）加入了 room · 由主 agent 邀请')).toBeDefined()
     cleanup()
@@ -226,8 +251,42 @@ describe('RoomEventView', () => {
     cleanup()
     bench({ seq: 3, time: 1003, sub: 'dispatch', targets: ['ada', 'bill'], text: '对齐接口' })
     expect(screen.getByText('你 @ada @bill：对齐接口')).toBeDefined()
+  })
+})
+
+describe('RoomRelayView', () => {
+  const relay: RoomRelayData = {
+    seq: 3, time: 1003, relayId: 'r1', from: 'ada', to: 'bill', content: '接口定稿', state: 'pending',
+  }
+
+  async function bench(data: RoomRelayData) {
+    const roomStore = await primedStore()
+    const confirmRelay = vi.fn(async () => {})
+    const dismissRelay = vi.fn(async () => {})
+    const props = {
+      node: nodeOf('room-relay', data), sessionId: 'room-1' as SessionId,
+      roomStore, confirmRelay, dismissRelay, t,
+    } as unknown as RoomRelayViewProps
+    render(<RoomRelayView {...props} />)
+    return { confirmRelay, dismissRelay }
+  }
+
+  it('a pending relay renders the gate row with confirm/dismiss actions', async () => {
+    const { confirmRelay, dismissRelay } = await bench(relay)
+    expect(screen.getByText(/⇢ ada → bill：接口定稿/)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '确认派发' }))
+    expect(confirmRelay).toHaveBeenCalledWith('r1')
+    fireEvent.click(screen.getByRole('button', { name: '忽略' }))
+    expect(dismissRelay).toHaveBeenCalledWith('r1')
+  })
+
+  it('a resolved relay folds to a plain dim line (no actions)', async () => {
+    await bench({ ...relay, seq: 4, state: 'sent' })
+    expect(screen.getByText(/⇢ ada → bill：接口定稿/)).toBeDefined()
+    expect(screen.getByText(/（已送达）/)).toBeDefined()
+    expect(screen.queryByRole('button')).toBeNull()
     cleanup()
-    bench({ seq: 4, time: 1004, sub: 'note', text: '先讨论方向' })
-    expect(screen.getByText('你记录到黑板：先讨论方向')).toBeDefined()
+    await bench({ ...relay, seq: 4, state: 'dismissed' })
+    expect(screen.getByText(/（已忽略）/)).toBeDefined()
   })
 })

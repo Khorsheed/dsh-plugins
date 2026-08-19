@@ -25,11 +25,12 @@ import { RoomComposer } from './RoomComposer.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomEventDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
+import { RoomRelayView } from './RoomRelayView.tsx'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome, RoomRunInjected,
-  RoomSpeechInjected, RoomSubmitOutcome,
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome,
+  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -110,7 +111,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     return { ok: true }
   }
 
-  const submit = async (sessionId: SessionId, text: string): Promise<RoomSubmitOutcome> => {
+  const submit = async (sessionId: SessionId, text: string): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
     const carried = await remote.postMessage({ sessionId, text })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
@@ -121,7 +122,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         : { ok: false, message: t('composer.error.generic') }
     }
     void roomStore.refresh(sessionId)
-    return { ok: true, dispatched: result.value.parsed.targets.length > 0 }
+    return { ok: true }
   }
 
   const openSession = (sessionId: SessionId): void => { ctx.sessions.open(sessionId) }
@@ -130,6 +131,20 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     const carried = await remote.cancel({ sessionId, name: member })
     if (carried.ok) void roomStore.refresh(sessionId)
   }
+  /** The relay gate actions (sessionId binds per entry inject). */
+  const relayFace = (sessionId: SessionId): RoomRelayInjected => ({
+    roomStore,
+    confirmRelay: async (relayId) => {
+      if (remote === undefined) return
+      const carried = await remote.confirmRelay({ sessionId, relayId })
+      if (carried.ok) void roomStore.refresh(sessionId)
+    },
+    dismissRelay: async (relayId) => {
+      if (remote === undefined) return
+      const carried = await remote.dismissRelay({ sessionId, relayId })
+      if (carried.ok) void roomStore.refresh(sessionId)
+    },
+  })
 
   /** Map a structured RoomFailure to the dialog's localized copy. */
   const failureText = (error: RoomFailure): string => {
@@ -179,6 +194,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.conversationEvents.register(roomSpeechDefinition)
   ctx.conversationEvents.register(roomRunDefinition)
   ctx.conversationEvents.register(roomEventDefinition)
+  ctx.conversationEvents.register(roomRelayDefinition)
 
   // The slots are declared by ui-sidebar / ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
@@ -252,6 +268,15 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'room-event', locale: NS },
     RoomEventView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-relay',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
+    },
+    RoomRelayView,
   ))
 
   return async () => {

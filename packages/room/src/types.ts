@@ -9,6 +9,14 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
+ * A JSON-safe value (mirrors the host's JsonValue shape without importing the
+ * dsh-session MAIN entry — that entry's Context merge is host-side and must
+ * not leak into the client type program). Relay provenance crosses the Remote
+ * boundary, so it must be constrained JSON.
+ */
+export type RoomJsonValue = null | boolean | number | string | RoomJsonValue[] | { [key: string]: RoomJsonValue }
+
+/**
  * Room identity marker payload. Appended once at room creation; replaying the
  * session's event log recovers room identity, so no session-header change is
  * needed. `version` gates future payload evolution.
@@ -31,6 +39,12 @@ export interface RoomMemberAddedEvent {
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
   readonly invitedBy: 'human' | 'agent'
+  /**
+   * The member's own working directory (empty = inherits the room session's
+   * cwd). Roster-only for now: the local-agent facade's per-call cwd override
+   * (family need R2) has not landed, so the adapter does NOT pass it down yet.
+   */
+  readonly cwd?: string
   /** The CLI member's dsh child session, once delegation has started. */
   readonly childSessionId?: SessionId
 }
@@ -52,18 +66,22 @@ export interface RoomMemberRemovedEvent {
   readonly name: string
 }
 
-/** A human @-message: blackboard entry and dispatch record in one. */
+/**
+ * A human @-message: the dispatch record. Journaled for UI projection and
+ * replay (chat-flow lines, task auto-open); it no longer feeds any prompt —
+ * a member's prompt is role instructions + roster + notifications + the
+ * dispatch text, never a running log.
+ */
 export interface RoomDispatchEvent {
   readonly targets: readonly string[]
   readonly text: string
 }
 
-/** A bare human message: blackboard only, triggers nobody. */
-export interface RoomNoteEvent {
-  readonly text: string
-}
-
-/** A member's final reply, mirrored onto the blackboard. */
+/**
+ * A member's final reply, mirrored into the room journal for UI projection
+ * and replay. Never re-injected into any prompt: the member's own CLI
+ * session (resume chain) holds its working memory.
+ */
 export interface RoomSpeechEvent {
   readonly member: string
   readonly text: string
@@ -80,6 +98,50 @@ export interface RoomRunStateEvent {
   readonly elapsedMs?: number
 }
 
+/** A relay's lifecycle states (see the design note's notification channel). */
+export type RoomRelayState = 'pending' | 'confirmed' | 'dismissed' | 'sent'
+
+/**
+ * A member-to-member notification arrived at the room gate (journaled as
+ * pending): the family bridge's `receiveMemberMessage` call, or the fallback
+ * parse of a reply's trailing `@name <content>` own line. `provenance` is
+ * the origin record (the bridge passes the sender's delegation record; the
+ * fallback records the speech it was parsed from).
+ */
+export interface RoomRelayEvent {
+  readonly id: string
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly provenance?: Record<string, RoomJsonValue>
+}
+
+/** A relay left the pending state (confirmed, dismissed, or delivered). */
+export interface RoomRelayResolvedEvent {
+  readonly id: string
+  readonly state: 'confirmed' | 'dismissed' | 'sent'
+}
+
+/** Task-board task statuses. */
+export type RoomTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled'
+
+/**
+ * A task entered the board: an @-dispatch opens it `in_progress` (title is
+ * the dispatch text, truncated), a human addTask opens it `pending`.
+ */
+export interface RoomTaskAddedEvent {
+  readonly id: string
+  readonly member: string
+  readonly title: string
+  readonly status: 'pending' | 'in_progress'
+}
+
+/** A task changed status (speech settle closes it; the human manages the rest). */
+export interface RoomTaskUpdatedEvent {
+  readonly id: string
+  readonly status: 'in_progress' | 'done' | 'cancelled'
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -93,14 +155,20 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/member-updated': RoomMemberUpdatedEvent
     /** Roster mutation: a member left. */
     'room/member-removed': RoomMemberRemovedEvent
-    /** Blackboard: a human @-message (also the dispatch record). */
+    /** Dispatch record: a human @-message (UI projection + task auto-open). */
     'room/dispatch': RoomDispatchEvent
-    /** Blackboard: a bare human message. */
-    'room/note': RoomNoteEvent
-    /** Blackboard: a member's reply. */
+    /** Member speech mirror (UI projection; never re-injected into prompts). */
     'room/speech': RoomSpeechEvent
     /** Member run lifecycle. */
     'room/run-state': RoomRunStateEvent
+    /** Notification gate: a member-to-member relay arrived (pending). */
+    'room/relay': RoomRelayEvent
+    /** Notification gate: a relay was confirmed, dismissed, or delivered. */
+    'room/relay-resolved': RoomRelayResolvedEvent
+    /** Task board: a task was added. */
+    'room/task-added': RoomTaskAddedEvent
+    /** Task board: a task changed status. */
+    'room/task-updated': RoomTaskUpdatedEvent
   }
 }
 
@@ -111,26 +179,27 @@ export interface RoomMember {
   readonly provider?: string
   readonly instructions?: string
   readonly invitedBy: 'human' | 'agent'
+  /** Member-level working directory (roster record; not yet passed to the facade). */
+  readonly cwd?: string
   readonly childSessionId?: SessionId
 }
 
-/** One blackboard entry, as folded by the journal replay (in log order). */
-export type RoomBlackboardEntry =
-  | { readonly kind: 'dispatch'; readonly seq: number; readonly targets: readonly string[]; readonly text: string }
-  | { readonly kind: 'note'; readonly seq: number; readonly text: string }
-  | {
-    readonly kind: 'speech'
-    readonly seq: number
-    readonly member: string
-    readonly text: string
-    readonly childSessionId?: SessionId
-    readonly durationMs?: number
-  }
+/** One notification relay, as folded by the journal replay. */
+export interface RoomRelay {
+  readonly id: string
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly provenance?: Record<string, RoomJsonValue>
+  readonly state: RoomRelayState
+}
 
-/** A member's blackboard read cursor: the seq of the latest dispatch naming them. */
-export interface RoomDispatchCursor {
+/** One task-board task, as folded by the journal replay. */
+export interface RoomTask {
+  readonly id: string
   readonly member: string
-  readonly seq: number
+  readonly title: string
+  readonly status: RoomTaskStatus
 }
 
 /** A member's current run state, as folded by the journal replay. */
@@ -141,11 +210,15 @@ export interface RoomMemberRun {
   readonly elapsedMs?: number
 }
 
-/** The replayed room state: roster, blackboard, dispatch cursors, run states. */
+/**
+ * The replayed room state: roster, notification relays, the task board, and
+ * run states. There is deliberately NO blackboard/log projection here —
+ * members never consume the room's running log (see the design note).
+ */
 export interface RoomState {
   readonly members: readonly RoomMember[]
-  readonly blackboard: readonly RoomBlackboardEntry[]
-  readonly cursors: readonly RoomDispatchCursor[]
+  readonly relays: readonly RoomRelay[]
+  readonly tasks: readonly RoomTask[]
   readonly runs: readonly RoomMemberRun[]
 }
 
@@ -161,8 +234,34 @@ export type RoomFailure =
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   | { readonly code: 'unknown-targets'; readonly names: readonly string[] }
+  /** postMessage without any leading @-mention (bare messages belong to the official submit path). */
+  | { readonly code: 'no-targets' }
+  | { readonly code: 'relay-not-found' }
+  /** The relay exists but already left the pending state. */
+  | { readonly code: 'relay-not-pending' }
+  | { readonly code: 'task-not-found' }
+  /** The task exists but is already closed (done/cancelled). */
+  | { readonly code: 'task-closed' }
   /** A cold room's agent resume failed (persistence or preset composition). */
   | { readonly code: 'resume-failed'; readonly message: string }
+
+/**
+ * The family bridge's gate entry, verbatim-frozen contract
+ * (`proposals/active/2026-08-19-local-agent-member-channel.md`): the bridge
+ * probes `ctx.get('room')` and duck-type-calls this method. Phase 1's gate is
+ * always human confirmation, so the receipt is always 'pending-confirm';
+ * 'sent'/'busy' belong to the phase-2 auto gate.
+ */
+export interface RoomMemberMessage {
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly parentSessionId: SessionId
+  readonly provenance?: Record<string, RoomJsonValue>
+}
+
+/** The gate receipt handed back to the sending member through the bridge. */
+export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
 
 /** isRoom probe: does this session carry the room marker? */
 export interface RoomIsRoomRequest {
@@ -204,9 +303,12 @@ export interface RoomInviteRequest {
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
   /**
-   * Optional first task. Recorded on the roster event's acceptance only —
-   * the dispatch engine (next step) turns it into the first run.
+   * Member-level working directory (empty/omitted = inherits the room
+   * session's cwd). Recorded on the roster; not yet passed to the delegation
+   * facade (family need R2 pending).
    */
+  readonly cwd?: string
+  /** Optional first task, dispatched to the member as soon as it joins. */
   readonly firstTask?: string
 }
 
@@ -251,7 +353,7 @@ export type RoomRemoveMemberResult =
   | { readonly ok: true; readonly value: { readonly name: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
-/** postMessage request: a human message into the room. */
+/** postMessage request: a human @-message into the room. */
 export interface RoomPostMessageRequest {
   /** Room session. */
   readonly sessionId: SessionId
@@ -261,7 +363,7 @@ export interface RoomPostMessageRequest {
 
 /** What the postMessage parser made of the raw text. */
 export interface RoomPostParsed {
-  /** Addressed members (empty for a bare note). */
+  /** Addressed members (never empty — a bare message is a `no-targets` rejection). */
   readonly targets: readonly string[]
   /** The message body with the leading @-tokens stripped. */
   readonly text: string
@@ -296,6 +398,49 @@ export interface RoomCancellation {
 /** cancel outcome. */
 export type RoomCancelResult =
   | { readonly ok: true; readonly value: RoomCancellation }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** confirmRelay/dismissRelay request: resolve a pending notification relay. */
+export interface RoomRelayResolveRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** The relay to resolve. */
+  readonly relayId: string
+}
+
+/** confirmRelay/dismissRelay outcome. */
+export type RoomRelayResolveResult =
+  | { readonly ok: true; readonly value: { readonly relayId: string } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** addTask request: a human-added task on a member's board lane. */
+export interface RoomAddTaskRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** The member owning the task. */
+  readonly member: string
+  /** Task title (non-blank). */
+  readonly title: string
+}
+
+/** addTask outcome. */
+export type RoomAddTaskResult =
+  | { readonly ok: true; readonly value: { readonly id: string } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** closeTask request: close an open task. */
+export interface RoomCloseTaskRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** The task to close. */
+  readonly taskId: string
+  /** Closing status (default 'done'). */
+  readonly status?: 'done' | 'cancelled'
+}
+
+/** closeTask outcome. */
+export type RoomCloseTaskResult =
+  | { readonly ok: true; readonly value: { readonly id: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** listProviders request (no parameters). */

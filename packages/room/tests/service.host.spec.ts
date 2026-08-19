@@ -54,11 +54,21 @@ async function bootRoom(options: BenchOptions = {}) {
 /** The roster row every fresh room seats: its own main agent. */
 const MAIN_MEMBER = { name: 'main', kind: 'main-agent', invitedBy: 'human' }
 
+/**
+ * Flush the task queue so the engine's queued run reaches the delivery point.
+ * (The facade stub's runs never SETTLE, so engine.idle() would hang — the
+ * relay's sent edge is journaled when the prompt is delivered, long before
+ * the run's result resolves.)
+ */
+function tick(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0))
+}
+
 describe('RoomService Remote surface (real composition)', () => {
   it('getState replays a fresh room (main agent seated), and rejects plain/unknown sessions', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], blackboard: [], cursors: [], runs: [] } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [] } })
 
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     expect(await service.getState({ sessionId: plain.id }))
@@ -78,7 +88,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('invite lands a cli member on the roster and acknowledges a dispatched first task', async () => {
     const { service, sessionId } = await bootRoom()
     const invited = await service.invite({
-      sessionId, provider: 'kimi', name: 'ada', instructions: '后端', firstTask: '搭骨架',
+      sessionId, provider: 'kimi', name: 'ada', instructions: '后端', firstTask: '搭骨架', cwd: '/home/user/api',
     })
     expect(invited).toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: true } })
     const state = await service.getState({ sessionId })
@@ -87,10 +97,11 @@ describe('RoomService Remote surface (real composition)', () => {
       value: {
         members: [
           MAIN_MEMBER,
-          { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端' },
+          { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端', cwd: '/home/user/api' },
         ],
-        // The first task is journaled as a dispatch record (no longer volatile).
-        blackboard: [{ kind: 'dispatch', targets: ['ada'], text: '搭骨架' }],
+        // The first task is journaled as a dispatch record and auto-opens the
+        // member's in_progress task.
+        tasks: [{ member: 'ada', title: '搭骨架', status: 'in_progress' }],
       },
     })
 
@@ -154,18 +165,17 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
   })
 
-  it('postMessage without a mention appends a blackboard note', async () => {
-    const { service, sessionId } = await bootRoom()
-    const posted = await service.postMessage({ sessionId, text: '今天先讨论方向' })
-    expect(posted).toMatchObject({ ok: true, value: { parsed: { targets: [], text: '今天先讨论方向' } } })
-    const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: { blackboard: [{ kind: 'note', text: '今天先讨论方向' }] },
-    })
+  it('postMessage without a mention is a structured no-targets rejection (bare messages belong to the official path)', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
+      .toEqual({ ok: false, error: { code: 'no-targets' } })
+    // Nothing is journaled: the rejection is pure defense.
+    expect(ctx.sessions.get(sessionId)!.events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
+    expect(await service.postMessage({ sessionId, text: '   ' }))
+      .toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
-  it('postMessage with mentions appends a dispatch and validates the roster', async () => {
+  it('postMessage with mentions appends a dispatch, auto-opens tasks, and validates the roster', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
@@ -174,27 +184,125 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(single).toMatchObject({ ok: true, value: { parsed: { targets: ['ada'], text: '出方案' } } })
     const fanout = await service.postMessage({ sessionId, text: '@ada @bill 对齐接口' })
     expect(fanout).toMatchObject({ ok: true, value: { parsed: { targets: ['ada', 'bill'], text: '对齐接口' } } })
-    if (!fanout.ok) throw new Error('narrowing')
 
     expect(await service.postMessage({ sessionId, text: '@ada @ghost 干活' }))
       .toEqual({ ok: false, error: { code: 'unknown-targets', names: ['ghost'] } })
     expect(await service.postMessage({ sessionId, text: '@ada' }))
-      .toEqual({ ok: false, error: { code: 'empty-text' } })
-    expect(await service.postMessage({ sessionId, text: '   ' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
 
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
       ok: true,
       value: {
-        blackboard: [
-          { kind: 'dispatch', targets: ['ada'], text: '出方案' },
-          { kind: 'dispatch', targets: ['ada', 'bill'], text: '对齐接口' },
+        tasks: [
+          { member: 'ada', title: '出方案', status: 'in_progress' },
+          { member: 'ada', title: '对齐接口', status: 'in_progress' },
+          { member: 'bill', title: '对齐接口', status: 'in_progress' },
         ],
-        // Cursors track each member's latest dispatch.
-        cursors: [{ member: 'ada', seq: fanout.value.seq }, { member: 'bill', seq: fanout.value.seq }],
       },
     })
+  })
+
+  it('receiveMemberMessage journals a pending relay and always receipts pending-confirm (phase-1 gate)', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    const receipt = await service.receiveMemberMessage({
+      from: 'ada', to: 'main', content: '接口定稿', parentSessionId: sessionId,
+      provenance: { kind: 'bridge', delegationId: 'd-1' },
+    })
+    expect(receipt).toBe('pending-confirm')
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: {
+        relays: [{ from: 'ada', to: 'main', content: '接口定稿', state: 'pending', provenance: { kind: 'bridge', delegationId: 'd-1' } }],
+      },
+    })
+  })
+
+  it('receiveMemberMessage throws on a non-room parent session (the bridge falls back to direct delivery)', async () => {
+    const { ctx, service } = await bootRoom()
+    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
+    await expect(service.receiveMemberMessage({
+      from: 'ada', to: 'bill', content: 'x', parentSessionId: plain.id,
+    })).rejects.toThrow('not a room')
+    await expect(service.receiveMemberMessage({
+      from: 'ada', to: 'bill', content: 'x', parentSessionId: SessionId('ghost'),
+    })).rejects.toThrow()
+  })
+
+  it('confirmRelay dispatches the notification to the recipient; dismissRelay drops it', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.invite({ sessionId, provider: 'codex', name: 'bill' })
+    await service.receiveMemberMessage({ from: 'ada', to: 'bill', content: '接口定稿', parentSessionId: sessionId })
+    await service.receiveMemberMessage({ from: 'ada', to: 'main', content: '抄送', parentSessionId: sessionId })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    const [first, second] = state.value.relays
+
+    expect(await service.confirmRelay({ sessionId, relayId: first!.id }))
+      .toEqual({ ok: true, value: { relayId: first!.id } })
+    expect(await service.dismissRelay({ sessionId, relayId: second!.id }))
+      .toEqual({ ok: true, value: { relayId: second!.id } })
+    await tick()
+    await tick()
+
+    // The confirm dispatched bill: his run started (the facade stub never
+    // settles, so he stays running) and the relay was marked sent once the
+    // member's session received the prompt; the dismiss journaled nothing.
+    const session = ctx.sessions.get(sessionId)!
+    const edges = session.events.filter(event => event.type === 'room/run-state')
+    expect(edges.map(event => (event.data as { member: string }).member)).toEqual(['bill'])
+    const after = await service.getState({ sessionId })
+    expect(after).toMatchObject({
+      ok: true,
+      value: { relays: [{ state: 'sent' }, { state: 'dismissed' }] },
+    })
+
+    // Resolved relays reject further resolution; unknown ids too.
+    expect(await service.confirmRelay({ sessionId, relayId: first!.id }))
+      .toEqual({ ok: false, error: { code: 'relay-not-pending' } })
+    expect(await service.dismissRelay({ sessionId, relayId: 'ghost' }))
+      .toEqual({ ok: false, error: { code: 'relay-not-found' } })
+  })
+
+  it('confirmRelay rejects a relay whose recipient left the roster', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.receiveMemberMessage({ from: 'main', to: 'ada', content: 'x', parentSessionId: sessionId })
+    await service.removeMember({ sessionId, name: 'ada' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    expect(await service.confirmRelay({ sessionId, relayId: state.value.relays[0]!.id }))
+      .toEqual({ ok: false, error: { code: 'member-not-found' } })
+  })
+
+  it('addTask opens a pending task; closeTask closes it exactly once', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    const added = await service.addTask({ sessionId, member: 'ada', title: '补测试' })
+    expect(added).toMatchObject({ ok: true })
+    if (!added.ok) throw new Error('narrowing')
+    expect(await service.getState({ sessionId })).toMatchObject({
+      ok: true,
+      value: { tasks: [{ id: added.value.id, member: 'ada', title: '补测试', status: 'pending' }] },
+    })
+
+    expect(await service.closeTask({ sessionId, taskId: added.value.id }))
+      .toEqual({ ok: true, value: { id: added.value.id } })
+    expect(await service.getState({ sessionId })).toMatchObject({
+      ok: true,
+      value: { tasks: [{ id: added.value.id, status: 'done' }] },
+    })
+    expect(await service.closeTask({ sessionId, taskId: added.value.id }))
+      .toEqual({ ok: false, error: { code: 'task-closed' } })
+    expect(await service.closeTask({ sessionId, taskId: 'ghost' }))
+      .toEqual({ ok: false, error: { code: 'task-not-found' } })
+    expect(await service.addTask({ sessionId, member: 'ghost', title: 'x' }))
+      .toEqual({ ok: false, error: { code: 'member-not-found' } })
+    expect(await service.addTask({ sessionId, member: 'ada', title: ' ' }))
+      .toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
   it('cancel reports a miss when the member never ran (and nothing is journaled)', async () => {

@@ -3,7 +3,9 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
-import { isRoomLog, parseMentions, pendingInstructions, previousCursor, replay } from '../src/journal.ts'
+import {
+  isRoomLog, parseMentions, parseRelayDirective, pendingInstructions, previousCursor, replay,
+} from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
 
 /** The REAL composition: a cordis root, the real SessionStore plugin, and the package's own service plugin. */
@@ -57,50 +59,50 @@ function resetSeq(): void {
 }
 
 describe('replay (pure journal fold)', () => {
-  it('folds the full vocabulary: roster, blackboard order, cursors, run states', () => {
+  it('folds the full vocabulary: roster, relays, tasks, run states', () => {
     resetSeq()
     const events = [
       ev('room/created', { version: 1 }),                                                    // 0
-      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端' }), // 1
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端', cwd: '/home/user/api' }), // 1
       ev('room/member-added', { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' }),                     // 2
       ev('room/member-updated', { name: 'ada', instructions: '后端 + 接口评审' }),           // 3
       ev('room/dispatch', { targets: ['ada', 'bill'], text: '出方案' }),                     // 4
-      ev('room/note', { text: '以上先放着' }),                                               // 5
+      ev('room/task-added', { id: 't1', member: 'ada', title: '出方案', status: 'in_progress' }), // 5
       ev('room/speech', { member: 'ada', text: '方案 A', durationMs: 1200 }),                // 6
-      ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),             // 7
-      ev('room/dispatch', { targets: ['ada'], text: '按方案 A 实现' }),                      // 8
-      ev('room/run-state', { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }), // 9
+      ev('room/task-updated', { id: 't1', status: 'done' }),                                 // 7
+      ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),             // 8
+      ev('room/dispatch', { targets: ['ada'], text: '按方案 A 实现' }),                      // 9
+      ev('room/run-state', { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }), // 10
+      ev('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' }),           // 11
+      ev('room/relay-resolved', { id: 'r1', state: 'confirmed' }),                           // 12
     ]
     const state = replay(events)
     expect(state.members).toEqual([
-      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端 + 接口评审' },
+      { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端 + 接口评审', cwd: '/home/user/api' },
       { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
     ])
-    expect(state.blackboard).toEqual([
-      { kind: 'dispatch', seq: 4, targets: ['ada', 'bill'], text: '出方案' },
-      { kind: 'note', seq: 5, text: '以上先放着' },
-      { kind: 'speech', seq: 6, member: 'ada', text: '方案 A', durationMs: 1200 },
-      { kind: 'dispatch', seq: 8, targets: ['ada'], text: '按方案 A 实现' },
-    ])
-    // The cursor tracks the LATEST dispatch naming the member.
-    expect(state.cursors).toEqual([{ member: 'ada', seq: 8 }, { member: 'bill', seq: 4 }])
+    expect(state.tasks).toEqual([{ id: 't1', member: 'ada', title: '出方案', status: 'done' }])
+    expect(state.relays).toEqual([{ id: 'r1', from: 'ada', to: 'bill', content: '接口定稿', state: 'confirmed' }])
     // The latest run-state event wins.
     expect(state.runs).toEqual([{ member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 }])
   })
 
-  it('member-removed cleans the roster, the cursor, and the run state', () => {
+  it('member-removed cleans the roster and the run state; relays and tasks stay as history', () => {
     resetSeq()
     const events = [
       ev('room/created', { version: 1 }),
       ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
       ev('room/dispatch', { targets: ['ada'], text: '干活' }),
+      ev('room/task-added', { id: 't1', member: 'ada', title: '干活', status: 'in_progress' }),
+      ev('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '看下' }),
       ev('room/run-state', { member: 'ada', state: 'running', startedAt: 100 }),
       ev('room/member-removed', { name: 'ada' }),
     ]
     const state = replay(events)
     expect(state.members).toEqual([])
-    expect(state.cursors).toEqual([])
     expect(state.runs).toEqual([])
+    expect(state.tasks).toEqual([{ id: 't1', member: 'ada', title: '干活', status: 'in_progress' }])
+    expect(state.relays).toEqual([{ id: 'r1', from: 'ada', to: 'bill', content: '看下', state: 'pending' }])
   })
 
   it('duplicate member-added keeps the first record; updates/removals of unknown members are dropped', () => {
@@ -116,11 +118,41 @@ describe('replay (pure journal fold)', () => {
     ])
   })
 
+  it('relay/task resolutions fold by id, latest winning; resolutions of unknown ids are dropped', () => {
+    resetSeq()
+    const events = [
+      ev('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' }),
+      ev('room/relay-resolved', { id: 'ghost', state: 'dismissed' }),
+      ev('room/relay-resolved', { id: 'r1', state: 'confirmed' }),
+      ev('room/relay-resolved', { id: 'r1', state: 'sent' }),
+      ev('room/task-added', { id: 't1', member: 'bill', title: '评接口', status: 'pending' }),
+      ev('room/task-updated', { id: 'ghost', status: 'done' }),
+      ev('room/task-updated', { id: 't1', status: 'in_progress' }),
+      ev('room/task-updated', { id: 't1', status: 'cancelled' }),
+    ]
+    const state = replay(events)
+    expect(state.relays).toEqual([{ id: 'r1', from: 'ada', to: 'bill', content: '接口定稿', state: 'sent' }])
+    expect(state.tasks).toEqual([{ id: 't1', member: 'bill', title: '评接口', status: 'cancelled' }])
+  })
+
+  it('skips unknown legacy event types (the dropped room/note of the blackboard design)', () => {
+    resetSeq()
+    const events = [
+      ev('room/created', { version: 1 }),
+      ev('room/note', { text: '旧黑板消息' }),
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+    ]
+    const state = replay(events)
+    expect(state.members).toHaveLength(1)
+    expect(state.relays).toEqual([])
+    expect(state.tasks).toEqual([])
+  })
+
   it('isRoomLog keys on the marker only', () => {
     resetSeq()
     expect(isRoomLog([ev('room/created', { version: 1 })])).toBe(true)
-    expect(isRoomLog([ev('room/note', { text: 'x' })])).toBe(false)
-    expect(replay([ev('room/note', { text: 'x' })]).members).toEqual([])
+    expect(isRoomLog([ev('room/dispatch', { targets: [], text: 'x' })])).toBe(false)
+    expect(replay([ev('room/dispatch', { targets: [], text: 'x' })]).members).toEqual([])
   })
 
   it('member-updated folds a childSessionId onto the member (delegation handle journaled)', () => {
@@ -192,5 +224,24 @@ describe('parseMentions', () => {
 
   it('a bare mention leaves an empty body', () => {
     expect(parseMentions('@ada')).toEqual({ targets: ['ada'], text: '' })
+  })
+})
+
+describe('parseRelayDirective (the fallback notification channel)', () => {
+  it('parses a trailing own-line @name directive', () => {
+    expect(parseRelayDirective('方案已完成。\n@bill 接口定稿了，请评审'))
+      .toEqual({ to: 'bill', content: '接口定稿了，请评审' })
+  })
+
+  it('ignores mentions inside prose and non-final lines', () => {
+    expect(parseRelayDirective('我问过 @bill 了，他没问题')).toBeUndefined()
+    expect(parseRelayDirective('@bill 先说这个\n后来又聊了别的')).toBeUndefined()
+    expect(parseRelayDirective('@bill')).toBeUndefined()
+    expect(parseRelayDirective('')).toBeUndefined()
+    expect(parseRelayDirective('   ')).toBeUndefined()
+  })
+
+  it('tolerates trailing blank lines after the directive', () => {
+    expect(parseRelayDirective('做完了。\n@bill 请接手\n\n')).toEqual({ to: 'bill', content: '请接手' })
   })
 })

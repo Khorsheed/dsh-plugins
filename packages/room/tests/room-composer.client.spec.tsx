@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-/** The room composer takeover: mention completion, submit, note hint, error line. */
+/** The room composer takeover: mention completion, dispatch submit, bare-message release, error line. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RoomComposer } from '../src/client/RoomComposer.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
-import type { RoomComposerProps, RoomSubmitOutcome } from '../src/client/slots.ts'
+import type { RoomComposerProps, RoomMutationOutcome } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
 afterEach(() => {
@@ -21,8 +21,8 @@ const STATE: RoomState = {
     { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
     { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
   ],
-  blackboard: [],
-  cursors: [],
+  relays: [],
+  tasks: [],
   runs: [],
 }
 
@@ -38,19 +38,28 @@ async function primedStore(): Promise<RoomStore> {
   return store
 }
 
-/** Render the composer with the framework shares stubbed (they are unused by this component). */
-async function bench(submit: (sessionId: SessionId, text: string) => Promise<RoomSubmitOutcome>) {
+interface Bench {
+  roomStore: RoomStore
+  area: HTMLTextAreaElement
+  /** The session standard kit's official input actions (stubbed). */
+  inputActions: { setDraft: ReturnType<typeof vi.fn>; submit: ReturnType<typeof vi.fn> }
+}
+
+/** Render the composer with the framework shares stubbed (inputActions is a spy). */
+async function bench(submit: (sessionId: SessionId, text: string) => Promise<RoomMutationOutcome>): Promise<Bench> {
   const roomStore = await primedStore()
+  const inputActions = { setDraft: vi.fn(), submit: vi.fn() }
   const props = {
     sessionId: SESSION,
     matched: { room: true },
+    inputActions,
     roomStore,
     submit,
     t: (key: string) => key,
   } as unknown as RoomComposerProps
   render(<RoomComposer {...props} />)
   const area = screen.getByRole('textbox') as HTMLTextAreaElement
-  return { roomStore, area }
+  return { roomStore, area, inputActions }
 }
 
 /** Change the draft with the caret at the end (a real typing position). */
@@ -93,27 +102,33 @@ describe('RoomComposer', () => {
     expect(screen.getAllByRole('option')).toHaveLength(3)
   })
 
-  it('submits on Enter, clears the draft, and shows no hint for a dispatch', async () => {
-    const submit = vi.fn(async (): Promise<RoomSubmitOutcome> => ({ ok: true, dispatched: true }))
-    const { area } = await bench(submit)
+  it('submits an @-message as a dispatch and clears the draft', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const { area, inputActions } = await bench(submit)
     type(area, '@ada 出方案')
     fireEvent.keyDown(area, { key: 'Enter' })
     await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, '@ada 出方案') })
     await waitFor(() => { expect(area.value).toBe('') })
-    expect(screen.queryByRole('status')).toBeNull()
+    // The dispatch path never touches the official input machine.
+    expect(inputActions.setDraft).not.toHaveBeenCalled()
+    expect(inputActions.submit).not.toHaveBeenCalled()
   })
 
-  it('shows the blackboard hint for a bare message', async () => {
-    const submit = vi.fn(async (): Promise<RoomSubmitOutcome> => ({ ok: true, dispatched: false }))
-    const { area } = await bench(submit)
+  it('releases a bare message to the official submit path (a normal main-agent turn)', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const { area, inputActions } = await bench(submit)
     type(area, '随便聊聊')
     fireEvent.keyDown(area, { key: 'Enter' })
-    await screen.findByRole('status')
-    expect(screen.getByRole('status').textContent).toBe('composer.noted')
+    await waitFor(() => { expect(area.value).toBe('') })
+    // The official input machine received the text and the submission —
+    // the room Remote was never called.
+    expect(inputActions.setDraft).toHaveBeenCalledWith('随便聊聊')
+    expect(inputActions.submit).toHaveBeenCalledTimes(1)
+    expect(submit).not.toHaveBeenCalled()
   })
 
   it('shows the structured error line and keeps the draft on rejection', async () => {
-    const submit = vi.fn(async (): Promise<RoomSubmitOutcome> => ({ ok: false, message: '未知成员：ghost' }))
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: false, message: '未知成员：ghost' }))
     const { area } = await bench(submit)
     type(area, '@ghost 干活')
     fireEvent.keyDown(area, { key: 'Enter' })

@@ -9,6 +9,7 @@
   },
   "files": [
     "src/css-modules.d.ts",
+    "src/journal.ts",
     "src/types.ts",
     "src/client/format.ts",
     "src/client/index.ts",
@@ -22,6 +23,7 @@
     "src/client/MembersView.tsx",
     "src/client/RoomComposer.tsx",
     "src/client/RoomEventView.tsx",
+    "src/client/RoomRelayView.tsx",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx"
   ]

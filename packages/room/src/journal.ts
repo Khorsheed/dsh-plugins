@@ -1,22 +1,24 @@
 /**
  * Room journal replay: folds the room session's `room/*` custom events into
- * the derived {@link RoomState} — roster, blackboard, per-member dispatch
- * cursors, and run states. Pure: the Remote surface reads through it, the
- * dispatch engine (next step) reads the cursors through it, and the unit
- * tests exercise it without a cordis composition. Reload-replay recovers the
- * exact same state, which is what makes the journal the room's single source
- * of truth.
+ * the derived {@link RoomState} — roster, notification relays, the task
+ * board, and run states. Pure: the Remote surface reads through it, the
+ * dispatch engine reads instruction cursors through it, and the unit tests
+ * exercise it without a cordis composition. Reload-replay recovers the exact
+ * same state, which is what makes the journal the room's single source of
+ * truth. There is NO blackboard fold: member prompts never consume the
+ * room's running log (see the design note) — speech/dispatch events are
+ * journaled for UI projection and replay only.
  * @module @khorsheed/dsh-room/journal
  */
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomBlackboardEntry, RoomMember, RoomMemberRun, RoomState,
+  RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask,
 } from './types.ts'
 
 /**
  * The addressing name of the room's own main agent, added to the roster at
- * room creation: an equal member with no privilege — not @-addressed, it
- * perceives nothing and says nothing. `main-agent` kind, never a provider.
+ * room creation: an equal member with no privilege. Bare human messages go
+ * to it through the official submit path; @-dispatch works like any member.
  */
 export const MAIN_AGENT_MEMBER = 'main'
 
@@ -38,9 +40,12 @@ export const ROOM_EVENT_TYPES = [
   'room/member-updated',
   'room/member-removed',
   'room/dispatch',
-  'room/note',
   'room/speech',
   'room/run-state',
+  'room/relay',
+  'room/relay-resolved',
+  'room/task-added',
+  'room/task-updated',
 ] as const
 
 /** Whether an event log carries the room identity marker. */
@@ -53,7 +58,8 @@ export function isRoomLog(events: readonly SessionEvent[]): boolean {
  * @param raw - the raw text.
  * @returns the addressed names (deduped, order-preserving) and the body with
  * the mention prefix stripped. Only LEADING tokens address: an `@name`
- * inside prose is plain text (and the message is a note when nothing leads).
+ * inside prose is plain text (a bare message goes to the main agent through
+ * the official submit path).
  */
 export function parseMentions(raw: string): { readonly targets: readonly string[]; readonly text: string } {
   const targets: string[] = []
@@ -69,22 +75,43 @@ export function parseMentions(raw: string): { readonly targets: readonly string[
 }
 
 /**
+ * The fallback notification channel: a member reply's TRAILING own line of
+ * the form `@name <content>` (the format the roster injection teaches).
+ * Only the last line counts — an `@name` inside prose is a mention, not a
+ * notification. The caller checks the target against the roster.
+ * @param text - the member's reply text.
+ * @returns the parsed directive, or undefined.
+ */
+export function parseRelayDirective(text: string): { readonly to: string; readonly content: string } | undefined {
+  const trimmed = text.trimEnd()
+  if (trimmed === '') return undefined
+  const last = trimmed.slice(trimmed.lastIndexOf('\n') + 1)
+  const match = /^@(\S+)\s+(\S[\s\S]*)$/.exec(last)
+  if (match === null) return undefined
+  return { to: match[1]!, content: match[2]!.trim() }
+}
+
+/**
  * Fold a session's event log into the room state.
  *
  * Write-side invariants (invite/update/remove validate before appending) are
  * NOT re-enforced here: a replayed log may be hand-edited or forked, so the
  * fold is defensive — a duplicate member-added keeps the first record (first
  * wins, a replay cannot re-seat a member), and updates/removals naming an
- * unknown member are dropped. Removal also drops the member's dispatch
- * cursor and run state: the roster reads clean after a remove.
+ * unknown member are dropped. Unknown event types (e.g. a `room/note` from
+ * the dropped blackboard design) fall through the switch and are skipped.
+ * Removal also drops the member's run state: the roster reads clean after a
+ * remove. Relays and tasks fold by id, latest resolution winning.
  * @param events - the session's event log.
  * @returns the folded room state (empty for a non-room log).
  */
 export function replay(events: readonly SessionEvent[]): RoomState {
   const members: RoomMember[] = []
   const byName = new Map<string, RoomMember>()
-  const blackboard: RoomBlackboardEntry[] = []
-  const cursors = new Map<string, number>()
+  const relays: RoomRelay[] = []
+  const relayById = new Map<string, RoomRelay>()
+  const tasks: RoomTask[] = []
+  const taskById = new Map<string, RoomTask>()
   const runs = new Map<string, RoomMemberRun>()
   for (const event of events) {
     switch (event.type) {
@@ -96,6 +123,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           invitedBy: event.data.invitedBy,
           ...event.data.provider === undefined ? {} : { provider: event.data.provider },
           ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions },
+          ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd },
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
         byName.set(added.name, added)
@@ -119,28 +147,49 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         if (member === undefined) break
         byName.delete(event.data.name)
         members.splice(members.indexOf(member), 1)
-        cursors.delete(event.data.name)
         runs.delete(event.data.name)
         break
       }
-      case 'room/dispatch': {
-        blackboard.push({ kind: 'dispatch', seq: event.seq, targets: [...event.data.targets], text: event.data.text })
-        for (const target of event.data.targets) cursors.set(target, event.seq)
+      case 'room/relay': {
+        if (relayById.has(event.data.id)) break
+        const relay: RoomRelay = {
+          id: event.data.id,
+          from: event.data.from,
+          to: event.data.to,
+          content: event.data.content,
+          state: 'pending',
+          ...event.data.provenance === undefined ? {} : { provenance: event.data.provenance },
+        }
+        relayById.set(relay.id, relay)
+        relays.push(relay)
         break
       }
-      case 'room/note': {
-        blackboard.push({ kind: 'note', seq: event.seq, text: event.data.text })
+      case 'room/relay-resolved': {
+        const relay = relayById.get(event.data.id)
+        if (relay === undefined) break
+        const resolved: RoomRelay = { ...relay, state: event.data.state }
+        relayById.set(resolved.id, resolved)
+        relays[relays.indexOf(relay)] = resolved
         break
       }
-      case 'room/speech': {
-        blackboard.push({
-          kind: 'speech',
-          seq: event.seq,
+      case 'room/task-added': {
+        if (taskById.has(event.data.id)) break
+        const task: RoomTask = {
+          id: event.data.id,
           member: event.data.member,
-          text: event.data.text,
-          ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
-          ...event.data.durationMs === undefined ? {} : { durationMs: event.data.durationMs },
-        })
+          title: event.data.title,
+          status: event.data.status,
+        }
+        taskById.set(task.id, task)
+        tasks.push(task)
+        break
+      }
+      case 'room/task-updated': {
+        const task = taskById.get(event.data.id)
+        if (task === undefined) break
+        const updated: RoomTask = { ...task, status: event.data.status }
+        taskById.set(updated.id, updated)
+        tasks[tasks.indexOf(task)] = updated
         break
       }
       case 'room/run-state': {
@@ -156,19 +205,14 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
     }
   }
-  return {
-    members,
-    blackboard,
-    cursors: [...cursors.entries()].map(([member, seq]) => ({ member, seq })),
-    runs: [...runs.values()],
-  }
+  return { members, relays, tasks, runs: [...runs.values()] }
 }
 
 /**
  * The member's dispatch cursor as of JUST BEFORE a given dispatch event: the
- * latest earlier dispatch naming them. The engine reads its blackboard
- * increment from this cursor (the current dispatch's own text rides the
- * prompt tail instead, so it is never duplicated into the increment).
+ * latest earlier dispatch naming them. The engine reads the role-instruction
+ * carry against this cursor (pass {@link Number.MAX_SAFE_INTEGER} for a
+ * dispatch that is not itself journaled, e.g. a relay delivery).
  * @param events - the session's event log.
  * @param member - the dispatch target.
  * @param beforeSeq - the current dispatch event's seq.

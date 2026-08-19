@@ -16,7 +16,7 @@ afterEach(() => {
 })
 
 /** An empty room state as the host's getState returns it. */
-export const EMPTY_ROOM: RoomState = { members: [], blackboard: [], cursors: [], runs: [] }
+export const EMPTY_ROOM: RoomState = { members: [], relays: [], tasks: [], runs: [] }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub services. */
 async function bench(options: {
@@ -97,7 +97,7 @@ describe('room client apply', () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
-    expect(conversationEvents.register).toHaveBeenCalledTimes(3)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(4)
 
     const footer = slots.entries('sidebar.footer.action')
     expect(footer).toHaveLength(1)
@@ -117,7 +117,7 @@ describe('room client apply', () => {
     expect((views[0]!.options.label as () => string)()).toBe('Members')
 
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
-    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event'])
+    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay'])
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {
@@ -126,7 +126,7 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.footer.action')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
-    expect(slots.entries('conversation.chat.node')).toHaveLength(3)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(4)
   })
 
   it('the footer action face creates a room through the Remote and opens it, inheriting the current session cwd', async () => {

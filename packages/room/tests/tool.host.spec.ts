@@ -44,7 +44,7 @@ describe('room_invite tool (real composition)', () => {
     expect(tool.name).toBe('room_invite')
     expect(tool.description).toContain('room')
     const parameters = tool.parameters as { properties: Record<string, unknown> }
-    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'instructions', 'firstTask'])
+    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'instructions', 'firstTask', 'cwd'])
   })
 
   it('rejects a non-agent caller and a non-room session with readable text', async () => {

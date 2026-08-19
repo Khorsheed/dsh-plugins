@@ -25,8 +25,8 @@ const STATE: RoomState = {
     { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' as SessionId, instructions: '后端' },
     { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent', childSessionId: 'child-2' as SessionId },
   ],
-  blackboard: [],
-  cursors: [],
+  relays: [],
+  tasks: [],
   runs: [{ member: 'bill', state: 'running', startedAt: Date.now() }],
 }
 

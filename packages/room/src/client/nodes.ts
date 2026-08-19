@@ -1,11 +1,12 @@
 /**
- * Room chat-flow projections: the three Definitions claiming the room
- * session's `room/*` journal events into chat nodes — `room-speech` (a
- * member's reply), `room-run` (a run's running edge, updated by its terminal
- * edge: done/cancelled vanish, failed stays as a dim error row), and
- * `room-event` (boundary lines: member joined/left, plus the human's own
- * dispatch/note messages, which otherwise never appear in the flow — the
- * room composer appends journal events, not user/message events). The
+ * Room chat-flow projections: the Definitions claiming the room session's
+ * `room/*` journal events into chat nodes — `room-speech` (a member's
+ * reply), `room-run` (a run's running edge, updated by its terminal edge:
+ * done/cancelled vanish, failed stays as a dim error row), `room-event`
+ * (boundary lines: member joined/left, plus the human's own dispatch
+ * messages — the composer appends journal events for @-messages, which
+ * otherwise never appear in the flow), and `room-relay` (the member-to-
+ * member notification gate row, folding resolved edges in place). The
  * auto-seated main agent's member-added is bookkeeping, not a boundary
  * event, and is not claimed.
  * @module @khorsheed/dsh-room/client/nodes
@@ -42,13 +43,13 @@ export interface RoomRunData {
   readonly elapsedMs?: number
 }
 
-/** Chat node data of one boundary/blackboard line. */
+/** Chat node data of one boundary line (member join/leave) or human dispatch. */
 export interface RoomEventData {
   /** Seq of the source event. */
   readonly seq: number
   /** Unix epoch ms from the event. */
   readonly time: number
-  readonly sub: 'member-added' | 'member-removed' | 'dispatch' | 'note'
+  readonly sub: 'member-added' | 'member-removed' | 'dispatch'
   /** The joining/leaving member (member-added/member-removed). */
   readonly member?: string
   /** The joining member's provider (member-added, cli members). */
@@ -57,8 +58,22 @@ export interface RoomEventData {
   readonly invitedBy?: 'human' | 'agent'
   /** Addressed members (dispatch). */
   readonly targets?: readonly string[]
-  /** The human's text (dispatch/note). */
+  /** The human's text (dispatch). */
   readonly text?: string
+}
+
+/** Chat node data of one member-to-member notification relay row. */
+export interface RoomRelayData {
+  /** Seq of the relay's latest journal event. */
+  readonly seq: number
+  /** Unix epoch ms from the relay event. */
+  readonly time: number
+  /** The relay id (confirm/dismiss key). */
+  readonly relayId: string
+  readonly from: string
+  readonly to: string
+  readonly content: string
+  readonly state: 'pending' | 'confirmed' | 'dismissed' | 'sent'
 }
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
@@ -67,8 +82,10 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
     'room-speech': RoomSpeechData
     /** room: a member run's live row (running; failed stays dim). */
     'room-run': RoomRunData
-    /** room: a boundary line (join/leave) or the human's own message. */
+    /** room: a boundary line (join/leave) or the human's own dispatch. */
     'room-event': RoomEventData
+    /** room: a member-to-member notification relay (gate row). */
+    'room-relay': RoomRelayData
   }
 }
 
@@ -161,9 +178,9 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
 }
 
 /**
- * The boundary/blackboard Definition: one single-event Context per
- * member-added (cli members only — the auto-seated main agent is skipped),
- * member-removed, dispatch, or note event.
+ * The boundary Definition: one single-event Context per member-added (cli
+ * members only — the auto-seated main agent is skipped), member-removed, or
+ * dispatch event.
  */
 export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
   kind: 'room-event',
@@ -174,7 +191,6 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
         return event.data.kind === 'main-agent' ? null : { id: String(event.seq), role: 'start' as const }
       case 'room/member-removed':
       case 'room/dispatch':
-      case 'room/note':
         return { id: String(event.seq), role: 'start' as const }
       default:
         return null
@@ -196,12 +212,49 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
         return { seq: event.seq, time: event.time, sub: 'member-removed', member: event.data.name }
       case 'room/dispatch':
         return { seq: event.seq, time: event.time, sub: 'dispatch', targets: event.data.targets, text: event.data.text }
-      case 'room/note':
-        return { seq: event.seq, time: event.time, sub: 'note', text: event.data.text }
       default:
-        throw new Error('room-event start requires a room boundary/blackboard event')
+        throw new Error('room-event start requires a room boundary/dispatch event')
     }
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-event'),
+}
+
+/**
+ * The relay Definition: one Context per relay (matched on the relay id),
+ * started by the `room/relay` event (pending) and updated by each
+ * `room/relay-resolved` edge — the gate row's state folds in place.
+ */
+export const roomRelayDefinition: ConversationNodeDefinition<RoomRelayData> = {
+  kind: 'room-relay',
+  target: 'chat',
+  match: (event) => {
+    switch (event.type) {
+      case 'room/relay':
+        return { id: event.data.id, role: 'start' as const }
+      case 'room/relay-resolved':
+        return { id: event.data.id, role: 'update' as const }
+      default:
+        return null
+    }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/relay') throw new Error('room-relay start requires a room/relay event')
+    return {
+      seq: event.seq,
+      time: event.time,
+      relayId: event.data.id,
+      from: event.data.from,
+      to: event.data.to,
+      content: event.data.content,
+      state: 'pending',
+    }
+  },
+  update: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/relay-resolved') return context.state
+    return { ...context.state, seq: event.seq, state: event.data.state }
+  },
+  buildViewNode: context => viewNode(context, 'room-relay'),
 }
