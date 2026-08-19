@@ -33,7 +33,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { readCodexBaseUrl } from './provision.ts'
+
+/** Quote one TOML basic string for the `-c` config override. */
+function tomlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -58,6 +64,48 @@ export class CodexCliProvider implements SubagentProvider {
     private readonly sandbox: CodexSandbox = 'workspace-write',
   ) {}
 
+  /**
+   * Register one run with the member channel and prepare the bridge MCP
+   * declaration as a per-process `-c` config override (codex takes inline
+   * TOML: the syntax was spike-verified against the real CLI — the run reaches
+   * model invocation with the server configured; the model-call leg is
+   * verified-pending, awaiting a quota-reset rerun). Nothing is written to the
+   * scoped home, so there is nothing to prune at settle; `release` only
+   * invalidates the token. Returns undefined when the mounted core predates
+   * the member channel (declare-and-degrade: the run proceeds unchanged).
+   */
+  private memberRun(
+    childSessionId: string,
+    parentSessionId: string,
+  ): { token: string; configOverride: string; bind(pid: number): void; release(): void } | undefined {
+    const registry = this.ctx.localAgent
+    if (
+      typeof registry.registerMemberRun !== 'function'
+      || typeof registry.memberBridgeSocketPath !== 'function'
+      || typeof registry.memberBridgeCommand !== 'function'
+    ) return undefined
+    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
+    // Dashed server names are valid TOML bare keys (spike-verified parse).
+    const serverName = `dsh-member-${token.slice(0, 8)}`
+    const bridge = registry.memberBridgeCommand()
+    const configOverride = `mcp_servers.${serverName}={`
+      + `command=${tomlString(bridge.command)},`
+      + `args=[${bridge.args.map(tomlString).join(',')}],`
+      + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}}`
+      + `}`
+    let released = false
+    return {
+      token,
+      configOverride,
+      bind: pid => registry.bindMemberRunPid(token, pid),
+      release: () => {
+        if (released) return
+        released = true
+        registry.unregisterMemberRun(token)
+      },
+    }
+  }
+
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
     if (parentCwd === undefined) {
@@ -81,6 +129,9 @@ export class CodexCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -110,30 +161,40 @@ export class CodexCliProvider implements SubagentProvider {
     // a failing delegation reports which endpoint it actually used.
     const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
-    return startCodexCliRun(request, {
-      cwd: parentCwd,
-      env: { CODEX_HOME: homeDir },
-      endpointLabel: baseUrl,
-      sandbox: this.sandbox,
-      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-      spawn: spec => this.ctx.subprocess.spawn(spec),
-      onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-      },
-      childSession,
-      ctx: this.ctx,
-      // The first round records the thread id so a later resume round can
-      // continue it.
-      onThreadId: (threadId) => {
-        if (threadId === undefined) return
-        this.ctx.localAgent.recordDelegation({
-          childSessionId: runId,
-          provider: this.name,
-          parentSessionId: request.parent.session.id,
-          cliSessionId: threadId,
-        })
-      },
-    })
+    try {
+      const run = await startCodexCliRun(request, {
+        cwd: parentCwd,
+        env: { CODEX_HOME: homeDir },
+        endpointLabel: baseUrl,
+        sandbox: this.sandbox,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: spec => this.ctx.subprocess.spawn(spec),
+        onError: (error: unknown, stopReason) => {
+          this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+        },
+        onSpawned: (pid) => { member?.bind(pid) },
+        ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
+        childSession,
+        ctx: this.ctx,
+        // The first round records the thread id so a later resume round can
+        // continue it.
+        onThreadId: (threadId) => {
+          if (threadId === undefined) return
+          this.ctx.localAgent.recordDelegation({
+            childSessionId: runId,
+            provider: this.name,
+            parentSessionId: request.parent.session.id,
+            cliSessionId: threadId,
+          })
+        },
+      })
+      // The member-channel token dies with the run, whatever its stop reason.
+      if (member !== undefined) void run.result.then(member.release, member.release)
+      return run
+    } catch (error) {
+      member?.release()
+      throw error
+    }
   }
 
   /** Resume round: continue the recorded thread inside the existing child session. */
@@ -152,6 +213,9 @@ export class CodexCliProvider implements SubagentProvider {
         `subagent-codex: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
+    // Member channel: register the resume round (same child session, fresh
+    // per-run token) before the spawn.
+    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -173,17 +237,26 @@ export class CodexCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
+        onSpawned: (pid) => { member?.bind(pid) },
+        ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
         childSession,
         ctx: this.ctx,
         resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
       })
       void run.result.then(
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
       )
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+      member?.release()
       throw error
     }
   }
@@ -205,6 +278,15 @@ export interface CodexCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
+  readonly onSpawned?: (pid: number) => void
+  /**
+   * Member channel: the bridge MCP declaration for this run as one `-c`
+   * inline-TOML config override (per-process; nothing lands in the scoped
+   * config.toml). Absent on a core that predates the member channel — the
+   * argv is then exactly the pre-channel shape.
+   */
+  readonly member?: { readonly configOverride: string } | undefined
   /** dsh subagent session recording this delegation; its response is appended after settle. */
   readonly childSession?: Session | undefined
   /** Host context carrying session persistence. */
@@ -432,16 +514,20 @@ export function startCodexCliRun(
     throw new Error('subagent-codex: request was aborted before the CLI started')
   }
   const turn = spec.resume?.turn ?? 1
+  // The member bridge rides a per-process `-c` override placed right after
+  // `exec` (the spike-verified position; `codex exec resume` accepts it too).
+  const memberArgv = spec.member === undefined ? [] : ['-c', spec.member.configOverride]
 
   const child = spec.spawn({
     argv: spec.resume === undefined
-      ? ['codex', 'exec', '--sandbox', spec.sandbox, '--json', task]
-      : ['codex', 'exec', '--sandbox', spec.sandbox, '--json', 'resume', spec.resume.cliSessionId, task],
+      ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--json', task]
+      : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--json', 'resume', spec.resume.cliSessionId, task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
+  spec.onSpawned?.(child.pid)
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
