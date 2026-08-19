@@ -37,6 +37,12 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 运行时需要：`node`、`bash`、macOS/Linux 上的 `lsof`（发现监听者；`--pid` 可绕过），以及 `pgrep`（回收后代进程：watchdog 的 `free_port`/清理与 `restart` 的强杀升级都遍历子进程树，而不是假设进程组）。消费者无需构建——发布的 `lib/` 就是可运行产物。
 
+## 自我重启的前提（给驱动重启的 agent）
+
+- **git 必需。** 凭证、检查点、回滚全部基于 git：凭证绑定 HEAD，checkpoint 是真实提交，rollback 是 reset。部署目录不是 git 仓库时，先 `git init` 并做一次初始提交，再 `record`——否则门禁以 "current git HEAD unavailable" 拒绝重启。`git init` 不是仪式：有了仓库，checkpoint/rollback 的恢复锚点才真正生效。
+- **需要 full-access（无沙箱）权限。** 重启链路要 spawn detached 进程、kill 进程、绑定端口；沙箱化的 tool runner（workspace-write 之类）会以 EPERM 拒绝其中操作，实例在 shell 层就起不来。发起自我重启前，先向用户确认会话运行在 full-access 模式；不是的话，请用户切换后再继续。（`verify` 和 `record` 的输出也会带这条提示。）
+- **安装后的第一次重启必须用 CLI 驱动。** 正在运行的实例还没加载插件（组合变更要重启才生效），watchdog 也还不存在——此时直接退出实例，服务就躺在地上没人拉。用 `dsh-ankh-guard restart --port N --start "CMD" --rollback`（它在 detached 进程里完成 停→起→canary 全循环），或先装 launchd/systemd 监督器。`schedule-exit` 在找不到存活 watchdog 时会发出警告。
+
 ## 已知安装坑
 
 - **从 GitHub 安装会现场构建。** `dsh plugin add github:…` 会 clone 并跑 `prepare`（完整 devDependencies 安装 + 构建）。npm 发布版（`@khorsheed/dsh-ankh-guard`）自带构建好的 `lib/`——除非刻意要跟仓库最新代码，否则优先用 npm 版。

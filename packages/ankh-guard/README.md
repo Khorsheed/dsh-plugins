@@ -37,6 +37,12 @@ Config (all optional): `stateDir` (default `$DSH_HOME/state`, else `<cwd>/.dsh-g
 
 Runtime needs: `node`, `bash`, `lsof` on macOS/Linux for listener discovery (`--pid` bypasses it), and `pgrep` for descendant reaping (the watchdog's `free_port`/cleanup and `restart`'s forced-kill escalation walk the child tree instead of assuming a process group). No build step for consumers — the published `lib/` is the runnable artifact.
 
+## Prerequisites for a self-restart (for the agent driving it)
+
+- **git is required.** The credential, checkpoints, and rollback are all git-based: the credential binds HEAD, a checkpoint is a real commit, rollback is a reset. If the deployment directory is not a git repository, `git init` it and make an initial commit before `record` — otherwise the gate refuses with "current git HEAD unavailable". The `git init` is not ceremony: with a repository in place, the checkpoint/rollback recovery anchors actually work.
+- **Full-access (unsandboxed) permissions.** The restart loop spawns detached processes, kills processes, and binds ports; sandboxed tool runners (workspace-write and the like) deny those operations with EPERM and the instance dies at the shell layer. Before initiating a self-restart, confirm with the user that the session runs with full access; if not, ask them to switch first. (`verify` and `record` print this hint too.)
+- **The first restart after install must be driven by the CLI.** The running instance has not loaded the plugin yet — composition changes need a boot — and no watchdog exists yet, so a bare exit leaves the service DOWN with nothing to bring it back. Use `dsh-ankh-guard restart --port N --start "CMD" --rollback` (it owns the whole stop→start→canary loop in a detached process), or install the launchd/systemd supervisor first. `schedule-exit` warns when it finds no live watchdog.
+
 ## Known install pitfalls
 
 - **A GitHub install builds from source.** `dsh plugin add github:…` clones and runs `prepare` (a full devDependency install + build). The npm release (`@khorsheed/dsh-ankh-guard`) ships the built `lib/` — prefer it unless you specifically need the repo edge.
