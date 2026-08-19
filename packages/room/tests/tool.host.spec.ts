@@ -5,11 +5,12 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
+import { stubAgents } from './agents-stub.ts'
 
 /** The REAL composition plus a stubbed tools registry capturing the registered definition. */
 async function boot() {
   const ctx = new Context()
-  ctx.provide('agents', { get: () => undefined } as never)
+  stubAgents(ctx)
   const facade: LocalAgentFacade = {
     start: vi.fn(async () => new Promise(() => {}) as never),
     resume: vi.fn(async () => new Promise(() => {}) as never),

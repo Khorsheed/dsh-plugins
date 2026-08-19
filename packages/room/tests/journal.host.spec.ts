@@ -4,12 +4,13 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
 import { isRoomLog, parseMentions, pendingInstructions, previousCursor, replay } from '../src/journal.ts'
+import { stubAgents } from './agents-stub.ts'
 
 /** The REAL composition: a cordis root, the real SessionStore plugin, and the package's own service plugin. */
 async function boot() {
   const ctx = new Context()
   // The agents registry is an external service to this package; stub its face.
-  ctx.provide('agents', { get: () => undefined } as never)
+  stubAgents(ctx)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   return { ctx, service: ctx.get('room') as RoomService }

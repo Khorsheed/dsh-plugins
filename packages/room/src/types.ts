@@ -161,6 +161,8 @@ export type RoomFailure =
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   | { readonly code: 'unknown-targets'; readonly names: readonly string[] }
+  /** A cold room's agent resume failed (persistence or preset composition). */
+  | { readonly code: 'resume-failed'; readonly message: string }
 
 /** isRoom probe: does this session carry the room marker? */
 export interface RoomIsRoomRequest {

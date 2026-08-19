@@ -47,7 +47,15 @@ async function bootRoom(options: { liveAgent?: boolean } = {}): Promise<Bench> {
   const agent = options.liveAgent === false
     ? undefined
     : { followup: vi.fn(), whenIdle: vi.fn(async () => {}) }
-  ctx.provide('agents', { get: () => agent } as never)
+  ctx.provide('agents', {
+    get: () => agent,
+    // createRoom publishes through the factory: mint the session via the
+    // real store, as the agent factory would.
+    create: vi.fn(async (request: { sessionId: SessionId; meta?: Record<string, unknown> }) => {
+      const session = ctx.sessions.create(request.sessionId, { meta: request.meta ?? {} })
+      return { agent: { id: session.id, session }, dispose: async () => {} }
+    }),
+  } as never)
   const facade = {
     start: vi.fn(),
     resume: vi.fn(),

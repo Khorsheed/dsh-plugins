@@ -4,6 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
+import { stubAgents } from './agents-stub.ts'
 
 interface BenchOptions {
   /** false: no localAgent service at all (facade probe misses). */
@@ -20,7 +21,7 @@ interface BenchOptions {
  */
 async function boot(options: BenchOptions = {}) {
   const ctx = new Context()
-  ctx.provide('agents', { get: () => undefined } as never)
+  const agents = stubAgents(ctx)
   const facade: LocalAgentFacade = {
     start: vi.fn(async (): Promise<SubagentRun> => ({
       id: SessionId('child-1'),
@@ -40,14 +41,14 @@ async function boot(options: BenchOptions = {}) {
   if (localAgent !== undefined) ctx.provide('localAgent', localAgent as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
-  return { ctx, service: ctx.get('room') as RoomService, facade }
+  return { ctx, service: ctx.get('room') as RoomService, facade, agents }
 }
 
 /** Boot with one room created; returns its id. */
 async function bootRoom(options: BenchOptions = {}) {
-  const { ctx, service, facade } = await boot(options)
+  const { ctx, service, facade, agents } = await boot(options)
   const { sessionId } = await service.createRoom({})
-  return { ctx, service, facade, sessionId }
+  return { ctx, service, facade, agents, sessionId }
 }
 
 /** The roster row every fresh room seats: its own main agent. */
@@ -64,6 +65,14 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'not-a-room' } })
     expect(await service.getState({ sessionId: SessionId('nope') }))
       .toEqual({ ok: false, error: { code: 'session-not-found' } })
+  })
+
+  it('createRoom publishes the session through the agent factory (a live main agent)', async () => {
+    const { service, agents, sessionId } = await bootRoom()
+    expect(agents.create).toHaveBeenCalledTimes(1)
+    // The dispatch anchor: the delegation facade resolves the parent through
+    // agents.get — a room born without a live agent cannot dispatch at all.
+    expect(agents.get(sessionId)).toBeDefined()
   })
 
   it('invite lands a cli member on the roster and acknowledges a dispatched first task', async () => {

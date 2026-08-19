@@ -11,19 +11,24 @@
  * never a boot failure).
  * @module @khorsheed/dsh-room
  */
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: pulls the `agents` registry merge onto Context (create/resume
+// are consumed through the registry, not the agent-loop package).
+import type {} from '@deepseek-ai/dsh-agent'
 // The persistence read path refuses logs carrying event types outside this
 // catalog; registering the room vocabulary declares that a room-mounted build
 // understands them (see ROOM_EVENT_TYPES in journal.ts).
 import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
-// Type-only: pulls the `agents` registry merge onto Context.
-import type {} from '@deepseek-ai/dsh-agent'
+import { composeRoomAgent, inspectCold, roomSessionPreset } from './agent-setup.ts'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+// Type-only: pulls the `tools` ToolRuntime merge onto Context (deferred inject).
+import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
@@ -57,14 +62,14 @@ type RoomLoad =
   | { readonly ok: true; readonly session: Session; readonly state: RoomState }
   | { readonly ok: false; readonly error: RoomFailure }
 
+/** A side-effect-free room read: replayed state plus the log-recorded preset. */
+type RoomColdLoad =
+  | { readonly ok: true; readonly state: RoomState; readonly preset: string | undefined }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** Addressing/display names must stay parseable by the composer @-grammar. */
 function validName(name: string): boolean {
   return name !== '' && !/\s/.test(name) && !name.includes('@')
-}
-
-/** The tools registry face this package consumes (probed, never injected). */
-interface ToolsRegistryProbe {
-  register(tool: ToolDefinition): () => void
 }
 
 /**
@@ -78,6 +83,9 @@ export class RoomService extends TypertRemoteService {
   /** The dispatch engine executing this service's dispatch records. */
   readonly engine: DispatchEngine
 
+  /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
+  private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
+
   /**
    * @param ctx - host context carrying the session store.
    */
@@ -89,15 +97,17 @@ export class RoomService extends TypertRemoteService {
     const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
     for (const type of ROOM_EVENT_TYPES) catalog.add(type)
     this.engine = new DispatchEngine(ctx)
-    // The tools registry is probed, not injected: a composition without it
-    // loses the model-facing invitation path but keeps every other surface.
-    const tools = ctx.get('tools') as ToolsRegistryProbe | undefined
-    if (tools !== undefined) {
-      this.ctx.effect(() => tools.register(roomInviteTool(this)), 'room: room_invite tool')
-    }
+    // The tools registry joins through DEFERRED injection, not a constructor
+    // probe: an apply-time ctx.get races the registry's own mount order (the
+    // probe loses on the real composition tree), while ctx.inject fires when
+    // the registry appears and never fires in a composition without one —
+    // losing only the model-facing invitation path, never the boot.
+    this.ctx.inject(['tools'], (toolsCtx) => {
+      toolsCtx.effect(() => toolsCtx.tools.register(roomInviteTool(this)), 'room: room_invite tool')
+    })
   }
 
-  /** Resolve a session as a room: presence, marker, replayed state. */
+  /** Resolve a LIVE session as a room: presence, marker, replayed state. */
   private load(sessionId: SessionId): RoomLoad {
     const session = this.ctx.sessions.get(sessionId)
     if (session === undefined) return { ok: false, error: { code: 'session-not-found' } }
@@ -106,29 +116,99 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
+   * Read a session as a room without side effects: the live store first, then
+   * a persistence inspection (a cold room after a host restart answers from
+   * its durable log; nothing is attached or resumed on a read).
+   */
+  private async loadCold(sessionId: SessionId): Promise<RoomColdLoad> {
+    const live = this.ctx.sessions.get(sessionId)
+    if (live !== undefined) {
+      return isRoomLog(live.events)
+        ? { ok: true, state: replay(live.events), preset: roomSessionPreset(live) }
+        : { ok: false, error: { code: 'not-a-room' } }
+    }
+    const inspected = await inspectCold(this.ctx, sessionId)
+    if (inspected === undefined) return { ok: false, error: { code: 'session-not-found' } }
+    if (!isRoomLog(inspected.events)) return { ok: false, error: { code: 'not-a-room' } }
+    return {
+      ok: true,
+      state: replay(inspected.events),
+      preset: resolveSessionPreset({ header: inspected.meta, events: inspected.events }),
+    }
+  }
+
+  /**
+   * Resolve a room for a MUTATION: the session must be live to take appends,
+   * and dispatch needs its agent live (the delegation facade resolves the
+   * parent through `ctx.agents.get` — live agents only). A cold room is
+   * cold-resumed through the agent factory, which republishes session +
+   * agent under the preset the log records; resumes dedupe per session.
+   */
+  private ensureLive(sessionId: SessionId): Promise<RoomLoad> {
+    const hit = this.load(sessionId)
+    if (hit.ok || hit.error.code !== 'session-not-found') return Promise.resolve(hit)
+    let pending = this.resumes.get(sessionId)
+    if (pending === undefined) {
+      pending = this.resumeRoom(sessionId).finally(() => this.resumes.delete(sessionId))
+      this.resumes.set(sessionId, pending)
+    }
+    return pending
+  }
+
+  /** One cold resume: refuse non-rooms before paying an agent composition. */
+  private async resumeRoom(sessionId: SessionId): Promise<RoomLoad> {
+    const cold = await this.loadCold(sessionId)
+    if (!cold.ok) return cold
+    try {
+      const composition = await composeRoomAgent(this.ctx, cold.preset)
+      await this.ctx.agents.resume({
+        resumeSessionId: sessionId,
+        ...composition.setup === undefined ? {} : { setup: composition.setup },
+      })
+    } catch (error: unknown) {
+      return { ok: false, error: { code: 'resume-failed', message: String(error) } }
+    }
+    return this.load(sessionId)
+  }
+
+  /**
    * Probe whether a session is a room: replay its event log looking for the
-   * `room/created` marker.
+   * `room/created` marker. Side-effect-free: a cold session answers from a
+   * persistence inspection, so opening any session never resumes its agent.
    * @param request - session identity.
    * @returns true when the session carries the marker (false for unknown sessions too).
    */
   @Remote('isRoom')
-  isRoom(request: RoomIsRoomRequest): Promise<boolean> {
+  async isRoom(request: RoomIsRoomRequest): Promise<boolean> {
     const session = this.ctx.sessions.get(request.sessionId)
-    return Promise.resolve(session !== undefined && isRoomLog(session.events))
+    if (session !== undefined) return isRoomLog(session.events)
+    const inspected = await inspectCold(this.ctx, request.sessionId)
+    return inspected !== undefined && isRoomLog(inspected.events)
   }
 
   /**
-   * Create a room: mint a normal session, append the `room/created` identity
-   * marker, seat the session's own main agent on the roster (an equal member,
-   * addressable like any other), and flush durable.
+   * Create a room: publish the session through the agent factory (the
+   * official session.create shape — a live main agent under the default
+   * preset, its id recorded on the header), append the `room/created`
+   * identity marker, seat the main agent on the roster (an equal member,
+   * addressable like any other), and flush durable. The live agent is what
+   * CLI-member dispatch anchors to (the delegation facade resolves the
+   * parent through `ctx.agents.get`, live agents only).
    * @param request - optional storage metadata (cwd).
    * @returns the new room session's identity.
    */
   @Remote('createRoom')
   async createRoom(request: RoomCreateRequest): Promise<RoomCreateResult> {
-    const session = this.ctx.sessions.create(undefined, {
-      meta: request.cwd === undefined ? {} : { cwd: request.cwd },
+    const composition = await composeRoomAgent(this.ctx, undefined)
+    const handle = await this.ctx.agents.create({
+      sessionId: SessionId(`session-${randomUUID()}`),
+      meta: {
+        ...request.cwd === undefined ? {} : { cwd: request.cwd },
+        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+      },
+      ...composition.setup === undefined ? {} : { setup: composition.setup },
     })
+    const session = handle.agent.session
     session.append('room/created', { version: 1 })
     session.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
     await this.ctx.sessions.flush(session)
@@ -170,10 +250,11 @@ export class RoomService extends TypertRemoteService {
    * @returns the replayed state, or a rejection from the closed failure union.
    */
   @Remote('getState')
-  getState(request: RoomGetStateRequest): Promise<RoomGetStateResult> {
-    const loaded = this.load(request.sessionId)
-    if (!loaded.ok) return Promise.resolve({ ok: false, error: loaded.error })
-    return Promise.resolve({ ok: true, value: loaded.state })
+  async getState(request: RoomGetStateRequest): Promise<RoomGetStateResult> {
+    // Side-effect-free: a cold room answers from its durable log (see loadCold).
+    const loaded = await this.loadCold(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    return { ok: true, value: loaded.state }
   }
 
   /**
@@ -189,7 +270,7 @@ export class RoomService extends TypertRemoteService {
    * @returns the invitation receipt, or a rejection.
    */
   async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent'): Promise<RoomInviteResult> {
-    const loaded = this.load(request.sessionId)
+    const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (!validName(request.name)) return { ok: false, error: { code: 'invalid-name' } }
     if (loaded.state.members.some(member => member.name === request.name)) {
@@ -243,7 +324,7 @@ export class RoomService extends TypertRemoteService {
    */
   @Remote('updateMember')
   async updateMember(request: RoomUpdateMemberRequest): Promise<RoomUpdateMemberResult> {
-    const loaded = this.load(request.sessionId)
+    const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (!loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'member-not-found' } }
@@ -263,7 +344,7 @@ export class RoomService extends TypertRemoteService {
    */
   @Remote('removeMember')
   async removeMember(request: RoomRemoveMemberRequest): Promise<RoomRemoveMemberResult> {
-    const loaded = this.load(request.sessionId)
+    const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (!loaded.state.members.some(member => member.name === request.name)) {
       return { ok: false, error: { code: 'member-not-found' } }
@@ -283,7 +364,7 @@ export class RoomService extends TypertRemoteService {
    */
   @Remote('postMessage')
   async postMessage(request: RoomPostMessageRequest): Promise<RoomPostMessageResult> {
-    const loaded = this.load(request.sessionId)
+    const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     const parsed = parseMentions(request.text)
@@ -314,11 +395,11 @@ export class RoomService extends TypertRemoteService {
    * @returns the cancellation receipt, or a rejection.
    */
   @Remote('cancel')
-  cancel(request: RoomCancelRequest): Promise<RoomCancelResult> {
-    const loaded = this.load(request.sessionId)
-    if (!loaded.ok) return Promise.resolve({ ok: false, error: loaded.error })
+  async cancel(request: RoomCancelRequest): Promise<RoomCancelResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
     const member = loaded.state.members.find(entry => entry.name === request.name)
-    if (member === undefined) return Promise.resolve({ ok: false, error: { code: 'member-not-found' } })
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
     const facade = probeLocalAgent(this.ctx)
     const hit = facade !== undefined && member.childSessionId !== undefined
       ? facade.cancel(member.childSessionId)
@@ -328,9 +409,10 @@ export class RoomService extends TypertRemoteService {
       loaded.session.append('room/run-state', {
         member: request.name, state: 'cancelled', startedAt: running?.startedAt ?? Date.now(),
       })
-      return this.ctx.sessions.flush(loaded.session).then(() => ({ ok: true as const, value: { cancelled: true } }))
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value: { cancelled: true } }
     }
-    return Promise.resolve({ ok: true, value: { cancelled: false } })
+    return { ok: true, value: { cancelled: false } }
   }
 }
 
