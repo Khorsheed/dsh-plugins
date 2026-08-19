@@ -14,7 +14,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import { renderStatus } from './cli.ts'
+import { renderStatus } from './cli-core.ts'
 import type { MissionService, RunSummary } from './service.ts'
 import type { Bucket, MissionView } from './types.ts'
 

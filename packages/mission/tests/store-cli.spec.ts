@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runCli, type CliIo } from '../src/cli.ts'
+import { runCli, type CliIo } from '../src/cli-core.ts'
 import { install } from '../src/invariant.ts'
 import { MissionService } from '../src/service.ts'
 
