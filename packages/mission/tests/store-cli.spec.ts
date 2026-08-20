@@ -106,6 +106,72 @@ describe('CLI semantics', () => {
   })
 })
 
+describe('registration verbs (lab CLI mode)', () => {
+  it('set-refs writes resource/fingerprint/sessions; repeat --session unions', async () => {
+    const service = new MissionService(dir)
+    await service.create({ id: 'm' })
+    const c = capture()
+    expect(await runCli(['set-refs', 'm', '--resource', 'box-1', '--fingerprint', 'sha256:abc', '--session', 's-1', '--data-dir', dir], c.io)).toBe(0)
+    expect(await runCli(['set-refs', 'm', '--session', 's-1', '--session', 's-2', '--data-dir', dir], c.io)).toBe(0)
+    const attempt = service.get('m').mission.attempts[0]
+    expect(attempt?.refs).toEqual({ resource: 'box-1', fingerprint: 'sha256:abc', sessions: ['s-1', 's-2'] })
+  })
+
+  it('set-refs: missing mission exits 1, no flags exits 2', async () => {
+    const c = capture()
+    expect(await runCli(['set-refs', 'ghost', '--resource', 'x', '--data-dir', dir], c.io)).toBe(1)
+    expect(c.err()).toMatch(/does not exist/)
+    expect(await runCli(['set-refs', 'm', '--data-dir', dir], c.io)).toBe(2)
+    expect(await runCli(['set-refs', '--data-dir', dir], c.io)).toBe(2)
+  })
+
+  it('add-artifact indexes and dedups; conflicting kind exits 1; missing flags exit 2', async () => {
+    const service = new MissionService(dir)
+    await service.create({ id: 'm' })
+    const c = capture()
+    expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir], c.io)).toBe(0)
+    expect(c.out()).toMatch(/artifact indexed/)
+    expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir], c.io)).toBe(0)
+    expect(c.out()).toMatch(/no-op/)
+    expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'archive', '--data-dir', dir], c.io)).toBe(1)
+    expect(c.err()).toMatch(/already indexed/)
+    expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--data-dir', dir], c.io)).toBe(2)
+    expect(service.get('m').mission.attempts[0]?.artifacts).toHaveLength(1)
+  })
+
+  it('add-checkpoint records and merges with submit\'s no-ref checkpoint; usage exits 2', async () => {
+    const service = new MissionService(dir)
+    await service.create({ id: 'm' })
+    await service.submit('m', { files: [{ path: 'a.txt', content: '1' }], checkpoint: 'round-1' })
+    const c = capture()
+    expect(await runCli(['add-checkpoint', 'm', '--name', 'round-1', '--ref', 'tag-9', '--artifact', 'b.txt', '--data-dir', dir], c.io)).toBe(0)
+    expect(c.out()).toMatch(/checkpoint recorded/)
+    const attempt = service.get('m').mission.attempts[0]
+    expect(attempt?.checkpoints).toHaveLength(1)
+    expect(attempt?.checkpoints[0]).toMatchObject({ name: 'round-1', ref: 'tag-9', artifacts: ['a.txt', 'b.txt'] })
+    // Same ref, nothing new → no-op; conflicting ref → business failure 1.
+    expect(await runCli(['add-checkpoint', 'm', '--name', 'round-1', '--ref', 'tag-9', '--data-dir', dir], c.io)).toBe(0)
+    expect(c.out()).toMatch(/no-op/)
+    expect(await runCli(['add-checkpoint', 'm', '--name', 'round-1', '--ref', 'other', '--data-dir', dir], c.io)).toBe(1)
+    expect(await runCli(['add-checkpoint', 'm', '--data-dir', dir], c.io)).toBe(2)
+  })
+
+  it('CLI writes land in the same store the service reads (and --run scopes the lookup)', async () => {
+    const service = new MissionService(dir)
+    await service.runCreate({ template: { states: ['a', 'b'], transitions: [{ from: 'a', to: 'b' }] }, runId: 'r1' })
+    await service.create({ runId: 'r1', id: 'm' })
+    const c = capture()
+    // Without --run the id is unique here, so the bare form works…
+    expect(await runCli(['set-refs', 'm', '--resource', 'box', '--data-dir', dir], c.io)).toBe(0)
+    // …and the scoped form writes the same record the service face reads.
+    expect(await runCli(['add-artifact', 'm', '--run', 'r1', '--path', 'x', '--kind', 'k', '--data-dir', dir], c.io)).toBe(0)
+    const { run, mission } = service.get('m', 'r1')
+    expect(run.id).toBe('r1')
+    expect(mission.attempts[0]?.refs.resource).toBe('box')
+    expect(mission.attempts[0]?.artifacts).toHaveLength(1)
+  })
+})
+
 describe('one store, many writers', () => {
   it('the service and CLI subprocesses write the same store without losing a write', async () => {
     const service = new MissionService(dir)

@@ -84,6 +84,9 @@ dsh-mission submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file 
 dsh-mission annotate MISSION_ID --ns NS --payload JSON [--run ID]
 dsh-mission attest MISSION_ID --key K [--note N] [--run ID]
 dsh-mission retry MISSION_ID [--run ID]
+dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
+dsh-mission add-artifact MISSION_ID --path P --kind K [--run ID]
+dsh-mission add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # exit 0/1, for teardown scripts
 ```
 

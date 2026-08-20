@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { resolveDataDir } from './defaults.ts'
 import { MissionService } from './service.ts'
-import type { MissionView, RunRecord } from './types.ts'
+import type { AttemptRefs, MissionView, RunRecord } from './types.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
 export interface CliIo {
@@ -34,6 +34,9 @@ commands:
   annotate MISSION_ID --ns NS --payload JSON [--run ID]
   attest MISSION_ID --key K [--note N] [--run ID]
   retry MISSION_ID [--run ID]
+  set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
+  add-artifact MISSION_ID --path P --kind K [--run ID]
+  add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
   is-releasable MISSION_ID [--run ID]           exit 0 = releasable, 1 = not
 flags:
   --data-dir DIR   data root (default: $DSH_HOME/state/mission, else <cwd>/.dsh-mission)
@@ -91,9 +94,12 @@ function flagAll(parsed: Parsed, name: string): string[] {
   return parsed.flags.get(name) ?? []
 }
 
+/** A missing/invalid argument: reported on stderr with usage, exit code 2 (never a business failure's 1). */
+class UsageError extends Error {}
+
 function requireFlag(parsed: Parsed, name: string): string {
   const value = flag(parsed, name)
-  if (value === undefined) throw new Error(`${name} is required\n\n${USAGE}`)
+  if (value === undefined) throw new UsageError(`${name} is required\n\n${USAGE}`)
   return value
 }
 
@@ -353,6 +359,52 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stdout(`attempt ${result.attempt} opened\n`)
         return 0
       }
+      case 'set-refs': {
+        const id = parsed.positionals[0]
+        const resource = flag(parsed, '--resource')
+        const fingerprint = flag(parsed, '--fingerprint')
+        const sessions = flagAll(parsed, '--session')
+        if (id === undefined || (resource === undefined && fingerprint === undefined && sessions.length === 0)) {
+          io.stderr(`set-refs requires a MISSION_ID and at least one of --resource/--fingerprint/--session\n\n${USAGE}`)
+          return 2
+        }
+        const refs: AttemptRefs = {}
+        if (resource !== undefined) refs.resource = resource
+        if (fingerprint !== undefined) refs.fingerprint = fingerprint
+        if (sessions.length > 0) refs.sessions = sessions
+        await service.setRefs(id, refs, { ...(runId !== undefined ? { runId } : {}), by: 'cli' })
+        io.stdout('refs updated\n')
+        return 0
+      }
+      case 'add-artifact': {
+        const id = parsed.positionals[0]
+        if (id === undefined) {
+          io.stderr(`add-artifact requires a MISSION_ID\n\n${USAGE}`)
+          return 2
+        }
+        const path = requireFlag(parsed, '--path')
+        const kind = requireFlag(parsed, '--kind')
+        const result = await service.addArtifact(id, { path, kind }, { ...(runId !== undefined ? { runId } : {}), by: 'cli' })
+        io.stdout(result.added ? 'artifact indexed\n' : 'already indexed (no-op)\n')
+        return 0
+      }
+      case 'add-checkpoint': {
+        const id = parsed.positionals[0]
+        if (id === undefined) {
+          io.stderr(`add-checkpoint requires a MISSION_ID\n\n${USAGE}`)
+          return 2
+        }
+        const name = requireFlag(parsed, '--name')
+        const ref = flag(parsed, '--ref')
+        const artifacts = flagAll(parsed, '--artifact')
+        const result = await service.addCheckpoint(id, {
+          name,
+          ...(ref !== undefined ? { ref } : {}),
+          ...(artifacts.length > 0 ? { artifacts } : {}),
+        }, { ...(runId !== undefined ? { runId } : {}), by: 'cli' })
+        io.stdout(result.added ? 'checkpoint recorded\n' : 'already up to date (no-op)\n')
+        return 0
+      }
       case 'is-releasable': {
         const id = parsed.positionals[0]
         if (id === undefined) {
@@ -369,6 +421,6 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     }
   } catch (error) {
     io.stderr(`${String(error)}\n`)
-    return 1
+    return error instanceof UsageError ? 2 : 1
   }
 }
