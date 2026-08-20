@@ -1,11 +1,18 @@
 /* Dock capsules: one collapsed row of two capsules (goal + tasks) plus the
    quick-add button, seated on the card-width axis inside the side clearance
    (the RoomComposer `.dock` wrapper; official dock insets: card minus 4 × 8).
-   Capsules follow the official `.refChip` register — rounded chip on the tip
-   surface, secondary text — and the expanded cards reuse the TodoPanel port
-   of the old strip (tip surface, 12px radius, 14px status glyphs). Every
-   token reference carries the light-theme literal as fallback; no divider
-   lines anywhere. */
+   TWO chrome variants share this stylesheet, keyed off the root's
+   `data-variant` (RoomDockCapsules.tsx's CAPSULE_VARIANT picks the default;
+   the attribute flips live for A/B comparison):
+   - A (official chip register): the model-selector trigger's language —
+     transparent rest, interactive hover fill, r24 chip, 13/20/500 secondary
+     label, caption chevron rotating open.
+   - B (light text row): no chip chrome — tertiary 12/18 text with a state
+     dot and the chevron, a hover-only fill.
+   Both share the expanded card (the official Menu surface: --dsw-specific-menu,
+   r12, inverted hairline, shadow-lv3) and the running sweep (the ToolRow
+   pattern, reduced-motion safe). Every token reference carries the
+   light-theme literal as fallback; no divider lines anywhere. */
 
 .root {
   box-sizing: border-box;
@@ -25,26 +32,145 @@
   min-width: 0;
 }
 
-/* The capsule: refChip-register rounded chip on the tip surface. */
+/* The capsule's shared skeleton; the variant blocks below own the skin. */
 .capsule {
+  position: relative; /* running-sweep overlay anchor */
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
   max-width: 60%;
-  padding: 2px 10px;
   border: none;
-  border-radius: 999px;
-  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* Variant A — the official chip register (model-selector trigger): 28px
+   rounded chip, transparent rest, interactive hover fill, 13/20/500
+   secondary label, caption chevron. */
+.root[data-variant='a'] .capsule {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 24px;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.root[data-variant='a'] .capsule:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.root[data-variant='a'] .capsule[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+/* Variant B — the light text row (compaction/dim-line language): no chip
+   chrome, tertiary 12/18 text led by the state dot, a hover-only fill. */
+.root[data-variant='b'] .capsule {
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: transparent;
   font-size: 12px;
   line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.root[data-variant='b'] .capsule:hover,
+.root[data-variant='b'] .capsule[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
-  cursor: pointer;
 }
 
 .capsuleActive {
   composes: capsule;
   color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+/* The ◐/▦ leading icons belong to variant A's chip register; variant B's
+   text row is led by the state dot instead. */
+.capsuleIcon {
+  display: none;
+  flex: none;
+}
+
+.root[data-variant='a'] .capsuleIcon {
+  display: inline;
+}
+
+/* The state dot (variant B's lead): business-primary while the capsule's
+   concern is live (goal set / tasks running), caption tone at rest. */
+.capsuleDot {
+  display: none;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.root[data-variant='b'] .capsuleDot {
+  display: inline-block;
+}
+
+.capsuleDot[data-tone='set'],
+.capsuleDot[data-tone='running'] {
+  background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.capsuleDot[data-tone='idle'] {
+  background: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+}
+
+/* The trailing chevron: caption tone in both variants, rotating open like
+   the model selector's. */
+.chevron {
+  flex: none;
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  transition: transform 120ms ease;
+}
+
+.capsule[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+/* Running sweep (the ToolRow pattern): a fixed-width glare band — theme
+   background at 60% — glides over the task capsule from off-left to
+   off-right while tasks run. ease-out with a 10% end hold gives each pass a
+   beat before the next. */
+.capsule[data-running]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 120px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base, rgb(255, 255, 255)) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: room-capsule-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes room-capsule-sweep {
+  0% { left: -120px; }
+  90%, 100% { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule[data-running]::after {
+    animation: none;
+    display: none;
+  }
+
+  .chevron {
+    transition: none;
+  }
 }
 
 .capsuleText {
@@ -53,6 +179,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+}
+
+/* Variant B's text row keeps the dim-line register: regular weight. */
+.root[data-variant='b'] .capsuleText {
+  font-weight: 400;
 }
 
 .capsuleMeta {
@@ -76,7 +207,7 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  background: transparent;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
@@ -88,15 +219,25 @@
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
 }
 
-/* Expanded card: the old strip's TodoPanel port (tip surface, 12px radius). */
+/* Variant A's quick-add rides the same 28px chip axis as its capsules. */
+.root[data-variant='a'] .addCapsule {
+  width: 28px;
+  height: 28px;
+}
+
+/* Expanded card: the official Menu surface (menu background, r12, inverted
+   hairline, shadow-lv3) — the same material the room's @-completion card and
+   the model selector's dropdown already use. Shared by both variants. */
 .card {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.04));
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0));
   border-radius: 12px;
-  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow:
+    var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08));
   /* Elevated surface, same contract as the official card: `.groups` scrolls
      inside it, so the thumb takes the l2 elevation pair (rebinding contract:
      ui-theme styles/scrollbar.css). */

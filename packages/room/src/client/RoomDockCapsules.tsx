@@ -24,11 +24,18 @@
  * the add form already expanded. Panels close on a second capsule click or a
  * click outside; no overlay.
  *
- * Visual layer: capsules follow the official `.refChip` register (rounded
- * chip on the tip surface, business-primary-free secondary text), the
- * expanded cards reuse the old strip's TodoPanel port (tip-surface card on
- * the shared dock width axis). Every token reference carries the light-theme
- * literal as fallback; no divider lines anywhere.
+ * Visual layer: TWO switchable chrome variants on one DOM (the variant rides
+ * the root's `data-variant`; flip CAPSULE_VARIANT below or set the attribute
+ * live to compare). Variant A (official chip register): the capsules take the
+ * model-selector trigger's language — transparent rest, interactive hover
+ * fill, r24 chip, 13/20/500 secondary label, caption chevron that rotates
+ * open. Variant B (light text row): no chip chrome at all — tertiary 12/18
+ * text with a state dot and the chevron, a hover-only fill. Both share the
+ * expanded card, now the official Menu surface (`--dsw-specific-menu`, r12,
+ * inverted hairline, shadow-lv3), and both sweep a restrained glare band over
+ * the task capsule while tasks run (the ToolRow pattern, reduced-motion
+ * safe). Every token reference carries the light-theme literal as fallback;
+ * no divider lines anywhere.
  */
 import {
   useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode,
@@ -39,6 +46,13 @@ import { formatRelativeTime } from './format.ts'
 import { memberColor } from './member-color.ts'
 import type { RoomDockCapsulesProps } from './slots.ts'
 import css from './RoomDockCapsules.module.css'
+
+/**
+ * The capsule chrome variant: 'a' = official chip register, 'b' = light text
+ * row. Both ship in the bundle — the attribute flips live for A/B comparison,
+ * and this constant picks the default while the variants await a choice.
+ */
+export const CAPSULE_VARIANT: 'a' | 'b' = 'a'
 
 /** Glyph tooltip text per status. */
 function statusLabel(status: RoomTask['status'], t: RoomDockCapsulesProps['t']): string {
@@ -106,6 +120,15 @@ function StatusGlyph({ status }: { status: RoomTask['status'] }) {
     case 'pending': return <PendingGlyph />
     case 'cancelled': return <CancelledGlyph />
   }
+}
+
+/** The capsule's trailing chevron (12px caption; CSS rotates it open). */
+function ChevronGlyph() {
+  return (
+    <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" className={css.chevron}>
+      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
 }
 
 /**
@@ -260,7 +283,7 @@ export function RoomDockCapsules({
     : state.tasks.filter(task => task.member === filter)
 
   return (
-    <section ref={rootRef} className={css.root} aria-label={t('goal.label')}>
+    <section ref={rootRef} className={css.root} data-variant={CAPSULE_VARIANT} aria-label={t('goal.label')}>
       <div className={css.capsules}>
         <button
           type="button"
@@ -269,7 +292,8 @@ export function RoomDockCapsules({
           aria-label={t('goal.label')}
           onClick={() => { toggle('goal') }}
         >
-          <span aria-hidden>◐</span>
+          <span className={css.capsuleIcon} aria-hidden>◐</span>
+          <span className={css.capsuleDot} data-tone={state.goal === undefined ? 'idle' : 'set'} aria-hidden />
           {state.goal === undefined ? (
             <span className={css.capsuleGuide}>{t('goal.set')}</span>
           ) : (
@@ -278,21 +302,25 @@ export function RoomDockCapsules({
               <span className={css.capsuleMeta}>{progress.done}/{progress.total}</span>
             </>
           )}
+          <ChevronGlyph />
         </button>
         <button
           type="button"
           className={open === 'tasks' ? css.capsuleActive : css.capsule}
           aria-expanded={open === 'tasks'}
           aria-label={t('tasks.capsule')}
+          data-running={running > 0 || undefined}
           onClick={() => { toggle('tasks') }}
         >
-          <span aria-hidden>▦</span>
+          <span className={css.capsuleIcon} aria-hidden>▦</span>
+          <span className={css.capsuleDot} data-tone={running > 0 ? 'running' : 'idle'} aria-hidden />
           <span className={css.capsuleText}>{t('tasks.capsule')}</span>
           <span className={css.capsuleMeta}>
             {pending > 0 ? t('tasks.summary.pending', { count: pending }) : ''}
             {pending > 0 && running > 0 ? '·' : ''}
             {running > 0 ? t('tasks.summary.running', { count: running }) : ''}
           </span>
+          <ChevronGlyph />
         </button>
         <button
           type="button"
