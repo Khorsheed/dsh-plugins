@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The harness checkout seeds dev-time type/test resolution and typert
+      # generation (AGENTS.md build contract). Keep it at the published
+      # release line the repo currently tracks (see dsh.compat / the rc
+      # adaptation notes); bump deliberately when the host line moves.
+      - name: Clone deepseek-harness (type/test seed)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          path: deepseek-harness
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install (harness seed)
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: Build harness host libs (type seed)
+        working-directory: deepseek-harness
+        run: pnpm run build:lib:host
+
+      - name: Install (repo)
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate taskpilot harness type paths
+        run: node scripts/sync-harness-paths.mjs
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Build
+        run: pnpm run build
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Test
+        run: pnpm run test
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Repo hygiene (full tree)
+        run: pnpm check:hygiene --all
+
+      - name: Plugin independence
+        run: pnpm check:plugins
+
+      - name: Script tests (checkers' own specs)
+        run: pnpm run test:scripts
+
+      - name: Doc gates
+        run: |
+          pnpm run verify-agent-note-format
+          pnpm run verify-agent-note-classification
+          pnpm run verify-translation-pairing
