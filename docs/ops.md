@@ -14,18 +14,20 @@
 
 ## 进 3080 的门禁清单(每次交付必过)
 
-任何一次 profile 变更,按顺序执行,任何一步不过就停:
+**自服务流程就是一条命令**——任何 agent 都可运行,无需通知守护者:
 
-1. `pnpm --filter <包> build && pnpm --filter <包> test` 全绿;`pnpm check:hygiene`、`pnpm check:plugins`、`pnpm test:scripts` 零违规
-2. `pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <版本> --out dist-publish`(产出 tgz;上一份 known-good 移入 `dist-legacy/`,回滚 = 换 tgz + 重启,分钟级)
-3. 刷新 profile:`dsh plugin --profile web add <tgz 绝对路径>`;profile 的 `cordis.patch.yml` 只允许经审查的显式编辑。操作要点(都交过学费):
-   - profile 引用的 tarball 放在 **workspace 之外**(如 `~/.dsh-official/tarballs/`)——放在本仓库里的 tarball 会被 pnpm 按"名+版本匹配 workspace 包"转成 `link:` 软链,tarball 化形同虚设
-   - 家族边(local-agent core/companion)在包未发布时需要 profile `pnpm-workspace.yaml` 里写 `overrides` 把每个 `@khorsheed/*` 名字指到对应 `file:` tgz,否则 pnpm 去 registry 解析直接 404
-   - 行为异常(装了还是软链/旧内容)时:**`rm -rf node_modules pnpm-lock.yaml` 后重装**——残留的 pnpm workspace 状态文件会把 link: 时代的解析行为还魂;同名同版本的 tgz 内容变了也可能吃到解包缓存,全清重装最稳
+```sh
+pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个包>] [--initiator <你的id>]
+```
+
+`scripts/deploy-3080.mts` 按顺序执行全部六道闸,任何一步不过即中止、不重启:① build+test(typert 生成用 `GEN_TYPERT_ONLY` 限定到本包,邻居的在制品红色状态不会拖死你)② pack-dist 出包并复制到 profile 的 tarball 目录(上一份 known-good 留在 `dist-legacy/`,回滚 = 换 tgz + 重跑本命令)③ 刷新 profile 清单与家族 overrides 并全新安装 ④ 录制绿色凭证 ⑤ preflight(**FAIL 即停,永不绕过**)⑥ `schedule-exit` 按闸重启 + 监听 canary PASS。收尾会打印一段粘贴即用的通报文本。`--no-restart` 只打包+刷新不重启。
+
+手动分步只在脚本本身出问题时兜底(即脚本注释里的六步)。profile 的 `cordis.patch.yml` 只允许经审查的显式编辑。脚本踩过的坑(已内建处理,手排时有用):
+   - profile 引用的 tarball 放在 **workspace 之外**(`~/.dsh-official/tarballs/`)——放在本仓库里的 tarball 会被 pnpm 按"名+版本匹配 workspace 包"转成 `link:` 软链,tarball 化形同虚设
+   - 家族边(local-agent core/companion)在包未发布时需要 profile `pnpm-workspace.yaml` 的 `overrides` 把每个 `@khorsheed/*` 名字指到对应 `file:` tgz,否则 pnpm 去 registry 解析直接 404
+   - 行为异常(装了还是软链/旧内容)时:**`rm -rf node_modules pnpm-lock.yaml` 后重装**——残留的 pnpm workspace 状态文件会把 link: 时代的解析行为还魂;同名同版本的 tgz 内容变了也可能吃到解包缓存
    - 打包前对刚改过源码的包做 **clean rebuild**(`rm -rf lib && build`)——tsc/tsdown 的增量残留会让产物引用不存在的文件(pack-dist 的 stale-types 检查只挡一类)
-4. 凭证 + 闸:`dsh-ankh-guard record build --repo <harness 检出>` → `dsh-ankh-guard preflight --profile web`(**FAIL 即停,永不绕过**——它拦下过 `!!js` 启动即崩和 loader 行 id 撞车)
-5. 按闸重启:`dsh-ankh-guard schedule-exit --port 3080 --delay-ms <ms> --profile web --repo <harness 检出> --initiator <你的 id>`,盯 watchdog 日志到 `canary PASS`,端口回 200
-6. 公开通报:什么插件、什么版本、什么变更,让其他 agent 知道 3080 刚变过
+   - 多人并行 install 会把官方包解析出多个 peer 变体,模块增强(SlotMap/LocaleNamespaceMap)挂到不同实例上,报 `constraint 'never'` 类错误——`pnpm dedupe` 收敛即可
 
 ## 变更驱动模型:流程不是审批
 

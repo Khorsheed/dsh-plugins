@@ -56,6 +56,7 @@ A second whole-tree checker, `pnpm check:plugins` (`scripts/check-plugin-indepen
 
 ## Ops
 
+- Shipping a plugin to prod 3080 goes through the self-serve flow: `pnpm deploy:3080 --package <dir>` (scripts/deploy-3080.mts) — it runs the whole acceptance gate (build/test → pack-dist → profile refresh → credential → preflight → gated restart with canary watch) and prints the announcement. Any agent may run it; only the flow writes the profile.
 - The prod instance is watchdog-supervised (ankh-guard). Restarts are gated by `dsh preflight --profile web` — a FAIL blocks the restart; never bypass the gate.
 - ankh-guard binds restart credentials to git HEAD: run `build + test` before any restart-triggering change so the credential is green.
 - The watchdog can roll the *checkout* back on repeated boot failure. Keep the harness checkout it guards disposable (see the deploy/tracking split in the consolidation note) — uncommitted work in a guarded checkout is at risk.
