@@ -14,7 +14,7 @@ The lifecycle and its rules live in [docs/ops.md](../../../docs/ops.md). The loa
 
 - **Three environments with tightening delivery**: `link:` only for throwaway dev instances; **prod 3080 accepts tarballs only** (entering prod is an explicit version decision, never the state of someone's `lib/`); npm follows after prod runs clean.
 - **A six-step acceptance gate** for every profile change: green build/test/hygiene → pack-dist tarball (previous known-good kept in `dist-legacy/` for minute-level rollback) → profile refresh → credential + preflight (never bypassed) → gated restart with canary watch → public announcement.
-- **Flow, not approval**: any developer may drive a change into prod, but only by running the whole flow — the profile is written by the flow, never by hand. The instance guardian (the kimi-code agent) watches topology/credentials/drift and cleans up anomalies; it is not the sole driver.
+- **Flow, not approval**: any developer may drive a change into prod, but only by running the whole flow — the profile is written by the flow, never by hand. The instance guardian (the kimi-code agent) watches topology/credentials/drift and cleans up anomalies; it is not the sole driver. The flow is executable: `pnpm deploy:3080 --package <dir>` (scripts/deploy-3080.mts) runs the six-step gate end to end, prints the announcement, and refuses first-time profile additions.
 - **Independent release cadence** (no lockstep), with the local-agent family co-released in dependency order, and the planned 整合包 as a **thin meta-package**: dependencies only, no bundle patch of its own, so children self-mount and stay individually add/removable inside the bundle.
 
 ## Alternatives considered
