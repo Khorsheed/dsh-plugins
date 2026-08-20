@@ -51,6 +51,35 @@ function textOf(blocks: readonly { readonly text?: string }[] | undefined): stri
   return blocks.map(block => block.text ?? '').join('')
 }
 
+/** The model-supplied command of a background bash call, when the log kept it. */
+function commandOf(args: Record<string, unknown> | undefined): string | undefined {
+  const command = args?.['command']
+  return typeof command === 'string' && command.length > 0 ? command : undefined
+}
+
+/** One-line clip with an ellipsis for long commands in row titles. */
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`
+}
+
+/**
+ * Multi-line command block for the expandable start-row detail: the command,
+ * workdir, and description exactly as the model issued them, so the drawer
+ * shows what actually ran even though the background ack text carries none of
+ * it. Empty when the call arguments were not logged.
+ */
+function commandDetail(args: Record<string, unknown> | undefined): string {
+  if (args === undefined) return ''
+  const lines: string[] = []
+  const command = commandOf(args)
+  if (command !== undefined) lines.push(`$ ${command}`)
+  const workdir = args['workdir']
+  if (typeof workdir === 'string' && workdir.length > 0) lines.push(`workdir: ${workdir}`)
+  const description = args['description']
+  if (typeof description === 'string' && description.length > 0) lines.push(`description: ${description}`)
+  return lines.join('\n')
+}
+
 function formatTime(time: number): string {
   const date = new Date(time)
   const pad = (n: number): string => String(n).padStart(2, '0')
@@ -121,13 +150,21 @@ export function buildJobTrajectory(
       const text = textOf(resultBlock?.content) || textOf(data.content)
       const fallback = jsonArgs(call.args)
       if (call.name === 'bash') {
-        if (text.includes(jobId)) {
+        const command = commandOf(call.args)
+        // The paired ack carries the job id; a missing or empty ack (page
+        // split, compaction) still mints the row when the call was provably
+        // a background start of this job.
+        if (text.includes(jobId) || text.length === 0) {
+          const block = commandDetail(call.args)
+          const detail = [block, text].filter(part => part.length > 0).join('\n')
           entries.push({
             seq: raw.seq,
             time: raw.time,
             kind: 'start',
-            title: `${formatTime(raw.time)} ${jobId} started`,
-            detail: text.length > 0 ? text : fallback,
+            title: command === undefined
+              ? `${formatTime(raw.time)} ${jobId} started`
+              : `${formatTime(raw.time)} ${jobId} started · ${clip(command, 80)}`,
+            detail: detail.length > 0 ? detail : fallback,
           })
         }
       } else if (call.entry !== undefined && text.length > 0) {

@@ -27,7 +27,10 @@ describe('parseTaskPilotCommand', () => {
 describe('buildJobTrajectory', () => {
   const logs = [
     event('tool/call', 1, 1000, {
-      callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'pnpm build', run_in_background: true }),
+      callId: 'c1', name: 'bash',
+      arguments: JSON.stringify({
+        command: 'pnpm build', description: 'Build the workspace', workdir: '/workspace', run_in_background: true,
+      }),
     }),
     event('tool/result', 2, 1000, {
       message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'job started: bash-1' }] }] },
@@ -53,6 +56,48 @@ describe('buildJobTrajectory', () => {
     expect(entries[0]?.title).toContain('bash-1 started')
     expect(entries[1]?.detail).toContain('compiling...')
     expect(entries[3]?.detail).toContain('finished [status: killed]')
+  })
+
+  it('shows the issued command in the start row title and detail', () => {
+    const entries = buildJobTrajectory(logs, 'bash-1')
+    const start = entries[0]
+    expect(start?.title).toContain('bash-1 started · pnpm build')
+    expect(start?.detail).toContain('$ pnpm build')
+    expect(start?.detail).toContain('workdir: /workspace')
+    expect(start?.detail).toContain('description: Build the workspace')
+    // The ack text is still present under the command block.
+    expect(start?.detail).toContain('job started: bash-1')
+  })
+
+  it('mints the start row from the call args when the paired ack is missing', () => {
+    const ackless = [
+      event('tool/call', 1, 1000, {
+        callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'sleep 60', run_in_background: true }),
+      }),
+      event('tool/result', 2, 1000, {
+        message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [] }] },
+      }),
+    ]
+    const entries = buildJobTrajectory(ackless, 'bash-1')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.kind).toBe('start')
+    expect(entries[0]?.detail).toContain('$ sleep 60')
+  })
+
+  it('clips a long command in the title but keeps it whole in the detail', () => {
+    const command = 'pnpm build --filter @khorsheed/dsh-taskpilot --reporter append-only --stream'.repeat(2)
+    const long = [
+      event('tool/call', 1, 1000, {
+        callId: 'c1', name: 'bash', arguments: JSON.stringify({ command, run_in_background: true }),
+      }),
+      event('tool/result', 2, 1000, {
+        message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'job started: bash-1' }] }] },
+      }),
+    ]
+    const entries = buildJobTrajectory(long, 'bash-1')
+    expect(entries[0]?.title).toContain('…')
+    expect(entries[0]?.title.length).toBeLessThan(command.length)
+    expect(entries[0]?.detail).toContain(command)
   })
 
   it('ignores unrelated jobs and unrelated events', () => {
