@@ -38,7 +38,8 @@ describe('codex-cli-provider member bridge injection', () => {
   const SOCKET = '/tmp/codex-home/member-bridge.sock'
   const EXPECTED_OVERRIDE = 'mcp_servers.dsh-member-token-xy={'
     + 'command="node",args=["/bridge.js"],'
-    + `env={DSH_MEMBER_SOCKET="${SOCKET}",DSH_MEMBER_TOKEN="token-xyz-1234"}`
+    + `env={DSH_MEMBER_SOCKET="${SOCKET}",DSH_MEMBER_TOKEN="token-xyz-1234"},`
+    + 'default_tools_approval_mode="approve"'
     + '}'
 
   function memberRegistry() {
