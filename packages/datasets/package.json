@@ -51,7 +51,9 @@
   "files": [
     "lib",
     "lib/typert.host.d.ts",
+    "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.js",
     "cordis.patch.yml"
   ],
   "license": "MIT",
