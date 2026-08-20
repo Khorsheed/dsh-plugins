@@ -29,9 +29,11 @@ async function boot() {
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
-  expect(tools.register).toHaveBeenCalledTimes(1)
-  const tool = tools.register.mock.calls[0]![0] as ToolDefinition
-  return { ctx, service, tool }
+  expect(tools.register).toHaveBeenCalledTimes(2)
+  const registered = tools.register.mock.calls.map(call => call[0] as ToolDefinition)
+  const tool = registered.find(entry => entry.name === 'room_invite')!
+  const taskTool = registered.find(entry => entry.name === 'room_task')!
+  return { ctx, service, tool, taskTool }
 }
 
 /** A minimal exec context: the calling agent driving `session`. */
@@ -110,5 +112,122 @@ describe('room_invite tool (real composition)', () => {
     expect(duplicate).toContain('retry')
     const invalid = await call(tool, { provider: 'kimi-cli', name: 'a b', instructions: 'x' }, execFor(room))
     expect(invalid).toContain('invalid-name')
+  })
+})
+
+describe('room_task tool (real composition)', () => {
+  /** Boot a room with ada on the roster; return the board ids as they appear. */
+  async function bootRoom() {
+    const { ctx, service, taskTool } = await boot()
+    const { sessionId } = await service.createRoom({})
+    const room = ctx.sessions.get(sessionId)!
+    await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
+    return { ctx, service, taskTool, sessionId, room }
+  }
+
+  it('registers with the model-facing name, the action enum, and the shared-board wording', async () => {
+    const { taskTool } = await boot()
+    expect(taskTool.name).toBe('room_task')
+    // The description teaches the public/private split: the board is shared,
+    // the agent's own todo tool stays the private plan.
+    expect(taskTool.description).toContain('SHARED')
+    expect(taskTool.description).toContain('todo')
+    const parameters = taskTool.parameters as {
+      properties: Record<string, { enum?: readonly string[] }>
+    }
+    expect(Object.keys(parameters.properties)).toEqual(['action', 'title', 'member', 'taskId', 'blockedBy'])
+    expect(parameters.properties['action']!.enum).toEqual(['add', 'close', 'update'])
+  })
+
+  it('rejects a non-agent caller and a non-room session with readable text', async () => {
+    const { ctx, taskTool } = await boot()
+    expect(await call(taskTool, { action: 'add', title: 'x', member: 'main' }, execFor(undefined)))
+      .toContain('requires a calling agent')
+    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
+    expect(await call(taskTool, { action: 'add', title: 'x', member: 'main' }, execFor(plain)))
+      .toContain('not a room')
+  })
+
+  it('add lands a pending task through the same host function as the UI, and returns the id', async () => {
+    const { service, taskTool, sessionId, room } = await bootRoom()
+    const text = await call(taskTool, { action: 'add', title: '写发布稿', member: 'main', blockedBy: 'ada' }, execFor(room))
+    expect(text).toContain('写发布稿')
+    expect(text).toContain('main')
+    const id = /id: ([0-9a-f-]{36})/.exec(text)?.[1]
+    expect(id).toBeDefined()
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { tasks: [{ id, member: 'main', title: '写发布稿', status: 'pending', blockedBy: 'ada' }] },
+    })
+  })
+
+  it('add requires title+member and rejects off-roster names with the roster to retry with', async () => {
+    const { taskTool, room } = await bootRoom()
+    expect(await call(taskTool, { action: 'add', member: 'main' }, execFor(room)))
+      .toContain('requires both title and member')
+    const unknown = await call(taskTool, { action: 'add', title: 'x', member: 'cathy' }, execFor(room))
+    expect(unknown).toContain('member-not-found')
+    expect(unknown).toContain('main')
+    expect(unknown).toContain('ada')
+    expect(unknown).toContain('Retry')
+    const blockedBy = await call(taskTool, { action: 'add', title: 'x', member: 'main', blockedBy: 'cathy' }, execFor(room))
+    expect(blockedBy).toContain('member-not-found')
+    expect(blockedBy).toContain('ada')
+  })
+
+  it('close marks an open task done and refuses unknown/closed ids with self-correcting text', async () => {
+    const { service, taskTool, sessionId, room } = await bootRoom()
+    const added = await service.addTask({ sessionId, member: 'ada', title: '补测试' })
+    if (!added.ok) throw new Error('addTask failed')
+    const text = await call(taskTool, { action: 'close', taskId: added.value.id }, execFor(room))
+    expect(text).toContain('done')
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({ ok: true, value: { tasks: [{ id: added.value.id, status: 'done' }] } })
+
+    const again = await call(taskTool, { action: 'close', taskId: added.value.id }, execFor(room))
+    expect(again).toContain('task-closed')
+    expect(again).toContain('already closed')
+
+    const open = await service.addTask({ sessionId, member: 'main', title: '出方案' })
+    if (!open.ok) throw new Error('addTask failed')
+    const missing = await call(taskTool, { action: 'close', taskId: 'no-such-id' }, execFor(room))
+    expect(missing).toContain('task-not-found')
+    // The open-task list lets the model retry with a real id.
+    expect(missing).toContain(open.value.id)
+    expect(missing).toContain('出方案')
+    expect(missing).toContain('Retry')
+  })
+
+  it('update renames, re-targets and clears blockedBy, and rejects empty edits', async () => {
+    const { service, taskTool, sessionId, room } = await bootRoom()
+    const added = await service.addTask({ sessionId, member: 'ada', title: '旧标题' })
+    if (!added.ok) throw new Error('addTask failed')
+
+    const renamed = await call(taskTool, {
+      action: 'update', taskId: added.value.id, title: '新标题', blockedBy: 'main',
+    }, execFor(room))
+    expect(renamed).toContain('updated')
+    let state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { tasks: [{ id: added.value.id, title: '新标题', blockedBy: 'main', status: 'pending' }] },
+    })
+
+    // null clears the wait.
+    await call(taskTool, { action: 'update', taskId: added.value.id, blockedBy: null }, execFor(room))
+    state = await service.getState({ sessionId })
+    expect(state).toMatchObject({ ok: true, value: { tasks: [{ id: added.value.id }] } })
+    expect((state as { value: { tasks: { blockedBy?: string }[] } }).value.tasks[0]!.blockedBy).toBeUndefined()
+
+    const nothing = await call(taskTool, { action: 'update', taskId: added.value.id }, execFor(room))
+    expect(nothing).toContain('nothing-to-update')
+    const blank = await call(taskTool, { action: 'update', taskId: added.value.id, title: '  ' }, execFor(room))
+    expect(blank).toContain('empty-text')
+
+    // A closed task takes no edits.
+    await service.closeTask({ sessionId, taskId: added.value.id })
+    const closed = await call(taskTool, { action: 'update', taskId: added.value.id, title: '再改' }, execFor(room))
+    expect(closed).toContain('task-closed')
   })
 })

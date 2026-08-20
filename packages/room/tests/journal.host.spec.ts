@@ -223,6 +223,19 @@ describe('replay (pure journal fold)', () => {
     expect(taskProgress(state.tasks)).toEqual({ done: 2, total: 3 })
     expect(taskProgress([])).toEqual({ done: 0, total: 0 })
   })
+
+  it('folds task-edited: title renames, blockedBy re-targets, and null clears the wait', () => {
+    resetSeq()
+    const state = replay([
+      ev('room/task-added', { id: 't1', member: 'ada', title: '旧标题', status: 'pending', blockedBy: 'bill' }),
+      ev('room/task-edited', { id: 't1', title: '新标题', blockedBy: 'main' }),
+      ev('room/task-edited', { id: 'ghost', title: '不存在' }),
+      ev('room/task-edited', { id: 't1', blockedBy: null }),
+    ])
+    expect(state.tasks).toEqual([
+      { id: 't1', member: 'ada', title: '新标题', status: 'pending', updatedAt: 1000 },
+    ])
+  })
 })
 
 describe('previousCursor', () => {

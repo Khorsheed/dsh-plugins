@@ -1,6 +1,6 @@
 /**
- * room host half: the `room` Typert Remote service plus the `room_invite`
- * model tool. The room's entire state is the session's `room/*` custom-event
+ * room host half: the `room` Typert Remote service plus the `room_invite` /
+ * `room_task` model tools. The room's entire state is the session's `room/*` custom-event
  * journal (log-only events — persistence and reload-replay come free, the
  * model never sees them, and harnesses without this plugin replay the session
  * safely); every read folds the journal through the pure replay, and every
@@ -37,7 +37,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
-import { roomInviteTool } from './tool.ts'
+import { roomInviteTool, roomTaskTool } from './tool.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -54,6 +54,7 @@ import type {
   RoomRemoveMemberRequest, RoomRemoveMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
+  RoomUpdateTaskRequest, RoomUpdateTaskResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -124,6 +125,7 @@ export class RoomService extends TypertRemoteService {
     // losing only the model-facing invitation path, never the boot.
     this.ctx.inject(['tools'], (toolsCtx) => {
       toolsCtx.effect(() => toolsCtx.tools.register(roomInviteTool(this)), 'room: room_invite tool')
+      toolsCtx.effect(() => toolsCtx.tools.register(roomTaskTool(this)), 'room: room_task tool')
     })
   }
 
@@ -570,6 +572,42 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'task-closed' } }
     }
     loaded.session.append('room/task-updated', { id: task.id, status: request.status ?? 'done' })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: { id: task.id } }
+  }
+
+  /**
+   * Edit an open task's title and/or blockedBy (the `room_task` tool's update
+   * action; journaled as `room/task-edited`, status changes stay on
+   * closeTask). Host method only — the capsule UI edits nothing but the goal.
+   * `blockedBy: null` clears the wait; a string must resolve against the
+   * roster. A closed task takes no edits.
+   * @param request - room session, task id, and at least one edited field.
+   * @returns the edited task's id, or a rejection.
+   */
+  async updateTask(request: RoomUpdateTaskRequest): Promise<RoomUpdateTaskResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const task = loaded.state.tasks.find(entry => entry.id === request.taskId)
+    if (task === undefined) return { ok: false, error: { code: 'task-not-found' } }
+    if (task.status === 'done' || task.status === 'cancelled') {
+      return { ok: false, error: { code: 'task-closed' } }
+    }
+    if (request.title === undefined && request.blockedBy === undefined) {
+      return { ok: false, error: { code: 'nothing-to-update' } }
+    }
+    if (request.title !== undefined && request.title.trim() === '') {
+      return { ok: false, error: { code: 'empty-text' } }
+    }
+    if (typeof request.blockedBy === 'string'
+      && !loaded.state.members.some(member => member.name === request.blockedBy)) {
+      return { ok: false, error: { code: 'member-not-found' } }
+    }
+    loaded.session.append('room/task-edited', {
+      id: task.id,
+      ...request.title === undefined ? {} : { title: request.title.trim() },
+      ...request.blockedBy === undefined ? {} : { blockedBy: request.blockedBy },
+    })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { id: task.id } }
   }

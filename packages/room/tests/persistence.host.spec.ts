@@ -99,6 +99,7 @@ describe('room journal persistence', () => {
       session.append('room/dispatch', { targets: ['ada'], text: '出方案' })
       session.append('room/task-added', { id: 't1', member: 'ada', title: '出方案', status: 'in_progress' })
       session.append('room/task-updated', { id: 't1', status: 'done' })
+      session.append('room/task-edited', { id: 't1', title: '出方案 v2' })
       session.append('room/speech', { member: 'ada', text: '方案 A' })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })

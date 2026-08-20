@@ -165,6 +165,18 @@ export interface RoomTaskUpdatedEvent {
   readonly status: 'in_progress' | 'done' | 'cancelled'
 }
 
+/**
+ * A task's editable fields changed (the `room_task` tool's `update` action):
+ * a title rename and/or a `blockedBy` re-target (`null` clears the wait).
+ * Status changes stay on `room/task-updated`; closed tasks take no edits.
+ */
+export interface RoomTaskEditedEvent {
+  readonly id: string
+  readonly title?: string
+  /** New blocking member; explicit null clears the wait. */
+  readonly blockedBy?: string | null
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -192,6 +204,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/task-added': RoomTaskAddedEvent
     /** Task board: a task changed status. */
     'room/task-updated': RoomTaskUpdatedEvent
+    /** Task board: a task's title/blockedBy was edited (the room_task tool's update). */
+    'room/task-edited': RoomTaskEditedEvent
     /** Goal: the room's goal was set (or cleared). */
     'room/goal': RoomGoalEvent
   }
@@ -498,6 +512,27 @@ export interface RoomCloseTaskRequest {
 
 /** closeTask outcome. */
 export type RoomCloseTaskResult =
+  | { readonly ok: true; readonly value: { readonly id: string } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/**
+ * updateTask request: edit an open task's title and/or blockedBy (the
+ * `room_task` tool's update action — host method only, not on the Remote
+ * surface; the capsule UI edits nothing but the goal).
+ */
+export interface RoomUpdateTaskRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** The task to edit. */
+  readonly taskId: string
+  /** New title (non-blank when present). */
+  readonly title?: string
+  /** New blocking member (must be on the roster); explicit null clears the wait. */
+  readonly blockedBy?: string | null
+}
+
+/** updateTask outcome. */
+export type RoomUpdateTaskResult =
   | { readonly ok: true; readonly value: { readonly id: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 

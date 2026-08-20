@@ -46,6 +46,7 @@ export const ROOM_EVENT_TYPES = [
   'room/relay-resolved',
   'room/task-added',
   'room/task-updated',
+  'room/task-edited',
   'room/goal',
 ] as const
 
@@ -196,6 +197,23 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const updated: RoomTask = { ...task, status: event.data.status, updatedAt: event.time }
         taskById.set(updated.id, updated)
         tasks[tasks.indexOf(task)] = updated
+        break
+      }
+      case 'room/task-edited': {
+        const task = taskById.get(event.data.id)
+        if (task === undefined) break
+        // An explicit null blockedBy CLEARS the wait: rebuild without the key
+        // (exactOptionalPropertyTypes forbids writing undefined into it).
+        const base: RoomTask = event.data.blockedBy === null
+          ? (({ blockedBy: _cleared, ...rest }: RoomTask): RoomTask => rest)(task)
+          : { ...task, ...event.data.blockedBy === undefined ? {} : { blockedBy: event.data.blockedBy } }
+        const edited: RoomTask = {
+          ...base,
+          ...event.data.title === undefined ? {} : { title: event.data.title },
+          updatedAt: event.time,
+        }
+        taskById.set(edited.id, edited)
+        tasks[tasks.indexOf(task)] = edited
         break
       }
       case 'room/goal': {
