@@ -73,6 +73,11 @@ const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/mission',
+    name: '@khorsheed/dsh-mission',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/local-agent',
     name: '@khorsheed/dsh-local-agent',
     hostConfigs: ['tsconfig.host.json'],
@@ -156,6 +161,15 @@ async function buildOverlay(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // GEN_TYPERT_ONLY=<name,name> restricts generation to a subset — one
+  // package's in-flight remote-surface breakage must not block every other
+  // package's build in a multi-agent repo (observed: mission WIP failing
+  // message-tools' gen-typert). Default: all registered typert packages.
+  const only = process.env['GEN_TYPERT_ONLY']?.split(',').map(s => s.trim()).filter(Boolean)
+  const selected = only !== undefined && only.length > 0
+    ? TYPERT_PACKAGES.filter(pkg => only.includes(pkg.name))
+    : TYPERT_PACKAGES
+  if (selected.length === 0) throw new Error(`gen-typert: GEN_TYPERT_ONLY matched no registered package`)
   const generatorModule = join(harness, 'packages/typert/generator/src/workspace.ts')
   if (!existsSync(generatorModule)) {
     throw new Error(`gen-typert: harness checkout not found at ${harness} — set DSH_HARNESS to a deepseek-harness clone`)
@@ -166,8 +180,8 @@ async function main(): Promise<void> {
       WorkspaceTypertGenerator: new (root: string) => WorkspaceGenerator
     }
     const generator = new WorkspaceTypertGenerator(overlay)
-    const artifacts = generator.generate(TYPERT_PACKAGES.map(pkg => pkg.name), ['host'])
-    for (const pkg of TYPERT_PACKAGES) {
+    const artifacts = generator.generate(selected.map(pkg => pkg.name), ['host'])
+    for (const pkg of selected) {
       const own = artifacts.filter(artifact => artifact.package === pkg.name)
       if (own.length === 0) throw new Error(`gen-typert: no host artifact generated for ${pkg.name}`)
       const out = join(repoRoot, pkg.dir, 'lib')
