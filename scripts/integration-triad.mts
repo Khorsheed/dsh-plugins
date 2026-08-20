@@ -378,3 +378,148 @@ export async function runTriad(image: string): Promise<TriadResult> {
     throw error
   }
 }
+
+/* ------------------------------------------------------------------------ */
+/* Failure paths (second contact round): what only failures reveal.          */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Failure-path template: a `failed` terminal reachable from `working`,
+ * gated by an ATTESTED guard (teardown after failure is an attested human
+ * decision), and `failed` itself is the releasable state — a failed cell
+ * still holds a resource that must be destroyable.
+ */
+export const TRIAD_FAILURE_TEMPLATE = {
+  name: 'triad-failure',
+  states: ['pending', 'ws-ready', 'working', 'failed'],
+  transitions: [
+    { from: 'pending', to: 'ws-ready' },
+    { from: 'ws-ready', to: 'working' },
+    { from: 'working', to: 'failed', guard: { type: 'attested', key: 'teardown-approved' } },
+  ],
+  releasableStates: ['failed'],
+  missions: [{ id: 'cell-f1', title: 'failure cell', labels: { task: 't1', player: 'driver', rep: '1' } }],
+} as const
+
+export const TRIAD_FAILURE_RUN_ID = 'triad-failure'
+export const TRIAD_FAILURE_MISSION_ID = 'cell-f1'
+
+/** What the failure chains produced — the spec's assertion surface. */
+export interface TriadFailureEvidence {
+  /** populate against a nonexistent source fails loud. */
+  populateError: string
+  /** …but the unit stays TRACKED (visible in status), never silently leaked. */
+  unitStillListed: boolean
+  containerPresentAfterPopulateFailure: boolean
+  /** lab never moves mission state: still `working`, no phantom history. */
+  missionStateAfterPopulateFailure: string
+  historyLengthAfterFailure: number
+  /** The gate refuses release while `working` (not in releasableStates). */
+  prematureReleaseError: string
+  /** A unit bound to an UNKNOWN mission: acquire warns, release fails closed. */
+  ghostAcquireWarned: boolean
+  ghostReleaseError: string
+  /** …and force does NOT bypass a gate whose query errors. */
+  ghostReleaseForceError: string
+  /** Attested teardown: attest → transition to failed → release destroys. */
+  teardown: { stateAfterAttest: string; releasable: boolean; containerGone: boolean }
+  warnings: string[]
+}
+
+export interface TriadFailureResult {
+  evidence: TriadFailureEvidence
+  cleanup: () => Promise<void>
+}
+
+/**
+ * Run the failure chains (lab ↔ mission; no datasets leg): acquire succeeds,
+ * populate fails; an unknown-mission binding probes the fail-closed gate;
+ * the attested-teardown path shows how a failed cell is legitimately
+ * released.
+ * @param image - container image settled by {@link probeDocker}.
+ * @returns evidence plus a cleanup handle.
+ */
+export async function runTriadFailures(image: string): Promise<TriadFailureResult> {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'dsh-triad-fail-'))
+  const log = (step: string): void => console.log(`[triad-fail] ${step}`)
+  const containers: string[] = []
+
+  const cleanup = async (): Promise<void> => {
+    for (const name of containers) {
+      try {
+        execFileSync('docker', ['rm', '-f', name], { stdio: ['ignore', 'pipe', 'pipe'] })
+      } catch { /* already gone */ }
+    }
+    rmSync(tempRoot, { recursive: true, force: true })
+  }
+
+  try {
+    const mission = new MissionService(join(tempRoot, 'mission'))
+    await mission.runCreate({
+      template: TRIAD_FAILURE_TEMPLATE,
+      runId: TRIAD_FAILURE_RUN_ID,
+      meta: { scene: 'integration-triad-failures' },
+      by: 'driver',
+    })
+    const warnings: string[] = []
+    const lab = new LabService({
+      providers: { docker: new DockerProvider(nodeExec()) },
+      maxConcurrentUnits: 4,
+      getMission: () => mission,
+      warn: message => warnings.push(message),
+    })
+
+    // ── Chain 1: acquire OK, populate FAILS ─────────────────────────────
+    log('chain 1: acquire succeeds, populate fails against a bogus source')
+    const unit = await lab.acquire({ image, missionId: TRIAD_FAILURE_MISSION_ID, runId: TRIAD_FAILURE_RUN_ID })
+    containers.push(unit.resource)
+    await mission.transition(TRIAD_FAILURE_MISSION_ID, 'ws-ready', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    await mission.transition(TRIAD_FAILURE_MISSION_ID, 'working', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    const populateError = await captureError(() => lab.populate(unit.id, { source: join(tempRoot, 'no-such-dir') }))
+    log(`populate refused: ${populateError}`)
+    const unitStillListed = (await lab.status(unit.id)).length === 1
+    const containerPresentAfterPopulateFailure = containerExists(unit.resource)
+    const after = mission.get(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID).mission.attempts[0] as AttemptRecord
+    const prematureReleaseError = await captureError(() => lab.release(unit.id))
+    log(`release while working refused: ${prematureReleaseError}`)
+
+    // ── Chain 2: a unit bound to an UNKNOWN mission — the gate query fails ──
+    log('chain 2: acquire with an unknown missionId; release must fail closed')
+    const ghost = await lab.acquire({ image, missionId: 'ghost', runId: TRIAD_FAILURE_RUN_ID })
+    containers.push(ghost.resource)
+    const ghostAcquireWarned = warnings.some(w => w.includes('ghost'))
+    const ghostReleaseError = await captureError(() => lab.release(ghost.id))
+    const ghostReleaseForceError = await captureError(() => lab.release(ghost.id, { force: true }))
+    log(`ghost release refused (fail closed): ${ghostReleaseError}; force also refused: ${ghostReleaseForceError}`)
+
+    // ── Chain 3: attested teardown of the failed cell ────────────────────
+    log('chain 3: attest teardown-approved → failed → release destroys the container')
+    await mission.attest(TRIAD_FAILURE_MISSION_ID, 'teardown-approved', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    await mission.transition(TRIAD_FAILURE_MISSION_ID, 'failed', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    const stateAfterAttest = (mission.get(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID).mission.attempts[0] as AttemptRecord).state
+    const releasable = mission.isReleasable(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID)
+    await lab.release(unit.id)
+    const containerGone = !containerExists(unit.resource)
+    containers.splice(containers.indexOf(unit.resource), 1)
+
+    return {
+      evidence: {
+        populateError,
+        unitStillListed,
+        containerPresentAfterPopulateFailure,
+        missionStateAfterPopulateFailure: after.state,
+        historyLengthAfterFailure: after.history.length,
+        prematureReleaseError,
+        ghostAcquireWarned,
+        ghostReleaseError,
+        ghostReleaseForceError,
+        teardown: { stateAfterAttest, releasable, containerGone },
+        warnings,
+      },
+      cleanup,
+    }
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
+}

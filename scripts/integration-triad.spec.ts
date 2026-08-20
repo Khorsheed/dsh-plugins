@@ -9,7 +9,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  probeDocker, runTriad, TRIAD_MISSION_ID, TRIAD_RUN_ID, type TriadResult,
+  probeDocker, runTriad, runTriadFailures, TRIAD_MISSION_ID, TRIAD_RUN_ID,
+  type TriadFailureResult, type TriadResult,
 } from './integration-triad.mts'
 
 const docker = probeDocker()
@@ -134,5 +135,55 @@ describe.runIf(docker.ok)('datasets → lab → mission integration (first half,
 
   it('lab emitted no degradation warnings on the happy path', () => {
     expect(ev().warnings).toEqual([])
+  })
+})
+
+describe.runIf(docker.ok)('lab ↔ mission failure paths (second contact round)', () => {
+  let result: TriadFailureResult | undefined
+  beforeAll(async () => {
+    result = await runTriadFailures(docker.image as string)
+  }, 300_000)
+  afterAll(async () => {
+    await result?.cleanup()
+  }, 60_000)
+
+  const ev = (): TriadFailureResult['evidence'] => {
+    if (result === undefined) throw new Error('the failure chains did not complete — see the beforeAll failure')
+    return result.evidence
+  }
+
+  it('populate failure fails loud AND the unit stays tracked (no silent leak)', () => {
+    const { populateError, unitStillListed, containerPresentAfterPopulateFailure } = ev()
+    expect(populateError).toMatch(/docker cp failed/)
+    // The unit is neither lost nor silently destroyed: it remains listed and
+    // its container exists — teardown is an orchestrator decision, not lab's.
+    expect(unitStillListed).toBe(true)
+    expect(containerPresentAfterPopulateFailure).toBe(true)
+  })
+
+  it('a failed populate never moves mission state and leaves no phantom history', () => {
+    const { missionStateAfterPopulateFailure, historyLengthAfterFailure } = ev()
+    expect(missionStateAfterPopulateFailure).toBe('working')
+    // pending→ws-ready, ws-ready→working — and nothing else.
+    expect(historyLengthAfterFailure).toBe(2)
+  })
+
+  it('the gate refuses release while the mission is not in a releasable state', () => {
+    expect(ev().prematureReleaseError).toMatch(/not in a releasable state/)
+  })
+
+  it('a unit bound to an unknown mission: acquire warns, release fails CLOSED on the query error', () => {
+    const { ghostAcquireWarned, ghostReleaseError, ghostReleaseForceError } = ev()
+    expect(ghostAcquireWarned).toBe(true)
+    expect(ghostReleaseError).toMatch(/failed closed/)
+    // force is not a bypass when the gate exists but its query errors.
+    expect(ghostReleaseForceError).toMatch(/failed closed/)
+  })
+
+  it('attested teardown: attest → failed (releasable) → release destroys the container', () => {
+    const { teardown } = ev()
+    expect(teardown.stateAfterAttest).toBe('failed')
+    expect(teardown.releasable).toBe(true)
+    expect(teardown.containerGone).toBe(true)
   })
 })

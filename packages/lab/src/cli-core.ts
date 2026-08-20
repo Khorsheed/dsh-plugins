@@ -36,10 +36,10 @@ Global: --max-concurrent N (acquire ceiling, default 4)
 Exit codes: 0 ok, 1 failure/refused, 2 usage.
 
 Mission integration (when the dsh-mission bin is on PATH): release gates on
-\`dsh-mission is-releasable\` (exit 0/1, anything else fails closed) and verify
-annotates the verbatim outcome into the 'lab' namespace. Refs / artifacts /
-checkpoints register only through the in-host service face (ctx.lab) — in CLI
-mode those writes are skipped with a warning.
+\`dsh-mission is-releasable\` (exit 0/1, anything else fails closed), and
+refs / artifacts / checkpoints / annotations register through the mission
+bin's verbs (set-refs / add-artifact / add-checkpoint / annotate). Without
+the bin, registration warns and skips, and release needs --force.
 `
 
 /** A parsed command line: repeated flags collect, booleans are known per verb. */
@@ -144,36 +144,46 @@ function childProcessExec(): Exec {
 }
 
 /**
- * The CLI's mission face over the `dsh-mission` bin. Only the verbs the
- * mission CLI actually exposes are wired (annotate, is-releasable); the rest
- * warn once and skip — full registration parity lives in the in-host service
- * face.
+ * The CLI's mission face over the `dsh-mission` bin. Every verb the mission
+ * CLI exposes is wired: set-refs / add-artifact / add-checkpoint / annotate /
+ * is-releasable. Exit-code contract (mission side): 0 ok, anything else is a
+ * failure with readable stderr — thrown here so LabService's registration
+ * discipline (warn and skip) applies uniformly.
  */
-function cliMissionFace(exec: Exec, io: CliIo): MissionFace {
-  const warned = new Set<string>()
-  const warnOnce = (what: string): void => {
-    if (warned.has(what)) return
-    warned.add(what)
-    io.stderr(`lab: CLI mode cannot register ${what} with mission (the dsh-mission bin exposes no such verb) — skipped; use the in-host ctx.lab face for full registration\n`)
+function cliMissionFace(exec: Exec): MissionFace {
+  const checked = async (argv: string[], what: string): Promise<void> => {
+    const result = await exec(argv)
+    if (result.exitCode !== 0) {
+      throw new Error(`dsh-mission ${what} failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
+    }
   }
   return {
-    setRefs: () => {
-      warnOnce('refs')
-      return Promise.resolve()
+    async setRefs(missionId, refs, options) {
+      const argv = ['dsh-mission', 'set-refs', missionId]
+      if (refs.resource !== undefined) argv.push('--resource', refs.resource)
+      if (refs.fingerprint !== undefined) argv.push('--fingerprint', refs.fingerprint)
+      for (const session of refs.sessions ?? []) argv.push('--session', session)
+      if (options?.runId !== undefined) argv.push('--run', options.runId)
+      await checked(argv, 'set-refs')
     },
-    addArtifact: () => {
-      warnOnce('artifacts')
-      return Promise.resolve({ added: false })
+    async addArtifact(missionId, artifact, options) {
+      const argv = ['dsh-mission', 'add-artifact', missionId, '--path', artifact.path, '--kind', artifact.kind]
+      if (options?.runId !== undefined) argv.push('--run', options.runId)
+      await checked(argv, 'add-artifact')
+      return { added: true }
     },
-    addCheckpoint: () => {
-      warnOnce('checkpoints')
-      return Promise.resolve({ added: false })
+    async addCheckpoint(missionId, checkpoint, options) {
+      const argv = ['dsh-mission', 'add-checkpoint', missionId, '--name', checkpoint.name]
+      if (checkpoint.ref !== undefined) argv.push('--ref', checkpoint.ref)
+      for (const artifact of checkpoint.artifacts ?? []) argv.push('--artifact', artifact)
+      if (options?.runId !== undefined) argv.push('--run', options.runId)
+      await checked(argv, 'add-checkpoint')
+      return { added: true }
     },
     async annotate(missionId, ns, payload, options) {
       const argv = ['dsh-mission', 'annotate', missionId, '--ns', ns, '--payload', JSON.stringify(payload)]
       if (options?.runId !== undefined) argv.push('--run', options.runId)
-      const result = await exec(argv)
-      if (result.exitCode !== 0) throw new Error(`dsh-mission annotate failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
+      await checked(argv, 'annotate')
       return { added: true }
     },
     async isReleasable(missionId, runId) {
@@ -226,7 +236,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     const service = new LabService({
       providers: { docker: new DockerProvider(exec) },
       maxConcurrentUnits: Number(one(parsed, 'max-concurrent') ?? '4'),
-      getMission: () => (mission ? cliMissionFace(exec, io) : undefined),
+      getMission: () => (mission ? cliMissionFace(exec) : undefined),
       warn,
     })
     switch (command) {

@@ -34,6 +34,8 @@ docker 是软依赖：`probeDocker()` 探测 daemon、以有界超时拉 `alpine
 
 `scripts/integration-triad.spec.ts`（10 测试）：snapshot 钉 commit 与 worktree 只含 visible 层；模板建 run 且 lint 无 error；refs（resource + `sha256:` fingerprint）经服务面写入；容器内可见性（`ls -R` 证据；grading/verify 缺席）；collect 回环与 artifact 登记；两个过早门禁的拒绝与容器存活；guard 通过 → release → 容器消失 → 终态 `released`；六条 history 按序、带 actor/时间、被拒的尝试不留幻影条目；两条 append-only 的 `lab` ns verify annotation。已在 docker daemon 28.1.1 上以本地兜底镜像 `postgres:16-alpine` 验证全绿（验证时无网络拉 alpine）。
 
+**第二轮（失败路径，5 测试，`runTriadFailures` 驱动，lab ↔ mission 两腿）**：populate 打不存在的源目录——失败报错响亮，单元仍被跟踪（status 可见、容器存活，不静默泄漏），mission 停在 `working` 且 history 无幻影条目；该状态下 release 被 gate 拒绝。绑定到**未知 mission** 的单元——acquire 登记失败 warn，release 在查询异常上 fail closed，且 `force` 不构成绕过。attested 拆除路径——`attest teardown-approved` → 转 `failed`（可释放态）→ release 销毁容器。第二轮同样全绿（docker daemon 28.1.1）。
+
 ## Related
 
 - [datasets M1 Agent Note](../feature/2026-08-19-datasets-store-m1.md)、[mission M1 Agent Note](../feature/2026-08-19-mission-m1.md)、[lab M1 Agent Note](../feature/2026-08-20-lab-m1.md)、[lab M2 动词 Agent Note](../feature/2026-08-20-lab-m2-verbs.md)——本链路集成的各包交付。

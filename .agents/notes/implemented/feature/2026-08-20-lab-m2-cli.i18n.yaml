@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-lab-m2-cli.md
-.agents/notes/implemented/feature/2026-08-20-lab-m2-cli.md: b1098004998de7ab2ceda2c647ed67227b999e95
-.agents/notes/implemented/feature/2026-08-20-lab-m2-cli.zh.md: d4f018409ca7cbb759f47ac68a2abb740a1b8d3a
+.agents/notes/implemented/feature/2026-08-20-lab-m2-cli.md: 8c972e97ad9ef43550a61b2636eaf9f9ded30f07
+.agents/notes/implemented/feature/2026-08-20-lab-m2-cli.zh.md: 54fffde5abea24199457ddf99ddb508d7542a9b5

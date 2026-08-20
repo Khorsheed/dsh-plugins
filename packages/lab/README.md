@@ -75,7 +75,7 @@ dsh-lab release UNIT [--force]
 dsh-lab status [UNIT]
 ```
 
-The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and `verify` annotates the verbatim outcome into the `lab` namespace. Refs / artifacts / checkpoints register only through the in-host service face — the mission CLI exposes no such verbs, so in CLI mode those writes are skipped with a warning.
+The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and refs / artifacts / checkpoints / annotations register through the mission bin's verbs (`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`). Without the bin on PATH, registration warns and skips, and `release` needs `--force`.
 
 ## Compatibility
 
@@ -92,4 +92,4 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@kh
 - **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper; `checkpoint` additionally needs `git` inside the unit.
 - **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
 - **M3 scope** — the `lab_*` model tools are designed in the proposal and deliberately absent here.
-- **CLI-mode mission registration is partial** — the `dsh-mission` bin exposes `annotate` and `is-releasable` only, so the CLI wires exactly those (verify records, the release gate); refs / artifacts / checkpoints register through the in-host service face and are skipped with a warning in CLI mode.
+- **CLI-mode registration goes through the mission bin** — it requires `dsh-mission` on PATH and covers exactly its verb set (set-refs / add-artifact / add-checkpoint / annotate / is-releasable); anything richer belongs to the in-host service face.

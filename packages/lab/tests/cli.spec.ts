@@ -151,6 +151,21 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
     expect(run.log).toContain("dsh-mission annotate m-1 --ns lab")
   })
 
+  it('acquire registers refs and checkpoint registers the ref via the dsh-mission bin', async () => {
+    const acquire = await runLab(['acquire', '--image', 'app:latest', '--mission', 'm-1', '--run', 'r-1'], {}, true)
+    expect(acquire.code).toBe(0)
+    const info = JSON.parse(acquire.stdout) as { id: string; resource: string; fingerprint: string }
+    expect(acquire.log).toContain(`dsh-mission set-refs m-1 --resource ${info.resource} --fingerprint ${info.fingerprint} --run r-1`)
+    const env = { STUB_PS: info.resource, STUB_INSPECT: JSON.stringify([{
+      Name: `/${info.resource}`,
+      Config: { Labels: { 'dsh-lab.managed': 'true', 'dsh-lab.unit': info.id, 'dsh-lab.mission': 'm-1', 'dsh-lab.run': 'r-1', 'dsh-lab.fingerprint': info.fingerprint } },
+      State: { Running: true },
+    }]) }
+    const checkpoint = await runLab(['checkpoint', info.id, '--name', 'iter-1'], env, true)
+    expect(checkpoint.code).toBe(0)
+    expect(checkpoint.log).toContain('dsh-mission add-checkpoint m-1 --name iter-1 --ref')
+  })
+
   it('status prints the reconciled unit list', async () => {
     const env = { STUB_PS: 'dsh-lab-t1', STUB_INSPECT: UNIT_INSPECT }
     const run = await runLab(['status'], env, false)

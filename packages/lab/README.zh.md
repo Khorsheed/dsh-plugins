@@ -75,7 +75,7 @@ dsh-lab release UNIT [--force]
 dsh-lab status [UNIT]
 ```
 
-CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面适配到 `dsh-mission` 二进制：`release` 的 gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码一律 fail closed），`verify` 把原样结果注解进 `lab` 命名空间。refs / artifact / checkpoint 的登记只在进程内服务面可用——mission CLI 没有这些动词，CLI 模式下这些写入 warn 跳过。
+CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面适配到 `dsh-mission` 二进制：`release` 的 gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码一律 fail closed），refs / artifact / checkpoint / 注解经 mission 二进制的动词登记（`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`）。PATH 上没有该二进制时，登记 warn 跳过，`release` 需 `--force`。
 
 ## Compatibility
 
@@ -92,4 +92,4 @@ CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面�
 - **镜像必须自带 `sleep` 与 `sh`**——distroless 镜像需要自定义 `command`，且失去记 pid 的 wrapper；`checkpoint` 还要求单元内有 `git`。
 - **checkpoint 需要可写工作区**——工作区在首次 checkpoint 时自动 `git init`；只读挂载的工作区无法提交，会报错（此时应 checkpoint 一个 populate 出来的目录）。
 - **M3 范围**——`lab_*` 模型工具已在提案中设计，本线刻意缺席。
-- **CLI 模式的 mission 登记是部分的**——`dsh-mission` 二进制只暴露 `annotate` 与 `is-releasable`，CLI 正好接线这两个（verify 记录、release gate）；refs / artifact / checkpoint 的登记走进程内服务面，CLI 模式下 warn 跳过。
+- **CLI 模式的登记走 mission 二进制**——要求 PATH 上有 `dsh-mission`，覆盖面正好是其动词集（set-refs / add-artifact / add-checkpoint / annotate / is-releasable）；更丰富的登记走进程内服务面。

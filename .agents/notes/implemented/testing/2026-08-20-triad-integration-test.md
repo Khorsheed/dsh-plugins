@@ -34,6 +34,8 @@ Docker is a soft dependency: `probeDocker()` checks the daemon, pulls `alpine:la
 
 `scripts/integration-triad.spec.ts` (10 tests): snapshot pin and visible-only worktree tree; lint-clean template run creation; refs (resource + `sha256:` fingerprint) written via the service face; in-container visibility (`ls -R` evidence; grading/verify absent); collect round-trip with artifact registration; both premature-gate refusals with the surviving container; guard pass → release → container gone → final state `released`; six-entry history in order with actor/time and no phantom entries from refused attempts; two append-only `lab`-ns verify annotations. Verified green on a live docker daemon 28.1.1 with the `postgres:16-alpine` local fallback image (no network for the alpine pull at verification time).
 
+**Second round (failure paths, 5 tests, the `runTriadFailures` driver, lab ↔ mission only)**: populate against a nonexistent source — fails loud, and the unit stays TRACKED (visible in status, container alive; no silent leak), mission stays at `working` with no phantom history; release is refused in that state. A unit bound to an UNKNOWN mission — acquire's registration warns, release fails CLOSED on the query error, and `force` is not a bypass. The attested-teardown path — `attest teardown-approved` → transition to `failed` (a releasable state) → release destroys the container. Second round green on the same daemon.
+
 ## Related
 
 - [datasets M1 Agent Note](../feature/2026-08-19-datasets-store-m1.md), [mission M1 Agent Note](../feature/2026-08-19-mission-m1.md), [lab M1 Agent Note](../feature/2026-08-20-lab-m1.md), [lab M2 verbs Agent Note](../feature/2026-08-20-lab-m2-verbs.md) — the per-package deliveries this chain integrates.
