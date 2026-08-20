@@ -4,8 +4,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { MESSAGE_TOOLS_PLUGIN, WITHDRAWN_NOTICE } from '../src/marker.ts'
 import {
   collectWithdrawnEntries, countHiddenInSpan, editedMessageDefinition, foldHiddenRanges,
-  hasRestoreForSpan, isSeqHidden, restoredAssistantMessageDefinition, restoredMessageDefinition,
-  withdrawnDividerDefinition,
+  hasRestoreForSpan, isRestoreSuperseded, isSeqHidden, restoredAssistantMessageDefinition,
+  restoredMessageDefinition, withdrawnDividerDefinition,
   type WithdrawnDividerData,
 } from '../src/client/withdrawn-node.ts'
 
@@ -239,9 +239,29 @@ describe('span statistics', () => {
     { ...userNode(11), kind: 'message-tools-restored', data: { seq: 11, time: 1, restoredFromSeq: 5, content: [], text: '原文' } },
   ]
 
-  it('counts hidden nodes of every kind except the divider', () => {
-    expect(countHiddenInSpan(nodes, 5, 10)).toBe(4)
+  it('counts hidden user-visible messages, not UI chrome', () => {
+    expect(countHiddenInSpan(nodes, 5, 10)).toBe(3)
     expect(countHiddenInSpan(nodes, 0, 1)).toBe(0)
+  })
+
+  it('does not count context rows that duplicate restored rows or edit triggers', () => {
+    const restoredRow = {
+      ...userNode(11),
+      kind: 'message-tools-restored',
+      data: { seq: 11, time: 1, restoredFromSeq: 5, content: [], text: '原文' },
+    }
+    const duplicateContext = {
+      ...userNode(11),
+      kind: 'context',
+      data: { seq: 11, content: [], source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN } },
+    }
+    const editTriggerContext = {
+      ...userNode(12),
+      kind: 'context',
+      data: { seq: 12, content: [], source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'edit-trigger' } },
+    }
+    expect(countHiddenInSpan([restoredRow, duplicateContext, dividerNode(11, 13)], 11, 13)).toBe(1)
+    expect(countHiddenInSpan([editTriggerContext, dividerNode(12, 13)], 12, 13)).toBe(0)
   })
 
   it('collects user originals and assistant text in anchor order, skipping textless entries', () => {
@@ -252,14 +272,39 @@ describe('span statistics', () => {
     ])
   })
 
-  it('skips nodes without readable text: no content field, empty text, reasoning-only steps', () => {
+  it('skips unreadable nodes but preserves reasoning-only assistant steps', () => {
     const sparse = [
       { ...userNode(5), data: {} },
       userNode(6),
       { ...userNode(7), kind: 'assistant-step', data: { status: 'running' } },
       { ...userNode(8), kind: 'assistant-step', data: { status: 'settled', blocks: [{ kind: 'reasoning', text: '想' }] } },
     ]
-    expect(collectWithdrawnEntries(sparse, 5, 10)).toEqual([])
+    expect(collectWithdrawnEntries(sparse, 5, 10)).toEqual([
+      { kind: 'assistant', text: '想' },
+    ])
+  })
+
+  it('collects restored and edited rows when they are re-withdrawn', () => {
+    const restored = {
+      ...userNode(11),
+      kind: 'message-tools-restored',
+      data: { seq: 11, time: 1, restoredFromSeq: 5, content: [{ type: 'text', text: '原文' }], text: '原文' },
+    }
+    const restoredAssistant = {
+      ...userNode(12),
+      kind: 'message-tools-restored-assistant',
+      data: { seq: 12, time: 1, restoredFromSeq: 6, text: '旧答' },
+    }
+    const edited = {
+      ...userNode(13),
+      kind: 'message-tools-edited',
+      data: { seq: 13, time: 1, content: [{ type: 'text', text: '编辑后' }] },
+    }
+    expect(collectWithdrawnEntries([restored, restoredAssistant, edited], 11, 14)).toEqual([
+      { kind: 'user', text: '原文' },
+      { kind: 'assistant', text: '旧答' },
+      { kind: 'user', text: '编辑后' },
+    ])
   })
 
   it('detects a live restore row citing the span start', () => {
@@ -274,6 +319,7 @@ describe('span statistics', () => {
     ]
     // The restore row (seq 11) now sits inside the new hidden span [11, 12).
     expect(hasRestoreForSpan(rewithdrawn, 5, [5, 10, 11, 12])).toBe(false)
+    expect(isRestoreSuperseded(rewithdrawn, 5, [5, 10, 11, 12])).toBe(true)
   })
 })
 

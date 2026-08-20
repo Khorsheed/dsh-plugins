@@ -107,6 +107,20 @@ describe('WithdrawnDividerView collapsed', () => {
     fireEvent.click(screen.getByRole('button', MARKER))
     expect(screen.getByRole<HTMLButtonElement>('button', RESTORE).disabled).toBe(true)
   })
+
+  it('disables restore on a superseded divider without showing the restored badge', () => {
+    const nodes = [
+      userNode(5, '被撤回的用户问题'),
+      assistantStepNode(6, '助手回复文本'),
+      dividerNode(5, 10),
+      restoredNode(11, 5),
+      dividerNode(11, 12),
+    ]
+    render(<WithdrawnDividerView {...dividerProps({ nodes })} />)
+    expect(screen.queryByText('已恢复')).toBeNull()
+    fireEvent.click(screen.getByRole('button', MARKER))
+    expect(screen.getByRole<HTMLButtonElement>('button', RESTORE).disabled).toBe(true)
+  })
 })
 
 describe('WithdrawnDividerView replay', () => {

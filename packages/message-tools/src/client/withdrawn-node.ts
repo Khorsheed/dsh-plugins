@@ -179,9 +179,18 @@ function joinText(blocks: readonly unknown[]): string {
 
 /** Join AssistantBlock text (kind-keyed, unlike message content's type-keyed blocks). */
 function joinAssistantText(blocks: readonly unknown[]): string {
-  return blocks
+  const text = blocks
     .filter((block): block is { kind: string; text: string } =>
       (block as { kind?: string; text?: unknown }).kind === 'text'
+      && typeof (block as { text?: unknown }).text === 'string')
+    .map(block => block.text)
+    .join('')
+  if (text !== '') return text
+  // Interrupted assistant steps may contain only reasoning; preserve it in
+  // the divider expand instead of showing an empty span.
+  return blocks
+    .filter((block): block is { kind: string; text: string } =>
+      (block as { kind?: string; text?: unknown }).kind === 'reasoning'
       && typeof (block as { text?: unknown }).text === 'string')
     .map(block => block.text)
     .join('')
@@ -267,24 +276,21 @@ export const restoredAssistantMessageDefinition: ConversationNodeDefinition<Rest
 }
 
 /**
- * Count the chat nodes hidden by one withdrawn span (every kind except the
- * divider itself).
+ * Count the user-visible messages hidden by one withdrawn span. This mirrors
+ * {@link collectWithdrawnEntries}: context injections, tool calls, turn tails,
+ * and other UI chrome are not counted as “messages”, while restored/edited
+ * rows and reasoning-only assistant steps are.
  * @param nodes - every materialized chat node.
  * @param startSeq - first hidden seq (inclusive).
  * @param endSeq - the divider's seq (exclusive).
- * @returns the hidden node count.
+ * @returns the hidden message count.
  */
 export function countHiddenInSpan(
   nodes: readonly ChatConversationViewNode[],
   startSeq: number,
   endSeq: number,
 ): number {
-  let count = 0
-  for (const node of nodes) {
-    if (node.kind === 'message-tools-withdrawn') continue
-    if (node.anchorSeq >= startSeq && node.anchorSeq < endSeq) count += 1
-  }
-  return count
+  return collectWithdrawnEntries(nodes, startSeq, endSeq).length
 }
 
 /** One read-only replay entry of the divider's expand area. */
@@ -317,10 +323,20 @@ export function collectWithdrawnEntries(
     .sort((left, right) => left.anchorSeq - right.anchorSeq)
   const entries: WithdrawnEntry[] = []
   for (const node of inSpan) {
-    if (node.kind === 'user' || node.kind === 'steering') {
+    if (node.kind === 'user' || node.kind === 'steering' || node.kind === 'message-tools-edited') {
       const content = (node.data as { content?: readonly unknown[] }).content ?? []
       const text = joinText(content)
       if (text !== '') entries.push({ kind: 'user', text })
+      continue
+    }
+    if (node.kind === 'message-tools-restored') {
+      const text = (node.data as { text?: string }).text ?? ''
+      if (text !== '') entries.push({ kind: 'user', text })
+      continue
+    }
+    if (node.kind === 'message-tools-restored-assistant') {
+      const text = (node.data as { text?: string }).text ?? ''
+      if (text !== '') entries.push({ kind: 'assistant', text })
       continue
     }
     if (node.kind === 'assistant-step') {
@@ -354,6 +370,27 @@ export function hasRestoreForSpan(
     node.kind === 'message-tools-restored'
     && (node.data as RestoredMessageData).restoredFromSeq === hiddenStartSeq
     && !isSeqHidden(ranges, node.anchorSeq))
+}
+
+/**
+ * Whether a span's restore rows have themselves been withdrawn by a later
+ * span. The earlier divider remains as history, but the later divider is the
+ * active restore point; offering restore on both would duplicate the same
+ * logical content when the user toggles withdraw → restore → withdraw.
+ * @param nodes - every materialized chat node.
+ * @param hiddenStartSeq - the span's first hidden seq.
+ * @param ranges - the flattened hidden spans from foldHiddenRanges.
+ * @returns true when this span's restore rows are hidden inside a later span.
+ */
+export function isRestoreSuperseded(
+  nodes: readonly ChatConversationViewNode[],
+  hiddenStartSeq: number,
+  ranges: readonly number[],
+): boolean {
+  return nodes.some(node =>
+    (node.kind === 'message-tools-restored' || node.kind === 'message-tools-restored-assistant')
+    && (node.data as RestoredMessageData).restoredFromSeq === hiddenStartSeq
+    && isSeqHidden(ranges, node.anchorSeq))
 }
 
 /**

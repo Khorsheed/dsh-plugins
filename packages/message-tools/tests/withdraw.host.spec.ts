@@ -43,6 +43,28 @@ function assistantMessage(text: string): SessionEvent {
   return event as SessionEvent
 }
 
+/** An interrupted assistant/message carrying only reasoning content. */
+function assistantMessageReasoning(text: string): SessionEvent {
+  const event = {
+    type: 'assistant/message',
+    seq,
+    time: 1000,
+    data: {
+      turn: 0,
+      step: 1,
+      message: {
+        id: `a${seq}`,
+        role: 'assistant',
+        content: [{ type: 'reasoning', text }],
+        source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+      },
+    },
+    surfaceOp: 'append',
+  }
+  seq += 1
+  return event as SessionEvent
+}
+
 /** An interrupted assistant stream fragment (text delta, no final message). */
 function assistantChunkText(text: string): SessionEvent {
   const event = {
@@ -363,6 +385,25 @@ describe('planRestore', () => {
       userMessage('问'),                                // 0
       assistantChunkReasoning('思考中'),                 // 1
       withdrawalReplacement(0, 0, [0]),                 // 2 (surface span omits chunks)
+    ]
+    const result = planRestore(events, [2], 0)
+    expect(result).toEqual({
+      ok: true,
+      plan: {
+        entries: [
+          { role: 'user', content: [{ type: 'text', text: '问' }], sourceSeq: 0 },
+          { role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n思考中`, sourceSeq: 1 },
+        ],
+      },
+    })
+  })
+
+  it('preserves reasoning-only assistant/message content', () => {
+    reset()
+    const events = [
+      userMessage('问'),                                // 0
+      assistantMessageReasoning('思考中'),               // 1
+      withdrawalReplacement(0, 1, [0, 1]),              // 2
     ]
     const result = planRestore(events, [2], 0)
     expect(result).toEqual({

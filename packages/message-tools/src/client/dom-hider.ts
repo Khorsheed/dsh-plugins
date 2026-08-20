@@ -19,7 +19,7 @@
  * sessions), and only one chat view is mounted at a time.
  */
 import type { ChatConversationViewNode, ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { messageToolsOp } from '../marker.ts'
+import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
 
 /**
@@ -47,10 +47,14 @@ export function hiddenFlowKeys(nodes: readonly ChatConversationViewNode[], range
     if (node.kind === 'message-tools-withdrawn') continue
     if (node.kind === 'context') {
       const data = node.data as { seq?: number; source?: unknown }
-      // The context row duplicating a restore row (same source event seq), or
-      // rendering an edit trigger — the trigger is only the wake, never
-      // transcript content.
-      if (restoredSeqs.has(data.seq ?? -1) || messageToolsOp(data.source) === 'edit-trigger') {
+      const source = data.source as { kind?: string; plugin?: string; op?: unknown } | undefined
+      // Every message-tools context row is a presentation duplicate or a
+      // wake-only trigger: restore replays are rendered by the plugin's own
+      // rows, edit triggers are never transcript content, and withdrawal /
+      // edit replacements are not append-surface context rows at all.
+      if (source?.kind === 'plugin' && source.plugin === MESSAGE_TOOLS_PLUGIN
+        || restoredSeqs.has(data.seq ?? -1)
+        || messageToolsOp(data.source) === 'edit-trigger') {
         keys.push(node.key)
         continue
       }

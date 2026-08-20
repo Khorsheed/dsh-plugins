@@ -14,7 +14,8 @@ import { useState, type ReactNode } from 'react'
 import { Button, IconChevronDownOutline14, IconChevronRightOutline14, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconUndoOutline16 } from './icons.tsx'
 import {
-  collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, type WithdrawnEntry,
+  collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, isRestoreSuperseded,
+  type WithdrawnEntry,
 } from './withdrawn-node.ts'
 import type { WithdrawnDividerViewProps } from './slots.ts'
 import css from './WithdrawnDividerView.module.css'
@@ -36,10 +37,16 @@ export function WithdrawnDividerView({
     snapshot.chat.nodes.values(), data.hiddenStartSeq, data.seq,
   ))
   // The badge tracks a LIVE restore row: withdrawing the restored rows again
-  // clears it and re-enables the restore action (the events stay in the log).
+  // clears it. A superseded divider still shows its historical marker, but its
+  // restore action is disabled because the later re-withdrawal divider is now
+  // the active restore point for the same logical content.
   const restored = useSession((snapshot) => {
     const nodes = snapshot.chat.nodes.values()
     return hasRestoreForSpan(nodes, data.hiddenStartSeq, foldHiddenRanges(nodes))
+  })
+  const superseded = useSession((snapshot) => {
+    const nodes = snapshot.chat.nodes.values()
+    return isRestoreSuperseded(nodes, data.hiddenStartSeq, foldHiddenRanges(nodes))
   })
 
   const toggle = (): void => {
@@ -95,7 +102,7 @@ export function WithdrawnDividerView({
           <div className={css.restoreRow}>
             <Button
               variant="outline"
-              disabled={busy || restored}
+              disabled={busy || restored || superseded}
               onClick={restore}
             >
               {t('withdrawn.restore')}
