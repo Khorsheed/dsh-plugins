@@ -62,6 +62,15 @@
 
 验收方式：playwright 无头渲染每页，console 零错误 + 截图 + 探针页断言（放行/阻断符合设计）。
 
+### 5. 生成侧契约：`3d-artifact` skill（生成-渲染闭环）
+
+渲染器只执法、不救场（`fetch` / `loader.load` 是代码行为，渲染器无法通用改写），所以**交互/3D 产物的合规责任在生成侧**：生成 HTML 的模型必须在生成时刻遵守契约。本次决策（2026-08-21）：**生成侧告知只做 skill**（M3 交付），其余手段后置：
+
+- **做**：`3d-artifact` skill —— 契约清单（自包含 / 零运行时网络 / CDN 白名单 / 体积红线）+ `02-gltf-inline.html` 参考实现 + 生成后自检清单。按需加载（progressive disclosure），模型在生成 3D 产物时自行加载。
+- **暂不做（后置）**：AGENTS.md 常驻规则、生成后自动预检脚本、`gen_3d_artifact` 生成工具化。
+- **后置触发条件**：出现"模型未加载 skill 导致产物违约"的实例（渲染器回退静态/源码视图即为可见违约信号），再评估上预检脚本或工具化。
+- **兜底**：违约产物不会爆炸——渲染器按 Tier0/源码视图安全失败，用户可人工浏览器打开；4 个测试页（02 = 契约正例、04 = 越界反例）即回归样本。
+
 ## 里程碑
 
 | 里程碑 | 内容 | 状态 |
@@ -69,12 +78,13 @@
 | M0 | 3D 测试页 + playwright 验证 CSP/渲染设计 | **已完成**（2026-08-21：4 页全过，探针 7 项符合设计） |
 | M1 | Remote 分级 + scripted 探测（含单测） | 待开工 |
 | M2 | client Tier0/Tier1 + 桥 + 看门狗（含单测） | 待开工 |
-| M3 | 产物行接入 + 3D 专项调优（体积红线、纹理压缩） | 待开工 |
+| M3 | 产物行接入 + 3D 专项：`3d-artifact` skill（生成侧契约）+ 体积红线/纹理调优 | 待开工 |
 
 ## 实现记录
 
 - **M0（2026-08-21）**：4 个测试页 + 冒烟脚本交付于 `$DSH_HOME/scratch/html-render-3d-demo/`（`01-cube-cdn` / `02-gltf-inline` / `03-particles-dom` / `04-csp-probe`），playwright（chromium-1228）无头渲染全 PASS，截图与像素采样确认出图。
 - **M0 关键发现（已写回设计）**：three r152 的 `GLTFLoader` 对 `data:` URI 缓冲走 `fetch`，会被 `connect-src 'none'` 拦截——与 three.ws 契约的教训一致。**内联 3D 必须用 GLB 容器 + `atob` → `parse(arrayBuffer)` 的零 fetch 路径**；该模式已作为 Tier1/3D 专项的硬性约定。`blob:` Worker 在 `worker-src blob:` 下放行；`img-src` 收窄到 `data:/blob:` 后外链图片被正确阻断。
+- **2026-08-21 决策**：生成侧告知只做 `3d-artifact` skill（方案 §5）；AGENTS.md 常驻规则 / 预检脚本 / 生成工具化明确后置，触发条件见 §5。
 
 ## 验收标准（done 判定）
 
@@ -82,10 +92,12 @@
 - 浏览器实测：抽屉打开含脚本 HTML → 静态默认 + 提示；确认后脚本运行且宿主 UI 不卡（独立进程）；openLink 白名单内外行为正确；>512KB HTML 可渲染；CSP 探针页放行/阻断符合设计。
 - 测试全绿：CSP 注入、桥校验、探测、超时回退、srcdoc 包装（既有断言同步更新）。
 - 4 个 3D 测试页在 playwright 下 console 零错误、截图可见渲染结果。
+- M3 交付 `3d-artifact` skill：含契约清单、`02-gltf-inline.html` 参考实现、生成后自检清单。
 
 ## 风险 / 放弃的东西
 
 - **桥是新增攻击面**：白名单 + 校验 + source 校验三层，宁可缺能力不可放错。
 - **meta CSP 误伤**：CDN 白名单过窄则 CDN 库加载失败 → 3D 测试页即回归样本。
 - **现有 srcdoc 断言随包装失效** → 同步更新测试。
-- 放弃：`allow-same-origin`（沙箱 + 进程隔离红线，任何 tier 不开）；宿主 DOM 渲染任意 HTML；独立 origin 服务器（opaque origin 已够，相对资源解析不承诺——Tier1 提示用户用 data:/绝对 URL）。
+- **skill 未被模型加载（接受的风险）**：产物可能违约（外链 / fetch / `data:` 缓冲）——渲染器安全失败（静态/源码视图）兜底，失败可见；出现实例后启用预检脚本（后置手段）。
+- 放弃：`allow-same-origin`（沙箱 + 进程隔离红线，任何 tier 不开）；宿主 DOM 渲染任意 HTML；独立 origin 服务器（opaque origin 已够，相对资源解析不承诺——Tier1 提示用户用 data:/绝对 URL）；本期不做 AGENTS.md 常驻规则 / 生成后预检脚本 / 生成工具化（后置，触发条件见方案 §5）。
