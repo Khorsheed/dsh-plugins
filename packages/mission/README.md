@@ -11,7 +11,16 @@ Milestone M1 ships the store, the state machine with three built-in guards, the 
 - **Run** — one JSON file (`runs/<runId>.json`) holding the frozen state machine, every mission with its attempts, and all annotations. `runs/<runId>/data/…` is the append-only run-data tree submissions land in.
 - **Mission** — a work item, unique id within its run. `labels` carry arbitrary coordinates (e.g. `layer=dwd`), `dependsOn` / `scheduledAt` are plan data. Plan data only moves the projection — mission never fires anything; starting work stays with the human / agent / external orchestrator.
 - **Attempt vs checkpoint** — an attempt is a full re-run (`retry` opens a new one, the old stays immutable); a checkpoint is a continuous progress point *inside* one attempt. They are never interchangeable.
-- **Guards** — transition preconditions, three built-in types, no seam for more: `file-check` (expected files under a directory relative to the attempt's run-data directory — no interpolation), `schema-check` (the recorded submission validates against a JSON Schema subset), `attested` (a key an external script or human registered via `attest`).
+- **Guards** — transition preconditions, three built-in types, no seam for more: `file-check` (expected files under a directory relative to the attempt's run-data directory — no interpolation), `schema-check` (a named JSON input validates against a JSON Schema subset), `attested` (a key an external script or human registered via `attest`).
+
+  `schema-check`'s `inputFrom` names its input (default `submission`):
+
+  | `inputFrom` | validates | use |
+  |---|---|---|
+  | `submission` | the payload recorded by `submit` (also pre-validated at submit time) | structure-constrained outputs |
+  | `run-meta` | the run's `meta` object | pin scene data at the earliest transition — e.g. require dataset-snapshot fields (`datasetId`/`commit`) so a changed snapshot can never silently ride along (the meta analogue of `refs.fingerprint`) |
+
+  mission reads only JSON Schema — the concrete fields are scene data declared by the template, never plugin vocabulary.
 - **Five-bucket projection** — the filter dimension for queue views, derived from the state-machine *shape* plus plan data: terminal state (no out-edge) → `done`; unmet `dependsOn` → `blocked`; future `scheduledAt` → `scheduled`; initial state (no in-edge) → `ready`; everything else → `active`.
 - **Releasable states** — a template with a non-empty `releasableStates` declares "this run holds resources to release". `is-releasable` answers whether a mission's resources may be destroyed, and the linter enforces the gate's integrity (below).
 

@@ -373,6 +373,16 @@ export class MissionService {
           throw new Error(`mission: schema-check schema unreadable at ${schemaFile}: ${String(error)}`)
         }
         assertSchemaSubset(schema, schemaFile)
+        if (guard.inputFrom === 'run-meta') {
+          // The run's meta (e.g. a template-required dataset snapshot) — not
+          // the submission. mission reads only JSON Schema; the fields are
+          // scene data declared by the template.
+          const violations = validateJson(schema, run.meta)
+          if (violations.length > 0) {
+            throw new Error(`mission: schema-check guard (run meta) failed for ${mission.id} attempt ${attempt.attempt}:\n${violations.map(v => `  - ${v}`).join('\n')}`)
+          }
+          return
+        }
         const submission = attempt.submission
         if (submission === undefined || submission.json === undefined) {
           throw new Error(`mission: schema-check guard for ${mission.id} attempt ${attempt.attempt}: no submission recorded (submit first)`)
@@ -420,11 +430,12 @@ export class MissionService {
   }
 
   /**
-   * Record a submission: validate the JSON payload against every schema-check
-   * guard leaving the current state FIRST (a failure writes nothing), then
-   * append the files into the attempt's run-data directory, index them as
-   * artifacts, and register a NO-REF checkpoint (the resource holder's own
-   * `addCheckpoint` fills the ref later — same name merges, never duplicates).
+   * Record a submission: validate the JSON payload against every
+   * submission-input schema-check guard leaving the current state FIRST (a
+   * failure writes nothing), then append the files into the attempt's
+   * run-data directory, index them as artifacts, and register a NO-REF
+   * checkpoint (the resource holder's own `addCheckpoint` fills the ref
+   * later — same name merges, never duplicates).
    */
   async submit(missionId: string, options: SubmitOptions & { runId?: string }): Promise<SubmitResult> {
     const { run } = this.locate(missionId, options.runId)
@@ -435,7 +446,9 @@ export class MissionService {
       const attempt = currentAttempt(mission)
       if (options.json !== undefined) {
         for (const t of storedRun.stateMachine.transitions) {
-          if (t.from !== attempt.state || t.guard?.type !== 'schema-check') continue
+          // run-meta guards validate the run's meta at transition time — a
+          // submission payload is not their input, so submit skips them.
+          if (t.from !== attempt.state || t.guard?.type !== 'schema-check' || t.guard.inputFrom === 'run-meta') continue
           const schemaFile = resolveSchemaPath(t.guard.schemaPath, storedRun.templateDir)
           let schema: unknown
           try {

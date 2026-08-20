@@ -11,7 +11,16 @@ dsh 生态的通用任务管理：**mission** 是一个工作项——状态、�
 - **Run**——一个 JSON 文件（`runs/<runId>.json`），装冻结的状态机、全部 mission 及其 attempt、全部 annotation。`runs/<runId>/data/…` 是追加式运行数据树，submit 的产出落在这里。
 - **Mission**——一个工作项，id 在 run 内唯一。`labels` 承载任意坐标（如 `layer=dwd`），`dependsOn` / `scheduledAt` 是计划数据。计划数据只改变投影归属——mission 永不点火；发起仍是人 / agent / 外部编排。
 - **attempt 与 checkpoint 不混**——attempt 是整格重跑（`retry` 新开一个，原 attempt 不可变保留）；checkpoint 是 attempt **内**的连续推进点。两者在数据模型与 API 上不可混用。
-- **Guard**——转移前置条件，内置三种，不开 seam：`file-check`（期望文件位于相对该 attempt 运行数据目录的目录下——无插值）、`schema-check`（已登记的 submission 通过 JSON Schema 子集校验）、`attested`（外部脚本或人经 `attest` 登记的 key）。
+- **Guard**——转移前置条件，内置三种，不开 seam：`file-check`（期望文件位于相对该 attempt 运行数据目录的目录下——无插值）、`schema-check`（指定的 JSON 输入通过子集校验）、`attested`（外部脚本或人经 `attest` 登记的 key）。
+
+  `schema-check` 的 `inputFrom` 指定校验输入（默认 `submission`）：
+
+  | `inputFrom` | 校验对象 | 用途 |
+  |---|---|---|
+  | `submission` | `submit` 登记的 payload（submit 时预先校验） | 要结构约束的产出 |
+  | `run-meta` | run 的 `meta` 对象 | 在最早的转移上钉住场景数据——如要求数据集快照字段（`datasetId`/`commit`），快照变了就过不去（meta 侧的 `refs.fingerprint` 同类物） |
+
+  mission 只认 JSON Schema——具体字段是模板里声明的场景数据，不进插件词汇。
 - **五桶投影**——队列视图的筛选维度，从状态机**形状**加计划数据派生：终态（无出边）→ `done`；`dependsOn` 未满足 → `blocked`；`scheduledAt` 未到 → `scheduled`；初始态（无入边）→ `ready`；其余 → `active`。
 - **可释放状态**——`releasableStates` 非空即声明「本 run 有资源要释放」。`is-releasable` 回答 mission 持有的资源可否销毁，lint 负责闸的完整性（见下）。
 

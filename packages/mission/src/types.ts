@@ -21,12 +21,17 @@ export type Guard =
     expectedFiles: string[]
   }
   | {
-    /** The last `submit` JSON payload must validate against this JSON Schema (subset, see schema.ts). */
+    /** The named JSON input must validate against this JSON Schema (subset, see schema.ts). */
     type: 'schema-check'
     /** Resolved against the template's directory (absolute paths used as-is). */
     schemaPath: string
-    /** Only `'submission'` exists: the payload recorded by `submit`. */
-    inputFrom?: 'submission'
+    /**
+     * What to validate: `'submission'` (default) — the payload recorded by
+     * `submit`; `'run-meta'` — the run's `meta` object (e.g. a template can
+     * require dataset-snapshot fields on the earliest transition, pinning
+     * comparability the way `refs.fingerprint` pins the environment).
+     */
+    inputFrom?: 'submission' | 'run-meta'
   }
   | {
     /** An external script/human attested this key for the current attempt (`attest`). */
