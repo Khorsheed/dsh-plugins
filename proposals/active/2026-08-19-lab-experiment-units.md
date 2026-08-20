@@ -104,7 +104,8 @@ lab 单向依赖 mission，走**服务面**（`ctx.get('mission')`）而非模�
 
 ## 实现记录
 
-- **M1 已交付**（2026-08-20）：`packages/lab`（`@khorsheed/dsh-lab`）——`ctx.lab` 服务面 + docker provider（acquire / populate / collect / release / status）、环境指纹入 refs、容器标签即注册表（宿主重启后 reconcile，gate 不失效）、pidfile 终止补偿、`maxConcurrentUnits`；26 测试全绿（Exec 假件，无需 docker daemon）。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m1.md`（含偏离说明：populate 语义=acquire 时挂载 + 拷入单元；无 gate 的 release 需显式 force + warn；invariant 为无数据的所有权预留）。待办：活 profile + 真 daemon 冒烟（验收 1/5/6/7）。
+- **M1 已交付**（2026-08-20，commit `71147bf`）：`packages/lab`（`@khorsheed/dsh-lab`）——`ctx.lab` 服务面 + docker provider（acquire / populate / collect / release / status）、环境指纹入 refs、容器标签即注册表（宿主重启后 reconcile，gate 不失效）、pidfile 终止补偿、`maxConcurrentUnits`；26 测试全绿（Exec 假件，无需 docker daemon）。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m1.md`（含偏离说明：populate 语义=acquire 时挂载 + 拷入单元；无 gate 的 release 需显式 force + warn；invariant 为无数据的所有权预留）。
+- **M2 前半已交付**（2026-08-20）：`checkpoint` / `verify` / `archive` 三动词——checkpoint = 工作区 git（首次自动 init）+ tag，sha 入 mission checkpoint `ref`；verify 原样记录（退出码/stdout/stderr/耗时/超时事实）入 `lab` ns，无任何判断分支；archive = 工作区导出 + 逐文件 sha256 manifest。42 测试全绿。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m2-verbs.md`。CLI 面为 M2 后半。待办：活 profile + 真 daemon 冒烟（验收 1/5/6/7）。
 
 ## 风险 / 放弃的东西
 

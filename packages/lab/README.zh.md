@@ -10,7 +10,7 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 2. **`release` 是 gate 的执行点。** 单元绑定 mission 且 `@khorsheed/dsh-mission` 插件在场时，`isReleasable` 必须通过——查询失败即拒绝（fail closed），任何选项都不能绕过校验。无 gate 时（未绑定 mission，或插件缺席），release 需要显式 `force` 并告警。
 3. **不发起任何任务。** lab 提供动词；何时调用由人 / agent / 外部编排决定。
 
-里程碑 M1 交付服务面（`ctx.lab`）与 docker provider：acquire / populate / collect / release / status、环境指纹、孤儿进程补偿、`maxConcurrentUnits` 安全阀。CLI 属 M2（连同 checkpoint / verify / archive），模型工具属 M3。
+里程碑 M1–M2 交付服务面（`ctx.lab`）与 docker provider：acquire / populate / collect / checkpoint / verify / archive / release / status、环境指纹、孤儿进程补偿、`maxConcurrentUnits` 安全阀。CLI 是 M2 的剩余部分，模型工具属 M3。
 
 ## 工作原理
 
@@ -19,6 +19,9 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 - **输入**——两条路：acquire 时声明 `mounts` 获得零拷贝只读绑定挂载（容器创建后无法追加挂载）；或 `populate` 把宿主机目录拷入运行中的单元（进入单元可写层的一份拷贝）。目录路径就是全部接口——datasets `worktree_path` 的产出或调用方自供路径皆可；lab 对 datasets 无代码级依赖，层白名单由产出路径的那一侧强制。
 - **孤儿进程补偿**——lab 自己 spawn 的每条容器内命令都经过一层 wrapper，把自身 pid 记到 `/run/dsh-lab/pids/`；`release` 先进容器按 pid SIGTERM 清扫，再移除容器。覆盖范围是 provider 自己的 exec 路径——他人 exec 进容器的进程不在 lab 的视野内。
 - **`maxConcurrentUnits`**——一个纯数字上限（config，默认 4）：达到上限 `acquire` 拒绝并报错明确。lab 不理解"哪些阶段可并发"（那是调用方的语义），一个数字足以挡住误并发——而误并发会悄悄毁掉对耗时敏感的测量。
+- **检查点**——提交工作区（首次 checkpoint 时自动 `git init`）并打 tag；commit sha 写入 mission 检查点的 `ref`。只读挂载的工作区会在此处报错——它无法被提交，这正是正确的信号。
+- **验证**——可选地把验证物拷入临时目录、在工作区里执行命令、移除验证物，把结果**原样**（退出码、stdout、stderr、耗时、超时事实）记进 mission 的 `lab` 注解命名空间。整条代码路径上没有任何通过/失败分支。
+- **归档**——把工作区导出到宿主机目录，附 `manifest.json`（逐文件 sha256 + 大小、单元事实、指纹），登记为 mission 产物。
 
 ## 安装与加载
 
@@ -46,24 +49,29 @@ const unit = await ctx.lab.acquire({
   mounts: [{ source: worktreePath, target: '/input', readonly: true }],
 })
 await ctx.lab.populate(unit.id, { source: '/path/to/layer', target: '/workspace' })
+const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
+const outcome = await ctx.lab.verify(unit.id, { command: ['npm', 'test'], source: '/path/to/checks', timeoutMs: 300_000 })
+// outcome = { exitCode, stdout, stderr, durationMs, timedOut } —— 原样；同时注解进 mission 的 'lab' 命名空间
 await ctx.lab.collect(unit.id, { source: '/workspace/out', target: '/host/archive/out', kind: 'archive' })
+await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/ + manifest.json（逐文件 sha256）
 await ctx.lab.release(unit.id)                // 由 mission.isReleasable 放行；无 gate 时需 force + 告警
 const units = await ctx.lab.status()          // 与 docker daemon reconcile 后的视图
 ```
 
-mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
+mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
 
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅ —— 服务面与 docker provider 在已发布宿主上完整可用。
 - source line（deepseek-harness master，fork 或 upstream）：✅ —— 同上。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact 登记 warn 跳过。CLI（M2）、checkpoint / verify / archive（M2）、模型工具（M3）在本线尚不存在。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。CLI（M2 剩余部分）、模型工具（M3）在本线尚不存在。
 
 ## 已知限制与推迟的工作
 
 - **`populate` 是拷贝；挂载在 acquire 时声明**——docker 无法给已创建的容器追加挂载，因此零拷贝只读路径是 `acquire` 的 `mounts`，`populate` 是把一份拷贝物化进单元可写层（单元已在运行时，"进单元"就是这个意思）。
 - **worktree provider 只有接口形状，未交付**——`UnitProvider` 接口按能容纳它的形状设计；真实需求出现时再实现。届时注意：worktree 单元的隔离强度差一个量级（共享文件系统、无网络与资源限制），不得用于需要可比性的实验。
 - **孤儿补偿只覆盖 lab 自己的 exec**——`/run/dsh-lab/pids/` 下的 pidfile 只跟踪 provider spawn 的进程；外来的 `docker exec` 对清扫不可见（release 时的容器移除仍会收走一切）。
-- **镜像必须自带 `sleep` 与 `sh`**——distroless 镜像需要自定义 `command`，且失去记 pid 的 wrapper。
-- **M2/M3 范围**——CLI、checkpoint / verify / archive、`lab_*` 模型工具已在提案中设计，本线刻意缺席。
+- **镜像必须自带 `sleep` 与 `sh`**——distroless 镜像需要自定义 `command`，且失去记 pid 的 wrapper；`checkpoint` 还要求单元内有 `git`。
+- **checkpoint 需要可写工作区**——工作区在首次 checkpoint 时自动 `git init`；只读挂载的工作区无法提交，会报错（此时应 checkpoint 一个 populate 出来的目录）。
+- **M2/M3 范围**——CLI（M2 剩余部分）、`lab_*` 模型工具（M3）已在提案中设计，本线刻意缺席。

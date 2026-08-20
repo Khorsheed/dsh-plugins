@@ -144,3 +144,84 @@ describe('DockerProvider.listManaged', () => {
     expect(calls).toHaveLength(1)
   })
 })
+
+describe('DockerProvider.checkpoint', () => {
+  it('initializes git on first use, commits, tags, and returns the commit sha', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      if (argv.includes('rev-parse') && argv.includes('--is-inside-work-tree')) {
+        return { exitCode: 128, stdout: '', stderr: 'not a git repository' }
+      }
+      if (argv.includes('rev-parse')) return { exitCode: 0, stdout: 'deadbeef123\n', stderr: '' }
+      return undefined
+    })
+    const ref = await makeProvider(exec).checkpoint('dsh-lab-x', '/workspace', 'iter-1')
+    expect(ref).toBe('deadbeef123')
+    const inner = calls.map((argv) => argv.slice(6).join(' ')) // strip exec … sh -c <wrapper> dsh-lab
+    expect(inner[0]).toBe('git -C /workspace rev-parse --is-inside-work-tree')
+    expect(inner[1]).toBe('git -C /workspace init')
+    expect(inner[2]).toBe('git -C /workspace add -A')
+    expect(inner[3]).toContain('commit --allow-empty -m iter-1')
+    expect(inner[3]).toContain('user.name=dsh-lab')
+    expect(inner[4]).toBe('git -C /workspace tag -f iter-1')
+    expect(inner[5]).toBe('git -C /workspace rev-parse iter-1')
+  })
+
+  it('skips init inside an existing repo', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      if (argv.includes('rev-parse') && !argv.includes('--is-inside-work-tree')) {
+        return { exitCode: 0, stdout: 'cafe\n', stderr: '' }
+      }
+      return undefined
+    })
+    await makeProvider(exec).checkpoint('dsh-lab-x', '/workspace', 'iter-2')
+    expect(calls.some((argv) => argv.includes('init'))).toBe(false)
+  })
+
+  it('fails loud when the workspace cannot be committed (e.g. read-only mount)', async () => {
+    const { exec } = fakeExec((argv) => {
+      if (argv.includes('--is-inside-work-tree')) return { exitCode: 128, stdout: '', stderr: 'not a git repository' }
+      if (argv.includes('init')) return { exitCode: 1, stdout: '', stderr: 'Read-only file system' }
+      return undefined
+    })
+    await expect(makeProvider(exec).checkpoint('dsh-lab-x', '/input', 'iter-1')).rejects.toThrow(/Read-only file system/)
+  })
+})
+
+describe('DockerProvider.verify', () => {
+  it('runs the command in the workspace through the pidfile wrapper and returns the outcome verbatim', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      if (argv[0] === 'exec' && argv.includes('npm')) {
+        return { exitCode: 1, stdout: 'tests failed: 2', stderr: 'boom', timedOut: false }
+      }
+      return undefined
+    })
+    const result = await makeProvider(exec).verify('dsh-lab-x', '/workspace', { command: ['npm', 'test'] })
+    expect(result).toMatchObject({ exitCode: 1, stdout: 'tests failed: 2', stderr: 'boom', timedOut: false })
+    const runCall = calls[0] ?? []
+    expect(runCall.slice(0, 4)).toEqual(['exec', '--workdir', '/workspace', 'dsh-lab-x'])
+    expect(runCall.slice(-2)).toEqual(['npm', 'test'])
+  })
+
+  it('copies material in, always removes it after — even when the run fails', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      if (argv[0] === 'exec' && argv.includes('./run.sh')) return { exitCode: 2, stdout: '', stderr: '' }
+      return undefined
+    })
+    await makeProvider(exec).verify('dsh-lab-x', '/workspace', { command: ['./run.sh'], source: '/host/verify' })
+    const verbs = calls.map((argv) => argv.join(' '))
+    expect(verbs.some((v) => v.includes('rm -rf /run/dsh-lab/verify') && v.includes('mkdir') === false)).toBe(true)
+    expect(calls.some((argv) => argv.join(' ') === 'cp /host/verify/. dsh-lab-x:/run/dsh-lab/verify')).toBe(true)
+    expect(verbs[verbs.length - 1]).toContain('rm -rf /run/dsh-lab/verify')
+  })
+
+  it('forwards the timeout to the exec runner and surfaces the timedOut fact', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      if (argv[0] === 'exec') return { exitCode: -1, stdout: '', stderr: '', timedOut: true }
+      return undefined
+    })
+    const result = await makeProvider(exec).verify('dsh-lab-x', '/workspace', { command: ['sleep', '99'], timeoutMs: 100 })
+    expect(result.timedOut).toBe(true)
+    expect(result.exitCode).toBe(-1)
+    expect(calls[0]?.slice(0, 2)).toEqual(['exec', '--workdir'])
+  })
+})

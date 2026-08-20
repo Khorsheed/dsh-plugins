@@ -10,7 +10,7 @@ Three red lines define the character of the plugin:
 2. **`release` is the gate's enforcement point.** When the unit is bound to a mission and the `@khorsheed/dsh-mission` plugin is present, `isReleasable` must pass — a failed query fails closed, and no option bypasses the check. Without a gate (no mission binding, or the plugin absent), release requires an explicit `force` and warns.
 3. **It never fires work.** lab provides verbs; when to call them belongs to the human / agent / external orchestrator.
 
-Milestone M1 ships the service face (`ctx.lab`) with the docker provider: acquire / populate / collect / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The CLI is M2 (with checkpoint / verify / archive), the model tools are M3.
+Milestones M1–M2 ship the service face (`ctx.lab`) with the docker provider: acquire / populate / collect / checkpoint / verify / archive / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The CLI is the rest of M2; the model tools are M3.
 
 ## How it works
 
@@ -19,6 +19,9 @@ Milestone M1 ships the service face (`ctx.lab`) with the docker provider: acquir
 - **Inputs** — two paths: declare `mounts` at acquire for a zero-copy read-only bind mount (container mounts cannot be added after creation), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
 - **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach.
 - **`maxConcurrentUnits`** — a plain ceiling (config, default 4): `acquire` refuses at the limit with an explicit error. lab doesn't know which phases may overlap (that's the caller's semantics); one number blocks accidental concurrency, which silently corrupts timing-sensitive measurements.
+- **Checkpoint** — commit the workspace (auto-initialized as a git repo on first checkpoint) and tag it; the commit sha goes into the mission's checkpoint `ref`. A read-only mounted workspace fails loud — it cannot be committed, which is the correct signal.
+- **Verify** — optionally copy verification material into a scratch dir, run the command in the workspace, remove the material, and record the outcome *verbatim* (exit code, stdout, stderr, duration, timeout fact) into the mission's `lab` annotation namespace. There is no pass/fail branch anywhere in the code path.
+- **Archive** — export the workspace into a host directory plus a `manifest.json` (per-file sha256 + size, unit facts, fingerprint), registered as a mission artifact.
 
 ## Install and load
 
@@ -46,24 +49,29 @@ const unit = await ctx.lab.acquire({
   mounts: [{ source: worktreePath, target: '/input', readonly: true }],
 })
 await ctx.lab.populate(unit.id, { source: '/path/to/layer', target: '/workspace' })
+const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
+const outcome = await ctx.lab.verify(unit.id, { command: ['npm', 'test'], source: '/path/to/checks', timeoutMs: 300_000 })
+// outcome = { exitCode, stdout, stderr, durationMs, timedOut } — verbatim; also annotated into mission ns 'lab'
 await ctx.lab.collect(unit.id, { source: '/workspace/out', target: '/host/archive/out', kind: 'archive' })
+await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/ + manifest.json (sha256 per file)
 await ctx.lab.release(unit.id)                // gated by mission.isReleasable; force + warning without a gate
 const units = await ctx.lab.status()          // reconciled against the docker daemon
 ```
 
-The mission integration is a probed structural face (`setRefs` / `addArtifact` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
+The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
 
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — the service face and docker provider work on the published host.
 - source line (deepseek-harness master, fork or upstream): ✅ — same.
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact registration is skipped with a warning. The CLI (M2), checkpoint / verify / archive (M2), and the model tools (M3) do not exist in this line yet.
+Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. The CLI (rest of M2) and the model tools (M3) do not exist in this line yet.
 
 ## Known Limitations and Deferred Work
 
 - **`populate` copies; mounts are declared at acquire** — docker cannot add mounts to a created container, so the zero-copy read-only path is `acquire`'s `mounts`, and `populate` materializes a copy into the unit's writable layer (that is what "into the unit" means once it runs).
 - **The worktree provider is interface-shaped but unshipped** — the `UnitProvider` interface admits it; it lands when a real need appears. When it does: a worktree unit is an order of magnitude weaker isolation (shared filesystem, no network or resource limits) and must never serve experiments that need comparability.
 - **Orphan compensation covers lab's own execs only** — pidfiles under `/run/dsh-lab/pids/` track processes the provider spawned; a foreign `docker exec` into the unit is invisible to the sweep (container removal still reaps everything at release).
-- **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper.
-- **M2/M3 scope** — CLI, checkpoint / verify / archive, and the `lab_*` model tools are designed in the proposal and deliberately absent here.
+- **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper; `checkpoint` additionally needs `git` inside the unit.
+- **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
+- **M2/M3 scope** — the CLI (rest of M2) and the `lab_*` model tools (M3) are designed in the proposal and deliberately absent here.

@@ -22,6 +22,9 @@ export interface MountSpec {
   readonly?: boolean
 }
 
+/** Default in-unit working directory (checkpoint commits here; populate targets it by default). */
+export const DEFAULT_WORKSPACE = '/workspace'
+
 /** What {@link Lab.acquire} needs to prepare one isolated unit. */
 export interface AcquireSpec {
   /** Provider kind; only `'docker'` ships in this line (the worktree shape is reserved). */
@@ -52,6 +55,8 @@ export interface UnitInfo {
   resource: string
   /** Environment fingerprint (image digest, falling back to image id). */
   fingerprint: string
+  /** In-unit working directory (checkpoint commits here); from `workdir`, default `/workspace`. */
+  workspace: string
   /** Mission this unit is registered to, when any. */
   missionId?: string
   /** Run hint recorded at acquire. */
@@ -70,7 +75,7 @@ export interface UnitStatus extends UnitInfo {
 export interface PopulateOptions {
   /** Host directory whose contents enter the unit. */
   source: string
-  /** Absolute in-unit target directory (created when missing); defaults to `/workspace`. */
+  /** Absolute in-unit target directory (created when missing); defaults to the unit's workspace. */
   target?: string
 }
 
@@ -93,6 +98,44 @@ export interface ReleaseOptions {
    * cannot be bypassed — no force flag overrides `isReleasable`.
    */
   force?: boolean
+}
+
+/** {@link Lab.checkpoint} options. */
+export interface CheckpointOptions {
+  /** Checkpoint name; becomes the in-unit git tag. */
+  name: string
+}
+
+/** {@link Lab.verify} options: mount verification material, execute, record. */
+export interface VerifyOptions {
+  /** Command executed inside the unit with the workspace as its cwd. */
+  command: string[]
+  /** Host directory of verification material, copied to a scratch dir for the run, removed after. */
+  source?: string
+  /** Bound the execution; expiry terminates the client (the in-container pid stays sweepable). */
+  timeoutMs?: number
+}
+
+/** What a {@link Lab.verify} run factually produced — recorded verbatim, never judged. */
+export interface VerifyResult {
+  /** The command's exit code; -1 when the client was terminated (e.g. timeout) before one existed. */
+  exitCode: number
+  /** Collected stdout, verbatim. */
+  stdout: string
+  /** Collected stderr, verbatim. */
+  stderr: string
+  /** Wall-clock duration of the execution. */
+  durationMs: number
+  /** The timeout fired (a fact, not a verdict). */
+  timedOut: boolean
+}
+
+/** {@link Lab.archive} options: export the workspace plus an integrity manifest. */
+export interface ArchiveOptions {
+  /** Host directory receiving `workspace/` and `manifest.json` (created when missing). */
+  target: string
+  /** Artifact kind registered with mission; defaults to `'archive'`. */
+  kind?: string
 }
 
 /** The lab service face (`ctx.lab`). Records, never judges; never fires work. */
@@ -132,6 +175,33 @@ export interface Lab {
    */
   release(unitId: string, options?: ReleaseOptions): Promise<void>
   /**
+   * Record a rewindable point: commit the workspace (auto-initialized as a
+   * git repo on first use) and tag it; the commit sha goes into the
+   * mission's checkpoint `ref` when a mission face is present.
+   * @param unitId - unit to checkpoint.
+   * @param options - checkpoint name.
+   * @returns the recorded ref (commit sha).
+   */
+  checkpoint(unitId: string, options: CheckpointOptions): Promise<{ ref: string }>
+  /**
+   * Run a command inside the unit and record the outcome VERBATIM (exit
+   * code, stdout, stderr, duration, timeout fact) — as the return value and,
+   * when a mission face is present, as an annotation in the `lab` namespace.
+   * lab never derives a verdict from the outcome.
+   * @param unitId - unit to verify in.
+   * @param options - command, optional material, optional timeout.
+   * @returns the verbatim outcome.
+   */
+  verify(unitId: string, options: VerifyOptions): Promise<VerifyResult>
+  /**
+   * Export the unit's workspace plus a sha256 integrity manifest into a host
+   * directory; registered as a mission artifact when a mission face is
+   * present.
+   * @param unitId - unit to archive.
+   * @param options - host target and artifact kind.
+   */
+  archive(unitId: string, options: ArchiveOptions): Promise<void>
+  /**
    * List managed units (reconciled against the provider, so units survive a
    * host restart), or one unit when `unitId` is given.
    * @param unitId - optional unit selector.
@@ -161,23 +231,35 @@ export interface MissionFace {
   ): Promise<{ added: boolean }>
   /** May this mission's held resources be destroyed? */
   isReleasable(missionId: string, runId?: string): boolean
+  /** Register a checkpoint; `ref` is filled only by the resource holder (lab). */
+  addCheckpoint(
+    missionId: string,
+    checkpoint: { name: string; ref?: string; artifacts?: string[] },
+    options?: { runId?: string },
+  ): Promise<{ added: boolean }>
+  /** Append a namespace-isolated, append-only annotation. */
+  annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string }): Promise<{ added: boolean }>
 }
 
 /** One finished subprocess invocation. */
 export interface ExecResult {
-  /** Process exit code. */
+  /** Process exit code; -1 when terminated before an exit code existed. */
   exitCode: number
   /** Collected stdout. */
   stdout: string
   /** Collected stderr. */
   stderr: string
+  /** The caller's timeout fired and terminated the process. */
+  timedOut?: boolean
 }
 
 /**
  * Host command runner the providers shell out through (`docker …`). The
  * plugin entry adapts `ctx.subprocess`; tests inject a scripted fake.
+ * @param argv - executable and arguments, never shell-interpreted.
+ * @param options - optional execution bound.
  */
-export type Exec = (argv: string[]) => Promise<ExecResult>
+export type Exec = (argv: string[], options?: { timeoutMs?: number }) => Promise<ExecResult>
 
 /** One provider-managed resource as listed from the provider itself. */
 export interface ManagedResource {
@@ -228,6 +310,24 @@ export interface UnitProvider {
    * @param options - in-unit source and host target.
    */
   collect(resource: string, options: CollectOptions): Promise<void>
+  /**
+   * Record a rewindable point inside the unit: commit the workspace (git,
+   * auto-initialized when absent) and tag it with the checkpoint name.
+   * @param resource - provider resource handle.
+   * @param workspace - in-unit working directory.
+   * @param name - checkpoint name (becomes the tag).
+   * @returns the commit sha (the checkpoint ref).
+   */
+  checkpoint(resource: string, workspace: string, name: string): Promise<string>
+  /**
+   * Execute a command inside the unit and return the outcome verbatim —
+   * non-zero exits are data here, never thrown.
+   * @param resource - provider resource handle.
+   * @param workspace - in-unit working directory (the command's cwd).
+   * @param options - command, optional material, optional timeout.
+   * @returns the verbatim outcome.
+   */
+  verify(resource: string, workspace: string, options: VerifyOptions): Promise<VerifyResult>
   /**
    * List every resource this provider manages (label-selected), so the
    * service can rebuild its registry after a host restart.

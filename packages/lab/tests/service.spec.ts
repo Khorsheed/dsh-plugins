@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { LabService } from '../src/service.ts'
 import type {
   AcquireSpec, CollectOptions, ManagedResource, MissionFace, PopulateOptions, UnitProvider,
+  VerifyOptions, VerifyResult,
 } from '../src/types.ts'
 
 /** In-memory provider: records verbs, keeps a managed-resource list for reconcile. */
@@ -14,15 +15,26 @@ class FakeProvider implements UnitProvider {
   terminated: string[] = []
   populated: (PopulateOptions & { target: string })[] = []
   collected: CollectOptions[] = []
-  fingerprintValue = 'fp:test'
+  checkpoints: { workspace: string; name: string }[] = []
+  verifies: VerifyOptions[] = []
+  checkpointRef = 'sha:fake'
+  verifyResult: VerifyResult = { exitCode: 0, stdout: '', stderr: '', durationMs: 5, timedOut: false }
+  /** Files the fake collect/archive materializes into the target. */
+  collectFiles: Record<string, string> = {}
 
   fingerprint(_spec: AcquireSpec): Promise<string> {
     return Promise.resolve(this.fingerprintValue)
   }
 
+  fingerprintValue = 'fp:test'
+
   acquire(id: string, spec: AcquireSpec, fingerprint: string): Promise<string> {
     const resource = `dsh-lab-${id}`
-    const labels: Record<string, string> = { 'dsh-lab.unit': id, 'dsh-lab.fingerprint': fingerprint }
+    const labels: Record<string, string> = {
+      'dsh-lab.unit': id,
+      'dsh-lab.fingerprint': fingerprint,
+      'dsh-lab.workdir': spec.workdir ?? '/workspace',
+    }
     if (spec.missionId !== undefined) labels['dsh-lab.mission'] = spec.missionId
     if (spec.runId !== undefined) labels['dsh-lab.run'] = spec.runId
     this.managed.push({ id, resource, labels, running: true })
@@ -36,7 +48,23 @@ class FakeProvider implements UnitProvider {
 
   collect(_resource: string, options: CollectOptions): Promise<void> {
     this.collected.push(options)
+    mkdirSync(options.target, { recursive: true })
+    for (const [name, content] of Object.entries(this.collectFiles)) {
+      const full = join(options.target, name)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, content)
+    }
     return Promise.resolve()
+  }
+
+  checkpoint(_resource: string, workspace: string, name: string): Promise<string> {
+    this.checkpoints.push({ workspace, name })
+    return Promise.resolve(this.checkpointRef)
+  }
+
+  verify(_resource: string, _workspace: string, options: VerifyOptions): Promise<VerifyResult> {
+    this.verifies.push(options)
+    return Promise.resolve(this.verifyResult)
   }
 
   listManaged(): Promise<ManagedResource[]> {
@@ -54,18 +82,34 @@ class FakeProvider implements UnitProvider {
 function fakeMission(releasable: boolean): MissionFace & {
   refs: { missionId: string; refs: { resource?: string; fingerprint?: string } }[]
   artifacts: { missionId: string; path: string; kind: string }[]
+  checkpoints: { missionId: string; name: string; ref?: string }[]
+  annotations: { missionId: string; ns: string; payload: unknown }[]
 } {
   const refs: { missionId: string; refs: { resource?: string; fingerprint?: string } }[] = []
   const artifacts: { missionId: string; path: string; kind: string }[] = []
+  const checkpoints: { missionId: string; name: string; ref?: string }[] = []
+  const annotations: { missionId: string; ns: string; payload: unknown }[] = []
   return {
     refs,
     artifacts,
+    checkpoints,
+    annotations,
     setRefs(missionId, r) {
       refs.push({ missionId, refs: r })
       return Promise.resolve()
     },
     addArtifact(missionId, artifact) {
       artifacts.push({ missionId, path: artifact.path, kind: artifact.kind })
+      return Promise.resolve({ added: true })
+    },
+    addCheckpoint(missionId, checkpoint) {
+      const entry: { missionId: string; name: string; ref?: string } = { missionId, name: checkpoint.name }
+      if (checkpoint.ref !== undefined) entry.ref = checkpoint.ref
+      checkpoints.push(entry)
+      return Promise.resolve({ added: true })
+    },
+    annotate(missionId, ns, payload) {
+      annotations.push({ missionId, ns, payload })
       return Promise.resolve({ added: true })
     },
     isReleasable: () => releasable,
@@ -234,5 +278,107 @@ describe('reconciliation (host restart)', () => {
   it('status of an unknown unit fails loud', async () => {
     const { service } = makeService()
     await expect(service.status('ghost')).rejects.toThrow(/unknown unit/)
+  })
+})
+
+describe('checkpoint', () => {
+  it('tags the workspace and registers the ref with mission', async () => {
+    const mission = fakeMission(true)
+    const { service, provider } = makeService({ mission })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const { ref } = await service.checkpoint(info.id, { name: 'iter-1' })
+    expect(ref).toBe('sha:fake')
+    expect(provider.checkpoints).toEqual([{ workspace: '/workspace', name: 'iter-1' }])
+    expect(mission.checkpoints).toEqual([{ missionId: 'm-1', name: 'iter-1', ref: 'sha:fake' }])
+  })
+
+  it('honors a custom workdir as the checkpoint workspace', async () => {
+    const { service, provider } = makeService()
+    const info = await service.acquire({ image: 'app:latest', workdir: '/repo' })
+    await service.checkpoint(info.id, { name: 'c' })
+    expect(provider.checkpoints[0]?.workspace).toBe('/repo')
+  })
+
+  it('warns instead of registering when mission is absent', async () => {
+    const { service, warnings } = makeService({ mission: undefined })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    await service.checkpoint(info.id, { name: 'iter-1' })
+    expect(warnings.some((w) => w.includes('no checkpoint was registered'))).toBe(true)
+  })
+
+  it('rejects an empty checkpoint name', async () => {
+    const { service } = makeService()
+    const info = await service.acquire({ image: 'app:latest' })
+    await expect(service.checkpoint(info.id, { name: '' })).rejects.toThrow(/non-empty/)
+  })
+})
+
+describe('verify — records verbatim, never judges', () => {
+  async function verifyWith(verifyResult: VerifyResult): Promise<{
+    annotations: { missionId: string; ns: string; payload: unknown }[]
+  }> {
+    const mission = fakeMission(true)
+    const provider = new FakeProvider()
+    provider.verifyResult = verifyResult
+    const { service } = makeService({ mission, provider })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    await service.verify(info.id, { command: ['npm', 'test'] })
+    return { annotations: mission.annotations }
+  }
+
+  it('a failing command is recorded as-is (exit code + streams), with no verdict', async () => {
+    const { annotations } = await verifyWith({ exitCode: 1, stdout: 'tests failed: 2', stderr: 'boom', durationMs: 9, timedOut: false })
+    expect(annotations).toHaveLength(1)
+    expect(annotations[0]?.ns).toBe('lab')
+    expect(annotations[0]?.payload).toMatchObject({ kind: 'verify', command: ['npm', 'test'], exitCode: 1, stdout: 'tests failed: 2', stderr: 'boom', timedOut: false })
+  })
+
+  it('a timeout is recorded as a fact, not a failure verdict', async () => {
+    const { annotations } = await verifyWith({ exitCode: -1, stdout: 'partial', stderr: '', durationMs: 100, timedOut: true })
+    expect(annotations[0]?.payload).toMatchObject({ exitCode: -1, timedOut: true, stdout: 'partial' })
+  })
+
+  it('a silent success is recorded with empty streams verbatim', async () => {
+    const { annotations } = await verifyWith({ exitCode: 0, stdout: '', stderr: '', durationMs: 3, timedOut: false })
+    expect(annotations[0]?.payload).toMatchObject({ exitCode: 0, stdout: '', stderr: '' })
+  })
+
+  it('returns the outcome even when mission is absent, and warns about the missed record', async () => {
+    const provider = new FakeProvider()
+    provider.verifyResult = { exitCode: 3, stdout: 'x', stderr: '', durationMs: 1, timedOut: false }
+    const { service, warnings } = makeService({ mission: undefined, provider })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const result = await service.verify(info.id, { command: ['t'] })
+    expect(result.exitCode).toBe(3)
+    expect(warnings.some((w) => w.includes('not recorded'))).toBe(true)
+  })
+
+  it('rejects an empty command', async () => {
+    const { service } = makeService()
+    const info = await service.acquire({ image: 'app:latest' })
+    await expect(service.verify(info.id, { command: [] })).rejects.toThrow(/non-empty/)
+  })
+})
+
+describe('archive', () => {
+  it('exports the workspace and writes a sha256 integrity manifest, registered as an artifact', async () => {
+    const mission = fakeMission(true)
+    const provider = new FakeProvider()
+    provider.collectFiles = { 'out.txt': 'hello', '.git/HEAD': 'ref: refs/heads/main\n' }
+    const { service } = makeService({ mission, provider })
+    const target = mkdtempSync(join(tmpdir(), 'lab-archive-'))
+    tmpDirs.push(target)
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1', workdir: '/repo' })
+    await service.archive(info.id, { target })
+    expect(provider.collected).toEqual([{ source: '/repo', target: join(target, 'workspace') }])
+    const manifest = JSON.parse(readFileSync(join(target, 'manifest.json'), 'utf8')) as {
+      unit: { id: string; fingerprint: string; workspace: string; missionId: string }
+      files: { path: string; sha256?: string; bytes?: number }[]
+    }
+    expect(manifest.unit).toMatchObject({ id: 'u1', fingerprint: 'fp:test', workspace: '/repo', missionId: 'm-1' })
+    const out = manifest.files.find((f) => f.path === 'out.txt')
+    expect(out?.sha256).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+    expect(out?.bytes).toBe(5)
+    expect(mission.artifacts).toEqual([{ missionId: 'm-1', path: target, kind: 'archive' }])
   })
 })
