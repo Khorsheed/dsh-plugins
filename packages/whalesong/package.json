@@ -76,10 +76,7 @@
     "@types/node": "^26.2.0"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/client.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "cordis.patch.yml"
   ]
 }

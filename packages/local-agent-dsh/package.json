@@ -64,14 +64,8 @@
     }
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/records.js",
-    "lib/provision.js",
-    "lib/dsh-cli-provider.js",
-    "lib/client.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "dependencies": {

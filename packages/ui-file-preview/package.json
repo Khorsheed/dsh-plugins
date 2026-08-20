@@ -100,10 +100,7 @@
     "@khorsheed/dsh-file-preview": "workspace:*"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts",
+    "lib",
     "cordis.patch.yml"
   ]
 }

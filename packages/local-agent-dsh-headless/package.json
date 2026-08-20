@@ -43,11 +43,8 @@
     }
   },
   "files": [
-    "lib/index.js",
-    "lib/startup.js",
-    "lib/invariant.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "dependencies": {
