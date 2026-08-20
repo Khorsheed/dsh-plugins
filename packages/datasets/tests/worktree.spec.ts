@@ -27,7 +27,9 @@ describe('sparse patterns', () => {
   it('cover every item directory of exactly the allowed layers', () => {
     expect(layerSparsePatterns('alpha', ['hidden', 'visible'])).toEqual([
       '/datasets/alpha/items/*/hidden/',
+      '/datasets/alpha/hidden/',
       '/datasets/alpha/items/*/visible/',
+      '/datasets/alpha/visible/',
     ])
   })
 })
@@ -40,6 +42,10 @@ describe('ensureWorktree', () => {
     expect(existsSync(join(wt.path, 'datasets/alpha/items/i1/visible/task.md'))).toBe(true)
     expect(existsSync(join(wt.path, 'datasets/alpha/items/i1/hidden'))).toBe(false)
     expect(existsSync(join(wt.path, 'datasets/alpha/dataset.json'))).toBe(false)
+    // Dataset-level layers follow the same mechanism: the allowed one is
+    // present, the disallowed one is physically absent.
+    expect(existsSync(join(wt.path, 'datasets/alpha/visible/guide.md'))).toBe(true)
+    expect(existsSync(join(wt.path, 'datasets/alpha/hidden'))).toBe(false)
     expect(readFileSync(join(wt.path, 'datasets/alpha/items/i1/visible/task.md'), 'utf8')).toBe('task one v1\n')
     // Registered with git, and locked against accidental pruning.
     const entries = await listWorktrees(repo.dir)

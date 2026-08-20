@@ -29,8 +29,12 @@ export function formatList(result: ListDatasetsResult | ListItemsResult): string
       .join('\n')
   }
   const header = `${result.dataset.id}  ${result.dataset.itemCount} items  layers: ${result.dataset.layers.join(', ')}`
-  if (result.items.length === 0) return `${header}\nno items`
-  return `${header}\n${result.items.map(formatItem).join('\n')}`
+  const sharedBits = Object.entries(result.datasetLayers)
+    .map(([layer, files]) => `${layer}/(${files.length})`)
+    .join(' ')
+  const sharedLine = sharedBits === '' ? '' : `\nshared: ${sharedBits}`
+  if (result.items.length === 0) return `${header}${sharedLine}\nno items`
+  return `${header}${sharedLine}\n${result.items.map(formatItem).join('\n')}`
 }
 
 /** Render `datasets_show` output. */
@@ -44,6 +48,13 @@ export function formatShow(result: ShowResult): string {
     }`,
     `descriptor: ${JSON.stringify(result.descriptor)}`,
   ]
+  const sharedEntries = Object.entries(result.datasetLayers)
+  if (sharedEntries.length > 0) {
+    lines.push('shared:')
+    for (const [layer, files] of sharedEntries) {
+      for (const file of files) lines.push(`  ${layer}/${file}`)
+    }
+  }
   for (const item of result.items) {
     lines.push(formatItem(item))
     for (const [layer, files] of Object.entries(item.layers)) {

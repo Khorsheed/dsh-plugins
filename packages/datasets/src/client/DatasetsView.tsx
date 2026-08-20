@@ -143,7 +143,8 @@ function BindingForm(props: {
 /** One layer group: a collapsible folder row, then its file leaves under a guide. */
 function LayerNode(props: {
   dataset: string
-  item: string
+  /** Item id, or null for a dataset-level (shared) layer. */
+  item: string | null
   layer: string
   paths: readonly string[]
   selection: DatasetSelection | null
@@ -238,6 +239,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const refreshRev = useStore(s => s.refreshRev)
   const expandedDataset = useStore(s => s.expandedDataset)
   const items = useStore(s => s.items)
+  const sharedLayers = useStore(s => s.sharedLayers)
   const selection = useStore(s => s.selection)
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
@@ -283,7 +285,10 @@ export function DatasetsView(props: DatasetsViewProps) {
     const dataset = expandedDataset
     void listDatasets(sessionId, dataset).then((result) => {
       if (cancelled || !result.ok) return
-      if (result.value.kind === 'items') actions.setItems(dataset, (result.value as ListItemsResult).items)
+      if (result.value.kind === 'items') {
+        const detail = result.value as ListItemsResult
+        actions.setItems(dataset, detail.items, detail.datasetLayers)
+      }
     })
     return () => { cancelled = true }
   }, [sessionId, expandedDataset, items, actions, listDatasets])
@@ -297,7 +302,9 @@ export function DatasetsView(props: DatasetsViewProps) {
     actions.setPreviewLoading(true)
     actions.setPreviewError(null)
     void readFile(sessionId, {
-      dataset: target.dataset, item: target.item, layer: target.layer, path: target.path,
+      dataset: target.dataset,
+      ...(target.item !== null ? { item: target.item } : {}),
+      layer: target.layer, path: target.path,
     }).then((result) => {
       if (cancelled) return
       actions.setPreviewLoading(false)
@@ -329,7 +336,9 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
   }
 
-  const selectedItem = selection === null ? undefined : items[selection.dataset]?.find(item => item.id === selection.item)
+  const selectedItem = selection === null || selection.item === null
+    ? undefined
+    : items[selection.dataset]?.find(item => item.id === selection.item)
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
@@ -404,6 +413,23 @@ export function DatasetsView(props: DatasetsViewProps) {
                 )}
                 {expanded && (
                   <div className={css.children}>
+                    {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (
+                      <div className={css.sharedGroup}>
+                        <div className={css.sharedLabel}>{t('tree.shared')}</div>
+                        {Object.entries(sharedLayers[dataset.id] ?? {}).map(([layer, paths]) => (
+                          <LayerNode
+                            key={layer}
+                            dataset={dataset.id}
+                            item={null}
+                            layer={layer}
+                            paths={paths}
+                            selection={selection}
+                            onSelect={(next) => { actions.select(next) }}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    )}
                     {(items[dataset.id] ?? []).map(item => (
                       <ItemNode
                         key={item.id}
@@ -425,7 +451,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.previewHeader}>
               <FileIcon />
               <span className={css.previewPath}>
-                {selection.item} / {selection.layer}/{selection.path}
+                {selection.item ?? t('tree.shared')} / {selection.layer}/{selection.path}
               </span>
               {selectedItem?.metadata !== undefined && (
                 <MetaPills metadata={selectedItem.metadata} t={t} />

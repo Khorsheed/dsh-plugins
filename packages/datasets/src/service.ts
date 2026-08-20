@@ -16,7 +16,7 @@ import {
 } from './binding.ts'
 import {
   assertSafeRelativePath, assertValidName, datasetDir, DatasetsError, itemDir, ITEM_METADATA,
-  listDatasetIds, listItems, loadDescriptor, loadItem, summarizeDataset,
+  listDatasetIds, listDatasetLayers, listItems, loadDescriptor, loadItem, summarizeDataset,
   validateDescriptor, type DatasetSummary, type ItemRecord, type JsonObject,
 } from './dataset.ts'
 import { repoToplevel, resolveCommit, showFile } from './git.ts'
@@ -78,6 +78,8 @@ export function resolveScope(
 export interface ListItemsResult {
   kind: 'items'
   dataset: DatasetSummary
+  /** Dataset-level (shared) layer content, layer name → layer-relative paths, whitelist-filtered. */
+  datasetLayers: Record<string, string[]>
   items: ItemRecord[]
 }
 
@@ -92,6 +94,8 @@ export interface ShowResult {
   dataset: DatasetSummary
   /** The whole descriptor, passthrough. */
   descriptor: JsonObject
+  /** Dataset-level (shared) layer content, layer name → layer-relative paths, whitelist-filtered. */
+  datasetLayers: Record<string, string[]>
   /** One item when `item` was given, else every item (layer-filtered). */
   items: ItemRecord[]
   commit: string
@@ -107,7 +111,8 @@ export interface DatasetSnapshot {
 /** `datasets_read` query. */
 export interface ReadQuery {
   dataset: string
-  item: string
+  /** Item id; omit to read a DATASET-LEVEL (shared) layer file. */
+  item?: string
   layer: string
   /** Layer-relative file path. */
   path: string
@@ -229,6 +234,17 @@ function filterItemLayers(scope: DatasetScope, item: ItemRecord): ItemRecord {
   return { ...item, layers }
 }
 
+/** Filter a layer → files map (dataset-level shared content) to the scope whitelist. */
+function filterLayerMap(scope: DatasetScope, map: Record<string, string[]>): Record<string, string[]> {
+  const whitelist = scope.layers
+  if (whitelist === undefined) return map
+  const filtered: Record<string, string[]> = {}
+  for (const [layer, files] of Object.entries(map)) {
+    if (whitelist.includes(layer)) filtered[layer] = files
+  }
+  return filtered
+}
+
 /** Filter a summary's declared layer lists to the scope whitelist. */
 function filterSummaryLayers(scope: DatasetScope, summary: DatasetSummary): DatasetSummary {
   const whitelist = scope.layers
@@ -262,9 +278,11 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {
         assertDatasetAllowed(scope, datasetId)
+        const descriptor = await loadDescriptor(repo, sha, datasetId)
         const summary = filterSummaryLayers(scope, await summarizeDataset(repo, sha, datasetId))
+        const shared = await listDatasetLayers(repo, sha, datasetId, descriptor.layers.map(layer => layer.name))
         const items = (await listItems(repo, sha, datasetId)).map(item => filterItemLayers(scope, item))
-        return { kind: 'items', dataset: summary, items }
+        return { kind: 'items', dataset: summary, datasetLayers: filterLayerMap(scope, shared), items }
       }
       const ids = (await listDatasetIds(repo, sha))
         .filter(id => scope.datasets === undefined || scope.datasets.includes(id))
@@ -278,12 +296,14 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       const { repo, sha } = await resolveCommitAt(scope, commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
       const summary = filterSummaryLayers(scope, await summarizeDataset(repo, sha, datasetId))
+      const shared = await listDatasetLayers(repo, sha, datasetId, descriptor.layers.map(layer => layer.name))
       const items = itemId !== undefined
         ? [await loadItem(repo, sha, datasetId, itemId)]
         : await listItems(repo, sha, datasetId)
       return {
         dataset: summary,
         descriptor: descriptor.raw,
+        datasetLayers: filterLayerMap(scope, shared),
         items: items.map(item => filterItemLayers(scope, item)),
         commit: sha,
       }
@@ -298,12 +318,28 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
 
     async read(scope, query) {
       assertDatasetAllowed(scope, query.dataset)
-      assertValidName('item id', query.item)
+      if (query.item !== undefined) assertValidName('item id', query.item)
       assertValidName('layer name', query.layer)
       assertLayerAllowed(scope, query.layer)
       const rel = assertSafeRelativePath(query.path)
       const { repo, sha } = await resolveCommitAt(scope, query.commit)
-      const objectPath = `${itemDir(query.dataset, query.item)}/${query.layer}/${rel}`
+      // Item omitted: the layer directory at the DATASET level (shared
+      // content). That path can address ANY top-level directory, so the
+      // dataset level additionally requires the layer to be DECLARED —
+      // undeclared top-level directories are descriptor passthrough and stay
+      // unreachable here exactly as before.
+      if (query.item === undefined) {
+        const descriptor = await loadDescriptor(repo, sha, query.dataset)
+        if (!descriptor.layers.some(layer => layer.name === query.layer)) {
+          throw new DatasetsError(
+            `layer ${JSON.stringify(query.layer)} is not declared by dataset ${JSON.stringify(query.dataset)}`,
+            'LAYER_UNDECLARED',
+          )
+        }
+      }
+      const objectPath = query.item === undefined
+        ? `${datasetDir(query.dataset)}/${query.layer}/${rel}`
+        : `${itemDir(query.dataset, query.item)}/${query.layer}/${rel}`
       const content = await showFile(repo, sha, objectPath)
       if (content === undefined) {
         throw new DatasetsError(`no file ${objectPath} at ${sha.slice(0, 12)}`, 'FILE_NOT_FOUND')

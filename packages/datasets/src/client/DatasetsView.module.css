@@ -196,6 +196,24 @@
   white-space: nowrap;
 }
 
+/* The dataset-level layers group label: a quiet line, like the dataset note. */
+.sharedGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.sharedLabel {
+  overflow: hidden;
+  height: 18px;
+  padding: 0 8px 0 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The dataset's descriptor name gets its own quiet line under the row. */
 .datasetNote {
   overflow: hidden;

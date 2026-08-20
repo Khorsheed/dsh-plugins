@@ -8,19 +8,22 @@ git 仓库之上的通用版本化数据集存储：分层 item、从 git 对象
 
 ## 数据集仓库布局
 
-数据集存储就是一个普通 git 仓库。目录结构是约定，层名任意、由 descriptor 声明：
+数据集存储就是一个普通 git 仓库。目录结构是约定，层名任意、由 descriptor 声明。层目录可以存在于**两个级别**——题集级层放跨 item 共享的内容，item 级层放单个 item 的内容：
 
 ```
 <repo>/
   datasets/<dataset-id>/
     dataset.json           # id、name、layers 清单（可见性类别）、item 元数据 schema
-    <任意其他文件>          # descriptor 透传——插件原样携带，不读
+    <layer>/...            # 题集级层（以 layers 清单声明的名字命名的顶层目录）
+    <任意其他文件>          # descriptor 透传——原样携带、不读、读取路径不可达
     items/<item-id>/
       item.json            # item 元数据（字段由声明的 schema 约束）
-      <layer>/...          # 任意命名层
+      <layer>/...          # item 级层
 ```
 
 版本 = git commit。插件只校验 `dataset.json` 的**形状**：`id`、可选 `name`、非空的 `layers` 清单（每项声明 `name`，可声明 `modelFacing: false`，缺省 true）、可选的 `itemMetaSchema` 对象。其余字段原样透传。
+
+两级规则纯粹按名字判定：顶层目录的名字若声明在 `layers` 清单里，它就是题集级层；其余任何顶层文件或目录都是 descriptor 透传，与之前一样置身 `list`/`show`/`read`/`worktree_path` 之外。`items` 是保留的 item 容器，不能用作层名。所有机制在两级统一生效：会话绑定的层白名单（列表过滤、读取拒绝、sparse-checkout 模式同时覆盖 `datasets/<id>/<layer>/` 与 `datasets/<id>/items/*/<layer>/`）、`modelFacing` 可见性类别（声明按层名，天然两级适用）。评测题集布局里，跨 item 共享且有可见性要求的内容就放在这里：`suites/<suite>/verify/helpers/` 放题集级层（判定时才挂载），评分 rubric 也从散落的顶层目录收进声明过的题集级层，白名单才真正管得到它们。
 
 `modelFacing: false` 是数据声明，语义仅一条：该层离开本机的导出必须过人工确认闸（确认闸由导出方实现，不属本插件）。它与会话绑定的层白名单是两层独立机制——白名单管「会话里 agent 能看什么」，导出闸管「什么能离开本机」。
 
@@ -103,7 +106,7 @@ dsh-datasets binding --session ID [--state-root DIR]
 
 <!-- 截图占位：docs/screenshots/…-datasets-tab.png（待补） -->
 
-web profile 下插件向会话的视图环贡献 **`datasets` tab**（与 chat、trajectory 并列）——本会话数据集的绑定与浏览。tab 只做导航：顶部绑定条（当前绑定及其数据集/layers 白名单，加绑定 / 改白名单 / 解绑——绑定写入在这里同样只是人的操作，与 slash 路径一致），左侧数据集 → item → 层 → 文件树，右侧内容预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线渲染（与 chat 同一个渲染器），其余文件经官方 `CodeBlock` 语法高亮；本包没有任何自研渲染器。
+web profile 下插件向会话的视图环贡献 **`datasets` tab**（与 chat、trajectory 并列）——本会话数据集的绑定与浏览。tab 只做导航：顶部绑定条（当前绑定及其数据集/layers 白名单，加绑定 / 改白名单 / 解绑——绑定写入在这里同样只是人的操作，与 slash 路径一致），左侧数据集 →（共享层 →）item → 层 → 文件树（题集级层在 item 列表之前、归于一个安静的「共享」分组），右侧内容预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线渲染（与 chat 同一个渲染器），其余文件经官方 `CodeBlock` 语法高亮；本包没有任何自研渲染器。
 
 tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `list` / `show` / `read`，每个方法都从调用方 agent 解析会话绑定，因此绑定的层白名单在 Remote 路径上与工具路径同等强制。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace。
 

@@ -110,6 +110,7 @@ describe('DatasetsRemoteService', () => {
     const result = await remote.show(agent, { dataset: 'alpha', item: 'i1' })
     expect(result.commit).toBe(repo.commit)
     expect(result.dataset.layers).toEqual(['visible'])
+    expect(result.datasetLayers).toEqual({ visible: ['guide.md'] })
     expect((result.descriptor['extra'] as Record<string, unknown>)['passthrough']).toBe(true)
     expect(result.items).toHaveLength(1)
     expect(Object.keys(result.items[0]?.layers ?? {})).toEqual(['visible'])

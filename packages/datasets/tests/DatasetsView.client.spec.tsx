@@ -46,6 +46,7 @@ const DATASETS: ListDatasetsResult = {
 const ITEMS: ListItemsResult = {
   kind: 'items',
   dataset: DATASETS.datasets[0]!,
+  datasetLayers: { visible: ['guide.md'] },
   items: [{
     id: 'i1',
     metadata: { difficulty: 'hard' },
@@ -119,8 +120,11 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
-    // The layer header is one quiet phrase: name, middot, count — never a right-floated count.
-    expect(await screen.findByText(/· tree\.fileCount/)).toBeTruthy()
+    // The layer header is one quiet phrase: name, middot, count — never a right-floated count
+    // (it appears once per layer group: the shared group and the item's own).
+    expect((await screen.findAllByText(/· tree\.fileCount/)).length).toBeGreaterThan(0)
+    // Dataset-level (shared) layers group under the quiet label, ahead of the items.
+    expect(screen.getByText('tree.shared')).toBeTruthy()
     const file = await screen.findByText('task.md')
     fireEvent.click(file)
     expect(h.readFile).toHaveBeenCalledWith('s1', {
@@ -133,6 +137,11 @@ describe('DatasetsView', () => {
     // never the raw JSON string.
     expect(await screen.findByText('difficulty: hard')).toBeTruthy()
     expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
+    // A shared (dataset-level) file reads WITHOUT an item selector.
+    fireEvent.click(screen.getByText('guide.md'))
+    expect(h.readFile).toHaveBeenCalledWith('s1', {
+      dataset: 'alpha', layer: 'visible', path: 'guide.md',
+    })
   })
 
   it('bind form submits the parsed binding and refreshes', async () => {
@@ -172,6 +181,7 @@ describe('DatasetsView', () => {
       value: dataset === undefined ? DATASETS : {
         kind: 'items' as const,
         dataset: DATASETS.datasets[0]!,
+        datasetLayers: {},
         items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
       },
     }))

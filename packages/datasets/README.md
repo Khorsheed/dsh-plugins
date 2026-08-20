@@ -8,19 +8,22 @@ The plugin exists for the three things a file browser does not have: a **semanti
 
 ## The dataset repository layout
 
-A dataset store is an ordinary git repository. The directory structure is the convention; layer names are arbitrary and declared by the descriptor:
+A dataset store is an ordinary git repository. The directory structure is the convention; layer names are arbitrary and declared by the descriptor. A layer directory may exist at **two levels** — dataset-level layers hold content shared across items, item-level layers hold per-item content:
 
 ```
 <repo>/
   datasets/<dataset-id>/
     dataset.json           # id, name, layers manifest (visibility classes), item metadata schema
-    <any other files>      # descriptor passthrough — the plugin carries them, unread
+    <layer>/...            # dataset-level layer (a top-level directory named by the layers manifest)
+    <any other files>      # descriptor passthrough — carried, unread, unreachable by the read paths
     items/<item-id>/
       item.json            # item metadata (fields constrained by the declared schema)
-      <layer>/...          # arbitrarily named layers
+      <layer>/...          # item-level layers
 ```
 
 Version = git commit. The plugin validates the **shape** of `dataset.json` only: `id`, optional `name`, a non-empty `layers` manifest where each entry declares `name` and may declare `modelFacing: false` (default true), and an optional `itemMetaSchema` object. Everything else passes through verbatim.
+
+The two-level rule is purely name-based: a top-level directory whose name is declared in the `layers` manifest IS a dataset-level layer; every other top-level file or directory is descriptor passthrough and stays outside `list`/`show`/`read`/`worktree_path` exactly as before. `items` is the reserved item container and may not name a layer. All mechanisms apply at both levels uniformly: the session binding's layer whitelist (filtered listings, rejected reads, sparse-checkout patterns covering `datasets/<id>/<layer>/` and `datasets/<id>/items/*/<layer>/` alike) and the `modelFacing` visibility class (the declaration is per layer NAME, so it covers both levels by construction). In evaluation-suite layouts this is where cross-item shared content with visibility requirements goes: `suites/<suite>/verify/helpers/` as a dataset-level layer (mounted only at judging time), and grading rubrics move from loose top-level directories into a declared dataset-level layer so the whitelist actually governs them.
 
 `modelFacing: false` is a data declaration with exactly one meaning: exporting that layer off the machine must pass a human confirmation gate (the gate belongs to the exporter, not this plugin). It is independent of the session binding's layer whitelist — the whitelist governs what the session's agent can see; the export gate governs what may leave the machine.
 
@@ -103,7 +106,7 @@ dsh-datasets binding --session ID [--state-root DIR]
 
 <!-- screenshot placeholder: docs/screenshots/…-datasets-tab.png (pending) -->
 
-On web profiles the plugin contributes a **`datasets` tab** to the conversation's view ring (beside chat and trajectory) — the session's dataset binding and browser. The tab is pure navigation: a binding bar on top (the current binding with its dataset/layer whitelists, plus bind / edit-whitelist / unbind gestures — binding writes stay human operations here exactly as on the slash path), a dataset → item → layer → file tree on the left, and a content preview on the right. The preview is delegated to the official reader primitives — markdown renders through the official `MarkdownText` pipeline (the same renderer the chat uses), every other file through the official `CodeBlock` syntax highlighter; there is no self-rolled renderer in this package.
+On web profiles the plugin contributes a **`datasets` tab** to the conversation's view ring (beside chat and trajectory) — the session's dataset binding and browser. The tab is pure navigation: a binding bar on top (the current binding with its dataset/layer whitelists, plus bind / edit-whitelist / unbind gestures — binding writes stay human operations here exactly as on the slash path), a dataset → (shared layers →) item → layer → file tree on the left (dataset-level layers group under a quiet Shared label ahead of the items), and a content preview on the right. The preview is delegated to the official reader primitives — markdown renders through the official `MarkdownText` pipeline (the same renderer the chat uses), every other file through the official `CodeBlock` syntax highlighter; there is no self-rolled renderer in this package.
 
 The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace `datasets`) over the same service core as the tools: `binding` / `bind` / `unbind` / `list` / `show` / `read`, each resolving the session binding from the calling agent, so the binding's layer whitelist is enforced on the Remote path exactly as on the tool path. The browser half mounts the namespace through the official `ctx.remote.$mount` channel.
 

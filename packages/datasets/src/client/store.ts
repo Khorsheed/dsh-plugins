@@ -13,9 +13,10 @@ import type { DatasetBinding, DatasetSummary, ItemRecord, ReadResult } from '../
 /** One selected file: its coordinates down to the layer-relative path. */
 export interface DatasetSelection {
   readonly dataset: string
-  readonly item: string
+  /** Item id, or null for a DATASET-LEVEL (shared) layer file. */
+  readonly item: string | null
   readonly layer: string
-  /** Layer-relative file path (as ItemRecord.layers lists it). */
+  /** Layer-relative file path (as the layer's file list reports it). */
   readonly path: string
 }
 
@@ -39,6 +40,8 @@ export interface DatasetsViewState {
   expandedDataset: string | null
   /** Item records per dataset id, loaded when a dataset expands. */
   items: Record<string, readonly ItemRecord[]>
+  /** Dataset-level (shared) layer files per dataset id, loaded with its items. */
+  sharedLayers: Record<string, Record<string, readonly string[]>>
   /** The selected file's coordinates, or null when nothing is selected. */
   selection: DatasetSelection | null
   /** The selected file's content, or null before one completes. */
@@ -58,7 +61,7 @@ export type DatasetsViewActions = {
   setListLoading: (draft: DatasetsViewState, loading: boolean) => void
   setListError: (draft: DatasetsViewState, error: string | null) => void
   expand: (draft: DatasetsViewState, dataset: string | null) => void
-  setItems: (draft: DatasetsViewState, dataset: string, items: readonly ItemRecord[]) => void
+  setItems: (draft: DatasetsViewState, dataset: string, items: readonly ItemRecord[], shared: Record<string, readonly string[]>) => void
   select: (draft: DatasetsViewState, selection: DatasetSelection) => void
   setPreview: (draft: DatasetsViewState, preview: ReadResult) => void
   setPreviewLoading: (draft: DatasetsViewState, loading: boolean) => void
@@ -75,6 +78,7 @@ const INITIAL: DatasetsViewState = {
   refreshRev: 0,
   expandedDataset: null,
   items: {},
+  sharedLayers: {},
   selection: null,
   preview: null,
   previewLoading: false,
@@ -97,6 +101,7 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
         d.listError = null
         d.expandedDataset = null
         d.items = {}
+        d.sharedLayers = {}
         d.selection = null
         d.preview = null
         d.previewError = null
@@ -110,7 +115,10 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
       setListLoading: (d, loading: boolean) => { d.listLoading = loading },
       setListError: (d, error: string | null) => { d.listError = error },
       expand: (d, dataset: string | null) => { d.expandedDataset = dataset },
-      setItems: (d, dataset: string, items: readonly ItemRecord[]) => { d.items[dataset] = items },
+      setItems: (d, dataset: string, items: readonly ItemRecord[], shared: Record<string, readonly string[]>) => {
+        d.items[dataset] = items
+        d.sharedLayers[dataset] = shared
+      },
       select: (d, selection: DatasetSelection) => {
         d.selection = selection
         d.preview = null

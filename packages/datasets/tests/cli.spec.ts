@@ -49,6 +49,7 @@ describe('read verbs', () => {
     expect(list.out).toContain('non-model-facing: hidden')
 
     const items = await run(['list', '--dataset', 'alpha'], env)
+    expect(items.out).toContain('shared: visible/(1)')
     expect(items.out).toContain('i1')
 
     const show = await run(['show', '--dataset', 'alpha', '--item', 'i1'], env)

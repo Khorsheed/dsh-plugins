@@ -55,6 +55,36 @@ describe('whitelist enforcement', () => {
     expect(result.dataset.nonModelFacingLayers).toEqual([])
   })
 
+  it('list reports dataset-level layers, whitelist-filtered, declared-only', async () => {
+    repo = makeFixtureRepo()
+    const bound = await service().list(boundScope(), 'alpha')
+    if (bound.kind !== 'items') throw new Error('expected items result')
+    // The hidden dataset-level layer is whitelisted out; `drafts/` is not a
+    // declared layer, so it stays descriptor passthrough and never lists.
+    expect(bound.datasetLayers).toEqual({ visible: ['guide.md'] })
+    const everything = await service().list({ repo: repo.dir }, 'alpha')
+    if (everything.kind !== 'items') throw new Error('expected items result')
+    expect(everything.datasetLayers).toEqual({ visible: ['guide.md'], hidden: ['answers.md'] })
+  })
+
+  it('read resolves a dataset-level file when item is omitted and enforces the whitelist on it', async () => {
+    repo = makeFixtureRepo()
+    const ok = await service().read(boundScope(), { dataset: 'alpha', layer: 'visible', path: 'guide.md' })
+    expect(ok.content).toBe('shared guide v1\n')
+    // Same layer name at both levels: the item-level read is unaffected.
+    const itemLevel = await service().read(boundScope(), {
+      dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md',
+    })
+    expect(itemLevel.content).toBe('task one v1\n')
+    await expect(service().read(boundScope(), {
+      dataset: 'alpha', layer: 'hidden', path: 'answers.md',
+    })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    // The passthrough directory is not a declared layer: no read path reaches it.
+    await expect(service().read({ repo: repo.dir }, {
+      dataset: 'alpha', layer: 'drafts', path: 'notes.md',
+    })).rejects.toMatchObject({ code: 'LAYER_UNDECLARED' })
+  })
+
   it('read outside the whitelist is rejected; inside it reads from the git object', async () => {
     repo = makeFixtureRepo()
     await expect(service().read(boundScope(), {

@@ -28,6 +28,7 @@ export type DatasetsKey =
   | 'preview.loading'
   | 'preview.error'
   | 'tree.fileCount'
+  | 'tree.shared'
   | 'tree.moreMeta'
   | 'json.copyValue'
   | 'json.copyJson'
@@ -72,6 +73,7 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
   'tree.fileCount': '{count} 个文件',
+  'tree.shared': '共享',
   'tree.moreMeta': '+{count}',
   'json.copyValue': '复制值',
   'json.copyJson': '复制 JSON',
@@ -110,6 +112,7 @@ export const en: Record<DatasetsKey, string> = {
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
   'tree.fileCount': '{count} files',
+  'tree.shared': 'Shared',
   'tree.moreMeta': '+{count}',
   'json.copyValue': 'Copy value',
   'json.copyJson': 'Copy JSON',

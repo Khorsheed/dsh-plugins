@@ -34,6 +34,8 @@ describe('descriptor shape validation', () => {
     expect(() => validateDescriptor(null, 't')).toThrowError(DatasetsError)
     expect(() => validateDescriptor({ id: 'a' }, 't')).toThrowError(/layers/)
     expect(() => validateDescriptor({ id: 'a', layers: [] }, 't')).toThrowError(/layers/)
+    // 'items' is the reserved item container — it may not name a layer.
+    expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'items' }] }, 't')).toThrowError(/reserved/)
     expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'x' }, { name: 'x' }] }, 't')).toThrowError(/duplicate/)
     expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'x', modelFacing: 'no' }] }, 't')).toThrowError(/modelFacing/)
     expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'x' }], itemMetaSchema: 'nope' }, 't')).toThrowError(/itemMetaSchema/)

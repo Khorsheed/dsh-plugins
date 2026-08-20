@@ -3,17 +3,26 @@
  * The plugin validates the SHAPE of the descriptor only — it never interprets
  * its semantics, and every other descriptor file passes through untouched.
  *
- * Layout (layer names are arbitrary, declared by the descriptor):
+ * Layout (layer names are arbitrary, declared by the descriptor; a layer
+ * directory may exist at BOTH levels — dataset-level layers hold content
+ * shared across items, item-level layers hold per-item content; the session
+ * whitelist governs both):
  *
  * ```
  * <repo>/
  *   datasets/<dataset-id>/
  *     dataset.json           # id, name, layers manifest (visibility classes), item metadata schema
- *     <any other files>      # descriptor passthrough
+ *     <layer>/...            # dataset-level layer (declared in the layers manifest)
+ *     <any other files>      # descriptor passthrough — anything NOT a declared layer name
  *     items/<item-id>/
  *       item.json            # item metadata (fields constrained by the declared schema)
- *       <layer>/...          # arbitrarily named layers
+ *       <layer>/...          # item-level layers
  * ```
+ *
+ * `items` is the reserved item container and may not name a layer. Everything
+ * else top-level that is not a declared layer directory passes through
+ * untouched — the plugin never interprets it, and it stays outside every
+ * read/list/worktree path.
  *
  * v1 reads JSON descriptors: no YAML parser is available on this package's
  * dependency chain, and adding one is deliberately out of scope (see README
@@ -170,6 +179,9 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
       throw new DatasetsError(`${origin}: every layer needs a segment-safe "name"`, 'SHAPE_INVALID')
     }
     const layerName = entry['name']
+    if (layerName === 'items') {
+      throw new DatasetsError(`${origin}: "items" is the reserved item container and may not name a layer`, 'SHAPE_INVALID')
+    }
     if (seen.has(layerName)) {
       throw new DatasetsError(`${origin}: duplicate layer ${JSON.stringify(layerName)}`, 'SHAPE_INVALID')
     }
@@ -257,6 +269,36 @@ export async function summarizeDataset(repo: string, commit: string, datasetId: 
     nonModelFacingLayers: descriptor.layers.filter(layer => !layer.modelFacing).map(layer => layer.name),
     itemCount: items.size,
   }
+}
+
+/**
+ * List the dataset-level layer content at a commit: for each DECLARED layer
+ * name, the files under `datasets/<id>/<layer>/` (layer-relative, sorted).
+ * Only declared names qualify — any other top-level directory is descriptor
+ * passthrough and never becomes a layer. Declared layers absent at this
+ * commit are omitted.
+ * @param repo - repository path.
+ * @param commit - commit to read from.
+ * @param datasetId - the dataset id.
+ * @param declared - the descriptor's declared layer names.
+ * @returns layer name → layer-relative file paths, for layers with content.
+ */
+export async function listDatasetLayers(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  declared: readonly string[],
+): Promise<Record<string, string[]>> {
+  const layers: Record<string, string[]> = {}
+  for (const layer of declared) {
+    const dir = `${datasetDir(datasetId)}/${layer}`
+    const files = (await listFiles(repo, commit, dir))
+      .filter(file => file.startsWith(`${dir}/`))
+      .map(file => file.slice(dir.length + 1))
+      .sort()
+    if (files.length > 0) layers[layer] = files
+  }
+  return layers
 }
 
 /**
