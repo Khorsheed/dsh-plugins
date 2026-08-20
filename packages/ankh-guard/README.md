@@ -143,7 +143,7 @@ Mounted as a cordis plugin (base bundle), the same surface is available as the `
 
 ## Model Experience
 
-Two injected context messages, no tool schema: a one-time boot notice per root session (restarts must go through the guard CLI — never hand-rolled scripts), and the restart report / interrupted-session continuation after a restart. Both are plugin-sourced snapshot user messages; the boot notice rides `agent.inject` (no wake).
+A shipped skill, plus two followup messages, no tool schema. The `dsh-self-restart-guard` skill is registered at apply (compositions without the skill capability skip it): the full restart protocol rides the skill catalog, so an agent discovers it exactly when a task involves restarting the instance — no per-session push notice. After a restart, the restart report / interrupted-session continuation reaches only the initiating session and the sessions the restart interrupted, as plugin-sourced followup user messages; every other session stays untouched.
 
 #### KV Cache effect
 

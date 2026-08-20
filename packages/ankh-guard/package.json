@@ -38,6 +38,7 @@
     "scripts/on-install.js",
     "scripts/install-launchd.sh",
     "scripts/install-systemd.sh",
+    "skills/**/*.md",
     "cordis.patch.yml"
   ],
   "license": "MIT",

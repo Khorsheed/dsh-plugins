@@ -129,32 +129,33 @@ describe('state core', () => {
     expect(cleared.checkpoint?.revision).toBe('cp1')
   })
 
-  it('injects the boot notice into every root session at creation (no wake)', async () => {
-    // The discovery channel for agents that never read the README: restarts
-    // must go through the guard CLI, never hand-rolled scripts.
+  it('registers the restart-protocol skill when the skills service is present', async () => {
+    // The pull-based discovery channel: agents find the protocol through the
+    // skill catalog when a task involves restarting the instance — no
+    // per-session push notice.
     const repo = makeRepo()
     const stateDir = tmpDir('guard-ctx-')
     const ctx = new Context()
     await ctx.plugin(Loader)
-    const rootAgent = { id: 'session-root', followup: vi.fn(), inject: vi.fn() } as never
-    const otherAgent = { id: 'session-other', followup: vi.fn(), inject: vi.fn() } as never
-    const liveAgents: unknown[] = [rootAgent, otherAgent]
-    ctx.provide('agents', {
-      roots: () => [liveAgents[0]],
-      list: () => liveAgents,
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const registrations: Array<{ name: string; description: string; content: string }> = []
+    let disposed = false
+    ctx.provide('skills', {
+      register: (skill: { name: string; description: string; content: string }) => {
+        registrations.push(skill)
+        return () => { disposed = true }
+      },
     } as never)
     const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
     await fiber.await()
-    ctx.emit('agent/created', { agent: rootAgent } as never)
-    ctx.emit('agent/created', { agent: otherAgent } as never)
-    const rootInject = (rootAgent as { inject: ReturnType<typeof vi.fn> }).inject
-    const otherInject = (otherAgent as { inject: ReturnType<typeof vi.fn> }).inject
-    expect(rootInject).toHaveBeenCalledTimes(1)
-    const message = rootInject.mock.calls[0]?.[0] as { content: Array<{ text: string }> }
-    expect(message.content[0]?.text).toContain('dsh-ankh-guard restart')
-    expect(message.content[0]?.text).toContain('禁止手写')
-    expect(otherInject).not.toHaveBeenCalled()
+    expect(registrations.map(skill => skill.name)).toEqual(['dsh-self-restart-guard'])
+    expect(registrations[0]?.description).toContain('restart')
+    expect(registrations[0]?.content).toContain('check-env')
+    // The shipped skill must not carry machine-specific paths from the
+    // development environment it was written on.
+    expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
     await fiber.dispose()
+    expect(disposed).toBe(true)
   })
 
   it('fails loud on a malformed state file', () => {
@@ -2518,5 +2519,9 @@ describe('pack smoke', () => {
     }
     // The bin entry is a runnable shebang script, not just a bundled file.
     expect(readFileSync(join(artifactLib, 'cli.js'), 'utf8')).toMatch(/^#!\/usr\/bin\/env node/)
+    // The restart-protocol skill ships with the package — apply() reads it
+    // from <pkg>/skills/ and degrades to a bare warning when it is missing.
+    expect(existsSync(join(unpack, 'package', 'skills', 'dsh-self-restart-guard', 'SKILL.md')),
+      'the restart-protocol skill is missing from the tarball').toBe(true)
   })
 })

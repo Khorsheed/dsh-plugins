@@ -143,7 +143,7 @@ dsh-ankh-guard restart \
 
 ## Model Experience
 
-两条注入上下文，无工具 schema：每个 root 会话一次性的 boot 须知（重启必须走守护 CLI，禁止手写重启脚本），以及重启后的报告与被中断会话的续跑注入。都是插件来源的 snapshot 用户消息；boot 须知经 `agent.inject` 注入（不唤醒）。
+一个随包 skill，加两条 followup 消息，无工具 schema。`dsh-self-restart-guard` skill 在 apply 时注册（无 skill 能力的组合自动跳过）：完整重启协议挂在 skill catalog 上，agent 在涉及重启实例的任务里按需发现——没有逐会话的推送通知。重启后，重启报告/被中断会话的续跑只到达发起会话和被中断的会话，以插件来源的 followup 用户消息形式注入；其余会话完全无感。
 
 #### KV Cache effect
 
