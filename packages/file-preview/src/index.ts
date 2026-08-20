@@ -3,6 +3,9 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentRegistry } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
@@ -25,6 +28,43 @@ declare module '@deepseek-ai/cordis' {
  * the web face is an optional additive host, absent in headless compositions. */
 interface ImageRouteHost {
   register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
+}
+
+/** The slice of the skill registry this package consumes (optional service). */
+interface SkillRegistrySlice {
+  register: (skill: { name: string; description: string; content: string }) => () => void
+}
+
+/**
+ * Register the 3d-artifact skill — the generation-side contract for
+ * sandbox-runnable interactive 3D / digital-twin single-file HTML (self-
+ * contained, zero runtime network, GLB-inline zero-fetch models). Pull-based
+ * discovery: an agent whose task involves generating such an HTML page finds
+ * the contract through the skill catalog — no per-session push notice.
+ * Optional: compositions without the skill capability skip the registration.
+ * A missing/malformed shipped SKILL.md degrades to a warning — a discovery
+ * aid must never take a boot down; the pack-smoke test owns the file's
+ * presence in the tarball.
+ * @param ctx - plugin context.
+ */
+function registerArtifactSkill(ctx: Context): void {
+  const skills = ctx.get('skills') as SkillRegistrySlice | undefined
+  if (skills === undefined) return
+  try {
+    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact', 'SKILL.md')
+    const raw = readFileSync(skillFile, 'utf8')
+    const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
+    const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const description = /^description: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const content = match?.[2]
+    if (match === null || name === undefined || description === undefined || content === undefined) {
+      ctx.logger.warn('file-preview: shipped SKILL.md is malformed — the 3d-artifact skill is not registered')
+      return
+    }
+    ctx.effect(() => skills.register({ name, description, content }))
+  } catch (error) {
+    ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
+  }
 }
 
 /** Extensions treated as binary without reading (their text decode is meaningless). */
@@ -153,6 +193,7 @@ export class FilePreviewService extends TypertRemoteService {
         'file-preview: image route',
       )
     }
+    registerArtifactSkill(ctx)
   }
 
   private get fs(): FileSystem {

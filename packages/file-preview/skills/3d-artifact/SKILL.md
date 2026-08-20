@@ -1,3 +1,8 @@
+---
+name: 3d-artifact
+description: Generate sandbox-runnable interactive 3D / digital-twin single-file HTML that obeys the strict sandbox CSP — self-contained, zero runtime network, GLB-inline zero-fetch models. Load when the task asks for a 3D visualization, simulation, digital twin, or WebGL scene delivered as one standalone HTML page.
+---
+
 # 3d-artifact — generating sandbox-runnable interactive 3D / digital-twin single-file HTML
 
 ## When to load

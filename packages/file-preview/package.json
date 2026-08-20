@@ -46,8 +46,11 @@
   "files": [
     "lib",
     "lib/typert.host.d.ts",
+    "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
-    "cordis.patch.yml"
+    "lib/typert.remote-client.js",
+    "cordis.patch.yml",
+    "skills/**/*.md"
   ],
   "license": "MIT",
   "peerDependencies": {
