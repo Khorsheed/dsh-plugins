@@ -153,6 +153,9 @@ describe('context-guard browser half', () => {
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {
     const { ctx, fiber } = await bench()
     const translate = ctx.locale.bind(NS)
+    // Pin the locale explicitly: rc.8's browser-locale detection reads the jsdom
+    // window (en-US), so the default locale is environment-dependent.
+    ctx.locale.setLocale('zh')
     expect(translate('settings.title')).toBe(zh['settings.title'])
     ctx.locale.setLocale('en')
     expect(translate('settings.title')).toBe(en['settings.title'])
