@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-20-rc8-host-adaptation.md
-.agents/notes/implemented/process/2026-08-20-rc8-host-adaptation.md: 7410828cf719d28b36bf0ee96866b320596bbbed
-.agents/notes/implemented/process/2026-08-20-rc8-host-adaptation.zh.md: 242a5d446b9e5b45bd7cced375fe557b14e575c0
+.agents/notes/implemented/process/2026-08-20-rc8-host-adaptation.md: ff0e0f9daa18f9a44c393cd59b226499eb56db79
+.agents/notes/implemented/process/2026-08-20-rc8-host-adaptation.zh.md: ea7bd9ad9b6a4d72cd818bb7d95233d1a89c91c0
