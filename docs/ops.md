@@ -2,6 +2,8 @@
 
 本仓库插件的流转分三层环境，交付形态逐层收紧。npm 发布的动作清单与失败对照表见 [publishing.md](publishing.md),本文规定流程本身。
 
+本文只写流程,不记录任何版本状态。当前线上运行版本以 profile 清单(`$DSH_HOME/profiles/web/package.json`)与 `dist-publish/` 为准;每次 `deploy:3080` 会自动维护它们并输出通报。流程本身变化时才改本文。
+
 ## 三层环境与交付形态
 
 | 环境 | 用途 | 交付形态 | 规则 |
@@ -40,7 +42,7 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 - **独立线,不齐步走。** 每个插件按自己的成熟度验收、发布(semver 独立);四段式(`0.1.0-rc.8.x`)是线内补丁的既有记法。唯一硬约束:新版本必须超过 npm 已发布版本。
 - **家族同发,按依赖序。** local-agent 家族(core → tool-subagent → 各 provider)作为一批发布,版本线先对齐;pack-dist 会把 `workspace:*` 改写成 `^<version>` 家族依赖,顺序错了干净机器装不上。
-- **整合包是薄元包**(规划中,如 `@khorsheed/dsh-plugin-pack`):只声明 dependencies、**自身不带 bundle patch**。`dsh plugin add` 会把直接依赖调和进 profile 的 bundles 层,每个子插件仍靠各自的 patch 自挂载——社区既能一条命令装全家,也能对其中任一 bundle 单独 add/remove,互不影响。整合包版本随任一子包发布而 bump。
+- **整合包**：当前 CLI 的 `reconcilePlugins` 只调和 profile 的**直接依赖**,npm 薄元包的子插件是传递依赖、不会被挂载——所以薄元包需要上游 seam(见提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile)。今天可交付的整合形态是**形态 A(add 清单)与形态 B(profile 目录模板)**,成员都是 profile 直接依赖,任一 bundle 单独装卸互不影响。整合包版本只在成员增删或跨大版本线时 bump(caret 范围下子包 patch 发布不需要动 pack)。
 - **首发包没有顺序问题**(除家族外),npm 上都不存在,无 403/409 风险。
 
 ## 放行 npm 的标准
