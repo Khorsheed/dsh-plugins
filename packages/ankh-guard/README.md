@@ -49,6 +49,7 @@ Runtime needs: `node`, `bash`, `lsof` on macOS/Linux for listener discovery (`--
 - **pnpm blocks dependency build scripts by default.** If the add fails on a build-script interception, allow the toolchain entries via `allowBuilds` and retry.
 - **A root-owned npm cache** (one `sudo npm …` in the past) fails the prepare build with EPERM: `sudo chown -R $(id -u):$(id -g) ~/.npm`.
 - **`--start` does not run from your cwd.** The watchdog `cd`s into the dsh home (else `/tmp`) before launching, so the start command must be self-contained — absolute paths, or an explicit `cd` inside it.
+- **Put `--no-open` in the start command.** Without it, every respawn (watchdog takeover, scheduled restart) opens a fresh browser tab on the host. The preflight dry-run never opens one.
 - **Supervision adopted from a sandboxed session stays sandboxed.** A watchdog spawned from inside a workspace-write sandbox passes that profile to every respawned instance (nested sandbox-exec then fails, and every command degrades to approvals). For a permanent deployment, use the layered shape (the launchd/systemd installer) so the watchdog chain starts outside any sandbox.
 
 ## CLI
@@ -74,7 +75,7 @@ Full commands: `verify`, `record`, `status`, `clear`, `checkpoint`, `reset`, `ca
 - `1` — a composition verdict: the tree a restart would boot is broken; the output names the failing layer.
 - `3` — preflight itself could not execute (missing app layout, infrastructure crash) — **not** a verdict on the composition.
 
-`schedule-exit` and `restart` run this gate after the credential check, before anything is stopped. A composition failure refuses with the preflight's diagnostics; an infrastructure failure also refuses — worded differently and with the manual override (stop the instance by hand, let the watchdog respawn it) — because the guard will not stop a healthy instance it cannot prove will come back. Outside the dsh app layout (a standalone published install) there is no profile to check: the gate warns once and proceeds. Flags: `--profile NAME` (default `$DSH_PROFILE`, else `web`) and `--preflight-timeout-ms MS` (default 120000); `DSH_PREFLIGHT_COMMAND` replaces the resolved app bin wholesale (test hook). Run it by hand any time with `dsh-ankh-guard preflight --profile web`.
+`schedule-exit` and `restart` run this gate after the credential check, before anything is stopped. A composition failure refuses with the preflight's diagnostics; an infrastructure failure also refuses — worded differently and with the manual override (stop the instance by hand, let the watchdog respawn it) — because the guard will not stop a healthy instance it cannot prove will come back. The gate locates the dsh app to dry-run with via `--repo`, else `DSH_HARNESS`, else the conventional `~/code/deepseek-harness` checkout; where none of those resolves (a pure npm deployment with no harness checkout) there is no engine to boot the profile with, so the gate warns once and proceeds. Flags: `--profile NAME` (default `$DSH_PROFILE`, else `web`) and `--preflight-timeout-ms MS` (default 120000); `DSH_PREFLIGHT_COMMAND` replaces the resolved app bin wholesale (test hook). Run it by hand any time with `dsh-ankh-guard preflight --profile web`.
 
 ### The self-restart protocol
 
@@ -150,7 +151,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ⚠️ degraded — everything works, but the optional composition-preflight gate still mirrors `composeProfile` by hand (with a drift tripwire test) because rc.8 still does not export it; without a harness checkout the gate reports a notice instead of running. All other capabilities are intact on the npm line.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ⚠️ degraded — everything works; the composition-preflight gate runs through the standalone `preflight-runner` (composing through the published `@deepseek-ai/dsh-app-boot` primitives with a drift tripwire, since rc.8 still does not export `composeProfile`) wherever a dsh app layout resolves — `--repo`, `DSH_HARNESS`, or the default checkout. On a pure npm deployment with no harness checkout the gate reports a notice and proceeds instead; every other capability is intact on the npm line.
 - source line (deepseek-harness master, fork or upstream): ✅ — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
 ## Known Limitations and Deferred Work
