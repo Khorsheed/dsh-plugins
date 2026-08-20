@@ -262,3 +262,98 @@ describe('FilePreviewService.list', () => {
     expect(service.list(makeAgent(session))).toEqual({ entries: [], asOfSeq: -1, truncated: false })
   })
 })
+
+describe('FilePreviewService.read — HTML render-channel cap and scripted hint', () => {
+  const htmlInfo = (size: number): FsInfo => ({ version: FsVersion('v1'), type: 'file', size })
+  const htmlTarget = { displayPath: 'page.html' } as unknown as FsTarget
+  const agent = makeAgent({ events: [], header: { cwd: '/work' } })
+
+  it('reads HTML up to htmlMaxReadBytes (default 4 MiB) — wider than the base cap', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(2 * 1024 * 1024)),
+      readText: vi.fn().mockResolvedValue('<h1>big page</h1>'),
+    }
+    const service = makeService(fs as unknown as FileSystem, { maxReadBytes: 512 * 1024 })
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result.kind).toBe('text')
+    expect(result.content).toBe('<h1>big page</h1>')
+    expect(result.truncated).toBe(false)
+    // 2 MiB > base cap, but the html cap allowed the read — the base cap must
+    // not have been applied.
+    expect(fs.readText).toHaveBeenCalled()
+  })
+
+  it('answers too-large for HTML beyond htmlMaxReadBytes without reading', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(5 * 1024 * 1024)),
+      readText: vi.fn(),
+    }
+    const service = makeService(fs as unknown as FileSystem)
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result).toEqual({ path: 'page.html', kind: 'too-large', size: 5 * 1024 * 1024 })
+    expect(fs.readText).not.toHaveBeenCalled()
+  })
+
+  it('answers too-large for HTML beyond a custom htmlMaxReadBytes', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(64 * 1024)),
+      readText: vi.fn(),
+    }
+    const service = makeService(fs as unknown as FileSystem, { htmlMaxReadBytes: 32 * 1024 })
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result).toEqual({ path: 'page.html', kind: 'too-large', size: 64 * 1024 })
+    expect(fs.readText).not.toHaveBeenCalled()
+  })
+
+  it('truncates at the custom htmlMaxReadBytes when the backend reports no size', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      // No size: the read proceeds and the content cap applies.
+      stat: vi.fn().mockResolvedValue({ version: FsVersion('v1'), type: 'file' } as FsInfo),
+      readText: vi.fn().mockResolvedValue('x'.repeat(64 * 1024 + 10)),
+    }
+    const service = makeService(fs as unknown as FileSystem, { htmlMaxReadBytes: 32 * 1024 })
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result.kind).toBe('text')
+    expect(result.truncated).toBe(true)
+    expect(result.content?.length).toBe(32 * 1024)
+  })
+
+  it('marks HTML with a <script> tag as scripted', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(50)),
+      readText: vi.fn().mockResolvedValue('<script>alert(1)</script><p>hi</p>'),
+    }
+    const service = makeService(fs as unknown as FileSystem)
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result.htmlScripted).toBe(true)
+  })
+
+  it('marks HTML with an inline event handler as scripted', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(50)),
+      readText: vi.fn().mockResolvedValue('<button onclick="go()">x</button>'),
+    }
+    const service = makeService(fs as unknown as FileSystem)
+    const result = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(result.htmlScripted).toBe(true)
+  })
+
+  it('leaves htmlScripted absent for plain HTML and for non-HTML text', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(htmlTarget),
+      stat: vi.fn().mockResolvedValue(htmlInfo(50)),
+      readText: vi.fn().mockResolvedValue('<p>static only</p>'),
+    }
+    const service = makeService(fs as unknown as FileSystem)
+    const html = await service.read(agent, 'page.html', new AbortController().signal)
+    expect(html.htmlScripted).toBeUndefined()
+    const md = await service.read(makeAgent({ events: [], header: { cwd: '/work' } }), 'notes.md', new AbortController().signal)
+    expect(md.htmlScripted).toBeUndefined()
+  })
+})

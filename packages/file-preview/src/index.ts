@@ -111,6 +111,27 @@ function isImagePath(path: string): boolean {
   return dot >= 0 && IMAGE_EXTENSIONS.has(path.slice(dot).toLowerCase())
 }
 
+/** HTML extensions served through the sandboxed render channel. */
+const HTML_EXTENSIONS: ReadonlySet<string> = new Set(['.html', '.htm'])
+
+/** Detect an HTML document from its display path extension. */
+function isHtmlPath(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  return dot >= 0 && HTML_EXTENSIONS.has(path.slice(dot).toLowerCase())
+}
+
+/** Best-effort scripted-HTML detection: any `<script>` tag, inline event
+ *  handler (`on*="…"`), or `javascript:` URL marks the document as scripted.
+ *  Only a hint for default-mode selection and warning — never a trust
+ *  decision; the sandbox and the Tier1 CSP are the real boundary. The scan
+ *  runs on the read content as delivered (a truncated read may miss markers
+ *  in the tail; acceptable for a hint). */
+function isScriptedHtml(content: string): boolean {
+  return /<\s*script[\s>]/i.test(content)
+    || /\son[a-z]+\s*=/i.test(content)
+    || /javascript:/i.test(content)
+}
+
 /** Stable error text for a failed read, without leaking backend internals. */
 function readErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -129,6 +150,7 @@ export class FilePreviewService extends TypertRemoteService {
 
   static Config: z<FilePreviewConfig> = z.object({
     maxReadBytes: z.natural().min(1).default(512 * 1024),
+    htmlMaxReadBytes: z.natural().min(1).default(4 * 1024 * 1024),
     maxFiles: z.natural().min(1).default(500),
     captureBashWrites: z.boolean().default(true),
   })
@@ -164,6 +186,7 @@ export class FilePreviewService extends TypertRemoteService {
     super(ctx, 'filePreview')
     this.resolved = {
       maxReadBytes: config.maxReadBytes ?? 512 * 1024,
+      htmlMaxReadBytes: config.htmlMaxReadBytes ?? 4 * 1024 * 1024,
       maxFiles: config.maxFiles ?? 500,
       captureBashWrites: config.captureBashWrites ?? true,
     }
@@ -378,7 +401,12 @@ export class FilePreviewService extends TypertRemoteService {
     if (info === undefined || info.type !== 'file') {
       return { path, kind: 'missing' }
     }
-    if (info.size !== undefined && info.size > this.resolved.maxReadBytes) {
+    // HTML gets its own, wider render-channel cap; every other text read
+    // keeps `maxReadBytes`. Images keep the base cap (their route serves
+    // bytes, not the render channel).
+    const html = isHtmlPath(path)
+    const cap = html ? this.resolved.htmlMaxReadBytes : this.resolved.maxReadBytes
+    if (info.size !== undefined && info.size > cap) {
       return { path, kind: 'too-large', size: info.size }
     }
     if (isImagePath(path)) {
@@ -402,12 +430,13 @@ export class FilePreviewService extends TypertRemoteService {
       if (hasNulByte(content)) {
         return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
       }
-      const truncated = content.length > this.resolved.maxReadBytes
+      const truncated = content.length > cap
       return {
         path,
         kind: 'text',
-        content: truncated ? content.slice(0, this.resolved.maxReadBytes) : content,
+        content: truncated ? content.slice(0, cap) : content,
         truncated,
+        ...(html && isScriptedHtml(content) ? { htmlScripted: true } : {}),
         ...(info.size === undefined ? {} : { size: info.size }),
       }
     } catch (error) {
