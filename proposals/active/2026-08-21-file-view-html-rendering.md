@@ -76,9 +76,9 @@
 | 里程碑 | 内容 | 状态 |
 | --- | --- | --- |
 | M0 | 3D 测试页 + playwright 验证 CSP/渲染设计 | **已完成**（2026-08-21：4 页全过，探针 7 项符合设计） |
-| M1 | Remote 分级 + scripted 探测（含单测） | 待开工 |
-| M2 | client Tier0/Tier1 + 桥 + 看门狗（含单测） | 待开工 |
-| M3 | 产物行接入 + 3D 专项：`3d-artifact` skill（生成侧契约）+ 体积红线/纹理调优 | 待开工 |
+| M1 | Remote 分级 + scripted 探测（含单测） | **已完成**（`a4d7883`：`htmlMaxReadBytes` 4MiB + `htmlScripted` 提示，106 tests） |
+| M2 | client Tier0/Tier1 + 桥 + 看门狗（含单测） | **已完成**（`e981c25`：buildSrcDoc 内嵌 CSP / allow-scripts 门控 / dshBridge 白名单桥 / 10s 看门狗，125 tests） |
+| M3 | 产物行接入 + 3D 专项：`3d-artifact` skill（生成侧契约）+ 体积红线/纹理调优 | 进行中（skill 已交付 `0bff9d2`；产物行接入待做） |
 
 ## 实现记录
 
