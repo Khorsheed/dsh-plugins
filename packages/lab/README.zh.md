@@ -10,7 +10,7 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 2. **`release` 是 gate 的执行点。** 单元绑定 mission 且 `@khorsheed/dsh-mission` 插件在场时，`isReleasable` 必须通过——查询失败即拒绝（fail closed），任何选项都不能绕过校验。无 gate 时（未绑定 mission，或插件缺席），release 需要显式 `force` 并告警。
 3. **不发起任何任务。** lab 提供动词；何时调用由人 / agent / 外部编排决定。
 
-里程碑 M1–M2 交付服务面（`ctx.lab`）与 docker provider：acquire / populate / collect / checkpoint / verify / archive / release / status、环境指纹、孤儿进程补偿、`maxConcurrentUnits` 安全阀。CLI 是 M2 的剩余部分，模型工具属 M3。
+里程碑 M1–M2 交付服务面（`ctx.lab`）与同内核的 `dsh-lab` CLI，配 docker provider：acquire / populate / collect / checkpoint / verify / archive / release / status、环境指纹、孤儿进程补偿、`maxConcurrentUnits` 安全阀。模型工具属 M3。
 
 ## 工作原理
 
@@ -60,12 +60,29 @@ const units = await ctx.lab.status()          // 与 docker daemon reconcile 后
 
 mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
 
+## CLI
+
+`dsh-lab <动词>`（或 `node lib/cli.js`）；数据走 stdout（有值的动词输出 JSON），诊断走 stderr。退出码：`0` 正常，`1` 失败/拒绝，`2` 用法错误。
+
+```sh
+dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
+dsh-lab populate UNIT --source DIR [--target DIR]
+dsh-lab collect UNIT --source DIR --target DIR [--kind K]
+dsh-lab checkpoint UNIT --name NAME
+dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
+dsh-lab archive UNIT --target DIR [--kind K]
+dsh-lab release UNIT [--force]
+dsh-lab status [UNIT]
+```
+
+CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面适配到 `dsh-mission` 二进制：`release` 的 gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码一律 fail closed），`verify` 把原样结果注解进 `lab` 命名空间。refs / artifact / checkpoint 的登记只在进程内服务面可用——mission CLI 没有这些动词，CLI 模式下这些写入 warn 跳过。
+
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅ —— 服务面与 docker provider 在已发布宿主上完整可用。
 - source line（deepseek-harness master，fork 或 upstream）：✅ —— 同上。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。CLI（M2 剩余部分）、模型工具（M3）在本线尚不存在。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。`lab_*` 模型工具（M3）在本线尚不存在。
 
 ## 已知限制与推迟的工作
 
@@ -74,4 +91,5 @@ mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addC
 - **孤儿补偿只覆盖 lab 自己的 exec**——`/run/dsh-lab/pids/` 下的 pidfile 只跟踪 provider spawn 的进程；外来的 `docker exec` 对清扫不可见（release 时的容器移除仍会收走一切）。
 - **镜像必须自带 `sleep` 与 `sh`**——distroless 镜像需要自定义 `command`，且失去记 pid 的 wrapper；`checkpoint` 还要求单元内有 `git`。
 - **checkpoint 需要可写工作区**——工作区在首次 checkpoint 时自动 `git init`；只读挂载的工作区无法提交，会报错（此时应 checkpoint 一个 populate 出来的目录）。
-- **M2/M3 范围**——CLI（M2 剩余部分）、`lab_*` 模型工具（M3）已在提案中设计，本线刻意缺席。
+- **M3 范围**——`lab_*` 模型工具已在提案中设计，本线刻意缺席。
+- **CLI 模式的 mission 登记是部分的**——`dsh-mission` 二进制只暴露 `annotate` 与 `is-releasable`，CLI 正好接线这两个（verify 记录、release gate）；refs / artifact / checkpoint 的登记走进程内服务面，CLI 模式下 warn 跳过。

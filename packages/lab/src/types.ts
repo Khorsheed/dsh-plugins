@@ -229,8 +229,8 @@ export interface MissionFace {
     artifact: { path: string; kind: string },
     options?: { runId?: string },
   ): Promise<{ added: boolean }>
-  /** May this mission's held resources be destroyed? */
-  isReleasable(missionId: string, runId?: string): boolean
+  /** May this mission's held resources be destroyed? (async-tolerant: the CLI face spawns `dsh-mission`.) */
+  isReleasable(missionId: string, runId?: string): boolean | Promise<boolean>
   /** Register a checkpoint; `ref` is filled only by the resource holder (lab). */
   addCheckpoint(
     missionId: string,

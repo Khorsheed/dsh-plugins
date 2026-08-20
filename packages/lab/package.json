@@ -22,6 +22,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./cli": {
+      "types": "./lib/types/cli.d.ts",
+      "default": "./lib/cli.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -74,5 +78,8 @@
       "minHost": "0.1.0-rc.6",
       "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning"
     }
+  },
+  "bin": {
+    "dsh-lab": "lib/cli.js"
   }
 }

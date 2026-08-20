@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { DockerProvider } from '../src/docker.ts'
 import type { Exec, ExecResult } from '../src/types.ts'
 
-/** A scripted host command runner recording every invocation. */
-function fakeExec(handler: (argv: string[]) => ExecResult | undefined): { exec: Exec; calls: string[][] } {
+/** A scripted host command runner recording every invocation (docker prefix asserted, then stripped). */
+function fakeExec(handler: (argv: string[], options?: { timeoutMs?: number }) => ExecResult | undefined): { exec: Exec; calls: string[][] } {
   const calls: string[][] = []
-  const exec: Exec = (argv) => {
-    calls.push([...argv])
-    return Promise.resolve(handler(argv) ?? { exitCode: 0, stdout: '', stderr: '' })
+  const exec: Exec = (argv, options) => {
+    if (argv[0] !== 'docker') return Promise.reject(new Error(`unprefixed command: ${argv.join(' ')}`))
+    const stripped = argv.slice(1)
+    calls.push(stripped)
+    return Promise.resolve(handler(stripped, options) ?? { exitCode: 0, stdout: '', stderr: '' })
   }
   return { exec, calls }
 }
@@ -215,13 +217,18 @@ describe('DockerProvider.verify', () => {
   })
 
   it('forwards the timeout to the exec runner and surfaces the timedOut fact', async () => {
-    const { exec, calls } = fakeExec((argv) => {
-      if (argv[0] === 'exec') return { exitCode: -1, stdout: '', stderr: '', timedOut: true }
+    let seenTimeout: number | undefined
+    const { exec, calls } = fakeExec((argv, options) => {
+      if (argv[0] === 'exec') {
+        seenTimeout = options?.timeoutMs
+        return { exitCode: -1, stdout: '', stderr: '', timedOut: true }
+      }
       return undefined
     })
     const result = await makeProvider(exec).verify('dsh-lab-x', '/workspace', { command: ['sleep', '99'], timeoutMs: 100 })
     expect(result.timedOut).toBe(true)
     expect(result.exitCode).toBe(-1)
+    expect(seenTimeout).toBe(100)
     expect(calls[0]?.slice(0, 2)).toEqual(['exec', '--workdir'])
   })
 })

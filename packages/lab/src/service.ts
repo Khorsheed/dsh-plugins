@@ -105,7 +105,7 @@ export class LabService implements Lab {
 
   async release(unitId: string, options?: ReleaseOptions): Promise<void> {
     const { unit, provider } = await this.locate(unitId)
-    this.checkReleaseGate(unit, options)
+    await this.checkReleaseGate(unit, options)
     await provider.terminate(unit.resource)
     this.units.delete(unitId)
     this.runningUnits.delete(unitId)
@@ -196,12 +196,12 @@ export class LabService implements Lab {
    * option bypasses the check. Without a gate, `force: true` plus a warning
    * is the only way through.
    */
-  private checkReleaseGate(unit: UnitInfo, options: ReleaseOptions | undefined): void {
+  private async checkReleaseGate(unit: UnitInfo, options: ReleaseOptions | undefined): Promise<void> {
     const mission = unit.missionId !== undefined ? this.options.getMission() : undefined
     if (unit.missionId !== undefined && mission !== undefined) {
       let releasable: boolean
       try {
-        releasable = mission.isReleasable(unit.missionId, unit.runId)
+        releasable = await mission.isReleasable(unit.missionId, unit.runId)
       } catch (error) {
         throw new Error(`lab: release of ${unit.id} refused — the releasable check for mission ${unit.missionId} failed closed: ${String(error)}`)
       }

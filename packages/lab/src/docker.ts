@@ -74,7 +74,7 @@ export class DockerProvider implements UnitProvider {
 
   /** The fingerprint is the first repo digest, falling back to the local image id. */
   private async inspectImage(image: string): Promise<string | undefined> {
-    const result = await this.exec(['image', 'inspect', image, '--format', '{{json .RepoDigests}} {{.Id}}'])
+    const result = await this.docker(['image', 'inspect', image, '--format', '{{json .RepoDigests}} {{.Id}}'])
     if (result.exitCode !== 0) return undefined
     const [digestsJson, id] = result.stdout.trim().split(' ')
     const digests = JSON.parse(digestsJson ?? '[]') as string[]
@@ -157,11 +157,11 @@ export class DockerProvider implements UnitProvider {
   }
 
   async listManaged(): Promise<ManagedResource[]> {
-    const ps = await this.exec(['ps', '-a', '--filter', `label=${MANAGED_LABEL}=true`, '--format', '{{.Names}}'])
+    const ps = await this.docker(['ps', '-a', '--filter', `label=${MANAGED_LABEL}=true`, '--format', '{{.Names}}'])
     if (ps.exitCode !== 0) throw new Error(`lab: docker ps failed (exit ${ps.exitCode}): ${ps.stderr.trim()}`)
     const names = ps.stdout.split('\n').map((line) => line.trim()).filter((line) => line !== '')
     if (names.length === 0) return []
-    const inspect = await this.exec(['inspect', ...names])
+    const inspect = await this.docker(['inspect', ...names])
     if (inspect.exitCode !== 0) throw new Error(`lab: docker inspect failed (exit ${inspect.exitCode}): ${inspect.stderr.trim()}`)
     const parsed = JSON.parse(inspect.stdout) as {
       Name?: string
@@ -191,7 +191,7 @@ export class DockerProvider implements UnitProvider {
   async terminate(resource: string): Promise<void> {
     // Best-effort graceful sweep: TERM every pidfile-recorded process. The
     // container may already be stopped — that failure is expected and ignored.
-    await this.exec([
+    await this.docker([
       'exec', resource, 'sh', '-c',
       `for f in ${PID_DIR}/*.pid; do [ -f "$f" ] || continue; kill -TERM "$(cat "$f")" 2>/dev/null || true; done`,
     ])
@@ -210,7 +210,7 @@ export class DockerProvider implements UnitProvider {
     const full = ['exec']
     if (options?.workdir !== undefined) full.push('--workdir', options.workdir)
     full.push(resource, 'sh', '-c', `echo $$ > ${PID_DIR}/$$.pid; exec "$@"`, 'dsh-lab', ...argv)
-    return this.exec(full, options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined)
+    return this.docker(full, options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined)
   }
 
   /** {@link execInUnit} variant for setup steps where a failure IS an error. */
@@ -222,9 +222,14 @@ export class DockerProvider implements UnitProvider {
     return result
   }
 
+  /** Invoke the docker CLI — the one binary every provider command prefixes. */
+  private docker(argv: string[], options?: { timeoutMs?: number }): Promise<ExecResult> {
+    return this.exec(['docker', ...argv], options)
+  }
+
   /** Run one docker invocation, throwing with stderr context on failure. */
   private async run(argv: string[]): Promise<void> {
-    const result = await this.exec(argv)
+    const result = await this.docker(argv)
     if (result.exitCode !== 0) {
       throw new Error(`lab: docker ${argv[0] ?? ''} failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
     }

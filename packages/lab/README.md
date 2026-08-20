@@ -10,7 +10,7 @@ Three red lines define the character of the plugin:
 2. **`release` is the gate's enforcement point.** When the unit is bound to a mission and the `@khorsheed/dsh-mission` plugin is present, `isReleasable` must pass — a failed query fails closed, and no option bypasses the check. Without a gate (no mission binding, or the plugin absent), release requires an explicit `force` and warns.
 3. **It never fires work.** lab provides verbs; when to call them belongs to the human / agent / external orchestrator.
 
-Milestones M1–M2 ship the service face (`ctx.lab`) with the docker provider: acquire / populate / collect / checkpoint / verify / archive / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The CLI is the rest of M2; the model tools are M3.
+Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over the same kernel, with the docker provider: acquire / populate / collect / checkpoint / verify / archive / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The model tools are M3.
 
 ## How it works
 
@@ -60,12 +60,29 @@ const units = await ctx.lab.status()          // reconciled against the docker d
 
 The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
 
+## CLI
+
+`dsh-lab <verb>` (or `node lib/cli.js`); data on stdout (JSON where the verb produces a value), diagnostics on stderr. Exit codes: `0` ok, `1` failure/refused, `2` usage.
+
+```sh
+dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
+dsh-lab populate UNIT --source DIR [--target DIR]
+dsh-lab collect UNIT --source DIR --target DIR [--kind K]
+dsh-lab checkpoint UNIT --name NAME
+dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
+dsh-lab archive UNIT --target DIR [--kind K]
+dsh-lab release UNIT [--force]
+dsh-lab status [UNIT]
+```
+
+The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and `verify` annotates the verbatim outcome into the `lab` namespace. Refs / artifacts / checkpoints register only through the in-host service face — the mission CLI exposes no such verbs, so in CLI mode those writes are skipped with a warning.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — the service face and docker provider work on the published host.
 - source line (deepseek-harness master, fork or upstream): ✅ — same.
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. The CLI (rest of M2) and the model tools (M3) do not exist in this line yet.
+Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. The `lab_*` model tools (M3) do not exist in this line yet.
 
 ## Known Limitations and Deferred Work
 
@@ -74,4 +91,5 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@kh
 - **Orphan compensation covers lab's own execs only** — pidfiles under `/run/dsh-lab/pids/` track processes the provider spawned; a foreign `docker exec` into the unit is invisible to the sweep (container removal still reaps everything at release).
 - **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper; `checkpoint` additionally needs `git` inside the unit.
 - **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
-- **M2/M3 scope** — the CLI (rest of M2) and the `lab_*` model tools (M3) are designed in the proposal and deliberately absent here.
+- **M3 scope** — the `lab_*` model tools are designed in the proposal and deliberately absent here.
+- **CLI-mode mission registration is partial** — the `dsh-mission` bin exposes `annotate` and `is-releasable` only, so the CLI wires exactly those (verify records, the release gate); refs / artifacts / checkpoints register through the in-host service face and are skipped with a warning in CLI mode.
