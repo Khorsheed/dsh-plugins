@@ -88,6 +88,7 @@
 - **2026-08-21 skill 已交付**：`3d-artifact` skill 随 `@khorsheed/dsh-file-preview` 打包（`skills/3d-artifact/SKILL.md` + `files` glob）并在 `FilePreviewService` 构造器经可选 `skills` 服务注册（照 ankh-guard 范式，缺能力降级）；pack-smoke 测试断言 tarball 携带；提交 `0bff9d2`，Agent Note `implemented/feature/2026-08-21-3d-artifact-skill-registration`。
 - **2026-08-21 测试用例**：用「超写实数字孪生峡谷+悬索桥」提示词按 skill 契约生成 `scratch/html-render-3d-demo/05-digital-twin-canyon.html`（程序化地形 V 谷、河流、双塔悬索桥+车流、山峦/风机/输电塔、数字孪生叠加：点云/BIM 线框/热力图/传感器/无人机），playwright 验证 PASS：2.7s 加载、58 fps（无头 SwiftShader）、60 车辆、console 零错误；截图 `05-default/05-close.png`。
 - **2026-08-21 构建修复**：e007ba3 破坏 `gen-typert`（files 目录写法 vs 生成器字面校验）——五个 typert 包补回字面 `lib/typert.*.js` 条目，`gen-typert` 恢复通过；提交 `2a198ab`，Agent Note `implemented/bug-fix/2026-08-21-typert-files-reconciliation`。
+- **2026-08-21 E2E（throwaway 实例 `~/.dsh-html-demo:3291`，link 装 file-preview + ui-file-preview）**：向实例内 agent 发送**简化提示词**（纯 CSS/SVG、零脚本、内嵌 Tier1 CSP、≤30KB——静态沙箱下 CSS 动画可跑，省 token）→ 生成 `canyon-bridge.html`（20KB，**0 script、CSP 合规、无外链**）→ **产物视图列表拿到**（fold 采集：`canyon-bridge.html / ws / 第 1 轮 · 第 6 步`）→ **点行渲染正常**：sandboxed iframe（Tier0 静态）+ 源码/渲染切换 + **35 个 CSS 动画运行** + 数字孪生面板（主缆张力/挠度/风速…）；**正文 mention 点击开抽屉 ✅**。发现：官方**工具结果行**的文件链接（write 工具输出的 disclosure 行）走官方 `workspaces.openPath`（跳 IDE），不在插件拦截面内——S1 缝的新表面，已补登记。
 
 ## 验收标准（done 判定）
 
