@@ -8,15 +8,22 @@
  * injected Remote callbacks; the whitelist the binding declares is enforced
  * host-side, so the tree only ever shows what the session may see.
  *
- * The visual language follows the official trees (sidebar session list,
- * directory browser): 28px pill rows on the interactive hover/active tokens,
- * 14px chevrons, quiet tertiary annotations, and official Button/Input/Pill
- * atoms for the chrome.
+ * The tree follows the IDE explorer anatomy (VS Code): compact 24px rows,
+ * chevron disclosure at every group level, hairline indent guides under each
+ * expanded group, the official folder glyphs for layers (they ARE repo
+ * directories) and a minimal inline file glyph for leaves (no official
+ * per-extension icon set exists — see the M2 Agent Note), and full-row subtle
+ * hover/selected backgrounds. Item metadata stays OUT of the tree (an
+ * explorer has no chips); it surfaces in the preview header when one of the
+ * item's files is selected. The preview pane's skeleton follows the products
+ * tab: a single quiet header line (icon + path + metadata + commit), a
+ * hairline below it, then the content.
  */
 
 import { useEffect, useState } from 'react'
 import {
-  Button, IconChevronDownOutline14, IconChevronRightOutline14, Input, Pill,
+  Button, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconFolderClose16, IconFolderOpen16, Input, Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
@@ -30,8 +37,8 @@ function parseList(raw: string): string[] | undefined {
   return list.length === 0 ? undefined : list
 }
 
-/** At most this many metadata chips show inline; the rest collapse into a +N chip. */
-const MAX_META_PILLS = 2
+/** At most this many metadata chips show in the preview header; the rest collapse into +N. */
+const MAX_META_PILLS = 3
 
 /** One metadata entry as quiet chip text: scalars inline, containers summarized. */
 function metaPillText(key: string, value: unknown): string {
@@ -40,20 +47,39 @@ function metaPillText(key: string, value: unknown): string {
   return `${key}: ${String(value)}`
 }
 
-/** An item's metadata as quiet chips — never the raw JSON string. */
+/** The selected item's metadata as quiet chips in the preview header — never raw JSON. */
 function MetaPills(props: { metadata: JsonObject; t: DatasetsViewProps['t'] }) {
   const { metadata, t } = props
   const entries = Object.entries(metadata)
   if (entries.length === 0) return null
   const shown = entries.slice(0, MAX_META_PILLS)
   const rest = entries.length - shown.length
-  const full = JSON.stringify(metadata, null, 2)
   return (
-    <span className={css.metaPills} title={full}>
+    <span className={css.metaPills} title={JSON.stringify(metadata, null, 2)}>
       {shown.map(([key, value]) => <Pill key={key} className={css.metaPill}>{metaPillText(key, value)}</Pill>)}
       {rest > 0 && <Pill className={css.metaPill}>{t('tree.moreMeta', { count: rest })}</Pill>}
     </span>
   )
+}
+
+/** The leaf file glyph: a minimal inline document outline (the official icon
+ * set ships folder glyphs but no file icon — see the M2 Agent Note). */
+function FileIcon() {
+  return (
+    <svg className={css.fileIcon} width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M4 1.5h5.5L13 5v9.5H4V1.5Z M9.5 1.5V5H13"
+        stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A group-row chevron: the official 14px disclosure glyphs. */
+function Chevron(props: { open: boolean }) {
+  return props.open
+    ? <IconChevronDownOutline14 className={css.chevron} />
+    : <IconChevronRightOutline14 className={css.chevron} />
 }
 
 /**
@@ -114,14 +140,51 @@ function BindingForm(props: {
   )
 }
 
-/** A dataset/item row chevron: the official 14px disclosure glyphs. */
-function Chevron(props: { open: boolean }) {
-  return props.open
-    ? <IconChevronDownOutline14 className={css.chevron} />
-    : <IconChevronRightOutline14 className={css.chevron} />
+/** One layer group: a collapsible folder row, then its file leaves under a guide. */
+function LayerNode(props: {
+  dataset: string
+  item: string
+  layer: string
+  paths: readonly string[]
+  selection: DatasetSelection | null
+  onSelect: (selection: DatasetSelection) => void
+  t: DatasetsViewProps['t']
+}) {
+  const { dataset, item, layer, paths, selection, onSelect, t } = props
+  const [open, setOpen] = useState(true)
+  return (
+    <div className={css.layer}>
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        {open ? <IconFolderOpen16 className={css.folderIcon} /> : <IconFolderClose16 className={css.folderIcon} />}
+        <span className={css.rowTitle}>{layer}</span>
+        <span className={css.rowCount}>· {t('tree.fileCount', { count: paths.length })}</span>
+      </button>
+      {open && (
+        <div className={css.children}>
+          {paths.map((path) => {
+            const selected = selection !== null
+              && selection.dataset === dataset && selection.item === item
+              && selection.layer === layer && selection.path === path
+            return (
+              <button
+                key={path}
+                type="button"
+                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
+                onClick={() => { onSelect({ dataset, item, layer, path }) }}
+              >
+                <FileIcon />
+                <span className={css.fileName}>{path}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
-/** One item's layer/file tree (files are the leaf rows that drive the preview). */
+/** One item: a disclosure row; its layers (and their files) sit under a guide. */
 function ItemNode(props: {
   dataset: string
   item: ItemRecord
@@ -136,31 +199,23 @@ function ItemNode(props: {
       <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
         <Chevron open={open} />
         <span className={css.rowTitle}>{item.id}</span>
-        {item.metadata !== undefined && <MetaPills metadata={item.metadata} t={t} />}
       </button>
-      {open && Object.entries(item.layers).map(([layer, paths]) => (
-        <div key={layer} className={css.layerGroup}>
-          <div className={css.layerHeader}>
-            <span className={css.layerName}>{layer}</span>
-            <span className={css.layerCount}>· {t('tree.fileCount', { count: paths.length })}</span>
-          </div>
-          {paths.map((path) => {
-            const selected = selection !== null
-              && selection.dataset === dataset && selection.item === item.id
-              && selection.layer === layer && selection.path === path
-            return (
-              <button
-                key={path}
-                type="button"
-                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
-                onClick={() => { onSelect({ dataset, item: item.id, layer, path }) }}
-              >
-                {path}
-              </button>
-            )
-          })}
+      {open && (
+        <div className={css.children}>
+          {Object.entries(item.layers).map(([layer, paths]) => (
+            <LayerNode
+              key={layer}
+              dataset={dataset}
+              item={item.id}
+              layer={layer}
+              paths={paths}
+              selection={selection}
+              onSelect={onSelect}
+              t={t}
+            />
+          ))}
         </div>
-      ))}
+      )}
     </div>
   )
 }
@@ -274,6 +329,8 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
   }
 
+  const selectedItem = selection === null ? undefined : items[selection.dataset]?.find(item => item.id === selection.item)
+
   return (
     <div className={css.view} data-conversation-composer-overlay="">
       <div className={css.bindingBar}>
@@ -339,22 +396,26 @@ export function DatasetsView(props: DatasetsViewProps) {
                   aria-expanded={expanded}
                 >
                   <Chevron open={expanded} />
-                  <span className={css.rowTitle}>{dataset.id}</span>
-                  <span className={css.rowCount}>{t('list.itemCount', { count: dataset.itemCount })}</span>
+                  <span className={css.rowTitleStrong}>{dataset.id}</span>
+                  <span className={css.rowCount}>· {t('list.itemCount', { count: dataset.itemCount })}</span>
                 </button>
                 {dataset.name !== undefined && (
                   <div className={css.datasetNote} title={dataset.name}>{dataset.name}</div>
                 )}
-                {expanded && (items[dataset.id] ?? []).map(item => (
-                  <ItemNode
-                    key={item.id}
-                    dataset={dataset.id}
-                    item={item}
-                    selection={selection}
-                    onSelect={(next) => { actions.select(next) }}
-                    t={t}
-                  />
-                ))}
+                {expanded && (
+                  <div className={css.children}>
+                    {(items[dataset.id] ?? []).map(item => (
+                      <ItemNode
+                        key={item.id}
+                        dataset={dataset.id}
+                        item={item}
+                        selection={selection}
+                        onSelect={(next) => { actions.select(next) }}
+                        t={t}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -362,9 +423,13 @@ export function DatasetsView(props: DatasetsViewProps) {
         <section className={css.preview}>
           {selection !== null && (
             <div className={css.previewHeader}>
+              <FileIcon />
               <span className={css.previewPath}>
                 {selection.item} / {selection.layer}/{selection.path}
               </span>
+              {selectedItem?.metadata !== undefined && (
+                <MetaPills metadata={selectedItem.metadata} t={t} />
+              )}
               {preview !== null && (
                 <span className={css.previewCommit}>@{preview.commit.slice(0, 7)}</span>
               )}

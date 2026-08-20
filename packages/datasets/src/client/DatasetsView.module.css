@@ -1,9 +1,10 @@
 /* Conversation datasets view: binding bar on top, then a two-pane browser
    (dataset/item tree + content preview) filling the bounded view area; each
-   pane scrolls independently. The tree follows the official row language
-   (sidebar session list, directory browser): 28px pill rows, 6px radius,
-   transparent → interactive hover/active tokens, 14px chevrons, quiet
-   tertiary annotations, ellipsis everywhere. */
+   pane scrolls independently. The tree follows the IDE explorer anatomy:
+   compact 24px rows, chevron disclosure, hairline indent guides under each
+   expanded group, folder/file glyphs, and full-row subtle state backgrounds.
+   The preview pane follows the products tab's skeleton: one quiet header
+   line, a hairline, then the content in the chat's reading measure. */
 
 .view {
   display: flex;
@@ -94,11 +95,10 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 2px;
   width: 300px;
   min-width: 0;
   min-height: 0;
-  padding: 8px 8px calc(8px + var(--dsh-datasets-bottom-clearance, 0px));
+  padding: 6px 6px calc(8px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow-y: auto;
   border-right: 1px solid var(--dsw-alias-border-l2);
 }
@@ -115,21 +115,38 @@
   flex-direction: column;
 }
 
-/* One disclosure row (dataset or item): the official 28px pill. */
+.item,
+.layer {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Every expanded group's children hang on a hairline indent guide set under
+   the parent's chevron center — the explorer's orientation cue. */
+.children {
+  display: flex;
+  flex-direction: column;
+  margin-left: 11px;
+  padding-left: 9px;
+  border-left: 1px solid var(--dsw-alias-border-l3);
+}
+
+/* One tree row (dataset / item / layer): explorer-compact, flush with the
+   column, the state background spanning the whole row. */
 .row {
   display: flex;
   flex: none;
   align-items: center;
   gap: 4px;
   width: 100%;
-  height: 28px;
-  padding: 4px 8px 4px 4px;
+  height: 24px;
+  padding: 2px 6px 2px 2px;
   overflow: hidden;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 20px;
   text-align: left;
   cursor: pointer;
@@ -147,108 +164,66 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.folderIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Group titles give up their grow: counts/chips cluster right after them. */
 .rowTitle {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-weight: 500;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTitleStrong {
+  composes: rowTitle;
+  font-weight: 500;
+}
+
+/* Quiet count suffix, immediately after the title (`· N 个文件`). */
+.rowCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 /* The dataset's descriptor name gets its own quiet line under the row. */
 .datasetNote {
   overflow: hidden;
-  height: 20px;
-  padding: 0 8px 2px 26px;
+  height: 18px;
+  padding: 0 8px 0 20px;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 11px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rowCount {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Item rows indent one chevron slot under their dataset. */
-.item {
-  display: flex;
-  flex-direction: column;
-}
-
-.item > .row {
-  padding-left: 22px;
-}
-
-.metaPills {
-  display: flex;
-  flex: none;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.metaPill {
-  padding: 1px 6px;
-  font-size: 11px;
-  line-height: 16px;
-}
-
-/* Layer groups sit under the item label: a quiet group header with the file
-   count, then the layer-relative file rows. */
-.layerGroup {
-  display: flex;
-  flex-direction: column;
-  padding-left: 26px;
-}
-
-.layerHeader {
-  display: flex;
-  flex: none;
-  align-items: baseline;
-  gap: 5px;
-  height: 22px;
-  padding: 1px 8px 1px 0;
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-  white-space: nowrap;
-}
-
-.layerName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.layerCount {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-
+/* A file leaf: the inline glyph plus the layer-relative path. */
 .fileRow {
-  display: block;
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 2px 6px;
   overflow: hidden;
-  height: 26px;
-  padding: 3px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 20px;
-  font-family: var(--ds-font-family-code);
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -263,6 +238,35 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.fileIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The selected item's metadata chips live in the preview header, not the tree. */
+.metaPills {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.metaPill {
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .preview {
   display: flex;
   flex: 1;
@@ -271,21 +275,26 @@
   min-height: 0;
 }
 
+/* The selected file's header: one quiet line — the file glyph, the
+   item/layer/path, the item's metadata chips, the pinned commit — over a
+   hairline (the products tab's header rhythm). */
 .previewHeader {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  font-size: 12px;
-  line-height: 18px;
 }
 
 .previewPath {
+  flex: none;
+  max-width: 50%;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   color: var(--dsw-alias-label-primary);
-  font-family: var(--ds-font-family-code);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -295,6 +304,8 @@
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 

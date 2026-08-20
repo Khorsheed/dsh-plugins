@@ -115,9 +115,8 @@ describe('DatasetsView', () => {
     fireEvent.click(row)
     expect(await screen.findByText('i1')).toBeTruthy()
     expect(h.listDatasets).toHaveBeenCalledWith('s1', 'alpha')
-    // Item metadata renders as quiet chips, never the raw JSON string.
-    expect(await screen.findByText('difficulty: hard')).toBeTruthy()
-    expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
+    // An explorer carries no chips: the item row is the bare id.
+    expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
     // The layer header is one quiet phrase: name, middot, count — never a right-floated count.
@@ -130,6 +129,10 @@ describe('DatasetsView', () => {
     // The markdown content renders through the official MarkdownText pipeline.
     expect(await screen.findByText('Task')).toBeTruthy()
     expect(screen.getByText('@a4f9c2e')).toBeTruthy()
+    // The item's metadata surfaces in the preview header as quiet chips,
+    // never the raw JSON string.
+    expect(await screen.findByText('difficulty: hard')).toBeTruthy()
+    expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
   })
 
   it('bind form submits the parsed binding and refreshes', async () => {
