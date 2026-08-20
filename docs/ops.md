@@ -18,7 +18,11 @@
 
 1. `pnpm --filter <包> build && pnpm --filter <包> test` 全绿;`pnpm check:hygiene`、`pnpm check:plugins`、`pnpm test:scripts` 零违规
 2. `pnpm exec tsx scripts/pack-dist.ts --package <包目录> --scope @khorsheed --version <版本> --out dist-publish`(产出 tgz;上一份 known-good 移入 `dist-legacy/`,回滚 = 换 tgz + 重启,分钟级)
-3. 刷新 profile:`dsh plugin --profile web add <tgz 绝对路径>`;profile 的 `cordis.patch.yml` 只允许经审查的显式编辑
+3. 刷新 profile:`dsh plugin --profile web add <tgz 绝对路径>`;profile 的 `cordis.patch.yml` 只允许经审查的显式编辑。操作要点(都交过学费):
+   - profile 引用的 tarball 放在 **workspace 之外**(如 `~/.dsh-official/tarballs/`)——放在本仓库里的 tarball 会被 pnpm 按"名+版本匹配 workspace 包"转成 `link:` 软链,tarball 化形同虚设
+   - 家族边(local-agent core/companion)在包未发布时需要 profile `pnpm-workspace.yaml` 里写 `overrides` 把每个 `@khorsheed/*` 名字指到对应 `file:` tgz,否则 pnpm 去 registry 解析直接 404
+   - 行为异常(装了还是软链/旧内容)时:**`rm -rf node_modules pnpm-lock.yaml` 后重装**——残留的 pnpm workspace 状态文件会把 link: 时代的解析行为还魂;同名同版本的 tgz 内容变了也可能吃到解包缓存,全清重装最稳
+   - 打包前对刚改过源码的包做 **clean rebuild**(`rm -rf lib && build`)——tsc/tsdown 的增量残留会让产物引用不存在的文件(pack-dist 的 stale-types 检查只挡一类)
 4. 凭证 + 闸:`dsh-ankh-guard record build --repo <harness 检出>` → `dsh-ankh-guard preflight --profile web`(**FAIL 即停,永不绕过**——它拦下过 `!!js` 启动即崩和 loader 行 id 撞车)
 5. 按闸重启:`dsh-ankh-guard schedule-exit --port 3080 --delay-ms <ms> --profile web --repo <harness 检出> --initiator <你的 id>`,盯 watchdog 日志到 `canary PASS`,端口回 200
 6. 公开通报:什么插件、什么版本、什么变更,让其他 agent 知道 3080 刚变过
