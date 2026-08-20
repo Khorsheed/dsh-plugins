@@ -11,6 +11,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { resolveDataDir } from './defaults.ts'
+import { expectedNsOfMeta, renderNsReport } from './export.ts'
 import { MissionService } from './service.ts'
 import type { AttemptRefs, MissionView, RunRecord } from './types.ts'
 
@@ -38,6 +39,10 @@ commands:
   add-artifact MISSION_ID --path P --kind K [--run ID]
   add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
   is-releasable MISSION_ID [--run ID]           exit 0 = releasable, 1 = not
+  export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
+           [--layer NAME]... [--guarded NAME]...
+                                                self-contained bundle; guarded (modelFacing: false) layers
+                                                require interactive TTY confirmation — non-TTY is refused
 flags:
   --data-dir DIR   data root (default: $DSH_HOME/state/mission, else <cwd>/.dsh-mission)
 `
@@ -159,6 +164,9 @@ export function renderStatus(service: MissionService, runId: string): string {
   if (status.unreleased.length > 0) {
     lines.push(`⚠ holding resource but not releasable: ${status.unreleased.join(', ')}`)
   }
+  if (status.nsReport !== null) {
+    lines.push(...renderNsReport(expectedNsOfMeta(status.run.meta) ?? [], status.nsReport))
+  }
   return lines.join('\n')
 }
 
@@ -171,13 +179,34 @@ function missionDetail(run: RunRecord, missionId: string): unknown {
   return { runId: run.id, mission }
 }
 
+/** TTY behaviour of the calling terminal (injected by tests; the bin entry passes the real streams). */
+export interface CliTty {
+  /** Both stdin and stdout are interactive terminals. Default: probed from the process streams. */
+  isTTY?: boolean
+  /** Ask the human one y/N question. Default: a readline prompt. Only ever called when isTTY. */
+  confirm?: (question: string) => Promise<boolean>
+}
+
+/** The default leak-gate prompt: an explicit y/yes answer, everything else declines. */
+async function readlineConfirm(question: string): Promise<boolean> {
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question(`${question} [y/N] `)
+    return ['y', 'yes'].includes(answer.trim().toLowerCase())
+  } finally {
+    rl.close()
+  }
+}
+
 /**
  * Run one CLI invocation against the store.
  * @param argv - arguments (without node/script entries).
  * @param io - output sinks.
+ * @param tty - terminal behaviour for the export leak gate (tests inject it).
  * @returns the process exit code.
  */
-export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
+export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {}): Promise<number> {
   let parsed: Parsed
   try {
     parsed = parse(argv)
@@ -403,6 +432,65 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           ...(artifacts.length > 0 ? { artifacts } : {}),
         }, { ...(runId !== undefined ? { runId } : {}), by: 'cli' })
         io.stdout(result.added ? 'checkpoint recorded\n' : 'already up to date (no-op)\n')
+        return 0
+      }
+      case 'export': {
+        const id = parsed.positionals[0]
+        const out = flag(parsed, '--out')
+        if (id === undefined || parsed.positionals.length > 1 || out === undefined) {
+          io.stderr(`export requires RUN_ID and --out DIR\n\n${USAGE}`)
+          return 2
+        }
+        const layerNames = flagAll(parsed, '--layer')
+        const guardedNames = flagAll(parsed, '--guarded')
+        for (const g of guardedNames) {
+          if (!layerNames.includes(g)) {
+            io.stderr(`--guarded ${JSON.stringify(g)} is not one of the included --layer values\n\n${USAGE}`)
+            return 2
+          }
+        }
+        const snapshotDir = flag(parsed, '--snapshot-dir')
+        const snapshotRepo = flag(parsed, '--snapshot-repo')
+        const snapshotCommit = flag(parsed, '--snapshot-commit')
+        const snapshotDataset = flag(parsed, '--snapshot-dataset')
+        if ((snapshotRepo === undefined) !== (snapshotCommit === undefined)) {
+          io.stderr(`--snapshot-repo and --snapshot-commit go together\n\n${USAGE}`)
+          return 2
+        }
+        const request = {
+          runId: id,
+          outDir: out,
+          layers: layerNames.map(name => ({ name, guarded: guardedNames.includes(name) })),
+          ...(snapshotDir !== undefined ? { snapshotDir } : {}),
+          ...(snapshotRepo !== undefined && snapshotCommit !== undefined
+            ? { snapshot: { repo: snapshotRepo, commit: snapshotCommit, ...(snapshotDataset !== undefined ? { dataset: snapshotDataset } : {}) } }
+            : {}),
+        }
+        // THE LEAK GATE: guarded (modelFacing: false) layers need an interactive
+        // per-layer human confirmation. Non-TTY refuses (fail-closed) — an agent
+        // driving the CLI through Bash has no TTY and is stopped here; no flag
+        // bypasses this.
+        const plan = service.planExport(request)
+        if (plan.guardedLayers.length > 0) {
+          const isTTY = tty.isTTY ?? (process.stdin.isTTY === true && process.stdout.isTTY === true)
+          if (!isTTY) {
+            io.stderr(`export refused: the bundle would include guarded (modelFacing: false) layer(s): ${plan.guardedLayers.join(', ')}. Including them requires an interactive TTY confirmation per layer; there is no bypass flag.\n`)
+            return 1
+          }
+          const confirm = tty.confirm ?? readlineConfirm
+          io.stdout(`the bundle will include guarded (modelFacing: false) layer(s) — confirm each:\n`)
+          for (const layer of plan.guardedLayers) {
+            if (!(await confirm(`include guarded layer ${JSON.stringify(layer)} in ${plan.runId}-bundle`))) {
+              io.stderr(`export aborted: guarded layer ${JSON.stringify(layer)} was not confirmed — nothing was written\n`)
+              return 1
+            }
+          }
+        }
+        const result = service.exportRun(request)
+        io.stdout(`exported ${result.bundleDir} (${result.files} files)\n`)
+        if (result.nsReport !== null && plan.expectedNs !== null) {
+          for (const line of renderNsReport(plan.expectedNs, result.nsReport)) io.stdout(`${line}\n`)
+        }
         return 0
       }
       case 'is-releasable': {

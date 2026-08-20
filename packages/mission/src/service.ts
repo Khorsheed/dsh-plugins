@@ -14,6 +14,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
+import { exportRun, nsCompleteness, planExport, type ExportPlan, type ExportRequest, type ExportResult, type NsCellReport } from './export.ts'
 import { currentAttempt, viewOf } from './projection.ts'
 import { assertSchemaSubset, jsonEquals, validateJson } from './schema.ts'
 import { MissionStore, resolveInside } from './store.ts'
@@ -83,6 +84,8 @@ export interface RunStatus {
   buckets: Record<string, string[]>
   /** Missions holding `refs.resource` while not releasable — the leak warning. */
   unreleased: string[]
+  /** Per-cell ns completeness when the run meta declares expectedNs, else null. */
+  nsReport: NsCellReport[] | null
 }
 
 export interface TransitionResult {
@@ -258,7 +261,18 @@ export class MissionService {
       rows,
       buckets,
       unreleased: rows.filter(r => r.resourceHeld).map(r => r.id),
+      nsReport: nsCompleteness(run),
     }
+  }
+
+  /** Plan a run-bundle export (nothing written; the caller runs the leak gate). */
+  planExport(request: ExportRequest): ExportPlan {
+    return planExport(this.store, request)
+  }
+
+  /** Write the bundle — the caller has already passed the leak gate. */
+  exportRun(request: ExportRequest): ExportResult {
+    return exportRun(this.store, request)
   }
 
   /**

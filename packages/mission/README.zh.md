@@ -70,7 +70,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 ## 模型工具
 
-`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（M2，仅 CLI/slash）。
+`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（仅 CLI/slash/tab，带泄题闸）。
 
 ## 服务面
 
@@ -97,6 +97,8 @@ dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]..
 dsh-mission add-artifact MISSION_ID --path P --kind K [--run ID]
 dsh-mission add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚本使用
+dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
+         [--layer NAME]... [--guarded NAME]...   # 自包含 bundle（泄题闸见下）
 ```
 
 ## slash 命令
@@ -113,6 +115,14 @@ dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚
 
 `queue` 渲染五桶队列表（id / 标题 / 桶 / 模板状态 / 计划阻塞 / 时长），附「持有 resource 未 releasable」警示；默认只显示**本会话**的 run（`originSession` 过滤），`--all` 看全部，`--run` 指定一个。`run status` 打印与 CLI 相同的投影表。`run create` 把调用会话记为 run 的 `originSession`；写操作在 history 里记为 `slash:<sessionId>`。用法错误返回 usage 文本。**export 尚不是 slash 命令**——它随泄题闸在 M2 剩余部分落地。
 
+## 导出与泄题闸
+
+`dsh-mission export RUN_ID --out DIR` 写**自包含 bundle** `<runId>-bundle/`：`manifest.json`（冻结的状态机、数据集快照引用、逐层内容哈希、收录层清单如实标明 guarded 层、ns 完整性报告）、`run.json`、`missions/<id>/attempt-N/{meta.json, annotations.json, artifacts/}`、每个收录层的 `dataset/<layer>/`、以及留待人工撰写的 `methodology.md`。已有 bundle 目录绝不覆盖。
+
+**泄题闸**：收录 guarded（`modelFacing: false`）层必须 TTY 交互确认——逐个列出、逐项确认。非 TTY 一律拒绝（fail-closed）：agent 经 Bash 调 CLI 没有 TTY，自然被闸住；任何 flag（含 `--include-guarded` 式）都不放行。slash 面没有确认通道，`/mission export` 对 guarded 层直接拒绝并指向 TTY CLI；挂载 datasets 插件时，slash 面从其元数据读层可见性（否则靠显式 `--guarded` 声明）。
+
+**expectedNs**：run meta 声明 `expectedNs` 时，`run status` 与 export 输出每格 ns 清单——缺失如实标缺失（绝不用其他 ns 顶替），全部注解都在 `expectedNs` 之外的格子在报告与 manifest 里标「只有未列 ns」。
+
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。
@@ -126,4 +136,4 @@ dsh-mission is-releasable MISSION_ID [--run ID]   # 退出码 0/1，供销毁脚
 - **`retry` 天然不幂等**——每次调用都真实新开一个 attempt。其余所有写操作幂等（相同参数重复提交 = no-op）。
 - **锁对 pid 复用是尽力而为**——stale 锁在 pid 已死或锁龄超 60 秒时回收；窗口内 pid 被复用最多等到 10 秒锁超时。在预期写密度下足够；存储层可换 sqlite 而不动数据模型。
 - **每个模板恰一个初始态**——mission 的起点必须无歧义；终态数量任意。
-- **M2/M4 范围**——bundle 导出（含泄题闸与 expectedNs 完整性报告）与 web 会话 tab 已在提案中设计，此处刻意缺席；slash 面已交付但不含 export。
+- **M4 范围**——web 会话 tab 已在提案中设计，单独落地。

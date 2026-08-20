@@ -8,13 +8,18 @@
  * `slash:<sessionId>` in history). The status table rendering is shared with
  * the CLI ({@link renderStatus} / {@link rowLine}) — no duplicated logic.
  *
- * Export is deliberately absent here as everywhere in v1: sharing a run
- * bundle is an initiating-class human decision with a leak gate, landing with
- * the CLI/slash export work later in M2.
+ * Export lives here with the same leak gate semantics as the CLI, adapted to
+ * what a slash command honestly IS: a one-shot text invocation with NO
+ * interactive confirmation channel. Guarded (modelFacing: false) layers need
+ * a per-layer human confirmation, so `/mission export` REFUSES them and
+ * points at the TTY CLI — a slash handler cannot ask a follow-up question,
+ * and pretending a flag is a confirmation would be exactly the bypass the
+ * gate exists against. Unguarded exports run straight through.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { renderStatus } from './cli-core.ts'
+import { renderNsReport } from './export.ts'
 import type { MissionService, RunSummary } from './service.ts'
 import type { Bucket, MissionView } from './types.ts'
 
@@ -23,7 +28,10 @@ const USAGE = `usage:
   /mission run list
   /mission run status RUN_ID
   /mission run create --template FILE [--id ID] [--meta JSON]
-  /mission retry MISSION_ID [--run ID]`
+  /mission retry MISSION_ID [--run ID]
+  /mission export RUN_ID --out DIR [--layer NAME]... [--guarded NAME]... [--snapshot-dir DIR]
+         [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
+         (guarded layers are refused here — the confirmation gate needs a TTY: dsh-mission export)`
 
 const BUCKETS: readonly Bucket[] = ['ready', 'scheduled', 'blocked', 'active', 'done']
 
@@ -59,7 +67,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--run', '--bucket', '--template', '--id', '--meta'])
+  const VALUE_FLAGS = new Set(['--run', '--bucket', '--template', '--id', '--meta', '--out', '--snapshot-dir', '--snapshot-repo', '--snapshot-commit', '--snapshot-dataset', '--layer', '--guarded'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -81,6 +89,10 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
 function flagOf(args: SlashArgs, name: string): string | undefined {
   const values = args.flags.get(name)
   return values === undefined ? undefined : values[values.length - 1]
+}
+
+function flagAllOf(args: SlashArgs, name: string): string[] {
+  return args.flags.get(name) ?? []
 }
 
 /** The calling session id — origin filter default and write attribution. */
@@ -227,12 +239,84 @@ async function run(service: MissionService, args: SlashArgs, invocation: Command
   }
 }
 
+/** Slash-face extras: the optional datasets probe for layer-visibility metadata. */
+export interface SlashExtras {
+  /**
+   * Resolve a snapshot's `modelFacing: false` layers through the datasets
+   * plugin when it is mounted (ctx.get probe, duck-typed; null = unavailable —
+   * the caller then trusts only explicit --guarded declarations).
+   */
+  resolveNonModelFacing?: (snapshot: { repo: string; commit?: string; dataset: string }) => Promise<string[] | null>
+}
+
+/** `/mission export RUN_ID --out DIR …` — unguarded only; guarded points at the TTY CLI. */
+async function exportCmd(service: MissionService, args: SlashArgs, extras: SlashExtras | undefined): Promise<CommandResult> {
+  const [id, ...rest] = args.positionals
+  const out = flagOf(args, '--out')
+  if (id === undefined || rest.length > 0 || out === undefined) {
+    return { kind: 'error', text: `export requires RUN_ID and --out DIR\n\n${USAGE}` }
+  }
+  const layerNames = flagAllOf(args, '--layer')
+  const snapshotDir = flagOf(args, '--snapshot-dir')
+  const snapshotRepo = flagOf(args, '--snapshot-repo')
+  const snapshotCommit = flagOf(args, '--snapshot-commit')
+  const snapshotDataset = flagOf(args, '--snapshot-dataset')
+  if ((snapshotRepo === undefined) !== (snapshotCommit === undefined)) {
+    return { kind: 'error', text: `--snapshot-repo and --snapshot-commit go together\n\n${USAGE}` }
+  }
+  let guardedNames = flagAllOf(args, '--guarded')
+  // Layer visibility from the datasets plugin when mounted and a dataset is named.
+  if (snapshotRepo !== undefined && snapshotDataset !== undefined && extras?.resolveNonModelFacing !== undefined) {
+    const probed = await extras.resolveNonModelFacing({
+      repo: snapshotRepo,
+      ...(snapshotCommit !== undefined ? { commit: snapshotCommit } : {}),
+      dataset: snapshotDataset,
+    })
+    if (probed !== null) {
+      guardedNames = [...new Set([...guardedNames, ...probed.filter(layer => layerNames.includes(layer))])]
+    }
+  }
+  for (const g of guardedNames) {
+    if (!layerNames.includes(g)) return { kind: 'error', text: `--guarded ${JSON.stringify(g)} is not an included --layer\n\n${USAGE}` }
+  }
+  const request = {
+    runId: id,
+    outDir: out,
+    layers: layerNames.map(name => ({ name, guarded: guardedNames.includes(name) })),
+    ...(snapshotDir !== undefined ? { snapshotDir } : {}),
+    ...(snapshotRepo !== undefined && snapshotCommit !== undefined
+      ? { snapshot: { repo: snapshotRepo, commit: snapshotCommit, ...(snapshotDataset !== undefined ? { dataset: snapshotDataset } : {}) } }
+      : {}),
+  }
+  const plan = service.planExport(request)
+  if (plan.guardedLayers.length > 0) {
+    // A slash command cannot ask a follow-up question — no confirmation
+    // channel exists here, so guarded layers are REFUSED and routed to the
+    // TTY CLI. This is the gate working, not a limitation to paper over.
+    return {
+      kind: 'error',
+      text: `export refused: the bundle would include guarded (modelFacing: false) layer(s): ${plan.guardedLayers.join(', ')}. `
+        + 'A slash command has no interactive confirmation channel — run `dsh-mission export` in a terminal and confirm each layer.',
+    }
+  }
+  const result = service.exportRun(request)
+  const lines = [`exported ${result.bundleDir} (${result.files} files)`]
+  if (result.nsReport !== null && plan.expectedNs !== null) {
+    lines.push(...renderNsReport(plan.expectedNs, result.nsReport))
+  }
+  return { kind: 'success', text: lines.join('\n') }
+}
+
 /**
  * Dispatch one `/mission` invocation. Usage problems answer with the usage
  * text; service failures (unknown run/mission, guard or lint refusal) surface
  * as error results — the slash face never throws across the registry.
  */
-export async function handleMissionCommand(service: MissionService, invocation: CommandInvocation): Promise<CommandResult> {
+export async function handleMissionCommand(
+  service: MissionService,
+  invocation: CommandInvocation,
+  extras?: SlashExtras,
+): Promise<CommandResult> {
   let tokens: string[]
   try {
     tokens = tokenize(invocation.rawInput)
@@ -254,6 +338,8 @@ export async function handleMissionCommand(service: MissionService, invocation: 
         return queue(service, args, invocation)
       case 'run':
         return await run(service, args, invocation)
+      case 'export':
+        return await exportCmd(service, args, extras)
       case 'retry': {
         const id = args.positionals[0]
         if (id === undefined || args.positionals.length > 1) {
@@ -276,11 +362,34 @@ export async function handleMissionCommand(service: MissionService, invocation: 
 
 /** Register the `/mission` slash command on the plugin context. */
 export function registerMissionSlash(ctx: Context, service: MissionService): void {
+  // Optional integration: the datasets plugin's layer-visibility metadata for
+  // the export leak gate. Probed per call with ctx.get — a composition without
+  // datasets falls back to explicit --guarded declarations, nothing else changes.
+  const resolveNonModelFacing: SlashExtras['resolveNonModelFacing'] = async (snapshot) => {
+    const datasets = ctx.get('datasets') as {
+      list?: (scope: { repo: string }, dataset?: string, commit?: string) => Promise<unknown>
+    } | undefined
+    if (typeof datasets?.list !== 'function') return null
+    try {
+      const result = await datasets.list(
+        { repo: snapshot.repo },
+        snapshot.dataset,
+        ...(snapshot.commit !== undefined ? [snapshot.commit] : []),
+      )
+      if (typeof result !== 'object' || result === null) return null
+      const summary = (result as { dataset?: { nonModelFacingLayers?: unknown } }).dataset
+      const layers = summary?.nonModelFacingLayers
+      if (!Array.isArray(layers)) return null
+      return layers.filter((layer): layer is string => typeof layer === 'string')
+    } catch {
+      return null // no binding / unknown dataset / plugin shape drift — explicit declarations stand
+    }
+  }
   ctx.commands.register({
     name: 'mission',
-    description: 'Mission queue and runs: five-bucket queue view, run list/status/create, retry. '
-      + 'Export stays with the CLI (leak gate) — see the proposal.',
-    input: { hint: 'queue [--run ID] [--bucket B] [--all] | run list|status RUN_ID|create --template F | retry MISSION_ID' },
-    handler: invocation => handleMissionCommand(service, invocation),
+    description: 'Mission queue and runs: five-bucket queue view, run list/status/create, retry, export '
+      + '(guarded layers refuse here — the leak gate needs a TTY: dsh-mission export).',
+    input: { hint: 'queue [--run ID] [--bucket B] [--all] | run list|status RUN_ID|create --template F | retry MISSION_ID | export RUN_ID --out DIR' },
+    handler: invocation => handleMissionCommand(service, invocation, { resolveNonModelFacing }),
   })
 }

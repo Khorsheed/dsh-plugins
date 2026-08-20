@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-mission-m2-export.md
+.agents/notes/implemented/feature/2026-08-19-mission-m2-export.md: 785ed78eb79a347a7241e5846a29c4ed6f3088cf
+.agents/notes/implemented/feature/2026-08-19-mission-m2-export.zh.md: 25a66ee4d86bcf1a3ab292bc43edee8028408451

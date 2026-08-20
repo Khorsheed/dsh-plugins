@@ -70,7 +70,7 @@ The `simple` template's `releasableStates` is deliberately empty: everyday work 
 
 ## Model tools
 
-`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`. Write tools ride the standard `tools/pre-execute` approval pipeline; the calling session id is recorded into history as `tool:<sessionId>`. A companion system-prompt section (`tool:mission`) briefs the model. **Export is intentionally not a tool** — sharing a run bundle is an initiating-class human decision (M2, CLI/slash only).
+`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`. Write tools ride the standard `tools/pre-execute` approval pipeline; the calling session id is recorded into history as `tool:<sessionId>`. A companion system-prompt section (`tool:mission`) briefs the model. **Export is intentionally not a tool** — sharing a run bundle is an initiating-class human decision (CLI/slash/tab only, with the leak gate).
 
 ## Service face
 
@@ -97,6 +97,8 @@ dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]..
 dsh-mission add-artifact MISSION_ID --path P --kind K [--run ID]
 dsh-mission add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # exit 0/1, for teardown scripts
+dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
+         [--layer NAME]... [--guarded NAME]...   # self-contained bundle (leak gate below)
 ```
 
 ## Slash commands
@@ -113,6 +115,14 @@ One `/mission` command with subcommands, a thin adapter over the same service ke
 
 `queue` renders the five-bucket queue table (id / title / bucket / template state / plan-blocked / duration) with the held-but-unreleasable warning; it defaults to THIS session's runs (`originSession` filter), `--all` widens to every run, `--run` names one. `run status` prints the same projection table as the CLI. `run create` records the calling session as the run's `originSession`; writes are attributed `slash:<sessionId>` in history. Usage errors answer with the usage text. **Export is not a slash command yet** — it lands with the leak gate in the rest of M2.
 
+## Export and the leak gate
+
+`dsh-mission export RUN_ID --out DIR` writes a **self-contained bundle** `<runId>-bundle/`: `manifest.json` (frozen state machine, dataset snapshot reference, per-layer content hashes, the included-layer list with guarded layers plainly marked, the ns completeness report), `run.json`, `missions/<id>/attempt-N/{meta.json, annotations.json, artifacts/}`, `dataset/<layer>/` for every included layer, and a `methodology.md` stub for the human write-up. A bundle directory is never overwritten.
+
+**The leak gate**: including a guarded (`modelFacing: false`) layer requires an interactive TTY confirmation — each guarded layer is listed and confirmed one by one. Non-TTY invocations are refused (fail-closed): an agent driving the CLI through Bash has no TTY and is stopped there, and no flag (including `--include-guarded`-style ones) bypasses the gate. The slash face has no confirmation channel at all, so `/mission export` refuses guarded layers and points at the TTY CLI; when the datasets plugin is mounted, the slash face resolves layer visibility from its metadata (explicit `--guarded` declarations otherwise).
+
+**expectedNs**: when run meta declares `expectedNs`, `run status` and export print the per-cell namespace report — a missing ns is reported missing (never substituted by another namespace), and a cell whose annotations are all outside `expectedNs` is marked "only unlisted ns present" in the report and the manifest.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host.
@@ -126,4 +136,4 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands n
 - **`retry` is not idempotent by nature** — every call opens a real new attempt. All other writes are idempotent (identical repeats are no-ops).
 - **The lock is best-effort against pid reuse** — a stale lock is reclaimed when its pid is dead or it is older than 60 s; a recycled pid inside that window can wait up to the 10 s lock timeout. Fine at the expected write density; the store can move to sqlite without touching the data model.
 - **One initial state per template** — missions must start unambiguously; terminal states may be any number.
-- **M2/M4 scope** — bundle export (with the leak gate and expectedNs completeness report) and the web session tab are designed in the proposal and deliberately absent here; the slash face shipped without export.
+- **M4 scope** — the web session tab is designed in the proposal and lands separately.
