@@ -4,7 +4,7 @@ import type { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session/types'
 import {
-  diffsFromResultMeta, foldFilePreview, pathFromToolCall,
+  diffsFromResultMeta, foldFilePreview, foldFilePreviewByTurn, pathFromToolCall,
 } from '@khorsheed/dsh-file-preview/src/fold.ts'
 
 /** Build one tool/call event with JSON-serialized arguments. */
@@ -160,12 +160,12 @@ describe('foldFilePreview', () => {
     expect(foldFilePreview(events, 500).entries[0]!.diffs).toEqual([])
   })
 
-  it('ignores tool results for paths never recorded by a call', () => {
+  it('registers render-intent paths from result diff meta even without a call', () => {
     const events: SessionEvent[] = [
       toolCall(0, 'write', { file_path: 'a.md' }),
       toolResult(1, { diffs: [{ path: 'ghost.md', oldText: 'x', newText: 'y' }] }),
     ]
-    expect(foldFilePreview(events, 500).entries.map(entry => entry.path)).toEqual(['a.md'])
+    expect(foldFilePreview(events, 500).entries.map(entry => entry.path)).toEqual(['a.md', 'ghost.md'])
   })
 
   it('skips non-file calls and diff-less results while advancing the watermark', () => {
@@ -263,5 +263,47 @@ describe('foldFilePreview code dispatches', () => {
     const result = foldFilePreview(events, 500)
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0]).toMatchObject({ path: 'a.md', op: 'edit', seq: 2, turn: 2, step: 1 })
+  })
+})
+
+describe('foldFilePreviewByTurn', () => {
+  it('keeps a path in EVERY turn that touched it (repeated-touch fidelity)', () => {
+    const events = [
+      toolCall(0, 'write', { file_path: 'a.md' }, 2, 1),
+      toolCall(1, 'edit', { file_path: 'a.md' }, 5, 3),
+      toolCall(2, 'write', { file_path: 'b.md' }, 5, 4),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(2)?.get('a.md')?.seq).toBe(0)
+    expect(byTurn.get(5)?.get('a.md')?.seq).toBe(1)
+    expect(byTurn.get(5)?.get('b.md')?.seq).toBe(2)
+    expect(byTurn.get(2)?.get('b.md')).toBeUndefined()
+  })
+
+  it('registers render-intent paths from result diff meta and sums per-turn deltas', () => {
+    const events = [
+      toolResult(0, { diffs: [{ path: 'render.html', oldText: null, newText: 'a\nb\n' }] }, 1),
+      toolResult(1, { diffs: [{ path: 'render.html', oldText: 'a\n', newText: 'a\nb\nc\n' }] }, 1),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    const fact = byTurn.get(1)?.get('render.html')
+    expect(fact).toMatchObject({ added: 5 })
+    expect(fact?.removed).toBeUndefined()
+  })
+
+  it('borrows the enclosing root call turn for code dispatches', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 1),
+      codeDispatch(1, 'write', { file_path: 'a.md' }, 0),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(3)?.get('a.md')?.step).toBe(1)
+  })
+
+  it('the list fold now registers diff-only paths (the card vocabulary)', () => {
+    const events = [toolResult(0, { diffs: [{ path: 'render.html', oldText: null, newText: 'x' }] }, 1)]
+    const result = foldFilePreview(events, 500)
+    expect(result.entries[0]).toMatchObject({ path: 'render.html', op: 'edit' })
+    expect(result.entries[0]?.diffs).toHaveLength(1)
   })
 })

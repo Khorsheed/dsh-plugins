@@ -36,6 +36,10 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
     calls.push({ method: 'reveal', args })
     return { ok: true, value: { revealed: true } }
   })
+  const turnFiles = vi.fn(async (...args: unknown[]) => {
+    calls.push({ method: 'turnFiles', args })
+    return { ok: true, value: { asOfSeq: 0, turns: [] } }
+  })
   class RemoteService extends Service {
     constructor(serviceCtx: Context) {
       super(serviceCtx, 'remote')
@@ -48,7 +52,7 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
   // `ctx.get('remote.filePreview')` after the mount settles).
   const mount = vi.fn(async () => () => {})
   Object.assign(ctx.remote, { $mount: mount })
-  ctx.provide('remote.filePreview', { list, read, reveal })
+  ctx.provide('remote.filePreview', { list, read, reveal, turnFiles })
   ctx.provide('sessions', {
     list: { getSnapshot: () => ({ current, byId: current === undefined ? {} : { [current]: { cwd: '/work' } } }) },
   })
@@ -59,7 +63,6 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
     hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
   })
   ctx.provide('locale', new LocaleRuntime(ctx))
-  ctx.provide('conversationEvents', { register: vi.fn() } as never)
   await ctx.plugin(SlotRegistry).await()
   // Declare the target slots (normally declared by ui-conversation / ui-layout).
   ctx.slots.register({
@@ -72,7 +75,7 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, list, read, reveal, mount, openPath }
+  return { ctx, fiber, calls, list, read, reveal, turnFiles, mount, openPath }
 }
 
 /** The view entry's inject factory, called the way the outlet would. */
@@ -115,8 +118,6 @@ describe('ui-file-preview browser plugin', () => {
   it('mounts the Remote and registers the view tab, the turn row, and the drawer', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
-    const events = b.ctx.get('conversationEvents') as unknown as { register: ReturnType<typeof vi.fn> }
-    expect(events.register).toHaveBeenCalled()
     const viewEntry = b.ctx.slots.entries('conversation.view')[0]
     expect(viewEntry?.options).toMatchObject({ id: 'file-preview', order: 20 })
     expect(viewEntry?.locale).toBe('filePreview')
@@ -157,12 +158,18 @@ describe('ui-file-preview browser plugin', () => {
     const turnEntry = b.ctx.slots.entries('conversation.chat.turnTail')[0]
     const turnInjected = (
       turnEntry?.inject as unknown as
-      ((owner: never) => { openDrawer: (path: string) => void }) | undefined
+      ((owner: never) => { openDrawer: (path: string) => void; turnFiles: (sessionId: SessionId, turn: number) => Promise<unknown> }) | undefined
     )?.({} as never)
     if (turnInjected === undefined) throw new Error('turn inject missing')
     turnInjected.openDrawer('notes.md')
     expect(drawerStore.getSnapshot().open).toBe(true)
     expect(drawerStore.getSnapshot().selectedPath).toBe('notes.md')
+    // The turn card's host-fed loader reaches the turnFiles RPC (cached: the
+    // second call for the same session+turn does not hit the wire again).
+    await turnInjected.turnFiles(sid('s1'), 1)
+    await turnInjected.turnFiles(sid('s1'), 1)
+    expect(b.turnFiles).toHaveBeenCalledTimes(1)
+    expect(b.turnFiles).toHaveBeenCalledWith('s1')
   })
 
   it('routes the drawer open gesture through workspaces.openPath and reveal through the Remote', async () => {

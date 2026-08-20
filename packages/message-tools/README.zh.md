@@ -6,11 +6,11 @@
 
 编辑即原位替换：host 追加一条 `user/message` replacement，其内容就是编辑后的新文本（区间覆盖目标消息及 surface 尾部——编辑旧消息就是放弃其后的一切），随后通过 `agent.followup` 投递一条极简的插件来源触发消息启动重新生成（harness 没有"不追加就唤醒"的路径）。模型上下文里新文本只出现一次；旧内容留在日志里作审计。会话有运行中的轮次时，编辑先取消它（它在往将被遮蔽的区间里写）并等待落定——落定指被取消轮次的收尾全部落盘，而不是 `running` 翻转：翻转最先发生，被取消的工具结果在其后才落盘，`turn/end` 事件最后落盘，因此等待以该轮次的时间线位置关闭（turn/end 落盘）为准（有界；迟迟不落定的轮次会以「编辑失败」拒绝，绝不放行编辑去和收尾赛跑——那会把孤儿 tool 消息漏进模型上下文）。取消失败则不编辑。编辑不出现「已撤回」分隔线——插件的 edit Definition 把 replacement 认领为一条普通气泡行，带轻量「已编辑」徽标（可再次编辑形成编辑链：目标是上一个 replacement 的 seq)。编辑框底部 trailing 位带一个真实可用的模型 chip：它与 composer 的模型座位、/model 弹层共享同一个按会话的 `ModelDirectory`（经 `ctx.get('modelDirectories')` 读取——可选服务，组合里没有 ui-model-selection 时就不渲染 chip)，切换结果经 host 校验后作用于重新生成的轮次。
 
-撤回是真撤回，不是打标记：host 追加一条 `user/message` surface replacement（与 compaction 同一机制），其区间覆盖目标消息及之后的所有 surface 节点，该区间由此离开 `session.surface`，不再进入模型上下文。replacement 事件携带 `source: { kind: 'plugin', plugin: 'message-tools' }`，其 `sourceEventSeqs` 引用每一个被遮蔽的节点，满足 surface 来源校验；方法返回前经 `SessionStore.flush` 落盘。本插件不引入任何新的 session 事件类型——harness 之外的事件类型无法携带 `ignorable: true`（envelope 由 append API 赋值），而持久化日志里的未知类型会让 session-persistence 在重载时拒绝整个日志。replacement 事件本身就是持久的审计轨迹。撤回成功后还会把目标消息原文自动回填到该会话 composer 草稿（与分隔线「重新编辑」同一条 `setDraft` 路径：空草稿直接填入、非空换行追加、composer 落 info 提示）——绝不自动发送，撤回失败则不回填；原位编辑路径不触发回填。
+撤回是真撤回，不是打标记：host 追加一条 `user/message` surface replacement（与 compaction 同一机制），其区间覆盖目标消息及之后的所有 surface 节点，该区间由此离开 `session.surface`，不再进入模型上下文。若会话有运行中的轮次，客户端会先取消它并等待轮次完全落定，再追加 replacement（与编辑同款的 cancel-and-settle 编排），避免流式中的助手内容落到 replacement 之后。replacement 事件携带 `source: { kind: 'plugin', plugin: 'message-tools' }`，其 `sourceEventSeqs` 引用每一个被遮蔽的节点，满足 surface 来源校验；方法返回前经 `SessionStore.flush` 落盘。本插件不引入任何新的 session 事件类型——harness 之外的事件类型无法携带 `ignorable: true`（envelope 由 append API 赋值），而持久化日志里的未知类型会让 session-persistence 在重载时拒绝整个日志。replacement 事件本身就是持久的审计轨迹。撤回成功后还会把目标消息原文自动回填到该会话 composer 草稿（与分隔线「重新编辑」同一条 `setDraft` 路径：空草稿直接填入、非空换行追加、composer 落 info 提示）——绝不自动发送，撤回失败则不回填；原位编辑路径不触发回填。
 
 聊天投影同样从这条 replacement 事件获知撤回：插件的 Definition 把它认领为一条锚定在 replacement seq 上的分隔线节点。隐藏分两层：被遮蔽的用户渲染器对区间内的用户消息渲染为空；其余种类由 DOM 隐藏器覆盖——一张动态样式表把 `data-chat-flow-key`（`ChatNodeSeat.tsx`）锚点落在区间内的聊天行一律隐藏。隐藏器在首个非空规则集出现时探测这个未文档化属性，探测落空时进入有界重试（MutationObserver 等待首条聊天行出现，带截止时限）——页面停在轨迹页签或聊天区尚未挂载时不许一次定生死；只有重试窗口耗尽仍探不到行才自动停用并 `console.warn` 一次，退化为仅渲染器隐藏，且停用后 observer 仍然存活，聊天行晚到（例如页面在轨迹页签停过了窗口期）会自动恢复生效，绝不报错。分隔线采用官方 compaction 标记的视觉语言，可就地展开只读回放撤回区间（用户消息原文与助手文本，从实时节点存储折叠），并提供「恢复到对话末尾」操作（见下文的恢复）。撤回成功时原文已自动回填草稿（见上文的撤回段落），无需额外操作。
 
-恢复是整个被撤回区间的尾部重放，不是原位修复：surface 折叠是位置性的——被替换的区间只接续成一个节点（`packages/core/session/src/surface.ts` 的 `applySurfacePlan`）——区间无法回到模型上下文原位。host 的 `restore` 方法沿着撤回 replacement 的 `sourceEventSeqs`（区间的权威边界，绝不重新推测）把每一条可重放内容按原始顺序逐条追加到尾部：用户消息逐字重放——编辑替换的内容就是最后一次编辑的新文本，因此恢复以编辑替换开头的区间时重放的是编辑后文本——每条助手回复的文本则以带框架的插件来源用户消息形式重放（`assistant/message` 无法携带插件来源，且 turn/step 轨迹不允许在 step 之外追加助手消息）。每条重放都在 `sourceEventSeqs` 里引用自己的原事件。工具调用/结果永不重放：调用/结果配对无法重新进入，副作用不可重放，且助手文本通常已概括了它们。重放出的行渲染为「已恢复」组——用户气泡带完整的复制/编辑/撤回操作行；助手回复以全宽行渲染，正文走官方 `MarkdownText`(ui-conversation 的 AssistantMarkdown 背后的公开渲染器，排版与代码块与原生回复一致），上方留小号 tertiary 色的「已恢复 · 助手回复」标注，模型侧框架文字不在 UI 上显示——分隔线在存在引用该区间的存活恢复行期间显示「已恢复」徽标；再次撤回这些恢复行会清掉徽标并重新启用恢复操作（恢复事件始终留在日志里）。
+恢复是整个被撤回区间的尾部重放，不是原位修复：surface 折叠是位置性的——被替换的区间只接续成一个节点（`packages/core/session/src/surface.ts` 的 `applySurfacePlan`）——区间无法回到模型上下文原位。host 的 `restore` 方法沿着撤回 replacement 自身划定的完整日志区间 `[start, seq)` 把每一条可重放内容按原始顺序逐条追加到尾部（surface 节点的遮蔽仍以 `sourceEventSeqs` 校验；区间边界来自 replacement 自身，绝不从其他生产者推测）：用户消息逐字重放——编辑替换的内容就是最后一次编辑的新文本，因此恢复以编辑替换开头的区间时重放的是编辑后文本——每条助手回复的文本则以带框架的插件来源用户消息形式重放（`assistant/message` 无法携带插件来源，且 turn/step 轨迹不允许在 step 之外追加助手消息）。未最终落成 `assistant/message` 的中断助手步骤，只要其 `assistant/chunk` 片段落在该日志区间内，也会合并成一条助手重放；如果该步骤只产生了 reasoning，则保留 reasoning，避免恢复时丢掉用户已经看到的中断思考。每条重放都在自己的 `sourceEventSeqs` 里引用原事件。工具调用/结果永不重放：调用/结果配对无法重新进入，副作用不可重放，且助手文本通常已概括了它们。重放出的行渲染为「已恢复」组——用户气泡带完整的复制/编辑/撤回操作行；助手回复以全宽行渲染，正文走官方 `MarkdownText`(ui-conversation 的 AssistantMarkdown 背后的公开渲染器，排版与代码块与原生回复一致），上方留小号 tertiary 色的「已恢复 · 助手回复」标注，模型侧框架文字不在 UI 上显示——分隔线在存在引用该区间的存活恢复行期间显示「已恢复」徽标；再次撤回这些恢复行会清掉徽标并重新启用恢复操作（恢复事件始终留在日志里）。
 
 `/client` 导出插件本体（`apply`/`inject`）与 `MessageToolsRemote` 类型；host 侧导出 `MessageToolsService` 类，`/types` 子路径提供线上类型。
 
@@ -48,7 +48,7 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 
 #### 模型看到什么
 
-恢复把被撤回区间的可重放内容按原始顺序追加到尾部：每条用户消息逐字重放（被编辑的消息以其最后一次编辑的文本恢复），每条助手回复的文本带一行框架（`(以下是先前被撤回、现随恢复放回的助手回复)`)，全部为插件标记并引用各自的原事件。工具调用与结果不重放。被撤回区间本身保持隐藏。
+恢复把被撤回区间的可重放内容按原始顺序追加到尾部：每条用户消息逐字重放（被编辑的消息以其最后一次编辑的文本恢复），每条助手回复的文本带一行框架（`(以下是先前被撤回、现随恢复放回的助手回复)`)，全部为插件标记并引用各自的原事件。中断的助手步骤若没有 `assistant/message`，会从其 `assistant/chunk` 片段合并重放；只有 reasoning 时保留 reasoning。工具调用与结果不重放。被撤回区间本身保持隐藏。
 
 #### Token 影响
 
@@ -60,7 +60,7 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 
 ## 兼容性
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——已对发布 tarball 实测验证:`@deepseek-ai/dsh-session@0.1.0-rc.7` 导出 `./surface` 子路径(含 `isAppendSurfaceEvent` / `isReplacementSurfaceEvent`);其余运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：chat-node owner props 移除了 `loadImage`，改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制与延后工作
@@ -70,6 +70,6 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 - **编辑仅支持文本。** 就地编辑框回填拼接后的文本块；原消息中的图片附件不会带入重发。
 - **恢复是尾部重放，不是原位修复。** surface 折叠是位置性的——被替换的区间只接续成一个节点（`packages/core/session/src/surface.ts` 的 `applySurfacePlan`）——被撤回的区间无法回到模型上下文原位；`messageTools.restore` 把区间的用户消息与助手文本按原始顺序重放为尾部新消息（工具调用/结果除外：配对无法重新进入，副作用不可重放），分隔线保留并在恢复行存活期间显示「已恢复」徽标——再次撤回恢复行会清掉徽标并重新启用恢复操作。撤回的模型侧隐藏永不回退——区间始终留在 surface 之外。前驱实验的文件快照仍不在范围内。
 - **恢复入口只在撤回分隔线上提供。** 编辑不产生分隔线（编辑气泡原位替换区间），因此纯编辑区间没有恢复入口；恢复包含编辑替换的撤回区间时重放的是最后一次编辑的新文本，恢复以编辑替换开头的区间（编辑气泡后被撤回）时，编辑后文本作为区间的第一条重放。
-- **助手文本以带框架的用户角色消息重放。** `assistant/message` 无法携带插件来源（`AssistantMessage.source` 是 `ModelMessageSource`)，且会话轨迹要求助手追加必须有打开的 step(`packages/core/session/src/invariant.ts:118`)，因此重放的回复以插件来源用户消息落地、前缀框架 `(以下是先前被撤回、现随恢复放回的助手回复)`——角色保真由框架文字而非 role 字段承担。
+- **助手文本以带框架的用户角色消息重放。** `assistant/message` 无法携带插件来源（`AssistantMessage.source` 是 `ModelMessageSource`)，且会话轨迹要求助手追加必须有打开的 step(`packages/core/session/src/invariant.ts:118`)，因此重放的回复以插件来源用户消息落地、前缀框架 `(以下是先前被撤回、现随恢复放回的助手回复)`——角色保真由框架文字而非 role 字段承担。未最终落成 `assistant/message` 的中断助手步骤会从其 `assistant/chunk` 片段重放（text 优先；只有 reasoning 时保留 reasoning），避免恢复时丢掉用户已见的中断内容。
 - **分隔线展开回放读的是已物化的聊天节点。** 行已掉出加载窗口的区间显示「撤回的内容不在当前已加载的历史中」而非条目列表；模型侧的恢复重放不受影响（它折叠的是持久日志，不是节点存储）。
 - **context 消息仍使用官方渲染器**，因此没有编辑/撤回操作；已吸入轮次的 steering 消息共享被遮蔽的渲染器，有同样的操作。撤回某条用户消息时，落在区间内的 steering 消息仍会随 surface 尾部一起对模型隐藏。仍在排队的消息不在本插件范围：它们还没落日志，官方队列条带已能经 `conversation.updateQueue` 编辑/移除它们。

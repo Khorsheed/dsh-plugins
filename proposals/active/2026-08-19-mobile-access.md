@@ -23,6 +23,13 @@
 | 推送 | host 侧无 Web Push 基建；`turn/end` 是现成触发点；`packages/credentials` 现成（配置只存引用、`role('secret')` 不进响应） | 推送 host 半（VAPID + 订阅 + 触发）可纯插件实现 |
 | Bot 通道 | `packages/sdk`（protocol / client / server，stdio JSON-RPC）+ `dsh --profile headless "task"` 一次性执行模式现成 | IM bot 可纯插件实现，零域名零入站（平台 long-polling） |
 
+## 数据主权（本方案的核心特性）
+
+dsh 是自托管架构，**所有用户数据收在单一根目录 `$DSH_HOME`（默认 `~/.dsh/`）**：会话数据为事件溯源模型，由本地后端（web profile 为 SQLite，另有 JSONL 可选）持久化；产物文件在工作区；配置与凭据在 `$DSH_HOME` 下（凭据走 `ctx.credentials` 引用，密钥不入配置）。
+
+- **M1 + M2 默认路径：会话数据完全不上云**。手机经 Tailscale 加密 P2P 隧道（DERP 中继仅转发加密流量、不存储）访问本机 dsh；Tailscale 协调服务器只做设备发现与密钥交换；出网字节仅：Web Push 通知 payload（Web Push 标准加密，推送服务不可见内容，但通知文本明文显示于锁屏）、LLM API 调用（dsh 固有）、Tailscale 元数据。
+- **M4 例外**：启用 Telegram bot 时，问答消息经 Telegram 服务器并存储于其侧（聊天记录）——可选通道，README 明示"开启即同意该数据路径"；不启用则数据全程本地。
+
 ## 方案
 
 ### M1 远程安全接入（纯部署 + 纯配置，零官方改动）

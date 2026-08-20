@@ -430,6 +430,129 @@ describe('FilePreviewView', () => {
     expect(await screen.findByText('current')).toBeTruthy()
   })
 
+  it('renders markdown files through the official renderer (bold, table)', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/readme.md', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: {
+        path: '/work/readme.md',
+        kind: 'text',
+        content: '**bold**\n\n| a | b |\n| - | - |\n| 1 | 2 |',
+        truncated: false,
+      },
+    })
+    renderView(h)
+    const row = await screen.findByText('readme.md')
+    act(() => { row.click() })
+    // The document view sits in the block frame with a format banner.
+    expect(await screen.findByText('markdown')).toBeTruthy()
+    // Bold renders as <strong> — the raw '**' markers are gone.
+    expect(screen.getByText('bold')).toBeTruthy()
+    expect(screen.queryByText(/\*\*bold\*\*/)).toBeNull()
+    // The GFM table renders its cells.
+    expect(screen.getByText('1')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+    expect(screen.getByText('a')).toBeTruthy()
+    expect(screen.getByText('b')).toBeTruthy()
+  })
+
+  it('renders JSON files through the JsonTree inspector', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/config.json', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { path: '/work/config.json', kind: 'text', content: '{"name": "demo", "count": 2}', truncated: false },
+    })
+    renderView(h)
+    const row = await screen.findByText('config.json')
+    act(() => { row.click() })
+    // The tree sits in the block frame with its format banner.
+    expect(await screen.findByText('json')).toBeTruthy()
+    // JsonTree renders the string value with its quotes and the number value.
+    expect(screen.getByText('"demo"')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+  })
+
+  it('falls back to the code view when JSON does not parse', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/broken.json', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/broken.json', kind: 'text', content: '{ not json', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('broken.json')
+    act(() => { row.click() })
+    // Invalid JSON keeps the literal code view.
+    expect(await screen.findByText('{ not json')).toBeTruthy()
+  })
+
+  it('renders CSV files as a table', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/data.csv', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { path: '/work/data.csv', kind: 'text', content: 'name,count\nalpha,1\nbeta,2', truncated: false },
+    })
+    renderView(h)
+    const row = await screen.findByText('data.csv')
+    act(() => { row.click() })
+    // The delimited file renders as a table — cells, not the raw source —
+    // inside the block frame with its format banner.
+    expect(await screen.findByText('csv')).toBeTruthy()
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.getByText('beta')).toBeTruthy()
+    expect(screen.getByText('count')).toBeTruthy()
+  })
+
+  it('renders HTML in a sandboxed iframe by default and toggles to source', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<h1>Hello</h1>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    // Render view is the default: a fully sandboxed iframe carrying the
+    // document (no scripts/forms — the official pipeline keeps HTML literal,
+    // so the render view is the plugin's own sandboxed channel).
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('srcdoc')).toBe('<h1>Hello</h1>')
+      expect(frame?.getAttribute('sandbox')).toBe('')
+    })
+    // The toggle flips to the source code view.
+    act(() => { screen.getByText('preview.htmlSource').click() })
+    expect(await screen.findByText('<h1>Hello</h1>')).toBeTruthy()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('keeps non-markdown text in the syntax-highlighted code view', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/notes.txt', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/notes.txt', kind: 'text', content: '**not bold** here', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('notes.txt')
+    act(() => { row.click() })
+    // A non-markdown text file keeps its literal source — no markdown parse.
+    expect(await screen.findByText('**not bold** here')).toBeTruthy()
+  })
+
   it('shows the recorded path for a missing file', async () => {
     const h = makeHarness()
     h.listFiles.mockResolvedValue({

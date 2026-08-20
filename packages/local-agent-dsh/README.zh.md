@@ -38,3 +38,8 @@ local-agent 家族的 **dsh harness**：把 dsh 自己作为本地 CLI 委派出
 | `apiKeyRef` | `DEEPSEEK_API_KEY` | 子 dsh 解析的凭据引用 |
 | `cliLaunch` | 父级自身启动 | dsh 启动 argv 前缀覆盖 |
 | `headlessBundleDir` | 从安装解析 | 子 profile 符号链接指向的 headless bundle 目录 |
+
+## Compatibility
+
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——rc.7→rc.8 API 审计（2026-08-20）确认本插件消费的所有面（slot、核心服务、核心事件、cordis 4.x、schemastery）均无变化或纯增量，无需改动源码。
+- 源码线（deepseek-harness master）：✅

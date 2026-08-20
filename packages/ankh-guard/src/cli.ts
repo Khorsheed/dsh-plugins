@@ -18,22 +18,25 @@
  *              instance, so the post-restart canary runs even though the
  *              instance restart killed the session that used to own it.
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { resolveRepoDir, resolveStateDir } from './defaults.ts'
+import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
 import {
-  clearCredential, lastGoodBootRevision, loadState, recordCredential, setCheckpoint, verifyCredential,
+  clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
+import { lastGoodBootRevision, stateFile } from './state-files.ts'
+import { findPidOnPort, killPidTree } from './processes.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
   stateDir: string
   repoDir: string
+  home: string
   maxAgeMinutes: number
   port: number | undefined
   command: string | undefined
@@ -71,7 +74,7 @@ commands:
           [--profile NAME] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
           [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR]
-  supervise --port N --start "CMD" [--foreground] [--log FILE] [--state-dir DIR] [--repo DIR]
+  supervise --port N --start "CMD" [--foreground] [--log FILE] [--state-dir DIR] [--repo DIR] [--home DIR]
 flags:
   --state-dir DIR  state directory (default: $DSH_HOME/state, else <cwd>/.dsh-guard-state)
   --repo DIR       repository the credential binds to (default: cwd)
@@ -89,7 +92,10 @@ flags:
   --delay-ms MS    restart: sleep before stopping, so the current turn can finish first
                    (agent-driven graceful self-restart: schedule, complete, then restart);
                    schedule-exit: delay before the detached exit agent kills the host
-  --log FILE       supervise/schedule-exit: watchdog/exit-agent log file (default: <home>/state/*.log)
+  --log FILE       supervise (detached only — with --foreground the external supervisor's
+                   redirection owns the log) / schedule-exit: log file (default: <state-dir>/*.log)
+  --home DIR       supervise: the dsh home the supervised instance boots with (profiles,
+                   credentials — default: $DSH_HOME; required when that is unset)
   --initiator ID   schedule-exit: session id that requested the exit (default: $DSH_SESSION_ID);
                    recorded in last-restart.json so the restart report returns to that session
   --profile NAME   preflight/schedule-exit/restart: the dsh profile to dry-run (default:
@@ -107,7 +113,7 @@ export function parse(
   argv: readonly string[],
 ): { error: string } | { command: string; positionals: readonly string[]; options: CliOptions } {
   const options: CliOptions = {
-    stateDir: '', repoDir: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined,
+    stateDir: '', repoDir: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined,
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
@@ -126,6 +132,7 @@ export function parse(
       const arg = argv[i] ?? ''
       switch (arg) {
         case '--state-dir': options.stateDir = flagValue(arg, true) ?? ''; i++; break
+        case '--home': options.home = flagValue(arg, true) ?? ''; i++; break
         case '--repo': options.repoDir = flagValue(arg, true) ?? ''; i++; break
         case '--max-age': {
           const raw = flagValue(arg, true)
@@ -237,6 +244,23 @@ function guardInvocation(): string {
     return `node ${cliPath}`
   }
   return `node ${cliPath}`
+}
+
+/**
+ * argv (after process.execPath) that runs the exit agent, with the same
+ * source/built split as {@link guardInvocation}: `exit-agent.ts` via the tsx
+ * loader when this CLI runs from source, `exit-agent.js` when built.
+ */
+function exitAgentInvocation(): string[] {
+  const cliPath = fileURLToPath(import.meta.url)
+  if (cliPath.includes(`${sep}src${sep}`)) {
+    const agent = join(dirname(cliPath), 'exit-agent.ts')
+    const nodeModules = resolve(dirname(cliPath), '../../../node_modules')
+    const tsx = join(nodeModules, 'tsx', 'dist', 'esm', 'index.mjs')
+    if (existsSync(tsx)) return ['--import', tsx, agent]
+    return [agent]
+  }
+  return [join(dirname(cliPath), 'exit-agent.js')]
 }
 
 /** Default bound on one preflight subprocess run (a real web-profile boot takes tens of seconds). */
@@ -410,6 +434,19 @@ function resolveProfileName(options: CliOptions): string {
   return env !== '' ? env : 'web'
 }
 
+/**
+ * The home the supervised instance boots with (the watchdog exports it as
+ * DSH_HOME): the explicit flag first, then the environment — the same
+ * flag-over-env order as every other resolver in this CLI (and as the
+ * installers' own --home). Undefined when neither names one: supervise fails
+ * loud rather than boot the instance on a home guessed from the state dir.
+ */
+export function resolveWdHome(optionHome: string, env: Record<string, string | undefined> = process.env): string | undefined {
+  if (optionHome !== '') return optionHome
+  const fromEnv = env.DSH_HOME
+  return fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined
+}
+
 /** The first ~40 lines of captured preflight output, newline-terminated, or empty. */
 function summarizeOutput(output: string): string {
   if (output.trim() === '') return ''
@@ -450,46 +487,6 @@ async function preflightGate(verb: string, profile: string, timeoutMs: number, i
         summarizeOutput(outcome.output)
       }manual override: stop the instance by hand (\`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)\`) and let the watchdog respawn it, or fix the preflight failure and retry.\n`)
       return false
-  }
-}
-
-/** The first process listening on a TCP port, or null when none is (via lsof). */
-function findPidOnPort(port: number): string | null {
-
-
-  try {
-    const out = execFileSync('lsof', [`-tiTCP:${port}`, '-sTCP:LISTEN', '-P'], { encoding: 'utf8' }).trim()
-    const first = out.split('\n')[0]
-    return first !== undefined && first !== '' ? first : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Kill a pid AND its descendants, deepest first (best effort). The supervised
- * instance may have forked children; a plain SIGKILL on the pid alone would
- * orphan them (the EADDRINUSE race the watchdog's EADDRINUSE branch exists
- * for). The process-group model is NOT assumed — the instance is not
- * setsid'd — so the sweep walks `pgrep -P` instead. `pgrep` missing or
- * returning nothing is fine: the pid itself still gets the signal.
- */
-function killPidTree(pid: number, signal: NodeJS.Signals): void {
-  let children: string[] = []
-  try {
-    const out = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).trim()
-    children = out === '' ? [] : out.split('\n')
-  } catch {
-    // no children, or pgrep unavailable — the pid itself still gets killed
-  }
-  for (const raw of children) {
-    const child = Number(raw)
-    if (Number.isInteger(child) && child > 0) killPidTree(child, signal)
-  }
-  try {
-    process.kill(pid, signal)
-  } catch {
-    // already gone
   }
 }
 
@@ -598,7 +595,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     }
     case 'checkpoint': {
       const message = options.message ?? 'batch snapshot'
-      const result = commitCheckpoint(repoDir, `dsh-ankh-guard checkpoint: ${message}`)
+      const result = commitCheckpoint(repoDir, `dsh-ankh-guard checkpoint: ${message}`, SRC_ARTIFACT_PATTERN)
       if (!result.ok) {
         io.stderr(`${result.error}\n`)
         return 1
@@ -727,10 +724,22 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`supervise requires --port N and --start "CMD"\n\n${USAGE}`)
         return 2
       }
-      // The watchdog writes its pidfile under <home>/state; reuse the running
-      // one when it is still alive (one supervisor owns the port).
-      const wdHome = process.env.DSH_HOME ?? dirname(stateDir)
-      const pidfile = join(wdHome, 'state', 'watchdog.pid')
+      // The supervised instance boots with THIS home (the watchdog exports it
+      // as DSH_HOME): a home derived from the state dir would silently point
+      // the instance at the wrong profiles/credentials, surfacing far from
+      // the cause — so a missing home is a loud misconfiguration, not a guess.
+      const wdHome = resolveWdHome(options.home)
+      if (wdHome === undefined) {
+        io.stderr('supervise needs the dsh home: pass --home DIR or set DSH_HOME — the supervised instance reads its profiles/credentials from there, and deriving one from --state-dir would guess wrong\n')
+        return 2
+      }
+      // One state directory owns every marker and the pidfile; the plugin,
+      // this CLI, and the watchdog must agree on it. Deriving a home from
+      // stateDir and re-appending 'state' breaks whenever stateDir is not
+      // literally '$DSH_HOME/state' (an explicit --state-dir, or the
+      // '<cwd>/.dsh-guard-state' fallback): the CLI would write '<cwd>/state'
+      // while the plugin reads '<cwd>/.dsh-guard-state'.
+      const pidfile = stateFile(stateDir, 'watchdogPid')
       if (existsSync(pidfile)) {
         const existing = readFileSync(pidfile, 'utf8').trim()
         const existingPid = Number(existing)
@@ -773,12 +782,19 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`watchdog script not found at ${watchdog}\n`)
         return 1
       }
-      const logPath = options.log ?? join(wdHome, 'state', 'watchdog.log')
-      mkdirSync(dirname(logPath), { recursive: true })
+      // --log only has a consumer in the detached branch (the log file the
+      // watchdog is spawned into). Foreground output follows the EXTERNAL
+      // supervisor's redirection (launchd StandardOutPath / systemd
+      // StandardOutput=) — accepting --log here would silently write nothing.
+      if (options.foreground && options.log !== undefined) {
+        io.stderr('supervise: --log has no effect with --foreground — output follows the external supervisor\'s redirection (launchd StandardOutPath / systemd StandardOutput=); drop --log\n')
+        return 2
+      }
       const env = {
         ...process.env,
         WD_PORT: String(port),
         WD_HOME: wdHome,
+        WD_STATE_DIR: stateDir,
         WD_REPO: repoDir,
         WD_START: options.start,
         // Foreground (launchd-supervised) mode: the watchdog owns the port by
@@ -800,6 +816,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         })
         return code
       }
+      const logPath = options.log ?? stateFile(stateDir, 'watchdogLog')
+      mkdirSync(dirname(logPath), { recursive: true })
       const child = spawn('bash', [watchdog, '--supervise'], {
         detached: true,
         stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
@@ -829,11 +847,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // Intentional-restart marker: the supervising watchdog runs the canary
       // after the respawn and clears this on pass. The initiator (the session
       // that requested the exit) rides along so the restart report can return
-      // to that session instead of racing to whichever root agent resumes first.
-      const wdHome = process.env.DSH_HOME ?? dirname(stateDir)
+      // to that session instead of racing to whichever root agent resumes
+      // first. Everything lands in stateDir directly — the same directory the
+      // plugin reads (see the supervise case for why no home is derived).
       const initiator = options.initiator ?? process.env.DSH_SESSION_ID
-      mkdirSync(join(wdHome, 'state'), { recursive: true })
-      writeFileSync(join(wdHome, 'state', 'restart-requested.json'),
+      mkdirSync(stateDir, { recursive: true })
+      writeFileSync(stateFile(stateDir, 'restartRequested'),
         `${JSON.stringify({
           reason: 'scheduled self-restart',
           requestedAt: Date.now(),
@@ -843,29 +862,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // the sandbox/harness process group, so the scheduled kill actually
       // lands even after the scheduling turn ends — the fix for "the kill
       // never happened" seen with `(sleep N; kill) &` from a managed shell.
-      const resultFile = join(wdHome, 'state', 'last-restart.json')
-      const logPath = options.log ?? join(wdHome, 'state', 'schedule-exit.log')
+      // The agent is a real shipped file (typechecked, linted, unit-tested),
+      // spawned with the same source/built split as guardInvocation().
+      const resultFile = stateFile(stateDir, 'lastRestart')
+      const logPath = options.log ?? stateFile(stateDir, 'scheduleExitLog')
       mkdirSync(dirname(logPath), { recursive: true })
-      const script = [
-        "const { execFileSync } = require('node:child_process');",
-        'const fs = require("node:fs");',
-        'const port = Number(process.env.WD_PORT);',
-        'const delay = Number(process.env.WD_DELAY_MS);',
-        'const result = process.env.WD_RESULT_FILE;',
-        'const initiator = process.env.WD_INITIATOR || undefined;',
-        'const record = (fields) => JSON.stringify({ ...fields, ...(initiator !== undefined ? { initiator } : {}) });',
-        'setTimeout(() => {',
-        '  try {',
-        "    const out = execFileSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN', '-P'], { encoding: 'utf8' }).trim();",
-        "    const pid = Number(out.split('\\n')[0]);",
-        "    if (Number.isInteger(pid)) { process.kill(pid, 'SIGTERM'); fs.writeFileSync(result, record({ exitAt: Date.now(), pid })); }",
-        "    else { fs.writeFileSync(result, record({ error: 'no listener on port ' + port })); }",
-        '  } catch (e) {',
-        '    fs.writeFileSync(result, record({ error: String(e) }));',
-        '  }',
-        '}, delay);',
-      ].join('\n')
-      const child = spawn(process.execPath, ['-e', script], {
+      const child = spawn(process.execPath, exitAgentInvocation(), {
         detached: true,
         stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
         env: {

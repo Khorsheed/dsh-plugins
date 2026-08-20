@@ -72,7 +72,7 @@ registry 元数据与命令回复从不进入模型请求、不影响其缓存�
 
 ## 兼容性
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.0-rc.7`):✅ 完整——运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery)。
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：`commands/execute` Remote 新增必填 `images` 参数（rc.6/rc.7 宿主会收到错位的参数）——在旧宿主上请停留在上一个构建。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制与后续工作

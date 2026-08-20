@@ -36,6 +36,36 @@ export async function editInPlace(steps: EditInPlaceSteps, running: boolean): Pr
   await steps.edit()
 }
 
+/** The verbs of one withdrawal, bound to a session by the caller. */
+export interface WithdrawInPlaceSteps {
+  /** Cancel the session's running turn. */
+  cancel: () => Promise<void>
+  /** Wait until the cancelled turn has fully settled (bounded; never hangs). */
+  waitIdle: () => Promise<void>
+  /** Apply the withdrawal (single Remote call: surface replacement + flush). */
+  withdraw: () => Promise<void>
+}
+
+/**
+ * Withdraw one user message: when the session has a running turn, cancel it
+ * first (it is writing into the span the withdrawal is about to shadow) and
+ * wait for the settle, then apply the withdrawal. A failed cancel rejects
+ * without withdrawing; a failed or timed-out settle wait rejects without
+ * withdrawing too — withdrawing before the cancelled turn's teardown has
+ * landed would leave straggler chunks/assistant writes outside the
+ * replacement's span. An idle session is never cancelled.
+ * @param steps - the cancel/waitIdle/withdraw verbs.
+ * @param running - whether the session has a running turn right now.
+ * @returns completion; failures reject at the failing step.
+ */
+export async function withdrawInPlace(steps: WithdrawInPlaceSteps, running: boolean): Promise<void> {
+  if (running) {
+    await steps.cancel()
+    await steps.waitIdle()
+  }
+  await steps.withdraw()
+}
+
 /**
  * The minimal slice of the client conversation snapshot the settle probe
  * reads (structurally satisfied by `ConversationSnapshot`, so the unit tests

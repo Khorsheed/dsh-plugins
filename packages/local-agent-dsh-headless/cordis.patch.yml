@@ -43,3 +43,26 @@
         task: !!js ctx.localAgentDshHeadlessStartup.task
         sessionId: !!js ctx.localAgentDshHeadlessStartup.sessionId
         resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId
+
+    # The member bridge (local-agent member channel, M3): the parent provider
+    # hands the per-run socket path, token, and bridge entry through the
+    # sub-dsh spawn env (the DSH_MEMBER_* names survive only via the explicit
+    # env layer — see dsh-cli-provider.ts, MEMBER_BRIDGE_ENTRY_ENV is the
+    # family-internal contract). @deepseek-ai/dsh-mcp-client resolves from the
+    # installation's dependency closure (linked into the scoped home's
+    # profiles/node_modules fallback at boot). Absent env (a core predating
+    # the member channel) yields an unconnectable stdio server; with
+    # failOnStartupError off the run simply proceeds without member_message.
+    - id: member-bridge
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: dsh-member
+        transport: stdio
+        command: !!js process.execPath
+        args:
+          - !!js process.env.DSH_MEMBER_BRIDGE_ENTRY || ''
+        cwd: !!js process.cwd()
+        env:
+          DSH_MEMBER_SOCKET: !!js process.env.DSH_MEMBER_SOCKET ?? ''
+          DSH_MEMBER_TOKEN: !!js process.env.DSH_MEMBER_TOKEN ?? ''
+        failOnStartupError: false

@@ -9,8 +9,8 @@
  * authorize a restart of unverified code. Framework-free: the cordis plugin,
  * the CLI, and the invariant companion all share this module.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { stateFile } from './state-files.ts'
 
 /** A green-build credential: proof that HEAD {@link revision} passed {@link scope} at {@link recordedAt}. */
 export interface GuardCredential {
@@ -55,11 +55,10 @@ export interface VerifyResult {
 }
 
 const AUDIT_CAP = 50
-const STATE_FILE = 'self-restart-guard.json'
 
 /** Absolute path of the state file inside a state directory. */
 export function stateFilePath(stateDir: string): string {
-  return join(stateDir, STATE_FILE)
+  return stateFile(stateDir, 'guard')
 }
 
 /** A fresh, credential-less state. */
@@ -80,6 +79,13 @@ function isCheckpoint(value: unknown): value is GuardCheckpoint {
   return typeof c.revision === 'string' && typeof c.recordedAt === 'number' && typeof c.message === 'string'
 }
 
+function isAuditEntry(value: unknown): value is GuardAuditEntry {
+  if (typeof value !== 'object' || value === null) return false
+  const e = value as GuardAuditEntry
+  return (e.action === 'record' || e.action === 'clear' || e.action === 'checkpoint')
+    && typeof e.ts === 'number' && typeof e.detail === 'string'
+}
+
 /**
  * Read the state file; an absent file is an empty state, a malformed one is a
  * loud misconfiguration error (never silently ignored).
@@ -91,7 +97,7 @@ export function loadState(stateDir: string): GuardState {
     const raw = readFileSync(stateFilePath(stateDir), 'utf8')
     const parsed = JSON.parse(raw) as Partial<GuardState> | null
     if (parsed === null || typeof parsed !== 'object') return emptyState()
-    const audit = Array.isArray(parsed.audit) ? parsed.audit as GuardAuditEntry[] : []
+    const audit = Array.isArray(parsed.audit) ? parsed.audit.filter(isAuditEntry) : []
     const state: GuardState = { audit }
     if (isCredential(parsed.credential)) state.credential = parsed.credential
     if (isCheckpoint(parsed.checkpoint)) state.checkpoint = parsed.checkpoint
@@ -105,7 +111,13 @@ export function loadState(stateDir: string): GuardState {
 /** Persist a state (creates the directory as needed). */
 export function saveState(stateDir: string, state: GuardState): void {
   mkdirSync(stateDir, { recursive: true })
-  writeFileSync(stateFilePath(stateDir), `${JSON.stringify(state, null, 2)}\n`)
+  // Atomic via tmp + rename: a crash mid-write must never leave a truncated
+  // state file — a malformed one throws in loadState and fails the host's
+  // boot invariant, i.e. the guard's own state would take the host down.
+  const file = stateFilePath(stateDir)
+  const tmp = `${file}.${process.pid}.tmp`
+  writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`)
+  renameSync(tmp, file)
 }
 
 function withAudit(state: GuardState, entry: GuardAuditEntry): GuardState {
@@ -204,22 +216,5 @@ export function verifyCredential(
   return {
     ok: true,
     reason: `green credential valid (${credential.scope} @ ${credential.revision}, ${Math.round(leftMs / 60_000)} min left)`,
-  }
-}
-
-/**
- * The last deployment-proven revision, stamped by the watchdog on every
- * healthy boot (`last-good-boot.json` next to the guard state), or undefined.
- * A green credential proves build+test passed; only this stamp proves the
- * deployment composed and the instance came up.
- * @param stateDir - state directory.
- * @returns the stamped revision, or undefined.
- */
-export function lastGoodBootRevision(stateDir: string): string | undefined {
-  try {
-    const stamp = JSON.parse(readFileSync(join(stateDir, 'last-good-boot.json'), 'utf8')) as { revision?: unknown }
-    return typeof stamp.revision === 'string' && stamp.revision !== '' ? stamp.revision : undefined
-  } catch {
-    return undefined
   }
 }

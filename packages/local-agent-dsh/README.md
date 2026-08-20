@@ -38,3 +38,8 @@ The sub-dsh profile lives under the scoped home (`profiles/headless-local-agent-
 | `apiKeyRef` | `DEEPSEEK_API_KEY` | credential reference the sub-dsh resolves |
 | `cliLaunch` | parent's own launch | dsh launch argv prefix override |
 | `headlessBundleDir` | resolved from installation | headless bundle directory for the sub-profile symlink |
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
+- source line (deepseek-harness master): ✅

@@ -31,3 +31,8 @@ Removing the harness bundles unregisters their tool rows. Removing this package 
 ## Scope isolation
 
 The tool itself spawns nothing; it resolves and stages through the `localAgent` service and delegates to the harness provider, which runs the CLI under the harness's scoped home. The tool therefore inherits the harness bundle's `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` isolation.
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
+- source line (deepseek-harness master): ✅

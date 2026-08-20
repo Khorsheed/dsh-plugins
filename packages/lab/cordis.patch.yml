@@ -1,0 +1,14 @@
+# lab bundle patch: inserts the lab row into the composing profile,
+# so `dsh plugin --profile <name> add @khorsheed/dsh-lab` reconciles it
+# into the bundles layer (apps/cli plugin.ts reconcilePlugins). The row is a
+# bare mount — every config field has a schema default.
+#
+# NOTE: a composition must mount this row id exactly once. Official images
+# (the published npm line and upstream master) mount no lab row, so
+# plugin-adding this package is the install path there; a composition that
+# already mounts the id by other means must NOT also add it — a duplicate
+# loader entry id fails boot. Check first:
+# `dsh --profile <name> --dump-config | grep lab`.
+- insert:
+    - id: lab
+      name: "@khorsheed/dsh-lab"

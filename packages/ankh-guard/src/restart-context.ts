@@ -9,8 +9,8 @@
  * those sessions and queue a "continue" turn. Pure logic reads the durable
  * files; the plugin wires them into `agent/created` and `agent.followup`.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { stateFile } from './state-files.ts'
 
 /** The exit agent's durable restart record (written by `schedule-exit`). */
 export interface RestartRecord {
@@ -19,6 +19,11 @@ export interface RestartRecord {
   error?: string
   /** Session id of the agent that scheduled the exit, when known. */
   initiator?: string
+  /**
+   * The watchdog recovered an UNPLANNED exit (crash, or a stop outside the
+   * guard) — written on the respawn so the recovery is reported, not silent.
+   */
+  unexpected?: boolean
   reportedAt?: number
 }
 
@@ -37,12 +42,12 @@ export interface InterruptedSnapshot {
 
 /** Absolute path of the restart record inside a state directory. */
 export function restartRecordFile(stateDir: string): string {
-  return join(stateDir, 'last-restart.json')
+  return stateFile(stateDir, 'lastRestart')
 }
 
 /** Absolute path of the interrupted-session snapshot inside a state directory. */
 export function interruptedSnapshotFile(stateDir: string): string {
-  return join(stateDir, 'interrupted-sessions.json')
+  return stateFile(stateDir, 'interruptedSessions')
 }
 
 /**
@@ -74,6 +79,9 @@ export function pendingRestartRecord(stateDir: string): RestartRecord | null {
 export function restartContextText(record: RestartRecord, canaryPending: boolean): string {
   if (record.exitAt === undefined && record.error === undefined) return ''
   const time = record.exitAt !== undefined ? new Date(record.exitAt).toISOString() : '未知时间'
+  if (record.unexpected === true) {
+    return `[ankh-guard] 服务最近发生过一次非计划退出（崩溃或被手动停止）：${time}，watchdog 已自动拉起实例。请向用户简要回报这次非计划重启。`
+  }
   const outcome = record.error !== undefined ? `失败（${record.error}）` : '成功'
   const canary = canaryPending ? '金丝雀尚未完成' : '金丝雀已处理'
   return `[ankh-guard] 服务最近重启过：${time}，退出${outcome}，${canary}。请向用户简要回报本次重启结果。`
@@ -101,6 +109,9 @@ export function continueInterruptedText(exitAt: number): string {
 export function continueAndReportText(record: RestartRecord, canaryPending: boolean): string {
   if (record.exitAt === undefined && record.error === undefined) return ''
   const time = record.exitAt !== undefined ? new Date(record.exitAt).toISOString() : '未知时间'
+  if (record.unexpected === true) {
+    return `[ankh-guard] 服务于 ${time} 发生非计划退出（崩溃或被手动停止），watchdog 已自动拉起实例。你上次正在进行的回合被中断（日志已标记 interrupted）。请检查当前状态并继续未完成的任务，并向用户简要回报这次非计划重启；若任务已不再适用，简要说明原因后停止。`
+  }
   const outcome = record.error !== undefined ? `失败（${record.error}）` : '成功'
   const canary = canaryPending ? '金丝雀尚未完成' : '金丝雀已处理'
   return `[ankh-guard] 服务于 ${time} 重启，退出${outcome}，${canary}。你上次正在进行的回合被中断（日志已标记 interrupted）。请检查当前状态并继续未完成的任务，并向用户简要回报本次重启结果；若任务已不再适用，简要说明原因后停止。`
@@ -114,7 +125,7 @@ export function continueAndReportText(record: RestartRecord, canaryPending: bool
  */
 export function acknowledgeRestartRecord(stateDir: string, record: RestartRecord, now: number): void {
   try {
-    writeFileSync(restartRecordFile(stateDir), `${JSON.stringify({ ...record, reportedAt: now })}\n`)
+    atomicWrite(restartRecordFile(stateDir), `${JSON.stringify({ ...record, reportedAt: now })}\n`)
   } catch {
     // Best-effort: an unwritable record re-injects next step rather than crashing.
   }
@@ -149,8 +160,15 @@ export function readInterruptedSnapshot(stateDir: string): InterruptedSnapshot |
 export function writeInterruptedSnapshot(stateDir: string, snapshot: InterruptedSnapshot): void {
   try {
     mkdirSync(stateDir, { recursive: true })
-    writeFileSync(interruptedSnapshotFile(stateDir), `${JSON.stringify(snapshot)}\n`)
+    atomicWrite(interruptedSnapshotFile(stateDir), `${JSON.stringify(snapshot)}\n`)
   } catch {
     // Best-effort: a failed snapshot loses auto-continue for this stop, never the process.
   }
+}
+
+/** Write a small durable file atomically (tmp + rename in the same directory). */
+function atomicWrite(file: string, content: string): void {
+  const tmp = `${file}.${process.pid}.tmp`
+  writeFileSync(tmp, content)
+  renameSync(tmp, file)
 }

@@ -31,3 +31,8 @@ subagent 请求 descriptor schema（`subagent/descriptor`）是严格的：one-s
 ## 范围隔离
 
 工具自身不 spawn 任何进程；它只通过 `localAgent` 服务解析和 stage，并把委派交给 harness provider，由后者在 harness 的 scoped home 下运行 CLI。因此工具继承 harness bundle 的 `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` 隔离。
+
+## Compatibility
+
+- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——rc.7→rc.8 API 审计（2026-08-20）确认本插件消费的所有面（slot、核心服务、核心事件、cordis 4.x、schemastery）均无变化或纯增量，无需改动源码。
+- 源码线（deepseek-harness master）：✅

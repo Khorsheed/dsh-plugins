@@ -65,6 +65,7 @@ ctx.slots.inject('conversation.composer', () =>
 
 - **两段式成员判定**（selector 纯度约束的直接后果）：`selectCliMember` 只能用会话快照粗筛——`subagent.address.mode === 'one-shot'` 且会话在家族视角"可能是成员"（如有 parentId 即可，宁宽勿漏）；当选后 `MemberComposer` 向 gateway 查委派记录（新增只读 Remote `memberOf(childSessionId)`，读 `delegations` 登记），**查无记录则渲染与官方一致的只读说明**（视觉对齐 `SubagentReadOnlyComposer`），绝不把非成员会话盖成可写。
 - **组件**：外观/交互照 `InputBar` 抄（输入框、发送、进行态、Stop），状态机自写：草稿本地保存、run 进行中输入禁用 + Stop 可用、错误提示。发送**不走** `inputActions.submit()`，调 §2 的 Remote。
+- **统计行不自绘**：token 消耗 / 缓存命中率那行是官方 `StatsLine`，挂在**独立于 composer 链**的 list 槽 `conversation.composer.dock` 上（`ConversationRoot.tsx:156`；zone 判定无 subagent 门控，`ConversationRoot.tsx:81-82`），我们的链选举不影响它，成员会话照常渲染。StatsLine 对无数据的分组整组隐藏（`StatsLine.tsx:172`），CLI 成员缺的 ttft/decode 时序不会显示成误导性的零；token/缓存三家数据源齐全（kimi 有 `inputCacheRead/Creation`、claude 有 cache_read/creation、codex 有 cached input，均随镜像进 `tokenUsage` 投影）。备选（仅当实测发现 dock 被抑制或样式冲突）：MemberComposer 内用 `useProjection('tokenUsage')` 自渲染一行精简版。
 - **进行态数据**：`localAgent/run-progress` 事件（M2/M3）经客户端既有订阅通道到达；transcript 本体由 M3 镜像实时进子会话，会话视图自滚动，composer 不管渲染。
 
 ### 2. 人 → 成员的发送与中断 Remote（gateway）
@@ -122,7 +123,7 @@ ctx.slots.inject('conversation.composer', () =>
 
 - 底座提案：`proposals/active/2026-08-18-local-agent-delegation-api.md`（M1–M4 已合 main）。
 - M1 通道 + M2 composer 已落地（worktree 分支 `local-agent-member-channel`，commit `e6b516b` / `670210d`）：`memberOf` / `promptMember` / `stopMember` Remote、registry `getDelegation` 访问器、`conversation.composer` chain 条目（priority -20）与 MemberComposer（含降级只读渲染）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-channel.md`。
-- M3 成员互通知已落地（kimi 先行）：桥接 MCP server（无依赖 stdio JSON-RPC，`member_message(to, text)`）、宿主 loopback listener、每 run token + CLI pid 交叉校验、同父校验、闸门交接（鸭子类型 `room.receiveMemberMessage` 探针，零 room 依赖、checker 无需新 sanction）、家族直发（busy 回执 + 出处标注 prompt）。kimi 注入走 `$KIMI_CODE_HOME/mcp.json` 每 run 条目（`dsh-member-<token8>`，settle 剪除）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-notification.md`。**provider 状态**：kimi ✅；codex 待做（共享 config.toml 需 TOML 手术，树中无 parser）；claude-code 待做（`--mcp-config` + `-p` 模式权限路径需对真实 CLI 核实）；dsh 待做（需 harness 自身 MCP client 能力）。room 侧 `receiveMemberMessage` 由 room 提案自行实现（非本提案交付物）。
+- M3 成员互通知已落地（kimi 先行）：桥接 MCP server（无依赖 stdio JSON-RPC，`member_message(to, text)`）、宿主 loopback listener、每 run token + CLI pid 交叉校验、同父校验、闸门交接（鸭子类型 `room.receiveMemberMessage` 探针，零 room 依赖、checker 无需新 sanction）、家族直发（busy 回执 + 出处标注 prompt）。kimi 注入走 `$KIMI_CODE_HOME/mcp.json` 每 run 条目（`dsh-member-<token8>`，settle 剪除）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-notification.md`。**provider 状态**：kimi ✅（mcp.json 每 run 条目）；claude-code ✅（`--mcp-config` JSON + `--allowedTools`，真实 CLI 端到端探针通过）；codex ✅ 注入已落地（`-c` 内联 TOML 覆盖，语法经真实 CLI 接受；**模型调用腿待配额重置后复跑验证**）；dsh ✅（headless bundle 的 `cordis.patch.yml` 加 `@deepseek-ai/dsh-mcp-client` stdio 行，`!!js` 读每 run env；该包自 rc.6 minHost 起在 dsh 安装闭包内，可解析）。room 侧 `receiveMemberMessage` 由 room 提案自行实现（非本提案交付物）。
 - 评审记录：room 第二轮评审（2026-08-19）提出双向通道诉求；其 `prepareContinuable` 手段经 harness 源码核实不可行（§0），本提案为替代路线。2026-08-19 增补：room 明确成员互通知（CLI → CLI）为更高频场景，并入 M3。room 第三轮评审指出原 §3 直发与验收标准的闸门条款矛盾，修正为闸门交接（room 在场 → 交给 room 闸门；缺席/非 room → 直发），闸门所有权单一归于 room。
 - 协议约定（room 评审确认）：通知协议说明保持双轨表述——「优先用 `member_message` 工具，没工具时用名册注入约定的独占行格式」。codex/claude/dsh 桥接落地后该表述不变，桥接只是让工具轨可用，独占行轨作为永久降级保留。
 - 背景 note：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方）。
@@ -130,7 +131,7 @@ ctx.slots.inject('conversation.composer', () =>
 ## 验收标准（done 判定，绑定可插拔交付）
 
 - 人 → 成员（真实 profile）：主 agent 经 `subagent_kimi` 委派一轮后，打开该子会话出现可写 composer；发送一条消息 = 同一 CLI 会话续一轮（子会话 transcript 与人的输入、成员回复均实时出现）；进行中 Stop 可中断。
-- 成员 → 成员（真实 profile）：room 在场时 A（kimi）run 中 `member_message` 通知 B（codex）经闸门交接落到 room——默认产生待确认卡，人确认（或 room 配置自动派发）后 B 续轮且 prompt 带 A 的出处标注，A 收到真实回执（`pending-confirm` / `sent` / `busy`）；room 缺席时 local-agent 直发 B；错 token / 跨 room 寻址被拒。
+- 统计行（真实 profile）：成员会话打开时官方 dock 统计行（`conversation.composer.dock` 的 StatsLine）在 MemberComposer 下方可见；token 消耗与缓存命中率有真实数据（数据源 = 镜像写入的 usage）；无 ttft/decode 等零值误导分组。若实测 dock 被抑制或样式冲突，启用备选（MemberComposer 内 `useProjection('tokenUsage')` 自渲染）并更新本节。- 成员 → 成员（真实 profile）：room 在场时 A（kimi）run 中 `member_message` 通知 B（codex）经闸门交接落到 room——默认产生待确认卡，人确认（或 room 配置自动派发）后 B 续轮且 prompt 带 A 的出处标注，A 收到真实回执（`pending-confirm` / `sent` / `busy`）；room 缺席时 local-agent 直发 B；错 token / 跨 room 寻址被拒。
 - 跨重启：重启 profile 后打开昨天的成员会话，发送仍续上同一 CLI 会话（delegations.jsonl + reattach）。
 - 降级：打开一个非家族委派的 one-shot 子会话（若有）渲染与官方只读面板一致的说明；不装本包 client 半的会话行为不变；未挂桥接的成员 run 与现状一致。
 - room 复验：room 成员会话内直接发送生效；A 通知 B 的轮次被 room 黑板感知；闸门条款成立——room 在场时家族路径不产生任何未经 room 闸门的成员间派发。

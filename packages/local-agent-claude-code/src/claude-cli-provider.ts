@@ -34,6 +34,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -55,6 +56,56 @@ export class ClaudeCliProvider implements SubagentProvider {
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
   ) {}
+
+  /**
+   * Register one run with the member channel and prepare the bridge MCP
+   * declaration for the spawn argv. Claude Code takes a per-invocation
+   * `--mcp-config <json>` flag (verified end-to-end against the real CLI), so
+   * the declaration is a single JSON string — nothing is written to the
+   * scoped home and there is nothing to prune at settle; `release` only
+   * invalidates the token. Returns undefined when the mounted core predates
+   * the member channel (declare-and-degrade: the run proceeds unchanged).
+   */
+  private memberRun(
+    childSessionId: string,
+    parentSessionId: string,
+  ): { token: string; mcpConfig: string; allowedTool: string; bind(pid: number): void; release(): void } | undefined {
+    const registry = this.ctx.localAgent
+    if (
+      typeof registry.registerMemberRun !== 'function'
+      || typeof registry.memberBridgeSocketPath !== 'function'
+      || typeof registry.memberBridgeCommand !== 'function'
+    ) return undefined
+    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
+    const serverName = `dsh-member-${token.slice(0, 8)}`
+    const bridge = registry.memberBridgeCommand()
+    const mcpConfig = JSON.stringify({
+      mcpServers: {
+        [serverName]: {
+          command: bridge.command,
+          args: bridge.args,
+          env: {
+            [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+            [MEMBER_BRIDGE_TOKEN_ENV]: token,
+          },
+        },
+      },
+    })
+    let released = false
+    return {
+      token,
+      mcpConfig,
+      // The one tool the bridge exposes, pre-allowed so `claude -p` (whose
+      // non-interactive mode auto-denies permission prompts) can call it.
+      allowedTool: `mcp__${serverName}__member_message`,
+      bind: pid => registry.bindMemberRunPid(token, pid),
+      release: () => {
+        if (released) return
+        released = true
+        registry.unregisterMemberRun(token)
+      },
+    }
+  }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
@@ -79,6 +130,9 @@ export class ClaudeCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -109,33 +163,43 @@ export class ClaudeCliProvider implements SubagentProvider {
     // delegation reports which endpoint it actually used.
     const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
     this.ctx.logger.info(`subagent-claude: delegating via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
-    return startClaudeCliRun(request, {
-      cwd: parentCwd,
-      env: {
-        CLAUDE_CONFIG_DIR: homeDir,
-        ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-      },
-      endpointLabel: effectiveBaseUrl,
-      permissionMode: this.permissionMode,
-      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-      spawn: spec => this.ctx.subprocess.spawn(spec),
-      onError: (error: unknown, stopReason) => {
-        this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-      },
-      childSession,
-      ctx: this.ctx,
-      // The first round records the claude session id so a later resume round
-      // can continue it.
-      onSessionId: (sessionId) => {
-        if (sessionId === undefined) return
-        this.ctx.localAgent.recordDelegation({
-          childSessionId: runId,
-          provider: this.name,
-          parentSessionId: request.parent.session.id,
-          cliSessionId: sessionId,
-        })
-      },
-    })
+    try {
+      const run = await startClaudeCliRun(request, {
+        cwd: parentCwd,
+        env: {
+          CLAUDE_CONFIG_DIR: homeDir,
+          ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+        },
+        endpointLabel: effectiveBaseUrl,
+        permissionMode: this.permissionMode,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: spec => this.ctx.subprocess.spawn(spec),
+        onError: (error: unknown, stopReason) => {
+          this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+        },
+        onSpawned: (pid) => { member?.bind(pid) },
+        ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
+        childSession,
+        ctx: this.ctx,
+        // The first round records the claude session id so a later resume round
+        // can continue it.
+        onSessionId: (sessionId) => {
+          if (sessionId === undefined) return
+          this.ctx.localAgent.recordDelegation({
+            childSessionId: runId,
+            provider: this.name,
+            parentSessionId: request.parent.session.id,
+            cliSessionId: sessionId,
+          })
+        },
+      })
+      // The member-channel token dies with the run, whatever its stop reason.
+      if (member !== undefined) void run.result.then(member.release, member.release)
+      return run
+    } catch (error) {
+      member?.release()
+      throw error
+    }
   }
 
   /** Resume round: continue the recorded claude session inside the existing child session. */
@@ -154,6 +218,9 @@ export class ClaudeCliProvider implements SubagentProvider {
         `subagent-claude: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
+    // Member channel: register the resume round (same child session, fresh
+    // per-run token) before the spawn.
+    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -178,17 +245,26 @@ export class ClaudeCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
+        onSpawned: (pid) => { member?.bind(pid) },
+        ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
         resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
       })
       void run.result.then(
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
       )
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+      member?.release()
       throw error
     }
   }
@@ -214,6 +290,16 @@ export interface ClaudeCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
+  readonly onSpawned?: (pid: number) => void
+  /**
+   * Member channel: the bridge MCP declaration for this run, injected as
+   * `--mcp-config <json>` plus a `--allowedTools` entry for the bridge's one
+   * tool (claude `-p` auto-denies permission prompts). Absent on a core that
+   * predates the member channel — the argv is then exactly the pre-channel
+   * shape.
+   */
+  readonly member?: { readonly mcpConfig: string; readonly allowedTool: string } | undefined
   /** dsh subagent session recording this delegation; its response is appended after settle. */
   readonly childSession?: Session | undefined
   /** Host context carrying session persistence. */
@@ -487,14 +573,20 @@ export function startClaudeCliRun(
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
   const turn = spec.resume?.turn ?? 1
+  // The member bridge flags ride every argv variant (skip and normal
+  // permission modes alike): --allowedTools is redundant under
+  // --dangerously-skip-permissions but keeps the injection uniform.
+  const memberArgv = spec.member === undefined
+    ? []
+    : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool]
   // --verbose is required by the CLI when --print and stream-json combine.
   const argv = spec.resume === undefined
     ? spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', task]
-      : ['claude', '-p', '--verbose', '--output-format', 'stream-json', task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', ...memberArgv, task]
+      : ['claude', '-p', '--verbose', '--output-format', 'stream-json', ...memberArgv, task]
     : spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', task]
-      : ['claude', '-p', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
+      : ['claude', '-p', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
 
   const child = spec.spawn({
     argv,
@@ -503,6 +595,7 @@ export function startClaudeCliRun(
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
+  spec.onSpawned?.(child.pid)
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.

@@ -121,6 +121,12 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
       const diffs = diffsFromResultMeta(event.data.meta)
       if (diffs === undefined) continue
       for (const diff of diffs) {
+        // The render-intent vocabulary: a result diff registers its path even
+        // when no write/edit call recorded it (non-write/edit mutation tools
+        // like the official deliverables' follow-along locations).
+        if (!entries.has(diff.path)) {
+          record({ op: 'edit', path: diff.path }, event.seq, event.data.turn, event.data.step)
+        }
         const entry = entries.get(diff.path)
         if (entry === undefined) continue
         const change: FilePreviewDiff = {
@@ -142,4 +148,109 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
     asOfSeq,
     truncated: entries.size >= maxFiles,
   }
+}
+
+/** Lines in one diff text: a trailing newline terminates the last line rather than adding one. */
+export function lineCount(text: string): number {
+  if (text === '') return 0
+  const lines = text.split('\n').length
+  return text.endsWith('\n') ? lines - 1 : lines
+}
+
+/** One file's mutation facts within one turn — the turn card's vocabulary. */
+export interface TurnFileFact {
+  readonly path: string
+  /** Seq of the first mutation recorded for this path in this turn (stable ordering). */
+  readonly seq: number
+  readonly step: number
+  /** Lines added across the turn's mutations of this path. */
+  readonly added?: number
+  /** Lines removed; absent when any mutation reported no prior content (create/overwrite). */
+  readonly removed?: number
+}
+
+/** Per-turn file maps: turn number → path → mutation facts (first-seen within the turn). */
+export type TurnFilesByTurn = ReadonlyMap<number, ReadonlyMap<string, TurnFileFact>>
+
+/** Sum two optional counts; unknown wins (any uncounted mutation reports no total). */
+function sumKnown(a: number | undefined, b: number | undefined): number | undefined {
+  return a === undefined || b === undefined ? undefined : a + b
+}
+
+/**
+ * Fold a session's events into per-turn file-mutation maps — the turn card's
+ * single source of truth. Unlike {@link foldFilePreview}, this does NOT dedupe
+ * a path to its last occurrence: a file touched in two turns appears in BOTH
+ * turn maps, so each turn's card lists exactly what that turn mutated.
+ * write/edit calls register with their own turn; nested Code Mode dispatches
+ * borrow the enclosing root call's turn (dispatch events carry none); a
+ * `tool/result` whose presentation meta carries diffs registers its paths (the
+ * render-intent vocabulary) with the result's turn, and per-turn line deltas
+ * are summed from the diffs.
+ * @param events - the session's events in ascending seq order.
+ * @returns turn → path → facts, in event order per turn.
+ */
+export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFilesByTurn {
+  const byTurn = new Map<number, Map<string, TurnFileFact>>()
+  /** Root tool/call locations, so nested code dispatches borrow their turn/step. */
+  const callSites = new Map<string, { turn: number; step: number }>()
+  const turnMap = (turn: number): Map<string, TurnFileFact> => {
+    let map = byTurn.get(turn)
+    if (map === undefined) {
+      map = new Map()
+      byTurn.set(turn, map)
+    }
+    return map
+  }
+  const record = (
+    path: string, turn: number, seq: number, step: number,
+    added: number | undefined, removed: number | undefined,
+  ): void => {
+    const map = turnMap(turn)
+    const existing = map.get(path)
+    if (existing === undefined) {
+      map.set(path, {
+        path, seq, step,
+        ...(added === undefined ? {} : { added }),
+        ...(removed === undefined ? {} : { removed }),
+      })
+      return
+    }
+    const mergedAdded = sumKnown(existing.added, added)
+    const mergedRemoved = sumKnown(existing.removed, removed)
+    map.set(path, {
+      ...existing,
+      ...(mergedAdded === undefined ? {} : { added: mergedAdded }),
+      ...(mergedRemoved === undefined ? {} : { removed: mergedRemoved }),
+    })
+  }
+  for (const event of events) {
+    if (event.type === 'tool/call') {
+      callSites.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
+      const target = pathFromToolCall(event.data.name, event.data.arguments)
+      if (target === undefined) continue
+      record(target.path, event.data.turn, event.seq, event.data.step, undefined, undefined)
+      continue
+    }
+    if (event.type === 'tool/code-dispatch') {
+      if (event.data.isError) continue
+      const target = targetFromArguments(event.data.name, event.data.arguments)
+      if (target === undefined) continue
+      const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
+      record(target.path, site.turn, event.seq, site.step, undefined, undefined)
+      continue
+    }
+    if (event.type === 'tool/result') {
+      const diffs = diffsFromResultMeta(event.data.meta)
+      if (diffs === undefined) continue
+      for (const diff of diffs) {
+        record(
+          diff.path, event.data.turn, event.seq, event.data.step,
+          lineCount(diff.newText),
+          diff.oldText === null ? undefined : lineCount(diff.oldText),
+        )
+      }
+    }
+  }
+  return byTurn
 }

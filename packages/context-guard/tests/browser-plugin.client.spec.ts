@@ -178,7 +178,7 @@ describe('context-guard browser half', () => {
     const { ctx, execute } = await bench()
     execute.mockResolvedValue({ ok: true, value: { matched: true } })
     await expect(buttonInjectedFor(ctx, KNOWN).compactNow()).resolves.toBeNull()
-    expect(execute).toHaveBeenCalledWith(KNOWN, '/compact')
+    expect(execute).toHaveBeenCalledWith(KNOWN, '/compact', [])
   })
 
   it('surfaces a host rejection as a failure line', async () => {

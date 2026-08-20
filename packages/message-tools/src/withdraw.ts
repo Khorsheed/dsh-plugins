@@ -182,10 +182,16 @@ function joinText(blocks: readonly unknown[]): string {
 }
 
 /**
- * The shadowed seqs of the latest message-tools withdrawal replacement citing
- * `targetSeq`, or undefined when no such replacement exists (the message left
- * the surface through another producer, e.g. compaction). The replacement's
- * `sourceEventSeqs` is the span's authoritative boundary — never re-derived.
+ * The full log seqs shadowed by the latest message-tools withdrawal
+ * replacement citing `targetSeq`, or undefined when no such replacement exists
+ * (the message left the surface through another producer, e.g. compaction).
+ *
+ * `sourceEventSeqs` is authoritative for the shadowed *surface* nodes, but an
+ * interrupted assistant step may exist only as `assistant/chunk` events (no
+ * `assistant/message` ever landed). Those chunks are not surface nodes, so
+ * they are absent from `sourceEventSeqs`. The replacement's own `start` and
+ * `seq` delimit the whole withdrawn log interval — `[start, seq)` — and are
+ * still read from the replacement itself, never guessed from another producer.
  */
 function findWithdrawnSpan(
   events: readonly SessionEvent[],
@@ -194,7 +200,9 @@ function findWithdrawnSpan(
   for (let index = events.length - 1; index > targetSeq; index--) {
     const event = events[index]
     if (event !== undefined && isMessageToolsReplacement(event) && event.sourceEventSeqs?.includes(targetSeq)) {
-      return event.sourceEventSeqs
+      const span: number[] = []
+      for (let seq = event.surfaceOp.start; seq < event.seq; seq++) span.push(seq)
+      return span
     }
   }
   return undefined
@@ -206,35 +214,123 @@ function findWithdrawnSpan(
  * last edit's new text), earlier restore replays, and assistant text (framed;
  * restore-assistant replays already carry the frame). Skipped: withdrawal
  * placeholders, edit triggers, other plugin context, and tool calls/results.
+ *
+ * Assistant text normally comes from `assistant/message` surface events. A
+ * turn that was interrupted before finalization may never emit
+ * `assistant/message`; its visible content survives only as `assistant/chunk`
+ * rows. Those chunks are folded into one assistant replay per step when no
+ * final `assistant/message` exists for that step, so withdrawing/restoring an
+ * interrupted reply does not lose the partial assistant content.
  */
 function replayEntries(
   events: readonly SessionEvent[],
   spanSeqs: readonly number[],
 ): RestoreReplayEntry[] {
   const entries: RestoreReplayEntry[] = []
+  interface ChunkAccumulator {
+    readonly turn: number
+    readonly step: number
+    readonly sourceSeq: number
+    readonly text: Map<number, string>
+    readonly reasoning: Map<number, string>
+    finalized: boolean
+  }
+  let pending: ChunkAccumulator | undefined
+  const finalizedSteps = new Set<string>()
+
+  const flushPending = (): void => {
+    if (pending === undefined) return
+    if (!pending.finalized) {
+      const text = [...pending.text.values()].join('')
+      const reasoning = [...pending.reasoning.values()].join('')
+      const replay = text !== '' ? text : reasoning
+      if (replay !== '') {
+        entries.push({
+          role: 'assistant',
+          text: `${RESTORED_ASSISTANT_NOTICE}\n${replay}`,
+          sourceSeq: pending.sourceSeq,
+        })
+      }
+    }
+    pending = undefined
+  }
+
+  const pushChunk = (event: SessionEvent<'assistant/chunk'>): void => {
+    if (finalizedSteps.has(`${event.data.turn}:${event.data.step}`)) return
+    if (pending === undefined
+      || pending.turn !== event.data.turn
+      || pending.step !== event.data.step) {
+      flushPending()
+      pending = {
+        turn: event.data.turn,
+        step: event.data.step,
+        sourceSeq: event.seq,
+        text: new Map(),
+        reasoning: new Map(),
+        finalized: false,
+      }
+    }
+    const chunk = event.data.chunk
+    if (chunk.type === 'text-delta') {
+      pending.text.set(chunk.index, (pending.text.get(chunk.index) ?? '') + chunk.text)
+    } else if (chunk.type === 'block-end' && chunk.block.type === 'text') {
+      pending.text.set(chunk.index, chunk.block.text)
+    } else if (chunk.type === 'reasoning-delta') {
+      pending.reasoning.set(chunk.index, (pending.reasoning.get(chunk.index) ?? '') + chunk.text)
+    } else if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') {
+      pending.reasoning.set(chunk.index, chunk.block.text)
+    }
+  }
+
+  const pushAssistantText = (text: string, sourceSeq: number): void => {
+    if (text !== '') {
+      entries.push({ role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n${text}`, sourceSeq })
+    }
+  }
+
   for (const seq of spanSeqs) {
     const event = events[seq]
     if (event === undefined) continue
     if (isMessageToolsEdit(event)) {
+      flushPending()
       entries.push({ role: 'user', content: event.data.content, sourceSeq: seq })
       continue
     }
+    if (event.type === 'assistant/chunk') {
+      pushChunk(event)
+      continue
+    }
     if (event.type === 'user/message') {
+      flushPending()
       if (event.surfaceOp !== 'append') continue
       if (event.data.source.kind === 'user' || isMessageToolsRestore(event)) {
         entries.push({ role: 'user', content: event.data.content, sourceSeq: seq })
       } else if (isMessageToolsRestoreAssistant(event)) {
+        // Restore-assistant replays already carry the model-facing frame; do
+        // not add a second one.
         entries.push({ role: 'assistant', text: joinText(event.data.content), sourceSeq: seq })
       }
       continue
     }
     if (event.type === 'assistant/message') {
-      const text = joinText(event.data.message.content)
-      if (text !== '') {
-        entries.push({ role: 'assistant', text: `${RESTORED_ASSISTANT_NOTICE}\n${text}`, sourceSeq: seq })
+      // A finalized step supersedes any pending chunk accumulation for the
+      // same step: flush without emitting the partial, then replay the final.
+      finalizedSteps.add(`${event.data.turn}:${event.data.step}`)
+      if (pending !== undefined
+        && pending.turn === event.data.turn
+        && pending.step === event.data.step) {
+        pending.finalized = true
       }
+      flushPending()
+      pushAssistantText(joinText(event.data.message.content), seq)
+      continue
     }
+    // Log-only events (boundaries, headers, titles) do not split a chunk run;
+    // the pending assistant step is flushed at the next replayable boundary or
+    // when a different step starts.
   }
+
+  flushPending()
   return entries
 }
 

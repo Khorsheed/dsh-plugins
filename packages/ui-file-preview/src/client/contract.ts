@@ -1,6 +1,6 @@
-/** Composed props contracts for the file-preview view and link-click drawer. */
+/** Composed props contracts for the file-preview view, link-click drawer, and turn card. */
 
-import type { FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
+import type { FilePreviewList, FilePreviewRead, FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { createFilePreviewStore } from './file-preview-store.ts'
 
-/** The filePreview Remote namespace (list + read), as mounted by this plugin. */
+/** The filePreview Remote namespace (list + read + turnFiles), as mounted by this plugin. */
 export type FilePreviewRemote = TypertRemoteNamespaceMap['filePreview']
 
 /** Business face injected into the conversation.view file entry. */
@@ -71,4 +71,18 @@ export type FilePreviewDrawerProps =
   & PropsRuntime<'shell.overlay'>
   & PropsStore<ReturnType<typeof createFilePreviewStore>>
   & InjectFace<FilePreviewDrawerInjected>
+  & PropsLocale<'filePreview'>
+
+/** Business face injected into the conversation.chat.turnTail mutation card. */
+export interface FilePreviewTurnRowInjected {
+  /** Open the file-preview drawer for one path (the card row click). */
+  openDrawer: (path: string) => void
+  /** Resolve one session's files for one turn through the session-level cache. */
+  turnFiles: (sessionId: SessionId, turn: number) => Promise<readonly FilePreviewTurnFile[]>
+}
+
+/** Full props of the turn mutation card (owner + injected + locale shares). */
+export type FilePreviewTurnRowProps =
+  & PropsRuntime<'conversation.chat.turnTail'>
+  & InjectFace<FilePreviewTurnRowInjected>
   & PropsLocale<'filePreview'>

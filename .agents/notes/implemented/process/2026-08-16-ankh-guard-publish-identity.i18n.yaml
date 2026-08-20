@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-16-ankh-guard-publish-identity.md
-.agents/notes/implemented/process/2026-08-16-ankh-guard-publish-identity.md: 6d82a81fa4d90b00725a438c3656b2ec2bb5fc57
-.agents/notes/implemented/process/2026-08-16-ankh-guard-publish-identity.zh.md: 57ccd1d6fbd35b0e43bac6be32b0dee4f5cb0f33
+.agents/notes/implemented/process/2026-08-16-ankh-guard-publish-identity.md: f635953eae6f4c695684a326f539b6d946a62d0e
+.agents/notes/implemented/process/2026-08-16-ankh-guard-publish-identity.zh.md: 4341a0bded145c35122d9619b703cae7b4b732db

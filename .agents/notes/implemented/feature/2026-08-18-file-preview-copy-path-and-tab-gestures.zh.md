@@ -18,6 +18,12 @@ Status: implemented
 
 **"在文件夹中打开"现在会选中文件。** 宿主打开器（`host.openPath`）只会用默认应用打开路径——没有"在文件夹中选中"的语义——所以宿主半边新增了 `filePreview.reveal` Remote 方法独占 reveal：它通过 `ctx.fs` 以会话 cwd 为基准解析展示路径，把规范化路径交给无 shell 的原生派发（`@deepseek-ai/dsh-native-command`）：macOS `open -R`（Finder 选中）、Windows `explorer /select,<path>`（Explorer 选中）、WSL 先用 `wslpath` 转 Windows 路径、桌面 Linux 依次尝试 `nautilus` / `dolphin` / `nemo` `--select`。客户端的 `revealFolder` 动词现在调用 `remote.reveal(sessionId, path)`；宿主回答 `revealed: false`（文件缺失、没有可选中的文件管理器）或调用失败时，回退为通过既有 `openOnHost` 打开父文件夹——reveal 之前的行为——手势总能落在可见处。宿主方法只是尽力而为的能力，不是门禁：客户端对整组文件夹/IDE 手势仍用 loopback + `canOpenPath` 门禁。reveal 派发携带可注入的平台事实以支持确定性测试，服务构造函数也为原生 runner 留了 seam。
 
+**Markdown 预览按文档渲染。** 共享预览面板此前把所有文本读取（含 `.md`）都用 `CodeBlock` 当作语法高亮源码展示，表格和强调只能看到字面记号。现在 `*.md`/`*.mdx` 读取改走官方 `MarkdownText` 管线（聊天区同一渲染器——标题、表格、加粗/斜体、链接、脚注、数学公式），其余文本文件保持代码视图；内容搜索时任何文本仍切换到原始匹配行视图，命中始终可见。该渲染器与聊天区信任的是同一套不信任内容安全管线，无需额外消毒。官方 `MarkdownText` 刻意无外框（它是聊天消息正文渲染器），所以面板把每个文档视图——markdown、JSON 树、CSV 表格——都放进与代码/diff 视图同一套块级外框（圆角 `--dsw-alias-markdown-code-block` 表面 + 顶部小格式标签，显示 prism 语言名或裸扩展名），所有预览读起来像一个家族。聊天的 markdown 排版是 16px，在预览里偏大，因此面板的结构化 body 在自己作用域内重定义主题的 markdown 字体简写 token（14px 正文、标题等比缩小）——聊天不受影响。面板由抽屉与 tab 共享，两个表面都会渲染 markdown。
+
+**其他结构化文本文件遵循同一原则**（`structured.tsx`）：JSON（`*.json`/`*.jsonc`）在 `JSON.parse` 得到 150k 字符上限内的对象/数组时，走官方 `JsonTree` 检查树（可折叠、键盘可达、逐节点复制，标签用插件 `filePreview` 命名空间的中英文案）；CSV/TSV 渲染为 GFM 表格（同样走 `MarkdownText` 管线，紧凑的类 RFC-4180 解析器处理引号字段与转义引号，首行作表头，上限 500 行 × 40 列）。所有结构化预览在解析失败、结构不合法（标量、`.jsonc` 注释、超大输入）或内容搜索进行中时，都回退为普通代码视图——预览只会变丰富，绝不会坏。没有更丰富形态的文件类型——代码、YAML/XML/TOML、diff/patch、纯文本——仍停留在语法高亮视图。
+
+**HTML 提供源码 ⇄ 渲染切换。** 官方管线刻意把原始 HTML 当字面文本（聊天渲染器的 `case 'html'` 原样输出，整个官方客户端也没有 iframe/srcdoc 的 HTML 查看器）；官方"完整查看 HTML"的路径是宿主打开器，它把 `.html`/`.htm` 归为浏览器文档（`BROWSER_DOCUMENTS`）——即头部"在 IDE 打开"手势。因此面板自己的渲染视图是**沙箱 iframe**（`<iframe sandbox="" srcDoc={content}>`）：空 sandbox 阻断脚本、表单、弹窗、顶层导航与同源访问，未信任文件只能布局自己的 CSS/图片——符合插件"只读预览、安全降级"的原则。相对资源无法解析（srcDoc 没有文件基准）；完整 JS 渲染仍走浏览器打开路径。预览工具栏对 `.html`/`.htm` 文件显示分段式"源码/渲染"切换（默认渲染，与所有文档形态一致）；内容搜索在两种模式下都显示原始匹配行。
+
 ## 备选方案
 
 - **文件列表里每行一个复制按钮。** 否决：行是紧凑的 名称/目录/轮次 网格，每行一个按钮会污染可能触顶服务上限的列表；选中文件的手势行与抽屉头部一致，复制目标也更明确。

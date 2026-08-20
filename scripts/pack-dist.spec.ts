@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertNoStaleTypes, rescopePackageJson, rewriteNames } from './pack-dist.ts'
+import { assertNoStaleTypes, filesDeclaredExtras, rescopePackageJson, rewriteNames } from './pack-dist.ts'
 
 describe('rescopePackageJson', () => {
   it('rescopes name/version, carets workspace ranges, drops repo-only fields', () => {
@@ -24,6 +24,15 @@ describe('rescopePackageJson', () => {
     expect(out['repository']).toBeUndefined()
   })
 
+  it('strips lifecycle scripts — they reference the repo toolchain, absent in staging and on consumers', () => {
+    const out = rescopePackageJson({
+      name: '@deepseek-ai/dsh-x',
+      version: '0.1.0-rc.5',
+      scripts: { prepare: 'npm run build', build: 'tsc && tsdown', test: 'vitest run' },
+    }, '@khorsheed/dsh-x', '0.1.0')
+    expect(out.scripts).toBeUndefined()
+  })
+
   it('renames family peers to the dist scope and ranges them on the dist version', () => {
     const family = new Map([['@deepseek-ai/dsh-file-preview', '@khorsheed/dsh-file-preview']])
     const out = rescopePackageJson({
@@ -40,6 +49,21 @@ describe('rescopePackageJson', () => {
       '@deepseek-ai/dsh-client-runtime': '^0.1.0-rc.5',
     })
     expect(out.devDependencies).toEqual({ '@khorsheed/dsh-file-preview': '^0.1.0' })
+  })
+})
+
+describe('filesDeclaredExtras', () => {
+  it('keeps plain file/dir payloads, skips lib, staged root docs, and globs', () => {
+    expect(filesDeclaredExtras([
+      'lib/*.js',
+      'lib/types/**/*.d.ts',
+      'scripts/dsh-watchdog.sh',
+      'scripts',
+      'cordis.patch.yml',
+      'README.md',
+      'assets',
+    ])).toEqual(['scripts/dsh-watchdog.sh', 'scripts', 'assets'])
+    expect(filesDeclaredExtras(undefined)).toEqual([])
   })
 })
 

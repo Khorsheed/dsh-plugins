@@ -10,7 +10,7 @@ ankh-guard lived under two names: `@deepseek-ai/dsh-ankh-guard` in the deepseek-
 
 ## Decision
 
-The published identity is **`@khorsheed/dsh-ankh-guard`**, and it is now the only package name: the package lives in the `dsh-plugins` monorepo at `packages/ankh-guard` (the single source of truth, published via `scripts/pack-dist.ts`), and the deepseek-harness in-tree family member was removed on 2026-08-16 (harness commit `48a9e1735d`, "chore: remove migrated plugin packages now hosted in dsh-plugins"). Install documentation names the khorsheed package everywhere. The version line follows the official family: the family shipped rc.7 (`@deepseek-ai/dsh@0.1.0-rc.7`), so the ankh-guard line moved to rc.7.x — package.json declares `0.1.0-rc.7` as the next-release line (npm latest is `0.1.0-rc.6.5`, the last rc.6-line cut).
+The published identity is **`@khorsheed/dsh-ankh-guard`**, and it is now the only package name: the package lives in the `dsh-plugins` monorepo at `packages/ankh-guard` (the single source of truth, published via `scripts/pack-dist.ts`), and the deepseek-harness in-tree family member was removed on 2026-08-16 (harness commit `48a9e1735d`, "chore: remove migrated plugin packages now hosted in dsh-plugins"). Install documentation names the khorsheed package everywhere. The version line follows the official family: the family shipped rc.8 (`@deepseek-ai/dsh@0.1.0-rc.8`, 2026-08-19), so the ankh-guard line moved to rc.8.x — package.json declares `0.1.0-rc.8` as the next-release line (npm latest is `0.1.0-rc.6.5`, the last rc.6-line cut).
 
 ## Alternatives considered
 

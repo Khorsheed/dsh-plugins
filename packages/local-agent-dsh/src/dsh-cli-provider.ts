@@ -31,9 +31,19 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 import { mirrorDshSession } from './session-mirror.ts'
+
+/**
+ * Spawn-env name carrying the bridge entry path into the sub-dsh process,
+ * where the headless bundle's mcp-client row reads it (`!!js`). The name is a
+ * family-internal contract between this provider and
+ * `@khorsheed/dsh-local-agent-dsh-headless`'s cordis.patch.yml — the member
+ * bridge itself reads only the socket/token env.
+ */
+export const MEMBER_BRIDGE_ENTRY_ENV = 'DSH_MEMBER_BRIDGE_ENTRY'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -57,6 +67,44 @@ export class DshCliProvider implements SubagentProvider {
   readonly inheritsParentContext = false
 
   constructor(private readonly ctx: Context, private readonly config: LocalAgentDshConfig) {}
+
+  /**
+   * Register one run with the member channel and prepare the per-run env the
+   * sub-dsh's mcp-client row reads (the headless bundle patch declares the
+   * bridge server with `!!js` env lookups; `@deepseek-ai/dsh-mcp-client`
+   * resolves from the installation's dependency closure linked into the
+   * scoped home's profiles/node_modules fallback). Returns undefined when the
+   * mounted core predates the member channel (declare-and-degrade: the run
+   * proceeds unchanged — the row's failOnStartupError is off, and the bridge
+   * itself fails closed on the absent token).
+   */
+  private memberRun(
+    childSessionId: string,
+    parentSessionId: string,
+  ): { env: Record<string, string>; bind(pid: number): void; release(): void } | undefined {
+    const registry = this.ctx.localAgent
+    if (
+      typeof registry.registerMemberRun !== 'function'
+      || typeof registry.memberBridgeSocketPath !== 'function'
+      || typeof registry.memberBridgeCommand !== 'function'
+    ) return undefined
+    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
+    const bridge = registry.memberBridgeCommand()
+    let released = false
+    return {
+      env: {
+        [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+        [MEMBER_BRIDGE_TOKEN_ENV]: token,
+        [MEMBER_BRIDGE_ENTRY_ENV]: bridge.args[0] ?? '',
+      },
+      bind: pid => registry.bindMemberRunPid(token, pid),
+      release: () => {
+        if (released) return
+        released = true
+        registry.unregisterMemberRun(token)
+      },
+    }
+  }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
     const parentCwd = request.parent.session.header.cwd
@@ -121,15 +169,29 @@ export class DshCliProvider implements SubagentProvider {
       parentSessionId: request.parent.session.id,
       cliSessionId: runId,
     })
-    return startDshCliRun(request, {
-      cwd: parentCwd,
-      homeDir,
-      childSession,
-      sessionId: runId,
-      resume: undefined,
-      config: this.config,
-      ctx: this.ctx,
-    })
+    // Member channel: register this run and hand the bridge coordinates to
+    // the sub-dsh through the spawn env, so its session starts with
+    // member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
+    try {
+      const run = await startDshCliRun(request, {
+        cwd: parentCwd,
+        homeDir,
+        childSession,
+        sessionId: runId,
+        resume: undefined,
+        config: this.config,
+        ctx: this.ctx,
+        ...member === undefined ? {} : { memberEnv: member.env },
+        onSpawned: (pid) => { member?.bind(pid) },
+      })
+      // The member-channel token dies with the run, whatever its stop reason.
+      if (member !== undefined) void run.result.then(member.release, member.release)
+      return run
+    } catch (error) {
+      member?.release()
+      throw error
+    }
   }
 
   /** Resume round: continue the recorded sub-dsh session inside the existing child session. */
@@ -148,6 +210,9 @@ export class DshCliProvider implements SubagentProvider {
         `subagent-dsh: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
+    // Member channel: register the resume round (same child session, fresh
+    // per-run token) before the spawn.
+    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -166,14 +231,23 @@ export class DshCliProvider implements SubagentProvider {
         resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
         config: this.config,
         ctx: this.ctx,
+        ...member === undefined ? {} : { memberEnv: member.env },
+        onSpawned: (pid) => { member?.bind(pid) },
       })
       void run.result.then(
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
-        () => this.ctx.localAgent.releaseResumeLock(intent.childSessionId),
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
+        () => {
+          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+          member?.release()
+        },
       )
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+      member?.release()
       throw error
     }
   }
@@ -203,6 +277,14 @@ export interface DshCliRunSpec {
    * ({@link DEFAULT_LIVE_MIRROR_INTERVAL_MS}). Tests inject a small value.
    */
   readonly liveMirrorIntervalMs?: number | undefined
+  /**
+   * Member channel: the per-run bridge coordinates (socket path, token,
+   * bridge entry) merged into the explicit env layer — the sub-dsh's
+   * mcp-client row reads them via `!!js` env lookups.
+   */
+  readonly memberEnv?: Record<string, string> | undefined
+  /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
+  readonly onSpawned?: (pid: number) => void
 }
 
 /** Validate and join the one-shot task before crossing the process boundary. */
@@ -288,9 +370,14 @@ export async function startDshCliRun(
     env: {
       DSH_HOME: spec.homeDir,
       DEEPSEEK_API_KEY: apiKey,
+      // Member channel coordinates ride the same explicit layer (DSH_* names
+      // are scrubbed from the ambient env; this layer is the sanctioned
+      // override).
+      ...spec.memberEnv,
     },
   }
   const child = ctx.subprocess.spawn(spawnSpec)
+  spec.onSpawned?.(child.pid)
 
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })

@@ -106,9 +106,10 @@ idea → planned → in-progress → verified → done（移入 closed/）
 
 | 分类 | 提案 | 状态 | 官方依赖 | 前置 / 依赖 | 备注 | 最后更新 |
 |---|---|---|---|---|---|---|
-| plugin | [通用版本化数据集存储（datasets）](active/2026-08-19-datasets-store.md) | planned | 纯插件 | — | 独立可用；与 mission 可选兼容 | 2026-08-19 |
-| plugin | [通用任务管理（mission）](active/2026-08-19-mission-tasks.md) | planned | 纯插件 | bench 仓库模板（评测用法） | 独立可用；与 datasets 可选兼容 | 2026-08-19 |
+| plugin | [通用版本化数据集存储（datasets）](active/2026-08-19-datasets-store.md) | in-progress | 纯插件 | — | M1 已交付；独立可用，与 mission 可选兼容 | 2026-08-19 |
+| plugin | [通用任务管理（mission）](active/2026-08-19-mission-tasks.md) | in-progress | 纯插件 | bench 仓库模板（评测用法） | M1 已交付；独立可用，与 datasets 可选兼容 | 2026-08-19 |
 | plugin | [受控实验单元（lab）](active/2026-08-19-lab-experiment-units.md) | idea | 纯插件 | datasets（`worktree_path`）· mission（`is-releasable`） | 填补 mission/datasets 有意留白的资源生命周期；provider 第一版仅 docker | 2026-08-19 |
 | plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1–M4 代码已落地（未推送），待真实 profile 验收 | 2026-08-19 |
 | plugin | [local-agent 成员双向通道（可写 composer + promptMember + 成员互通知）](active/2026-08-19-local-agent-member-channel.md) | planned | 纯插件 | local-agent-delegation-api（底座 M1–M4） | room 二轮评审立项；替代不可行的 prepareContinuable 路线（§0 存档）；M3 = CLI→CLI 成员互通知（room 高频场景） | 2026-08-19 |
+| plugin | [local-agent provider 长驻驱动模式（live driver）](active/2026-08-20-local-agent-live-driver.md) | planned | 纯插件 | delegation-api M1–M4（对 facade 透明） | exec 驱动保留为 fallback；dsh → codex → kimi → claude 逐家落地；换回优雅中断/steer/审批口/低成本流式 | 2026-08-20 |
 | plugin | [移动端接入（mobile-access）](active/2026-08-19-mobile-access.md) | planned | 纯插件 | 无 | 随时随地访问完整 Web UI（保留全部插件能力）；M1 网关认证 / M2 PWA+推送 / M3 移动 UI 适配 / M4 bot 通道 | 2026-08-19 |

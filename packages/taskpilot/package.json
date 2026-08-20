@@ -55,7 +55,7 @@
       ]
     },
     "compat": {
-      "minHost": "0.1.0-rc.6"
+      "minHost": "0.1.0-rc.8"
     }
   },
   "peerDependencies": {

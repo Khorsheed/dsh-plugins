@@ -9,9 +9,10 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
-import { foldFilePreview } from './fold.ts'
+import { BashWriteCollector } from './bash-writes.ts'
+import { foldFilePreview, foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
 import { revealNativePath } from './reveal.ts'
-import type { FilePreviewConfig, FilePreviewList, FilePreviewRead, FilePreviewReveal } from './types.ts'
+import type { FilePreviewConfig, FilePreviewEntry, FilePreviewList, FilePreviewRead, FilePreviewReveal, FilePreviewTurnFile, FilePreviewTurnMap } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -89,6 +90,7 @@ export class FilePreviewService extends TypertRemoteService {
   static Config: z<FilePreviewConfig> = z.object({
     maxReadBytes: z.natural().min(1).default(512 * 1024),
     maxFiles: z.natural().min(1).default(500),
+    captureBashWrites: z.boolean().default(true),
   })
 
   /** URL prefix the image route answers under. */
@@ -102,11 +104,16 @@ export class FilePreviewService extends TypertRemoteService {
   private readonly agents: AgentRegistry | undefined
   /** Native reveal runner; a constructor seam for deterministic tests. */
   private readonly revealNative: (path: string, signal: AbortSignal) => Promise<void>
+  /** Bash-write collector (S2 seam), or undefined when disabled in config. */
+  private readonly collector: BashWriteCollector | undefined
+  /** Per-session by-turn fold cache, invalidated by the log watermark. */
+  private readonly turnCache = new Map<string, { asOfSeq: number; byTurn: TurnFilesByTurn }>()
 
   /**
    * @param ctx - owning Cordis Context carrying `fs`; `webServer` and `agents`
    *   are optional (the image route needs them, headless faces lack both).
-   * @param config - optional deployment tuning; defaults cap reads and lists.
+   * @param config - optional deployment tuning; defaults cap reads and lists,
+   *   and enable the bash-write collector.
    * @param deps - test seam for the native reveal dispatch.
    */
   constructor(
@@ -118,8 +125,18 @@ export class FilePreviewService extends TypertRemoteService {
     this.resolved = {
       maxReadBytes: config.maxReadBytes ?? 512 * 1024,
       maxFiles: config.maxFiles ?? 500,
+      captureBashWrites: config.captureBashWrites ?? true,
     }
     this.revealNative = deps.revealNative ?? revealNativePath
+    if (config.captureBashWrites !== false) {
+      this.collector = new BashWriteCollector({ fs: this.fs, maxFiles: this.resolved.maxFiles })
+      ctx.effect(
+        () => this.collector!.attach(ctx),
+        'file-preview: bash-write capture',
+      )
+    } else {
+      this.collector = undefined
+    }
     const webServer = ctx.get('webServer') as ImageRouteHost | undefined
     this.agents = ctx.get('agents')
     this.imageRoute = webServer !== undefined && this.agents !== undefined
@@ -217,13 +234,77 @@ export class FilePreviewService extends TypertRemoteService {
   }
 
   /**
-   * List the files one session wrote or edited, folded from its log.
+   * List the files one session wrote or edited: the log fold plus any
+   * bash-written files the collector verified (the S2 seam), merged so a
+   * captured path the fold already knows keeps its log-derived entry.
    * @param agent - owning live agent; its session log is the data source.
    * @returns first-seen files capped by `maxFiles`, with the log watermark.
    */
   @Remote('list')
   list(agent: Agent): FilePreviewList {
-    return foldFilePreview(agent.session.events, this.resolved.maxFiles)
+    const folded = foldFilePreview(agent.session.events, this.resolved.maxFiles)
+    const captured = this.collector?.captured(agent.session.id)
+    if (captured === undefined || captured.size === 0) return folded
+    const seen = new Set(folded.entries.map(entry => entry.path))
+    const extra: FilePreviewEntry[] = []
+    for (const [path, write] of captured) {
+      if (seen.has(path) || folded.entries.length + extra.length >= this.resolved.maxFiles) continue
+      extra.push({ path, op: 'write', seq: write.seq, turn: write.turn, step: write.step, diffs: [] })
+    }
+    if (extra.length === 0) return folded
+    return {
+      entries: [...folded.entries, ...extra],
+      asOfSeq: folded.asOfSeq,
+      truncated: folded.truncated || folded.entries.length + extra.length >= this.resolved.maxFiles,
+    }
+  }
+
+  /**
+   * Every turn's file mutations for the turn-tail card — the single source of
+   * truth the card renders (the client's old write/edit-only fold retired).
+   * Built by folding the session log per turn (write/edit calls, Code Mode
+   * dispatches borrowing the root call's turn, and render-intent paths from
+   * result diff meta) and merging the collector's bash-written captures by
+   * their own turn. The fold is cached per session and invalidated by the log
+   * watermark, so repeated card fetches do not refold. A path touched in two
+   * turns appears in BOTH turn groups — per-turn attribution is exact.
+   * @param agent - owning live agent; its session log is the data source.
+   * @returns per-turn file groups plus the scanned watermark.
+   */
+  @Remote('turnFiles')
+  turnFiles(agent: Agent): FilePreviewTurnMap {
+    const session = agent.session
+    const events = session.events
+    const asOfSeq = events.length === 0 ? -1 : events[events.length - 1]!.seq
+    const cached = this.turnCache.get(session.id)
+    let byTurn: TurnFilesByTurn
+    if (cached === undefined || cached.asOfSeq !== asOfSeq) {
+      byTurn = foldFilePreviewByTurn(events)
+      this.turnCache.set(session.id, { asOfSeq, byTurn })
+    } else {
+      byTurn = cached.byTurn
+    }
+    const captured = this.collector?.captured(session.id)
+    const turns: { turn: number; files: readonly FilePreviewTurnFile[] }[] = []
+    // One pass over the turn keys in ascending order (turn numbers are small).
+    const turnNumbers = new Set<number>(byTurn.keys())
+    if (captured !== undefined) {
+      for (const write of captured.values()) turnNumbers.add(write.turn)
+    }
+    for (const turn of [...turnNumbers].sort((a, b) => a - b)) {
+      const files: FilePreviewTurnFile[] = []
+      const map = byTurn.get(turn)
+      if (map !== undefined) files.push(...map.values())
+      if (captured !== undefined) {
+        for (const [path, write] of captured) {
+          if (write.turn !== turn || files.some(file => file.path === path)) continue
+          files.push({ path, seq: write.seq, step: write.step })
+        }
+      }
+      if (files.length === 0) continue
+      turns.push({ turn, files: files.sort((a, b) => a.seq - b.seq) })
+    }
+    return { turns, asOfSeq }
   }
 
   /**

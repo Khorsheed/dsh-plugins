@@ -37,6 +37,14 @@ Config (all optional): `stateDir` (default `$DSH_HOME/state`, else `<cwd>/.dsh-g
 
 Runtime needs: `node`, `bash`, `lsof` on macOS/Linux for listener discovery (`--pid` bypasses it), and `pgrep` for descendant reaping (the watchdog's `free_port`/cleanup and `restart`'s forced-kill escalation walk the child tree instead of assuming a process group). No build step for consumers — the published `lib/` is the runnable artifact.
 
+## Known install pitfalls
+
+- **A GitHub install builds from source.** `dsh plugin add github:…` clones and runs `prepare` (a full devDependency install + build). The npm release (`@khorsheed/dsh-ankh-guard`) ships the built `lib/` — prefer it unless you specifically need the repo edge.
+- **pnpm blocks dependency build scripts by default.** If the add fails on a build-script interception, allow the toolchain entries via `allowBuilds` and retry.
+- **A root-owned npm cache** (one `sudo npm …` in the past) fails the prepare build with EPERM: `sudo chown -R $(id -u):$(id -g) ~/.npm`.
+- **`--start` does not run from your cwd.** The watchdog `cd`s into the dsh home (else `/tmp`) before launching, so the start command must be self-contained — absolute paths, or an explicit `cd` inside it.
+- **Supervision adopted from a sandboxed session stays sandboxed.** A watchdog spawned from inside a workspace-write sandbox passes that profile to every respawned instance (nested sandbox-exec then fails, and every command degrades to approvals). For a permanent deployment, use the layered shape (the launchd/systemd installer) so the watchdog chain starts outside any sandbox.
+
 ## CLI
 
 The primary interface is the CLI, usable even when the instance is down. Use the `dsh-ankh-guard` bin (or `node lib/cli.js`). Every command takes `--state-dir "$DSH_HOME/state" --repo "$PWD"`.
@@ -80,6 +88,8 @@ Six steps for a safe restart after editing code:
 ```sh
 dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state" --repo "$PWD"
 ```
+
+`supervise` also needs the dsh home the supervised instance boots with (the watchdog exports it as the instance's `DSH_HOME`): `--home DIR` wins, else `$DSH_HOME`; with neither set it refuses loudly — a home guessed from `--state-dir` would silently boot the instance on the wrong profiles/credentials.
 
 It spawns `scripts/dsh-watchdog.sh` (ships with the package) detached with `--wait-owner`: the watchdog idles while the current instance runs, takes over the port when the instance exits (intentional restart or crash), respawns it, runs the guard canary on intentional restarts (a `restart-requested.json` marker), and clears the marker on pass. Two consecutive boot failures roll the checkout back to the last known-good revision — the healthy-boot stamp (`last-good-boot.json`, written every time the instance comes up, so it names the last revision that genuinely ran in this deployment), else the guard checkpoint, else the credential's HEAD — but only when the boot failure's error subject is a path inside the repository: a broken profile overlay or installed plugin cannot be fixed by reverting the checkout, so that failure class skips the rollback entirely. The same exemption covers a start command that does not bind the supervised port: when the boot window times out while the instance is listening elsewhere — or fails with `EADDRINUSE` naming a port this watchdog does not own — the watchdog names the bound port and skips the rollback, because resetting the checkout cannot change a command-line argument. `EADDRINUSE` on the supervised port keeps its free-and-retry escape hatch, now bounded at five attempts. Every reset (watchdog, CLI, or service) first creates `guard-backup-*` branch anchors for the discarded HEAD and for uncommitted tracked changes, so recovery never depends on the reflog. Four failures serve a crash page on the port with a retry button (SIGUSR1 to the watchdog). A `watchdog-stop` marker exits the watchdog for good. The instance itself can adopt supervision before a self-restart — the user never starts the watchdog by hand.
 
@@ -134,7 +144,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.7`): ⚠️ degraded — the composition-preflight gate needs a harness checkout to resolve the official packages from; on a standalone npm install without one the guard proceeds with a notice, and every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ⚠️ degraded — everything works, but the optional composition-preflight gate still mirrors `composeProfile` by hand (with a drift tripwire test) because rc.8 still does not export it; without a harness checkout the gate reports a notice instead of running. All other capabilities are intact on the npm line.
 - source line (deepseek-harness master, fork or upstream): ✅ — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
 ## Known Limitations and Deferred Work

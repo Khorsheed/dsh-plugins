@@ -26,7 +26,12 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 
 `LocalAgentMemberMessage` 为 `{ from: string, to, content, parentSessionId, provenance }`——提案冻结的形状（`{ from, to, content, parentSessionId, provenance }`，回执原样透传）。`from` 是发送方的 dsh 子会话 id（桥无法说花名册名字——只有 room 持有花名册，由 room 把两端解析为名字）；完整委派视图作为 `provenance` 随行。抛错的闸门记日志并视为拒绝。家族侧回执：`sent` / `busy`（B 的 resume 锁占用）/ `error: <原因>`（如父会话不在线）。直发 prompt 带出处标注（`成员 <harness>（会话 <childSessionId>）转告：…`）及指名 A 子会话 id 的回复提示——绝不含 CLI 会话 resume 句柄。（M3 初版曾漂移为 `{ claimed, receipt }` 信封且 `from` 带委派视图对象——room 原样 journal `from`，一次真实桥接调用把对象写进了 room journal，导致走线上校验的 `getState` 拒绝该状态。room × member-channel 联合验收发现后契约对齐到 room 的冻结形状，room 侧同时对该无类型边界加运行时校验。）
 
-**provider 注入，kimi 先行**（`packages/local-agent-kimi/src/member-bridge-config.ts`）：kimi 唯一的 MCP 配置面是 scoped home 共享的 `$KIMI_CODE_HOME/mcp.json`（已对官方文档核实：无逐次调用的配置 flag，且只有条目自身的 `env` 有文档保证到达 server 子进程——CLI 的进程 env 不是可靠通道）。同一文件被并发 run 共享，排除单一可变条目，因此 provider 写入**每 run 一条 server 条目** `dsh-member-<token8>`，socket 路径与 token 置于其 `env`——构造上无竞态——settle 时剪除，并在每次写入时清理其他家族条目（宿主崩溃残留）。kimi 文档化的 mid-session 语义保证两者安全：配置编辑不中断已打开的会话。挂载的 core 早于成员通道时经 `typeof registry.registerMemberRun` 探针发现，run 与此前完全一致地继续（declare-and-degrade）。
+**provider 注入**——按各 CLI 的配置面一家一套机制，共享 kimi 建立的 register → bind(pid) → settle 时 unregister 模式与同一降级规则（core 早于成员通道时经 `typeof registry.registerMemberRun` 探针发现，run 与此前完全一致地继续，declare-and-degrade）：
+
+- **kimi**（`packages/local-agent-kimi/src/member-bridge-config.ts`）：kimi 唯一的 MCP 配置面是 scoped home 共享的 `$KIMI_CODE_HOME/mcp.json`（已对官方文档核实：无逐次调用的配置 flag，且只有条目自身的 `env` 有文档保证到达 server 子进程——CLI 的进程 env 不是可靠通道）。同一文件被并发 run 共享，排除单一可变条目，因此 provider 写入**每 run 一条 server 条目** `dsh-member-<token8>`，socket 路径与 token 置于其 `env`——构造上无竞态——settle 时剪除，并在每次写入时清理其他家族条目（宿主崩溃残留）。kimi 文档化的 mid-session 语义保证两者安全：配置编辑不中断已打开的会话。
+- **claude-code**（已对真实 CLI 端到端探针验证：模型调用了工具，桥完成往返，零权限提示）：逐次调用 flag，完全不写配置文件——`--mcp-config <json>`（单个 JSON 字符串声明 `dsh-member-<token8>` 的 command/args/env）加 `--allowedTools mcp__<server>__member_message`（claude `-p` 自动拒绝权限提示），fresh 与 resume argv 同样追加，skip 与普通权限模式一致。
+- **codex**：逐进程内联 TOML 覆盖 `-c 'mcp_servers.dsh-member-<token8>={command=…,args=[…],env={…}}'`，`codex exec` 与 `codex exec resume` 同样携带；不触碰共享的 config.toml，因此无需清理。探针状态：覆盖语法被真实 CLI **接受**且 run 到达模型调用；模型调用腿**待验证**（账户配额重置后复跑）。
+- **dsh**：sub-dsh 是一个 dsh profile，成员桥走 harness 自带的 `@deepseek-ai/dsh-mcp-client`——家族 headless bundle 的 `cordis.patch.yml` 里一条 stdio 行，经 `!!js` env 读取每 run 坐标（`DSH_MEMBER_SOCKET` / `DSH_MEMBER_TOKEN` / `DSH_MEMBER_BRIDGE_ENTRY`，由 sub-dsh spawn env 的显式层传入）。该包从 dsh 安装的依赖闭包解析（boot 时链接进 scoped home 的 `profiles/node_modules` 兜底；已发布的 app 自 rc.6——家族的 minHost——起就携带它）。`failOnStartupError: false` 保证无成员通道的 core 上失败开放。
 
 ## Alternatives considered
 
@@ -40,13 +45,14 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 
 - kimi 成员今日即可在 run 中互通知；回执词表（`sent` / `pending-confirm` / `busy` / `error: …`）对发送方结论稳定，无论由哪一侧（room 闸门或家族直发）产生。
 - 闸门所有权单一：room 认领时家族绝不投递，room 的待确认卡流程不可能被绕过。
-- 宿主崩溃会留下残留的 `dsh-member-*` 配置条目；下一次 run 的写入会清理。token 比宿主进程长寿的 run 失败关闭（未知 token）。
-- **codex / claude-code / dsh 的注入尚未做**（逐 provider 后续）：codex 需对共享且用户可编辑的 `$CODEX_HOME/config.toml` 做 TOML 手术（树中无 TOML parser——风险在手改用户文件，不在格式）；claude-code 最干净的面是逐次调用的 `--mcp-config` flag，但 `-p` 模式自动拒绝权限提示，成员工具的权限路径（`--allowedTools` 还是 skip 模式）需先对真实 CLI 核实；dsh 作为成员需要 harness 自己的 MCP client 故事。落地时各自独立提交。
+- 宿主崩溃会留下残留的 `dsh-member-*` kimi 配置条目；下一次 run 的写入会清理。token 比宿主进程长寿的 run 失败关闭（未知 token）。
+- codex 的模型调用腿仍**待验证**（注入语法已被真实 CLI 接受；模型调用待配额重置后复跑）——argv 形态有单测覆盖。claude-code 与 kimi 已过端到端探针；dsh 复用 harness 自己的 mcp-client，其工具调用路径有上游测试。
+- 每 provider 的 argv/env 面是各 provider 的内部事务（kimi 的 mcp.json 条目、claude 的 `--mcp-config` JSON、codex 的 `-c` TOML、dsh 的 bundle 行）——四套机制，一份 registry 契约。
 - 桥讲 NDJSON stdio（MCP TypeScript SDK 的帧格式）；用 header 帧的 client 不互通——接受：桥面向的是有文档的 kimi client 行为。
 
 ## Testing
 
-`packages/local-agent/tests/member-channel.spec.ts`（11 例）：token 鉴权（未知/失效拒绝，异源或未绑定 pid 拒绝）、带出处的直发全链路（facade resume 以 B 记录的 parent/provider 被调，prompt 指名 A 且绝不含 B 的 CLI 会话句柄）、跨父拒绝、busy 回执、闸门三分支（room 认领 → 回执原样透传且家族不投递；room 拒绝 → 直发；room 缺席 → 直发）、成员名仅经认领的 room 解析、父不在线落地为 `error:` 回执、闸门抛错回落直发。`packages/local-agent/tests/member-bridge.spec.ts`（5 例）：内存 stdio 上的 initialize/tools-list 握手、对假 socket listener 的 tools/call 往返（断言 `{token, pid, to, text}` 载荷）、宿主拒绝映射为工具错误、未配置/不可达通道的工具错误、未知工具/方法的 JSON-RPC 错误码。`packages/local-agent-kimi/tests/member-bridge-injection.spec.ts`（6 例）：配置写入保留用户 server 并清理残留家族条目、settle 时移除、每 run 键形态、fresh 与 resume 轮注入（条目含 socket+token env、pid 绑定、settle 清理）、对无成员通道 core 的降级照常。测试套件：local-agent 134/134，local-agent-kimi 62/62，local-agent-tool-subagent 10/10。
+`packages/local-agent/tests/member-channel.spec.ts`（11 例）：token 鉴权（未知/失效拒绝，异源或未绑定 pid 拒绝）、带出处的直发全链路（facade resume 以 B 记录的 parent/provider 被调，prompt 指名 A 且绝不含 B 的 CLI 会话句柄）、跨父拒绝、busy 回执、闸门三分支（room 认领 → 回执原样透传且家族不投递；room 拒绝 → 直发；room 缺席 → 直发）、成员名仅经认领的 room 解析、父不在线落地为 `error:` 回执、闸门抛错回落直发。`packages/local-agent/tests/member-bridge.spec.ts`（5 例）：内存 stdio 上的 initialize/tools-list 握手、对假 socket listener 的 tools/call 往返（断言 `{token, pid, to, text}` 载荷）、宿主拒绝映射为工具错误、未配置/不可达通道的工具错误、未知工具/方法的 JSON-RPC 错误码。`packages/local-agent-kimi/tests/member-bridge-injection.spec.ts`（6 例）：配置写入保留用户 server 并清理残留家族条目、settle 时移除、每 run 键形态、fresh 与 resume 轮注入（条目含 socket+token env、pid 绑定、settle 清理）、对无成员通道 core 的降级照常。claude-code（3 例）、codex（3 例）、dsh（3 例 + 1 例 patch 形态）的 `member-bridge-injection.spec.ts` 分别断言每 run 的 argv/env 注入（fresh + resume）、pid 绑定、settle 清理与降级路径；dsh 套件还钉住 headless bundle 的 mcp-client 行形态。测试套件：local-agent 134/134，local-agent-kimi 62/62，local-agent-claude-code 28/28，local-agent-codex 35/35，local-agent-dsh 37/37，local-agent-dsh-headless 19/19，local-agent-tool-subagent 10/10。
 
 ## Cross-references
 

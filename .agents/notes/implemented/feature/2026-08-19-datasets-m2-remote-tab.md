@@ -1,0 +1,44 @@
+# Agent Note: datasets M2 — Typert Remote data face and the web session tab
+
+Status: implemented
+
+English | [中文](2026-08-19-datasets-m2-remote-tab.zh.md)
+
+## Problem
+
+The [datasets proposal](../../../proposals/active/2026-08-19-datasets-store.md) schedules M2 as the web session tab plus its data face: a `conversation.view` tab for the session's dataset binding and browsing, served by a Typert Remote service whose methods resolve the session binding from the calling agent and enforce the layer whitelist exactly as the model tools do. [M1](2026-08-19-datasets-store-m1.md) shipped the host faces; the tab and the Remote channel remained.
+
+## Decision
+
+Shipped in the same package (`@khorsheed/dsh-datasets` becomes a dual-face package: host plugin + browser bundle), keeping one service core as the only logic owner.
+
+- **Remote service** (`src/remote.ts`): `DatasetsRemoteService extends TypertRemoteService`, cordis key `datasetsRemote` (`datasets` is the core service), wire namespace `datasets` — the browser calls `remote.datasets.*`. Methods: `binding` / `bind` / `unbind` / `list` / `show` / `read`, each taking `agent: Agent` first, resolving the scope from `agent.session`'s binding plus the configured default repo, and delegating to `ctx.datasets` — zero copied logic, so whitelist enforcement on the Remote path is the same code as on the tool path (unit-tested: `LAYER_NOT_ALLOWED` through `remote.read`). `bind`/`unbind` write the plugin-owned binding store (they originally appended the `datasets/binding` session event like the slash command — moved after the resume-poisoning fix, see [the downstream-events bug-fix note](../bug-fix/2026-08-20-downstream-session-events-unresumable.md)). The plugin's `apply` mounts it via `ctx.plugin(DatasetsRemoteService, { defaultRepo })` right after `ctx.provide('datasets', …)`; the gateway discovers the service by its `typertRemote` binding, so headless compositions construct it harmlessly (marker only, no gateway).
+- **Wire types are the service types** (`src/types.ts`, `./types` export): pure re-exports of `DatasetBinding` / `DatasetSummary` / `ItemRecord` / the list/show/read results. The Remote boundary rejects `unknown`, so the two free-form leaves were tightened at the source to a constrained `JsonObject = Record<string, JsonValue>` (`@deepseek-ai/dsh-session`'s recursive `JsonValue`, the same type official Remote services use at the boundary): `ItemRecord.metadata` and `DatasetDescriptor.raw` (hence `ShowResult.descriptor`). The values are `JSON.parse` output by construction, so the tightening is honest and the wire face carries no duplicated DTOs.
+- **Client tab** (`src/client/`): a `conversation.view` entry, id `datasets`, order 30, store-backed, with the binding bar (current binding + whitelists, bind/edit/unbind form), a dataset → item → layer → file tree, and a preview pane. The Remote namespace is mounted through `ctx.remote.$mount` and read back with `ctx.get('remote.datasets')` — the namespace is deliberately NOT in `inject` (the ui-file-preview deadlock lesson). Copy lives in a `datasets` locale namespace (zh source of truth, en mirror).
+- **Preview component choice**: official primitives, not a community component. The official client packages export no complete file-reader component (ui-deliverables only lists produced files), and the community ui-file-preview's `FilePreviewPane` is coupled to its session-write fold (`FilePreviewEntry`/diffs) — importing it would be a forbidden cross-plugin edge with wrong-domain semantics. The official reading experience exists as `MarkdownText` (the chat's markdown renderer) and `CodeBlock` (prism highlighting) from `@deepseek-ai/dsh-client-ui-primitives`, both platform modules resolved from the loader table; the tab renders markdown through the former and everything else through the latter (`src/client/preview.tsx`). No self-rolled markdown renderer.
+- **Build contract**: `scripts/gen-typert.mts` registers datasets (hostConfigs `tsconfig.host.json`); the package build runs gen-typert → `tsc -b` (solution tsconfig with host/client project references, the message-tools layout) → `tsdown` through the shared `clientBundle('@khorsheed/dsh-datasets', …)` helper. package.json gains `./types`, `./client`, `./typert`, `./remote`, `./src/*` exports, the `dsh.client` declaration (platform web; the inject set copied from ui-file-preview), `files` entries for the client bundle and typert artifacts, and a `zod` dependency (the generated remote-client artifact imports it at runtime, same as file-preview/message-tools). Client-side peers are `peerDependenciesMeta.optional` so headless installs stay lean.
+
+## Alternatives considered
+
+- **A separate `@khorsheed/dsh-client-ui-datasets` companion package (the file-preview/ui-file-preview split)** — rejected: the split exists there because the host half is independently consumable by other UI; the datasets tab is the only Remote consumer, and one package keeps the identity triangle, the binding semantics, and the wire types in one reviewable unit. The dual-face single-package precedent is message-tools.
+- **JSON-string encoding for the free-form wire leaves (`metadataJson`, `descriptorJson`)** — rejected: lossy-looking wire format and parse burden on every consumer, where tightening the leaf types to `JsonObject` is exact, matches the official boundary vocabulary, and costs two casts at `JSON.parse` sites.
+- **Request-object parameters for every Remote method (the message-tools shape)** — first rejected for reads in favor of optional positionals (`list(agent, dataset?, commit?)`, terser call sites), then **adopted after live smoke**: the generator accepts optional positionals, but the gateway's client proxy forwards exactly as many values as the caller passed and enforces exact descriptor arity (`client api: datasets/list expected 3 argument(s), got 2`), so an omitted trailing optional is a runtime failure the type system invites. `list`/`show` take `ListRequest`/`ShowRequest` objects (optional fields inside an object are genuinely optional over the wire); `read` keeps the service core's `ReadQuery` object.
+- **Reusing ui-file-preview's preview pane through a new sanctioned edge** — rejected: the pane's props require the session-write fold's entry shape; datasets files are git objects with no turn/step/diff vocabulary, so the "reuse" would have been a re-implementation behind an import.
+
+## Consequences
+
+- The Remote wire vocabulary is generated from the real service types: any future drift between the tab and the tools fails generation, not at runtime.
+- **Exact arity is a gateway invariant, not a type-level one**: Remote client calls must pass every declared positional (request objects for anything optional). The unit benches stub the namespace, so only live smoke catches an arity mismatch — the tab's first smoke found exactly one.
+- `ItemRecord.metadata` / `DatasetDescriptor.raw` are now `JsonObject` — a type-level tightening only (runtime values unchanged); consumers that wrote `Record<string, unknown>` still compile (JsonObject is assignable to it).
+- `scripts/gen-typert.mts` edits live outside `packages/datasets/` by necessity: the generator's shared type metadata requires a one-batch full-set run, so the package must be registered in the central list (the file's own header documents why).
+- The tab reads whole files over RPC with no byte cap (tool semantics); the README's Known Limitations points large-file consumers at `worktree_path`.
+- Deviation from the proposal's sketch: no descriptor-passthrough pane and no "引用进对话" (quote-into-chat) button — the sketch's tree/preview/binding bar shipped; the quote button needs an input-machine seam decision that the proposal leaves open, and the tab stands without it.
+
+## Testing
+
+`packages/datasets/tests/` — 55 tests over 9 files (M1's 39 stay green). New: `remote.spec.ts` (bind/unbind event round-trip, whitelist filtering on list/show, `LAYER_NOT_ALLOWED` and git-object reads through `remote.read`, NO_REPO fail-loud plus the configured-default fallback, dataset whitelist hiding) over a real service core in a bare cordis context with a fake live session; `apply.client.spec.ts` (the message-timeline bench shape: Remote mount, entry id/order, the injected face's verb-to-namespace binding, double-mount degradation, teardown collapse); `DatasetsView.client.spec.tsx` (unbound empty state, bound tree expansion, selection-driven preview rendering markdown through the official `MarkdownText`, bind-form submit parsing, unbind, read-error surface).
+
+## Cross-references
+
+- [datasets proposal](../../../proposals/active/2026-08-19-datasets-store.md) — the design this implements (M2).
+- [datasets store M1](2026-08-19-datasets-store-m1.md) — the host faces and the service core this milestone fronts.

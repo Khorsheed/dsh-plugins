@@ -62,13 +62,13 @@ export function apply(ctx: Context): void {
     locale: NS,
     inject: (sessionId): TaskPilotDockInjected => ({
       stopJob: (jobId) => (
-        ctx.remote.commands.execute(sessionId, renderTaskPilotCommand({ kind: 'stop-job', jobId }))
+        ctx.remote.commands.execute(sessionId, renderTaskPilotCommand({ kind: 'stop-job', jobId }), [])
       ),
       interruptSubagent: (childId, parentId) => {
         const command = parentId === undefined
           ? { kind: 'interrupt-subagent' as const, childId }
           : { kind: 'interrupt-subagent' as const, childId, parentId }
-        return ctx.remote.commands.execute(sessionId, renderTaskPilotCommand(command))
+        return ctx.remote.commands.execute(sessionId, renderTaskPilotCommand(command), [])
       },
       openJob: (jobId) => { drawerActions?.openJob(sessionId, jobId) },
       openSession: (id) => { (ctx.sessions as ISessions).open(id) },

@@ -4,9 +4,10 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
-import { CodeBlock, DiffBlock } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, DiffBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { languageFor } from './path-utils.ts'
+import { isHtmlPath, languageFor } from './path-utils.ts'
+import { structuredPreview } from './structured.tsx'
 import css from './FilePreviewPane.module.css'
 
 /** Content-search state handed to the text preview body. */
@@ -61,18 +62,71 @@ function MarkedContent({ content, search }: { content: string; search: ContentSe
   )
 }
 
-/** Render one classified read; text carries a syntax-highlighted CodeBlock. */
-function PreviewBody(props: { read: FilePreviewRead; t: TranslateNS<'filePreview'>; search?: ContentSearch }) {
-  const { read, t, search } = props
+/** Render one classified read; text carries a syntax-highlighted CodeBlock,
+ * except markdown files, which render through the official MarkdownText
+ * pipeline (the same renderer the chat uses — headings, tables, emphasis,
+ * links, images, footnotes, math) so the preview reads like the document, not
+ * its source, and JSON/CSV files, which render through their structured forms
+ * (JsonTree inspector / markdown table) when parseable. HTML files get a
+ * source ⇄ render toggle: the render view is a sandboxed iframe (empty
+ * `sandbox` — no scripts, forms, or popups; CSS/images render, relative
+ * assets do not resolve against a file base), because the official pipeline
+ * keeps raw HTML literal by design. Every document view (markdown included)
+ * sits in the same block chrome the code and diff views use — a rounded
+ * surface with a small format banner — so the previews read as one family.
+ * A content search switches any text read to the raw marked-lines view so
+ * matches stay visible regardless of rendering. */
+function PreviewBody(props: {
+  read: FilePreviewRead
+  t: TranslateNS<'filePreview'>
+  search?: ContentSearch
+  htmlMode: 'source' | 'render'
+}) {
+  const { read, t, search, htmlMode } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
+      const searching = search !== undefined && search.query !== '' && search.matches.length > 0
+      // HTML: the render view is a sandboxed static iframe (the source view is
+      // the CodeBlock below); a content search still shows the raw lines.
+      if (isHtmlPath(read.path)) {
+        return (
+          <div className={css.previewScroll}>
+            {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
+            {searching
+              ? <MarkedContent content={content} search={search} />
+              : htmlMode === 'render'
+                ? <iframe className={css.htmlRender} sandbox="" srcDoc={content} title={t('preview.htmlRender')} />
+                : <CodeBlock code={content} lang="html" />}
+          </div>
+        )
+      }
+      // The document-form body (structured JSON/CSV, or rendered markdown),
+      // or null when the file has none — the code view then renders.
+      const documentBody = searching
+        ? null
+        : structuredPreview(read.path, content, t)
+          ?? (languageFor(read.path) === 'markdown' ? <MarkdownText text={content} /> : null)
+      // The frame's format label mirrors CodeBlock's infostring: the prism
+      // language when the map knows it ('markdown', 'json'), else the bare
+      // extension ('csv', 'tsv').
+      const dot = read.path.lastIndexOf('.')
+      const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
         <div className={css.previewScroll}>
           {read.truncated === true && <div className={css.notice}>{t('drawer.truncated')}</div>}
-          {search !== undefined && search.query !== '' && search.matches.length > 0
+          {searching
             ? <MarkedContent content={content} search={search} />
-            : <CodeBlock code={content} lang={languageFor(read.path)} />}
+            : documentBody !== null
+              ? (
+                <div className={css.structured}>
+                  <div className={css.structuredBanner}>
+                    <span className={css.structuredInfo}>{documentLabel}</span>
+                  </div>
+                  <div className={css.structuredBody}>{documentBody}</div>
+                </div>
+              )
+              : <CodeBlock code={content} lang={languageFor(read.path)} />}
         </div>
       )
     }
@@ -120,6 +174,12 @@ export function FilePreviewPane(props: {
   const [diffIndex, setDiffIndex] = useState(0)
   const [contentQuery, setContentQuery] = useState('')
   const [activeMatch, setActiveMatch] = useState(0)
+  // HTML files toggle between the source and the sandboxed render view; the
+  // pane is keyed by the selection at the render site, so the choice resets
+  // per file. Render is the default — the document form, like every other
+  // structured preview.
+  const [htmlMode, setHtmlMode] = useState<'source' | 'render'>('render')
+  const html = isHtmlPath(entry?.path ?? read.path)
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
   const diffs = entry?.diffs ?? []
   const showTabs = diffs.length > 0
@@ -223,6 +283,24 @@ export function FilePreviewPane(props: {
               </button>
             </>
           )}
+          {html && (
+            <div className={css.htmlToggle} role="group" aria-label={t('preview.htmlToggle')}>
+              <button
+                type="button"
+                className={htmlMode === 'source' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
+                onClick={() => { setHtmlMode('source') }}
+              >
+                {t('preview.htmlSource')}
+              </button>
+              <button
+                type="button"
+                className={htmlMode === 'render' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
+                onClick={() => { setHtmlMode('render') }}
+              >
+                {t('preview.htmlRender')}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {showingDiff && current !== undefined
@@ -256,7 +334,7 @@ export function FilePreviewPane(props: {
             <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} />
           </div>
         )
-        : <PreviewBody read={read} t={t} search={search} />}
+        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} />}
     </div>
   )
 }

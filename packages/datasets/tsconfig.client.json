@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": [
+    "src/binding.ts",
+    "src/css-modules.d.ts",
+    "src/dataset.ts",
+    "src/defaults.ts",
+    "src/git.ts",
+    "src/service.ts",
+    "src/types.ts",
+    "src/worktree.ts",
+    "src/client/index.ts",
+    "src/client/contract.ts",
+    "src/client/store.ts",
+    "src/client/locales.ts",
+    "src/client/preview.tsx",
+    "src/client/DatasetsView.tsx"
+  ]
+}

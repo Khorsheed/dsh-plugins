@@ -13,7 +13,10 @@ import { execFileSync } from 'node:child_process'
  */
 export function currentHead(repoDir: string): string | null {
   try {
-    const out = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).trim()
+    // stdio 'pipe': without it a non-git directory forwards git's stderr
+    // ("fatal: not a git repository…") into the host's log — expected states
+    // must stay silent.
+    const out = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim()
     return out.length > 0 ? out : null
   } catch {
     return null
@@ -26,25 +29,22 @@ export type CheckpointCommitResult =
   | { ok: false; error: string }
 
 /**
- * Files that look like bare-tsc emissions next to sources (real build output
- * goes to `lib/`). Swept into a checkpoint they pollute diffs forever after —
- * surfaced as a warning, never a refusal: a checkpoint's job is to preserve
- * work, including a dirty tree.
- */
-const SRC_ARTIFACT_PATTERN = /^packages\/[^/]+\/[^/]+\/src\/.+\.(?:js|d\.ts|js\.map|d\.ts\.map)$/
-
-/**
  * Commit the whole working tree as a checkpoint snapshot (empty commits
  * allowed — a clean tree still records a rollback point).
  * @param repoDir - repository directory.
  * @param message - checkpoint commit message.
+ * @param artifactPattern - staged paths matching this are reported as
+ * build-artifact-looking warnings (deployment-specific — see
+ * SRC_ARTIFACT_PATTERN in defaults.ts; omit for none).
  * @returns the new HEAD sha, or a failure reason.
  */
-export function commitCheckpoint(repoDir: string, message: string): CheckpointCommitResult {
+export function commitCheckpoint(repoDir: string, message: string, artifactPattern?: RegExp): CheckpointCommitResult {
   try {
     execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: 'pipe' })
     const staged = execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: repoDir, encoding: 'utf8' })
-    const artifacts = staged.split('\n').filter(file => SRC_ARTIFACT_PATTERN.test(file))
+    const artifacts = artifactPattern === undefined
+      ? []
+      : staged.split('\n').filter(file => artifactPattern.test(file))
     execFileSync('git', ['commit', '--allow-empty', '-m', message], { cwd: repoDir, stdio: 'pipe' })
     const sha = currentHead(repoDir)
     if (sha === null) return { ok: false, error: 'checkpoint commit succeeded but HEAD became unreadable' }

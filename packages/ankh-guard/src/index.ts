@@ -25,9 +25,9 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import { resolveSessionPreset, type PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
-import { resolveRepoDir, resolveStateDir } from './defaults.ts'
+import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
+import { stateFile } from './state-files.ts'
 import {
   acknowledgeRestartRecord, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
   pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
@@ -217,7 +217,13 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   //    resume pass re-creates those agents via `ctx.agents.resume` and queues
   //    a "continue" followup for the interrupted ones (their logs were closed
   //    with `reason.kind === 'interrupted'` by crash-recovery repair).
-  if (reportMode === 'followup') {
+  //
+  // The two halves are gated INDEPENDENTLY: half 1 by reportMode, half 2 by
+  // resumeInterrupted. Nesting both under reportMode once meant
+  // `reportRestartContext: 'step'/'off'` silently disabled session recovery
+  // (default-on!) with no warning — a misconfiguration failing silent.
+  const followupReport = reportMode === 'followup'
+  if (followupReport || resumeInterrupted) {
     type FollowupAgent = { followup: (message: ReturnType<typeof createUserMessage>) => void }
     const pluginMessage = (text: string): ReturnType<typeof createUserMessage> => createUserMessage({
       content: [{ type: 'text', text }],
@@ -230,7 +236,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     ctx.effect(() => () => { disposed = true })
 
     const claim = (agent: FollowupAgent, record: RestartRecord): void => {
-      const canaryPending = existsSync(join(stateDir, 'restart-requested.json'))
+      const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
       const text = restartContextText(record, canaryPending)
       if (text === '') return
       // Deliver before acknowledging: an ack on an undelivered followup would
@@ -247,23 +253,28 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     const deliver = (agent: FollowupAgent & { id: unknown }): void => {
       const id = agent.id as string
       const exitAt = pendingContinue.get(id)
-      if (exitAt !== undefined) pendingContinue.delete(id)
-      const record = pendingRestartRecord(stateDir)
+      const record = followupReport ? pendingRestartRecord(stateDir) : null
       if (exitAt !== undefined && record !== null
         && (record.initiator === undefined || id === record.initiator)) {
         // The initiator was itself interrupted by its own restart: one
         // combined turn continues the work AND reports the outcome — two
         // separate injections would run two near-duplicate turns.
-        const canaryPending = existsSync(join(stateDir, 'restart-requested.json'))
+        const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
         const text = continueAndReportText(record, canaryPending)
         if (text !== '') {
           agent.followup(pluginMessage(text))
+          pendingContinue.delete(id)
           acknowledgeRestartRecord(stateDir, record, Date.now())
+          return
         }
-        return
+        // A record with nothing to report yet (no exitAt/error) must not
+        // swallow the continue — fall through to the continue-only path.
       }
       if (exitAt !== undefined) {
         agent.followup(pluginMessage(continueInterruptedText(exitAt)))
+        // Delete only after a successful injection: a throwing followup keeps
+        // the session eligible at its next creation (same rule as claim()).
+        pendingContinue.delete(id)
       }
       if (record === null) return
       // The report waits for its owner; other sessions are never woken.
@@ -272,7 +283,9 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     }
 
     // Shutdown snapshot: which root sessions had a live turn when the process
-    // stopped. Synchronous by design — a signal handler cannot await.
+    // stopped. Synchronous by design — a signal handler cannot await. Only
+    // registered when resume is on: the snapshot's sole consumer is the resume
+    // pass, so a disabled resume must not leave stray state files behind.
     const snapshotInterrupted = (): void => {
       try {
         const interrupted = ctx.agents.roots()
@@ -280,7 +293,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
           .map(agent => agent.id as string)
         let initiator: string | undefined
         try {
-          const marker = JSON.parse(readFileSync(join(stateDir, 'restart-requested.json'), 'utf8')) as { initiator?: string }
+          const marker = JSON.parse(readFileSync(stateFile(stateDir, 'restartRequested'), 'utf8')) as { initiator?: string }
           initiator = marker.initiator
         } catch {
           // No scheduled-restart marker: a plain stop snapshots turns only.
@@ -294,8 +307,10 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
         // Best-effort: a signal handler must never throw into shutdown.
       }
     }
-    process.on('SIGTERM', snapshotInterrupted)
-    ctx.effect(() => () => { process.off('SIGTERM', snapshotInterrupted) })
+    if (resumeInterrupted) {
+      process.on('SIGTERM', snapshotInterrupted)
+      ctx.effect(() => () => { process.off('SIGTERM', snapshotInterrupted) })
+    }
 
     // A faithful resume mirrors the API proxy's cold-resume path: the
     // session's stored preset composition (resolved from the LOG, not the
@@ -304,9 +319,16 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     // value and every turn of the resumed agent fails.
     const buildResumeOptions = async (id: string): Promise<ResumeAgentOptions> => {
       const agentOptions: AgentOptions = {}
-      const selection = (ctx.get('agentDefaultModel') as
+      const defaultModel = ctx.get('agentDefaultModel') as
         | { currentSelection(): { provider?: string; model?: string } }
-        | undefined)?.currentSelection()
+        | undefined
+      const selection = defaultModel?.currentSelection()
+      if (defaultModel !== undefined && (selection?.provider === undefined || selection?.model === undefined)) {
+        // The hand-copied structural type above degrades SILENTLY on host
+        // signature drift: the resume succeeds, the persona's {{model}} is
+        // empty, and every resumed turn fails. Say so when it happens.
+        ctx.logger(name).warn('agentDefaultModel present but yielded no complete provider/model selection — resumed sessions may fail every turn (host signature drift?)')
+      }
       if (selection?.provider !== undefined) agentOptions.provider = selection.provider
       if (selection?.model !== undefined) agentOptions.model = selection.model
       let setup: ResumeAgentOptions['setup']
@@ -395,7 +417,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       if (decision.kind === 'reject' || signal.aborted) return decision
       const record = pendingRestartRecord(stateDir)
       if (record === null) return decision
-      const canaryPending = existsSync(join(stateDir, 'restart-requested.json'))
+      const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
       const text = restartContextText(record, canaryPending)
       if (text === '') return decision
       acknowledgeRestartRecord(stateDir, record, Date.now())
@@ -425,7 +447,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     clear: () => clearCredential(stateDir, Date.now()),
     status: () => loadState(stateDir),
     checkpoint: (message) => {
-      const result = commitCheckpoint(repoDir, `dsh-ankh-guard checkpoint: ${message ?? 'batch snapshot'}`)
+      const result = commitCheckpoint(repoDir, `dsh-ankh-guard checkpoint: ${message ?? 'batch snapshot'}`, SRC_ARTIFACT_PATTERN)
       if (!result.ok) return result
       setCheckpoint(stateDir, { revision: result.sha, message: message ?? 'batch snapshot' }, Date.now())
       return result

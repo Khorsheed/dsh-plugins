@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-downstream-session-events-unresumable.md
+.agents/notes/implemented/bug-fix/2026-08-20-downstream-session-events-unresumable.md: 24773c88d5b40c33bc18dcbf5910f4b024956fd2
+.agents/notes/implemented/bug-fix/2026-08-20-downstream-session-events-unresumable.zh.md: d74778689412c7bca661735e33790c60e7ef31b7

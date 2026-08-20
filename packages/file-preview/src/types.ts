@@ -72,6 +72,10 @@ export interface FilePreviewConfig {
   readonly maxReadBytes?: number
   /** Cap on the number of entries `list` returns. */
   readonly maxFiles?: number
+  /** Whether the bash-write collector watches sessions for files bash wrote
+   * (heredocs, `>` redirects, `tee`, `sed -i`) and adds them to `list`. On by
+   * default; disable to keep the list log-derived only. */
+  readonly captureBashWrites?: boolean
 }
 
 /** Outcome of a `filePreview.reveal` call (the "show in folder" gesture). */
@@ -86,3 +90,30 @@ export type FilePreviewReveal =
     /** Why: `missing` = the recorded path does not resolve to an existing target; `select-failed` = the host could not select the file. */
     readonly reason: 'missing' | 'select-failed'
   }
+
+/** One file's mutation facts within one turn — the turn card's vocabulary. */
+export interface FilePreviewTurnFile {
+  /** The display path (absolute for bash-captured writes; as-recorded otherwise). */
+  readonly path: string
+  /** Seq of the first mutation recorded for this path in this turn (stable ordering). */
+  readonly seq: number
+  readonly step: number
+  /** Lines added across the turn's mutations of this path. */
+  readonly added?: number
+  /** Lines removed; absent when any mutation reported no prior content (create/overwrite). */
+  readonly removed?: number
+}
+
+/** One turn's file-mutation group for the turn-tail card. */
+export interface FilePreviewTurnGroup {
+  readonly turn: number
+  readonly files: readonly FilePreviewTurnFile[]
+}
+
+/** Whole-response of `filePreview.turnFiles`: every turn's mutation groups. */
+export interface FilePreviewTurnMap {
+  /** Files mutated per turn, in event order within each turn. */
+  readonly turns: readonly FilePreviewTurnGroup[]
+  /** Seq of the last scanned session event (cache invalidation watermark). */
+  readonly asOfSeq: number
+}
