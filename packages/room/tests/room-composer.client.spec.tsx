@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The room composer takeover: mention completion, dispatch submit, bare-message release, error line, the in-composer task board and stats row. */
+/** The room composer takeover: mention completion, dispatch submit, bare-message release, error line, the in-composer dock capsules and stats row. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientContext, SessionId, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,7 +25,7 @@ const STATE: RoomState = {
   ],
   relays: [],
   tasks: [
-    { id: 't1', member: 'ada', title: '出方案', status: 'in_progress' },
+    { id: 't1', member: 'ada', title: '出方案', status: 'in_progress', updatedAt: 1000 },
   ],
   runs: [],
 }
@@ -64,6 +64,7 @@ async function bench(
     submit,
     addTask: vi.fn(async () => ({ ok: true as const })),
     closeTask: vi.fn(async () => ({ ok: true as const })),
+    setGoal: vi.fn(async () => ({ ok: true as const })),
     // Default: a projection seat that serves nothing (no stats row).
     useProjection: options.useProjection === undefined
       ? (() => undefined) as unknown as UseProjection
@@ -150,16 +151,19 @@ describe('RoomComposer', () => {
     expect(area.value).toBe('@ghost 干活')
   })
 
-  it('renders the task board strip above the card (the dock seat hides with the official fallback)', async () => {
+  it('renders the dock capsules above the card (the dock seat hides with the official fallback)', async () => {
     await bench(vi.fn())
-    // The collapsed strip header carries the open-task summary (key-passthrough t).
-    const header = screen.getByRole('button', { name: /tasks\.title/ })
-    expect(header.textContent).toContain('tasks.summary.open')
-    // The strip sits before the composer card's textarea in tree order.
+    // The collapsed row carries the goal guide state (no goal in the fixture)
+    // and the task capsule with its running count (key-passthrough t).
+    const goalCapsule = screen.getByRole('button', { name: 'goal.label' })
+    expect(goalCapsule.textContent).toContain('goal.set')
+    const taskCapsule = screen.getByRole('button', { name: 'tasks.capsule' })
+    expect(taskCapsule.textContent).toContain('tasks.summary.running')
+    // The capsules sit before the composer card's textarea in tree order.
     const area = screen.getByRole('textbox')
-    expect(header.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Expanding reveals the fixture task.
-    fireEvent.click(header)
+    expect(taskCapsule.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Expanding the task capsule reveals the fixture task.
+    fireEvent.click(taskCapsule)
     expect(screen.getByText('出方案')).toBeDefined()
   })
 

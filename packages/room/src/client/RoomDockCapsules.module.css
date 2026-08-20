@@ -1,0 +1,396 @@
+/* Dock capsules: one collapsed row of two capsules (goal + tasks) plus the
+   quick-add button, seated on the card-width axis inside the side clearance
+   (the RoomComposer `.dock` wrapper; official dock insets: card minus 4 × 8).
+   Capsules follow the official `.refChip` register — rounded chip on the tip
+   surface, secondary text — and the expanded cards reuse the TodoPanel port
+   of the old strip (tip surface, 12px radius, 14px status glyphs). Every
+   token reference carries the light-theme literal as fallback; no divider
+   lines anywhere. */
+
+.root {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 auto var(--dsh-composer-stack-gap, 6px);
+  width: calc(100% - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width: calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+}
+
+.capsules {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The capsule: refChip-register rounded chip on the tip surface. */
+.capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 60%;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
+}
+
+.capsuleActive {
+  composes: capsule;
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.capsuleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.capsuleMeta {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+.capsuleGuide {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+.addCapsule {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.addCapsule:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+/* Expanded card: the old strip's TodoPanel port (tip surface, 12px radius). */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.04));
+  border-radius: 12px;
+  background: var(--dsw-specific-tip, rgb(245, 246, 247));
+  /* Elevated surface, same contract as the official card: `.groups` scrolls
+     inside it, so the thumb takes the l2 elevation pair (rebinding contract:
+     ui-theme styles/scrollbar.css). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgb(229, 229, 229));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgb(212, 212, 212));
+}
+
+/* Goal card. */
+.goalRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.goalText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.goalEditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressTrack {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  transition: width 0.2s ease;
+}
+
+.recentLabel {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.advanceRow {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Member filter chips: the capsule register again, with the member dot. */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.chipActive {
+  composes: chip;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* The official `.list` scroll region (180px cap) wraps the member groups. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Group header: the official tertiary small-text convention (12/18
+   tertiary), plus the room's member color dot. */
+.member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.glyphCompleted {
+  color: var(--dsw-alias-state-success-primary, rgb(34, 197, 94));
+}
+
+.glyphPending {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+}
+
+.glyphCancelled {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.glyphProgress {
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  animation: room-task-progress-spin 1s linear infinite;
+}
+
+@keyframes room-task-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Figma strip is single-line; long items ellipsize with no inline expand. */
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cancelled rows read as closed noise: the content drops to tertiary. */
+.item[data-status="cancelled"] .content {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* Blocked rows ("等 ada") grey out until the wait clears. */
+.item[data-blocked] .content {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.blockedTag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.meta {
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+/* Row-level text action (the room's close button): tertiary 12/18, hover
+   takes the standard interactive hover fill. */
+.action {
+  flex: none;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Add row: same rhythm as a task row; the controls take the aligned input
+   skin (RoomComposer: transparent field, caption placeholder, business-blue
+   caret). */
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.addExpander {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.addExpander:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.memberSelect {
+  flex: none;
+  max-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  caret-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  user-select: none;
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary, rgb(236, 19, 19));
+}

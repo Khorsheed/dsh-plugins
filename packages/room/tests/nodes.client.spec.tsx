@@ -9,17 +9,18 @@ import type {
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
-  type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
+  roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition,
+  type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData, type RoomTaskLineData,
 } from '../src/client/nodes.ts'
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
 import { RoomRunView } from '../src/client/RoomRunView.tsx'
 import { RoomEventView } from '../src/client/RoomEventView.tsx'
 import { RoomRelayView } from '../src/client/RoomRelayView.tsx'
+import { RoomTaskLineView } from '../src/client/RoomTaskLineView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
+  RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps, RoomTaskLineViewProps,
 } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
@@ -194,6 +195,7 @@ describe('room node Definitions', () => {
     expect(roomRunDefinition.match(message)).toBeNull()
     expect(roomEventDefinition.match(message)).toBeNull()
     expect(roomRelayDefinition.match(message)).toBeNull()
+    expect(roomTaskLineDefinition.match(message)).toBeNull()
   })
 
   it('room-relay keys on the relay id: the gate row folds its resolutions in place', () => {
@@ -215,6 +217,40 @@ describe('room node Definitions', () => {
     )
     expect(updated).toEqual({ ...started, seq: 4, state: 'sent' })
     expect(roomRelayDefinition.buildViewNode!(contextOf(updated))).toMatchObject({ data: { state: 'sent' } })
+  })
+
+  it('room-task-line keys on the task id: hidden while open, materializes at the done edge', () => {
+    const added = ev('room/task-added', 3, { id: 't1', member: 'ada', title: 'API 定稿', status: 'in_progress' })
+    const progressed = ev('room/task-updated', 4, { id: 't1', status: 'done' })
+    const cancelled = ev('room/task-updated', 5, { id: 't1', status: 'cancelled' })
+    expect(roomTaskLineDefinition.match(added)).toEqual({ id: 't1', role: 'start' })
+    expect(roomTaskLineDefinition.match(progressed)).toEqual({ id: 't1', role: 'update' })
+    expect(roomTaskLineDefinition.match(ev('room/goal', 6, { text: 'x' }))).toBeNull()
+
+    const started = roomTaskLineDefinition.start(contextOf(undefined), matchOf(added), undefined as never)
+    expect(started).toEqual({
+      seq: 3, time: 1003, taskId: 't1', member: 'ada', title: 'API 定稿', status: 'in_progress',
+    })
+    // Open: the node stays hidden.
+    expect(roomTaskLineDefinition.buildViewNode!(contextOf(started)))
+      .toMatchObject({ kind: 'room-task-line', visibility: 'hidden' })
+
+    const done = roomTaskLineDefinition.update(
+      contextOf(started) as never,
+      { event: progressed, role: 'update', location: { kind: 'unresolved' } } as never,
+    )
+    // The anchor moves to the closing edge: the line sits at the moment of completion.
+    expect(done).toEqual({ ...started, seq: 4, time: 1004, status: 'done' })
+    expect(roomTaskLineDefinition.buildViewNode!(contextOf(done)))
+      .toMatchObject({ visibility: 'visible', anchorSeq: 4 })
+
+    // A cancelled task never produces an advance line.
+    const folded = roomTaskLineDefinition.update(
+      contextOf(started) as never,
+      { event: cancelled, role: 'update', location: { kind: 'unresolved' } } as never,
+    )
+    expect(roomTaskLineDefinition.buildViewNode!(contextOf(folded)))
+      .toMatchObject({ visibility: 'hidden', data: { status: 'cancelled' } })
   })
 })
 
@@ -358,5 +394,51 @@ describe('RoomRelayView', () => {
     cleanup()
     await bench({ ...relay, seq: 4, state: 'dismissed' })
     expect(screen.getByText(/（已忽略）/)).toBeDefined()
+  })
+})
+
+describe('RoomTaskLineView', () => {
+  const line: RoomTaskLineData = {
+    seq: 4, time: 1004, taskId: 't1', member: 'ada', title: 'API 定稿', status: 'done',
+  }
+
+  /** A store primed with the given task board (or left unpulled). */
+  async function storeWith(tasks: RoomState['tasks'] | undefined): Promise<RoomStore> {
+    const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
+    const gateway: RoomGateway = {
+      isRoom: async () => ({ ok: true, value: true }),
+      getState: async () => ({
+        ok: true,
+        value: { ok: true, value: { ...STATE, tasks: tasks ?? [] } },
+      }),
+    }
+    const store = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+    if (tasks !== undefined) await store.ensure('room-1' as SessionId)
+    return store
+  }
+
+  async function bench(data: RoomTaskLineData, tasks: RoomState['tasks'] | undefined) {
+    const roomStore = await storeWith(tasks)
+    const props = {
+      node: nodeOf('room-task-line', data), sessionId: 'room-1' as SessionId, roomStore, t,
+    } as unknown as RoomTaskLineViewProps
+    render(<RoomTaskLineView {...props} />)
+  }
+
+  it('renders the advance line with the live goal progress (cancelled leaves the denominator)', async () => {
+    await bench(line, [
+      { id: 't1', member: 'ada', title: 'API 定稿', status: 'done', updatedAt: 1004 },
+      { id: 't2', member: 'bill', title: '搭页面', status: 'done', updatedAt: 1002 },
+      { id: 't3', member: 'bill', title: '补测试', status: 'pending', updatedAt: 1003 },
+      { id: 't4', member: 'bill', title: '砍掉的', status: 'cancelled', updatedAt: 1001 },
+    ])
+    expect(screen.getByText(/✓ ada 完成了「API 定稿」/)).toBeDefined()
+    expect(screen.getByText(/── 目标进度 2\/3/)).toBeDefined()
+  })
+
+  it('drops the progress suffix while the store has no state for the session', async () => {
+    await bench(line, undefined)
+    expect(screen.getByText(/✓ ada 完成了「API 定稿」/)).toBeDefined()
+    expect(screen.queryByText(/目标进度/)).toBeNull()
   })
 })

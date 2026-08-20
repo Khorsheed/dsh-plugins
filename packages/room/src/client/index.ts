@@ -3,8 +3,8 @@
  * official `ctx.remote.$mount` channel, feeds the client-side RoomStore, and
  * registers the slot entries: the sidebar footer「+ New room」action, the
  * `conversation.composer` chain takeover (claims the composer exactly when
- * the current session is a cached room — and renders the task board plus the
- * session stats row itself, because both of their official homes ride the
+ * the current session is a cached room — and renders the dock capsules plus
+ * the session stats row itself, because both of their official homes ride the
  * fallback tree the takeover hides), and the 成员 `conversation.view`
  * tab. Composing this plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
@@ -27,12 +27,13 @@ import { RoomComposer } from './RoomComposer.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
 import { RoomStore } from './room-store.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
+import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
   NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome,
-  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTasksInjected,
+  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -151,9 +152,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   /** The task-board actions (sessionId binds per entry inject). */
   const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
     roomStore,
-    addTask: async (member, title) => {
+    addTask: async (member, title, blockedBy) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.addTask({ sessionId, member, title })
+      const carried = await remote.addTask({
+        sessionId, member, title, ...blockedBy === undefined ? {} : { blockedBy },
+      })
       if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
       void roomStore.refresh(sessionId)
       return { ok: true }
@@ -161,6 +164,13 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     closeTask: async (taskId) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.closeTask({ sessionId, taskId })
+      if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    setGoal: async (text) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.setGoal({ sessionId, text })
       if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
       void roomStore.refresh(sessionId)
       return { ok: true }
@@ -225,6 +235,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.conversationEvents.register(roomRunDefinition)
   ctx.conversationEvents.register(roomEventDefinition)
   ctx.conversationEvents.register(roomRelayDefinition)
+  ctx.conversationEvents.register(roomTaskLineDefinition)
 
   // The slots are declared by ui-sidebar / ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
@@ -244,7 +255,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // approval panel's priority 1 wins while a question/approval waits). A
   // cache miss declines — the freshly opened room shows the official bar for
   // the first pull's duration (accepted, see room-store.ts). The injected
-  // face also carries the task-board actions: the takeover renders the board
+  // face also carries the capsule actions: the takeover renders the dock
   // itself, because its `conversation.input.dock` seat hides with the
   // official fallback.
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
@@ -310,6 +321,15 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
     },
     RoomRelayView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-task-line',
+      locale: NS,
+      inject: (): RoomTaskLineInjected => ({ roomStore }),
+    },
+    RoomTaskLineView,
   ))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

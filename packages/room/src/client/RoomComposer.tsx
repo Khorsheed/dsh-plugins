@@ -14,11 +14,11 @@
  * line.
  *
  * Because the takeover hides the official fallback tree, the two surfaces
- * that normally live there are re-homed INTO this component: the task board
- * (RoomTaskDock strip above the card — its `conversation.input.dock` seat is
- * display:none under a takeover) and the session stats row (RoomStatsLine
- * below the card — the official StatsLine rides the fallback's composer
- * dock).
+ * that normally live there are re-homed INTO this component: the dock
+ * capsules (RoomDockCapsules above the card — the `conversation.input.dock`
+ * seat is display:none under a takeover) and the session stats row
+ * (RoomStatsLine below the card — the official StatsLine rides the fallback's
+ * composer dock).
  */
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
@@ -27,7 +27,7 @@ import { parseMentions } from '../journal.ts'
 import type { RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
-import { RoomTaskDock } from './RoomTaskDock.tsx'
+import { RoomDockCapsules } from './RoomDockCapsules.tsx'
 import css from './RoomComposer.module.css'
 
 interface ActiveMention {
@@ -51,7 +51,7 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, inputActions, roomStore, submit, addTask, closeTask, useProjection, t,
+  sessionId, inputActions, roomStore, submit, addTask, closeTask, setGoal, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -147,11 +147,18 @@ export function RoomComposer({
 
   return (
     <div className={css.root}>
-      {/* The task board's dock seat is hidden with the official fallback, so
-          the takeover renders the strip itself, on the same card-width
-          column axis. */}
+      {/* The dock's slot seat is hidden with the official fallback, so the
+          takeover renders the goal/task capsules itself, on the same
+          card-width column axis. */}
       <div className={css.dock}>
-        <RoomTaskDock sessionId={sessionId} roomStore={roomStore} addTask={addTask} closeTask={closeTask} t={t} />
+        <RoomDockCapsules
+          sessionId={sessionId}
+          roomStore={roomStore}
+          addTask={addTask}
+          closeTask={closeTask}
+          setGoal={setGoal}
+          t={t}
+        />
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       <div className={css.card}>

@@ -35,14 +35,16 @@ export type NewRoomActionProps =
   & InjectFace<NewRoomInjected>
   & PropsLocale<'room'>
 
-/** Injected face of the input-dock task board. */
+/** Injected face of the dock capsules (goal capsule + task capsule). */
 export interface RoomTasksInjected {
-  /** The client-side room state store (tasks ride the replayed state). */
+  /** The client-side room state store (tasks and the goal ride the replayed state). */
   readonly roomStore: RoomStore
-  /** Add a pending task to a member's lane. */
-  readonly addTask: (member: string, title: string) => Promise<RoomMutationOutcome>
+  /** Add a pending task to a member's lane, optionally waiting on another member. */
+  readonly addTask: (member: string, title: string, blockedBy?: string) => Promise<RoomMutationOutcome>
   /** Close an open task (done). */
   readonly closeTask: (taskId: string) => Promise<RoomMutationOutcome>
+  /** Set (or, with a blank text, clear) the room's goal. */
+  readonly setGoal: (text: string) => Promise<RoomMutationOutcome>
 }
 
 /**
@@ -164,12 +166,25 @@ export type RoomRelayViewProps =
   & InjectFace<RoomRelayInjected>
   & PropsLocale<'room'>
 
+/** Injected face of the task-advance chat node. */
+export interface RoomTaskLineInjected {
+  /** The client-side room state store (the goal-progress suffix). */
+  readonly roomStore: RoomStore
+}
+
+/** Full props of the 'room-task-line' chat-node renderer. */
+export type RoomTaskLineViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-task-line'>
+  & InjectFace<RoomTaskLineInjected>
+  & PropsLocale<'room'>
+
 /**
- * Props of the task-board strip, rendered by the RoomComposer itself above
- * the input card — NOT a slot entry: `conversation.input.dock` lives inside
- * the official composer fallback, which the takeover hides.
+ * Props of the dock capsules (goal capsule + task capsule), rendered by the
+ * RoomComposer itself above the input card — NOT a slot entry:
+ * `conversation.input.dock` lives inside the official composer fallback,
+ * which the takeover hides.
  */
-export type RoomTaskDockProps =
+export type RoomDockCapsulesProps =
   { readonly sessionId: SessionId }
   & RoomTasksInjected
   & PropsLocale<'room'>

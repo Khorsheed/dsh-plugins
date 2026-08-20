@@ -74,6 +74,18 @@ export interface RoomRelayData {
   readonly state: 'pending' | 'confirmed' | 'dismissed' | 'sent'
 }
 
+/** Chat node data of one task-advance line (the dim "✓ ada 完成了「…」" row). */
+export interface RoomTaskLineData {
+  /** Seq of the task's LATEST journal event (add or the closing update). */
+  readonly seq: number
+  /** Unix epoch ms of that event. */
+  readonly time: number
+  readonly taskId: string
+  readonly member: string
+  readonly title: string
+  readonly status: 'pending' | 'in_progress' | 'done' | 'cancelled'
+}
+
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     /** room: a member's reply (identity row + unframed markdown + actions). */
@@ -84,6 +96,8 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
     'room-event': RoomEventData
     /** room: a member-to-member notification relay (gate row). */
     'room-relay': RoomRelayData
+    /** room: a task closure's advance line (visible only once done). */
+    'room-task-line': RoomTaskLineData
   }
 }
 
@@ -256,4 +270,47 @@ export const roomRelayDefinition: ConversationNodeDefinition<RoomRelayData> = {
     return { ...context.state, seq: event.seq, state: event.data.state }
   },
   buildViewNode: context => viewNode(context, 'room-relay'),
+}
+
+/**
+ * The task-advance Definition: one Context per task (matched on the task id),
+ * started by the `room/task-added` event and updated by each
+ * `room/task-updated` edge. The node stays HIDDEN while the task is open or
+ * cancelled and materializes — at the closing event's seq, so the line sits
+ * at the moment of completion — only when the task closes done: the dim
+ * advance line `✓ ada 完成了「API 定稿」── 目标进度 2/5`. (The goal progress
+ * suffix is computed by the renderer from the room store, not folded here.)
+ */
+export const roomTaskLineDefinition: ConversationNodeDefinition<RoomTaskLineData> = {
+  kind: 'room-task-line',
+  target: 'chat',
+  match: (event) => {
+    switch (event.type) {
+      case 'room/task-added':
+        return { id: event.data.id, role: 'start' as const }
+      case 'room/task-updated':
+        return { id: event.data.id, role: 'update' as const }
+      default:
+        return null
+    }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/task-added') throw new Error('room-task-line start requires a room/task-added event')
+    return {
+      seq: event.seq,
+      time: event.time,
+      taskId: event.data.id,
+      member: event.data.member,
+      title: event.data.title,
+      status: event.data.status,
+    }
+  },
+  update: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/task-updated') return context.state
+    return { ...context.state, seq: event.seq, time: event.time, status: event.data.status }
+  },
+  buildViewNode: context => viewNode(context, 'room-task-line',
+    context.state !== undefined && context.state.status === 'done' ? 'visible' : 'hidden'),
 }

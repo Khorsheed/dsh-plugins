@@ -94,11 +94,11 @@ describe('room client apply', () => {
     expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale'])
   })
 
-  it('mounts the Remote, registers the three Definitions and the slot entries with the right shapes', async () => {
+  it('mounts the Remote, registers the five Definitions and the slot entries with the right shapes', async () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
-    expect(conversationEvents.register).toHaveBeenCalledTimes(4)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(5)
 
     const footer = slots.entries('sidebar.footer.action')
     expect(footer).toHaveLength(1)
@@ -118,11 +118,11 @@ describe('room client apply', () => {
     expect((views[0]!.options.label as () => string)()).toBe('Members')
 
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
-    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay'])
+    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay', 'room-task-line'])
 
-    // The task board no longer occupies the input dock: that seat hides with
+    // The dock capsules no longer occupy the input dock: that seat hides with
     // the official fallback under the composer takeover, so the takeover
-    // renders the board itself and the dock stays untouched.
+    // renders the capsules itself and the dock stays untouched.
     expect(slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
@@ -132,7 +132,7 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.footer.action')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
-    expect(slots.entries('conversation.chat.node')).toHaveLength(4)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(5)
   })
 
   it('the footer action face creates a room through the Remote and opens it, inheriting the current session cwd', async () => {
