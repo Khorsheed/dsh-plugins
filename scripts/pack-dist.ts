@@ -24,7 +24,7 @@ import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 /** Files copied from the package root into the staging dir when present. */
 const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'cordis.patch.yml']
@@ -71,11 +71,13 @@ export type PackageJson = Record<string, unknown> & {
 /**
  * Rescope the manifest: new scoped name and dist version; `workspace:^`
  * dependency ranges become caret ranges on the SOURCE version (the workspace
- * releases in lockstep); `dependencies` (bundled into lib output) and
- * repo-only fields (publishConfig, repository) are dropped. Family members
- * (other packages dist'ed under the same scope, e.g. a host package a client
- * package peers on) are renamed to their dist names and ranged on the DIST
- * version — a family name left at the source scope is unresolvable for npm
+ * releases in lockstep); repo-only fields (publishConfig, repository) are
+ * dropped. `dependencies` is dropped too — runtime deps are bundled into lib
+ * or provided by the host composition — EXCEPT family edges, which are the
+ * loader-level core/companion contract (`dsh plugin add` reconciles direct
+ * dependencies into the profile's bundles layer): they survive, renamed to
+ * their dist names and ranged on the DIST version, like every other family
+ * reference — a family name left at the source scope is unresolvable for npm
  * installers (the source scope is not published).
  * @param pkg - the source manifest.
  * @param name - the dist package name.
@@ -90,13 +92,26 @@ export function rescopePackageJson(
   family?: ReadonlyMap<string, string>,
 ): PackageJson {
   const out: PackageJson = { ...pkg, name, version }
-  delete out.dependencies
   delete out['publishConfig']
   delete out['repository']
   // Lifecycle hooks reference the repo build toolchain, which exists neither
   // in the staging dir (pnpm pack would run `prepare` there) nor on
   // consumers' machines — dist manifests carry no scripts.
   delete out.scripts
+  // Runtime deps are bundled into lib or provided by the host composition, so
+  // the section goes — EXCEPT family edges: they are the loader-level
+  // core/companion contract (`dsh plugin add` reconciles *direct* dependencies
+  // into the profile's bundles layer, which is how installing a provider
+  // auto-mounts the core), so family entries survive, renamed to the dist
+  // scope and ranged on the dist version.
+  const deps = Object.fromEntries(
+    Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
+      const target = family?.get(dep)
+      return target !== undefined ? [[target, `^${version}`]] : []
+    }),
+  )
+  if (Object.keys(deps).length > 0) out.dependencies = deps
+  else delete out.dependencies
   for (const section of ['peerDependencies', 'devDependencies'] as const) {
     const deps = out[section]
     if (deps === undefined) continue
@@ -244,7 +259,7 @@ function main(argv: readonly string[]): void {
   if (packageDir === undefined || scope === undefined || version === undefined || outDir === undefined) {
     throw new Error('usage: pack-dist --package <dir> --scope <scope> --version <version> --out <dir> [--family <comma-separated source package names>]')
   }
-  const tarball = packDist({ packageDir, scope, version, outDir, ...(family === undefined ? {} : { family }) })
+  const tarball = packDist({ packageDir, scope, version, outDir: resolve(outDir), ...(family === undefined ? {} : { family }) })
   process.stdout.write(`${tarball}\n`)
 }
 

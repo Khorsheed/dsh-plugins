@@ -50,6 +50,26 @@ describe('rescopePackageJson', () => {
     })
     expect(out.devDependencies).toEqual({ '@khorsheed/dsh-file-preview': '^0.1.0' })
   })
+
+  it('keeps family edges in dependencies (the core/companion contract), drops bundled/host-provided deps', () => {
+    const family = new Map([
+      ['@khorsheed/dsh-local-agent', '@khorsheed/dsh-local-agent'],
+      ['@khorsheed/dsh-local-agent-tool-subagent', '@khorsheed/dsh-local-agent-tool-subagent'],
+    ])
+    const out = rescopePackageJson({
+      name: '@khorsheed/dsh-local-agent-kimi',
+      version: '0.1.0-rc.6',
+      dependencies: {
+        '@deepseek-ai/schemastery': '^3.18.1',
+        '@khorsheed/dsh-local-agent': 'workspace:*',
+        '@khorsheed/dsh-local-agent-tool-subagent': 'workspace:*',
+      },
+    }, '@khorsheed/dsh-local-agent-kimi', '0.1.0-rc.6', family)
+    expect(out.dependencies).toEqual({
+      '@khorsheed/dsh-local-agent': '^0.1.0-rc.6',
+      '@khorsheed/dsh-local-agent-tool-subagent': '^0.1.0-rc.6',
+    })
+  })
 })
 
 describe('filesDeclaredExtras', () => {
