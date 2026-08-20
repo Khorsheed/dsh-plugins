@@ -17,6 +17,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDataDir } from './defaults.ts'
+import { MissionRemoteService } from './remote.ts'
 import { MissionService } from './service.ts'
 import { registerMissionSlash } from './slash.ts'
 import { registerMissionTools } from './tools.ts'
@@ -56,10 +57,13 @@ export function apply(ctx: Context, config: MissionConfig): void {
   ctx.provide('mission', service)
   registerMissionTools(ctx, service)
   registerMissionSlash(ctx, service)
+  // The Typert Remote data face (wire namespace `mission`) behind the web tab.
+  ctx.plugin(MissionRemoteService)
   ctx.systemPrompt.section({ name: 'tool:mission', order: 113, text: MISSION_PROMPT })
 }
 
 export { MissionService } from './service.ts'
+export { MissionRemoteService } from './remote.ts'
 export { MissionStore } from './store.ts'
 export { handleMissionCommand, registerMissionSlash } from './slash.ts'
 export { resolveDataDir } from './defaults.ts'

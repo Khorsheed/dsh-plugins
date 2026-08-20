@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-mission",
-  "description": "Generic task management: runs of missions with template-declared state machines, deterministic guards, plan data (dependencies / schedules), attempts and checkpoints, append-only annotations, and a releasable-state gate for irreversible resources",
+  "description": "Generic task management: runs of missions with template-declared state machines, deterministic guards, plan data (dependencies / schedules), attempts and checkpoints, append-only annotations, a releasable-state gate for irreversible resources, gated run-bundle export, and a web session tab over a Typert Remote data face",
   "version": "0.1.0-rc.1",
   "publishConfig": {
     "access": "public"
@@ -29,44 +29,111 @@
       "types": "./lib/types/cli.d.ts",
       "default": "./lib/cli.js"
     },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/*.js",
-    "lib/types/**/*.d.ts",
+    "lib",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.d.ts",
     "cordis.patch.yml"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-conversation": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-layout": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.8",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.8",
     "@deepseek-ai/schemastery": "^3.18.1",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsdown",
+    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+    "typecheck": "tsc -b tsconfig.json --noEmit"
   },
   "keywords": [
     "dsh",
@@ -80,9 +147,23 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while model tools, the service surface, and the CLI stay fully functional. The session tab (web) is not part of this line yet."
+      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while model tools, the service surface, and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.1.0-rc.8 web profile; earlier release lines share the same gateway conventions but were not smoke-tested."
     }
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

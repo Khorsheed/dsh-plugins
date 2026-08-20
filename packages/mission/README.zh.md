@@ -4,7 +4,7 @@
 
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
-里程碑 M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；M2 补上 `/mission` slash 面。run bundle 导出是 M2 的剩余部分；会话 tab 属 M4。
+M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；M2 补上 `/mission` slash 面与带闸的 bundle 导出；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
 
 ## 工作方式
 
@@ -123,6 +123,10 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 
 **expectedNs**：run meta 声明 `expectedNs` 时，`run status` 与 export 输出每格 ns 清单——缺失如实标缺失（绝不用其他 ns 顶替），全部注解都在 `expectedNs` 之外的格子在报告与 manifest 里标「只有未列 ns」。
 
+## 会话 tab
+
+会话 tab 环上的 `missions` 入口（web profile）：五桶筛选 chip（多选）、run 范围选择器（默认本会话、全部 run、单个 run）、任务表——# / 标题 / 状态（桶）/ 模板状态 / 计划阻塞 / 时长——每个 run 段带未释放资源警示。选中行打开详情面板（attempt / 检查点 / 注解计数）与人操作：重跑（新开 attempt）、释放检查、导出 bundle。导出对话框先检查（plan），收录 guarded（`modelFacing: false`）层时逐层列出，逐项勾选后导出才可用——与 CLI 的 TTY 确认同一个闸，宿主侧复核。数据走 `mission` Typert Remote 命名空间（宿主侧 `MissionRemoteService`，`ctx.mission` 的薄适配器）。
+
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。
@@ -136,4 +140,4 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 - **`retry` 天然不幂等**——每次调用都真实新开一个 attempt。其余所有写操作幂等（相同参数重复提交 = no-op）。
 - **锁对 pid 复用是尽力而为**——stale 锁在 pid 已死或锁龄超 60 秒时回收；窗口内 pid 被复用最多等到 10 秒锁超时。在预期写密度下足够；存储层可换 sqlite 而不动数据模型。
 - **每个模板恰一个初始态**——mission 的起点必须无歧义；终态数量任意。
-- **M4 范围**——web 会话 tab 已在提案中设计，单独落地。
+- **tab 没有提交产出按钮**——提交产出需要 Remote 面不具备的产物上传管线；`mission_submit`（工具）与 `dsh-mission submit`（CLI）覆盖。导出对话框的确认是泄题闸的 web 形态：guarded 层逐项勾选才放行，宿主侧用全新 plan 复核确认清单。

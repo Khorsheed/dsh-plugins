@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Generic task management for the dsh ecosystem: a **mission** is one work item — state, labels, plan data (dependencies / one-shot schedule), attempts, opaque resource references, an artifact index, and append-only namespaced annotations; a **run** is a batch of missions created from a template. The template declares a state machine, the run freezes it, and every mission enforces it: declaration *is* enforcement — undeclared transitions fail loud, guards are deterministic, and nothing ever transitions automatically.
 
-Milestone M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI; M2 adds the `/mission` slash face. Run-bundle export is the rest of M2; the session tab is M4.
+M1 ships the store, the state machine with three built-in guards, the run-template linter, the five-bucket projection, the service face (`ctx.mission`), twelve model tools, and the `dsh-mission` CLI; M2 adds the `/mission` slash face and gated run-bundle export; M4 adds the web session tab over a Typert Remote data face.
 
 ## How it works
 
@@ -123,6 +123,10 @@ One `/mission` command with subcommands, a thin adapter over the same service ke
 
 **expectedNs**: when run meta declares `expectedNs`, `run status` and export print the per-cell namespace report — a missing ns is reported missing (never substituted by another namespace), and a cell whose annotations are all outside `expectedNs` is marked "only unlisted ns present" in the report and the manifest.
 
+## Session tab
+
+The `missions` entry in the conversation tab ring (web profile): five-bucket filter chips (multi-select), a run scope selector (this session by default, all runs, or one run), and the task table — # / title / bucket / template state / plan-blocked / duration — with the unreleased-resource warning per run section. Selecting a row opens the detail panel (attempt / checkpoint / annotation counts) with the human gestures: retry (opens a new attempt), release check, and export bundle. The export dialog plans first, lists guarded (`modelFacing: false`) layers when any are included, and enables export only after each is individually acknowledged — the same gate as the CLI's TTY confirmation, re-checked host-side. Data rides the `mission` Typert Remote namespace (host side: `MissionRemoteService`, a thin adapter over `ctx.mission`).
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host.
@@ -136,4 +140,4 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands n
 - **`retry` is not idempotent by nature** — every call opens a real new attempt. All other writes are idempotent (identical repeats are no-ops).
 - **The lock is best-effort against pid reuse** — a stale lock is reclaimed when its pid is dead or it is older than 60 s; a recycled pid inside that window can wait up to the 10 s lock timeout. Fine at the expected write density; the store can move to sqlite without touching the data model.
 - **One initial state per template** — missions must start unambiguously; terminal states may be any number.
-- **M4 scope** — the web session tab is designed in the proposal and lands separately.
+- **The tab has no submit button** — submitting outputs needs artifact upload plumbing the Remote face does not carry; `mission_submit` (tool) and `dsh-mission submit` (CLI) cover it. The export dialog's confirmation is the leak gate's web form: guarded layers must be acknowledged one by one, and the host re-checks the confirmed list against a fresh plan.
