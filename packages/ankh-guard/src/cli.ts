@@ -31,7 +31,7 @@ import {
 } from './state.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
 import { discoverLaunchCommand, findPidOnPort, killPidTree } from './processes.ts'
-import { readInstanceLaunch, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
+import { readInstanceLaunch, writeAdoptionRecord, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
@@ -205,6 +205,7 @@ commands:
   check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
   preflight [--profile NAME] [--timeout-ms MS]
   record-unexpected-exit [--state-dir DIR]   # watchdog-facing: record an unplanned-exit recovery
+  record-adoption [--initiator ID] [--state-dir DIR]   # watchdog-facing: record the first (adoption) takeover
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
@@ -883,6 +884,19 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         : '[watchdog] unplanned exit recovered — a report record is still pending, left it untouched\n')
       return 0
     }
+    case 'record-adoption': {
+      // Invoked by the watchdog at the ADOPTION takeover — the first restart
+      // a deployment ever sees (supervise handed it the port and a
+      // pre-existing owner was stopped). The session that established
+      // supervision promised a verification report; this record is what wakes
+      // it after the bounce. Same pending protection as the unexpected-exit
+      // record.
+      const written = writeAdoptionRecord(stateDir, Date.now(), options.initiator)
+      io.stdout(written
+        ? '[watchdog] adoption takeover — left a report record for the supervising session\n'
+        : '[watchdog] adoption takeover — a report record is still pending, left it untouched\n')
+      return 0
+    }
     case 'check-env': {
       // THE one-call readiness answer for an agent planning a restart: (1) is
       // this instance supervised and by whom, (2) what command a restart
@@ -1169,6 +1183,15 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // Let the instance mark its own launch record as supervised (the
         // watchdog passes its env to the instance it spawns).
         DSH_ANKH_SUPERVISED: '1',
+        // The session establishing supervision: the watchdog's adoption
+        // takeover reports back to it (record-adoption). Empty for
+        // human-driven supervise runs — the record then waits for the first
+        // root agent created.
+        WD_INITIATOR: process.env.DSH_SESSION_ID ?? '',
+        // Adoption vs first-ever boot, decided HERE — race-free: by the time
+        // a spawned watchdog would probe the port, the owner may already be
+        // gone.
+        WD_ADOPTION: findPidOnPort(port) !== null ? '1' : '0',
         // Foreground (launchd-supervised) mode: the watchdog owns the port by
         // adoption; the detached form waits for the current owner to exit.
         WD_WAIT_OWNER: options.foreground ? '0' : '1',

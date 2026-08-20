@@ -898,14 +898,46 @@ describe('supervise', () => {
         await new Promise((resolve) => { setTimeout(resolve, 300) })
       }
       expect(await fetchBody(port)).toBe('new')
-      // First boot of this deployment (no last-good-boot stamp yet): the
-      // watchdog must NOT file a crash report — a guard that false-alarms on
-      // first contact loses its credibility.
+      // A live owner existed at supervise time: this takeover is an ADOPTION
+      // restart, and the watchdog files a report record addressed to the
+      // supervising session (empty initiator here — no DSH_SESSION_ID in this
+      // test's env). The no-false-positive guard covers the first-EVER boot
+      // (no owner), asserted by the next test.
+      const record = join(env.home, 'state', 'last-restart.json')
+      const recordDeadline = Date.now() + 5000
+      while (!existsSync(record) && Date.now() < recordDeadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      const outcome = JSON.parse(readFileSync(record, 'utf8'))
+      expect(outcome.unexpected).toBeUndefined()
+      expect(typeof outcome.exitAt).toBe('number')
+    } finally {
+      env.stop()
+      host.kill('SIGKILL')
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
+  it('a first-EVER boot (no previous owner) files no report record', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    try {
+      // Nothing listens on the port: supervise boots the instance directly.
+      // No owner was stopped, nothing was interrupted — a record here would be
+      // a false alarm on first contact.
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        io().io,
+      )).toBe(0)
+      await waitForPort(port)
+      expect(await fetchBody(port)).toBe('new')
       await new Promise((resolve) => { setTimeout(resolve, 1500) })
       expect(existsSync(join(env.home, 'state', 'last-restart.json'))).toBe(false)
     } finally {
       env.stop()
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -1305,6 +1337,63 @@ describe('supervise', () => {
     expect(second.out.join('')).toContain('still pending')
     expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
   })
+
+  it('record-adoption carries the initiator and never overwrites a pending record', async () => {
+    const stateDir = tmpDir('guard-cli-')
+    const first = io()
+    expect(await runCli(['record-adoption', '--state-dir', stateDir, '--initiator', 'session-x'], first.io)).toBe(0)
+    expect(first.out.join('')).toContain('adoption takeover')
+    const record = JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))
+    expect(record.initiator).toBe('session-x')
+    expect(record.unexpected).toBeUndefined()
+    expect(typeof record.exitAt).toBe('number')
+    const second = io()
+    expect(await runCli(['record-adoption', '--state-dir', stateDir, '--initiator', 'session-y'], second.io)).toBe(0)
+    expect(second.out.join('')).toContain('still pending')
+    expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
+  })
+
+  it('the adoption takeover reports back to the session that established supervision', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    // No last-good-boot stamp: this deployment has never come up — the first
+    // takeover must file an ADOPTION record (addressed to the supervising
+    // session), never an unexpected-exit one.
+    const host = spawn(process.execPath, ['-e',
+      `require('http').createServer((q,s)=>s.end('host')).listen(${port},'127.0.0.1')`],
+    { detached: true, stdio: 'ignore' })
+    host.unref()
+    const previousSession = process.env.DSH_SESSION_ID
+    process.env.DSH_SESSION_ID = 'session-supervisor'
+    try {
+      await waitForPort(port)
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        io().io,
+      )).toBe(0)
+      // The detached watchdog waits for the owner to exit, then takes over.
+      host.kill('SIGTERM')
+      const record = join(env.home, 'state', 'last-restart.json')
+      const deadline = Date.now() + 20_000
+      while (!existsSync(record) && Date.now() < deadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 300) })
+      }
+      const outcome = JSON.parse(readFileSync(record, 'utf8'))
+      expect(outcome.initiator).toBe('session-supervisor')
+      expect(outcome.unexpected).toBeUndefined()
+      expect(await fetchBody(port)).toBe('new')
+    } finally {
+      if (previousSession === undefined) delete process.env.DSH_SESSION_ID
+      else process.env.DSH_SESSION_ID = previousSession
+      env.stop()
+      host.kill('SIGKILL')
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
 
   it('reports an existing live watchdog instead of spawning a second', async () => {
     const env = supervisedEnv()

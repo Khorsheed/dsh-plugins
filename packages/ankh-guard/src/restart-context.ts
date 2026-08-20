@@ -161,6 +161,29 @@ export function writeRestartOutcome(stateDir: string, record: { exitAt: number; 
   atomicWrite(restartRecordFile(stateDir), `${JSON.stringify(record)}\n`)
 }
 
+/**
+ * Record the watchdog's ADOPTION takeover — the first restart a deployment
+ * ever sees: `supervise` handed the port to the watchdog, which stopped the
+ * pre-existing owner and booted the supervised instance. The session that
+ * established supervision promised the user a verification report; without
+ * this record nothing wakes it after the bounce (the adoption writes no
+ * restart marker and no outcome record). Never overwrites a record that still
+ * awaits its report.
+ * @param stateDir - state directory.
+ * @param now - epoch milliseconds of the takeover boot.
+ * @param initiator - the session that established supervision, when known.
+ * @returns whether the record was written.
+ */
+export function writeAdoptionRecord(stateDir: string, now: number, initiator: string | undefined): boolean {
+  if (pendingRestartRecord(stateDir) !== null) return false
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(restartRecordFile(stateDir), `${JSON.stringify({
+    exitAt: now,
+    ...(initiator !== undefined && initiator !== '' ? { initiator } : {}),
+  })}\n`)
+  return true
+}
+
 /** How the current instance was launched, recorded at boot. */
 export interface InstanceLaunch {
   /** The shell command that starts the instance. */
