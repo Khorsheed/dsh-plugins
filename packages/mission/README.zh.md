@@ -22,7 +22,7 @@ dsh 生态的通用任务管理：**mission** 是一个工作项——状态、�
 
   mission 只认 JSON Schema——具体字段是模板里声明的场景数据，不进插件词汇。
 - **五桶投影**——队列视图的筛选维度，从状态机**形状**加计划数据派生：终态（无出边）→ `done`；`dependsOn` 未满足 → `blocked`；`scheduledAt` 未到 → `scheduled`；初始态（无入边）→ `ready`；其余 → `active`。
-- **可释放状态**——`releasableStates` 非空即声明「本 run 有资源要释放」。`is-releasable` 回答 mission 持有的资源可否销毁，lint 负责闸的完整性（见下）。
+- **可释放状态**——`releasableStates` 非空即声明「本 run 有资源要释放」。`is-releasable` 回答 mission 持有的资源可否销毁，lint 负责闸的完整性（见下）。run status 的「持有 resource 未 releasable」警示只对位于闸**上游**状态的 mission 触发——可释放状态经声明 transitions 可达的下游状态（如 `released`）视为已了结、不报警，不可变的 `refs` 记录照常保留。
 
 ## 安装与加载
 

@@ -22,7 +22,7 @@ Milestone M1 ships the store, the state machine with three built-in guards, the 
 
   mission reads only JSON Schema — the concrete fields are scene data declared by the template, never plugin vocabulary.
 - **Five-bucket projection** — the filter dimension for queue views, derived from the state-machine *shape* plus plan data: terminal state (no out-edge) → `done`; unmet `dependsOn` → `blocked`; future `scheduledAt` → `scheduled`; initial state (no in-edge) → `ready`; everything else → `active`.
-- **Releasable states** — a template with a non-empty `releasableStates` declares "this run holds resources to release". `is-releasable` answers whether a mission's resources may be destroyed, and the linter enforces the gate's integrity (below).
+- **Releasable states** — a template with a non-empty `releasableStates` declares "this run holds resources to release". `is-releasable` answers whether a mission's resources may be destroyed, and the linter enforces the gate's integrity (below). The run-status warning (`holding resource but not releasable`) fires only for missions holding `refs.resource` in a state UPSTREAM of the gate — a state downstream of a releasable state (e.g. `released`, reachable from `releasable` through the declared transitions) is settled and stays silent, while the immutable `refs` record is kept.
 
 ## Install and load
 

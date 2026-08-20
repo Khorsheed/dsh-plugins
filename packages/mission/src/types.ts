@@ -192,7 +192,11 @@ export interface MissionView {
   blockedOn: string[]
   scheduledAt?: number
   releasable: boolean
-  /** True while the current attempt holds `refs.resource` without being releasable. */
+  /**
+   * True while the current attempt holds `refs.resource` in a state UPSTREAM of the
+   * release gate (not a releasable state and not reachable from one — `released`
+   * terminals downstream of the gate are settled and stay silent).
+   */
   resourceHeld: boolean
   /** Epoch ms when the current state was entered (the queue view's duration column). */
   enteredCurrentAt: number
