@@ -100,7 +100,9 @@ export interface FilePreviewTurnFile {
   readonly step: number
   /** Lines added across the turn's mutations of this path. */
   readonly added?: number
-  /** Lines removed; absent when any mutation reported no prior content (create/overwrite). */
+  /** Lines removed; 0 for a create; absent when an uncounted mutation (a write
+   *  whose prior content was not diffable, a Code Mode dispatch) reported no
+   *  total. */
   readonly removed?: number
 }
 

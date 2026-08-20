@@ -32,6 +32,29 @@ function toolResult(seq: number, diffs: JsonValue, turn = 1, step = 2): SessionE
   }
 }
 
+/**
+ * Build the result of a `write` call: the real message carries the
+ * `tool-result` block with the CALL's callId, and a create's write tool
+ * attaches no diff meta (`{ diffs: [] }`).
+ */
+function writeResult(seq: number, callSeq: number, turn = 1, step = 2): SessionEvent<'tool/result'> {
+  return {
+    seq,
+    time: seq,
+    type: 'tool/result',
+    data: {
+      turn,
+      step,
+      message: createToolResultMessage({
+        callId: `call-${callSeq}` as CallId,
+        content: [{ type: 'text', text: 'Created' }],
+        isError: false,
+      }),
+      meta: { diffs: [] },
+    },
+  }
+}
+
 describe('pathFromToolCall', () => {
   it('reads the file_path argument for read, write, and edit', () => {
     expect(pathFromToolCall('write', '{"file_path":"notes.md","content":"x"}')).toEqual({ op: 'write', path: 'notes.md' })
@@ -289,6 +312,67 @@ describe('foldFilePreviewByTurn', () => {
     const fact = byTurn.get(1)?.get('render.html')
     expect(fact).toMatchObject({ added: 5 })
     expect(fact?.removed).toBeUndefined()
+  })
+
+  it('counts a create write from the call content when the result carries no diff meta', () => {
+    const events = [
+      toolCall(0, 'write', { file_path: 'new.md', content: 'a\nb\nc\n' }, 3, 1),
+      writeResult(1, 0, 3, 2),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    // A create removes 0 lines; the full written content is the added count.
+    expect(byTurn.get(3)?.get('new.md')).toMatchObject({ added: 3, removed: 0 })
+  })
+
+  it('accumulates deltas across multiple mutations of one file (tool/call placeholders do not wipe)', () => {
+    const events = [
+      toolCall(0, 'edit', { file_path: 'a.md', old_string: 'x', new_string: 'x\ny\n' }, 2, 1),
+      toolResult(1, { diffs: [{ path: 'a.md', oldText: 'x', newText: 'x\ny\n' }] }, 2, 2),
+      toolCall(2, 'edit', { file_path: 'a.md', old_string: 'y', new_string: 'y\nz\n' }, 2, 3),
+      toolResult(3, { diffs: [{ path: 'a.md', oldText: 'y\n', newText: 'y\nz\n' }] }, 2, 4),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    // First edit added 2 removed 1; second added 2 removed 1 — totals sum.
+    expect(byTurn.get(2)?.get('a.md')).toMatchObject({ added: 4, removed: 2 })
+  })
+
+  it('a create followed by an edit accumulates both counts', () => {
+    const events = [
+      toolCall(0, 'write', { file_path: 'new.md', content: 'a\n' }, 2, 1),
+      writeResult(1, 0, 2, 2),
+      toolCall(2, 'edit', { file_path: 'new.md', old_string: 'a', new_string: 'a\nb\n' }, 2, 3),
+      toolResult(3, { diffs: [{ path: 'new.md', oldText: 'a\n', newText: 'a\nb\n' }] }, 2, 4),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    // Create added 1 (removed 0); edit added 2 removed 1.
+    expect(byTurn.get(2)?.get('new.md')).toMatchObject({ added: 3, removed: 1 })
+  })
+
+  it('a code-mode dispatch to the same file poisons the deltas (unknown wins)', () => {
+    const events = [
+      toolCall(0, 'edit', { file_path: 'a.md', old_string: 'x', new_string: 'y\nz\n' }, 2, 1),
+      toolResult(1, { diffs: [{ path: 'a.md', oldText: 'x', newText: 'y\nz\n' }] }, 2, 2),
+      codeDispatch(2, 'write', { file_path: 'a.md' }, 0),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    const fact = byTurn.get(2)?.get('a.md')
+    expect(fact?.added).toBeUndefined()
+    expect(fact?.removed).toBeUndefined()
+  })
+
+  it('a non-first-touch write with empty result meta contributes no count', () => {
+    const events = [
+      // The file was written before in this session, so the second write is an
+      // overwrite whose prior content was not diffable — nothing to count.
+      toolCall(0, 'write', { file_path: 'a.md', content: 'v1\n' }, 1, 1),
+      writeResult(1, 0, 1, 2),
+      toolCall(2, 'write', { file_path: 'a.md', content: 'v2\n' }, 2, 1),
+      writeResult(3, 2, 2, 2),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(1)?.get('a.md')).toMatchObject({ added: 1, removed: 0 })
+    expect(byTurn.get(2)?.get('a.md')?.added).toBeUndefined()
+    expect(byTurn.get(2)?.get('a.md')?.removed).toBeUndefined()
   })
 
   it('borrows the enclosing root call turn for code dispatches', () => {
