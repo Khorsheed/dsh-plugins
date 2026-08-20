@@ -391,6 +391,38 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
+  it('addTask journals an optional blockedBy (a roster member) and rejects an unknown one', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.invite({ sessionId, provider: 'kimi', name: 'bill' })
+    const added = await service.addTask({ sessionId, member: 'bill', title: '搭页面', blockedBy: 'ada' })
+    expect(added).toMatchObject({ ok: true })
+    expect(await service.getState({ sessionId })).toMatchObject({
+      ok: true,
+      value: { tasks: [{ member: 'bill', title: '搭页面', status: 'pending', blockedBy: 'ada' }] },
+    })
+    expect(await service.addTask({ sessionId, member: 'bill', title: 'x', blockedBy: 'ghost' }))
+      .toEqual({ ok: false, error: { code: 'member-not-found' } })
+  })
+
+  it('setGoal journals the goal (latest wins; blank clears) and getState carries it', async () => {
+    const { service, sessionId } = await bootRoom()
+    const fresh = await service.getState({ sessionId })
+    if (!fresh.ok) throw new Error('narrowing')
+    expect(fresh.value.goal).toBeUndefined()
+    expect(await service.setGoal({ sessionId, text: ' 插件 API v2 上线 ' }))
+      .toEqual({ ok: true, value: { goal: '插件 API v2 上线' } })
+    expect(await service.getState({ sessionId })).toMatchObject({
+      ok: true, value: { goal: '插件 API v2 上线' },
+    })
+    expect(await service.setGoal({ sessionId, text: '' })).toEqual({ ok: true, value: {} })
+    const cleared = await service.getState({ sessionId })
+    if (!cleared.ok) throw new Error('narrowing')
+    expect(cleared.value.goal).toBeUndefined()
+    expect(await service.setGoal({ sessionId: SessionId('nope'), text: 'x' }))
+      .toEqual({ ok: false, error: { code: 'session-not-found' } })
+  })
+
   it('cancel reports a miss when the member never ran (and nothing is journaled)', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })

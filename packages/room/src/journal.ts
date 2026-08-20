@@ -12,7 +12,7 @@
  */
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask,
+  RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -46,6 +46,7 @@ export const ROOM_EVENT_TYPES = [
   'room/relay-resolved',
   'room/task-added',
   'room/task-updated',
+  'room/goal',
 ] as const
 
 /** Whether an event log carries the room identity marker. */
@@ -115,6 +116,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const tasks: RoomTask[] = []
   const taskById = new Map<string, RoomTask>()
   const runs = new Map<string, RoomMemberRun>()
+  let goal: string | undefined
   for (const event of events) {
     switch (event.type) {
       case 'room/member-added': {
@@ -181,6 +183,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           member: event.data.member,
           title: event.data.title,
           status: event.data.status,
+          ...event.data.blockedBy === undefined ? {} : { blockedBy: event.data.blockedBy },
+          updatedAt: event.time,
         }
         taskById.set(task.id, task)
         tasks.push(task)
@@ -189,9 +193,15 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       case 'room/task-updated': {
         const task = taskById.get(event.data.id)
         if (task === undefined) break
-        const updated: RoomTask = { ...task, status: event.data.status }
+        const updated: RoomTask = { ...task, status: event.data.status, updatedAt: event.time }
         taskById.set(updated.id, updated)
         tasks[tasks.indexOf(task)] = updated
+        break
+      }
+      case 'room/goal': {
+        // Latest goal event wins; a blank text clears the goal.
+        const text = event.data.text.trim()
+        goal = text === '' ? undefined : text
         break
       }
       case 'room/run-state': {
@@ -208,7 +218,18 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
     }
   }
-  return { members, relays, tasks, runs: [...runs.values()] }
+  return { members, relays, tasks, runs: [...runs.values()], ...goal === undefined ? {} : { goal } }
+}
+
+/**
+ * The goal progress pair: done tasks over the COUNTABLE total — cancelled
+ * tasks leave the denominator (a cancelled task was never part of the plan).
+ * @param tasks - the folded task board.
+ * @returns done/total.
+ */
+export function taskProgress(tasks: readonly RoomTask[]): RoomTaskProgress {
+  const countable = tasks.filter(task => task.status !== 'cancelled')
+  return { done: countable.filter(task => task.status === 'done').length, total: countable.length }
 }
 
 /**

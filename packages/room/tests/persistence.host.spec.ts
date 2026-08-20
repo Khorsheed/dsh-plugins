@@ -104,6 +104,7 @@ describe('room journal persistence', () => {
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
       session.append('room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/member-removed', { name: 'ada' })
+      session.append('room/goal', { text: '插件 API v2 上线' })
       await fix.ctx.sessions.flush(session)
 
       const loaded = await fix.ctx.sessionPersistence.load(sessionId)

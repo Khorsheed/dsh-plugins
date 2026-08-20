@@ -135,14 +135,28 @@ export interface RoomRelayResolvedEvent {
 export type RoomTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled'
 
 /**
+ * The room's goal was set (or cleared: an empty text). Log-only; the journal
+ * fold keeps the LATEST goal event's text as the current goal (empty/absent =
+ * unset). The goal rides the roster section of every member prompt, and the
+ * dock's goal capsule renders it with the task progress.
+ */
+export interface RoomGoalEvent {
+  readonly text: string
+}
+
+/**
  * A task entered the board: an @-dispatch opens it `in_progress` (title is
  * the dispatch text, truncated), a human addTask opens it `pending`.
+ * `blockedBy` names the MEMBER the task waits on — pure display ("等 ada"):
+ * the row renders grey until that member has no open task left. It never
+ * triggers any automatic dispatch.
  */
 export interface RoomTaskAddedEvent {
   readonly id: string
   readonly member: string
   readonly title: string
   readonly status: 'pending' | 'in_progress'
+  readonly blockedBy?: string
 }
 
 /** A task changed status (speech settle closes it; the human manages the rest). */
@@ -178,6 +192,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/task-added': RoomTaskAddedEvent
     /** Task board: a task changed status. */
     'room/task-updated': RoomTaskUpdatedEvent
+    /** Goal: the room's goal was set (or cleared). */
+    'room/goal': RoomGoalEvent
   }
 }
 
@@ -209,6 +225,13 @@ export interface RoomTask {
   readonly member: string
   readonly title: string
   readonly status: RoomTaskStatus
+  /** The member this task waits on (display only; never dispatches anything). */
+  readonly blockedBy?: string
+  /**
+   * Epoch ms of the task's latest journal event (add or status update): the
+   * goal card's "latest advance" ordering and the row's relative time.
+   */
+  readonly updatedAt: number
 }
 
 /** A member's current run state, as folded by the journal replay. */
@@ -222,15 +245,27 @@ export interface RoomMemberRun {
 }
 
 /**
- * The replayed room state: roster, notification relays, the task board, and
- * run states. There is deliberately NO blackboard/log projection here —
- * members never consume the room's running log (see the design note).
+ * The replayed room state: roster, notification relays, the task board, run
+ * states, and the current goal. There is deliberately NO blackboard/log
+ * projection here — members never consume the room's running log (see the
+ * design note).
  */
 export interface RoomState {
   readonly members: readonly RoomMember[]
   readonly relays: readonly RoomRelay[]
   readonly tasks: readonly RoomTask[]
   readonly runs: readonly RoomMemberRun[]
+  /** The current goal text (the latest `room/goal` event), undefined when unset. */
+  readonly goal?: string
+}
+
+/**
+ * The goal progress pair: done tasks over the COUNTABLE total — cancelled
+ * tasks leave the denominator (a cancelled task was never part of the plan).
+ */
+export interface RoomTaskProgress {
+  readonly done: number
+  readonly total: number
 }
 
 /** Closed failure vocabulary of the room Remote surface. */
@@ -439,6 +474,11 @@ export interface RoomAddTaskRequest {
   readonly member: string
   /** Task title (non-blank). */
   readonly title: string
+  /**
+   * Optional member this task waits on ("等 ada" — display only, never an
+   * automatic dispatch). Must name a roster member when present.
+   */
+  readonly blockedBy?: string
 }
 
 /** addTask outcome. */
@@ -459,6 +499,19 @@ export interface RoomCloseTaskRequest {
 /** closeTask outcome. */
 export type RoomCloseTaskResult =
   | { readonly ok: true; readonly value: { readonly id: string } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** setGoal request: set (or, with a blank text, clear) the room's goal. */
+export interface RoomSetGoalRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** Goal text; blank clears the goal. */
+  readonly text: string
+}
+
+/** setGoal outcome. */
+export type RoomSetGoalResult =
+  | { readonly ok: true; readonly value: { readonly goal?: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** listProviders request (no parameters). */

@@ -52,6 +52,7 @@ import type {
   RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult,
+  RoomSetGoalRequest, RoomSetGoalResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
 } from './types.ts'
 
@@ -528,7 +529,9 @@ export class RoomService extends TypertRemoteService {
   /**
    * Add a task to a member's board lane (the human's management entry; @-
    * dispatches auto-open in_progress tasks, this opens a pending one).
-   * @param request - room session, member, title.
+   * `blockedBy` names the member the task waits on (display only — it never
+   * dispatches anything); it must resolve against the roster.
+   * @param request - room session, member, title, optional blockedBy.
    * @returns the new task's id, or a rejection.
    */
   @Remote('addTask')
@@ -539,9 +542,14 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'member-not-found' } }
     }
     if (request.title.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    if (request.blockedBy !== undefined
+      && !loaded.state.members.some(member => member.name === request.blockedBy)) {
+      return { ok: false, error: { code: 'member-not-found' } }
+    }
     const id = randomUUID()
     loaded.session.append('room/task-added', {
       id, member: request.member, title: request.title.trim(), status: 'pending',
+      ...request.blockedBy === undefined ? {} : { blockedBy: request.blockedBy },
     })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { id } }
@@ -564,6 +572,24 @@ export class RoomService extends TypertRemoteService {
     loaded.session.append('room/task-updated', { id: task.id, status: request.status ?? 'done' })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { id: task.id } }
+  }
+
+  /**
+   * Set (or, with a blank text, clear) the room's goal. The goal is one
+   * journaled line — the latest `room/goal` event wins; it rides the top of
+   * the roster section in every member prompt and drives the dock's goal
+   * capsule. Pure display/coordination text: it never dispatches anything.
+   * @param request - room session and goal text.
+   * @returns the now-current goal (absent after a clear), or a rejection.
+   */
+  @Remote('setGoal')
+  async setGoal(request: RoomSetGoalRequest): Promise<RoomSetGoalResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const text = request.text.trim()
+    loaded.session.append('room/goal', { text })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: text === '' ? {} : { goal: text } }
   }
 
   /**

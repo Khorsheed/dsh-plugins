@@ -45,9 +45,11 @@ export interface DispatchOptions {
  * The roster section: one line per OTHER member (name, provider, one-line
  * role) plus the notification protocol — the fallback channel's trailing
  * own-line `@name <content>` format lives here so a member can reach others
- * without any bridge tooling.
+ * without any bridge tooling. The room's GOAL heads the section when set (one
+ * line, "本房间的目标：…"; omitted when unset): members should know what the
+ * room as a whole is driving at without ever seeing its running log.
  */
-function rosterSection(state: { readonly members: readonly RoomMember[] }, self: string): string {
+function rosterSection(state: { readonly members: readonly RoomMember[]; readonly goal?: string }, self: string): string {
   const lines = state.members
     .filter(member => member.name !== self)
     .map((member) => {
@@ -57,6 +59,7 @@ function rosterSection(state: { readonly members: readonly RoomMember[] }, self:
     })
   return [
     '【成员名册】',
+    ...state.goal === undefined ? [] : [`本房间的目标：${state.goal}`],
     ...lines,
     '通知协议：要通知某个成员，在回复末尾独占一行写 `@名字 <内容>`；该行会被转交给对方（一阶段需房间主人确认）。',
   ].join('\n')

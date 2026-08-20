@@ -144,6 +144,22 @@ describe('DispatchEngine (real composition)', () => {
     expect(text.split('按方案 A 实现')).toHaveLength(2)
   })
 
+  it('the roster section carries the room goal on top when set, and omits it when unset', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
+    bench.facade.resume.mockImplementation(async () => settledRun('child-1', 'done'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
+    await bench.service.engine.idle()
+    // Unset: no goal line.
+    expect(textOf(bench.facade.start.mock.calls[0]![2] as ContentBlock[])).not.toContain('本房间的目标')
+
+    await bench.service.setGoal({ sessionId: bench.sessionId, text: '插件 API v2 上线' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
+    await bench.service.engine.idle()
+    const text = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
+    expect(text).toContain('【成员名册】\n本房间的目标：插件 API v2 上线')
+  })
+
   it('an instructions edit rides the next dispatch as an update notice', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
