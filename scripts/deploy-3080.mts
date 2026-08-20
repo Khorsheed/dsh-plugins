@@ -98,6 +98,12 @@ try {
   // neighbor cannot fail this deploy).
   const env = { ...process.env, GEN_TYPERT_ONLY: metas.map(m => m.name).join(',') }
   for (const m of metas) {
+    // The build runs the working tree — warn when it differs from HEAD, so the
+    // operator consciously ships uncommitted code (rollback knows only git).
+    const dirty = execFileSync('git', ['status', '--porcelain', '--', m.dir], { encoding: 'utf8' }).trim()
+    if (dirty !== '') {
+      process.stdout.write(`\nWARNING: ${m.dir} has uncommitted changes — prod will run code git cannot roll back to:\n${dirty.split('\n').slice(0, 10).join('\n')}\n`)
+    }
     process.stdout.write(`\n=== build ${m.name} ===\n`)
     run('pnpm', ['--filter', m.name, 'build'], { env })
     process.stdout.write(`\n=== test ${m.name} ===\n`)
