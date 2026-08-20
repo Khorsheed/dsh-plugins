@@ -526,17 +526,56 @@ describe('FilePreviewView', () => {
     const row = await screen.findByText('page.html')
     act(() => { row.click() })
     // Render view is the default: a fully sandboxed iframe carrying the
-    // document (no scripts/forms — the official pipeline keeps HTML literal,
-    // so the render view is the plugin's own sandboxed channel).
+    // document wrapped in the Tier1 srcDoc (meta CSP embedded — the parent
+    // shell has no CSP, so the policy must live inside the document; no
+    // scripts/forms — the official pipeline keeps HTML literal, so the
+    // render view is the plugin's own sandboxed channel).
     await waitFor(() => {
       const frame = document.querySelector('iframe')
-      expect(frame?.getAttribute('srcdoc')).toBe('<h1>Hello</h1>')
+      const srcDoc = frame?.getAttribute('srcdoc') ?? ''
+      expect(srcDoc).toContain('<h1>Hello</h1>')
+      expect(srcDoc).toContain('http-equiv="Content-Security-Policy"')
+      expect(srcDoc).toContain('connect-src')
       expect(frame?.getAttribute('sandbox')).toBe('')
     })
     // The toggle flips to the source code view.
     act(() => { screen.getByText('preview.htmlSource').click() })
     expect(await screen.findByText('<h1>Hello</h1>')).toBeTruthy()
     expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('gates scripted HTML behind a one-time confirm (Tier1 sandbox)', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>alert(1)</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Static render by default — scripts never run without a gesture.
+    await waitFor(() => {
+      expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    })
+    // The scripted segment opens the confirm gate; the sandbox stays locked.
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    expect(screen.getByText('preview.scriptConfirm')).toBeTruthy()
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    // Confirm → Tier1: allow-scripts (still opaque origin) + the bridge
+    // capability client in the document.
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame?.getAttribute('srcdoc') ?? '').toContain('dsh-bridge')
+    })
+    // Cancelling from the confirm gate keeps the static sandbox.
+    act(() => { screen.getByText('preview.htmlRender').click() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptCancel').click() })
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    expect(screen.queryByText('preview.scriptConfirm')).toBeNull()
   })
 
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {

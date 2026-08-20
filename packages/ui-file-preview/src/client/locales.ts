@@ -15,6 +15,11 @@ export type FilePreviewKey =
   | 'preview.htmlToggle'
   | 'preview.htmlSource'
   | 'preview.htmlRender'
+  | 'preview.htmlScript'
+  | 'preview.scriptConfirm'
+  | 'preview.scriptRun'
+  | 'preview.scriptCancel'
+  | 'preview.slowHint'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -78,6 +83,11 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.htmlToggle': 'HTML 视图',
   'preview.htmlSource': '源码',
   'preview.htmlRender': '渲染',
+  'preview.htmlScript': '运行脚本',
+  'preview.scriptConfirm': '此文件含脚本，将在隔离沙箱中运行（无网络、无法访问宿主）',
+  'preview.scriptRun': '运行',
+  'preview.scriptCancel': '取消',
+  'preview.slowHint': '渲染超时——文档可能过大，可切源码视图或在浏览器中打开',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
@@ -135,6 +145,11 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.htmlToggle': 'HTML view',
   'preview.htmlSource': 'Source',
   'preview.htmlRender': 'Render',
+  'preview.htmlScript': 'Run scripts',
+  'preview.scriptConfirm': 'This file contains scripts; they will run in an isolated sandbox (no network, no host access)',
+  'preview.scriptRun': 'Run',
+  'preview.scriptCancel': 'Cancel',
+  'preview.slowHint': 'Render timed out — the document may be too large; try the source view or open it in a browser',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',

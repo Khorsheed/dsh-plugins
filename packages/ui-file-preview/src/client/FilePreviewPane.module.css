@@ -160,6 +160,41 @@
   background: #fff;
 }
 
+/* Tier1 scripted-mode confirm bar: a one-time explicit gate before a
+   scripted document runs. Shown above the preview area, never over it. */
+.scriptConfirm {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(88, 196, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(88, 196, 255, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, #9fd4f0);
+}
+
+.scriptConfirmRun,
+.scriptConfirmCancel {
+  flex: none;
+  padding: 2px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.scriptConfirmRun {
+  border-color: rgba(88, 196, 255, 0.5);
+  color: #7fd4ff;
+}
+
 /* Search mode renders plain text with line-level hits and inline marks. */
 .markedPre {
   margin: 0;
