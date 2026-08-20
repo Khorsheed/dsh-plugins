@@ -94,12 +94,19 @@
   padding: 0 8px 6px;
 }
 
-/* Stats strip inside the card: quiet 12px tertiary like the official
-   StatsLine, replacing the dock line the elected fallback hides. */
+/* Stats dock BELOW the card, replacing the line the elected fallback hides:
+   the official StatsLine metrics verbatim (centered, chat-content width,
+   12/20 tertiary) so member sessions read identically to agent sessions. */
 .stats {
-  padding: 0 16px 8px;
+  display: block;
+  text-align: center;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 4px 16px 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   overflow: hidden;

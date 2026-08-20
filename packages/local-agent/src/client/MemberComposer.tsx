@@ -238,10 +238,10 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
             </button>
           )}
         </div>
-        {statsGroups.length > 0 && (
-          <div className={css.stats} data-member-stats>{statsGroups.join(' | ')}</div>
-        )}
       </div>
+      {statsGroups.length > 0 && (
+        <div className={css.stats} data-member-stats>{statsGroups.join(' | ')}</div>
+      )}
     </div>
   )
 }
