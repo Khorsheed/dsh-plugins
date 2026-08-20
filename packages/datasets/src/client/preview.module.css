@@ -4,7 +4,7 @@
    products tab's scheme, replicated over official primitives). */
 
 .structured {
-  margin: 12px 0;
+  margin: 4px 0 12px;
   overflow: hidden;
   background: var(--dsw-alias-markdown-code-block);
   border-radius: 12px;

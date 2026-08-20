@@ -30,8 +30,8 @@ function parseList(raw: string): string[] | undefined {
   return list.length === 0 ? undefined : list
 }
 
-/** At most this many metadata chips show inline; the rest collapse into a +N pill. */
-const MAX_META_PILLS = 3
+/** At most this many metadata chips show inline; the rest collapse into a +N chip. */
+const MAX_META_PILLS = 2
 
 /** One metadata entry as quiet chip text: scalars inline, containers summarized. */
 function metaPillText(key: string, value: unknown): string {
@@ -50,8 +50,8 @@ function MetaPills(props: { metadata: JsonObject; t: DatasetsViewProps['t'] }) {
   const full = JSON.stringify(metadata, null, 2)
   return (
     <span className={css.metaPills} title={full}>
-      {shown.map(([key, value]) => <Pill key={key}>{metaPillText(key, value)}</Pill>)}
-      {rest > 0 && <Pill>{t('tree.moreMeta', { count: rest })}</Pill>}
+      {shown.map(([key, value]) => <Pill key={key} className={css.metaPill}>{metaPillText(key, value)}</Pill>)}
+      {rest > 0 && <Pill className={css.metaPill}>{t('tree.moreMeta', { count: rest })}</Pill>}
     </span>
   )
 }
@@ -142,7 +142,7 @@ function ItemNode(props: {
         <div key={layer} className={css.layerGroup}>
           <div className={css.layerHeader}>
             <span className={css.layerName}>{layer}</span>
-            <span className={css.rowCount}>{t('tree.fileCount', { count: paths.length })}</span>
+            <span className={css.layerCount}>· {t('tree.fileCount', { count: paths.length })}</span>
           </div>
           {paths.map((path) => {
             const selected = selection !== null
@@ -340,9 +340,11 @@ export function DatasetsView(props: DatasetsViewProps) {
                 >
                   <Chevron open={expanded} />
                   <span className={css.rowTitle}>{dataset.id}</span>
-                  {dataset.name !== undefined && <span className={css.rowNote}>{dataset.name}</span>}
                   <span className={css.rowCount}>{t('list.itemCount', { count: dataset.itemCount })}</span>
                 </button>
+                {dataset.name !== undefined && (
+                  <div className={css.datasetNote} title={dataset.name}>{dataset.name}</div>
+                )}
                 {expanded && (items[dataset.id] ?? []).map(item => (
                   <ItemNode
                     key={item.id}
@@ -375,12 +377,14 @@ export function DatasetsView(props: DatasetsViewProps) {
           )}
           {selection !== null && !previewLoading && previewError === null && preview !== null && (
             <div className={css.previewScroll}>
-              <DatasetPreview
-                key={`${selection.item}/${selection.layer}/${selection.path}`}
-                path={selection.path}
-                content={preview.content}
-                t={t}
-              />
+              <div className={css.previewContent}>
+                <DatasetPreview
+                  key={`${selection.item}/${selection.layer}/${selection.path}`}
+                  path={selection.path}
+                  content={preview.content}
+                  t={t}
+                />
+              </div>
             </div>
           )}
         </section>

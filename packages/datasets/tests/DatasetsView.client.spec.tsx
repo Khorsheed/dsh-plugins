@@ -109,6 +109,8 @@ describe('DatasetsView', () => {
     expect(await screen.findByText(/binding\.repo/)).toBeTruthy()
     const row = await screen.findByText('alpha')
     expect(h.listDatasets).toHaveBeenCalledWith('s1')
+    // The descriptor name renders on its own quiet line, not crammed into the row.
+    expect(screen.getByText('Alpha')).toBeTruthy()
 
     fireEvent.click(row)
     expect(await screen.findByText('i1')).toBeTruthy()
@@ -118,6 +120,8 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
+    // The layer header is one quiet phrase: name, middot, count — never a right-floated count.
+    expect(await screen.findByText(/· tree\.fileCount/)).toBeTruthy()
     const file = await screen.findByText('task.md')
     fireEvent.click(file)
     expect(h.readFile).toHaveBeenCalledWith('s1', {
