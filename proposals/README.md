@@ -114,3 +114,4 @@ idea → planned → in-progress → verified → done（移入 closed/）
 | plugin | [local-agent provider 长驻驱动模式（live driver）](active/2026-08-20-local-agent-live-driver.md) | planned | 纯插件 | delegation-api M1–M4（对 facade 透明） | exec 驱动保留为 fallback；dsh → codex → kimi → claude 逐家落地；换回优雅中断/steer/审批口/低成本流式 | 2026-08-20 |
 | plugin | [移动端接入（mobile-access）](active/2026-08-19-mobile-access.md) | planned | 纯插件 | 无 | 随时随地访问完整 Web UI（保留全部插件能力）；M1 网关认证 / M2 PWA+推送 / M3 移动 UI 适配 / M4 bot 通道 | 2026-08-19 |
 | plugin | [撤回可选回滚文件状态（withdraw-file-rollback）](active/2026-08-21-withdraw-file-rollback.md) | planned | 需契约扩展（upstream 候选） | 官方 rc 能力评估（当前 rc.8 无） | 社区 v1 纯插件子集（fs 日志后端 + git 基线 + 覆盖判定护栏）可先行；bash 捕获需上游原语 | 2026-08-21 |
+| plugin | [文件视图 HTML 渲染能力增强（file-view-html-rendering）](active/2026-08-21-file-view-html-rendering.md) | planned | 纯插件 | 无（调研报告见 scratch 2026-08-21） | 文件视图/抽屉/产物行共用通道；Tier0/Tier1 分层 + 大文件分级；M0 3D 测试页已交付并过 playwright | 2026-08-21 |
