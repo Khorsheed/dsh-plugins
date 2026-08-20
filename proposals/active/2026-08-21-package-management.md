@@ -29,7 +29,37 @@
 | 领域层 | mission | host + client | 任务管理（评测用法） |
 | 平台运维 | ankh-guard | host 工具 | 重启闸 / 看门人（不进终端用户整合包） |
 
-发布状态实测：**20 包全部未发布到 npm**（`npm view @khorsheed/dsh-* version` 全 NOT PUBLISHED）；prod（3080）17 包在跑、全部为 `file:` tarball **直接依赖**（见下）；datasets / lab / mission 三包仍在开发、未进 prod。首发无顺序问题（除 local-agent 家族按依赖序同发）。
+发布状态实测（2026-08-21，registry JSON 直查；`npm view` 在本环境超时不可用，以 registry 为准）：**ankh-guard 已发布（npm latest = `0.1.0-rc.8.9`），其余 19 包未发布**；prod（3080）17 包在跑、全部为 `file:` tarball **直接依赖**（见下）；datasets / lab / mission 三包仍在开发、未进 prod。首发除 local-agent 家族按依赖序同发外无顺序问题；ankh-guard 已过首发线，后续发布需超过 `0.1.0-rc.8.9`。
+
+#### 宿主兼容与发布状态矩阵（M1 盘点基准表）
+
+| 包 | minHost | latestHost | npm 已发布 | 进度 |
+|---|---|---|---|---|
+| context-guard | rc.8 | rc.8 | 未发布 | prod |
+| message-timeline | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| client-message-tools | rc.8 | rc.8 | 未发布 | prod |
+| client-session-title-edit | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| taskpilot | rc.8 | rc.8 | 未发布 | prod |
+| ui-shortcuts | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| whalesong | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| file-preview | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| client-ui-file-preview | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent | rc.8 | rc.8 | 未发布 | prod |
+| local-agent-kimi | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent-codex | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent-claude-code | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent-dsh | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent-dsh-headless | rc.6 | rc.8（prod 实测） | 未发布 | prod |
+| local-agent-tool-subagent | 无 | 无 | 未发布 | prod |
+| datasets | rc.6 | rc.8（tab 冒烟声明） | 未发布 | dev-only |
+| lab | rc.6 | rc.6（缺省 = minHost） | 未发布 | dev-only |
+| mission | rc.6 | rc.8（tab 冒烟声明） | 未发布 | dev-only |
+| ankh-guard | rc.6 | rc.8（prod 实测） | **0.1.0-rc.8.9** | prod |
+
+- **`latestHost` 语义**（新增列）：`minHost` = 硬下限（低于此不可用，gate）；`latestHost` = 已验证 / 声明兼容的最高宿主线（信息性上限，**不 gate**；缺省 = minHost）。建议落为 package.json 可选字段 `dsh.compat.latestHost`（M1 实施），与各包 README 的 Compatibility 段落保持同步。表中 prod 包 latestHost = rc.8 为「prod 线实测」推断（prod 宿主当前 rc.8，2026-08-21 核）；datasets / mission 的 rc.8 来自 compat notes 的 tab 冒烟声明；lab 未进一步实测取缺省。注意 local-agent 家族 harness 的 minHost 虽为 rc.6，但 core（rc.8）是它们的依赖——**家族实际地板是 rc.8**。
+- **npm 发布版本**：以 registry 为准（与 package.json `version` = 下一发布线区分开）；目前仅 ankh-guard 有值。
+- **GitHub 地址**：全部包同仓 `github.com/Khorsheed/dsh-plugins`，各自目录 `packages/<dir>`——`repository` 字段是单一事实源，盘点表不逐行重复；**message-timeline 缺 `repository` 字段**，M1 顺手补齐。
+- **profile / bundle 归属**：19 个 bundle（声明 `dsh.bundle.patch`，自挂载、进 bundles 层）+ 1 个 plain（`local-agent-tool-subagent`，无 patch、家族内部行，由 kimi 的 patch 挂载；属于 profile 依赖但不属于 bundles 层）。
 
 ### 官方契约实测（决定整合包形态的关键事实）
 
@@ -59,13 +89,13 @@ M1/M2 先落分类与流程文档 → M3 用形态 B 首发 `dsh-eval`（不等�
 
 ### 发布流程管理
 
-- **每包独立线**：build + test + hygiene/plugins 全绿 → `scripts/pack-dist.ts` 出 tgz → 验证 tarball → `npm publish`（版本必须超过 registry 已发布线）；首发全未发布，无 403/409 风险，唯一顺序约束是 local-agent 家族同发、按依赖序。
+- **每包独立线**：build + test + hygiene/plugins 全绿 → `scripts/pack-dist.ts` 出 tgz → 验证 tarball → `npm publish`（版本必须超过 registry 已发布线）；19 包首发无 403/409 风险，ankh-guard 已发布（0.1.0-rc.8.9）、后续发布需超过该版本；唯一顺序约束是 local-agent 家族同发、按依赖序。
 - **整合包规则**：`^` 范围引用成员；**只在成员增删或跨大版本线时 bump**（比 ops.md「随任一子包发布而 bump」更省——caret 范围下子包 patch 发布不需要动 pack）；无代码无 build，但发布前同样跑 hygiene + pack-dist 出 tgz + 空 profile 冒烟（装、卸单个、再起）。
 - **首发整合包 dsh-eval 组成**（初稿）：datasets + lab + file-preview 对 + client-message-tools + taskpilot + 基础层全体（除 ankh-guard）。
 
 ## 里程碑
 
-- M1：包盘点定稿——分类表 + `dsh.category` 字段 + README 总表（进行中）
+- M1：包盘点定稿——分类表 + `dsh.category` + `dsh.compat.latestHost` 字段 + README 总表 + `repository` 补齐（进行中）
 - M2：流程文档——`docs/ops.md` / `docs/publishing.md` 增补整合包发布规则与首发顺序
 - M3：dsh-eval 整合包（形态 B：profile 模板 + 安装脚本 + README，空 profile 冒烟）
 - M4：上游 seam 落地 → 形态 C 薄元包发布（`@khorsheed/dsh-eval-pack`）
@@ -73,12 +103,14 @@ M1/M2 先落分类与流程文档 → M3 用形态 B 首发 `dsh-eval`（不等�
 
 ## 实现记录（随实施追加）
 
-- 前置盘点与契约实测（2026-08-21，本会话）：20 包全未发布；prod 17 包全直接依赖；`reconcilePlugins` 只扫直接依赖（`apps/cli/src/plugin.ts`）；`loadProfile` 只读 bundles 层（`packages/boot/app-boot/src/profile.ts`）→ 薄元包需上游 seam。
+- 前置盘点与契约实测（2026-08-21，本会话）：19 包未发布、ankh-guard 已发布（registry 实测 0.1.0-rc.8.9，初稿误判全未发布系 `npm view` 超时所致）；prod 17 包全直接依赖；`reconcilePlugins` 只扫直接依赖（`apps/cli/src/plugin.ts`）；`loadProfile` 只读 bundles 层（`packages/boot/app-boot/src/profile.ts`）→ 薄元包需上游 seam。
+- 2026-08-21 修订：矩阵新增 latestHost（信息性上限，缺省 = minHost）与 npm 已发布列；GitHub 同仓单行记录 + message-timeline 缺 `repository` 字段；宿主兼容语义与 prod 线（rc.8）推断见上。
 - （实施时登记相关 Agent Note / PR / 包名）
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
 - 分类机械可查：每个包 `dsh.category` 与 README 标注一致，盘点表入 README 总表。
+- 宿主兼容盘点入表：每包 `minHost` / `latestHost` 与 README Compatibility 段落一致（latestHost 缺省 = minHost）；全包 `repository` 字段齐备（当前 message-timeline 缺）。
 - dsh-eval 整合包：空 profile 一条命令（M3 用脚本/模板、M4 用 `dsh plugin add <pack>`）装全家；任一 bundle 单独 `remove` 后其余不受影响、boot 零错误；preflight 无 FAIL。
 - 发布全链路走通：至少一个包完成 pack-dist → npm publish → 一次性目录消费者冒烟；整合包按 M3/M4 形态可复现装出。
 

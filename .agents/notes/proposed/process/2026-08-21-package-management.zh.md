@@ -6,13 +6,13 @@ Status: proposed
 
 ## Problem
 
-仓库正处于首发门槛（截至 2026-08-21 的 20 个包全未上 npm），却没有一套把「插件分类 → 可分发整合包 → 发布流程」串起来的具体方案。[plugin-ops-model](../../implemented/process/2026-08-20-plugin-ops-model.md) 定了三层环境生命周期并勾画了薄元包，但把薄元包的命名/版本策略与真实机制留作 open item。对照 harness 源码（`apps/cli/src/plugin.ts`、`packages/boot/app-boot/src/profile.ts`）的契约实测显示：当前 CLI 无法挂载薄元包——`pnpm add <pack>` 只把 pack 写成直接依赖，而 `reconcilePlugins` 只扫直接依赖——成员装上了但永远不会挂载。任何建立在 ops.md「薄元包」一行字上的计划，都是在缺口上盖楼。
+仓库正处于首发门槛（截至 2026-08-21 的 20 个包中只有 ankh-guard 上了 npm——latest 0.1.0-rc.8.9——其余 19 个未发布），却没有一套把「插件分类 → 可分发整合包 → 发布流程」串起来的具体方案。[plugin-ops-model](../../implemented/process/2026-08-20-plugin-ops-model.md) 定了三层环境生命周期并勾画了薄元包，但把薄元包的命名/版本策略与真实机制留作 open item。对照 harness 源码（`apps/cli/src/plugin.ts`、`packages/boot/app-boot/src/profile.ts`）的契约实测显示：当前 CLI 无法挂载薄元包——`pnpm add <pack>` 只把 pack 写成直接依赖，而 `reconcilePlugins` 只扫直接依赖——成员装上了但永远不会挂载。任何建立在 ops.md「薄元包」一行字上的计划，都是在缺口上盖楼。
 
 ## Proposal
 
 把包管理作为一个能力跟踪在 [proposals/active/2026-08-21-package-management.md](../../../proposals/active/2026-08-21-package-management.md)，其上游 seam 跟踪在 [proposals/active/2026-08-21-upstream-meta-pack-reconcile.md](../../../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md)：
 
-- **分类**：每个包加 `dsh.category`（`base` / `domain` / `ops`，主标签唯一；领域包加 `dsh.domain` 备注如 `eval`），README 总表同步。分类是标签，绝不是物理 bundle。
+- **分类**：每个包加 `dsh.category`（`base` / `domain` / `ops`，主标签唯一；领域包加 `dsh.domain` 备注如 `eval`），README 总表同步。分类是标签，绝不是物理 bundle。盘点矩阵还跟踪宿主兼容（`minHost` 硬下限 / 信息性 `latestHost` 缺省 = minHost，拟落为 `dsh.compat.latestHost`）、npm 已发布版本（以 registry 为准）、共享 GitHub 仓（各自 `packages/<dir>`；message-timeline 仍缺 `repository` 字段），以及 bundle-vs-plain 区分（19 bundle + tool-subagent plain）。
 - **分发形态**：A——add 清单脚本（今天可用）；B——profile 目录模板（repo/tgz 分发，成员为直接依赖，今天可用，首发推荐）；C——npm 薄元包（目标形态，被上游 seam 阻塞）。
 - **发布流程**：每包独立线（首发除 local-agent 家族同发外无顺序问题）；整合包用 `^` 范围，只在成员增删或跨大版本线时 bump，不随成员 patch 发布而 bump。
 - **首发应用**：`dsh-eval` 整合包（datasets + lab + file-preview 对 + client-message-tools + taskpilot + 基础层去掉 ankh-guard），形态 B 先行；`dsh-novel` 等小说领域插件。
