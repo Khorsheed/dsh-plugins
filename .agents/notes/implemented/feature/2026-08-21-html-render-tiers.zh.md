@@ -15,7 +15,7 @@ Status: implemented
 **M2（ui-file-preview，`e981c25`）**——
 - `buildSrcDoc`（html-src-doc.ts）：`srcdoc` 一律内嵌 Tier1 meta CSP——web 壳自身无 CSP，且 `srcdoc` 不是 HTTP 响应，继承不可依赖；片段包装成完整文档，完整文档把 meta 注入其 `<head>`（已有 CSP 绝不重复）。Tier1 额外注入 `content-visibility` 延迟渲染样式与 `dshBridge` 能力桥客户端。
 - `attachBridge`（html-bridge.ts）：Tier1 帧的唯一出口——每条 `postMessage` 都校验（`event.source` 必须是受控 iframe、`fn` 在白名单、参数形状检查）后才执行 `openLink`（仅 https、`noopener,noreferrer`）、`copy`（异步剪贴板 + execCommand 回退）、`download`（仅 data:）；错误回回复、绝不在宿主抛异常。
-- FilePreviewPane：渲染默认静态；含脚本文档提供「运行脚本」分段，弹出一次性确认；确认后 iframe 切到 `sandbox="allow-scripts"`——**绝不 `allow-same-origin`**，保住 opaque origin（连同 Site Isolation 进程隔离）。10s 看门狗在 iframe 无 load 时提示源码视图或浏览器打开。
+- FilePreviewPane：渲染默认静态；含脚本文档提供「运行脚本」分段，弹出一次性确认；确认后 iframe 切到 `sandbox="allow-scripts"`——**绝不 `allow-same-origin`**，保住 opaque origin（连同 Site Isolation 进程隔离）。提供**全屏**按钮把 html iframe 送进 Fullscreen API（HTML/3D 预览需要更大画布）。看门狗只在渲染可能真卡住时提示源码视图/浏览器打开——大文档（>256 KiB）或脚本档（CDN 网络）；小文档静态渲染是同步的，且被拦脚本的静态帧永不触发 `load`（Chrome 一直挂着），无条件定时器是纯噪音（验收误报"渲染超时"即此）。
 
 ## 备选方案
 
