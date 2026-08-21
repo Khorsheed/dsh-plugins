@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertNoStaleTypes, filesDeclaredExtras, rescopePackageJson, rewriteNames } from './pack-dist.ts'
+import { assertNoStaleTypes, filesDeclaredExtras, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
+
+/** Recursively list a directory's files as relative paths. */
+function walkDir(dir: string, prefix = ''): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir)) {
+    const rel = prefix === '' ? entry : join(prefix, entry)
+    const abs = join(dir, entry)
+    if (statSync(abs).isDirectory()) out.push(...walkDir(abs, rel))
+    else out.push(rel)
+  }
+  return out
+}
 
 describe('rescopePackageJson', () => {
   it('rescopes name/version, carets workspace ranges, drops repo-only fields', () => {
@@ -141,6 +154,68 @@ describe('assertNoStaleTypes', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pack-dist-spec-'))
     try {
       expect(() => assertNoStaleTypes(dir)).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('verifyTarball', () => {
+  function stage(files: Record<string, string>) {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-verify-'))
+    for (const [rel, text] of Object.entries(files)) {
+      mkdirSync(join(dir, rel, '..'), { recursive: true })
+      writeFileSync(join(dir, rel), text)
+    }
+    return dir
+  }
+  function pack(dir: string): string {
+    // bsdtar has no --transform: build the package/ prefix in a scratch dir so
+    // the staging tree itself stays untouched.
+    const scratch = mkdtempSync(join(tmpdir(), 'pack-dist-pack-'))
+    const pkgDir = join(scratch, 'package')
+    for (const rel of walkDir(dir)) {
+      mkdirSync(join(pkgDir, rel, '..'), { recursive: true })
+      copyFileSync(join(dir, rel), join(pkgDir, rel))
+    }
+    const tgz = join(scratch, 'out.tgz')
+    execFileSync('tar', ['-czf', tgz, '-C', scratch, 'package'])
+    return tgz
+  }
+
+  it('passes a complete, well-declared tarball', () => {
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x', dependencies: { '@khorsheed/dsh-core': '^0.1.0' } }),
+      'lib/index.js': "import '@khorsheed/dsh-core'; import '@khorsheed/dsh-x/types';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails when a staged file is missing from the tarball', () => {
+    const dir = stage({ 'package.json': '{}', 'lib/index.js': '' })
+    const tgz = pack(dir)
+    try {
+      // A file that reaches staging after packing is by definition missing
+      // from the tarball (the files-field gap this check exists for).
+      mkdirSync(join(dir, 'skills/s'), { recursive: true })
+      writeFileSync(join(dir, 'skills/s/SKILL.md'), '# s')
+      expect(() => verifyTarball(tgz, dir, '@khorsheed/dsh-x')).toThrow(/missing from the tarball.*SKILL\.md/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails on a family reference with no manifest edge', () => {
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x' }),
+      'lib/index.js': "import '@khorsheed/dsh-core';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).toThrow(/without manifest edges.*dsh-core/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

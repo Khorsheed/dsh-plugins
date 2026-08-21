@@ -268,9 +268,55 @@ export function packDist(options: PackDistOptions): string {
       throw new Error(`pack-dist: source-scope names survived the rewrite: ${leftovers.join(', ')}`)
     }
 
-    return execFileSync('pnpm', ['pack', '--pack-destination', outDir], { cwd: staging, encoding: 'utf8' }).trim()
+    const packOut = execFileSync('pnpm', ['pack', '--pack-destination', outDir], { cwd: staging, encoding: 'utf8' }).trim()
+    // pnpm pack prints a "Tarball Details" block; the path is the .tgz line.
+    const tarball = packOut.split('\n').map(line => line.trim()).find(line => line.endsWith('.tgz'))
+    if (tarball === undefined) throw new Error(`pack-dist: pnpm pack output carried no .tgz path: ${packOut}`)
+    verifyTarball(tarball, staging, distName)
+    return tarball
   } finally {
     rmSync(staging, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Post-pack verification. The tarball — not the staging dir — is what consumers
+ * boot, so the artifact itself is checked:
+ *
+ *   1. completeness — every staged file must be in the tarball (files-field
+ *      enumerations, glob gaps, and hashed-chunk misses all surface here;
+ *      learned when `skills/**` globs were silently dropped and when a hashed
+ *      tsdown chunk no files entry covered)
+ *   2. family edges — every `@khorsheed/*` name referenced by lib artifacts or
+ *      the bundle patch must have a dependencies/peerDependencies entry in the
+ *      staged manifest (the core/companion auto-mount contract)
+ */
+export function verifyTarball(tarball: string, staging: string, selfName: string): void {
+  const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
+  const packed = new Set(listing.split('\n').map(line => line.replace(/^package\//, '').trim()).filter(Boolean))
+  // Sourcemaps and incremental state are optional artifacts — not shipping
+  // them is correct, so they are outside the must-ship set.
+  const optional = (file: string): boolean => file.endsWith('.map') || file.endsWith('.tsbuildinfo')
+  const missing = walk(staging).filter(file => !optional(file) && !packed.has(relative(staging, file)))
+  if (missing.length > 0) {
+    throw new Error(`pack-dist: staged files missing from the tarball: ${missing.join(', ')}`)
+  }
+
+  const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
+  const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
+  const referenced = new Set<string>()
+  for (const file of walk(staging).filter(f => f.endsWith('.js') || f.endsWith('.d.ts') || f.endsWith('.yml'))) {
+    const text = readFileSync(file, 'utf8')
+    // Comments are not edges: a patch or artifact may mention a companion by
+    // name without depending on it (the host/client pair documents each other).
+    const effective = file.endsWith('.yml')
+      ? text.split('\n').filter(line => !line.trimStart().startsWith('#')).join('\n')
+      : text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1')
+    for (const m of effective.matchAll(/@khorsheed\/[a-z0-9-]+/g)) referenced.add(m[0])
+  }
+  const undeclared = [...referenced].filter(name => name !== selfName && !declared.has(name))
+  if (undeclared.length > 0) {
+    throw new Error(`pack-dist: family references without manifest edges: ${undeclared.join(', ')}`)
   }
 }
 

@@ -58,6 +58,12 @@ jobs:
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
 
+      # Packing is where artifact-level regressions surface (dropped globs,
+      # missing hashed chunks, lost family edges) — pack every bundle package
+      # so they fail here, not on a prod boot.
+      - name: Pack all bundles (artifact verification)
+        run: pnpm exec tsx scripts/pack-all-dist.ts
+
       - name: Repo hygiene (full tree)
         run: pnpm check:hygiene --all
 
