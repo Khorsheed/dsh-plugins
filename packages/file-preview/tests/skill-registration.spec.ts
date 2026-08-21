@@ -47,10 +47,17 @@ describe('3d-artifact skill registration', () => {
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
   })
 
-  it('skips registration when the skills service is absent', () => {
+  it('skips registration when the skills service is absent — with a boot-log warning', () => {
     const ctx = new Context()
     Object.assign(ctx, { fs: fsStub })
+    const warn = vi.fn()
+    Object.assign(ctx, { logger: { warn } })
     expect(() => new FilePreviewService(ctx)).not.toThrow()
+    // A silent skip would hide a host-API migration that dropped/renamed the
+    // skills service; the warn is the discoverability line (same diagnostic
+    // as ankh-guard's restart-skill registration).
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('skills capability absent'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('3d-artifact skill is not registered'))
   })
 })
 

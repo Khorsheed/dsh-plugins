@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-3d-artifact-skill-registration.md
-.agents/notes/implemented/feature/2026-08-21-3d-artifact-skill-registration.md: 129b8d3beea8c6b043488b4bd94ee9e836210225
-.agents/notes/implemented/feature/2026-08-21-3d-artifact-skill-registration.zh.md: d5c2d2a4efbb293ff784b615f163d181451c919b
+.agents/notes/implemented/feature/2026-08-21-3d-artifact-skill-registration.md: 1e6691b7fc5a64f79759d186bf85039ef0c6e24b
+.agents/notes/implemented/feature/2026-08-21-3d-artifact-skill-registration.zh.md: 9979e31453bc6a4911177d6bac91fe1b43ce4e21

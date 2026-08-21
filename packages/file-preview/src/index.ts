@@ -49,7 +49,15 @@ interface SkillRegistrySlice {
  */
 function registerArtifactSkill(ctx: Context): void {
   const skills = ctx.get('skills') as SkillRegistrySlice | undefined
-  if (skills === undefined) return
+  if (skills === undefined) {
+    // Not a crash: file preview degrades without the skill (and a minimal
+    // composition may legitimately lack the capability). The line exists so a
+    // host-API migration that drops or renames the skills service shows up in
+    // boot logs instead of failing silently — same diagnostic as ankh-guard's
+    // restart-skill registration; grep "skill .* not registered".
+    ctx.logger.warn('file-preview: skills capability absent — the 3d-artifact skill is not registered')
+    return
+  }
   try {
     const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact', 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
