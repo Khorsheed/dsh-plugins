@@ -120,7 +120,7 @@ function HtmlRenderView(props: {
           title={t('preview.exitFullscreen')}
           onClick={() => { void document.exitFullscreen?.() }}
         >
-          <IconCloseOutline16 size={14} />
+          <IconCloseOutline16 size={12} />
         </button>
       )}
     </div>
