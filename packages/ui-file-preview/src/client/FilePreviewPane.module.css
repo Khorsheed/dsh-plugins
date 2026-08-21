@@ -210,13 +210,13 @@
   z-index: 9999;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid rgba(88, 196, 255, 0.5);
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(88, 196, 255, 0.45);
   border-radius: 6px;
-  background: rgba(15, 17, 21, 0.85);
-  font-size: 12px;
-  line-height: 20px;
+  background: rgba(15, 17, 21, 0.82);
   color: #7fd4ff;
   cursor: pointer;
 }

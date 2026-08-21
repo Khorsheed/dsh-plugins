@@ -618,7 +618,8 @@ describe('FilePreviewView', () => {
     // The in-frame exit control lives inside the fullscreened wrapper (the
     // toolbar one also flips, but only the wrapper is visible in fullscreen).
     const inFrame = document.querySelector('iframe')!.parentElement!.querySelector('button')
-    expect(inFrame?.textContent).toBe('preview.exitFullscreen')
+    expect(inFrame?.getAttribute('aria-label')).toBe('preview.exitFullscreen')
+    expect(inFrame?.querySelector('svg')).toBeTruthy()
     act(() => { inFrame!.click() })
     expect(exitFullscreen).toHaveBeenCalled()
   })

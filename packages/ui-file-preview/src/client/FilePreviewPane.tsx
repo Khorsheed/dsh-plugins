@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
-import { CodeBlock, DiffBlock, MarkdownText, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, DiffBlock, MarkdownText, IconCloseOutline16, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { isHtmlPath, languageFor } from './path-utils.ts'
 import { buildSrcDoc } from './html-src-doc.ts'
@@ -116,10 +116,11 @@ function HtmlRenderView(props: {
         <button
           type="button"
           className={css.htmlFrameExit}
+          aria-label={t('preview.exitFullscreen')}
+          title={t('preview.exitFullscreen')}
           onClick={() => { void document.exitFullscreen?.() }}
         >
-          <IconFullscreenOutline16 size={14} />
-          {t('preview.exitFullscreen')}
+          <IconCloseOutline16 size={14} />
         </button>
       )}
     </div>
