@@ -30,6 +30,7 @@
   },
   "files": [
     "lib/*.js",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml"
   ],
@@ -48,8 +49,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.1-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
@@ -76,7 +77,8 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning"
+      "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning",
+      "verifiedHost": "0.1.1-rc.1"
     }
   },
   "bin": {
