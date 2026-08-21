@@ -309,3 +309,44 @@ function atomicWrite(file: string, content: string): void {
   writeFileSync(tmp, content)
   renameSync(tmp, file)
 }
+
+/** The plugin's skill-registration outcome, rewritten at every boot. */
+export interface SkillRegistrationRecord {
+  /** Whether the restart-protocol skill is in the skill catalog. */
+  registered: boolean
+  /** Why registration was skipped/failed, when registered is false. */
+  reason?: string
+  /** Epoch milliseconds of this boot's attempt. */
+  at: number
+}
+
+/**
+ * Persist the skill-registration outcome (atomic, best-effort). A migration
+ * or repackaging that drops the skill is otherwise invisible until someone
+ * notices the catalog entry missing — this record lets `check-env` surface it.
+ * @param stateDir - state directory.
+ * @param record - the outcome of this boot's registration attempt.
+ */
+export function writeSkillRegistration(stateDir: string, record: SkillRegistrationRecord): void {
+  try {
+    mkdirSync(stateDir, { recursive: true })
+    atomicWrite(stateFile(stateDir, 'skillRegistration'), `${JSON.stringify(record)}\n`)
+  } catch {
+    // Best-effort: the marker is an observability aid, never a boot blocker.
+  }
+}
+
+/**
+ * Read the skill-registration record, or null when absent/unparseable (the
+ * plugin never applied with this state dir, or predates the record).
+ * @param stateDir - state directory.
+ * @returns the record, or null.
+ */
+export function readSkillRegistration(stateDir: string): SkillRegistrationRecord | null {
+  try {
+    const record = JSON.parse(readFileSync(stateFile(stateDir, 'skillRegistration'), 'utf8')) as SkillRegistrationRecord
+    return typeof record.registered === 'boolean' && typeof record.at === 'number' ? record : null
+  } catch {
+    return null
+  }
+}

@@ -33,7 +33,7 @@ import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
 import { stateFile } from './state-files.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
-  writeInstanceLaunch,
+  writeInstanceLaunch, writeSkillRegistration,
   pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
   type RestartRecord,
 } from './restart-context.ts'
@@ -187,9 +187,15 @@ interface SkillRegistrySlice {
  * file's presence in the tarball.
  * @param ctx - plugin context.
  */
-function registerRestartSkill(ctx: Context): void {
+function registerRestartSkill(ctx: Context, stateDir: string): void {
   const skills = ctx.get('skills') as SkillRegistrySlice | undefined
-  if (skills === undefined) return
+  if (skills === undefined) {
+    // Loud, not silent: a host migration that drops/renames the skill
+    // capability must not make the protocol skill vanish without a trace.
+    ctx.logger.warn('ankh-guard: the skills service is absent in this composition — the restart-protocol skill is not registered')
+    writeSkillRegistration(stateDir, { registered: false, reason: 'skills service absent in this composition', at: Date.now() })
+    return
+  }
   try {
     const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dsh-self-restart-guard', 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
@@ -199,11 +205,14 @@ function registerRestartSkill(ctx: Context): void {
     const content = match?.[2]
     if (match === null || name === undefined || description === undefined || content === undefined) {
       ctx.logger.warn('ankh-guard: shipped SKILL.md is malformed — the restart-protocol skill is not registered')
+      writeSkillRegistration(stateDir, { registered: false, reason: 'shipped SKILL.md malformed', at: Date.now() })
       return
     }
     ctx.effect(() => skills.register({ name, description, content }))
+    writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
   } catch (error) {
     ctx.logger.warn(`ankh-guard: shipped SKILL.md unreadable (${String(error)}) — the restart-protocol skill is not registered`)
+    writeSkillRegistration(stateDir, { registered: false, reason: `shipped SKILL.md unreadable: ${String(error)}`, at: Date.now() })
   }
 }
 
@@ -263,7 +272,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   // `reportRestartContext: 'step'/'off'` silently disabled session recovery
   // (default-on!) with no warning — a misconfiguration failing silent.
   const followupReport = reportMode === 'followup'
-  registerRestartSkill(ctx)
+  registerRestartSkill(ctx, stateDir)
 
   if (followupReport || resumeInterrupted) {
     type FollowupAgent = { followup: (message: ReturnType<typeof createUserMessage>) => void }

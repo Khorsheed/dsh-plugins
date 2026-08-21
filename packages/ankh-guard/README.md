@@ -143,7 +143,7 @@ Mounted as a cordis plugin (base bundle), the same surface is available as the `
 
 ## Model Experience
 
-A shipped skill, plus two followup messages, no tool schema. The `dsh-self-restart-guard` skill is registered at apply (compositions without the skill capability skip it): the full restart protocol rides the skill catalog, so an agent discovers it exactly when a task involves restarting the instance — no per-session push notice. After a restart, the restart report / interrupted-session continuation reaches only the initiating session and the sessions the restart interrupted, as plugin-sourced followup user messages; every other session stays untouched.
+A shipped skill, plus two followup messages, no tool schema. The `dsh-self-restart-guard` skill is registered at apply: the full restart protocol rides the skill catalog, so an agent discovers it exactly when a task involves restarting the instance — no per-session push notice. Every boot records the registration outcome (`skill-registration.json`), surfaced as the `skill:` line in `check-env`, and a composition without the skill capability now warns in the boot log — a migration or repackaging that drops the skill shows up there instead of vanishing silently. After a restart, the restart report / interrupted-session continuation reaches only the initiating session and the sessions the restart interrupted, as plugin-sourced followup user messages; every other session stays untouched.
 
 #### KV Cache effect
 

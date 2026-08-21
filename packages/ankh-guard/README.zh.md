@@ -143,7 +143,7 @@ dsh-ankh-guard restart \
 
 ## Model Experience
 
-一个随包 skill，加两条 followup 消息，无工具 schema。`dsh-self-restart-guard` skill 在 apply 时注册（无 skill 能力的组合自动跳过）：完整重启协议挂在 skill catalog 上，agent 在涉及重启实例的任务里按需发现——没有逐会话的推送通知。重启后，重启报告/被中断会话的续跑只到达发起会话和被中断的会话，以插件来源的 followup 用户消息形式注入；其余会话完全无感。
+一个随包 skill，加两条 followup 消息，无工具 schema。`dsh-self-restart-guard` skill 在 apply 时注册：完整重启协议挂在 skill catalog 上，agent 在涉及重启实例的任务里按需发现——没有逐会话的推送通知。每次 boot 都会记录注册结果（`skill-registration.json`)，在 `check-env` 的 `skill:` 行可见；无 skill 能力的组合现在会在启动日志告警——迁移或重打包把 skill 弄丢时会在这里现形，而不是无声消失。重启后，重启报告/被中断会话的续跑只到达发起会话和被中断的会话，以插件来源的 followup 用户消息形式注入；其余会话完全无感。
 
 #### KV Cache effect
 

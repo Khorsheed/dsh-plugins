@@ -22,7 +22,7 @@ import { install as installInvariant } from '../src/invariant.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, pendingRestartRecord,
   readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
-  writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot,
+  writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeSkillRegistration,
 } from '../src/restart-context.ts'
 import { performExit } from '../src/exit-agent.ts'
 import { envInternals, preflightInternals, resolveHarnessRoot, resolvePreflightBin, resolveRunnerCommand, resolveWdHome, runCli, type CliIo } from '../src/cli.ts'
@@ -154,8 +154,26 @@ describe('state core', () => {
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // The registration outcome is on disk for check-env to surface.
+    const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
+    expect(marker.registered).toBe(true)
     await fiber.dispose()
     expect(disposed).toBe(true)
+  })
+
+  it('records the failure loudly when the skills service is absent (host migrations must not lose the skill silently)', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    // No skills service provided — the composition lacks the capability.
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
+    expect(marker.registered).toBe(false)
+    expect(marker.reason).toContain('skills service absent')
+    await fiber.dispose()
   })
 
   it('fails loud on a malformed state file', () => {
@@ -1613,6 +1631,18 @@ describe('supervise', () => {
       expect(text).toContain('unsandboxed')
       expect(text).toContain('supervision: NOT supervised')
       expect(text).toContain('git repo: yes')
+      // No skill-registration marker in this throwaway state: reported as absent.
+      expect(text).toContain('skill: not recorded')
+      // A registered marker surfaces as the catalog confirmation.
+      writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
+      const second = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], second.io)).toBe(0)
+      expect(second.out.join('')).toContain('skill: dsh-self-restart-guard registered')
+      // And a failure marker names the reason.
+      writeSkillRegistration(stateDir, { registered: false, reason: 'skills service absent in this composition', at: Date.now() })
+      const third = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], third.io)).toBe(0)
+      expect(third.out.join('')).toContain('skill: NOT registered (skills service absent')
     } finally {
       env.restore()
     }

@@ -31,7 +31,7 @@ import {
 } from './state.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
 import { discoverLaunchCommand, findPidOnPort, killPidTree } from './processes.ts'
-import { readInstanceLaunch, writeAdoptionRecord, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
+import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
@@ -937,6 +937,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         startLine = 'unknown — pass --start explicitly (no launch record yet; give --port for live discovery)'
       }
       io.stdout(`start: ${startLine}\n`)
+      const skillReg = readSkillRegistration(stateDir)
+      io.stdout(`skill: ${skillReg === null
+        ? 'not recorded (the plugin has not booted with this state dir, or predates the record)'
+        : skillReg.registered
+          ? 'dsh-self-restart-guard registered in the skill catalog'
+          : `NOT registered (${skillReg.reason ?? 'unknown reason'}) — the restart protocol will not surface in the skill catalog`}\n`)
       io.stdout(`git repo: ${currentHead(repoDir) !== null
         ? `yes (${repoDir})`
         : `no (${repoDir}) — git init + initial commit before record`}\n`)
