@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-datasets-m2-remote-tab.md
-.agents/notes/implemented/feature/2026-08-19-datasets-m2-remote-tab.md: 7d430135473b6f6f79a336dfcf1102eeaf2aeb85
-.agents/notes/implemented/feature/2026-08-19-datasets-m2-remote-tab.zh.md: 3ee9f870ba471bf73a6707ad775b8d2a92fcce25
+.agents/notes/implemented/feature/2026-08-19-datasets-m2-remote-tab.md: 6f2b724d22639b100dc1f647fb4998e266b32081
+.agents/notes/implemented/feature/2026-08-19-datasets-m2-remote-tab.zh.md: 3a33198dda090ff6c24ba15dd0d4b41e1c0c31e4

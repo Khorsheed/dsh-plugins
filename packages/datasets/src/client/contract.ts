@@ -1,5 +1,6 @@
 /** Composed props contract for the datasets session tab. */
 
+import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
@@ -29,6 +30,15 @@ export interface DatasetsViewInjected {
   listDatasets: (sessionId: SessionId, dataset?: string) => Promise<RemoteResult<ListDatasetsResult | ListItemsResult>>
   /** Read one file of one item layer, from the git object (one RPC). */
   readFile: (sessionId: SessionId, query: ReadQuery) => Promise<RemoteResult<ReadResult>>
+  /** Whether the browser itself is connected over loopback (native gestures gate). */
+  isLoopback: boolean
+  hooks: {
+    /** Current generation's Host description, bound by the slot renderer. */
+    hostDescription: HostDescriptionSource
+  }
+  /** Open the host's native directory chooser (the same wire call the official
+   * directory-picker flow drives); resolves null when the operator cancels. */
+  pickDirectory: () => Promise<string | null>
 }
 
 /** Full props of the datasets view entry (runtime + store + injected + locale shares). */

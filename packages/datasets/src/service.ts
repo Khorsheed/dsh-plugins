@@ -178,6 +178,8 @@ export interface DatasetsService {
   snapshot(scope: DatasetScope, datasetId: string, commit?: string): Promise<DatasetSnapshot>
   worktreePath(scope: DatasetScope, datasetId: string, options?: WorktreeOptions): Promise<ManagedWorktree>
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>
+  /** Fail loud unless `repo` is inside a git work tree (the tab's bind-time check). */
+  assertRepository(repo: string): Promise<void>
   /** Record a binding for a live session (slash/tab path). */
   bind(session: BindingSession, binding: DatasetBinding): DatasetBinding
   /** Clear a live session's binding. */
@@ -423,6 +425,10 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
         await writeOne(`${itemDir(input.dataset, input.item)}/${file.layer}/${rel}`, file.content)
       }
       return { written }
+    },
+
+    async assertRepository(repo) {
+      await toplevelOf(repo)
     },
 
     bind(session, binding) {

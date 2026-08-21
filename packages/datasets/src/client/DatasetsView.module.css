@@ -84,6 +84,12 @@
   gap: 8px;
 }
 
+/* The one-tap repo sources: current workspace / native chooser. */
+.bindShortcuts {
+  display: flex;
+  gap: 8px;
+}
+
 .body {
   display: flex;
   flex: 1;

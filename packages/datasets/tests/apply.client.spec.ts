@@ -32,20 +32,26 @@ async function bench(options: { mountFails?: boolean } = {}) {
   ctx.provide('remote', remoteService as never)
   const remote = remoteStub()
   ctx.provide('remote.datasets', remote as never)
+  const workspaces = { pickDirectory: vi.fn(async () => '/picked') }
+  ctx.provide('workspaces', workspaces as never)
+  ctx.provide('connection', {
+    isLoopback: true,
+    hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
+  } as never)
   const slots = ctx.get('slots') as SlotRegistry
   // The view ring as ui-conversation declares it in production.
   slots.register({
     name: 'root',
     children: { 'conversation.view': { kind: 'list', scope: 'session' } },
   } as never, () => null)
-  return { ctx, slots, remote, remoteService }
+  return { ctx, slots, remote, remoteService, workspaces }
 }
 
 describe('datasets client apply', () => {
   afterEach(() => { document.head.innerHTML = '' })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'remote', 'locale'])
+    expect(inject).toEqual(['slots', 'remote', 'locale', 'workspaces', 'connection'])
   })
 
   it('mounts the Remote and registers the datasets view entry', async () => {
@@ -89,6 +95,17 @@ describe('datasets client apply', () => {
     const query = { dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md' }
     await face.readFile('s1', query)
     expect(remote.read).toHaveBeenCalledWith('s1', query)
+  })
+
+  it('the face routes the native directory pick through the workspaces service', async () => {
+    const { ctx, slots, workspaces } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
+    expect(face.isLoopback).toBe(true)
+    expect(face.hooks.hostDescription.getSnapshot()).toEqual({ canOpenPath: true })
+    await expect(face.pickDirectory()).resolves.toBe('/picked')
+    expect(workspaces.pickDirectory).toHaveBeenCalledTimes(1)
   })
 
   it('collapses the view entry on teardown', async () => {

@@ -34,6 +34,7 @@ interface Harness {
   unbindSession: ReturnType<typeof vi.fn>
   listDatasets: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
+  pickDirectory: ReturnType<typeof vi.fn>
 }
 
 const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
@@ -66,17 +67,22 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
       { ok: true, value: dataset === undefined ? DATASETS : ITEMS }
     )),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
+    pickDirectory: vi.fn(async () => '/picked-repo'),
   }
 }
 
-function renderView(h: Harness) {
+function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
+  const canPick = opts.canPick ?? true
   const props = {
     sessionId: 's1' as SessionId,
     useSession: undefined,
     useInput: undefined,
     inputActions: undefined,
     useProjection: undefined,
-    useSessions: undefined,
+    useSessions: ((sel: (s: unknown) => unknown) => sel({
+      current: 's1',
+      byId: { s1: { cwd: '/work' } },
+    })) as never,
     useWorkspaces: undefined,
     useStore: hookOf(h.instance),
     actions: h.actions,
@@ -85,6 +91,9 @@ function renderView(h: Harness) {
     unbindSession: h.unbindSession,
     listDatasets: h.listDatasets,
     readFile: h.readFile,
+    isLoopback: canPick,
+    useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
+    pickDirectory: h.pickDirectory,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -144,6 +153,14 @@ describe('DatasetsView', () => {
     })
   })
 
+  it('a failed binding fetch settles the bar instead of loading forever', async () => {
+    const h = makeHarness()
+    h.fetchBinding.mockResolvedValue({ ok: false, error: { code: 'internal', message: 'resume failed' } })
+    renderView(h)
+    expect(await screen.findByText('binding.none')).toBeTruthy()
+    expect(await screen.findByText(/list\.error/)).toBeTruthy()
+  })
+
   it('bind form submits the parsed binding and refreshes', async () => {
     const h = makeHarness(null)
     renderView(h)
@@ -198,6 +215,34 @@ describe('DatasetsView', () => {
     // The JsonTree inspector renders the parsed keys, not the source text.
     expect(await screen.findByText('difficulty:')).toBeTruthy()
     expect(screen.queryByText('\"tags\"')).toBeNull()
+  })
+
+  it('the use-workspace shortcut fills the repo field with the session cwd', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.click(screen.getByText('binding.form.useWorkspace'))
+    expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/work')
+  })
+
+  it('browse fills the repo field through the native chooser, and hides without the capability', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.click(screen.getByText('binding.form.browse'))
+    await waitFor(() => {
+      expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/picked-repo')
+    })
+    expect(h.pickDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it('the browse button hides when the host cannot show a native chooser', async () => {
+    const h = makeHarness(null)
+    renderView(h, { canPick: false })
+    fireEvent.click(await screen.findByText('binding.bind'))
+    expect(screen.queryByText('binding.form.browse')).toBeNull()
+    // The workspace shortcut stays — it needs no native capability.
+    expect(screen.getByText('binding.form.useWorkspace')).toBeTruthy()
   })
 
   it('a failed read surfaces the error message', async () => {

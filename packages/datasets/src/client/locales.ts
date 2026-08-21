@@ -17,6 +17,8 @@ export type DatasetsKey =
   | 'binding.form.repo'
   | 'binding.form.datasets'
   | 'binding.form.layers'
+  | 'binding.form.useWorkspace'
+  | 'binding.form.browse'
   | 'binding.form.submit'
   | 'binding.form.cancel'
   | 'list.loading'
@@ -62,6 +64,8 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.form.repo': '仓库路径（git 仓库）',
   'binding.form.datasets': '数据集白名单，逗号分隔（留空为全部）',
   'binding.form.layers': 'layers 白名单，逗号分隔（留空为全部）',
+  'binding.form.useWorkspace': '使用当前工作区',
+  'binding.form.browse': '浏览…',
   'binding.form.submit': '确认',
   'binding.form.cancel': '取消',
   'list.loading': '加载中…',
@@ -101,6 +105,8 @@ export const en: Record<DatasetsKey, string> = {
   'binding.form.repo': 'Repository path (a git repository)',
   'binding.form.datasets': 'Dataset whitelist, comma-separated (empty = all)',
   'binding.form.layers': 'Layer whitelist, comma-separated (empty = all)',
+  'binding.form.useWorkspace': 'Use current workspace',
+  'binding.form.browse': 'Browse…',
   'binding.form.submit': 'Confirm',
   'binding.form.cancel': 'Cancel',
   'list.loading': 'Loading…',

@@ -91,9 +91,16 @@ function BindingForm(props: {
   initial: DatasetBinding | null
   onSubmit: (binding: DatasetBinding) => void
   onCancel: () => void
+  /** The session workspace's directory, when one exists (the one-tap option). */
+  currentCwd: string | undefined
+  /** Whether the host can show its native directory chooser. */
+  canPick: boolean
+  pickDirectory: () => Promise<string | null>
+  /** A bind failure to surface inside the form. */
+  notice: string | null
   t: DatasetsViewProps['t']
 }) {
-  const { initial, onSubmit, onCancel, t } = props
+  const { initial, onSubmit, onCancel, currentCwd, canPick, pickDirectory, notice, t } = props
   const [repo, setRepo] = useState(initial?.repoPath ?? '')
   const [datasets, setDatasets] = useState(initial?.datasets?.join(', ') ?? '')
   const [layers, setLayers] = useState(initial?.layers?.join(', ') ?? '')
@@ -120,6 +127,26 @@ function BindingForm(props: {
         placeholder={t('binding.form.repo')}
         aria-label={t('binding.form.repo')}
       />
+      <div className={css.bindShortcuts}>
+        {currentCwd !== undefined && (
+          <Button type="button" size="sm" onClick={() => { setRepo(currentCwd) }}>
+            {t('binding.form.useWorkspace')}
+          </Button>
+        )}
+        {canPick && (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              void pickDirectory().then((picked) => {
+                if (picked !== null) setRepo(picked)
+              })
+            }}
+          >
+            {t('binding.form.browse')}
+          </Button>
+        )}
+      </div>
       <Input
         value={datasets}
         onChange={event => { setDatasets(event.target.value) }}
@@ -136,6 +163,7 @@ function BindingForm(props: {
         <Button type="submit" variant="primary" size="sm">{t('binding.form.submit')}</Button>
         <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
       </div>
+      {notice !== null && <div className={css.notice}>{notice}</div>}
     </form>
   )
 }
@@ -227,9 +255,11 @@ function ItemNode(props: {
  */
 export function DatasetsView(props: DatasetsViewProps) {
   const {
-    sessionId, useStore, actions, t,
+    sessionId, useSessions, useStore, actions, t,
     fetchBinding, bindSession, unbindSession, listDatasets, readFile,
+    isLoopback, pickDirectory,
   } = props
+  const { useHostDescription } = props
   const binding = useStore(s => s.binding)
   const bindingLoaded = useStore(s => s.bindingLoaded)
   const notice = useStore(s => s.notice)
@@ -246,6 +276,8 @@ export function DatasetsView(props: DatasetsViewProps) {
   const previewError = useStore(s => s.previewError)
   // Component-private view state: whether the bind/edit form is open.
   const [formOpen, setFormOpen] = useState(false)
+  const currentCwd = useSessions(s => s.byId[sessionId]?.cwd)
+  const canPick = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   // Fetch the binding on mount and after bind/unbind refreshes, then the
   // dataset list of the bound scope; a stale request is dropped on cleanup.
@@ -257,6 +289,11 @@ export function DatasetsView(props: DatasetsViewProps) {
       if (cancelled) return
       if (!result.ok) {
         actions.setListLoading(false)
+        // Settle the bar too: an unanswerable binding read must not leave the
+        // tab on "loading" forever (a dead session errors on every fetch).
+        // setBinding resets the list error as part of its cascade, so the
+        // error goes on after it.
+        actions.setBinding(null)
         actions.setListError(result.error.message)
         return
       }
@@ -372,12 +409,16 @@ export function DatasetsView(props: DatasetsViewProps) {
               </Button>
             </div>
           )}
-        {notice !== null && <div className={css.notice}>{notice}</div>}
+        {notice !== null && !formOpen && <div className={css.notice}>{notice}</div>}
         {formOpen && (
           <BindingForm
             initial={binding}
             onSubmit={submitBinding}
             onCancel={() => { setFormOpen(false) }}
+            currentCwd={currentCwd}
+            canPick={canPick}
+            pickDirectory={pickDirectory}
+            notice={notice}
             t={t}
           />
         )}
