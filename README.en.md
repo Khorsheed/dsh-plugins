@@ -34,15 +34,15 @@ One capability per row; capabilities of the same plugin are grouped together (em
 | Plugin | Capability | Screenshot |
 | --- | --- | --- |
 | **Dialog control** |||
-| `dsh-client-message-tools`<br>edit / withdraw / restore | Edit: in-place surface replacement, the model reads the new text in place (real model chip, edit chains) | <img src="docs/screenshots/04-message-actions.png" width="360"> |
+| `dsh-client-message-tools`<br>edit / withdraw / restore | Edit: in-place surface replacement, the model reads the new text in place (real model chip, edit chains) | <img src="docs/screenshots/message-actions1.png" width="360"> |
 | | Withdraw: real withdrawal via surface replacement, shadowed span leaves the model context, 「已撤回 N 条消息」 divider, original backfilled to the draft | |
 | | Restore: tail replay along the authoritative boundary (`sourceEventSeqs`), rendered as a 「已恢复」 group | |
-| `dsh-message-timeline`<br>history timeline | Floating rail on the chat scrollport's left edge: one row per loaded user message, ticks at rest, hover reveals, click jumps, follows the reading position | <img src="docs/screenshots/02-message-timeline.png" width="360"> |
-| `dsh-client-session-title-edit`<br>inline title editing | Pencil beside the title → inline editor, Enter commits / Escape cancels, rides the official `session.rename`, pins user-sourced titles | <img src="docs/screenshots/03-session-title-edit.png" width="360"> |
+| `dsh-message-timeline`<br>history timeline | Floating rail on the chat scrollport's left edge: one row per loaded user message, ticks at rest, hover reveals, click jumps, follows the reading position | <img src="docs/screenshots/message-timeline1.png" width="360"> |
+| `dsh-client-session-title-edit`<br>inline title editing | Pencil beside the title → inline editor, Enter commits / Escape cancels, rides the official `session.rename`, pins user-sourced titles | <img src="docs/screenshots/session-title-edit1.png" width="360"> |
 | **File preview** |||
 | `dsh-file-preview` (host service) | Read-only Remote service: `list` folds the session's written/edited files (nested Code Mode included) with every change's diff, `read` serves current content (images as browser URLs) | — |
-| `dsh-client-ui-file-preview` (UI) | 「产物」tab: file list, most recently active first | <img src="docs/screenshots/05-file-preview-tab.png" width="360"> |
-| | Inline content preview: select a file to read it, change-history tab steps through diffs, content search highlights and jumps | <img src="docs/screenshots/06-file-preview.png" width="360"> |
+| `dsh-client-ui-file-preview` (UI) | 「产物」tab: file list, most recently active first | <img src="docs/screenshots/file-preview3.png" width="360"> |
+| | Inline content preview: select a file to read it, change-history tab steps through diffs, content search highlights and jumps | <img src="docs/screenshots/file-preview1.png" width="360"> |
 | | Per-turn mutation card + file drawer: 「N 个文件已修改」 summary after each finished turn; content-only drawer with show-in-folder / open-in-IDE gestures | — |
 | **Local coding-agent family** |||
 | `dsh-local-agent` (family core) | Scoped homes: each harness runs under its own `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`, never touching personal config or credentials | — |
@@ -53,12 +53,12 @@ One capability per row; capabilities of the same plugin are grouped together (em
 | `dsh-local-agent-claude-code` | Claude Code harness: `claude -p --output-format json` delegation, project-file records, resume continuation | — |
 | `dsh-local-agent-tool-subagent` | Family delegation tool: the official `subagent_*` schema plus optional `resume` (handle never travels in the prompt, validated per parent+provider) | — |
 | **Task & subagent monitoring** |||
-| `dsh-taskpilot` | Background-job pill: running first, ticking every second, stop button | <img src="docs/screenshots/09-taskpilot.png" width="360"> |
+| `dsh-taskpilot` | Background-job pill: running first, ticking every second, stop button | <img src="docs/screenshots/taskpilot1.png" width="360"> |
 | | Subagent pill: full lineage, duration and token readouts, interrupt button (deep children authorized via their direct parent) | — |
 | | Detail drawer: command/type/status/times plus a trajectory replayed from the session log | — |
 | **Status ambience** |||
-| `dsh-whalesong` | Favicon waterline bubbles: the tab icon animates while any session runs | <img src="docs/screenshots/whalesong-favicon.svg" width="48"> |
-| | Sidebar droplets: the sidebar whale spouts while a task runs (respects `prefers-reduced-motion`) | <img src="docs/screenshots/10-whalesong.png" width="200"> |
+| `dsh-whalesong` | Favicon waterline bubbles: the tab icon animates while any session runs | <img src="docs/screenshots/whalesong1.png" width="360"> |
+| | Sidebar droplets: the sidebar whale spouts while a task runs (respects `prefers-reduced-motion`) | <img src="docs/screenshots/whalesong2.png" width="200"> |
 | | Chimes: three rising glides on completion / a repeated rise when blocked (WebAudio) | — |
 | **Productivity** |||
 | `dsh-ui-shortcuts` | Three fixed actions, your keys: pause (Esc), steer-send (Ctrl/Cmd+S), new session (Ctrl/Cmd+O) | <img src="docs/screenshots/07-ui-shortcuts.png" width="360"> |

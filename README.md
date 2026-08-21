@@ -34,15 +34,15 @@
 | 插件 | 能力 | 截图 |
 | --- | --- | --- |
 | **对话控制** |||
-| `dsh-client-message-tools`<br>消息编辑 / 撤回 / 恢复 | 编辑:原位替换,模型在原位置读到新文本(带模型 chip,支持编辑链) | <img src="docs/screenshots/04-message-actions.png" width="360"> |
+| `dsh-client-message-tools`<br>消息编辑 / 撤回 / 恢复 | 编辑:原位替换,模型在原位置读到新文本(带模型 chip,支持编辑链) | <img src="docs/screenshots/message-actions1.png" width="360"> |
 | | 撤回:surface 替换,目标消息及其后内容离开模型上下文,投影为「已撤回 N 条消息」分隔线,原文回填草稿 | |
 | | 恢复:沿权威边界(`sourceEventSeqs`)尾部重放,渲染「已恢复」组 | |
-| `dsh-message-timeline`<br>历史消息时间轴 | 会话左缘悬浮时间轴:一行一条已加载用户消息,静止只显刻度,悬停展开、点击跳转、跟随阅读位置 | <img src="docs/screenshots/02-message-timeline.png" width="360"> |
-| `dsh-client-session-title-edit`<br>标题内联编辑 | 标题旁铅笔 → 内联输入,Enter 提交 / Esc 取消,走官方 `session.rename`,钉住用户来源标题 | <img src="docs/screenshots/03-session-title-edit.png" width="360"> |
+| `dsh-message-timeline`<br>历史消息时间轴 | 会话左缘悬浮时间轴:一行一条已加载用户消息,静止只显刻度,悬停展开、点击跳转、跟随阅读位置 | <img src="docs/screenshots/message-timeline1.png" width="360"> |
+| `dsh-client-session-title-edit`<br>标题内联编辑 | 标题旁铅笔 → 内联输入,Enter 提交 / Esc 取消,走官方 `session.rename`,钉住用户来源标题 | <img src="docs/screenshots/session-title-edit1.png" width="360"> |
 | **文件预览** |||
 | `dsh-file-preview`(宿主服务) | 只读 Remote 服务:`list` 折叠会话写入/编辑的文件(含嵌套 Code Mode)与每次改动的 diff,`read` 提供当前内容(图片走浏览器 URL) | — |
-| `dsh-client-ui-file-preview`(界面) | 「产物」tab:文件列表按最近活动倒序 | <img src="docs/screenshots/05-file-preview-tab.png" width="360"> |
-| | 文件内容预览:选中即看,改动记录逐条步进 diff,内容搜索高亮跳转 | <img src="docs/screenshots/06-file-preview.png" width="360"> |
+| `dsh-client-ui-file-preview`(界面) | 「产物」tab:文件列表按最近活动倒序 | <img src="docs/screenshots/file-preview3.png" width="360"> |
+| | 文件内容预览:选中即看,改动记录逐条步进 diff,内容搜索高亮跳转 | <img src="docs/screenshots/file-preview1.png" width="360"> |
 | | 回合变更卡片 + 文件抽屉:每个已完成回合末尾「N 个文件已修改」汇总;抽屉仅内容预览,支持「在文件夹中打开 / 在 IDE 中打开」 | — |
 | **本地编码 Agent 家族** |||
 | `dsh-local-agent`(家族核心) | 作用域 home:每个 harness 独立 `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`,不碰个人配置与凭据 | — |
@@ -53,12 +53,12 @@
 | `dsh-local-agent-claude-code` | Claude Code harness:`claude -p --output-format json` 委派、项目文件记录、resume 续聊 | — |
 | `dsh-local-agent-tool-subagent` | 家族委派工具:官方 `subagent_*` schema + 可选 `resume` 续聊(句柄不进 prompt,按 parent+provider 校验) | — |
 | **任务与子 Agent 监控** |||
-| `dsh-taskpilot` | 后台任务胶囊:运行中在前、每秒计时、停止按钮 | <img src="docs/screenshots/09-taskpilot.png" width="360"> |
+| `dsh-taskpilot` | 后台任务胶囊:运行中在前、每秒计时、停止按钮 | <img src="docs/screenshots/taskpilot1.png" width="360"> |
 | | 子 Agent 胶囊:完整谱系、运行时长与 token、中断按钮(深层授权直接父) | — |
 | | 详情抽屉:命令/类型/状态/耗时 + 从会话日志回放的执行轨迹 | — |
 | **状态氛围** |||
-| `dsh-whalesong` | favicon 水线气泡:任务运行时标签页图标动画 | <img src="docs/screenshots/whalesong-favicon.svg" width="48"> |
-| | 侧栏水滴:任务运行时侧栏鲸鱼喷水(尊重 `prefers-reduced-motion`) | <img src="docs/screenshots/10-whalesong.png" width="200"> |
+| `dsh-whalesong` | favicon 水线气泡:任务运行时标签页图标动画 | <img src="docs/screenshots/whalesong1.png" width="360"> |
+| | 侧栏水滴:任务运行时侧栏鲸鱼喷水(尊重 `prefers-reduced-motion`) | <img src="docs/screenshots/whalesong2.png" width="200"> |
 | | 提示音:完成三连滑音 / 阻塞上扬(WebAudio 合成) | — |
 | **效率工具** |||
 | `dsh-ui-shortcuts` | 三个固定动作 + 用户自选键位:暂停(Esc)、插队发送(Ctrl/Cmd+S)、新建会话(Ctrl/Cmd+O) | <img src="docs/screenshots/07-ui-shortcuts.png" width="360"> |
