@@ -25,48 +25,7 @@ This README is the catalog: what each plugin does, how to load it, and exactly h
 | `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 
-Versions are the current workspace lines; the npm registry may have newer ones.
-
-## Capability inventory
-
-One capability per row; capabilities of the same plugin are grouped together (empty first cells). The screenshot column currently holds captures from the production profile as placeholders — swap in your own shots whenever ready.
-
-| Plugin | Capability | Screenshot |
-| --- | --- | --- |
-| **Dialog control** |||
-| `dsh-client-message-tools`<br>edit / withdraw / restore | Edit: in-place surface replacement, the model reads the new text in place (real model chip, edit chains) | <img src="docs/screenshots/message-actions1.png" width="360"> |
-| | Withdraw: real withdrawal via surface replacement, shadowed span leaves the model context, 「已撤回 N 条消息」 divider, original backfilled to the draft | |
-| | Restore: tail replay along the authoritative boundary (`sourceEventSeqs`), rendered as a 「已恢复」 group | |
-| `dsh-message-timeline`<br>history timeline | Floating rail on the chat scrollport's left edge: one row per loaded user message, ticks at rest, hover reveals, click jumps, follows the reading position | <img src="docs/screenshots/message-timeline1.png" width="360"> |
-| `dsh-client-session-title-edit`<br>inline title editing | Pencil beside the title → inline editor, Enter commits / Escape cancels, rides the official `session.rename`, pins user-sourced titles | <img src="docs/screenshots/session-title-edit1.png" width="360"> |
-| **File preview** |||
-| `dsh-file-preview` (host service) | Read-only Remote service: `list` folds the session's written/edited files (nested Code Mode included) with every change's diff, `read` serves current content (images as browser URLs) | — |
-| `dsh-client-ui-file-preview` (UI) | 「产物」tab: file list, most recently active first | <img src="docs/screenshots/file-preview3.png" width="360"> |
-| | Inline content preview: select a file to read it, change-history tab steps through diffs, content search highlights and jumps | <img src="docs/screenshots/file-preview1.png" width="360"> |
-| | Per-turn mutation card + file drawer: 「N 个文件已修改」 summary after each finished turn; content-only drawer with show-in-folder / open-in-IDE gestures | — |
-| **Local coding-agent family** |||
-| `dsh-local-agent` (family core) | Scoped homes: each harness runs under its own `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`, never touching personal config or credentials | — |
-| | `/<harness> login / sessions / status / logout` command family (device-code / browser OAuth) | — |
-| | Settings → 本地 Agent section: roster-driven auth status, web login, sign-out | <img src="docs/screenshots/08-local-agent.png" width="360"> |
-| `dsh-local-agent-kimi` | Kimi Code harness: `kimi -p` delegation, `session_index.jsonl` records, resume continuation | — |
-| `dsh-local-agent-codex` | Codex harness: `codex exec` delegation, rollout records, resume continuation | — |
-| `dsh-local-agent-claude-code` | Claude Code harness: `claude -p --output-format json` delegation, project-file records, resume continuation | — |
-| `dsh-local-agent-tool-subagent` | Family delegation tool: the official `subagent_*` schema plus optional `resume` (handle never travels in the prompt, validated per parent+provider) | — |
-| **Task & subagent monitoring** |||
-| `dsh-taskpilot` | Background-job pill: running first, ticking every second, stop button | <img src="docs/screenshots/taskpilot1.png" width="360"> |
-| | Subagent pill: full lineage, duration and token readouts, interrupt button (deep children authorized via their direct parent) | — |
-| | Detail drawer: command/type/status/times plus a trajectory replayed from the session log | — |
-| **Status ambience** |||
-| `dsh-whalesong` | Favicon waterline bubbles: the tab icon animates while any session runs | <img src="docs/screenshots/whalesong1.png" width="360"> |
-| | Sidebar droplets: the sidebar whale spouts while a task runs (respects `prefers-reduced-motion`) | <img src="docs/screenshots/whalesong2.png" width="200"> |
-| | Chimes: three rising glides on completion / a repeated rise when blocked (WebAudio) | — |
-| **Productivity** |||
-| `dsh-ui-shortcuts` | Three fixed actions, your keys: pause (Esc), steer-send (Ctrl/Cmd+S), new session (Ctrl/Cmd+O) | <img src="docs/screenshots/07-ui-shortcuts.png" width="360"> |
-| | `ctx.shortcuts` registry: any plugin can register its own keyboard actions and get the settings row, rebinding, persistence for free | — |
-| **Ops guard** |||
-| `dsh-ankh-guard` | Green-build credential gate: a restart is allowed only after a green build + tests (credential bound to git HEAD, 10-minute window) | — |
-| | preflight composition gate: deep dry-run of the whole plugin tree in a subprocess before anything is stopped | — |
-| | Watchdog seamless restart: rollback to last-known-good, `guard-backup-*` anchors, crash page | — |
+Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
 
 ## Compatibility promise
 
