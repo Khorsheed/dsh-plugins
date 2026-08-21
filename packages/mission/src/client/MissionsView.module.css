@@ -29,25 +29,40 @@
   min-width: 0;
 }
 
+/* Filter chips follow the official toolbar-toggle convention
+   (ui-trajectory's TrajectoryToolbar): borderless 20px toggles, quiet
+   tertiary at rest, primary label + interactive-bg-hover on hover AND on
+   aria-pressed, and the business-primary focus ring. The selected state is
+   carried by aria-pressed alone (no separate class) so the semantics and the
+   visuals cannot drift apart. */
 .chip {
-  padding: 2px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  gap: 4px;
+  border: 0;
+  border-radius: 3px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+  font: var(--dsw-font-xxs-12);
 }
 
 .chip:hover {
-  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.chipActive {
-  border-color: var(--dsw-alias-border-l1);
-  background: var(--dsw-alias-bg-l2);
+.chip[aria-pressed='true'] {
   color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chip:focus-visible {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
 }
 
 .scope {

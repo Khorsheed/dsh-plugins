@@ -14,7 +14,7 @@ Status: implemented
 
 **边界类型**：Remote 请求/响应类型全部住在 `src/types.ts`，经公开的 `./types` 子路径导出（生成器的「公开非根类型子路径」规则；`./src/*` 不算）。生成的 `lib/typert.remote-client.js` import zod，故 zod 是运行时依赖（datasets 先例）。
 
-**client**（`src/client/`）：`conversation.view` 入口 id `missions`、order 35，照 datasets 解剖——inject `['slots', 'remote', 'locale']`，`$mount` 后 `ctx.get('remote.mission')` 读回，store 工厂（绝不用模块级单例），`mission` 命名空间的 zh/en 词典。视图按草图：桶 chip（多选）、run 范围选择器（默认本会话 / 全部 / 单个 run）、表格（# / 标题 / 桶 / 模板状态 / 计划阻塞 / 时长——时长取自 `enteredCurrentAt`）、每 run 的未释放警示、详情面板（attempt/检查点/注解计数）配重跑 + 释放检查 + 导出。导出对话框是闸的 web 形态：先检查（plan）→ guarded 层逐项 checkbox → 全部勾选后导出才可用。
+**client**（`src/client/`）：`conversation.view` 入口 id `missions`、order 35，照 datasets 解剖——inject `['slots', 'remote', 'locale']`，`$mount` 后 `ctx.get('remote.mission')` 读回，store 工厂（绝不用模块级单例），`mission` 命名空间的 zh/en 词典。视图按草图：桶 chip（多选）、run 范围选择器（默认本会话 / 全部 / 单个 run）、表格（# / 标题 / 桶 / 模板状态 / 计划阻塞 / 时长——时长取自 `enteredCurrentAt`）、每 run 的未释放警示、详情面板（attempt/检查点/注解计数）配重跑 + 释放检查 + 导出。导出对话框是闸的 web 形态：先检查（plan）→ guarded 层逐项 checkbox → 全部勾选后导出才可用。筛选 chip 对齐官方工具栏 toggle 惯例（ui-trajectory 的 TrajectoryToolbar）：选中态只由 `aria-pressed` 承载（不设平行 class，语义与视觉不会漂移），选中 = primary 标签色 + `interactive-bg-hover` 背景，静置 = 三级安静色，`focus-visible` = business-primary 描边——token 随主题自适应，深浅两色下选中/未选中均可辨。
 
 **构建面**：包切到 datasets 布局——solution tsconfig + `tsconfig.host.json`/`tsconfig.client.json`，tsdown 走 `clientBundle('@khorsheed/dsh-mission', [...])`，`scripts/gen-typert.mts` 注册，官方六件套 `dsh.client` inject，build 脚本 `gen-typert && tsc -b && tsdown`。
 

@@ -321,7 +321,8 @@ export function MissionsView(props: MissionsViewProps) {
         <div className={css.chips}>
           <button
             type="button"
-            className={buckets.length === 0 ? `${css.chip} ${css.chipActive}` : css.chip}
+            className={css.chip}
+            aria-pressed={buckets.length === 0}
             onClick={() => { for (const b of [...buckets]) actions.toggleBucket(b) }}
           >
             {t('filter.all')}
@@ -330,7 +331,7 @@ export function MissionsView(props: MissionsViewProps) {
             <button
               key={bucket}
               type="button"
-              className={buckets.includes(bucket) ? `${css.chip} ${css.chipActive}` : css.chip}
+              className={css.chip}
               aria-pressed={buckets.includes(bucket)}
               onClick={() => { actions.toggleBucket(bucket) }}
             >

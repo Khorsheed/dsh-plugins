@@ -128,18 +128,40 @@ describe('MissionsView', () => {
     expect(h.fetchQueue).toHaveBeenCalledWith('s1', {})
   })
 
-  it('bucket chips filter the queue request (multi-select)', async () => {
+  it('bucket chips filter the queue request (multi-select) with aria-pressed state', async () => {
     const h = makeHarness()
     renderView(h)
     await screen.findByText('整理内容包')
-    fireEvent.click(screen.getByRole('button', { name: 'blocked' }))
+    const allChip = screen.getByRole('button', { name: 'filter.all' })
+    const blockedChip = screen.getByRole('button', { name: 'blocked' })
+    const readyChip = screen.getByRole('button', { name: 'ready' })
+    // The toolbar-toggle convention: selection is aria-pressed, and 全部 is
+    // pressed exactly while no bucket chip is.
+    expect(allChip.getAttribute('aria-pressed')).toBe('true')
+    expect(blockedChip.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(blockedChip)
     await waitFor(() => {
       expect(h.fetchQueue).toHaveBeenLastCalledWith('s1', { buckets: ['blocked'] })
     })
-    fireEvent.click(screen.getByRole('button', { name: 'ready' }))
+    expect(blockedChip.getAttribute('aria-pressed')).toBe('true')
+    expect(allChip.getAttribute('aria-pressed')).toBe('false')
+
+    // Multi-select: both chips stay pressed together.
+    fireEvent.click(readyChip)
     await waitFor(() => {
       expect(h.fetchQueue).toHaveBeenLastCalledWith('s1', { buckets: ['blocked', 'ready'] })
     })
+    expect(blockedChip.getAttribute('aria-pressed')).toBe('true')
+    expect(readyChip.getAttribute('aria-pressed')).toBe('true')
+
+    // Clearing every chip re-presses 全部.
+    fireEvent.click(blockedChip)
+    fireEvent.click(readyChip)
+    await waitFor(() => {
+      expect(allChip.getAttribute('aria-pressed')).toBe('true')
+    })
+    expect(h.fetchQueue).toHaveBeenLastCalledWith('s1', {})
   })
 
   it('the scope selector widens to all runs', async () => {
