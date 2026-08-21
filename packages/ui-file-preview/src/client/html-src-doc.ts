@@ -64,24 +64,46 @@ const BRIDGE_SCRIPT = `<script id="dsh-bridge">
 /** The CSP meta tag, reused for both tiers (Tier0 = defense in depth). */
 const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${TIER1_CSP}">`
 
+/** A Tier0-only notice explaining why a scripted page sits still: injected
+ * into the wrapped document so the page's own "loading…" badge stops being
+ * misleading. Purely visual (scripts are off at Tier0, so no dismiss button);
+ * the toolbar's 运行脚本 segment is the way out. */
+const STATIC_HINT_STYLE = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:rgba(30,50,70,.94);color:#cfe8ff;font:12px/1.6 system-ui,-apple-system,sans-serif;padding:6px 12px;border-bottom:1px solid rgba(88,196,255,.45);box-shadow:0 2px 8px rgba(0,0,0,.3)'
+
 const HEAD_OPEN = /<head[^>]*>/i
+const BODY_OPEN = /<body[^>]*>/i
 const HAS_CSP = /http-equiv=["']Content-Security-Policy/i
 
 /** Build the `srcdoc` for the sandboxed render iframe.
  * @param content - the untrusted HTML source read from disk.
  * @param opts - `tier`: 0 = static (`sandbox=""`), 1 = scripts allowed.
+ *   `hint`: optional localized notice shown at the top of the document (used
+ *   for scripted files rendered statically at tier 0 — their own "loading…"
+ *   indicator can never finish there). Head-only extras land in `<head>`, the
+ *   hint bar itself at the start of `<body>`.
  * @returns a complete document carrying the Tier1 CSP.
  */
-export function buildSrcDoc(content: string, opts: { tier: 0 | 1 }): string {
-  const extras = opts.tier === 1 ? CV_STYLE + BRIDGE_SCRIPT : ''
+export function buildSrcDoc(content: string, opts: { tier: 0 | 1; hint?: string }): string {
+  const headExtras = opts.tier === 1
+    ? CV_STYLE + BRIDGE_SCRIPT
+    : (opts.hint === undefined ? '' : '<style>body{margin-top:34px}</style>')
+  const bodyStart = opts.tier === 0 && opts.hint !== undefined
+    ? `<div style="${STATIC_HINT_STYLE}">${opts.hint}</div>`
+    : ''
   const headMatch = HEAD_OPEN.exec(content)
   if (headMatch === null) {
     // Fragment: we own the whole document.
-    return `<!doctype html><html lang="zh"><head><meta charset="utf-8">${CSP_META}${extras}</head><body>${content}</body></html>`
+    return `<!doctype html><html lang="zh"><head><meta charset="utf-8">${CSP_META}${headExtras}</head><body>${bodyStart}${content}</body></html>`
   }
   // Full document: inject into its own head (no duplicated CSP when it
   // already declares one — skill-compliant outputs embed the same policy).
-  const injection = (HAS_CSP.test(content) ? '' : CSP_META) + extras
-  const at = headMatch.index + headMatch[0].length
-  return content.slice(0, at) + injection + content.slice(at)
+  const headInjection = (HAS_CSP.test(content) ? '' : CSP_META) + headExtras
+  let out = content.slice(0, headMatch.index + headMatch[0].length) + headInjection + content.slice(headMatch.index + headMatch[0].length)
+  if (bodyStart !== '') {
+    const bodyMatch = BODY_OPEN.exec(out)
+    if (bodyMatch !== null) {
+      out = out.slice(0, bodyMatch.index + bodyMatch[0].length) + bodyStart + out.slice(bodyMatch.index + bodyMatch[0].length)
+    }
+  }
+  return out
 }

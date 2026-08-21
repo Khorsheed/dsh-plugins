@@ -35,6 +35,22 @@ describe('buildSrcDoc', () => {
     expect(t1).toContain('parent.postMessage')
   })
 
+  it('injects a static hint at the start of the body for tier 0 only', () => {
+    const doc = buildSrcDoc('<p>x</p>', { tier: 0, hint: '静态预览提示' })
+    expect(doc).toContain('静态预览提示')
+    expect(doc.indexOf('静态预览提示')).toBeGreaterThan(doc.indexOf('<body>'))
+    expect(doc).toContain('position:fixed')
+    const t1 = buildSrcDoc('<p>x</p>', { tier: 1, hint: '静态预览提示' })
+    expect(t1).not.toContain('position:fixed')
+  })
+
+  it('injects a static hint into a full document body', () => {
+    const authored = '<!doctype html><html><head><title>t</title></head><body><p>x</p></body></html>'
+    const doc = buildSrcDoc(authored, { tier: 0, hint: 'hint-here' })
+    expect(doc.indexOf('hint-here')).toBeGreaterThan(doc.indexOf('<body>'))
+    expect(doc).toContain('<p>x</p>')
+  })
+
   it('injects the Tier1 extras into a full document', () => {
     const authored = '<!doctype html><html><head><title>t</title></head><body></body></html>'
     const doc = buildSrcDoc(authored, { tier: 1 })

@@ -589,11 +589,55 @@ describe('FilePreviewView', () => {
     const row = await screen.findByText('page.html')
     act(() => { row.click() })
     await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
-    const frame = document.querySelector('iframe')!
+    // Fullscreen targets the wrapper around the iframe (so the exit control
+    // stays visible inside the fullscreen element).
+    const wrap = document.querySelector('iframe')!.parentElement!
     const requestFullscreen = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(frame, 'requestFullscreen', { value: requestFullscreen, configurable: true })
+    Object.defineProperty(wrap, 'requestFullscreen', { value: requestFullscreen, configurable: true })
     act(() => { screen.getByText('preview.fullscreen').click() })
     expect(requestFullscreen).toHaveBeenCalled()
+  })
+
+  it('shows an exit-fullscreen control inside the fullscreened frame', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<p>hi</p>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    const wrap = document.querySelector('iframe')!.parentElement!
+    const exitFullscreen = vi.fn()
+    Object.defineProperty(document, 'fullscreenElement', { value: wrap, configurable: true })
+    Object.defineProperty(document, 'exitFullscreen', { value: exitFullscreen, configurable: true })
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    // The in-frame exit control lives inside the fullscreened wrapper (the
+    // toolbar one also flips, but only the wrapper is visible in fullscreen).
+    const inFrame = document.querySelector('iframe')!.parentElement!.querySelector('button')
+    expect(inFrame?.textContent).toBe('preview.exitFullscreen')
+    act(() => { inFrame!.click() })
+    expect(exitFullscreen).toHaveBeenCalled()
+  })
+
+  it('annotates a scripted page rendered statically with a static-preview hint', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    await waitFor(() => {
+      const srcDoc = document.querySelector('iframe')?.getAttribute('srcdoc') ?? ''
+      // The static tier explains why the page's own "loading…" never finishes.
+      expect(srcDoc).toContain('preview.staticHint')
+      expect(srcDoc).toContain('position:fixed')
+    })
   })
 
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {

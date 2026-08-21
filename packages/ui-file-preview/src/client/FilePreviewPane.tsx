@@ -71,18 +71,29 @@ function MarkedContent({ content, search }: { content: string; search: ContentSe
  * the Tier1 srcDoc wrapper (meta CSP + content-visibility + the `dshBridge`
  * capability client). The bridge's host side validates every call; the
  * watchdog lives in the pane (armed only for large documents and the
- * scripted tier — see FilePreviewPane). The frame ref is owned by the pane so
- * the toolbar can fullscreen it. Relative assets do not resolve against a
- * file base in either mode. */
+ * scripted tier — see FilePreviewPane). The iframe is wrapped in a
+ * fullscreen-able container owned by the pane, so fullscreen keeps a visible
+ * exit control (the toolbar lives outside the iframe and would vanish).
+ * Relative assets do not resolve against a file base in either mode. */
 function HtmlRenderView(props: {
   content: string
   mode: 'render' | 'script'
+  scripted: boolean
   t: TranslateNS<'filePreview'>
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
+  frameRef: RefObject<HTMLDivElement>
+  fullscreen: boolean
 }) {
-  const { content, mode, t, onLoaded, iframeRef } = props
-  const srcDoc = useMemo(() => buildSrcDoc(content, { tier: mode === 'script' ? 1 : 0 }), [content, mode])
+  const { content, mode, scripted, t, onLoaded, iframeRef, frameRef, fullscreen } = props
+  const tier = mode === 'script' ? 1 : 0
+  // At the static tier a scripted page's own "loading…" can never finish;
+  // explain it instead of letting it read as a hang.
+  const hint = mode === 'render' && scripted ? t('preview.staticHint') : undefined
+  const srcDoc = useMemo(
+    () => buildSrcDoc(content, hint === undefined ? { tier } : { tier, hint }),
+    [content, tier, hint],
+  )
   // Tier1: attach the capability bridge to this iframe's window. The frame is
   // mounted in the same commit that flips the mode, so the ref is set here.
   useEffect(() => {
@@ -92,14 +103,25 @@ function HtmlRenderView(props: {
     return attachBridge(frame)
   }, [mode, srcDoc, iframeRef])
   return (
-    <iframe
-      ref={iframeRef}
-      className={css.htmlRender}
-      sandbox={mode === 'script' ? 'allow-scripts' : ''}
-      srcDoc={srcDoc}
-      title={mode === 'script' ? t('preview.htmlScript') : t('preview.htmlRender')}
-      onLoad={onLoaded}
-    />
+    <div ref={frameRef} className={css.htmlFrameWrap}>
+      <iframe
+        ref={iframeRef}
+        className={css.htmlRender}
+        sandbox={mode === 'script' ? 'allow-scripts' : ''}
+        srcDoc={srcDoc}
+        title={mode === 'script' ? t('preview.htmlScript') : t('preview.htmlRender')}
+        onLoad={onLoaded}
+      />
+      {fullscreen && (
+        <button
+          type="button"
+          className={css.htmlFrameExit}
+          onClick={() => { void document.exitFullscreen?.() }}
+        >
+          {t('preview.exitFullscreen')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -122,10 +144,13 @@ function PreviewBody(props: {
   t: TranslateNS<'filePreview'>
   search?: ContentSearch
   htmlMode: 'source' | 'render' | 'script'
+  scripted: boolean
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
+  frameRef: RefObject<HTMLDivElement>
+  fullscreen: boolean
 }) {
-  const { read, t, search, htmlMode, onLoaded, iframeRef } = props
+  const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, fullscreen } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
@@ -140,7 +165,7 @@ function PreviewBody(props: {
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
                 ? <CodeBlock code={content} lang="html" />
-                : <HtmlRenderView content={content} mode={htmlMode} t={t} onLoaded={onLoaded} iframeRef={iframeRef} />}
+                : <HtmlRenderView content={content} mode={htmlMode} scripted={scripted} t={t} onLoaded={onLoaded} iframeRef={iframeRef} frameRef={frameRef} fullscreen={fullscreen} />}
           </div>
         )
       }
@@ -229,6 +254,7 @@ export function FilePreviewPane(props: {
   // Fullscreen state of the html iframe (exit via Esc / the browser UI).
   const [fullscreen, setFullscreen] = useState(false)
   const htmlIframeRef = useRef<HTMLIFrameElement>(null)
+  const htmlFrameRef = useRef<HTMLDivElement>(null)
   // Watchdog: a render that stalls suggests the source view / a browser open.
   // Armed only when it can actually stall — a large document (>256 KiB, where
   // parsing/scripting takes real time) or the scripted tier (network via CDN).
@@ -250,7 +276,7 @@ export function FilePreviewPane(props: {
   // Track the html iframe's fullscreen state (Esc / browser UI exits too).
   useEffect(() => {
     const onFullscreen = (): void => {
-      setFullscreen(document.fullscreenElement === htmlIframeRef.current)
+      setFullscreen(document.fullscreenElement === htmlFrameRef.current)
     }
     document.addEventListener('fullscreenchange', onFullscreen)
     return () => document.removeEventListener('fullscreenchange', onFullscreen)
@@ -393,7 +419,7 @@ export function FilePreviewPane(props: {
                   className={css.htmlToggleBtn}
                   aria-label={t('preview.fullscreen')}
                   onClick={() => {
-                    const frame = htmlIframeRef.current
+                    const frame = htmlFrameRef.current
                     if (frame === null) return
                     // Loose null check: environments without the Fullscreen
                     // API leave fullscreenElement undefined.
@@ -461,7 +487,7 @@ export function FilePreviewPane(props: {
             <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} />
           </div>
         )
-        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} onLoaded={() => setSlow(false)} iframeRef={htmlIframeRef} />}
+        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={() => setSlow(false)} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}
     </div>
   )
 }

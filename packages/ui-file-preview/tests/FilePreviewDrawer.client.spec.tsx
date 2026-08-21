@@ -68,7 +68,22 @@ function renderDrawer(h: Harness, opts: { current?: string | undefined; canOpen?
     copyPath: h.copyPath as never,
     t: (key: string) => key,
   }
-  return render(<FilePreviewDrawer {...props} />)
+  const view = render(<FilePreviewDrawer {...props} />)
+  return {
+    ...view,
+    // Re-render against a different current session — simulates a session
+    // switch from the sidebar.
+    switchSession(nextCurrent: string | undefined) {
+      const next: FilePreviewDrawerProps = {
+        ...props,
+        useSessions: ((sel: (s: unknown) => unknown) => sel({
+          current: nextCurrent,
+          byId: nextCurrent === undefined ? {} : { [nextCurrent]: { cwd: '/work' } },
+        })) as never,
+      }
+      view.rerender(<FilePreviewDrawer {...next} />)
+    },
+  }
 }
 
 afterEach(() => { cleanup() })
@@ -240,5 +255,25 @@ describe('FilePreviewDrawer', () => {
     })
     expect(h.instance.getSnapshot().list).toBeNull()
     expect(h.instance.getSnapshot().preview).toBeNull()
+  })
+
+  it('closes on a session switch unless pinned', () => {
+    const h = makeHarness()
+    const view = renderDrawer(h, { current: 's1' })
+    act(() => { h.actions.openPath('/work/a.md') })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    act(() => { view.switchSession('s2') })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('stays open across a session switch when pinned', () => {
+    const h = makeHarness()
+    const view = renderDrawer(h, { current: 's1' })
+    act(() => { h.actions.openPath('/work/a.md') })
+    act(() => { h.actions.setPinned(true) })
+    // The pin control is in the drawer header, toggled by aria-label.
+    expect(screen.getByRole('button', { name: 'drawer.unpin' })).toBeTruthy()
+    act(() => { view.switchSession('s2') })
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 })

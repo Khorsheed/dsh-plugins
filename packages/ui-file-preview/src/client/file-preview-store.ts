@@ -14,6 +14,9 @@ import type { FilePreviewEntry, FilePreviewList, FilePreviewRead } from '@khorsh
 export interface FilePreviewState {
   /** Whether the file view is open (the tab is always mounted while active). */
   open: boolean
+  /** Whether the drawer survives a session switch. Off by default — switching
+   * sessions closes the drawer; the pin button opts into staying put. */
+  pinned: boolean
   /** The selected file's display path, or null when nothing is selected. */
   selectedPath: string | null
   /** The latest fetched file list, or null before the first successful load. */
@@ -39,6 +42,7 @@ export type FilePreviewActions = {
   open: (draft: FilePreviewState) => void
   close: (draft: FilePreviewState) => void
   toggle: (draft: FilePreviewState) => void
+  setPinned: (draft: FilePreviewState, pinned: boolean) => void
   select: (draft: FilePreviewState, path: string) => void
   openPath: (draft: FilePreviewState, path: string) => void
   refreshList: (draft: FilePreviewState) => void
@@ -52,6 +56,7 @@ export type FilePreviewActions = {
 
 const INITIAL: FilePreviewState = {
   open: false,
+  pinned: false,
   selectedPath: null,
   list: null,
   listAsOfSeq: -1,
@@ -74,6 +79,7 @@ export function createFilePreviewStore(): EngineStoreHandle<FilePreviewState, Fi
       open: (d) => { d.open = true },
       close: (d) => { d.open = false },
       toggle: (d) => { d.open = !d.open },
+      setPinned: (d, pinned: boolean) => { d.pinned = pinned },
       select: (d, path: string) => {
         d.selectedPath = path
         d.preview = null

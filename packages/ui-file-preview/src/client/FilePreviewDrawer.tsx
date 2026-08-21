@@ -1,7 +1,7 @@
 /** Root-overlay drawer: inline preview of a file clicked from the chat, no
  * tab switch. Content only — the file view tab remains the browse surface. */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
@@ -23,6 +23,7 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
   const { useHostDescription } = props
   const actions = props.actions
   const open = useStore(s => s.open)
+  const pinned = useStore(s => s.pinned)
   const list = useStore(s => s.list)
   const selectedPath = useStore(s => s.selectedPath)
   const preview = useStore(s => s.preview)
@@ -51,6 +52,16 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
       delete document.documentElement.dataset.filePreviewDrawerOpen
     }
   }, [open])
+
+  // Switching sessions closes the drawer by default (the drawer previews one
+  // session's files); the pin button opts into staying put across the switch.
+  const prevCurrent = useRef(current)
+  useEffect(() => {
+    if (prevCurrent.current !== current && open && !pinned) {
+      actions.close()
+    }
+    prevCurrent.current = current
+  }, [current, open, pinned, actions])
 
   // Fetch the list while open (the diff tab needs the entry's lastDiff).
   useEffect(() => {
@@ -116,6 +127,21 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
               </button>
             </>
           )}
+          <button
+            type="button"
+            className={pinned ? `${css.pin} ${css.pinActive}` : css.pin}
+            onClick={() => { actions.setPinned(!pinned) }}
+            title={pinned ? t('drawer.unpin') : t('drawer.pin')}
+            aria-label={pinned ? t('drawer.unpin') : t('drawer.pin')}
+            aria-pressed={pinned}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+              <path
+                d="M9.6 2.4 L13.6 6.4 L11.1 7.4 L8.7 9.8 L9.2 13.2 L8.2 14.2 L4.6 10.6 L2.2 13 L2.6 11.6 L6.6 8.6 L5.6 6.1 L7.6 4.1 Z"
+                fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <button
             type="button" className={css.close} onClick={() => { actions.close() }}
             title={t('drawer.close')} aria-label={t('drawer.close')}
