@@ -27,6 +27,8 @@ git 仓库之上的通用版本化数据集存储：分层 item、从 git 对象
 
 `modelFacing: false` 是数据声明，语义仅一条：该层离开本机的导出必须过人工确认闸（确认闸由导出方实现，不属本插件）。它与会话绑定的层白名单是两层独立机制——白名单管「会话里 agent 能看什么」，导出闸管「什么能离开本机」。
 
+层缺省 `modelFacing` 为 `true`。因为 descriptor 文件会被当模板抄，形状校验还会**告警**（绝不阻断）：在混合敏感度数据集（存在任何显式 `modelFacing: false` 层）里，每个未显式声明该键的层各产生一条警告（`MODELFACING_UNDECLARED`，逐层）。纯公开数据集（没有任何 false 层）与逐层显式声明（无论 true/false）的数据集不产生警告。警告随数据集摘要走：CLI 在 `list`/`show`/`describe` 时打到 stderr，slash 命令附在输出末尾，web tab 在数据集行下以安静行呈现。
+
 内容以仓库内普通文件的方式进入数据集，走正常 git 流程提交；或由 agent 经 `datasets_put_item` 起草进工作树、人评审后提交。没有 import 动词，也没有复制式物化：单文件从 git 对象直读，整层经托管 worktree 消费。
 
 ## 安装与加载

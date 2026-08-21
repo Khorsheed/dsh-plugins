@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url'
 import { readBinding, validateBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow } from './format.ts'
+import { formatList, formatShow, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
 import { pruneManagedWorktrees } from './worktree.ts'
 
@@ -126,6 +126,10 @@ export async function runCli(
     switch (verb) {
       case 'list': {
         const result = await service.list(scope(), flags['dataset'], flags['commit'])
+        const warnings = result.kind === 'datasets'
+          ? result.datasets.flatMap(dataset => dataset.warnings)
+          : result.dataset.warnings
+        if (warnings.length > 0) io.stderr(`${formatWarnings(warnings)}\n`)
         io.stdout(`${formatList(result)}\n`)
         return 0
       }
@@ -133,14 +137,17 @@ export async function runCli(
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'show requires --dataset D')
         const result = await service.show(scope(), dataset, flags['item'], flags['commit'])
+        if (result.dataset.warnings.length > 0) io.stderr(`${formatWarnings(result.dataset.warnings)}\n`)
         io.stdout(`${formatShow(result)}\n`)
         return 0
       }
       case 'describe': {
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'describe requires --dataset D')
-        const result = await service.describe(scope(), dataset, flags['commit'])
-        io.stdout(`${JSON.stringify(result, null, 2)}\n`)
+        // show carries the same raw descriptor plus the summary (warnings ride it).
+        const result = await service.show(scope(), dataset, undefined, flags['commit'])
+        if (result.dataset.warnings.length > 0) io.stderr(`${formatWarnings(result.dataset.warnings)}\n`)
+        io.stdout(`${JSON.stringify(result.descriptor, null, 2)}\n`)
         return 0
       }
       case 'read': {

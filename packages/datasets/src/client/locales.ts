@@ -31,6 +31,7 @@ export type DatasetsKey =
   | 'preview.error'
   | 'tree.fileCount'
   | 'tree.shared'
+  | 'tree.warnModelFacing'
   | 'tree.moreMeta'
   | 'json.copyValue'
   | 'json.copyJson'
@@ -78,6 +79,7 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.error': '读取失败',
   'tree.fileCount': '{count} 个文件',
   'tree.shared': '共享',
+  'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度数据集建议逐层表态',
   'tree.moreMeta': '+{count}',
   'json.copyValue': '复制值',
   'json.copyJson': '复制 JSON',
@@ -119,6 +121,7 @@ export const en: Record<DatasetsKey, string> = {
   'preview.error': 'Failed to read',
   'tree.fileCount': '{count} files',
   'tree.shared': 'Shared',
+  'tree.warnModelFacing': 'Layer {layer} does not declare modelFacing and defaults to true; declare it explicitly in a mixed-sensitivity dataset',
   'tree.moreMeta': '+{count}',
   'json.copyValue': 'Copy value',
   'json.copyJson': 'Copy JSON',

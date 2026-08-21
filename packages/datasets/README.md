@@ -27,6 +27,8 @@ The two-level rule is purely name-based: a top-level directory whose name is dec
 
 `modelFacing: false` is a data declaration with exactly one meaning: exporting that layer off the machine must pass a human confirmation gate (the gate belongs to the exporter, not this plugin). It is independent of the session binding's layer whitelist — the whitelist governs what the session's agent can see; the export gate governs what may leave the machine.
 
+`modelFacing` defaults to `true` when a layer omits the key. Because descriptor files get copied as templates, shape validation also **warns** (never blocks): in a mixed-sensitivity dataset — one that has any explicit `modelFacing: false` layer — every layer that left the key undeclared produces one warning (`MODELFACING_UNDECLARED`, per layer). Datasets with no hidden layer, and datasets where every layer is explicit in either direction, stay silent. The warnings ride the dataset summary: the CLI prints them to stderr on `list`/`show`/`describe`, the slash command appends them to its output, and the web tab shows them as a quiet line under the dataset row.
+
 Content enters a dataset as plain files in the repository, committed through the normal git flow, or drafted by an agent via `datasets_put_item` into the working tree and committed by a human after review. There is no import verb and no copy-out materialization: single files are read from git objects, whole layers are consumed through managed worktrees.
 
 ## Install and load

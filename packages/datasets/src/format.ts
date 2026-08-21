@@ -3,7 +3,7 @@
  * callbacks, the slash command, and the CLI so all three faces present the
  * same text.
  */
-import type { ItemRecord } from './dataset.ts'
+import type { DescriptorWarning, ItemRecord } from './dataset.ts'
 import type { ListDatasetsResult, ListItemsResult, ShowResult } from './service.ts'
 
 function formatItem(item: ItemRecord): string {
@@ -35,6 +35,14 @@ export function formatList(result: ListDatasetsResult | ListItemsResult): string
   const sharedLine = sharedBits === '' ? '' : `\nshared: ${sharedBits}`
   if (result.items.length === 0) return `${header}${sharedLine}\nno items`
   return `${header}${sharedLine}\n${result.items.map(formatItem).join('\n')}`
+}
+
+/** Render validation warnings (mixed-sensitivity undeclared-modelFacing layers), one per line. */
+export function formatWarnings(warnings: readonly DescriptorWarning[]): string {
+  return warnings
+    .map(warning => `warn [${warning.code}]: layer ${JSON.stringify(warning.layer)} does not declare modelFacing `
+      + '(defaults to true; declare it explicitly in a mixed-sensitivity dataset)')
+    .join('\n')
 }
 
 /** Render `datasets_show` output. */

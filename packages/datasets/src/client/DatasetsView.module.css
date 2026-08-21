@@ -202,6 +202,14 @@
   white-space: nowrap;
 }
 
+/* A validation warning under the dataset row: quiet, wraps when long. */
+.datasetWarn {
+  padding: 2px 8px 2px 20px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 /* The dataset-level layers group label: a quiet line, like the dataset note. */
 .sharedGroup {
   display: flex;

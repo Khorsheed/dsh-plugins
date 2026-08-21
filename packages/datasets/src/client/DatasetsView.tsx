@@ -452,6 +452,11 @@ export function DatasetsView(props: DatasetsViewProps) {
                 {dataset.name !== undefined && (
                   <div className={css.datasetNote} title={dataset.name}>{dataset.name}</div>
                 )}
+                {dataset.warnings.map(warning => (
+                  <div key={warning.layer} className={css.datasetWarn}>
+                    {t('tree.warnModelFacing', { layer: warning.layer })}
+                  </div>
+                ))}
                 {expanded && (
                   <div className={css.children}>
                     {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (

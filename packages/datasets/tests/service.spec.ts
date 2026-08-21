@@ -53,6 +53,10 @@ describe('whitelist enforcement', () => {
     expect(Object.keys(i1?.layers ?? {})).toEqual(['visible'])
     expect(result.dataset.layers).toEqual(['visible'])
     expect(result.dataset.nonModelFacingLayers).toEqual([])
+    // The alpha fixture is mixed (hidden is modelFacing:false, visible is
+    // undeclared): the summary warns about the undeclared layer, and the
+    // warning blocks nothing.
+    expect(result.dataset.warnings.map(warning => warning.layer)).toEqual(['visible'])
   })
 
   it('list reports dataset-level layers, whitelist-filtered, declared-only', async () => {

@@ -1,8 +1,8 @@
 /** Layout convention + descriptor shape validation + git-object reads. */
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  assertSafeRelativePath, DatasetsError, listDatasetIds, listItems, loadDescriptor, loadItem,
-  summarizeDataset, validateDescriptor,
+  assertSafeRelativePath, DatasetsError, descriptorWarnings, listDatasetIds, listItems, loadDescriptor,
+  loadItem, summarizeDataset, validateDescriptor,
 } from '../src/dataset.ts'
 import { showFile } from '../src/git.ts'
 import { cleanup, commitAll, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
@@ -23,8 +23,8 @@ describe('descriptor shape validation', () => {
       anything: 'else',
     }, 'test')
     expect(descriptor.layers).toEqual([
-      { name: 'visible', modelFacing: true },
-      { name: 'hidden', modelFacing: false },
+      { name: 'visible', modelFacing: true, modelFacingDeclared: false },
+      { name: 'hidden', modelFacing: false, modelFacingDeclared: true },
     ])
     expect(descriptor.itemMetaSchema).toEqual({ type: 'object' })
     expect(descriptor.raw['anything']).toBe('else')
@@ -40,6 +40,34 @@ describe('descriptor shape validation', () => {
     expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'x', modelFacing: 'no' }] }, 't')).toThrowError(/modelFacing/)
     expect(() => validateDescriptor({ id: 'a', layers: [{ name: 'x' }], itemMetaSchema: 'nope' }, 't')).toThrowError(/itemMetaSchema/)
     expect(() => validateDescriptor({ id: 'bad id', layers: [{ name: 'x' }] }, 't')).toThrowError(/id/)
+  })
+})
+
+describe('descriptorWarnings (mixed-sensitivity undeclared modelFacing)', () => {
+  const descriptorOf = (layers: Record<string, unknown>[]) => validateDescriptor({ id: 'd', layers }, 't')
+
+  it('warns once per undeclared layer when any layer is modelFacing:false', () => {
+    const warnings = descriptorWarnings(descriptorOf([
+      { name: 'visible' },
+      { name: 'shared' },
+      { name: 'hidden', modelFacing: false },
+    ]))
+    expect(warnings.map(warning => warning.layer)).toEqual(['visible', 'shared'])
+    expect(warnings[0]?.code).toBe('MODELFACING_UNDECLARED')
+  })
+
+  it('stays silent when every layer is explicit (either direction)', () => {
+    expect(descriptorWarnings(descriptorOf([
+      { name: 'visible', modelFacing: true },
+      { name: 'hidden', modelFacing: false },
+    ]))).toEqual([])
+  })
+
+  it('stays silent for an all-public dataset (no false layer at all)', () => {
+    expect(descriptorWarnings(descriptorOf([
+      { name: 'visible' },
+      { name: 'shared' },
+    ]))).toEqual([])
   })
 })
 

@@ -70,11 +70,49 @@ export interface DatasetLayerDecl {
   name: string
   /**
    * Visibility class, default true. `false` marks a layer whose export must
-   * pass a human confirmation gate (the gate is the exporter's concern; this
-   * plugin only carries the declaration). Independent of the session binding's
-   * layers whitelist.
+   * pass a human confirmation gate (the gate belongs to the exporter, not this
+   * plugin). Independent of the session binding's layers whitelist.
    */
   modelFacing: boolean
+  /**
+   * Whether the descriptor explicitly declared `modelFacing` for this layer
+   * (false = the key was absent and the default applies). Drives the
+   * mixed-sensitivity warning: in a dataset that has any `modelFacing: false`
+   * layer, an UNDECLARED layer is likely an authorial oversight rather than a
+   * deliberate public layer.
+   */
+  modelFacingDeclared: boolean
+}
+
+/** A non-fatal validation warning (shape checks fail loud on errors, warn on suspicion). */
+export interface DescriptorWarning {
+  /** Stable, greppable code. */
+  code: 'MODELFACING_UNDECLARED'
+  /** The layer the warning is about. */
+  layer: string
+  /** Human-readable detail. */
+  message: string
+}
+
+/**
+ * Compute a descriptor's validation warnings. Exactly one rule today: when
+ * ANY layer is explicitly `modelFacing: false` (a mixed-sensitivity dataset)
+ * and ANOTHER layer left the key undeclared, that layer is probably an
+ * oversight — warn per undeclared layer. Datasets with no hidden layer (all
+ * public) and datasets where every layer is explicit stay silent.
+ * @param descriptor - the validated descriptor.
+ * @returns one warning per undeclared layer, empty when none apply.
+ */
+export function descriptorWarnings(descriptor: DatasetDescriptor): DescriptorWarning[] {
+  if (!descriptor.layers.some(layer => !layer.modelFacing)) return []
+  return descriptor.layers
+    .filter(layer => !layer.modelFacingDeclared)
+    .map(layer => ({
+      code: 'MODELFACING_UNDECLARED' as const,
+      layer: layer.name,
+      message: `layer ${JSON.stringify(layer.name)} does not declare modelFacing and defaults to true; `
+        + 'a mixed-sensitivity dataset should declare it per layer',
+    }))
 }
 
 /** Validated `dataset.json` shape. Unknown fields pass through on `raw`. */
@@ -106,6 +144,8 @@ export interface DatasetSummary {
   /** Layers declared `modelFacing: false`. */
   nonModelFacingLayers: string[]
   itemCount: number
+  /** Validation warnings (mixed-sensitivity undeclared-modelFacing layers); empty when none. */
+  warnings: DescriptorWarning[]
 }
 
 /** Segment-safe ids: no traversal, no separators, no whitespace. */
@@ -190,7 +230,7 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
     if (modelFacing !== undefined && typeof modelFacing !== 'boolean') {
       throw new DatasetsError(`${origin}: layer ${JSON.stringify(layerName)} "modelFacing" must be a boolean`, 'SHAPE_INVALID')
     }
-    decls.push({ name: layerName, modelFacing: modelFacing ?? true })
+    decls.push({ name: layerName, modelFacing: modelFacing ?? true, modelFacingDeclared: modelFacing !== undefined })
   }
   const itemMetaSchema = value['itemMetaSchema']
   if (itemMetaSchema !== undefined && !isPlainObject(itemMetaSchema)) {
@@ -268,6 +308,7 @@ export async function summarizeDataset(repo: string, commit: string, datasetId: 
     layers: descriptor.layers.map(layer => layer.name),
     nonModelFacingLayers: descriptor.layers.filter(layer => !layer.modelFacing).map(layer => layer.name),
     itemCount: items.size,
+    warnings: descriptorWarnings(descriptor),
   }
 }
 

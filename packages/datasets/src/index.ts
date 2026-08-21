@@ -20,7 +20,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow } from './format.ts'
+import { formatList, formatShow, formatWarnings } from './format.ts'
 import {
   createDatasetsService, resolveScope, type DatasetScope, type DatasetsService,
 } from './service.ts'
@@ -334,14 +334,19 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
           case 'list': {
             const scope = resolveScope({}, service.binding(session), defaultRepo)
             const result = await service.list(scope, flags.positionals[0])
-            return { kind: 'success', text: formatList(result) }
+            const warnings = result.kind === 'datasets'
+              ? result.datasets.flatMap(dataset => dataset.warnings)
+              : result.dataset.warnings
+            const suffix = warnings.length === 0 ? '' : `\n${formatWarnings(warnings)}`
+            return { kind: 'success', text: `${formatList(result)}${suffix}` }
           }
           case 'show': {
             const dataset = flags.positionals[0]
             if (dataset === undefined) return { kind: 'error', text: 'usage: /datasets show <dataset> [item]' }
             const scope = resolveScope({}, service.binding(session), defaultRepo)
             const result = await service.show(scope, dataset, flags.positionals[1])
-            return { kind: 'success', text: formatShow(result) }
+            const suffix = result.dataset.warnings.length === 0 ? '' : `\n${formatWarnings(result.dataset.warnings)}`
+            return { kind: 'success', text: `${formatShow(result)}${suffix}` }
           }
           case 'bind': {
             const repoPath = flags.positionals[0]

@@ -41,7 +41,10 @@ const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
 
 const DATASETS: ListDatasetsResult = {
   kind: 'datasets',
-  datasets: [{ id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1 }],
+  datasets: [{
+    id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1,
+    warnings: [{ code: 'MODELFACING_UNDECLARED', layer: 'visible', message: 'visible undeclared' }],
+  }],
 }
 
 const ITEMS: ListItemsResult = {
@@ -121,6 +124,8 @@ describe('DatasetsView', () => {
     expect(h.listDatasets).toHaveBeenCalledWith('s1')
     // The descriptor name renders on its own quiet line, not crammed into the row.
     expect(screen.getByText('Alpha')).toBeTruthy()
+    // A mixed-sensitivity dataset's undeclared layer surfaces as a quiet warning line.
+    expect(screen.getByText(/tree\.warnModelFacing/)).toBeTruthy()
 
     fireEvent.click(row)
     expect(await screen.findByText('i1')).toBeTruthy()
