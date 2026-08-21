@@ -17,7 +17,8 @@
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
     "hooks:install": "node scripts/setup-hooks.mjs",
     "deploy:3080": "tsx scripts/deploy-3080.mts",
-    "compat:report": "tsx scripts/compat-report.ts"
+    "compat:report": "tsx scripts/compat-report.ts",
+    "verify:package": "tsx scripts/verify-package.mts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
