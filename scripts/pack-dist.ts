@@ -66,6 +66,31 @@ function expandGlobEntry(packageDir: string, entry: string): string[] {
  * in which case `dir` double-star globs (e.g. the `skills` glob) are expanded
  * against it; the lib globs stay covered by the recursive lib/ copy.
  */
+/**
+ * The reverse completeness direction (declared ⊆ staging): every `files`
+ * entry must name something real. A glob that expands to nothing, or a plain
+ * entry whose path does not exist, means the package declares a payload it
+ * never stages — the exact shape of the skills-glob loss (the staging copy
+ * silently skipped it, and a staging⊆tarball check passes vacuously).
+ * `lib/` and the root documents are exempt: lib is asserted present by the
+ * build check, and root docs are staged on a when-present basis.
+ */
+export function assertDeclaredPayloadsExist(files: readonly string[] = [], packageDir: string): void {
+  const failures: string[] = []
+  for (const entry of files) {
+    if (entry === 'lib' || entry.startsWith('lib/')) continue
+    if ((STAGED_ROOT_FILES as readonly string[]).includes(entry)) continue
+    if (entry.includes('*')) {
+      if (expandGlobEntry(packageDir, entry).length === 0) failures.push(`${entry} (glob expands to nothing)`)
+      continue
+    }
+    if (!existsSync(join(packageDir, entry))) failures.push(`${entry} (no such path in the package)`)
+  }
+  if (failures.length > 0) {
+    throw new Error(`pack-dist: files declares payloads that do not exist: ${failures.join(', ')}`)
+  }
+}
+
 export function filesDeclaredExtras(files: readonly string[] = [], packageDir?: string): string[] {
   const out: string[] = []
   for (const entry of files) {
@@ -215,6 +240,7 @@ export function packDist(options: PackDistOptions): string {
   }
   assertNoStaleTypes(packageDir)
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as PackageJson
+  assertDeclaredPayloadsExist(pkg.files, packageDir)
   const distName = `${options.scope}/${basename(pkg.name)}`
   // Self first, then family members: cross-references in manifests, patch
   // rows, and every text artifact (js AND d.ts — type consumers resolve them).

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertNoStaleTypes, filesDeclaredExtras, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
+import { assertDeclaredPayloadsExist, assertNoStaleTypes, filesDeclaredExtras, packDist, rescopePackageJson, rewriteNames, verifyTarball } from './pack-dist.ts'
 
 /** Recursively list a directory's files as relative paths. */
 function walkDir(dir: string, prefix = ''): string[] {
@@ -160,6 +160,24 @@ describe('assertNoStaleTypes', () => {
   })
 })
 
+describe('assertDeclaredPayloadsExist', () => {
+  it('passes when every files entry resolves, and fails on empty glob expansions and missing paths', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-decl-'))
+    try {
+      mkdirSync(join(dir, 'skills/s'), { recursive: true })
+      writeFileSync(join(dir, 'skills/s/SKILL.md'), '# s')
+      // lib/ and staged root docs are exempt from the existence requirement.
+      expect(() => assertDeclaredPayloadsExist(['lib', 'cordis.patch.yml', 'skills/**/*.md'], dir)).not.toThrow()
+      expect(() => assertDeclaredPayloadsExist(['skills/**/*.md', 'assets/**/*.png'], dir))
+        .toThrow(/assets\/\*\*\/\*\.png.*glob expands to nothing/)
+      expect(() => assertDeclaredPayloadsExist(['scripts/missing.sh'], dir))
+        .toThrow(/scripts\/missing\.sh.*no such path/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('verifyTarball', () => {
   function stage(files: Record<string, string>) {
     const dir = mkdtempSync(join(tmpdir(), 'pack-dist-verify-'))
@@ -220,6 +238,36 @@ describe('verifyTarball', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+})
+
+describe('packDist end-to-end (independent of the self-checks)', () => {
+  // The artifact-level regression line: even if every self-check were deleted
+  // or broken by a later change, this test still proves a glob-declared payload
+  // physically reaches the tarball.
+  it('a real pack ships a glob-declared skill in the tarball', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-e2e-'))
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true })
+      mkdirSync(join(dir, 'lib/types'), { recursive: true })
+      mkdirSync(join(dir, 'skills/demo'), { recursive: true })
+      writeFileSync(join(dir, 'src/index.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/types/index.js'), 'export {}\n')
+      writeFileSync(join(dir, 'skills/demo/SKILL.md'), '# demo skill\n')
+      writeFileSync(join(dir, 'cordis.patch.yml'), "- insert:\n    - id: demo\n      name: '@khorsheed/dsh-e2e-demo'\n")
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({
+        name: '@khorsheed/dsh-e2e-demo',
+        version: '0.1.0-rc.1',
+        files: ['lib', 'skills/**/*.md', 'cordis.patch.yml'],
+      }))
+      const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0-rc.1', outDir: dir })
+      const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
+      expect(listing).toContain('package/skills/demo/SKILL.md')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
 
 describe('pack-dist CLI wiring', () => {

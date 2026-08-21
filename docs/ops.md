@@ -45,6 +45,16 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 - **整合包**：当前 CLI 的 `reconcilePlugins` 只调和 profile 的**直接依赖**,npm 薄元包的子插件是传递依赖、不会被挂载——所以薄元包需要上游 seam(见提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile)。今天可交付的整合形态是**形态 A(add 清单)与形态 B(profile 目录模板)**,成员都是 profile 直接依赖,任一 bundle 单独装卸互不影响。整合包版本只在成员增删或跨大版本线时 bump(caret 范围下子包 patch 发布不需要动 pack)。
 - **首发包没有顺序问题**(除家族外),npm 上都不存在,无 403/409 风险。
 
+## 迁移/升级验收清单(任何 agent 做完宿主迁移或重打包后执行)
+
+三步,做完才算迁移完成——写给所有迁移方(包括未来的我们):
+
+1. **会话里能列出 skill**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见
+2. **check-env 读数正常**:`dsh-ankh-guard check-env --port 3080` 的监督/启动读数无异常(缺能力、降级项要出声,不允许静默)
+3. **跑一次门禁重启**:`deploy:3080` 或 `schedule-exit` 走一遍完整闸,canary PASS 才算闭环
+
+打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
+
 ## 放行 npm 的标准
 
 3080 上**连续 3 天无相关事故**(崩溃、功能回退、与之相关的 preflight 失败)即可放行。放行时按 [publishing.md](publishing.md) 的自查清单执行;发完必做消费者验证(一次性目录 `npm install` + import 冒烟)。

@@ -172,6 +172,29 @@ describe('scanPackage', () => {
     }
   })
 
+  it('flags a payload directory that files does not cover', () => {
+    const { pkg, cleanup } = fixture(
+      {
+        name: '@khorsheed/dsh-demo',
+        files: ['lib', 'cordis.patch.yml'],
+        keywords: ['dsh', 'dsh-plugin'],
+        repository: { url: 'git+https://github.com/Khorsheed/dsh-plugins.git', directory: 'packages/demo' },
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      },
+      {
+        'cordis.patch.yml': `- insert:\n    - id: demo\n      name: '@khorsheed/dsh-demo'\n`,
+        'src/invariant.ts': `const PACKAGE_NAME = '@khorsheed/dsh-demo'\n`,
+        'skills/demo/SKILL.md': '# demo\n',
+      },
+    )
+    try {
+      const findings = scanPackage(pkg, ['@khorsheed/dsh-demo'])
+      expect(findings.map((f) => f.detail).join()).toContain('skills/ exists but is not covered by files')
+    } finally {
+      cleanup()
+    }
+  })
+
   it('flags a foreign-scope self reference in docs', () => {
     const { pkg, cleanup } = fixture(
       {
