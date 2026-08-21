@@ -68,20 +68,11 @@
 | | preflight 组合闸门:重启前子进程深干跑整棵插件树,起不来绝不停实例 | — |
 | | watchdog 无感重启:回滚到已知良好 + `guard-backup-*` 锚点 + 崩溃页 | — |
 
-## 互相冲突吗?
+## 兼容性承诺
 
-**不冲突——整套插件就是按"能共存"设计的,而且已经在共存。** 生产 profile 把全部 13 个 bundle 叠在官方 `dsh-base` + `dsh-web-app` 之上正常启动,所有 client bundle 均正常服务。三条性质保证:
+整套插件按共存设计:任意组合安装、卸载、开关,互不干扰。行 id、UI 席位、事件与命名空间全部互不重叠;探测不到可选能力时静默降级,绝不拖垮启动。生产环境长期全量叠装运行。
 
-- **行 id 互不重复。** 每个 `cordis.patch.yml` 只插入自己的行;家族共享行从不重复插入——local-agent 核心行只存在于核心包自己的 patch 里(harness 包改为声明依赖),每个 harness 的工具行 id 各不相同(`tool-subagent-kimi` / `tool-subagent-codex-local` / `tool-subagent-claude-code-local`)。
-- **UI 席位互不重叠。** 每个 client 都走 `slots.inject` 纪律挂自己的席位:`conversation.session.header.utilities`(message-timeline)、`conversation.session.header.actions`(session-title-edit)、`conversation.chat.node`(message-tools 影分身官方用户消息渲染)、`conversation.input.dock`(taskpilot)、`conversation.view` / `conversation.chat.turnTail`(ui-file-preview)、`settings.general.item`(ui-shortcuts)。taskpilot 与 ui-file-preview 共用 `shell.overlay`,但那是多注册浮层栈——两个独立浮层,不打架。
-- **降级不爆炸。** 探测不到可选兄弟/能力时静默降级,绝不把整个 boot 打挂。
-
-全包仅有的两条**排他规则**(也是仅有的真实冲突点):
-
-1. **`ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 互斥。** 两者 loader entry id 都是 `ui-shortcuts`,同一 profile 装两个会在启动时 fail loud——只保留其一。实际上官方那个**根本无法安装**:它是 fork 自生包,**从未发布到 npm**,迁移进本仓库时已从 harness 删除——这条规则只防着旧 fork tarball 流落在外面。默认 web bundle 从来没有挂过任何 shortcuts 行(不是不启用,是压根不存在)。
-2. **宿主已挂 `ankh-guard` 行的镜像不要再以 profile bundle 添加本包。**(迁移前的 fork 镜像会经 base bundle 挂该行;当前 master 已移除。)重复行 id 会导致启动失败。先查 `dsh.profile.bundles`;已有该行就跳过 add(或禁用重复行)。
-
-另有一条命名空间规则:`filePreview` Remote 只能由一个组合挂载(ui-file-preview 负责);重复挂载会 log loud,但插件其余部分照常注册。
+唯一的例外说明:已自带 `ankh-guard` 行的镜像(历史 fork)不要再重复添加该包——重复行 id 会导致启动失败。详见 [ankh-guard 的说明](packages/ankh-guard/README.md)。
 
 ## 安装
 
@@ -91,7 +82,7 @@
 # 按 npm 名装单个
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
-# 从 tarball / 源码目录装(message-timeline 只能源码装,见下)
+# 从 tarball / 源码目录装(开发态)
 dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```

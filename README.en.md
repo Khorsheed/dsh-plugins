@@ -68,20 +68,11 @@ One capability per row; capabilities of the same plugin are grouped together (em
 | | preflight composition gate: deep dry-run of the whole plugin tree in a subprocess before anything is stopped | — |
 | | Watchdog seamless restart: rollback to last-known-good, `guard-backup-*` anchors, crash page | — |
 
-## Do the plugins conflict?
+## Compatibility promise
 
-**No — they are designed to coexist, and they already do.** The production profile composes all 13 bundles over the stock `dsh-base` + `dsh-web-app` layers and boots; every client bundle serves. Three properties guarantee it:
+The plugins are designed to coexist: install, remove, or toggle any combination — they never interfere. Loader entry ids, UI seats, event and Remote namespaces are all distinct, and a plugin that cannot find an optional capability degrades silently instead of failing boot. The production deployment runs the full set, all the time.
 
-- **Distinct loader entry ids.** Each `cordis.patch.yml` inserts its own row ids, and nothing is ever re-inserted: the local-agent family's core row ships only in the core bundle's patch (harness bundles declare it as a dependency instead), and each harness mounts its own tool row with a distinct id (`tool-subagent-kimi`, `tool-subagent-codex-local`, `tool-subagent-claude-code-local`).
-- **Distinct UI seats.** Each client mounts its own slots with `slots.inject` discipline: `conversation.session.header.utilities` (message-timeline), `conversation.session.header.actions` (session-title-edit), `conversation.chat.node` (message-tools shadows the official user renderer), `conversation.input.dock` (taskpilot), `conversation.view` / `conversation.chat.turnTail` (ui-file-preview), `settings.general.item` (ui-shortcuts). `shell.overlay` is shared by taskpilot and ui-file-preview, but it is a multi-registration stack — two separate overlays, no fight.
-- **Degrade, don't explode.** A plugin that cannot find an optional sibling or capability degrades silently instead of failing boot.
-
-There are **two exclusivity rules** worth remembering, and they are the only real conflicts in the whole pack:
-
-1. **`ui-shortcuts` is exclusive with the official `@deepseek-ai/dsh-client-ui-shortcuts`.** Both use the loader entry id `ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. In practice the official one cannot even be installed: it was a fork-grown package, **never published to npm, and removed from the harness when it migrated into this repo** — the rule only guards against an old fork tarball lying around. The default web bundle never mounted a shortcuts row at all (not enabled, not disabled — simply absent).
-2. **`ankh-guard` must not be added as a profile bundle on a host that already mounts the `ankh-guard` row** (pre-migration fork images did, via the base bundle): the duplicate row id fails boot. Check `dsh.profile.bundles` first; if the row is already there, skip the add (or disable the duplicate instead of adding).
-
-And one namespace rule: exactly one composition may mount the `filePreview` Remote (ui-file-preview does); a double-mount logs loud but the rest of the plugin still registers.
+One exception to know: host images that already mount an `ankh-guard` row (historical forks) must not add the package again — a duplicate row id fails boot. See [the ankh-guard README](packages/ankh-guard/README.md).
 
 ## Install
 
