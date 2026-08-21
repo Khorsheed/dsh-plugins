@@ -20,6 +20,8 @@ export type FilePreviewKey =
   | 'preview.scriptRun'
   | 'preview.scriptCancel'
   | 'preview.slowHint'
+  | 'preview.fullscreen'
+  | 'preview.exitFullscreen'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -88,6 +90,8 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.scriptRun': '运行',
   'preview.scriptCancel': '取消',
   'preview.slowHint': '渲染超时——文档可能过大，可切源码视图或在浏览器中打开',
+  'preview.fullscreen': '全屏',
+  'preview.exitFullscreen': '退出全屏',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
@@ -150,6 +154,8 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.scriptRun': 'Run',
   'preview.scriptCancel': 'Cancel',
   'preview.slowHint': 'Render timed out — the document may be too large; try the source view or open it in a browser',
+  'preview.fullscreen': 'Fullscreen',
+  'preview.exitFullscreen': 'Exit fullscreen',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',

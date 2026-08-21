@@ -70,16 +70,18 @@ function MarkedContent({ content, search }: { content: string; search: ContentSe
  * frame keeps an opaque origin and its scripts cannot touch the host — and
  * the Tier1 srcDoc wrapper (meta CSP + content-visibility + the `dshBridge`
  * capability client). The bridge's host side validates every call; the
- * watchdog lives in the pane (10s without a load suggests the source view).
- * Relative assets do not resolve against a file base in either mode. */
+ * watchdog lives in the pane (armed only for large documents and the
+ * scripted tier — see FilePreviewPane). The frame ref is owned by the pane so
+ * the toolbar can fullscreen it. Relative assets do not resolve against a
+ * file base in either mode. */
 function HtmlRenderView(props: {
   content: string
   mode: 'render' | 'script'
   t: TranslateNS<'filePreview'>
   onLoaded: () => void
+  iframeRef: RefObject<HTMLIFrameElement>
 }) {
-  const { content, mode, t, onLoaded } = props
-  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const { content, mode, t, onLoaded, iframeRef } = props
   const srcDoc = useMemo(() => buildSrcDoc(content, { tier: mode === 'script' ? 1 : 0 }), [content, mode])
   // Tier1: attach the capability bridge to this iframe's window. The frame is
   // mounted in the same commit that flips the mode, so the ref is set here.
@@ -88,7 +90,7 @@ function HtmlRenderView(props: {
     const frame = iframeRef.current
     if (frame === null) return
     return attachBridge(frame)
-  }, [mode, srcDoc])
+  }, [mode, srcDoc, iframeRef])
   return (
     <iframe
       ref={iframeRef}
@@ -121,8 +123,9 @@ function PreviewBody(props: {
   search?: ContentSearch
   htmlMode: 'source' | 'render' | 'script'
   onLoaded: () => void
+  iframeRef: RefObject<HTMLIFrameElement>
 }) {
-  const { read, t, search, htmlMode, onLoaded } = props
+  const { read, t, search, htmlMode, onLoaded, iframeRef } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
@@ -137,7 +140,7 @@ function PreviewBody(props: {
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
                 ? <CodeBlock code={content} lang="html" />
-                : <HtmlRenderView content={content} mode={htmlMode} t={t} onLoaded={onLoaded} />}
+                : <HtmlRenderView content={content} mode={htmlMode} t={t} onLoaded={onLoaded} iframeRef={iframeRef} />}
           </div>
         )
       }
@@ -223,18 +226,35 @@ export function FilePreviewPane(props: {
   // The Tier1 confirm dialog is open (scripted files only; scripts never run
   // without an explicit user gesture).
   const [scriptConfirm, setScriptConfirm] = useState(false)
-  // Watchdog: a render (static or scripted) that has not loaded within 10s
-  // suggests the source view / a browser open instead.
+  // Fullscreen state of the html iframe (exit via Esc / the browser UI).
+  const [fullscreen, setFullscreen] = useState(false)
+  const htmlIframeRef = useRef<HTMLIFrameElement>(null)
+  // Watchdog: a render that stalls suggests the source view / a browser open.
+  // Armed only when it can actually stall — a large document (>256 KiB, where
+  // parsing/scripting takes real time) or the scripted tier (network via CDN).
+  // Small static documents render synchronously, and a blocked-script static
+  // frame never fires `load` (Chrome keeps it pending), so a fixed timer there
+  // would be pure noise.
   const [slow, setSlow] = useState(false)
   const html = isHtmlPath(entry?.path ?? read.path)
   const scripted = html && read.htmlScripted === true
   const content = read.kind === 'text' ? (read.content ?? '') : null
   useEffect(() => {
     if (!html || htmlMode === 'source' || content === null) return
+    const large = content.length > 256 * 1024
+    if (!large && htmlMode !== 'script') return
     setSlow(false)
-    const timer = window.setTimeout(() => setSlow(true), 10_000)
+    const timer = window.setTimeout(() => setSlow(true), 20_000)
     return () => window.clearTimeout(timer)
   }, [html, htmlMode, content])
+  // Track the html iframe's fullscreen state (Esc / browser UI exits too).
+  useEffect(() => {
+    const onFullscreen = (): void => {
+      setFullscreen(document.fullscreenElement === htmlIframeRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFullscreen)
+    return () => document.removeEventListener('fullscreenchange', onFullscreen)
+  }, [])
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
   const diffs = entry?.diffs ?? []
   const showTabs = diffs.length > 0
@@ -367,6 +387,23 @@ export function FilePreviewPane(props: {
                   {t('preview.htmlScript')}
                 </button>
               )}
+              {(htmlMode === 'render' || htmlMode === 'script') && (
+                <button
+                  type="button"
+                  className={css.htmlToggleBtn}
+                  aria-label={t('preview.fullscreen')}
+                  onClick={() => {
+                    const frame = htmlIframeRef.current
+                    if (frame === null) return
+                    // Loose null check: environments without the Fullscreen
+                    // API leave fullscreenElement undefined.
+                    if (document.fullscreenElement != null) { void document.exitFullscreen?.() }
+                    else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
+                  }}
+                >
+                  {fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -424,7 +461,7 @@ export function FilePreviewPane(props: {
             <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} />
           </div>
         )
-        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} onLoaded={() => setSlow(false)} />}
+        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} onLoaded={() => setSlow(false)} iframeRef={htmlIframeRef} />}
     </div>
   )
 }

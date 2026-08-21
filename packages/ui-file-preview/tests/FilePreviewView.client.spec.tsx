@@ -578,6 +578,24 @@ describe('FilePreviewView', () => {
     expect(screen.queryByText('preview.scriptConfirm')).toBeNull()
   })
 
+  it('offers fullscreen for the html render view and requests it on the iframe', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<p>hi</p>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    const frame = document.querySelector('iframe')!
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(frame, 'requestFullscreen', { value: requestFullscreen, configurable: true })
+    act(() => { screen.getByText('preview.fullscreen').click() })
+    expect(requestFullscreen).toHaveBeenCalled()
+  })
+
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {
     const h = makeHarness()
     h.listFiles.mockResolvedValue({
