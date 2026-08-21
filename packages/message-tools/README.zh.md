@@ -60,7 +60,7 @@ surface replacement 改写了历史尾部，prompt 前缀从替换点开始失�
 
 ## 兼容性
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.0-rc.8`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：chat-node owner props 移除了 `loadImage`，改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：chat-node owner props 移除了 `loadImage`，改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证（纯增量审计，2026-08-21）
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制与延后工作
