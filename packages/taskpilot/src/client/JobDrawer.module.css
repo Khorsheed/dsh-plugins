@@ -1,3 +1,13 @@
+/* Push-layout: while the drawer is open it claims its width from the
+   conversation column instead of covering it. The document mark and the
+   width variable are set by the drawer component's open effect (inset 0 on
+   narrow viewports, where the drawer overlays as before). The composer seat
+   renders INSIDE the conversation scroll region, so it follows the shrunken
+   container on its own — a seat-level margin would double the push. */
+:global(html[data-taskpilot-drawer-open]) :global([data-slot='conversation']) [data-conversation-scroll] {
+  margin-right: var(--dsh-taskpilot-drawer-w, 0px);
+}
+
 .drawer {
   position: fixed;
   top: 0;

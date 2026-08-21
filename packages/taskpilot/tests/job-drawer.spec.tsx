@@ -115,6 +115,26 @@ describe('JobDrawer', () => {
     expect(close).toHaveBeenCalled()
   })
 
+  it('marks the document while open and clears it on close', () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    const { unmount } = render(<JobDrawer {...drawerProps()} />)
+    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(true)
+    expect(document.documentElement.style.getPropertyValue('--dsh-taskpilot-drawer-w')).toBe('520px')
+    unmount()
+    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--dsh-taskpilot-drawer-w')).toBe('')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+  })
+
+  it('keeps the document unmarked while closed', () => {
+    const store = createDrawerStore()
+    render(<JobDrawer {...drawerProps({
+      useStore: (selector) => selector(store.get()),
+    })} />)
+    expect(document.documentElement.hasAttribute('data-taskpilot-drawer-open')).toBe(false)
+  })
+
   it('renders an empty state when history carries no entries for the job', async () => {
     const props = drawerProps({
       loadHistory: vi.fn(async () => ({ hasMore: false, events: [] })),
