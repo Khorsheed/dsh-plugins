@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 The Codex harness of the [local-agent family](../../local-agent/local-agent/README.md). The bundle patch registers the `codex` harness (`CODEX_HOME` scoped home, `codex login --device-auth` device-code flow, rollout-file session records) and mounts the `subagent_codex_local` tool at the **profile root** — the `codex-local` one-shot provider spawns `codex exec` under the harness's scoped home, so every agent preset can delegate without per-preset variants. The browser settings section ships with the family core's `./client` half (Settings → 本地 Agent), roster-driven per harness.
 
-> The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@khorsheed/dsh-local-agent`'s own patch, which this bundle declares as a dependency — `dsh plugin add` reconciles only *direct* dependencies into the profile's bundles layer, so install the core bundle together with this one (two commands). The codex bundle deliberately does not re-insert that row — a duplicate would mount the core twice.
+> The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@khorsheed/dsh-local-agent`'s own patch, which this bundle declares as a dependency — `dsh plugin add` reconciles only *direct* dependencies into the profile's bundles layer, so name both in one command: `dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-codex`. The codex bundle deliberately does not re-insert that row — a duplicate would mount the core twice.
 
 ## Prerequisites
 

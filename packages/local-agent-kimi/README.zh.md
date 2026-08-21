@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-[local-agent 家族](../../local-agent/local-agent/README.md) 的 Kimi Code harness。bundle patch 注册 `kimi` harness（`KIMI_CODE_HOME` 作用域目录、`kimi login` device-code 流程、`session_index.jsonl` 记录），并把 `subagent_kimi` 工具行挂到 **profile 根**——`kimi-cli` 一次性 provider 在 harness 作用域目录下 spawn `kimi -p`，任意 agent preset 都能委派、无需逐 preset 变体。家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——单独安装本包也能挂载 core。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
+[local-agent 家族](../../local-agent/local-agent/README.md) 的 Kimi Code harness。bundle patch 注册 `kimi` harness（`KIMI_CODE_HOME` 作用域目录、`kimi login` device-code 流程、`session_index.jsonl` 记录），并把 `subagent_kimi` 工具行挂到 **profile 根**——`kimi-cli` 一次性 provider 在 harness 作用域目录下 spawn `kimi -p`，任意 agent preset 都能委派、无需逐 preset 变体。家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——一条命令同时点名两个包安装（`dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-kimi`):`dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，两个都得点名。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
 
 ## 前置依赖
 

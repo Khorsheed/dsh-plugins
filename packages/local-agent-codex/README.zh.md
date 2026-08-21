@@ -4,7 +4,7 @@
 
 [local-agent 家族](../../local-agent/local-agent/README.md) 的 Codex harness。bundle patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、`codex login --device-auth` device-code 流程、rollout 文件会话记录），并把 `subagent_codex_local` 工具行挂到 **profile 根**——`codex-local` 一次性 provider 在 harness 作用域目录下 spawn `codex exec`，任意 agent preset 都能委派、无需逐 preset 变体。浏览器设置分区（设置 → 本地 Agent）随家族 core 的 `./client` 半提供，按 harness 的 roster 驱动。
 
-> 家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——但 `dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，所以要与本包一起显式安装 core（两条命令）。codex 包刻意不重复插入该行——重复会挂载两次 core。
+> 家族 core（`local-agent` 行，共享作用域目录根）随框架包 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖——但 `dsh plugin add` 只把**直接**依赖调和进 profile 的 bundles 层，所以一条命令里同时点名两个包:`dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-codex`。codex 包刻意不重复插入该行——重复会挂载两次 core。
 
 ## 前置依赖
 
