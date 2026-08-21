@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { FilePreviewTurnRowProps } from './contract.ts'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconFolderOpenOutline16,
+  IconChevronDownOutline14, IconChevronUpOutline14, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { basename } from './turn-files.ts'
 import { parentPath } from './path-utils.ts'
@@ -60,7 +60,10 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
           {t(files.length === 1 ? 'turn.summaryOne' : 'turn.summary', { count: files.length })}
         </span>
         <span className={css.chevron} aria-hidden>
-          {collapsed ? <IconChevronRightOutline14 /> : <IconChevronDownOutline14 />}
+          {/* Accordion convention: collapsed → down (click unfolds downward),
+              open → up (click folds the body back up). A right-pointing arrow
+              here read as "open a drawer to the side", which the card is not. */}
+          {collapsed ? <IconChevronDownOutline14 /> : <IconChevronUpOutline14 />}
         </span>
       </button>
       {!collapsed && (
