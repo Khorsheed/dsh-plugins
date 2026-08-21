@@ -57,6 +57,7 @@ export type FilePreviewKey =
   | 'drawer.step.latest'
   | 'drawer.step.older'
   | 'drawer.step.newer'
+  | 'drawer.resize'
   | 'drawer.pin'
   | 'drawer.unpin'
   | 'drawer.previewEmpty'
@@ -105,6 +106,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'drawer.title': '文件预览',
   'drawer.close': '关闭',
   'drawer.pin': '固定抽屉（切换会话不收回）',
+  'drawer.resize': '拖动调整抽屉宽度',
   'drawer.unpin': '取消固定（切换会话自动收回）',
   'drawer.openFolder': '在文件夹中打开',
   'drawer.openIde': '在 IDE 打开',
@@ -173,6 +175,7 @@ export const en: Record<FilePreviewKey, string> = {
   'drawer.title': 'File preview',
   'drawer.close': 'Close',
   'drawer.pin': 'Pin drawer (keep across session switches)',
+  'drawer.resize': 'Drag to resize the drawer',
   'drawer.unpin': 'Unpin (collapse on session switch)',
   'drawer.openFolder': 'Show in folder',
   'drawer.openIde': 'Open in IDE',

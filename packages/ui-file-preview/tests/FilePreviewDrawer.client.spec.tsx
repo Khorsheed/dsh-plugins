@@ -6,7 +6,7 @@
  * pane, the close gesture, and preview failures — content only, no file list.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { FilePreviewDrawer } from '../src/client/FilePreviewDrawer.tsx'
 import type { FilePreviewDrawerProps } from '../src/client/contract.ts'
@@ -275,5 +275,29 @@ describe('FilePreviewDrawer', () => {
     expect(screen.getByRole('button', { name: 'drawer.unpin' })).toBeTruthy()
     act(() => { view.switchSession('s2') })
     expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('resizes the drawer by dragging the left-edge handle', () => {
+    const h = makeHarness()
+    renderDrawer(h)
+    act(() => { h.actions.open() })
+    const handle = screen.getByRole('separator')
+    act(() => { fireEvent.pointerDown(handle, { clientX: 500, pointerId: 1 }) })
+    // Drag left by 100px → the drawer grows from the 520 default to 620.
+    act(() => { fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 }) })
+    act(() => { fireEvent.pointerUp(handle, { pointerId: 1 }) })
+    expect(document.documentElement.style.getPropertyValue('--dsh-file-preview-drawer-w')).toBe('620px')
+  })
+
+  it('clamps the drawer width to its minimum', () => {
+    const h = makeHarness()
+    renderDrawer(h)
+    act(() => { h.actions.open() })
+    const handle = screen.getByRole('separator')
+    act(() => { fireEvent.pointerDown(handle, { clientX: 300, pointerId: 1 }) })
+    // Drag right far past the minimum.
+    act(() => { fireEvent.pointerMove(handle, { clientX: 900, pointerId: 1 }) })
+    act(() => { fireEvent.pointerUp(handle, { pointerId: 1 }) })
+    expect(document.documentElement.style.getPropertyValue('--dsh-file-preview-drawer-w')).toBe('280px')
   })
 })

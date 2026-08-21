@@ -1,7 +1,7 @@
 /** Root-overlay drawer: inline preview of a file clicked from the chat, no
  * tab switch. Content only — the file view tab remains the browse surface. */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
@@ -11,11 +11,23 @@ import { useCopyPathFeedback } from './copy-path.ts'
 import { FilePreviewPane } from './FilePreviewPane.tsx'
 import css from './FilePreviewDrawer.module.css'
 
+/** Default drawer width (px), matching the pre-resize CSS. */
+const DEFAULT_WIDTH = 520
+const MIN_WIDTH = 280
+/** localStorage key for the user's drawer width preference. */
+const WIDTH_KEY = 'dsh-file-preview-drawer-w'
+
+function clampWidth(width: number, viewport: number): number {
+  return Math.max(MIN_WIDTH, Math.min(width, Math.round(viewport * 0.85)))
+}
+
 /**
  * The link-click drawer, registered into the frame-wide `shell.overlay` list
  * slot (root scope). It renders nothing while closed; when a chat file link
  * routes `openPath`, it shows that file's last change and current content in
- * place, leaving the conversation view untouched.
+ * place, leaving the conversation view untouched. The left-edge handle drags
+ * the width (persisted locally); the conversation push tracks the same
+ * document-level CSS variable the drawer width uses.
  * @param props - composed props (runtime + store + injected + locale shares).
  */
 export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
@@ -41,6 +53,38 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
   // Host open gestures (folder / IDE) exist only when this deployment can
   // hand a path to a native desktop — same gate the official row uses.
   const canOpenExternal = isLoopback && useHostDescription(description => description?.canOpenPath === true)
+
+  // Resizable width: a local preference persisted under WIDTH_KEY; while open
+  // the drawer and the conversation push both read the same document-level
+  // CSS variable, so a drag re-flows chat in lockstep.
+  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_KEY))
+      return Number.isFinite(saved) && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH
+    } catch {
+      return DEFAULT_WIDTH
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    if (!open) return
+    document.documentElement.style.setProperty('--dsh-file-preview-drawer-w', `${drawerWidth}px`)
+    return () => { document.documentElement.style.removeProperty('--dsh-file-preview-drawer-w') }
+  }, [open, drawerWidth])
+  useEffect(() => {
+    try { localStorage.setItem(WIDTH_KEY, String(drawerWidth)) } catch { /* quota/private-mode: non-fatal */ }
+  }, [drawerWidth])
+  const onResizePointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: drawerWidth }
+    // Capture so fast drags keep delivering moves even off the 8px handle.
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onResizePointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    // Left edge: dragging left grows the drawer.
+    setDrawerWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
+  }
+  const onResizePointerUp = (): void => { drag.current = null }
 
   // While open, mark the document so the drawer's own CSS can push the
   // conversation (scroll body + composer seat) left by the drawer width —
@@ -96,6 +140,16 @@ export function FilePreviewDrawer(props: FilePreviewDrawerProps) {
 
   return (
     <div className={css.drawer} role="dialog" aria-label={t('drawer.title')}>
+      <div
+        className={css.resizeHandle}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('drawer.resize')}
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerUp}
+      />
       <header className={css.header}>
         <div className={css.title} title={displayPath}>{displayPath ?? t('drawer.title')}</div>
         <div className={css.headerActions}>
