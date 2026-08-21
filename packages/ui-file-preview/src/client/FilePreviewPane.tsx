@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
-import { CodeBlock, DiffBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, DiffBlock, MarkdownText, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { isHtmlPath, languageFor } from './path-utils.ts'
 import { buildSrcDoc } from './html-src-doc.ts'
@@ -118,6 +118,7 @@ function HtmlRenderView(props: {
           className={css.htmlFrameExit}
           onClick={() => { void document.exitFullscreen?.() }}
         >
+          <IconFullscreenOutline16 size={14} />
           {t('preview.exitFullscreen')}
         </button>
       )}
@@ -262,6 +263,7 @@ export function FilePreviewPane(props: {
   // frame never fires `load` (Chrome keeps it pending), so a fixed timer there
   // would be pure noise.
   const [slow, setSlow] = useState(false)
+  const slowTimer = useRef<number | null>(null)
   const html = isHtmlPath(entry?.path ?? read.path)
   const scripted = html && read.htmlScripted === true
   const content = read.kind === 'text' ? (read.content ?? '') : null
@@ -270,9 +272,19 @@ export function FilePreviewPane(props: {
     const large = content.length > 256 * 1024
     if (!large && htmlMode !== 'script') return
     setSlow(false)
-    const timer = window.setTimeout(() => setSlow(true), 20_000)
-    return () => window.clearTimeout(timer)
+    if (slowTimer.current !== null) window.clearTimeout(slowTimer.current)
+    slowTimer.current = window.setTimeout(() => setSlow(true), 20_000)
+    return () => {
+      if (slowTimer.current !== null) { window.clearTimeout(slowTimer.current); slowTimer.current = null }
+    }
   }, [html, htmlMode, content])
+  // A successful load cancels the stall timer — the scene is fine, the timer
+  // must not keep counting (a fixed 20s notice fired even after a healthy
+  // load because only the state was cleared, never the timeout).
+  const onHtmlLoaded = (): void => {
+    setSlow(false)
+    if (slowTimer.current !== null) { window.clearTimeout(slowTimer.current); slowTimer.current = null }
+  }
   // Track the html iframe's fullscreen state (Esc / browser UI exits too).
   useEffect(() => {
     const onFullscreen = (): void => {
@@ -405,19 +417,20 @@ export function FilePreviewPane(props: {
                   className={htmlMode === 'script' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
                   onClick={() => {
                     // First click on scripted content asks for confirmation;
-                    // a click while already scripted drops back to static.
+                    // a click while already scripted stops it (the iframe
+                    // unmounts, so the artifact's loops stop with it).
                     if (htmlMode === 'script') { setHtmlMode('render'); setScriptConfirm(false) }
                     else setScriptConfirm(true)
                   }}
                 >
-                  {t('preview.htmlScript')}
+                  {t(htmlMode === 'script' ? 'preview.htmlScriptStop' : 'preview.htmlScript')}
                 </button>
               )}
               {(htmlMode === 'render' || htmlMode === 'script') && (
                 <button
                   type="button"
                   className={css.htmlToggleBtn}
-                  aria-label={t('preview.fullscreen')}
+                  aria-label={fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
                   onClick={() => {
                     const frame = htmlFrameRef.current
                     if (frame === null) return
@@ -427,7 +440,7 @@ export function FilePreviewPane(props: {
                     else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
                   }}
                 >
-                  {fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
+                  <IconFullscreenOutline16 size={14} />
                 </button>
               )}
             </div>
@@ -487,7 +500,7 @@ export function FilePreviewPane(props: {
             <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} />
           </div>
         )
-        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={() => setSlow(false)} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}
+        : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}
     </div>
   )
 }

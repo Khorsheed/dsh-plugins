@@ -84,6 +84,7 @@ function renderView(
 
 afterEach(() => { cleanup() })
 beforeEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.useRealTimers() })
 
 describe('FilePreviewView', () => {
   it('fetches the list on mount and shows products only', async () => {
@@ -594,7 +595,7 @@ describe('FilePreviewView', () => {
     const wrap = document.querySelector('iframe')!.parentElement!
     const requestFullscreen = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(wrap, 'requestFullscreen', { value: requestFullscreen, configurable: true })
-    act(() => { screen.getByText('preview.fullscreen').click() })
+    act(() => { screen.getByRole('button', { name: 'preview.fullscreen' }).click() })
     expect(requestFullscreen).toHaveBeenCalled()
   })
 
@@ -638,6 +639,50 @@ describe('FilePreviewView', () => {
       expect(srcDoc).toContain('preview.staticHint')
       expect(srcDoc).toContain('position:fixed')
     })
+  })
+
+  it('reports a stall in the scripted tier only after the watchdog window without a load', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    // Render + fetch under real timers; fake them only for the watchdog clock.
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Let the async preview fetch settle (real timers) before faking the clock.
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    act(() => { vi.useFakeTimers() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    // No load within the window → the stall notice appears.
+    act(() => { vi.advanceTimersByTime(21_000) })
+    expect(screen.getByText('preview.slowHint')).toBeTruthy()
+    act(() => { vi.useRealTimers() })
+  })
+
+  it('clears the stall timer once the frame has loaded', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Let the async preview fetch settle (real timers) before faking the clock.
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    act(() => { vi.useFakeTimers() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    // The frame loads → the pending stall timer is cancelled.
+    act(() => { fireEvent.load(document.querySelector('iframe')!) })
+    act(() => { vi.advanceTimersByTime(25_000) })
+    expect(screen.queryByText('preview.slowHint')).toBeNull()
+    act(() => { vi.useRealTimers() })
   })
 
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {

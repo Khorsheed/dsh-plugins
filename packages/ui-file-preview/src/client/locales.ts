@@ -16,6 +16,7 @@ export type FilePreviewKey =
   | 'preview.htmlSource'
   | 'preview.htmlRender'
   | 'preview.htmlScript'
+  | 'preview.htmlScriptStop'
   | 'preview.scriptConfirm'
   | 'preview.scriptRun'
   | 'preview.scriptCancel'
@@ -89,6 +90,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.htmlSource': '源码',
   'preview.htmlRender': '渲染',
   'preview.htmlScript': '运行脚本',
+  'preview.htmlScriptStop': '停止运行',
   'preview.scriptConfirm': '此文件含脚本，将在隔离沙箱中运行（无网络、无法访问宿主）',
   'preview.scriptRun': '运行',
   'preview.scriptCancel': '取消',
@@ -156,6 +158,7 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.htmlSource': 'Source',
   'preview.htmlRender': 'Render',
   'preview.htmlScript': 'Run scripts',
+  'preview.htmlScriptStop': 'Stop',
   'preview.scriptConfirm': 'This file contains scripts; they will run in an isolated sandbox (no network, no host access)',
   'preview.scriptRun': 'Run',
   'preview.scriptCancel': 'Cancel',
