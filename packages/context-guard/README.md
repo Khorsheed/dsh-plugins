@@ -4,7 +4,8 @@ English | [中文](README.zh.md)
 
 A context-window compaction reminder for the dsh web GUI: once the **context occupancy** — the same number the composer's context ring shows — crosses a configured share of the model's context window, a compact button appears in the composer's tool row, and clicking it runs the official `/compact` command. No new RPC, no edits to core packages; removing the plugin removes every surface it adds.
 
-<!-- screenshot placeholder: docs/screenshots/context-guard.png (pending — capture during the acceptance round) -->
+<img src="docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
+<img src="docs/screenshots/context-guard-settings.png" width="480" alt="the reminder-ratio setting in Settings → Plugins">
 
 ## Features
 

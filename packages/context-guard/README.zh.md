@@ -4,7 +4,8 @@
 
 dsh Web GUI 的上下文窗口压缩提醒：当**上下文占用**——与输入框旁边进度环显示的是同一个数——越过模型上下文窗口的配置比例时，输入框工具栏里会自动出现一枚压缩按钮，点击即执行官方 `/compact` 命令。不需要新 RPC、不改官方代码；移除本插件即清除它添加的所有界面。
 
-<!-- screenshot placeholder: docs/screenshots/context-guard.png (pending — capture during the acceptance round) -->
+<img src="docs/screenshots/context-guard-button.png" width="480" alt="上下文占用越过配置比例后，聊天框出现压缩按钮">
+<img src="docs/screenshots/context-guard-settings.png" width="480" alt="设置 → 插件里的提醒比例配置项">
 
 ## 特性
 
