@@ -59,6 +59,16 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 3080 上**连续 3 天无相关事故**(崩溃、功能回退、与之相关的 preflight 失败)即可放行。放行时按 [publishing.md](publishing.md) 的自查清单执行;发完必做消费者验证(一次性目录 `npm install` + import 冒烟)。
 
+**README 发布标准**(参照顶尖开源项目的门面结构,样例:`packages/whalesong/README.md`):
+
+1. 标题 + 一句话 pitch(用户得到什么,不写实现)
+2. pitch 之后紧跟截图:`docs/screenshots/` 已有图直接用;没有的先放占位注释 `<!-- screenshot placeholder: docs/screenshots/<包名>.png (pending) -->`,**在验收实例(3082)人工验收时补拍**、用 `git add -f` 提交(图片扩展名是 gitignore 的),替换占位
+3. Features 3–6 条(用户视角,实现细节折叠进 `<details>` 的 How it works)
+4. Install/Uninstall 命令、Config(如有)、Compatibility(机器核对过的事实段,verbatim 维护)、Known Limitations、Development 一行
+5. 中英双语逐节对应,改完必须重录 sidecar(`verify-translation-pairing --write`)
+
+**验收即截图**:每个波次的验收实例不只是"跑起来"——人工验收时逐包把可见界面拍下来,回填 README 占位。截图缺失不阻塞发布,但占位注释必须在(提醒后补)。
+
 ## 守护者值班项(周期)
 
 - prod 健康:watchdog 拓扑单一、canary 正常、profile 无悬空 bundles、link/file 依赖新鲜
