@@ -29,20 +29,54 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 /** Files copied from the package root into the staging dir when present. */
 const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'cordis.patch.yml']
 
+/** Expand a `dir` + double-star + `<pattern>` files glob into the relative
+ * paths present in the package, so pack-dist honors the same globs pnpm pack
+ * does — e.g. the `skills` glob shipping the 3d-artifact / restart-guard
+ * skill files. Supports the two shapes in use: recursive suffix match
+ * (`<dir>/**&#47;*.ext`) and every file (`<dir>/**&#47;*`). Returns [] for any
+ * other glob shape. */
+function expandGlobEntry(packageDir: string, entry: string): string[] {
+  const match = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
+  if (match === null) return []
+  const [, root, rest] = match
+  const rootDir = join(packageDir, root)
+  if (!existsSync(rootDir) || !statSync(rootDir).isDirectory()) return []
+  const suffix = rest === '*' ? '' : rest.replace(/^\*/, '')
+  const out: string[] = []
+  const stack: string[] = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()!
+    for (const name of readdirSync(join(packageDir, dir))) {
+      const rel = join(dir, name)
+      if (statSync(join(packageDir, rel)).isDirectory()) {
+        stack.push(rel)
+      } else if (suffix === '' || name.endsWith(suffix)) {
+        out.push(rel)
+      }
+    }
+  }
+  return out
+}
+
 /**
  * Payload paths from the package's `files` field beyond what staging already
  * copies verbatim (the root documents above and lib/) — e.g. ankh-guard's
  * `scripts/dsh-watchdog.sh` and its supervisor installers, which the watchdog
- * cannot ship without. Glob entries are skipped: the lib globs are covered by
- * the recursive lib/ copy, and no package currently files anything else
- * globbed.
+ * cannot ship without. Glob entries are skipped unless a `packageDir` is given,
+ * in which case `dir` double-star globs (e.g. the `skills` glob) are expanded
+ * against it; the lib globs stay covered by the recursive lib/ copy.
  */
-export function filesDeclaredExtras(files: readonly string[] = []): string[] {
-  return files.filter(entry =>
-    !entry.includes('*')
-    && entry !== 'lib'
-    && !entry.startsWith('lib/')
-    && !(STAGED_ROOT_FILES as readonly string[]).includes(entry))
+export function filesDeclaredExtras(files: readonly string[] = [], packageDir?: string): string[] {
+  const out: string[] = []
+  for (const entry of files) {
+    if (entry === 'lib' || entry.startsWith('lib/') || (STAGED_ROOT_FILES as readonly string[]).includes(entry)) continue
+    if (entry.includes('*')) {
+      if (packageDir !== undefined) out.push(...expandGlobEntry(packageDir, entry))
+      continue
+    }
+    out.push(entry)
+  }
+  return out
 }
 
 export interface PackDistOptions {
@@ -196,7 +230,7 @@ export function packDist(options: PackDistOptions): string {
     // Every other path the manifest's `files` declares (scripts/, assets, …)
     // must ship too — staging only root docs + lib once dropped ankh-guard's
     // watchdog script from the tarball it was about to publish.
-    for (const extra of filesDeclaredExtras(pkg.files)) {
+    for (const extra of filesDeclaredExtras(pkg.files, packageDir)) {
       const source = join(packageDir, extra)
       if (!existsSync(source)) continue
       const dest = join(staging, extra)

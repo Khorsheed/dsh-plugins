@@ -73,7 +73,7 @@ describe('rescopePackageJson', () => {
 })
 
 describe('filesDeclaredExtras', () => {
-  it('keeps plain file/dir payloads, skips lib, staged root docs, and globs', () => {
+  it('keeps plain file/dir payloads, skips lib, staged root docs, and globs without a dir', () => {
     expect(filesDeclaredExtras([
       'lib/*.js',
       'lib/types/**/*.d.ts',
@@ -84,6 +84,26 @@ describe('filesDeclaredExtras', () => {
       'assets',
     ])).toEqual(['scripts/dsh-watchdog.sh', 'scripts', 'assets'])
     expect(filesDeclaredExtras(undefined)).toEqual([])
+  })
+
+  it('expands dir/**/*.ext globs against the package dir (skills ship)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pack-dist-glob-'))
+    try {
+      mkdirSync(join(dir, 'skills', '3d-artifact'), { recursive: true })
+      mkdirSync(join(dir, 'skills', 'nested'), { recursive: true })
+      writeFileSync(join(dir, 'skills', '3d-artifact', 'SKILL.md'), 'x')
+      writeFileSync(join(dir, 'skills', 'nested', 'other.md'), 'y')
+      writeFileSync(join(dir, 'skills', 'ignore.txt'), 'z')
+      expect(filesDeclaredExtras(['skills/**/*.md'], dir).sort())
+        .toEqual(['skills/3d-artifact/SKILL.md', 'skills/nested/other.md'])
+      // `<dir>/**/*` matches every file recursively.
+      expect(filesDeclaredExtras(['skills/**/*'], dir).sort())
+        .toEqual(['skills/3d-artifact/SKILL.md', 'skills/ignore.txt', 'skills/nested/other.md'])
+      // Unknown glob shapes expand to nothing.
+      expect(filesDeclaredExtras(['assets/*.png'], dir)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
