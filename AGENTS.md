@@ -6,7 +6,7 @@ The upstream host lives at `~/code/deepseek-harness` (env `DSH_HARNESS`). We tra
 
 ## Multi-agent concurrency
 
-Several agents work this repo at once. The rules below exist because of real incidents — follow them mechanically.
+Several agents work this repo at once. The rules below exist because of real incidents — follow them mechanically. The full collaboration model — worktree-only development, the three paths (worktree → main → 3080, mainline host-tracking, npm waves), and the conflict rules — lives in [docs/development.md](docs/development.md).
 
 - **Pull before you start; push when arranged.** `git pull --rebase` before you start; commit each logical change as soon as it is green (committed work exists in git). **Pushes are coordinated by the human, not a same-day obligation** — never push unilaterally. Stage explicit paths only (`git add -A` / `git add .` / `git add -u` are forbidden: the index is shared checkout state, and broad staging has swept another agent's staged files into the wrong commit); review `git status` + `git diff --cached` before committing.
 - **Never develop in `/tmp`, `scratch/`, or any throwaway directory.** A message-tools production line (0.2→0.4.7) was lost this way. Clone/branch inside this repo or nowhere.
