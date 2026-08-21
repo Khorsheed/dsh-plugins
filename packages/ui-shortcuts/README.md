@@ -22,8 +22,6 @@ The plugin is **not** part of the default web bundle; add it to a profile to ins
 dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 ```
 
-**Warning**: this package shares the loader entry id `ui-shortcuts` with the official `@deepseek-ai/dsh-client-ui-shortcuts`. Mounting both in one profile fails loud at boot on the duplicate entry id — keep exactly one.
-
 Uninstall = remove the row (or set `disabled: true` on it):
 
 ```sh
@@ -46,7 +44,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts
 <details>
 <summary>Internals (click to expand)</summary>
 
-The loader row's node half registers the `ui-shortcuts` settings namespace; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the keyboard-shortcuts card in the plugin configuration tab (Settings → Plugins). Disabling through the plugin inventory is a deployment concern, not this package's.
+The loader row's node half registers the `ui-shortcuts` settings namespace; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the keyboard-shortcuts card in the plugin configuration tab (Settings → Plugins). Disabling through the plugin inventory is a deployment concern, not this package's. One id note: the row id `ui-shortcuts` is shared with the official `@deepseek-ai/dsh-client-ui-shortcuts` bundle — compose at most one of them in a profile (duplicate loader ids fail loud at boot); the default web image mounts neither conflict, so the one-command install above is the normal path.
 
 Action behavior, all through public services — the plugin never reaches into ui-conversation internals:
 

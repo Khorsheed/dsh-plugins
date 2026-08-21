@@ -22,8 +22,6 @@ dsh web GUI 的键盘快捷键插件:`Esc` 暂停运行中的回合,`Ctrl/Cmd+S`
 dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
 ```
 
-**警示**:本包与官方 `@deepseek-ai/dsh-client-ui-shortcuts` 的 loader entry id 都是 `ui-shortcuts`,同一 profile 挂两次会在启动时 fail loud——只保留其一。
-
 卸载 = 移除该行(或对其 `disabled: true`):
 
 ```sh
@@ -46,7 +44,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts
 <details>
 <summary>内部结构(点击展开)</summary>
 
-该 loader 行的 node 半边注册 `ui-shortcuts` 设置命名空间;浏览器半边(`/plugins/ui-shortcuts/client.js`)负责按键接线与插件配置 tab 里的快捷键卡片(设置 → 插件)。通过插件清单禁用属于部署层面的配置,不属于本包职责。
+该 loader 行的 node 半边注册 `ui-shortcuts` 设置命名空间;浏览器半边(`/plugins/ui-shortcuts/client.js`)负责按键接线与插件配置 tab 里的快捷键卡片(设置 → 插件)。通过插件清单禁用属于部署层面的配置,不属于本包职责。一条 id 备注:行 id `ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` bundle 同名——一个 profile 里最多组合其一(重复 loader id 会在启动时 fail loud);官方默认镜像不挂载任何一方,上文的一条命令安装就是常规路径。
 
 动作行为,全部走公开服务——插件从不触及 ui-conversation 内部:
 
