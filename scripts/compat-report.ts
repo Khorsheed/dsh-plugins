@@ -57,21 +57,25 @@ for (const dir of readdirSync('packages', { withFileTypes: true })) {
   if (!existsSync(manifestPath)) continue
   const pkg = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const minHost = pkg.dsh?.compat?.minHost
+  // minHost is the FLOOR (oldest host the build runs on; it never tracks the
+  // host line). verifiedHost is the newest line the package was audited
+  // against — the value that answers "behind or current".
+  const verified = pkg.dsh?.compat?.verifiedHost ?? minHost
   let status = '-'
-  if (minHost !== undefined) {
-    const cmp = compare(minHost, host)
+  if (verified !== undefined) {
+    const cmp = compare(verified, host)
     status = cmp === null ? '?' : cmp === 0 ? 'current' : cmp < 0 ? 'behind' : 'ahead'
   }
-  rows.push({ name: pkg.name, version: pkg.version, minHost: minHost ?? '-', status, private: pkg.private === true })
+  rows.push({ name: pkg.name, version: pkg.version, minHost: minHost ?? '-', verifiedHost: pkg.dsh?.compat?.verifiedHost, status, private: pkg.private === true })
 }
 
 const behind = rows.filter(r => r.status === 'behind')
 process.stdout.write(`host line: ${host}\n\n`)
-const w = [42, 14, 14, 10]
-process.stdout.write(`${'package'.padEnd(w[0])}${'version'.padEnd(w[1])}${'minHost'.padEnd(w[2])}${'status'.padEnd(w[3])}\n`)
+const w = [42, 14, 14, 14, 10]
+process.stdout.write(`${'package'.padEnd(w[0])}${'version'.padEnd(w[1])}${'minHost'.padEnd(w[2])}${'verifiedHost'.padEnd(w[3])}${'status'.padEnd(w[4])}\n`)
 for (const r of rows) {
   const name = r.private ? `${r.name} (private)` : r.name
-  process.stdout.write(`${name.padEnd(w[0])}${r.version.padEnd(w[1])}${String(r.minHost).padEnd(w[2])}${r.status.padEnd(w[3])}\n`)
+  process.stdout.write(`${name.padEnd(w[0])}${r.version.padEnd(w[1])}${String(r.minHost).padEnd(w[2])}${String(r.verifiedHost ?? '-').padEnd(w[3])}${r.status.padEnd(w[4])}\n`)
 }
 process.stdout.write(`\n${rows.length} package(s); ${behind.length} behind the host line${behind.length > 0 ? ` — re-audit: ${behind.map(r => r.name.replace('@khorsheed/dsh-', '')).join(', ')}` : ''}\n`)
 process.exit(behind.length > 0 && args.includes('--fail-behind') ? 1 : 0)
