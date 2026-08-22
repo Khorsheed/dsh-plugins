@@ -18,7 +18,9 @@ Status: implemented
 
 **审批**:server→client 的审批/elicitation 请求按无人值守策略自动应答(优先 cancel 否则 decline、空权限授予、空回答、elicitation 拒绝——harness 参照实现的表),与 exec 行为一致,即提案的默认策略;人类审批中继钩子留给后续增量。
 
-**轮关联**:turn id 由服务端分配,所以轮按 turn id 关联,而非调用方轮次号——一轮只接受自己 turn id 的通知(accept ack 在途时经 `turn/started` 提前观察),退役 turn id 把被取消轮的迟到 unwind 隔出去(stop-改口手势),settle 即清除本轮的接收槽。父侧 `turn/start` 边界只在 accept ack 之后打开,确定性拒绝不留 dangling 边界。
+**轮关联**:turn id 由服务端分配,所以轮按 turn id 关联,而非调用方轮次号——一轮只接受自己 turn id 的通知(accept ack 在途时经 `turn/started` 提前观察),退役 turn id 把被取消轮的迟到 unwind 隔出去(stop-改口手势),settle 即清除本轮的接收槽。父侧 `turn/start` 边界只在 accept ack 之后打开,确定性拒绝不留 dangling 边界。同一成员的轮次在驱动内另有串行化(facade 的 resume 锁只覆盖 resume 对 resume;resume 撞上在飞的 fresh 轮会覆盖 runtime 的单槽通知接收器)。
+
+**评审轮(2026-08-23)**:accept 窗口内的取消改用在响应落地前到达的 `turn/started` turn id(accept 中途不再发不出 turn/interrupt);被取消或失败的轮在 settle 时回放置留行并带上已观察到的用量(exec settle 镜像的保留部分成果契约——M2 初版无对账的选择把它们丢了);auth 形态失败(401 类消息)上报家族 registry 的 auth-failure 标记(exec 的退出后检测移植到不退出的 runtime,鸭子类型——旧 core 跳过);端点 info 日志挪到驱动模式分支之前,live 轮也能打到;runtime 注册表的 onDead 删除改为先比较再删(崩溃-重拉起交错不再误删新 runtime 的注册项——这两项共有修复同时落到四家)。
 
 **生命周期**(逐字复用 M1 纪律):惰性 spawn + initialize 握手、同成员同时一个 spawn、空闲回收(`liveIdleMs`,默认 30 分钟)、崩溃重拉起并 `thread/resume` 委派记录里的线程 id、5 分钟冷却的通道熔断(逐轮回退 exec)、卸载时 `disposeAll` 中止并等待进行中的 spawn、一切窗口内取消生效(abort 监听器挂在所有 await 之前;握手与 abort 信号赛跑;呼叫方取消的握手绝不触发熔断)。
 

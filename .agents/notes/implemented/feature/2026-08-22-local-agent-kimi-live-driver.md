@@ -51,7 +51,18 @@ fold offset); the run output accumulates from `agent_message_chunk` text.
 plus a per-session turn chain — a cancelled turn's `session/prompt` must
 settle (cancelled) before the next round's prompt goes out, so the
 stop-then-rephrase gesture cannot interleave two turns' chunk streams (ACP
-updates carry no turn id, so serialization is the correlation).
+updates carry no turn id, so serialization is the correlation). Whole rounds
+of one member are additionally serialized in the driver (the facade's resume
+lock covers resume-vs-resume only).
+
+**Review round (2026-08-23)**: an `end_turn` with no accumulated answer is
+now an error, never a silent success (the exec path's empty-output guard);
+auth-shaped failures (session errors like Authentication required, or a
+mid-run 401 surfacing as a settled error) are reported to the family
+registry's auth-failure mark, porting the exec path's post-exit detection to
+a process that never exits (duck-typed — older cores skip the mark); and the
+two shared fixes — compare-then-delete in the runtime registry's onDead and
+per-member round serialization — landed here as in all four drivers.
 
 **Permissions**: `session/request_permission` selects the first
 allow_once/allow_always option (cancelled when none) — matching `kimi -p`'s

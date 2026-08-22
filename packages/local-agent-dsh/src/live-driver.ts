@@ -284,6 +284,8 @@ export class DshLiveDriver {
   /** In-flight spawns by member: concurrent rounds share one, disposeAll waits them out. */
   private readonly ensuring = new Map<string, Promise<LiveRuntime>>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
+  /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
+  private readonly roundChains = new Map<string, Promise<unknown>>()
   /** When the channel last failed its spawn/handshake probe (breaker with cooldown). */
   private channelBrokenAt: number | undefined
   private disposed = false
@@ -410,7 +412,10 @@ export class DshLiveDriver {
     member?.bind(child.pid)
     const runtime = new LiveRuntime(child, this.timeouts, message => { this.ctx.logger.warn(message) })
     runtime.onDead = () => {
-      this.runtimes.delete(key)
+      // Delete only OUR registration: a crash-then-respawn can interleave so
+      // the dead runtime's late onDead would otherwise evict the NEW
+      // runtime's entry and leak it (the registry race the review caught).
+      if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
     }
@@ -460,15 +465,35 @@ export class DshLiveDriver {
   }
 
   /**
-   * Drive one delegation round on the member's resident runtime. Mirrors the
-   * exec run's settlement contract exactly (settleRunResult + turn/end
-   * bookkeeping) so the facade, the tool, and the projections cannot tell the
-   * difference — except `cancel` is a runtime interrupt and the process
-   * survives. Cancellation is honored in EVERY window: a slow spawn/handshake
-   * or a slow accept races the abort signal and settles aborted instead of
-   * running the turn to completion unwatched.
+   * Drive one delegation round on the member's resident runtime. Rounds of
+   * one member are strictly serialized: the facade's resume lock covers
+   * resume-vs-resume only, and a resume racing an in-flight fresh round would
+   * otherwise overwrite the runtime's single notification sink and strand
+   * the earlier round forever.
    */
   async startRound(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
+    const key = String(spec.childSession.id)
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    // The chain holds until the round's result SETTLES (never rejects by the
+    // seam contract), not merely until the handle publishes.
+    this.roundChains.set(key, round.then(
+      handle => handle.result.catch(() => ({})),
+      () => ({}),
+    ))
+    return round
+  }
+
+  /**
+   * The serialized round body. Mirrors the exec run's settlement contract
+   * exactly (settleRunResult + turn/end bookkeeping) so the facade, the
+   * tool, and the projections cannot tell the difference — except `cancel`
+   * is a runtime interrupt and the process survives. Cancellation is honored
+   * in EVERY window: a slow spawn/handshake or a slow accept races the abort
+   * signal and settles aborted instead of running the turn to completion
+   * unwatched.
+   */
+  private async startRoundLocked(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
     const task = dshTextTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-dsh: request was aborted before the run started')

@@ -64,7 +64,10 @@ SIGTERM ladder), crash re-spawn with `--resume`, breaker with 5-minute
 cooldown, `disposeAll` aborting in-flight spawns, cancel honored in every
 window (abort listener before any await; the init wait races the abort
 signal; a cancel inside the init window reclaims the never-proven runtime;
-a caller cancel never trips the breaker).
+a caller cancel never trips the breaker) — and, since the 2026-08-23 review
+round, compare-then-delete in the runtime registry's onDead and strict
+per-member round serialization (a resume racing an in-flight fresh round can
+no longer overwrite the runtime's single event sink).
 
 ## Alternatives considered
 

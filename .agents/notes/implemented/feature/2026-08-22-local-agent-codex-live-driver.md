@@ -63,7 +63,23 @@ its own turn id (observed early via `turn/started` while the accept ack is in
 flight), retired turn ids tag out a cancelled turn's late unwind (the
 stop-then-rephrase gesture), and settlement clears the round's sink. The
 parent-side `turn/start` boundary opens only after the accept ack, so a
-definitive reject leaves no dangling boundary.
+definitive reject leaves no dangling boundary. Rounds of one member are
+additionally serialized in the driver (the facade's resume lock covers
+resume-vs-resume only; a resume racing an in-flight fresh round would
+overwrite the runtime's single notification sink).
+
+**Review round (2026-08-23)**: the accept-window cancel now uses the early
+`turn/started` turn id when the response has not landed (the turn/interrupt
+can no longer be skipped mid-accept); an aborted or failed round flushes its
+held-back lines with the usage already observed (the exec settle-mirror's
+partial-work contract — M2's initial no-reconciliation choice dropped them);
+auth-shaped failures (401-class messages) are reported to the family
+registry's auth-failure mark, porting the exec path's post-exit detection to
+a process that never exits (duck-typed — older cores skip the mark); the
+endpoint info log moved before the drive-mode branch so live rounds report
+it; and the runtime registry's onDead delete is compare-then-delete (a
+crash-then-respawn interleave can no longer evict the new runtime's entry —
+the same two fixes landed across all four live drivers).
 
 **Lifecycle** (M1's discipline verbatim): lazy spawn + initialize handshake,
 one in-flight spawn per member, idle reclaim (`liveIdleMs`, default 30 min),

@@ -52,12 +52,18 @@ idle reclaim after `liveIdleMs` (default 30 min; wire `shutdown` → grace →
 SIGTERM ladder), `disposeAll` on plugin unload (aborting and waiting out
 in-flight spawns, so no process registers past the teardown), one spawn per
 member at a time (an in-flight spawn is shared, never doubled), crash
-re-spawn with `agents.resume` of the on-disk session on the next round, and a
+re-spawn with `agents.resume` of the on-disk session on the next round, a
 channel breaker with cooldown (default 5 min) instead of a permanent exec
 fallback — a transient boot fault must not disable live driving until reload,
 while a broken channel still falls back per round
-(`LiveChannelUnavailableError` → `driver.disabled`). Every runtime sits in the
-driver's registry until reclaimed, so a profile restart leaves no zombies.
+(`LiveChannelUnavailableError` → `driver.disabled`) — and, since the
+2026-08-23 review round, compare-then-delete in the runtime registry's
+onDead (a crash-then-respawn interleave can no longer evict the new
+runtime's entry) and strict per-member round serialization in the driver
+(the facade's resume lock covers resume-vs-resume only; a resume racing an
+in-flight fresh round would overwrite the runtime's single notification
+sink). Every runtime sits in the driver's registry until reclaimed, so a
+profile restart leaves no zombies.
 
 **Round correlation and cancel windows** (acceptance findings B1/B2). Every
 notification carries the parent's round number: `turn/start` takes the round

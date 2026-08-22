@@ -568,3 +568,27 @@ describe('kimi provider live dispatch', () => {
     await run.dispose()
   })
 })
+
+describe('kimi live driver review fixes', () => {
+  it('reports auth-shaped session failures to the registry mark', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-fix1'))
+    const authMarks: string[][] = []
+    const registry = m.ctx.localAgent as unknown as { reportAuthFailure?: (h: string, d: string) => void }
+    registry.reportAuthFailure = (h, d) => { authMarks.push([h, d]) }
+    m.queueChild(new FakeAcpServer({ failSessionNew: 'Authentication required' }))
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('Authentication required')
+    expect(authMarks).toHaveLength(1)
+    expect(authMarks[0]![0]).toBe('kimi')
+  })
+
+  it('an end_turn with no answer is an error, never a silent success', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-fix2'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: [], stopReason: 'end_turn' }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('error')
+    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    await m.driver.disposeAll()
+  })
+})

@@ -264,6 +264,8 @@ export class ClaudeLiveDriver {
   private readonly runtimes = new Map<string, ClaudeLiveRuntime>()
   private readonly ensuring = new Map<string, Promise<ClaudeLiveRuntime>>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
+  /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
+  private readonly roundChains = new Map<string, Promise<unknown>>()
   private channelBrokenAt: number | undefined
   private disposed = false
   private readonly disposeController = new AbortController()
@@ -394,7 +396,8 @@ export class ClaudeLiveDriver {
     member?.bind(child.pid)
     const runtime = new ClaudeLiveRuntime(child, message => { this.ctx.logger.warn(message) })
     runtime.onDead = () => {
-      this.runtimes.delete(key)
+      // Delete only OUR registration (crash-then-respawn interleave safety).
+      if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
     }
@@ -419,6 +422,18 @@ export class ClaudeLiveDriver {
    * process survives.
    */
   async startRound(request: SubagentStartRequest, spec: ClaudeLiveRoundSpec): Promise<SubagentRun> {
+    const key = String(spec.childSession.id)
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    this.roundChains.set(key, round.then(
+      handle => handle.result.catch(() => ({})),
+      () => ({}),
+    ))
+    return round
+  }
+
+  /** The serialized round body. */
+  private async startRoundLocked(request: SubagentStartRequest, spec: ClaudeLiveRoundSpec): Promise<SubagentRun> {
     const task = textTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-claude: request was aborted before the run started')

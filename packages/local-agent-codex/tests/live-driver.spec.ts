@@ -36,6 +36,8 @@ interface FakeAppServerScript {
   crashAfterTurnStart?: boolean
   /** Send one command-approval server request mid-turn and record the answer. */
   askApproval?: boolean
+  /** Emit turn/started BEFORE the turn/start response (accept-window cancel tests). */
+  startedBeforeAck?: boolean
 }
 
 /** A fake `codex app-server --stdio` process speaking the vendor wire. */
@@ -143,6 +145,11 @@ class FakeAppServer {
         this.turnSeq += 1
         const turnId = `turn-${this.turnSeq}`
         const threadId = String(params['threadId'])
+        if (this.script.startedBeforeAck === true) {
+          // The notification races the response: the driver's pendingTurnId
+          // adoption is what makes the accept window cancellable.
+          this.notify('turn/started', { threadId, turn: { id: turnId, status: 'inProgress' } })
+        }
         respond({ turn: { id: turnId, status: 'inProgress' } })
         const turn = this.script.turn?.(params) ?? {}
         queueMicrotask(() => {
@@ -582,5 +589,85 @@ describe('codex provider live dispatch', () => {
     expect(m.spawns[1]!.spec.argv).toContain('exec')
     expect(driver.disabled).toBe(true)
     await run.dispose()
+  })
+})
+
+describe('codex live driver review fixes', () => {
+  it('cancel inside the accept window still interrupts — the turn id came from the early turn/started', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-fix1'))
+    // turn/started lands BEFORE the turn/start response; turn never closes.
+    const fake = new FakeAppServer({ startedBeforeAck: true, turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    const interrupt = fake.requests.find(r => r.method === 'turn/interrupt')
+    expect(interrupt?.params).toMatchObject({ threadId: 'thread-1', turnId: 'turn-1' })
+    await m.driver.disposeAll()
+  })
+
+  it('an aborted round still mirrors the held-back lines and observed usage (partial-work contract)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-fix2'))
+    // Items stream, usage lands, but turn/completed never comes (cancelled).
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.map(r => r.method)).toContain('turn/start') })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'i1', type: 'reasoning', summary: ['在想了'], content: [] } })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'i2', type: 'agentMessage', text: '半截回复', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: { last: { inputTokens: 8, cachedInputTokens: 2, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 0 }, total: {} },
+    })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    // The volatile last line survived settlement, with the observed usage.
+    const assistant = child.events.filter(e => e.type === 'assistant/message')
+    expect(assistant).toHaveLength(2)
+    expect(assistant[1]?.data).toMatchObject({
+      message: { content: [{ type: 'text', text: '半截回复' }] },
+      usage: { inputTokens: 6, outputTokens: 3, cacheReadTokens: 2 },
+    })
+    await m.driver.disposeAll()
+  })
+
+  it('reports auth-shaped turn failures to the registry mark', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-fix3'))
+    const authMarks: string[][] = []
+    const registry = m.ctx.localAgent as unknown as { reportAuthFailure?: (h: string, d: string) => void }
+    registry.reportAuthFailure = (h, d) => { authMarks.push([h, d]) }
+    m.queueChild(new FakeAppServer({
+      turn: () => ({ status: 'failed', errorMessage: '401 Unauthorized: invalid access token', items: [] }),
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('error')
+    expect(authMarks).toHaveLength(1)
+    expect(authMarks[0]![0]).toBe('codex')
+    await m.driver.disposeAll()
+  })
+
+  it('serializes a resume round behind the in-flight fresh round (single spawn)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-fix4'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const secondPending = m.driver.startRound(request({ prompt: '换个说法' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(m.spawns).toHaveLength(1)
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(1)
+    // Round 1 closes (error — no output); round 2 then proceeds.
+    fake.runTurn('thread-1', 'turn-1', { items: [], status: 'failed', errorMessage: 'boom' })
+    await first.result
+    const second = await secondPending
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(2)
+    await m.driver.disposeAll()
+    void second
   })
 })

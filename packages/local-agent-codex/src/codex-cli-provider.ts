@@ -187,6 +187,12 @@ export class CodexCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Resolve the effective custom endpoint from the scoped config.toml for
+    // diagnostics: codex reads it directly (a user manually editing the
+    // config to route through a custom provider is authoritative). Logged
+    // BEFORE the drive-mode branch so live rounds report their endpoint too.
+    const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+    this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
     // Live driver: the round goes to the resident app-server process (one per
     // member). A channel that fails at spawn/handshake falls through to the
     // exec one-shot below — and stays there until the breaker cools down.
@@ -216,12 +222,6 @@ export class CodexCliProvider implements SubagentProvider {
     // Member channel: register this run and carry the bridge declaration on
     // the spawn argv, so the CLI session starts with member_message available.
     const member = this.memberRun(runId, request.parent.session.id)
-    // Resolve the effective custom endpoint from the scoped config.toml for
-    // diagnostics: codex reads it directly (a user manually editing the
-    // config to route through a custom provider is authoritative). Log it so
-    // a failing delegation reports which endpoint it actually used.
-    const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
-    this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
     try {
       const run = await startCodexCliRun(request, {
         cwd: parentCwd,
@@ -284,6 +284,9 @@ export class CodexCliProvider implements SubagentProvider {
         )
       }
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+      // Logged BEFORE the drive-mode branch so live rounds report their endpoint too.
+      this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
       // Live driver: continue the member's resident app-server thread. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
       if (this.live !== undefined && !this.live.disabled) {
@@ -308,8 +311,6 @@ export class CodexCliProvider implements SubagentProvider {
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
       const member = this.memberRun(intent.childSessionId, request.parent.session.id)
-      const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
-      this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
       let run: SubagentRun
       try {
         run = await startCodexCliRun(request, {

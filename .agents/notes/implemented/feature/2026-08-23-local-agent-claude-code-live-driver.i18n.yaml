@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-local-agent-claude-code-live-driver.md
-.agents/notes/implemented/feature/2026-08-23-local-agent-claude-code-live-driver.md: 88cd20864904a3a304f297fc22ce0b5ffa94866c
-.agents/notes/implemented/feature/2026-08-23-local-agent-claude-code-live-driver.zh.md: a87dc8c07773b041789a06189de3cb1ccc9609d8
+.agents/notes/implemented/feature/2026-08-23-local-agent-claude-code-live-driver.md: a57ce4d6cf51775a42591c54172ad487526df6e7
+.agents/notes/implemented/feature/2026-08-23-local-agent-claude-code-live-driver.zh.md: 594e5666e59268ad8e7614574bf9649d67cb5b94

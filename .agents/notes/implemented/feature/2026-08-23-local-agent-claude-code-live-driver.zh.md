@@ -20,7 +20,7 @@ Status: implemented
 
 **轮关联**:流事件不带 turn id,所以每成员同一时刻只跑一轮——per-runtime 链保证被取消轮的 `result` 落地后下一条消息才发出(claude 自己会排队 stdin 帧,但排队的 result 绝不能落进下一轮的接收槽)。settle 按身份清除本轮接收槽,且只在 result 落地之后:在飞轮的迟到 result 仍能抵达自己那一轮的 resolver,释放链条(stop-改口手势)。
 
-**生命周期**:逐字复用 M1–M3 纪律——惰性 spawn、同成员 spawn 去重、空闲回收(`liveIdleMs`,默认 30 分钟;stdin EOF → 宽限 → SIGTERM 阶梯)、崩溃重拉起 + `--resume`、5 分钟冷却的熔断器、卸载时 `disposeAll` 中止进行中的 spawn、一切窗口内取消生效(abort 监听器在一切 await 之前;init 等待与 abort 赛跑;init 窗口内的取消回收从未自证的 runtime;呼叫方取消绝不触发熔断)。
+**生命周期**:逐字复用 M1–M3 纪律——惰性 spawn、同成员 spawn 去重、空闲回收(`liveIdleMs`,默认 30 分钟;stdin EOF → 宽限 → SIGTERM 阶梯)、崩溃重拉起 + `--resume`、5 分钟冷却的熔断器、卸载时 `disposeAll` 中止进行中的 spawn、一切窗口内取消生效(abort 监听器在一切 await 之前;init 等待与 abort 赛跑;init 窗口内的取消回收从未自证的 runtime;呼叫方取消绝不触发熔断);2026-08-23 评审轮再加:注册表 onDead 先比较再删与同成员轮次严格串行化(resume 撞上在飞的 fresh 轮不再覆盖 runtime 的单槽事件接收器)。
 
 ## Alternatives considered
 

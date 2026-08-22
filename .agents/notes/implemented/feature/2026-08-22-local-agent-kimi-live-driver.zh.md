@@ -16,7 +16,9 @@ Status: implemented
 
 **镜像刻意保持文件折叠。** kimi 的 ACP `session/update` 通知是 token 级 chunk,与 exec 镜像拥有的 wire.jsonl 行折叠**不同构**——而 ACP runtime 在同一个 scoped home 写同一个 wire.jsonl(session-view.ts 有记载)。所以推送只**触发**节流的 `mirrorKimiDelta` 过一遍(exec 路径逐字的 offset 簿记,经 `kimiMirroredLines`),settle 对账仍是权威,两条驱动路径不可能漂移。`liveMirrorGranularity: 'token'` 额外把 chunk 直接写成 `assistant/chunk`(绝不计入折叠 offset);运行输出从 `agent_message_chunk` 文本累积。
 
-**轮关联**:每成员一进程、每 runtime 一会话,外加每会话的 turn 链——被取消轮的 `session/prompt` 必须先落定(cancelled),下一轮的 prompt 才发出,因此 stop-改口手势不可能把两轮的 chunk 流交错(ACP 更新不带 turn id,串行化就是关联)。
+**轮关联**:每成员一进程、每 runtime 一会话,外加每会话的 turn 链——被取消轮的 `session/prompt` 必须先落定(cancelled),下一轮的 prompt 才发出,因此 stop-改口手势不可能把两轮的 chunk 流交错(ACP 更新不带 turn id,串行化就是关联)。同一成员的整轮在驱动内另有串行化(facade 的 resume 锁只覆盖 resume 对 resume)。
+
+**评审轮(2026-08-23)**:`end_turn` 但没有累积答案现在落定 error,绝不当静默成功(exec 的空输出守卫);auth 形态失败(session 错误如 Authentication required,或运行中 401 以 settle 错误浮出)上报家族 registry 的 auth-failure 标记(exec 的退出后检测移植到不退出的 runtime,鸭子类型——旧 core 跳过);两项共有修复——注册表 onDead 先比较再删与同成员轮次串行化——与四家同步落地。
 
 **审批**:`session/request_permission` 选第一个 allow_once/allow_always 选项(没有则 cancelled)——与 `kimi -p` 的自动批准一致,即提案的默认策略。
 

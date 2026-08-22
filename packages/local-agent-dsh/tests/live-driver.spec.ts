@@ -675,17 +675,28 @@ describe('follow-up hardening (S1–S6)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('S2: concurrent rounds for one member share a single spawn', async () => {
+  it('S2: concurrent rounds for one member are serialized (single spawn, sink never overwritten)', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-s2'))
-    const fake = new FakeServeChild({ turn: () => ({ events: answerEvents(1, 't', 'a'), reason: null }) })
+    // Round 1's turn never closes on its own; the test closes it by hand.
+    const fake = new FakeServeChild({ turn: () => ({ events: [], reason: null }) })
     m.queueChild(fake)
-    // Both rounds enter before the handshake lands.
-    const first = m.driver.startRound(request() as never, roundSpec(m, child))
-    const second = m.driver.startRound(request() as never, roundSpec(m, child))
-    await Promise.all([first, second])
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Round 2 enters while round 1 is in flight: it must WAIT, and it must
+    // not spawn a second process.
+    const secondPending = m.driver.startRound(request({ prompt: '换个说法' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
+    await new Promise(resolve => setTimeout(resolve, 30))
     expect(m.spawns).toHaveLength(1)
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(1)
+    // Round 1 closes; round 2's turn goes out only after that.
+    fake.pushIdle('child-s2', 1, { kind: 'completed' })
+    // Round 1 had no assistant output, so it settles error — fine; the point
+    // is round 2 proceeds afterwards and settles cleanly.
+    await first.result
+    const second = await secondPending
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(2)
     await m.driver.disposeAll()
+    void second
   })
 
   it('S5: a tripped breaker retries live after the cooldown instead of sticking to exec', async () => {

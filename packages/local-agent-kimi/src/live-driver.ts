@@ -132,6 +132,15 @@ function thrown(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
 }
 
+/**
+ * Auth-shaped failure signatures in kimi's error output: the endpoint
+ * rejected the credential. Mirrors the exec path's detector
+ * (KIMI_AUTH_FAILURE in kimi-cli-provider.ts); the live path matches against
+ * session/prompt failure messages, which is where a mid-run 401 surfaces
+ * when the process does not exit.
+ */
+export const KIMI_LIVE_AUTH_FAILURE = /401|unauthorized|invalid api key|not authenticated|authentication required/i
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -365,6 +374,8 @@ export class KimiAcpLiveDriver {
   private readonly runtimes = new Map<string, KimiLiveRuntime>()
   private readonly ensuring = new Map<string, Promise<KimiLiveRuntime>>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
+  /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
+  private readonly roundChains = new Map<string, Promise<unknown>>()
   private channelBrokenAt: number | undefined
   private disposed = false
   private readonly disposeController = new AbortController()
@@ -476,7 +487,8 @@ export class KimiAcpLiveDriver {
       this.timeouts.requestMs,
     )
     runtime.onDead = () => {
-      this.runtimes.delete(key)
+      // Delete only OUR registration (crash-then-respawn interleave safety).
+      if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
     }
@@ -527,6 +539,24 @@ export class KimiAcpLiveDriver {
 
   private markChannelBroken(): void {
     this.channelBrokenAt = Date.now()
+  }
+
+  /**
+   * Report an auth-shaped round failure to the family registry's auth-failure
+   * mark (the exec path's post-exit 401 detection ported to a process that
+   * never exits: the match runs against the settled error instead). Degrades
+   * silently on a core predating reportAuthFailure.
+   */
+  private reportAuthIfShaped(error: Error): void {
+    if (!KIMI_LIVE_AUTH_FAILURE.test(error.message)) return
+    // Duck-typed: the method lands with the auth-truthfulness core; older
+    // cores simply skip the mark.
+    const registry = this.ctx.localAgent as unknown as {
+      reportAuthFailure?: (harness: string, detail: string) => void
+    }
+    if (typeof registry.reportAuthFailure === 'function') {
+      registry.reportAuthFailure('kimi', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
+    }
   }
 
   /**
@@ -596,6 +626,18 @@ export class KimiAcpLiveDriver {
    * bookkeeping); cancel is `session/cancel` and the process survives.
    */
   async startRound(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
+    const key = String(spec.childSession.id)
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    this.roundChains.set(key, round.then(
+      handle => handle.result.catch(() => ({})),
+      () => ({}),
+    ))
+    return round
+  }
+
+  /** The serialized round body. */
+  private async startRoundLocked(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
     const task = textTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-kimi: request was aborted before the run started')
@@ -718,7 +760,9 @@ export class KimiAcpLiveDriver {
       } catch (error) {
         // The accept failed: the runtime's session state is unknown, so do
         // not reuse it — reclaim and fail the round loudly. The turn never
-        // opened parent-side, so no dangling turn/start.
+        // opened parent-side, so no dangling turn/start. (An auth-shaped
+        // failure here flows through settleRunResult's onError, which owns
+        // the registry mark — reporting here too would double it.)
         if (!runAbort.signal.aborted) await this.reclaim(String(childSession.id))
         throw thrown(error)
       }
@@ -755,7 +799,13 @@ export class KimiAcpLiveDriver {
       const promptPromise: Promise<{ stopReason?: string }> = rt.turnChain.catch(() => {}).then(sendPrompt)
       rt.turnChain = promptPromise
       const promptResult = await Promise.race([promptPromise, processFailure])
-      return { output: collectOutput(), stopReason: acpStopReasonToHarness(String(promptResult?.stopReason ?? '')) }
+      const stopReason = acpStopReasonToHarness(String(promptResult?.stopReason ?? ''))
+      // The exec path's silent-failure guard: an end_turn with no answer is an
+      // error, never a 'completed' success with empty output.
+      if (stopReason === 'completed' && collectOutput().length === 0) {
+        throw new Error('subagent-kimi live: the turn completed but produced no answer')
+      }
+      return { output: collectOutput(), stopReason }
     })
 
     const result: Promise<SubagentResult> = settleRunResult({
@@ -766,6 +816,7 @@ export class KimiAcpLiveDriver {
         const diagnostics = runtime?.diagnostics ?? ''
         const suffix = diagnostics === '' ? '' : `; ${diagnostics}`
         this.ctx.logger.warn(`subagent-kimi: live round failed (${stopReason}): ${error.message}${suffix}`)
+        this.reportAuthIfShaped(error)
       },
       signal: request.signal,
       onAbort,

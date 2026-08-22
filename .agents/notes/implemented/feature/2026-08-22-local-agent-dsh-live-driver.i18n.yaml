@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-local-agent-dsh-live-driver.md
-.agents/notes/implemented/feature/2026-08-22-local-agent-dsh-live-driver.md: fa5d5bd909da05d69619293cc6a42f00adbb8e7d
-.agents/notes/implemented/feature/2026-08-22-local-agent-dsh-live-driver.zh.md: 55126c3ae8c246cd607874cf89c44f2005937f66
+.agents/notes/implemented/feature/2026-08-22-local-agent-dsh-live-driver.md: 269c2f460b8f6703872cfec372c1c302bbe00ce3
+.agents/notes/implemented/feature/2026-08-22-local-agent-dsh-live-driver.zh.md: 400dc7446710807f2a18dc54c9b4bb432b98cb59

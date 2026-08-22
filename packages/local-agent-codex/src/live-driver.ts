@@ -119,6 +119,15 @@ function thrown(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
 }
 
+/**
+ * Auth-shaped failure signatures in codex's error output: the endpoint
+ * rejected the credential. Mirrors the exec path's detector
+ * (CODEX_AUTH_FAILURE in codex-cli-provider.ts); the live path matches
+ * against turn-failure messages, which is where a mid-run 401 surfaces when
+ * the process does not exit.
+ */
+export const CODEX_LIVE_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -395,6 +404,8 @@ export class CodexLiveDriver {
   /** In-flight spawns by member: concurrent rounds share one, disposeAll waits them out. */
   private readonly ensuring = new Map<string, Promise<CodexLiveRuntime>>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
+  /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
+  private readonly roundChains = new Map<string, Promise<unknown>>()
   private channelBrokenAt: number | undefined
   private disposed = false
   private readonly disposeController = new AbortController()
@@ -509,7 +520,8 @@ export class CodexLiveDriver {
       this.timeouts.requestMs,
     )
     runtime.onDead = () => {
-      this.runtimes.delete(key)
+      // Delete only OUR registration (crash-then-respawn interleave safety).
+      if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
     }
@@ -557,6 +569,24 @@ export class CodexLiveDriver {
   }
 
   /**
+   * Report an auth-shaped round failure to the family registry's auth-failure
+   * mark (the exec path's post-exit 401 detection ported to a process that
+   * never exits: the match runs against the settled error instead). Degrades
+   * silently on a core predating reportAuthFailure.
+   */
+  private reportAuthIfShaped(error: Error): void {
+    if (!CODEX_LIVE_AUTH_FAILURE.test(error.message)) return
+    // Duck-typed: the method lands with the auth-truthfulness core; older
+    // cores simply skip the mark.
+    const registry = this.ctx.localAgent as unknown as {
+      reportAuthFailure?: (harness: string, detail: string) => void
+    }
+    if (typeof registry.reportAuthFailure === 'function') {
+      registry.reportAuthFailure('codex', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
+    }
+  }
+
+  /**
    * Auto-answer the app-server's approval/elicitation requests, matching the
    * unattended exec behavior (and the harness reference implementation's
    * tables): the live driver never grants interactive approval. This is the
@@ -589,6 +619,18 @@ export class CodexLiveDriver {
    * the fresh runtime instead of letting the turn run unwatched.
    */
   async startRound(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
+    const key = String(spec.childSession.id)
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    this.roundChains.set(key, round.then(
+      handle => handle.result.catch(() => ({})),
+      () => ({}),
+    ))
+    return round
+  }
+
+  /** The serialized round body. */
+  private async startRoundLocked(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
     const task = textTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-codex: request was aborted before the run started')
@@ -632,11 +674,15 @@ export class CodexLiveDriver {
       if (roundSettled || runAbort.signal.aborted) return
       runAbort.abort(new Error('subagent-codex: run cancelled locally'))
       // The live driver's core win: a graceful runtime interrupt instead of a
-      // process kill. Best-effort; local settlement does not wait for it.
-      if (activeTurnId !== undefined && runtime?.threadId !== undefined && !runtime.dead) {
+      // process kill. Best-effort; local settlement does not wait for it. The
+      // turn id comes from the accept response — or from the turn/started
+      // notification, which can land FIRST, so the accept window is covered
+      // too (the B1 review finding).
+      const turnId = activeTurnId ?? pendingTurnId
+      if (turnId !== undefined && runtime?.threadId !== undefined && !runtime.dead) {
         void runtime.peer.request('turn/interrupt', {
           threadId: runtime.threadId,
-          turnId: activeTurnId,
+          turnId,
         }).catch(() => {})
       }
     }
@@ -813,9 +859,19 @@ export class CodexLiveDriver {
       } catch (error) {
         // The accept failed: the runtime's thread/turn state is unknown, so do
         // not reuse it — reclaim and fail the round loudly. The turn never
-        // opened parent-side, so no dangling turn/start.
+        // opened parent-side, so no dangling turn/start. (An auth-shaped
+        // failure here flows through settleRunResult's onError, which owns
+        // the registry mark — reporting here too would double it.)
         if (!runAbort.signal.aborted) await this.reclaim(String(childSession.id))
         throw thrown(error)
+      }
+      // The turn exists sub-side from here on: if a cancel landed mid-accept,
+      // the interrupt goes out immediately (never leave a turn running wild).
+      if (runAbort.signal.aborted && runtime !== undefined && runtime.threadId !== undefined) {
+        void runtime.peer.request('turn/interrupt', {
+          threadId: runtime.threadId,
+          turnId: activeTurnId,
+        }).catch(() => {})
       }
       openTurn()
     })()
@@ -859,12 +915,17 @@ export class CodexLiveDriver {
         const diagnostics = runtime?.diagnostics ?? ''
         const suffix = diagnostics === '' ? '' : `; ${diagnostics}`
         this.ctx.logger.warn(`subagent-codex: live round failed (${stopReason}): ${error.message}${suffix}`)
+        this.reportAuthIfShaped(error)
       },
       signal: request.signal,
       onAbort,
     }).then((settled) => {
       roundSettled = true
       if (turnOpened) {
+        // An aborted or failed turn never sees turn/completed, so its
+        // hold-back line (and the usage already observed) would be lost —
+        // flush it now (the exec settle-mirror's partial-work contract).
+        if (mirrored < lines.length) mirrorUpTo(lines.length, true)
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {
