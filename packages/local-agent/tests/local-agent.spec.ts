@@ -240,7 +240,18 @@ describe('LocalAgentRegistry', () => {
     const second = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(second, 'printed no device-code prompt')
     const first = await pending
-    expectError(first, 'exited with code unknown')
+    // The replaced login's error text is platform-timing dependent: where
+    // /bin/sh is dash (Linux), a sh waiting on a foreground child defers
+    // SIGTERM until the child exits, so the replaced login's own prompt
+    // timeout fires first ('printed no device-code prompt'); where sh is
+    // bash (macOS), the SIGTERM kills it immediately ('exited with code
+    // unknown'). Both prove the replacement happened.
+    expect(first?.result).toMatchObject({ kind: 'error' })
+    const firstResult = first?.result
+    const firstText = firstResult?.kind === 'error' ? firstResult.text : ''
+    expect(
+      ['exited with code unknown', 'printed no device-code prompt'].some((fragment) => firstText.includes(fragment)),
+    ).toBe(true)
   })
 
   it('SIGKILLs a replaced login child that ignores SIGTERM', async () => {
