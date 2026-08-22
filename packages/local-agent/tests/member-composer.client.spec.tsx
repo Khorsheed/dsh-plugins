@@ -9,7 +9,7 @@ import {
   MemberComposer, selectCliMember, type MemberComposerProps,
 } from '../src/client/MemberComposer.tsx'
 import {
-  MEMBER_DOCK_CONTRIBUTORS, memberDockLines, statsContributor,
+  MEMBER_DOCK_CONTRIBUTORS, memberDockLines, statsContributor, tasksContributor,
 } from '../src/client/member-dock.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -44,13 +44,16 @@ function props(
   over: Partial<MemberComposerProps> = {},
   running = false,
   usage?: { uncachedInputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number },
+  todos?: readonly { content: string; status: 'pending' | 'in_progress' | 'completed' }[],
 ): MemberComposerProps {
   const snapshot = { running } as ConversationSnapshot
   function useSession<T>(select: (state: ConversationSnapshot) => T): T {
     return select(snapshot)
   }
   function useProjection(key: string): unknown {
-    return key === 'tokenUsage' ? usage : undefined
+    if (key === 'tokenUsage') return usage
+    if (key === 'todos') return todos
+    return undefined
   }
   return {
     matched: { childSessionId: CHILD },
@@ -235,6 +238,11 @@ describe('MemberComposer', () => {
 
 describe('member dock registry', () => {
   const USAGE = { uncachedInputTokens: 100, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 0 }
+  const TODOS = [
+    { content: '读代码', status: 'completed' },
+    { content: '改实现', status: 'in_progress' },
+    { content: '跑测试', status: 'pending' },
+  ] as const
 
   it('omits null contributors and keeps registration order', () => {
     const lines = memberDockLines({}, t, [
@@ -250,8 +258,8 @@ describe('member dock registry', () => {
     expect(memberDockLines({}, t, [])).toEqual([])
   })
 
-  it('registers the stats contributor', () => {
-    expect(MEMBER_DOCK_CONTRIBUTORS).toEqual([statsContributor])
+  it('registers stats then tasks', () => {
+    expect(MEMBER_DOCK_CONTRIBUTORS).toEqual([statsContributor, tasksContributor])
   })
 
   it('the stats contributor declines without usage and formats activity byte-identically to pre-dock', () => {
@@ -262,5 +270,34 @@ describe('member dock registry', () => {
       text: `${zh['member.stats.cacheHit'].replace('{percent}', '75')} | ${
         zh['member.stats.tokens'].replace('{input}', '400').replace('{output}', '50')}`,
     })
+  })
+
+  it('the tasks contributor declines with no todos and summarizes mixed states', () => {
+    expect(tasksContributor({}, t)).toBeNull()
+    expect(tasksContributor({ todos: null }, t)).toBeNull()
+    expect(tasksContributor({ todos: [] }, t)).toBeNull()
+    expect(tasksContributor({ todos: TODOS }, t)).toEqual({
+      id: 'tasks',
+      text: zh['member.tasks.summary'].replace('{done}', '1').replace('{total}', '3')
+        + zh['member.tasks.active'].replace('{title}', '改实现'),
+    })
+  })
+
+  it('the tasks contributor drops the active segment when nothing is in progress', () => {
+    const all = TODOS.map(todo => ({ ...todo, status: 'completed' as const }))
+    expect(tasksContributor({ todos: all }, t)).toEqual({
+      id: 'tasks',
+      text: zh['member.tasks.summary'].replace('{done}', '3').replace('{total}', '3'),
+    })
+  })
+
+  it('renders the tasks row below the stats row when the session carries todos', async () => {
+    const { container } = render(<MemberComposer {...props({}, false, USAGE, TODOS)} />)
+    await screen.findByRole('textbox')
+
+    const rows = [...container.querySelectorAll('[data-member-dock-row]')]
+    expect(rows.map(row => row.getAttribute('data-member-dock-row'))).toEqual(['stats', 'tasks'])
+    expect(rows[1]!.textContent).toContain('任务 1/3')
+    expect(rows[1]!.textContent).toContain('进行中：改实现')
   })
 })

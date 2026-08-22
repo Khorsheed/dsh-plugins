@@ -18,6 +18,9 @@
 // Type-only: merges the `tokenUsage` key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-token-meter/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+// Type-only: merges the `todos` key into SessionProjectionMap for useProjection.
+import type {} from '@deepseek-ai/dsh-tool-todo/client'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NS } from './locales.ts'
 
@@ -41,6 +44,12 @@ export interface MemberDockLine {
 export interface MemberDockProjections {
   /** Session token accounting (the token-meter unit's durable projection). */
   tokenUsage?: TokenUsageProjection | undefined
+  /**
+   * The member's current whole todo list (the latest `todo/write` snapshot —
+   * the dsh mirror passes it through; other providers' translation lands in
+   * later milestones), or null before the first write.
+   */
+  todos?: readonly TodoItem[] | null | undefined
 }
 
 /**
@@ -95,9 +104,26 @@ export function statsContributor(projections: MemberDockProjections, t: DockTran
   return { id: 'stats', text: groups.join(' | ') }
 }
 
+/**
+ * The tasks contributor: a compact summary of the member's todo list —
+ * `任务 <done>/<total>` plus the in-progress task's title when one is active
+ * (an all-completed list shows the summary alone). Declines when the session
+ * has no todos at all (unit absent, pre-first-write null, or an empty list).
+ */
+export function tasksContributor(projections: MemberDockProjections, t: DockTranslate): MemberDockLine | null {
+  const todos = projections.todos
+  if (todos === undefined || todos === null || todos.length === 0) return null
+  const done = todos.filter(todo => todo.status === 'completed').length
+  const active = todos.find(todo => todo.status === 'in_progress')
+  let text = t('member.tasks.summary', { done, total: todos.length })
+  if (active !== undefined) text += t('member.tasks.active', { title: active.content })
+  return { id: 'tasks', text }
+}
+
 /** The registered contributors, in render order. Registration IS inclusion. */
 export const MEMBER_DOCK_CONTRIBUTORS: readonly MemberDockContributor[] = [
   statsContributor,
+  tasksContributor,
 ]
 
 /**

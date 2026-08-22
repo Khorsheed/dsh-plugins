@@ -18,6 +18,13 @@
  * sources) are filtered — only the caller task (`source.kind === 'user'`)
  * crosses. Turn boundaries are NOT copied: the parent's real-time
  * spawn→settle boundaries stay the authoritative timing.
+ *
+ * `todo/write` passthrough: the sub-dsh's task list is a standing whole-list
+ * snapshot (last-wins). Each pass appends the round's LATEST snapshot only
+ * when it differs from the child session's last mirrored one, so repeated
+ * passes never duplicate an identical snapshot and the child's `todos`
+ * projection (and the official TodoPanel in non-takeover views) reads the
+ * member's task list for free.
  * @module @khorsheed/dsh-local-agent-dsh/session-mirror
  */
 
@@ -198,10 +205,26 @@ export async function mirrorDshSession(
         texts.push(mirroredEventText(event))
       }
     }
-    if (texts.length > 0) {
+    // todo/write passthrough, counted independently of the message prefix
+    // skip: the snapshot is a standing whole list (last-wins), so a pass
+    // appends the round's latest snapshot only when it differs from the
+    // child's last mirrored one — repeated passes never duplicate an
+    // identical snapshot, and intermediate snapshots stay out of the log.
+    let todosAppended = 0
+    const latestTodos = events.slice(start, end).filter(event => event.type === 'todo/write').at(-1)
+    const mirroredTodos = childSession.events.slice(lastTurnStart + 1)
+      .filter(event => event.type === 'todo/write')
+    if (latestTodos !== undefined && latestTodos.type === 'todo/write') {
+      if (JSON.stringify(mirroredTodos.at(-1)?.data) !== JSON.stringify(latestTodos.data)) {
+        // todo/write's append takes no surface options (log-only UI state).
+        childSession.append('todo/write', latestTodos.data)
+        todosAppended = 1
+      }
+    }
+    if (texts.length > 0 || todosAppended > 0) {
       await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
     }
-    return { texts, total: mirrored + texts.length }
+    return { texts, total: mirrored + mirroredTodos.length + texts.length + todosAppended }
   } catch (error) {
     ctx.logger.warn(`subagent-dsh: session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
     return empty

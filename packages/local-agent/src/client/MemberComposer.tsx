@@ -91,7 +91,10 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   // 'conversation.input.dock') live INSIDE the fallback InputBar that
   // `overlay: true` hides on election, so no official dock row can reach a
   // member session. One bag entry per projection a contributor reads.
-  const projections: MemberDockProjections = { tokenUsage: useProjection('tokenUsage') }
+  const projections: MemberDockProjections = {
+    tokenUsage: useProjection('tokenUsage'),
+    todos: useProjection('todos'),
+  }
 
   useEffect(() => {
     let cancelled = false
