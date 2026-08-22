@@ -1,9 +1,10 @@
 packages:
   - packages/*
-# pnpm ≥11.20 fails CI installs on unapproved dependency build scripts
-# (ERR_PNPM_IGNORED_BUILDS); esbuild's postinstall is required by tsdown.
-onlyBuiltDependencies:
-  - esbuild
+# pnpm ≥11 hard-fails installs on unreviewed dependency build scripts
+# (strictDepBuilds defaults to true). esbuild's postinstall (native binary)
+# is required by tsdown — same allowance the harness carries.
+allowBuilds:
+  esbuild: true
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent@0.1.1-rc.1'
   - '@deepseek-ai/dsh-agent-default-model@0.1.1-rc.1'
