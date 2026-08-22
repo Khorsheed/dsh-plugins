@@ -46,6 +46,13 @@ function tomlString(value: string): string {
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/**
+ * Auth-shaped failure signatures in codex's stderr or event stream: the
+ * endpoint rejected the credential. Narrow on purpose — matched against
+ * provider-controlled error output only.
+ */
+export const CODEX_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
 /** Codex sandbox policy values accepted by `codex exec --sandbox`. */
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
 
@@ -227,6 +234,7 @@ export class CodexCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
         ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
         childSession,
         ctx: this.ctx,
@@ -315,6 +323,7 @@ export class CodexCliProvider implements SubagentProvider {
             this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
           onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
           ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
           childSession,
           ctx: this.ctx,
@@ -358,6 +367,12 @@ export interface CodexCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401 a presence probe cannot see). The provider wires this
+   * to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /**
@@ -748,7 +763,19 @@ export function startCodexCliRun(
   // the settle chain first (so turn/end is already appended) AND for the
   // process to actually exit (so stdout is drained before parsing).
   void result.then(() => child.done).then(
-    () => mirrorCodexAfterExit(spec, task, turn, output, liveMirror),
+    () => {
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${drainedStderr}\n${drainedStdout}`
+        if (CODEX_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      return mirrorCodexAfterExit(spec, task, turn, output, liveMirror)
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 

@@ -167,6 +167,16 @@ export interface LocalAgentHarness {
    */
   isAuthenticated?: (homeDir: string) => Promise<boolean>
   /**
+   * The credential marker's modification stamp (epoch ms), undefined when no
+   * credential exists. Two consumers: the manual-login watch requires a stamp
+   * NEWER than the watch start (a stale marker must not read as a fresh
+   * login), and `statusOf` downgrades a presence-true probe when a delegation
+   * reported an auth failure newer than the stamp (presence cannot see a
+   * server-side revocation; the next real login rewrites the marker and
+   * recovers the status).
+   */
+  credentialStamp?: (homeDir: string) => Promise<number | undefined>
+  /**
    * Sign out of the scoped account, clearing the stored credentials so a
    * later login authorizes another account. Absent means the harness has no
    * logout path and `/logout` reports it instead of guessing.
@@ -388,6 +398,14 @@ export class LocalAgentRegistry {
    */
   private readonly kimiMirrorOffsets = new Map<string, number>()
   /**
+   * Delegation-reported auth failures per harness (epoch ms of the report).
+   * Presence probes cannot see a server-side revocation, so a provider
+   * observing a 401/403 reports it here and `statusOf` downgrades the harness
+   * until its credential marker is rewritten by a real re-login (stamp newer
+   * than the mark).
+   */
+  private readonly authFailures = new Map<string, number>()
+  /**
    * In-flight runs registered with the member channel, by per-run token. The
    * bridge MCP server presents its token (and parent pid) on every callback;
    * entries are invalidated on the run's settle path.
@@ -506,6 +524,21 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Record a delegation-observed authentication failure (a 401/403 from the
+   * CLI's endpoint). Presence probes cannot see a server-side revocation, so
+   * this mark downgrades the harness's reported status until a real re-login
+   * rewrites the credential marker (see {@link LocalAgentHarness.credentialStamp}).
+   * @param name - the harness whose credential failed.
+   * @param detail - the endpoint's answer, for the log.
+   */
+  reportAuthFailure(name: string, detail: string): void {
+    this.authFailures.set(name, Date.now())
+    this.ctx.logger.warn(
+      `localAgent: ${name} credential rejected by its endpoint (${detail}); the harness reports unauthenticated until a fresh login rewrites the credential marker`,
+    )
+  }
+
+  /**
    * Query one harness's auth status.
    * @param name - the harness name.
    * @returns the status snapshot.
@@ -513,7 +546,15 @@ export class LocalAgentRegistry {
   async statusOf(name: string): Promise<LocalAgentStatus> {
     const harness = this.requireHarness(name)
     const homeDir = this.homeDir(name)
-    const authenticated = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
+    let authenticated = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
+    const failedAt = this.authFailures.get(name)
+    if (authenticated && failedAt !== undefined && harness.credentialStamp !== undefined) {
+      // A delegation reported an auth failure (e.g. a server-side revocation
+      // the presence probe cannot see). Stay unauthenticated until the
+      // credential marker is rewritten by a real re-login.
+      const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+      authenticated = stamp !== undefined && stamp > failedAt
+    }
     return {
       name: harness.name,
       displayName: harness.displayName,
@@ -1259,6 +1300,7 @@ export class LocalAgentRegistry {
     if (probe !== undefined) {
       const homeDir = this.homeDir(harness.name)
       const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
+      const watchStart = Date.now()
       let stopped = false
       let timer: ReturnType<typeof setInterval> | undefined
       controller.done = new Promise<void>((resolve) => {
@@ -1274,6 +1316,14 @@ export class LocalAgentRegistry {
           if (stopped) return
           try {
             if (await probe(homeDir)) {
+              // Presence alone must not conclude a handoff: a stale marker
+              // (e.g. a revoked token's leftover record) would report success
+              // without any new login. When the harness exposes a credential
+              // stamp, require it to be rewritten after this watch started.
+              if (harness.credentialStamp !== undefined) {
+                const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+                if (stamp === undefined || stamp <= watchStart) return
+              }
               finish(`${harness.name} login detected in the scoped home`, 'info')
               return
             }

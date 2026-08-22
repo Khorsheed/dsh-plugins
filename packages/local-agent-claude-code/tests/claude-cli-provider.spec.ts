@@ -250,6 +250,38 @@ describe('claude-cli-provider run settlement', () => {
     await done
   })
 
+  it('reports auth-shaped failures through onAuthFailure (is_error result)', async () => {
+    const done = Promise.resolve({ exitCode: 0, signal: null })
+    const authFailures: string[] = []
+    const stream = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }),
+      JSON.stringify({ type: 'result', is_error: true, result: 'Failed to authenticate. API Error: 401 OAuth access token has been revoked', usage: {} }),
+      '',
+    ].join('\n')
+    const handle: SubprocessHandle = {
+      pid: 4247,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from([]),
+      collected: {
+        stdout: { readFrom: () => ({ text: stream, nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startClaudeCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      { cwd: '/tmp', env: {}, permissionMode: 'skip', disposeGraceMs: 3_000, spawn: () => handle, onAuthFailure: detail => authFailures.push(detail) },
+    )
+    expect((await run.result).stopReason).toBe('error')
+    // Auth detection runs on the post-exit chain (after streams drain).
+    await vi.waitFor(() => { expect(authFailures).toHaveLength(1) })
+    expect(authFailures[0]).toContain('401')
+    await done
+  })
+
   it('settles error when the CLI exits 0 with no parsed answer (silent failure, not success)', async () => {
     const done = Promise.resolve({ exitCode: 0, signal: null })
     const child = Session.create(SessionId('child-empty-claude'))

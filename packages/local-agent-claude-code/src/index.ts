@@ -17,7 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@khorsheed/dsh-local-agent'
 import { ClaudeCliProvider } from './claude-cli-provider.ts'
-import { claudeAuthenticated, listClaudeSessions } from './records.ts'
+import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions } from './records.ts'
 import { claudeLogout, provisionClaudeHome } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -90,6 +90,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
       isAuthenticated: claudeAuthenticated,
+      credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {
         const [verb] = input.split(/\s+/)

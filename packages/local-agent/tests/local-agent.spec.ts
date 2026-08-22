@@ -407,6 +407,72 @@ describe('LocalAgentRegistry', () => {
         vi.useRealTimers()
       }
     })
+
+    it('does not conclude success from a stale credential marker', async () => {
+      vi.useFakeTimers()
+      try {
+        const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-stale-') })
+        const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+        const watchStart = Date.now()
+        // A revoked token's leftover marker: presence says true, but the
+        // stamp predates this watch — no fresh login happened.
+        let stamp: number | undefined = watchStart - 60_000
+        const probe = vi.fn(async () => true)
+        registry.register({
+          ...manualHarness(probe),
+          credentialStamp: async () => stamp,
+        })
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        const polling = probe.mock.calls.length
+        expect(polling).toBeGreaterThan(0)
+        // Still polling after several ticks: the stale marker did not finish
+        // the watch. (A concluded watch stops the interval.)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBeGreaterThan(polling)
+
+        // A real re-login rewrites the marker; the watch now concludes.
+        stamp = Date.now()
+        const before = probe.mock.calls.length
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 2)
+        const atSuccess = probe.mock.calls.length
+        expect(atSuccess).toBeGreaterThan(before)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBe(atSuccess)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('auth failure marks', () => {
+    /** A harness whose probe and stamp the test controls directly. */
+    function stampedHarness(state: { authenticated: boolean; stamp: number | undefined }): LocalAgentHarness {
+      return harness({
+        isAuthenticated: async () => state.authenticated,
+        credentialStamp: async () => state.stamp,
+      })
+    }
+
+    it('downgrades a present-but-rejected credential until the marker is rewritten', async () => {
+      const { ctx } = await harnessMount({ homesRoot: tempDir('auth-mark-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const state = { authenticated: true, stamp: Date.now() - 60_000 }
+      registry.register(stampedHarness(state))
+
+      expect((await registry.statusOf('fake')).authenticated).toBe(true)
+
+      // A delegation hits a 401 the presence probe cannot see: the status
+      // downgrades even though the credential marker still exists.
+      registry.reportAuthFailure('fake', '401 OAuth access token has been revoked')
+      expect((await registry.statusOf('fake')).authenticated).toBe(false)
+
+      // A real re-login rewrites the marker (stamp newer than the mark): the
+      // status recovers without any explicit clearing.
+      state.stamp = Date.now() + 1_000
+      expect((await registry.statusOf('fake')).authenticated).toBe(true)
+    })
   })
 
   describe('subagentDelegationLabel', () => {

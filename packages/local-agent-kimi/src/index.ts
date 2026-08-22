@@ -16,7 +16,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type {} from '@khorsheed/dsh-local-agent'
 import { KimiCliProvider } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS, KimiAcpLiveDriver } from './live-driver.ts'
-import { kimiAuthenticated, listKimiSessions } from './records.ts'
+import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
 import { ensureKimiPermissions, kimiLogout, provisionKimiConfig } from './provision.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
@@ -128,6 +128,7 @@ export function apply(ctx: Context, config: Config): void {
       login: { command: 'kimi', args: ['login'] },
       records: { listSessions: homeDir => listKimiSessions(homeDir) },
       isAuthenticated: kimiAuthenticated,
+      credentialStamp: kimiCredentialStamp,
       logout: kimiLogout,
       subcommand: handleSubcommand,
     })

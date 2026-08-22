@@ -18,7 +18,7 @@ import type {} from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from './codex-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS, CodexLiveDriver } from './live-driver.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
-import { codexLogout, provisionCodexConfig } from './provision.ts'
+import { codexCredentialStamp, codexLogout, provisionCodexConfig } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-codex'
@@ -100,6 +100,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       records: { listSessions: homeDir => listCodexSessions(homeDir) },
       isAuthenticated: codexAuthenticated,
+      credentialStamp: codexCredentialStamp,
       logout: codexLogout,
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {
         const [verb] = input.split(/\s+/)

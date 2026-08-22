@@ -41,6 +41,13 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /**
+ * Auth-shaped failure signatures in claude's result error or stderr: the
+ * endpoint rejected the credential (401/403, revoked token). Narrow on
+ * purpose — matched against provider-controlled error strings only.
+ */
+export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token/i
+
+/**
  * One-shot and resumable Claude Code CLI subagent provider: every accepted
  * FRESH run starts a `claude -p` process in the delegating Session's
  * workspace, under the harness scoped home; a resume round (the family tool's
@@ -179,6 +186,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
         ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
@@ -247,6 +255,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
         ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
@@ -293,6 +302,12 @@ export interface ClaudeCliRunSpec {
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401/403 a presence probe cannot see). The provider wires
+   * this to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /**
    * Member channel: the bridge MCP declaration for this run, injected as
    * `--mcp-config <json>` plus a `--allowedTools` entry for the bridge's one
@@ -445,7 +460,11 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   if (event.type === 'result') {
     state.completed = true
     if (event.is_error === true) {
-      state.error = typeof event.error === 'string' ? event.error : 'claude -p reported an error'
+      // The detail text arrives in `result` on real auth failures (e.g. the
+      // 401's "Failed to authenticate. API Error: ..."), in `error` on others.
+      state.error = typeof event.result === 'string' ? event.result
+        : typeof event.error === 'string' ? event.error
+        : 'claude -p reported an error'
     }
     if (typeof event.session_id === 'string') state.sessionId = event.session_id
     if (event.usage !== undefined) state.usage = usageFromClaude(event.usage)
@@ -801,7 +820,21 @@ export function startClaudeCliRun(
   // resumable. Waits for the settle chain first (so turn/end is already
   // appended) AND for the process to actually exit (so stdout is drained).
   void result.then(() => child.done).then(
-    () => mirrorClaudeAfterExit(spec, task, turn, output, liveMirror),
+    () => {
+      // Auth detection runs post-exit: streams are drained by then, so a fast
+      // failure's output is complete (a settle-time read could race the flush).
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${parseClaudeStreamJson(drainedStdout).error ?? ''}\n${drainedStderr}`
+        if (CLAUDE_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      return mirrorClaudeAfterExit(spec, task, turn, output, liveMirror)
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 

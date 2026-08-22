@@ -12,8 +12,11 @@
  * @module @khorsheed/dsh-local-agent-claude-code/records
  */
 
-import { open, readFile, readdir } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
 
 /** Session files live under this directory inside the scoped home. */
@@ -22,19 +25,68 @@ const PROJECTS_ROOT = 'projects'
 /** Bound on the head prefix read from one session file. */
 const HEAD_BYTES = 64 * 1024
 
+const security = promisify(execFile)
+
+/**
+ * The scoped `.claude.json`'s modification stamp (epoch ms), undefined when
+ * absent. A completed login rewrites this file, so the stamp distinguishes a
+ * fresh login from a leftover marker (a revoked token's record lingers).
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns the marker's mtime, or undefined when no scoped config exists.
+ */
+export async function claudeCredentialStamp(homeDir: string): Promise<number | undefined> {
+  try {
+    return (await stat(join(homeDir, '.claude.json'))).mtimeMs
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The keychain entry name current claude uses for a non-default config dir:
+ * the bare name belongs to `~/.claude`, other dirs get a path-hash suffix.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns the macOS keychain service name holding the OAuth credential.
+ */
+function keychainService(homeDir: string): string {
+  const hash = createHash('sha256').update(homeDir).digest('hex').slice(0, 8)
+  return `Claude Code-credentials-${hash}`
+}
+
+/**
+ * The stored credential's expiry (epoch ms), read from the macOS keychain
+ * entry for this scoped home; undefined when the entry is missing, unreadable,
+ * or carries no expiry (presence alone then decides, as before).
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns the expiry, or undefined when unknown.
+ */
+async function readCredentialExpiry(homeDir: string): Promise<number | undefined> {
+  try {
+    const { stdout } = await security('find-generic-password', ['-s', keychainService(homeDir), '-w'])
+    const parsed = JSON.parse(stdout.trim()) as { expiresAt?: unknown }
+    return typeof parsed.expiresAt === 'number' ? parsed.expiresAt : undefined
+  } catch {
+    // Not on macOS, no such entry, or an unreadable payload: no expiry info.
+    return undefined
+  }
+}
+
 /**
  * Whether the scoped home holds usable Claude Code credentials: the scoped
  * `.claude.json` carries an `oauthAccount` record once a device-code login
- * has completed. This is a deliberate light FILE check — the real credential
- * lives in the macOS keychain under a hashed entry (`Claude Code-credentials-<sha256(path)[:8]>`,
- * hashed from the config-dir path) or in the default `~/.claude/.credentials.json`
- * on Linux (upstream bug #47661: `CLAUDE_CONFIG_DIR` does not isolate the
- * credentials file there — it writes the scoped dir but READS the default
- * home, so Linux credentials may exist even when the scoped home has none).
- * Spawning the CLI to probe auth is avoided; the platform differences are
- * documented in the README.
+ * has completed, AND the keychain credential is not past its stored expiry
+ * (when the expiry is readable — a server-side REVOCATION is not visible
+ * locally; providers report those through `localAgent.reportAuthFailure`).
+ * The real credential lives in the macOS keychain under a hashed entry
+ * (`Claude Code-credentials-<sha256(path)[:8]>`, hashed from the config-dir
+ * path) or in the default `~/.claude/.credentials.json` on Linux (upstream
+ * bug #47661: `CLAUDE_CONFIG_DIR` does not isolate the credentials file
+ * there — it writes the scoped dir but READS the default home, so Linux
+ * credentials may exist even when the scoped home has none). Spawning the
+ * CLI to probe auth is avoided; the platform differences are documented in
+ * the README.
  * @param homeDir - the `claude-code` harness's scoped home.
- * @returns true when a completed login is recorded in the scoped config.
+ * @returns true when a completed login is recorded and not locally expired.
  */
 export async function claudeAuthenticated(homeDir: string): Promise<boolean> {
   let text: string
@@ -52,7 +104,12 @@ export async function claudeAuthenticated(homeDir: string): Promise<boolean> {
     // A torn or malformed config reads as not authenticated.
     return false
   }
-  return config.oauthAccount !== undefined && config.oauthAccount !== null
+  if (config.oauthAccount === undefined || config.oauthAccount === null) return false
+  // Presence established; refuse a credential past its stored expiry. A
+  // server-side revocation is not locally visible — that path reports through
+  // the delegation's 401/403, not this probe.
+  const expiry = await readCredentialExpiry(homeDir)
+  return expiry === undefined || expiry > Date.now()
 }
 
 /**

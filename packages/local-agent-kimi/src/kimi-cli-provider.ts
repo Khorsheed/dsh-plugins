@@ -38,6 +38,13 @@ import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.t
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/**
+ * Auth-shaped failure signatures in kimi's stderr or output: the endpoint
+ * rejected the credential. Narrow on purpose — matched against
+ * provider-controlled error output only.
+ */
+export const KIMI_AUTH_FAILURE = /401|unauthorized|invalid api key|not authenticated/i
+
 /** Default interval between live transcript-mirror polls during a run. */
 export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
 
@@ -203,6 +210,7 @@ export class KimiCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('kimi', detail) },
         onSpawned: (pid) => { member?.bind(pid) },
         childSession,
         homeDir,
@@ -291,6 +299,7 @@ export class KimiCliProvider implements SubagentProvider {
           onError: (error: unknown, stopReason) => {
             this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
+          onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('kimi', detail) },
           onSpawned: (pid) => { member?.bind(pid) },
           childSession,
           homeDir,
@@ -333,6 +342,12 @@ export interface KimiCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401 a presence probe cannot see). The provider wires this
+   * to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /** dsh subagent session recording this delegation; its transcript is mirrored after settle. */
@@ -650,7 +665,21 @@ export function startKimiCliRun(
   // the process to actually exit (so the wire file is complete) before
   // reading it. Enqueued behind any in-flight live poll on the mirror queue.
   void result.then(() => child.done).then(
-    () => { enqueueMirror(() => mirrorKimiAfterExit(spec, stderr)) },
+    () => {
+      // Auth detection runs post-exit: streams are drained by then, so a fast
+      // failure's stderr is complete (a settle-time read could race the flush).
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${drainedStderr}\n${drainedStdout}`
+        if (KIMI_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      enqueueMirror(() => mirrorKimiAfterExit(spec, stderr))
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 

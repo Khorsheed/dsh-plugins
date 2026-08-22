@@ -253,6 +253,33 @@ describe('kimi-cli-provider run settlement', () => {
     await done
   })
 
+  it('reports auth-shaped failures through onAuthFailure', async () => {
+    const done = Promise.resolve({ exitCode: 1, signal: null })
+    const authFailures: string[] = []
+    const handle: SubprocessHandle = {
+      pid: 4246,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from([]),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: 'Error: 401 Unauthorized\n', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startKimiCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      { cwd: '/tmp', env: {}, disposeGraceMs: 3_000, spawn: () => handle, onAuthFailure: detail => authFailures.push(detail) },
+    )
+    expect((await run.result).stopReason).toBe('error')
+    // Auth detection runs on the post-exit chain (after streams drain).
+    await vi.waitFor(() => { expect(authFailures).toHaveLength(1) })
+    expect(authFailures[0]).toContain('401')
+    await done
+  })
+
   it('settles error when the CLI exits 0 with no printed answer (silent failure, not success)', async () => {
     const done = Promise.resolve({ exitCode: 0, signal: null })
     const child = Session.create(SessionId('child-empty-kimi'))
