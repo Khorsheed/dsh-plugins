@@ -17,7 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@khorsheed/dsh-local-agent'
 import { ClaudeCliProvider } from './claude-cli-provider.ts'
-import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions } from './records.ts'
+import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -88,7 +88,13 @@ export function apply(ctx: Context, config: Config): void {
           command: 'env',
           args: ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${homeDir}`, 'claude', 'auth', 'login'],
         },
-        // The watch defaults to isAuthenticated (claudeAuthenticated below).
+        // The watch syncs the keychain credential into the runtime-readable
+        // file first (claude 2.1.236 writes keychain but reads the file),
+        // then probes.
+        watch: async (home) => {
+          await syncClaudeCredentialFile(home)
+          return claudeAuthenticated(home)
+        },
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
       isAuthenticated: claudeAuthenticated,

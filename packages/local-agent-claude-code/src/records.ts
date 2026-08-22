@@ -14,7 +14,7 @@
 
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { open, readFile, readdir, stat } from 'node:fs/promises'
+import { open, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
@@ -56,17 +56,64 @@ function keychainService(homeDir: string): string {
 /**
  * The stored credential's expiry (epoch ms), read from the macOS keychain
  * entry for this scoped home; undefined when the entry is missing, unreadable,
- * or carries no expiry (presence alone then decides, as before).
+ * or carries no expiry (presence alone then decides, as before). The blob
+ * nests the token record under `claudeAiOauth`.
  * @param homeDir - the `claude-code` harness's scoped home.
  * @returns the expiry, or undefined when unknown.
  */
 async function readCredentialExpiry(homeDir: string): Promise<number | undefined> {
   try {
     const { stdout } = await security('find-generic-password', ['-s', keychainService(homeDir), '-w'])
-    const parsed = JSON.parse(stdout.trim()) as { expiresAt?: unknown }
-    return typeof parsed.expiresAt === 'number' ? parsed.expiresAt : undefined
+    const parsed = JSON.parse(stdout.trim()) as { claudeAiOauth?: { expiresAt?: unknown } }
+    const expiry = parsed.claudeAiOauth?.expiresAt
+    return typeof expiry === 'number' ? expiry : undefined
   } catch {
     // Not on macOS, no such entry, or an unreadable payload: no expiry info.
+    return undefined
+  }
+}
+
+/**
+ * Mirror the keychain credential into `<homeDir>/.credentials.json`. Claude
+ * 2.1.236 on macOS WRITES the scoped login to the hashed keychain entry but
+ * READS the credentials file at runtime (the same write/read split as the
+ * Linux #47661 bug) — a login that lands only in the keychain still answers
+ * "Not logged in". Called from the login watch so a completed login becomes
+ * readable; idempotent and content-compare before write.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns true when the file holds the current keychain credential after the call.
+ */
+export async function syncClaudeCredentialFile(homeDir: string): Promise<boolean> {
+  let blob: string
+  try {
+    const { stdout } = await security('find-generic-password', ['-s', keychainService(homeDir), '-w'])
+    blob = stdout.trim()
+    JSON.parse(blob)
+  } catch {
+    return false
+  }
+  const file = join(homeDir, '.credentials.json')
+  try {
+    if ((await readFile(file, 'utf8')).trim() === blob) return true
+  } catch {
+    // Absent or unreadable: fall through to the write.
+  }
+  await writeFile(file, blob, { mode: 0o600 })
+  return true
+}
+
+/**
+ * The expiry (epoch ms) from a `.credentials.json` payload; the token record
+ * nests under `claudeAiOauth`. Undefined when absent/unparseable.
+ * @param text - the file contents.
+ * @returns the expiry, or undefined.
+ */
+function credentialFileExpiry(text: string): number | undefined {
+  try {
+    const parsed = JSON.parse(text) as { claudeAiOauth?: { expiresAt?: unknown } }
+    const expiry = parsed.claudeAiOauth?.expiresAt
+    return typeof expiry === 'number' ? expiry : undefined
+  } catch {
     return undefined
   }
 }
@@ -89,6 +136,18 @@ async function readCredentialExpiry(homeDir: string): Promise<number | undefined
  * @returns true when a completed login is recorded and not locally expired.
  */
 export async function claudeAuthenticated(homeDir: string): Promise<boolean> {
+  // The runtime reads `.credentials.json` first (claude 2.1.236 writes the
+  // keychain but reads the file — see syncClaudeCredentialFile).
+  let fileExpiry: number | undefined
+  let filePresent = false
+  try {
+    const text = await readFile(join(homeDir, '.credentials.json'), 'utf8')
+    fileExpiry = credentialFileExpiry(text)
+    filePresent = true
+  } catch {
+    // No credentials file: fall through to the keychain-backed check.
+  }
+  if (filePresent) return fileExpiry === undefined || fileExpiry > Date.now()
   let text: string
   try {
     text = await readFile(join(homeDir, '.claude.json'), 'utf8')

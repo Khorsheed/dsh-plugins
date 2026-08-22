@@ -66,3 +66,22 @@ describe('claude records', () => {
     expect(await claudeAuthenticated(noConfig)).toBe(false)
   })
 })
+
+describe('claudeAuthenticated credential file', () => {
+  /** A scoped home with only a .credentials.json carrying the given expiry. */
+  function homeWithCredentialFile(expiresAt: number): string {
+    const home = tempHome('claude-credfile-')
+    writeFileSync(join(home, '.credentials.json'), JSON.stringify({ claudeAiOauth: { expiresAt } }))
+    return home
+  }
+
+  it('accepts a credentials file with a future expiry (the runtime-readable path)', async () => {
+    const home = homeWithCredentialFile(Date.now() + 3_600_000)
+    await expect(claudeAuthenticated(home)).resolves.toBe(true)
+  })
+
+  it('rejects a credentials file past its expiry', async () => {
+    const home = homeWithCredentialFile(Date.now() - 1_000)
+    await expect(claudeAuthenticated(home)).resolves.toBe(false)
+  })
+})

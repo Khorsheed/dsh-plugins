@@ -28,6 +28,12 @@ claude declares `pty` with the relay env scrubbed and the scoped home pinned, re
 - **Keep manual handoff as the only path** — rejected by the product owner: the click-to-browser flow is the family's first-run experience and worth restoring.
 - **Parsing the OAuth code page / polling Anthropic ourselves** — rejected: the CLI owns the flow; we only provide its terminal.
 
+## Production findings (same-day 3080 bring-up)
+
+- **The paste step is the fallback, not the main path**: the CLI picks a localhost callback (`redirect_uri=http://localhost:<port>/callback`) when it can bind one, and the browser hands the code back with no paste; the web-callback page (paste) appears otherwise. Both are handled.
+- **A host restart kills a pending login's listener** — the browser shows success but the callback hits a dead port and no credential lands. The watch then just expires; the failure mode is silent to the user.
+- **claude 2.1.236 has a macOS write/read split**: login writes the scoped credential to the hashed keychain entry but the runtime reads `<home>/.credentials.json` (same split as the Linux #47661 bug). A "successful" login then answers "Not logged in". The claude harness's login `watch` now runs `syncClaudeCredentialFile` (keychain → file, content-compared) before probing, and `claudeAuthenticated` checks the file first. A poisoned grant born from a blocked token exchange (Cloudflare 1010 on the proxy exit) stored `expiresAt: 0`; deleting the entry and re-logging with working OAuth traffic healed it.
+
 ## Consequences
 
 - Clicking 登录/重新授权 on claude opens the browser again (one paste step when the page shows a code — new since claude 2.1.235, upstream-imposed).

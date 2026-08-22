@@ -28,6 +28,12 @@ claude 以 pty 声明（relay env 摘除 + scoped home 固定），取代 manual
 - **只留手动接力**——被产品方否决：点击弹浏览器是家族的一手体验，值得恢复。
 - **自己解析授权页/轮询 Anthropic**——否决：流程归 CLI 所有，我们只提供终端。
 
+## 生产环境发现（同日 3080 上线）
+
+- **粘贴是兜底而非主路径**：CLI 能绑定 localhost 回调时（`redirect_uri=http://localhost:<port>/callback`），浏览器自动回传 code、无需粘贴；只有回调不可用时才走网页给码粘贴。两条都已覆盖。
+- **宿主重启会杀死等待中的登录监听**——浏览器显示成功但回调打在死端口上，凭证不落盘，watch 只会静默过期。
+- **claude 2.1.236 在 macOS 上写读分离**：登录把 scoped 凭证写进哈希 keychain 条目，运行时却读 `<home>/.credentials.json`（与 Linux #47661 同类）——"登录成功"却报 "Not logged in"。claude harness 的登录 watch 现在先跑 `syncClaudeCredentialFile`（keychain → 文件，内容比对后写）再探测；`claudeAuthenticated` 文件优先。另发现 token 交换被网络拦截（代理出口 Cloudflare 1010）会产生 `expiresAt: 0` 的坏凭证；删除条目并以畅通的 OAuth 通道重登后恢复。
+
 ## 影响
 
 - claude 的登录/重新授权恢复点击即开浏览器（页面给出 code 时多一步粘贴——claude 2.1.235 起上游强加）。
