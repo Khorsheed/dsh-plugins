@@ -78,7 +78,7 @@
     "compat": {
       "minHost": "0.1.0-rc.6",
       "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning",
-      "verifiedHost": "0.1.1-rc.1"
+      "verifiedHost": "0.1.1-rc.2"
     }
   },
   "bin": {

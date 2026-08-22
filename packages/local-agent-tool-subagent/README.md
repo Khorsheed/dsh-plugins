@@ -31,7 +31,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码。
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制

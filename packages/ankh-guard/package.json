@@ -91,7 +91,7 @@
     "compat": {
       "minHost": "0.1.0-rc.6",
       "notes": "composition-preflight gate runs via the standalone preflight-runner (resolves official packages from a live harness checkout, no fork patch); on the npm line without a checkout it degrades to a notice, every other capability intact",
-      "verifiedHost": "0.1.1-rc.1"
+      "verifiedHost": "0.1.1-rc.2"
     }
   }
 }

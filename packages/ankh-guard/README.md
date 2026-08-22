@@ -153,7 +153,7 @@ dsh-ankh-guard restart \
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.1 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--repo`、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.2 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--repo`、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master,fork 或上游):✅——门禁通过独立的 `preflight-runner` 运行(从在线 checkout 解析已发布的 `@deepseek-ai/dsh-app-boot` 等),不再需要 fork 补丁。
 
 ## Known Limitations and Deferred Work
