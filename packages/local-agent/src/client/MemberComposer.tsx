@@ -15,10 +15,8 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: merges the `tokenUsage` key into SessionProjectionMap for useProjection.
-import type {} from '@deepseek-ai/dsh-token-meter/client'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import { memberDockLines, type MemberDockProjections } from './member-dock.ts'
 import { NS } from './locales.ts'
 import css from './MemberComposer.module.css'
 
@@ -70,58 +68,6 @@ export type MemberComposerProps =
 type Membership = LocalAgentDelegationView | null | undefined
 
 /**
- * Compact token count: 517 / 12.2K / 517K / 1.2M (one decimal under three
- * digits) — the official StatsLine's rule, mirrored so the member composer's
- * stats read identically.
- * @param n - token count.
- * @returns display string.
- */
-export function formatTokens(n: number): string {
-  const scaled = (v: number): string =>
-    v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10)
-  if (n < 1_000) return String(n)
-  if (n < 1_000_000) return `${scaled(n / 1_000)}K`
-  return `${scaled(n / 1_000_000)}M`
-}
-
-/**
- * Cache-hit share of prompt-side input (cacheRead over the three disjoint
- * billing buckets), the official StatsLine's formula.
- * @param usage - the session's token-usage projection value.
- * @returns rounded integer percent, or null when no input was billed.
- */
-export function cacheHitPercent(usage: TokenUsageProjection): number | null {
-  const billed = usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
-  return billed === 0 ? null : Math.round(usage.cacheReadTokens / billed * 100)
-}
-
-/**
- * The stats groups for one token-usage projection: cache-hit percent (dropped
- * when no input was billed) and the input/output totals. Empty when the
- * session has no token activity at all — no empty strip. Turn/step counts and
- * timing groups are dsh-agent concepts and stay out for CLI members. While a
- * run is in flight the projection holds the last settled usage — exactly the
- * desired "no live ticking" behavior.
- * @param usage - the session's token-usage projection value (undefined = the
- *   token-meter unit is absent).
- * @param t - the locale seat.
- * @returns the display groups, possibly empty.
- */
-export function memberStatsGroups(
-  usage: TokenUsageProjection | undefined,
-  t: PropsLocale<typeof NS>['t'],
-): string[] {
-  if (usage === undefined) return []
-  const billed = usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
-  if (billed === 0 && usage.outputTokens === 0) return []
-  const groups: string[] = []
-  const cacheHit = cacheHitPercent(usage)
-  if (cacheHit !== null) groups.push(t('member.stats.cacheHit', { percent: cacheHit }))
-  groups.push(t('member.stats.tokens', { input: formatTokens(billed), output: formatTokens(usage.outputTokens) }))
-  return groups
-}
-
-/**
  * The member composer: a writable box for family member sessions and the
  * official-looking read-only panel for every other one-shot session. Drafts
  * stay in local state (the official input machine is deliberately NOT wired —
@@ -140,11 +86,12 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   /** The last structured promptMember failure, rendered inline. */
   const [error, setError] = useState<string | null>(null)
   const running = useSession(snapshot => snapshot.running) ?? false
-  // The stats line self-renders from the tokenUsage projection: the official
-  // StatsLine rides the 'conversation.composer.dock' list, which the fallback
-  // InputBar receives as its `footer` prop — and `overlay: true` hides the
-  // WHOLE fallback on election, so the dock never reaches a member session.
-  const usage = useProjection('tokenUsage')
+  // The member dock self-renders ambient state from the projection seat: the
+  // official panels (StatsLine on 'conversation.composer.dock', TodoPanel on
+  // 'conversation.input.dock') live INSIDE the fallback InputBar that
+  // `overlay: true` hides on election, so no official dock row can reach a
+  // member session. One bag entry per projection a contributor reads.
+  const projections: MemberDockProjections = { tokenUsage: useProjection('tokenUsage') }
 
   useEffect(() => {
     let cancelled = false
@@ -171,7 +118,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   }
 
   const busy = sending || running
-  const statsGroups = memberStatsGroups(usage, t)
+  const dockLines = memberDockLines(projections, t)
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -239,8 +186,21 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           )}
         </div>
       </div>
-      {statsGroups.length > 0 && (
-        <div className={css.stats} data-member-stats>{statsGroups.join(' | ')}</div>
+      {dockLines.length > 0 && (
+        <div className={css.dock} data-member-dock>
+          {dockLines.map(line => (
+            <div
+              key={line.id}
+              className={css.dockRow}
+              // The stats row keeps the pre-dock test hook; every row also
+              // carries its contributor id as the generic hook.
+              data-member-stats={line.id === 'stats' ? '' : undefined}
+              data-member-dock-row={line.id}
+            >
+              {line.text}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

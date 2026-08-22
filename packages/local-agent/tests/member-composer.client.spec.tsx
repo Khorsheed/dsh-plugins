@@ -8,6 +8,9 @@ import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorshee
 import {
   MemberComposer, selectCliMember, type MemberComposerProps,
 } from '../src/client/MemberComposer.tsx'
+import {
+  MEMBER_DOCK_CONTRIBUTORS, memberDockLines, statsContributor,
+} from '../src/client/member-dock.ts'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -211,6 +214,53 @@ describe('MemberComposer', () => {
 
       expect(await screen.findByText(zh['member.readonly.title'])).toBeTruthy()
       expect(container.querySelector('[data-member-stats]')).toBeNull()
+      // The whole dock stays out of the degraded branch.
+      expect(container.querySelector('[data-member-dock]')).toBeNull()
+    })
+
+    it('renders the stats row inside the dock below the composer card', async () => {
+      const { container } = render(<MemberComposer {...props({}, false, USAGE)} />)
+      await screen.findByRole('textbox')
+
+      const dock = container.querySelector('[data-member-dock]')
+      expect(dock).not.toBeNull()
+      const row = dock!.querySelector('[data-member-stats]')
+      expect(row).not.toBeNull()
+      expect(row!.getAttribute('data-member-dock-row')).toBe('stats')
+      // The dock is a sibling AFTER the card, not inside it.
+      expect(container.querySelector('[data-member-dock]')!.previousElementSibling).not.toBeNull()
+    })
+  })
+})
+
+describe('member dock registry', () => {
+  const USAGE = { uncachedInputTokens: 100, outputTokens: 50, cacheReadTokens: 300, cacheWriteTokens: 0 }
+
+  it('omits null contributors and keeps registration order', () => {
+    const lines = memberDockLines({}, t, [
+      () => null,
+      () => ({ id: 'b', text: 'B' }),
+      () => ({ id: 'a', text: 'A' }),
+    ])
+    expect(lines).toEqual([{ id: 'b', text: 'B' }, { id: 'a', text: 'A' }])
+  })
+
+  it('returns an empty stack when every contributor declines', () => {
+    expect(memberDockLines({}, t, [() => null, () => null])).toEqual([])
+    expect(memberDockLines({}, t, [])).toEqual([])
+  })
+
+  it('registers the stats contributor', () => {
+    expect(MEMBER_DOCK_CONTRIBUTORS).toEqual([statsContributor])
+  })
+
+  it('the stats contributor declines without usage and formats activity byte-identically to pre-dock', () => {
+    expect(statsContributor({}, t)).toBeNull()
+    // 300 cache-read over 400 billed input = 75%.
+    expect(statsContributor({ tokenUsage: USAGE }, t)).toEqual({
+      id: 'stats',
+      text: `${zh['member.stats.cacheHit'].replace('{percent}', '75')} | ${
+        zh['member.stats.tokens'].replace('{input}', '400').replace('{output}', '50')}`,
     })
   })
 })

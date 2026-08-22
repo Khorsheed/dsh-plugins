@@ -94,17 +94,27 @@
   padding: 0 8px 6px;
 }
 
-/* Stats dock BELOW the card, replacing the line the elected fallback hides:
-   the official StatsLine metrics verbatim (centered, chat-content width,
-   12/20 tertiary) so member sessions read identically to agent sessions. */
-.stats {
+/* The member dock: the projection-row stack below the card, replacing the
+   official dock rows the elected fallback hides. */
+.dock {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-items: center;
+}
+
+/* One dock row: the official StatsLine metrics verbatim (centered,
+   chat-content width, 12/20 tertiary, ellipsis on overflow) — every
+   contributor shares it, so member sessions read identically to agent
+   sessions. */
+.dockRow {
   display: block;
   text-align: center;
   width: 100%;
-  max-width: var(--dsh-composer-card-max-width);
+  max-width: var(--dsh-chat-content-width);
   margin: 0 auto;
   box-sizing: border-box;
-  padding: 4px 16px 0;
+  padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0;
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
