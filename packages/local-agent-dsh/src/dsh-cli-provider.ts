@@ -33,6 +33,8 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { DshLiveDriver } from './live-driver.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 import { mirrorDshSession } from './session-mirror.ts'
 
@@ -53,57 +55,82 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
 
 
 /**
+ * Member channel registration for one sub-dsh process lifetime: mint the
+ * per-run token and prepare the env the sub-dsh's mcp-client row reads (the
+ * headless bundle patch declares the bridge server with `!!js` env lookups;
+ * `@deepseek-ai/dsh-mcp-client` resolves from the installation's dependency
+ * closure linked into the scoped home's profiles/node_modules fallback).
+ * Returns undefined when the mounted core predates the member channel
+ * (declare-and-degrade: the run proceeds unchanged — the row's
+ * failOnStartupError is off, and the bridge itself fails closed on the absent
+ * token). The exec driver registers per round; the live driver registers per
+ * resident process and releases on reclaim.
+ */
+export interface MemberRunHandle {
+  readonly env: Record<string, string>
+  bind(pid: number): void
+  release(): void
+}
+
+/** Register one member run with the channel; see {@link MemberRunHandle}. */
+export function registerMemberRun(
+  ctx: Context,
+  providerName: string,
+  childSessionId: string,
+  parentSessionId: string,
+): MemberRunHandle | undefined {
+  const registry = ctx.localAgent
+  if (
+    typeof registry.registerMemberRun !== 'function'
+    || typeof registry.memberBridgeSocketPath !== 'function'
+    || typeof registry.memberBridgeCommand !== 'function'
+  ) return undefined
+  const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: providerName })
+  const bridge = registry.memberBridgeCommand()
+  let released = false
+  return {
+    env: {
+      [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+      [MEMBER_BRIDGE_TOKEN_ENV]: token,
+      [MEMBER_BRIDGE_ENTRY_ENV]: bridge.args[0] ?? '',
+    },
+    bind: pid => registry.bindMemberRunPid(token, pid),
+    release: () => {
+      if (released) return
+      released = true
+      registry.unregisterMemberRun(token)
+    },
+  }
+}
+
+/**
  * One-shot dsh CLI subagent provider: every accepted fresh run starts a fresh
  * sub-dsh headless process in the delegating Session's workspace, under the
  * harness scoped home; a resume round (the family tool's staged resume intent)
  * continues the SAME sub-dsh session with `--resume <uuid>` inside the SAME
  * dsh child session. Mirrors the other family providers' one-shot lifecycle,
  * including `NO_START_CAPABILITIES` — continuation is the family's own resume
- * mechanism, not the official Agent-type continuable seam.
+ * mechanism, not the official Agent-type continuable seam. With the live
+ * driver configured (`live: true`), rounds instead go to the resident sub-dsh
+ * serve process (see live-driver.ts); the exec path below stays the fallback.
  */
 export class DshCliProvider implements SubagentProvider {
   readonly name = 'dsh-cli'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
-  constructor(private readonly ctx: Context, private readonly config: LocalAgentDshConfig) {}
+  constructor(
+    private readonly ctx: Context,
+    private readonly config: LocalAgentDshConfig,
+    private readonly live?: DshLiveDriver,
+  ) {}
 
-  /**
-   * Register one run with the member channel and prepare the per-run env the
-   * sub-dsh's mcp-client row reads (the headless bundle patch declares the
-   * bridge server with `!!js` env lookups; `@deepseek-ai/dsh-mcp-client`
-   * resolves from the installation's dependency closure linked into the
-   * scoped home's profiles/node_modules fallback). Returns undefined when the
-   * mounted core predates the member channel (declare-and-degrade: the run
-   * proceeds unchanged — the row's failOnStartupError is off, and the bridge
-   * itself fails closed on the absent token).
-   */
+  /** Per-round member-channel registration for the exec path (see {@link registerMemberRun}). */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
-  ): { env: Record<string, string>; bind(pid: number): void; release(): void } | undefined {
-    const registry = this.ctx.localAgent
-    if (
-      typeof registry.registerMemberRun !== 'function'
-      || typeof registry.memberBridgeSocketPath !== 'function'
-      || typeof registry.memberBridgeCommand !== 'function'
-    ) return undefined
-    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
-    const bridge = registry.memberBridgeCommand()
-    let released = false
-    return {
-      env: {
-        [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
-        [MEMBER_BRIDGE_TOKEN_ENV]: token,
-        [MEMBER_BRIDGE_ENTRY_ENV]: bridge.args[0] ?? '',
-      },
-      bind: pid => registry.bindMemberRunPid(token, pid),
-      release: () => {
-        if (released) return
-        released = true
-        registry.unregisterMemberRun(token)
-      },
-    }
+  ): MemberRunHandle | undefined {
+    return registerMemberRun(this.ctx, this.name, childSessionId, parentSessionId)
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -169,6 +196,24 @@ export class DshCliProvider implements SubagentProvider {
       parentSessionId: request.parent.session.id,
       cliSessionId: runId,
     })
+    // Live driver: the round goes to the resident serve process (one per
+    // member). A channel that fails at spawn/handshake marks itself broken and
+    // falls through to the exec one-shot below — and stays there
+    // (driver.disabled) for later rounds.
+    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+      try {
+        return await this.live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          sessionId: runId,
+          parentSessionId: request.parent.session.id,
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError)) throw error
+        this.ctx.logger.warn(`subagent-dsh: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
     // Member channel: register this run and hand the bridge coordinates to
     // the sub-dsh through the spawn env, so its session starts with
     // member_message available.
@@ -210,9 +255,6 @@ export class DshCliProvider implements SubagentProvider {
         `subagent-dsh: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -223,31 +265,60 @@ export class DshCliProvider implements SubagentProvider {
       }
       // The next turn follows the rounds already recorded in the child session.
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
-      const run = await startDshCliRun(request, {
-        cwd: parentCwd,
-        homeDir,
-        childSession,
-        sessionId: intent.cliSessionId,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-        config: this.config,
-        ctx: this.ctx,
-        ...member === undefined ? {} : { memberEnv: member.env },
-        onSpawned: (pid) => { member?.bind(pid) },
-      })
-      void run.result.then(
-        () => {
-          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-          member?.release()
-        },
-        () => {
-          this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-          member?.release()
-        },
-      )
-      return run
+      // Live driver: continue the member's resident serve process. Channel
+      // spawn/handshake failure falls through to the exec one-shot below.
+      if (this.live !== undefined && !this.live.disabled) {
+        try {
+          const liveRun = await this.live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            sessionId: intent.cliSessionId,
+            parentSessionId: request.parent.session.id,
+            resume: { turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError)) throw error
+          this.ctx.logger.warn(`subagent-dsh: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      try {
+        const run = await startDshCliRun(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          sessionId: intent.cliSessionId,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          config: this.config,
+          ctx: this.ctx,
+          ...member === undefined ? {} : { memberEnv: member.env },
+          onSpawned: (pid) => { member?.bind(pid) },
+        })
+        void run.result.then(
+          () => {
+            this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+            member?.release()
+          },
+          () => {
+            this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
+            member?.release()
+          },
+        )
+        return run
+      } catch (error) {
+        member?.release()
+        throw error
+      }
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -542,7 +613,7 @@ export async function startDshCliRun(
 }
 
 /** Resolve the sub-dsh credential or fail loud before any process spawns. */
-async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise<string> {
+export async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise<string> {
   const ref = config.apiKeyRef ?? 'DEEPSEEK_API_KEY'
   const resolved = await ctx.credentials.resolve(credentialRef(ref))
   if (resolved === undefined) {

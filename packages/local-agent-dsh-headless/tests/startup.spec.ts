@@ -113,6 +113,23 @@ describe('sub-dsh headless command-line provider', () => {
     expect(observed.exits).toEqual([1])
   })
 
+  it('publishes serve mode with no task', async () => {
+    const { task, observed } = await bootStartup(['--serve'])
+    expect(task).toEqual({ task: '', serve: true })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('rejects --serve combined with a task or session flags', async () => {
+    const withTask = await bootStartup(['--serve', 'some', 'task'])
+    expect(withTask.observed.out).toContain('--serve takes no task')
+    expect(withTask.task).toBeUndefined()
+    expect(withTask.observed.exits).toEqual([1])
+    const withFlag = await bootStartup(['--serve', '--session-id', 'a'])
+    expect(withFlag.observed.out).toContain('do not apply')
+    expect(withFlag.task).toBeUndefined()
+    expect(withFlag.observed.exits).toEqual([1])
+  })
+
   it('prints its own help and leaves the runner pending', async () => {
     const { task, observed } = await bootStartup(['--help'])
     expect(observed.out).toContain('dsh --profile headless-local-agent-dsh')

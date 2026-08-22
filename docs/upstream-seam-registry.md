@@ -59,6 +59,13 @@
 - **退役条件**：守卫包实现 `--gate`。
 - **状态**：待实施（ankh-guard 维护者评估中）。
 
+### S8. 官方 SDK JSON-RPC wire 无 turn 级 interrupt/cancel
+
+- **需求**：长驻子实例（`dsh-jsonrpc-agent` / `@deepseek-ai/dsh-sdk-jsonrpc-server`）能被外部优雅中断当前 turn——local-agent live driver 的核心动机就是 runtime 级 cancel（进程不死、会话可续）。官方 wire 只有 `initialize` / `session/prompt` / `shutdown` + 通知流，无 interrupt；`@deepseek-ai/dsh-sdk-client` 注释明确"a timed-out request stays running server-side until the runtime is closed"。
+- **现状绕行**：自家 headless bundle（`@khorsheed/dsh-local-agent-dsh-headless`）的 `--serve` 模式自建一条同形制的 NDJSON JSON-RPC wire（`src/wire.ts`，帧格式对照官方 `JsonRpcLineTransport`），interrupt 走进程内官方 `Agent.cancel({kind:'parent'})`——这是自家 composition 调用官方 in-process API，不是 hack。
+- **退役条件**：官方 SDK wire 增加 turn 级 interrupt 方法（且保持调用方指定 session id 的懒创建语义）。届时 serve 模式整体退役，provider 的 live driver 改挂官方 server。
+- **状态**：绕行中（@khorsheed/dsh-local-agent-dsh live driver + headless serve 模式）。
+
 ## 维护约定
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。

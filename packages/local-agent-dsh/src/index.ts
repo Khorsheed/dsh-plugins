@@ -26,6 +26,7 @@ import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { DshCliProvider } from './dsh-cli-provider.ts'
+import { DEFAULT_LIVE_IDLE_MS, DshLiveDriver } from './live-driver.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 
@@ -48,6 +49,21 @@ export interface LocalAgentDshConfig {
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */
   headlessBundleDir?: string
+  /**
+   * Live driver: keep one resident sub-dsh serve process per member and drive
+   * turns over the family wire (runtime-level interrupt, push-mode mirror)
+   * instead of one process per round. Default off; the exec one-shot stays
+   * the fallback whenever the serve channel cannot come up.
+   */
+  live?: boolean
+  /** Idle lifetime of an unused resident runtime before reclaim. */
+  liveIdleMs?: number
+  /**
+   * Live mirror granularity: `event` mirrors finalized messages;
+   * `token` additionally appends `assistant/chunk` deltas (write amplification
+   * — opt-in).
+   */
+  liveMirrorGranularity?: 'event' | 'token'
 }
 
 /** Runtime schema so the Loader always passes an object, never undefined. */
@@ -56,6 +72,9 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  live: z.boolean().default(false),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
 })
 
 /** Settings namespace owning the DeepSeek toggle. */
@@ -108,7 +127,14 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // Idempotent: heals a deleted or drifted sub-profile before each round.
       provisionDshSubProfile(homeDir, config)
       disposers.push(ctx.localAgent.register(harness))
-      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config)))
+      // The live driver owns every resident runtime of this generation; its
+      // disposal runs after the provider unregisters, so no in-flight round
+      // can re-spawn a runtime the teardown already reclaimed.
+      const liveDriver = config.live === true ? new DshLiveDriver(ctx, config) : undefined
+      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config, liveDriver)))
+      if (liveDriver !== undefined) {
+        disposers.push(() => { void liveDriver.disposeAll() })
+      }
       // The family delegation tool is mounted dynamically so the toggle owns
       // its lifecycle — while OFF the model never sees `subagent_dsh`.
       void ctx.plugin(toolModule, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }).then(

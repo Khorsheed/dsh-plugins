@@ -301,8 +301,14 @@ describe('local-agent-dsh headless runner', () => {
     void ctx.fiber.dispose()
   })
 
-  it('validates config: the task is required', () => {
-    expect(() => new Config({} as never)).toThrow()
-    expect(new Config({ task: 'x' })).toEqual({ task: 'x' })
+  it('validates config: the task is optional in the schema but required for one-shot apply', () => {
+    // Serve mode takes no task, so the schema cannot require it; the one-shot
+    // branch of apply enforces it instead.
+    expect(new Config({} as never)).toEqual({ serve: false })
+    expect(new Config({ task: 'x' })).toEqual({ task: 'x', serve: false })
+    const ctx = new Context()
+    ctx.provide('appExit', () => {})
+    expect(() => { apply(ctx, new Config({} as never)) }).toThrow('a task is required unless serve mode is on')
+    void ctx.fiber.dispose()
   })
 })

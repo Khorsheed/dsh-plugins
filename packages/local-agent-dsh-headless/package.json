@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-local-agent-dsh-headless",
-  "description": "Sub-dsh headless bundle for the local-agent-dsh harness: a one-shot direct Agent/Session runner over dsh-base that accepts a caller-supplied --session-id (fresh create) or --resume (continuation), prints the final assistant text, and exits",
+  "description": "Sub-dsh headless bundle for the local-agent-dsh harness: a direct Agent/Session runner over dsh-base — one-shot (caller-supplied --session-id/--resume, prints the final assistant text, exits) or resident (--serve) driving turns over the family stdio wire",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -25,6 +25,10 @@
     "./startup": {
       "types": "./lib/types/startup.d.ts",
       "default": "./lib/startup.js"
+    },
+    "./wire": {
+      "types": "./lib/types/wire.d.ts",
+      "default": "./lib/wire.js"
     },
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",

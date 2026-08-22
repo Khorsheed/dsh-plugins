@@ -13,7 +13,7 @@ import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
+import { mirrorDshLiveEvent, mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
 
 /** A context whose sessionPersistence is absent (the mirror tolerates it). */
 function fakeCtx(): Context {
@@ -232,5 +232,71 @@ describe('mirrorDshSession', () => {
     const after = child.events.filter(event => event.type === 'todo/write')
     expect(after).toHaveLength(2)
     expect(after[1]?.data).toEqual(todos2)
+  })
+})
+
+describe('mirrorDshLiveEvent', () => {
+  const chunk = (text: string): object => ({
+    type: 'assistant/chunk',
+    seq: 0,
+    time: 1,
+    data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text } },
+  })
+
+  it('applies the file mirror\'s exact filter and verbatim append to one live event', () => {
+    const child = Session.create(SessionId('child-live-fold'))
+    // The caller task crosses; scaffolding user messages stay behind.
+    expect(mirrorDshLiveEvent(child, userLine('实时任务', 'user') as never)).toBe('实时任务')
+    expect(mirrorDshLiveEvent(child, userLine('脚手架', 'plugin') as never)).toBeUndefined()
+    // Assistant messages cross verbatim, usage included, same as the span loop.
+    const text = mirrorDshLiveEvent(child, assistantLine(1, '实时回复') as never)
+    expect(text).toBe('thinking 1实时回复')
+    const assistant = child.events.find(event => event.type === 'assistant/message')
+    expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 } })
+    // Turn boundaries never cross (the parent's own stay authoritative).
+    expect(mirrorDshLiveEvent(child, { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } } as never)).toBeUndefined()
+    expect(mirrorDshLiveEvent(child, { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } } as never)).toBeUndefined()
+    expect(child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
+  })
+
+  it('crosses assistant/chunk only under the token granularity, returning the delta text', () => {
+    const off = Session.create(SessionId('child-live-fold-off'))
+    expect(mirrorDshLiveEvent(off, chunk('hel') as never)).toBeUndefined()
+    expect(off.events).toHaveLength(0)
+
+    const on = Session.create(SessionId('child-live-fold-on'))
+    expect(mirrorDshLiveEvent(on, chunk('hel') as never, { granularity: 'token' })).toBe('hel')
+    const chunks = on.events.filter(event => event.type === 'assistant/chunk')
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
+    // Non-text chunks append but report no delta text.
+    const blockStart = {
+      type: 'assistant/chunk', seq: 0, time: 1,
+      data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 1, blockType: 'text' } },
+    }
+    expect(mirrorDshLiveEvent(on, blockStart as never, { granularity: 'token' })).toBeUndefined()
+    expect(on.events.filter(event => event.type === 'assistant/chunk')).toHaveLength(2)
+  })
+
+  it('keeps the file mirror\'s offset consistent after live-appended events (no double mirror)', async () => {
+    const home = tempHome()
+    const child = Session.create(SessionId('child-live-parity'))
+    child.append('turn/start', { turn: 1 })
+    // The live transport mirrored the task and the first reply event-by-event.
+    mirrorDshLiveEvent(child, userLine('第一轮任务', 'user') as never)
+    mirrorDshLiveEvent(child, assistantLine(1, '第一条回复') as never)
+    // The settle reconciliation pass over the on-disk log (which additionally
+    // holds a second reply the wire had not pushed) mirrors exactly the delta.
+    writeSubDshSession(home, 'child-live-parity', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('第一轮任务', 'user'),
+      assistantLine(1, '第一条回复'),
+      assistantLine(1, '第二条回复'),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-live-parity')
+    expect(delta).toEqual({ texts: ['thinking 1第二条回复'], total: 3 })
+    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
   })
 })

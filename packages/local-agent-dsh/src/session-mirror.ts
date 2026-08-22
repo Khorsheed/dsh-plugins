@@ -116,6 +116,9 @@ export interface DshMirrorDelta {
   total: number
 }
 
+/** How much of the live event stream crosses into the child session. */
+export type DshLiveMirrorGranularity = 'event' | 'token'
+
 /** Flatten a mirrored message event's content to plain text for delta progress. */
 function mirroredEventText(event: SessionEvent): string {
   // user/message carries content directly; assistant/message wraps it in `message`.
@@ -128,6 +131,58 @@ function mirroredEventText(event: SessionEvent): string {
     .filter(block => (block.type === 'text' || block.type === 'reasoning') && typeof block.text === 'string')
     .map(block => block.text as string)
     .join('')
+}
+
+/**
+ * Append one appendable message event verbatim and report its delta text —
+ * the single append path shared by the file mirror's span loop and the live
+ * driver's per-event mirror, so both transports produce identical child
+ * sessions.
+ */
+function appendMirroredMessageEvent(childSession: Session, event: SessionEvent): string {
+  if (event.type === 'user/message') {
+    childSession.append('user/message', event.data, { surfaceOp: 'append' })
+  } else if (event.type === 'assistant/message') {
+    // Verbatim copy: content blocks (text/reasoning) and usage ride the
+    // event's own fields, so the tokenUsage projection counts the round.
+    childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
+  }
+  return mirroredEventText(event)
+}
+
+/**
+ * Mirror ONE live-pushed sub-dsh session event (the serve mode's
+ * `session/event` wire notification) into the child session. This is the
+ * live driver's transport-side entry into the SAME fold the file mirror
+ * owns: the filter (only the caller task's `user/message` and every
+ * `assistant/message` cross; turn boundaries stay the parent's; scaffolding
+ * stays behind) and the verbatim append are exactly `mirrorDshSession`'s
+ * span-loop rules. `assistant/chunk` events cross only under the `token`
+ * granularity opt-in. The caller owns offset/dedupe (the live runtime pushes
+ * each event once) and persistence batching.
+ * @param childSession - the parent-side dsh subagent session.
+ * @param event - the live event from the resident sub-dsh.
+ * @param options - granularity; default `event`.
+ * @returns the mirrored text for delta progress, or undefined when the event
+ *   was filtered out (or carried no text, as non-text chunks do).
+ */
+export function mirrorDshLiveEvent(
+  childSession: Session,
+  event: SessionEvent,
+  options?: { granularity?: DshLiveMirrorGranularity },
+): string | undefined {
+  if (event.type === 'user/message' && event.data.source.kind === 'user') {
+    return appendMirroredMessageEvent(childSession, event)
+  }
+  if (event.type === 'assistant/message') {
+    return appendMirroredMessageEvent(childSession, event)
+  }
+  if (event.type === 'assistant/chunk' && options?.granularity === 'token') {
+    childSession.append('assistant/chunk', event.data)
+    const chunk = event.data.chunk
+    return chunk.type === 'text-delta' || chunk.type === 'reasoning-delta' ? chunk.text : undefined
+  }
+  return undefined
 }
 
 /**
@@ -195,15 +250,7 @@ export async function mirrorDshSession(
       .slice(mirrored)
     const texts: string[] = []
     for (const event of span) {
-      if (event.type === 'user/message') {
-        childSession.append('user/message', event.data, { surfaceOp: 'append' })
-        texts.push(mirroredEventText(event))
-      } else if (event.type === 'assistant/message') {
-        // Verbatim copy: content blocks (text/reasoning) and usage ride the
-        // event's own fields, so the tokenUsage projection counts the round.
-        childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
-        texts.push(mirroredEventText(event))
-      }
+      texts.push(appendMirroredMessageEvent(childSession, event))
     }
     // todo/write passthrough, counted independently of the message prefix
     // skip: the snapshot is a standing whole list (last-wins), so a pass
