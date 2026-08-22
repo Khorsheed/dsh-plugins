@@ -15,6 +15,7 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@khorsheed/dsh-local-agent'
 import { KimiCliProvider } from './kimi-cli-provider.ts'
+import { DEFAULT_LIVE_IDLE_MS, KimiAcpLiveDriver } from './live-driver.ts'
 import { kimiAuthenticated, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
 import { ensureKimiPermissions, kimiLogout, provisionKimiConfig } from './provision.ts'
@@ -26,14 +27,32 @@ export const name = 'local-agent-kimi'
 /** Services required before the harness can register. */
 export const inject = ['localAgent', 'subagents', 'subprocess']
 
-/** Plugin config: the model a fresh scoped home defaults to. */
+/** Plugin config: the model a fresh scoped home defaults to, plus the live driver. */
 export interface Config {
   /** Kimi-managed model id; used only when no user config exists to mirror. */
   model?: string
+  /**
+   * Live driver: keep one resident `kimi acp` process per member and drive
+   * turns over ACP (runtime-level graceful cancel, push-triggered mirroring)
+   * instead of one `kimi -p` process per round. Default off; the exec
+   * one-shot stays the fallback whenever the channel cannot come up.
+   */
+  live?: boolean
+  /** Idle lifetime of an unused resident runtime before reclaim. */
+  liveIdleMs?: number
+  /**
+   * Live mirror granularity: `event` mirrors the wire.jsonl fold via
+   * throttled passes; `token` additionally appends `assistant/chunk` deltas
+   * (write amplification — opt-in).
+   */
+  liveMirrorGranularity?: 'event' | 'token'
 }
 
 export const Config: z<Config> = z.object({
   model: z.string(),
+  live: z.boolean().default(false),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
 })
 
 /**
@@ -91,8 +110,17 @@ export function apply(ctx: Context, config: Config): void {
     void ensureKimiPermissions(homeDir).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-kimi: permission provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    ctx.subagents.registerProvider(new KimiCliProvider(ctx))
-    return ctx.localAgent.register({
+    // The live driver owns every resident runtime of this generation; its
+    // disposal runs with the effect teardown, so no process survives an
+    // unload.
+    const liveDriver = config.live === true
+      ? new KimiAcpLiveDriver(ctx, {
+        ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+      })
+      : undefined
+    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveDriver))
+    const disposeHarness = ctx.localAgent.register({
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
@@ -103,5 +131,10 @@ export function apply(ctx: Context, config: Config): void {
       logout: kimiLogout,
       subcommand: handleSubcommand,
     })
+    return () => {
+      disposeProvider()
+      disposeHarness()
+      void liveDriver?.disposeAll()
+    }
   }, 'local-agent-kimi: harness')
 }

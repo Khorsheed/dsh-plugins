@@ -46,6 +46,16 @@ Edit **only this key** — provisioning never overwrites an existing config, and
 
 ⚠️ **OAuth token exposure**: the scoped OAuth token is sent to whatever endpoint serves the request — point `base_url` only at endpoints you control or trust.
 
+Plugin config of its own (optional, in the profile patch layer):
+
+```yaml
+- id: local-agent-kimi
+  config:
+    live: false                # live driver: one resident kimi acp process per member, one session/prompt per round (runtime-level graceful session/cancel, push-triggered mirroring); off — or a channel that cannot come up — means the one-shot kimi -p path
+    liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
+    liveMirrorGranularity: event  # live mirror granularity; token additionally appends ACP chunks as assistant/chunk (write amplification — opt-in)
+```
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
@@ -72,6 +82,8 @@ Edit **only this key** — provisioning never overwrites an existing config, and
 **Resume.** A fresh delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as the tool's optional `resume` parameter continues the same kimi session (`kimi -S session_<id> -p`) inside the same dsh child session. The handle never rides the prompt: it is resolved through the `localAgent` delegation registry only for the same parent session and provider that recorded the delegation — a forged handle is rejected before any CLI process starts.
 
 **Isolation and accounting.** The child is a fresh session in the delegating session's workspace; the parent receives only the final answer or the exact error — child context, commentary, tool activity, and diffs never cross into the parent session. The provider opens `turn/start` at spawn and closes `turn/end` at settle, including on failure or abort (reason `error`/`aborted`), so durations equal real CLI runtime. Usage is the sum of the round's `usage.record` deltas (each one LLM request, not cumulative), carried on the round's final mirrored assistant message; the mirror filters kimi's auto-permission `<system-reminder>` messages, renders tool calls with arguments, pairs results to their calls, and advances incrementally so earlier messages never duplicate. Aborting settles the tool result immediately (SIGTERM→grace→SIGKILL) and keeps the partial work already mirrored.
+
+**Live driver (`live: true`).** Replaces the per-round spawn: the member's first delegation brings up one resident `kimi acp` process (ACP over stdio; the handshake requires the `loadSession` capability, otherwise the breaker falls back), `session/new` creates the session (the server-assigned id becomes the delegation record's `cliSessionId`), and every later round is one `session/prompt`; `cancel` lands as `session/cancel` — the process survives and the session stays continuable. The member bridge rides the ACP `mcpServers` inline declaration (no mcp.json write). `session/request_permission` is auto-answered unattended (first allow option, cancelled when none — matching `kimi -p`'s auto-approve). **Mirroring deliberately stays on the file fold**: ACP pushes token-level chunks, which are not isomorphic to the wire.jsonl line fold, so pushes only trigger throttled `mirrorKimiDelta` passes and the settle pass stays authoritative — one fold, one offset, and the two driver paths cannot drift. Runtimes are reclaimed after an idle timeout (stdin EOF → SIGTERM ladder); after a crash the next round re-spawns and `session/load`s the on-disk session.
 
 </details>
 
