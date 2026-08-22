@@ -32,14 +32,16 @@ describe('local-agent-claude-code apply', () => {
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
     })
-    // The manual-handoff login: no spawnable command, the exact terminal
-    // display command scrubbing the relay env and pinning the scoped home.
+    // The pty login: the CLI runs on a real terminal so it opens the browser
+    // itself; the declaration scrubs the relay env and pins the scoped home.
     const login = registered[0]?.login
-    expect(login !== undefined && 'manual' in login).toBe(true)
-    if (login !== undefined && 'manual' in login) {
-      expect(login.manual.commandDisplay).toBe(
-        `env -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL CLAUDE_CONFIG_DIR=${home} claude auth login`,
-      )
+    expect(login !== undefined && 'pty' in login).toBe(true)
+    if (login !== undefined && 'pty' in login) {
+      expect(login.pty.command).toBe('env')
+      expect(login.pty.args).toEqual([
+        '-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL',
+        `CLAUDE_CONFIG_DIR=${home}`, 'claude', 'auth', 'login',
+      ])
     }
     expect(registered[0]?.records).toBeDefined()
     // The scoped home is provisioned eagerly.
