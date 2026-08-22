@@ -95,9 +95,9 @@ describe('MembersView', () => {
     expect(mainCard.textContent).not.toContain('编辑')
     expect(mainCard.textContent).not.toContain('移除')
     // ada: provider, role instructions, idle chip, trajectory + edit + remove,
-    // and the avatar block carries the uppercased name.
+    // and the avatar tile carries the member's initial.
     const adaCard = cardOf('ada')
-    expect(adaCard.textContent).toContain('ADA')
+    expect(adaCard.textContent).toContain('Aada')
     expect(adaCard.textContent).toContain('kimi')
     expect(adaCard.textContent).toContain('后端')
     expect(adaCard.textContent).toContain('空闲')

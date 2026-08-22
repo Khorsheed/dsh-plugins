@@ -34,43 +34,55 @@
 .head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+/* The avatar tile: a small rounded square in the member color (passed in as
+   --member-color), slightly deepened through color-mix for white-letter
+   contrast — a shade, not a gradient. Keeps the member identity quiet: a
+   tile, not a banner. */
+.avatarTile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
   flex: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--member-color, #5b8ff9) 85%, black);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .name {
   color: var(--dsw-alias-label-primary, #1f2329);
-  font-weight: 510;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hint {
-  margin-left: auto;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
   font-size: 12px;
   white-space: nowrap;
 }
 
-/* The avatar block: the member color (passed in as --member-color), slightly
-   deepened through color-mix for white-letter contrast — a shade, not a
-   gradient. */
-.avatar {
-  display: grid;
-  place-items: center;
-  height: 56px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--member-color, #5b8ff9) 85%, black);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  user-select: none;
+.head > .chipRunning,
+.head > .chipFailed,
+.head > .chipIdle {
+  margin-left: auto;
+  flex: none;
 }
 
 .instructionsBlock {

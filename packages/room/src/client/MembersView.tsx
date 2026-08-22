@@ -51,14 +51,30 @@ function MemberCard({
   return (
     <div className={css.card} data-member={member.name}>
       <div className={css.head}>
-        <span className={css.dot} style={{ background: color }} aria-hidden />
-        <span className={css.name}>{member.name}</span>
-        <span className={css.hint}>
-          {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
+        <span className={css.avatarTile} style={{ '--member-color': color } as CSSProperties} aria-hidden>
+          {member.name.slice(0, 1).toUpperCase()}
         </span>
-      </div>
-      <div className={css.avatar} style={{ '--member-color': color } as CSSProperties} aria-hidden>
-        {member.name.toUpperCase()}
+        <span className={css.identity}>
+          <span className={css.name}>{member.name}</span>
+          <span className={css.hint}>
+            {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
+          </span>
+        </span>
+        {running ? (
+          <button
+            type="button"
+            className={css.chipRunning}
+            title={t('speech.jump')}
+            disabled={child === undefined}
+            onClick={() => { if (child !== undefined) openSession(child) }}
+          >
+            {`${t('members.status.running')} · ${formatDurationMs(elapsedMs ?? 0)}`}
+          </button>
+        ) : (
+          <span className={failed ? css.chipFailed : css.chipIdle}>
+            {failed ? t('members.status.failed') : t('members.status.idle')}
+          </span>
+        )}
       </div>
       {member.kind === 'cli' && (
         member.instructions === undefined ? (
@@ -85,21 +101,6 @@ function MemberCard({
         )
       )}
       <div className={css.foot}>
-        {running ? (
-          <button
-            type="button"
-            className={css.chipRunning}
-            title={t('speech.jump')}
-            disabled={child === undefined}
-            onClick={() => { if (child !== undefined) openSession(child) }}
-          >
-            {`${t('members.status.running')} · ${formatDurationMs(elapsedMs ?? 0)}`}
-          </button>
-        ) : (
-          <span className={failed ? css.chipFailed : css.chipIdle}>
-            {failed ? t('members.status.failed') : t('members.status.idle')}
-          </span>
-        )}
         {member.kind === 'cli' && (
           <span className={css.actions}>
             <button
