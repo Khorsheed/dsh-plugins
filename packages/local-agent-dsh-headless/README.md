@@ -1,22 +1,57 @@
-# `@khorsheed/dsh-local-agent-dsh-headless`
+# dsh-local-agent-dsh-headless
 
-[English](README.md) | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-The sub-dsh one-shot app bundle for the `local-agent-dsh` harness: a direct core Agent/Session runner over `dsh-base` that accepts a **caller-supplied session id** — `--session-id <id>` creates a fresh session with exactly that id, `--resume <id>` continues the existing session with that id — prints the final assistant text, and exits. It is the sibling of the official `@deepseek-ai/dsh-headless` bundle, differing only in who owns the session id.
+local-agent 家族的一次性 headless 子 dsh 运行器：在一个由调用方命名的 dsh 会话里跑一个任务，把最终助手文本打到 stdout，然后进程退出。它是官方 `@deepseek-ai/dsh-headless` bundle 的兄弟版本，唯一区别是会话 id 归谁所有——你永远不需要自己安装或挂载它；父侧 `local-agent-dsh` provider 会在运行时自动 provision。
 
-## Mounting discipline
+## 特性
 
-**Never add this bundle to an interactive profile's `bundles`.** Its patch carries sub-profile-only rows — a persona override, `hmr` disabled, a `tools` mode override, a `code-runtime` insert, and the member-bridge MCP row — that collide with an interactive composition (duplicate `code-runtime` id) and leak overrides into real user sessions. The bundle is composed ONLY into the `headless-local-agent-dsh` sub-profile, which the parent `local-agent-dsh` provider auto-provisions under the dsh harness's scoped home (`provisionDshSubProfile`): its own `package.json`, patch layer, and bundle symlink are written there at runtime — there is nothing to mount by hand anywhere. If a main-profile-safe variant is ever needed, split a separate patch instead of reusing this one.
+- **调用方提供的会话 id**——`--session-id <id>` 用该确切 id 新建会话，`--resume <id>` 续接该会话；id 以调用参数传递，绝不经过 stdout。
+- **一次性语义**——驱动任务、打印最终助手文本，完成轮退出 0、否则退出 1。
+- **隔离的会话存储**——子 dsh 会话存在自己的 scoped `$DSH_HOME` 下，绝不会出现在父实例的会话列表里。
+- **零手工挂载**——`headless-local-agent-dsh` 子 profile 由父级 provider 自动 provision，任何地方都不需要手工挂载。
 
-Patch edits must be boot-verified before landing (`dsh preflight` against a profile composing this bundle, or one real sub-dsh launch): the `!!js` tag is scalar-only and a mistagged collection fails at profile boot, before any plugin code runs. `tests/patch.spec.ts` pins the shape in-repo, but the boot check is the authoritative gate.
+## 安装
 
-## Why a caller-supplied session id
+本 bundle 从不单独安装或挂载——安装父级 harness 即一并带入：
 
-The local-agent family needs to continue the *same* dsh conversation across delegations. The parent provider generates one uuid and passes the same value on every round: the fresh round creates the sub-dsh session with it, and each resume round continues exactly that session. The id travels as an invocation flag, never through stdout — the sub-dsh stdout stays format-pure, with no delimiter prefix and no risk of a task answer that happens to contain an id-like string being misparsed.
+```sh
+dsh plugin --profile web add @khorsheed/dsh-local-agent-dsh
+```
 
-## Composition
+没有需要单独卸载的东西；本 bundle 在任何交互式 profile 里都不存在。
 
-This bundle's patch rides over `dsh-base` in its own profile (e.g. `headless-local-agent-dsh`):
+## 用法
+
+通常由父级 provider 拉起本 bundle；直接调用也可以：
+
+```sh
+dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   # fresh
+dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       # resume
+```
+
+两个 flag 都不给时，runner 自生成 `session-<uuid>` id（官方 headless 行为），因此仍是一次性使用的即插即用替代。
+
+## Compatibility
+
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- 源码线（deepseek-harness master）：✅
+
+## 已知限制
+
+- **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。
+- 子 dsh 会话绝不会出现在父实例的会话列表里（独立的 scoped-home 存储）。
+- 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
+- patch 改动落地前必须做启动级验证（`dsh preflight` 或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败。
+
+## 实现原理
+
+<details>
+<summary>内部结构（点击展开）</summary>
+
+local-agent 家族需要在多次委派之间续接**同一个** dsh 对话：父级 provider 生成一个 uuid，并在每一轮传同一个值——fresh 轮用它创建子 dsh 会话，之后的 resume 轮恰好续接该会话。
+
+本 bundle 的 patch 在自己的 profile 之上叠加 `dsh-base`（如 `headless-local-agent-dsh`）：
 
 ```yaml
 - id: local-agent-dsh-headless-startup
@@ -31,23 +66,10 @@ This bundle's patch rides over `dsh-base` in its own profile (e.g. `headless-loc
     resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId
 ```
 
-The startup provider parses the task positional plus `--session-id` / `--resume` (mutually exclusive) and publishes the invocation; the runner creates (`agents.create({ sessionId })`) or resumes (`agents.resume({ resumeSessionId })`) that session, drives the task, flushes, prints the final assistant text, and exits 0 on a completed turn, 1 otherwise — mirroring the official headless runner.
+startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume` 并发布调用；runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下，并生成自己的 `package.json`、patch 层与 bundle symlink。
 
-## Invocation
+</details>
 
-```sh
-dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   # fresh
-dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       # resume
-```
+## 开发
 
-With neither flag, the runner generates its own `session-<uuid>` id (the official headless behavior), so the bundle is a drop-in replacement for one-shot use.
-
-## Notes
-
-- The sub-dsh session store lives under its own `$DSH_HOME` (the harness's scoped home), so sub-dsh sessions never appear in the parent instance's session list.
-- No `local-agent` family bundles belong in this composition: base's own in-process subagent tools stay, but nothing here spawns another dsh.
-
-## Compatibility
-
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
-- source line (deepseek-harness master): ✅
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/local-agent-dsh-headless`）。问题与贡献请移步该仓库。

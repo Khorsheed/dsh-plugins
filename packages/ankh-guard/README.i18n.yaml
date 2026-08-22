@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record: the git blob hash of each side as of the
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write packages/ankh-guard/README.md
-packages/ankh-guard/README.md: 1e2b1c3b1b064aefc0a82f95606267e6333647b9
-packages/ankh-guard/README.zh.md: 9244892971aaa6ca46724a35c00f73c8d52789f7
+#   pnpm run verify-translation-pairing --write packages/ankh-guard/README.en.md
+packages/ankh-guard/README.en.md: c28a5c5ed62505813b47bb0ede0a1f2ee1a7b7b9
+packages/ankh-guard/README.md: b1a184a028dc67f269290c5f866f6edc395e16ca

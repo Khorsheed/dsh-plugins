@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-message-tools-withdraw-interrupted-assistant.md
-.agents/notes/implemented/bug-fix/2026-08-19-message-tools-withdraw-interrupted-assistant.md: d39598c0ec47fe88b70980572c9b77616a552ff2
-.agents/notes/implemented/bug-fix/2026-08-19-message-tools-withdraw-interrupted-assistant.zh.md: d67803760bdac2ea3597dcf74fc6969e881cef32
+.agents/notes/implemented/bug-fix/2026-08-19-message-tools-withdraw-interrupted-assistant.md: d86b36784bb50282045978001e4fc909a189a8f1
+.agents/notes/implemented/bug-fix/2026-08-19-message-tools-withdraw-interrupted-assistant.zh.md: a19b06532a807bf6e5bf1b3789cd92a2f67d0d69

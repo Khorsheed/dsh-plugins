@@ -26,63 +26,13 @@ This README is the catalog: what each plugin does, how to load it, and exactly h
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 | `@khorsheed/dsh-room` | host + client | `room` | Multi-agent **group-conversation sessions** (WIP): @-member dispatch, shared blackboard, members tab |
 
-Versions are the current workspace lines; the npm registry may have newer ones.
+Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
 
-## Capability inventory
+## Compatibility promise
 
-One capability per row; capabilities of the same plugin are grouped together (empty first cells). The screenshot column currently holds captures from the production profile as placeholders — swap in your own shots whenever ready.
+The plugins are designed to coexist: install, remove, or toggle any combination — they never interfere. Loader entry ids, UI seats, event and Remote namespaces are all distinct, and a plugin that cannot find an optional capability degrades silently instead of failing boot. The production deployment runs the full set, all the time.
 
-| Plugin | Capability | Screenshot |
-| --- | --- | --- |
-| **Dialog control** |||
-| `dsh-client-message-tools`<br>edit / withdraw / restore | Edit: in-place surface replacement, the model reads the new text in place (real model chip, edit chains) | <img src="docs/screenshots/04-message-actions.png" width="360"> |
-| | Withdraw: real withdrawal via surface replacement, shadowed span leaves the model context, 「已撤回 N 条消息」 divider, original backfilled to the draft | |
-| | Restore: tail replay along the authoritative boundary (`sourceEventSeqs`), rendered as a 「已恢复」 group | |
-| `dsh-message-timeline`<br>history timeline | Floating rail on the chat scrollport's left edge: one row per loaded user message, ticks at rest, hover reveals, click jumps, follows the reading position | <img src="docs/screenshots/02-message-timeline.png" width="360"> |
-| `dsh-client-session-title-edit`<br>inline title editing | Pencil beside the title → inline editor, Enter commits / Escape cancels, rides the official `session.rename`, pins user-sourced titles | <img src="docs/screenshots/03-session-title-edit.png" width="360"> |
-| **File preview** |||
-| `dsh-file-preview` (host service) | Read-only Remote service: `list` folds the session's written/edited files (nested Code Mode included) with every change's diff, `read` serves current content (images as browser URLs) | — |
-| `dsh-client-ui-file-preview` (UI) | 「产物」tab: file list, most recently active first | <img src="docs/screenshots/05-file-preview-tab.png" width="360"> |
-| | Inline content preview: select a file to read it, change-history tab steps through diffs, content search highlights and jumps | <img src="docs/screenshots/06-file-preview.png" width="360"> |
-| | Per-turn mutation card + file drawer: 「N 个文件已修改」 summary after each finished turn; content-only drawer with show-in-folder / open-in-IDE gestures | — |
-| **Local coding-agent family** |||
-| `dsh-local-agent` (family core) | Scoped homes: each harness runs under its own `KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`, never touching personal config or credentials | — |
-| | `/<harness> login / sessions / status / logout` command family (device-code / browser OAuth) | — |
-| | Settings → 本地 Agent section: roster-driven auth status, web login, sign-out | <img src="docs/screenshots/08-local-agent.png" width="360"> |
-| `dsh-local-agent-kimi` | Kimi Code harness: `kimi -p` delegation, `session_index.jsonl` records, resume continuation | — |
-| `dsh-local-agent-codex` | Codex harness: `codex exec` delegation, rollout records, resume continuation | — |
-| `dsh-local-agent-claude-code` | Claude Code harness: `claude -p --output-format json` delegation, project-file records, resume continuation | — |
-| `dsh-local-agent-tool-subagent` | Family delegation tool: the official `subagent_*` schema plus optional `resume` (handle never travels in the prompt, validated per parent+provider) | — |
-| **Task & subagent monitoring** |||
-| `dsh-taskpilot` | Background-job pill: running first, ticking every second, stop button | <img src="docs/screenshots/09-taskpilot.png" width="360"> |
-| | Subagent pill: full lineage, duration and token readouts, interrupt button (deep children authorized via their direct parent) | — |
-| | Detail drawer: command/type/status/times plus a trajectory replayed from the session log | — |
-| **Status ambience** |||
-| `dsh-whalesong` | Favicon waterline bubbles: the tab icon animates while any session runs | <img src="docs/screenshots/whalesong-favicon.svg" width="48"> |
-| | Sidebar droplets: the sidebar whale spouts while a task runs (respects `prefers-reduced-motion`) | <img src="docs/screenshots/10-whalesong.png" width="200"> |
-| | Chimes: three rising glides on completion / a repeated rise when blocked (WebAudio) | — |
-| **Productivity** |||
-| `dsh-ui-shortcuts` | Three fixed actions, your keys: pause (Esc), steer-send (Ctrl/Cmd+S), new session (Ctrl/Cmd+O) | <img src="docs/screenshots/07-ui-shortcuts.png" width="360"> |
-| | `ctx.shortcuts` registry: any plugin can register its own keyboard actions and get the settings row, rebinding, persistence for free | — |
-| **Ops guard** |||
-| `dsh-ankh-guard` | Green-build credential gate: a restart is allowed only after a green build + tests (credential bound to git HEAD, 10-minute window) | — |
-| | preflight composition gate: deep dry-run of the whole plugin tree in a subprocess before anything is stopped | — |
-| | Watchdog seamless restart: rollback to last-known-good, `guard-backup-*` anchors, crash page | — |
-
-## Do the plugins conflict?
-
-**No — they are designed to coexist, and they already do.** The production profile composes all 13 bundles over the stock `dsh-base` + `dsh-web-app` layers and boots; every client bundle serves. Three properties guarantee it:
-
-- **Distinct loader entry ids.** Each `cordis.patch.yml` inserts its own row ids, and nothing is ever re-inserted: the local-agent family's core row ships only in the core bundle's patch (harness bundles declare it as a dependency instead), and each harness mounts its own tool row with a distinct id (`tool-subagent-kimi`, `tool-subagent-codex-local`, `tool-subagent-claude-code-local`).
-- **Distinct UI seats.** Each client mounts its own slots with `slots.inject` discipline: `conversation.session.header.utilities` (message-timeline), `conversation.session.header.actions` (session-title-edit), `conversation.chat.node` (message-tools shadows the official user renderer), `conversation.input.dock` (taskpilot), `conversation.view` / `conversation.chat.turnTail` (ui-file-preview), `settings.general.item` (ui-shortcuts). `shell.overlay` is shared by taskpilot and ui-file-preview, but it is a multi-registration stack — two separate overlays, no fight.
-- **Degrade, don't explode.** A plugin that cannot find an optional sibling or capability degrades silently instead of failing boot.
-
-There are **two exclusivity rules** worth remembering, and they are the only real conflicts in the whole pack:
-
-1. **`ui-shortcuts` is exclusive with the official `@deepseek-ai/dsh-client-ui-shortcuts`.** Both use the loader entry id `ui-shortcuts`; mounting both in one profile fails loud at boot on the duplicate id — keep exactly one. In practice the official one cannot even be installed: it was a fork-grown package, **never published to npm, and removed from the harness when it migrated into this repo** — the rule only guards against an old fork tarball lying around. The default web bundle never mounted a shortcuts row at all (not enabled, not disabled — simply absent).
-2. **`ankh-guard` must not be added as a profile bundle on a host that already mounts the `ankh-guard` row** (pre-migration fork images did, via the base bundle): the duplicate row id fails boot. Check `dsh.profile.bundles` first; if the row is already there, skip the add (or disable the duplicate instead of adding).
-
-And one namespace rule: exactly one composition may mount the `filePreview` Remote (ui-file-preview does); a double-mount logs loud but the rest of the plugin still registers.
+One exception to know: host images that already mount an `ankh-guard` row (historical forks) must not add the package again — a duplicate row id fails boot. See [the ankh-guard README](packages/ankh-guard/README.md).
 
 ## Install
 

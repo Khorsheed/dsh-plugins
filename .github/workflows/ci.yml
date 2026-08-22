@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The harness checkout seeds dev-time type/test resolution and typert
+      # generation (AGENTS.md build contract). Keep it at the published
+      # release line the repo currently tracks (see dsh.compat / the rc
+      # adaptation notes); bump deliberately when the host line moves.
+      - name: Clone deepseek-harness (type/test seed)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: dsh-v0.1.1-rc.1
+          path: deepseek-harness
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install (harness seed)
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      # Host + client: taskpilot's generated paths point at the client
+      # ui-slots type lib, so host-only is not enough.
+      - name: Build harness libs (type seed)
+        working-directory: deepseek-harness
+        run: pnpm run build:lib
+
+      # Before the repo install: taskpilot's prepare builds, and the build
+      # needs the gitignored harness paths file.
+      - name: Generate taskpilot harness type paths
+        run: node scripts/sync-harness-paths.mjs
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Install (repo)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Test
+        run: pnpm run test
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      # Packing is where artifact-level regressions surface (dropped globs,
+      # missing hashed chunks, lost family edges) — pack every bundle package
+      # so they fail here, not on a prod boot.
+      - name: Pack all bundles (artifact verification)
+        run: pnpm exec tsx scripts/pack-all-dist.ts
+
+      - name: Repo hygiene (full tree)
+        run: pnpm check:hygiene --all
+
+      - name: Plugin independence
+        run: pnpm check:plugins
+
+      - name: Script tests (checkers' own specs)
+        run: pnpm run test:scripts
+
+      - name: Doc gates
+        run: |
+          pnpm run verify-agent-note-format
+          pnpm run verify-agent-note-classification
+          pnpm run verify-translation-pairing

@@ -30,7 +30,7 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 
 - **kimi**（`packages/local-agent-kimi/src/member-bridge-config.ts`）：kimi 唯一的 MCP 配置面是 scoped home 共享的 `$KIMI_CODE_HOME/mcp.json`（已对官方文档核实：无逐次调用的配置 flag，且只有条目自身的 `env` 有文档保证到达 server 子进程——CLI 的进程 env 不是可靠通道）。同一文件被并发 run 共享，排除单一可变条目，因此 provider 写入**每 run 一条 server 条目** `dsh-member-<token8>`，socket 路径与 token 置于其 `env`——构造上无竞态——settle 时剪除，并在每次写入时清理其他家族条目（宿主崩溃残留）。kimi 文档化的 mid-session 语义保证两者安全：配置编辑不中断已打开的会话。
 - **claude-code**（已对真实 CLI 端到端探针验证：模型调用了工具，桥完成往返，零权限提示）：逐次调用 flag，完全不写配置文件——`--mcp-config <json>`（单个 JSON 字符串声明 `dsh-member-<token8>` 的 command/args/env）加 `--allowedTools mcp__<server>__member_message`（claude `-p` 自动拒绝权限提示），fresh 与 resume argv 同样追加，skip 与普通权限模式一致。
-- **codex**：逐进程内联 TOML 覆盖 `-c 'mcp_servers.dsh-member-<token8>={command=…,args=[…],env={…}}'`，`codex exec` 与 `codex exec resume` 同样携带；不触碰共享的 config.toml，因此无需清理。探针状态：覆盖语法被真实 CLI **接受**且 run 到达模型调用；模型调用腿**待验证**（账户配额重置后复跑）。
+- **codex**：逐进程内联 TOML 覆盖 `-c 'mcp_servers.dsh-member-<token8>={command=…,args=[…],env={…},default_tools_approval_mode="approve"}'`，`codex exec` 与 `codex exec resume` 同样携带；不触碰共享的 config.toml，因此无需清理。探针状态（2026-08-20 配额重置后复跑）：**端到端通过**——模型真实调用了 `member_message`，桥接往返成功。一个单测看不见的真实 CLI 发现：codex 稳定开启的 `tool_call_mcp_elicitation` 闸门在非交互 exec 模式下会自动取消没有 `readOnlyHint` 的 MCP 工具（"user cancelled MCP tool call"），因此覆盖里**必须**带每 server 的 `default_tools_approval_mode="approve"`。
 - **dsh**：sub-dsh 是一个 dsh profile，成员桥走 harness 自带的 `@deepseek-ai/dsh-mcp-client`——家族 headless bundle 的 `cordis.patch.yml` 里一条 stdio 行，经 `!!js` env 读取每 run 坐标（`DSH_MEMBER_SOCKET` / `DSH_MEMBER_TOKEN` / `DSH_MEMBER_BRIDGE_ENTRY`，由 sub-dsh spawn env 的显式层传入）。该包从 dsh 安装的依赖闭包解析（boot 时链接进 scoped home 的 `profiles/node_modules` 兜底；已发布的 app 自 rc.6——家族的 minHost——起就携带它）。`failOnStartupError: false` 保证无成员通道的 core 上失败开放。
 
 ## Alternatives considered
@@ -46,7 +46,7 @@ receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessag
 - kimi 成员今日即可在 run 中互通知；回执词表（`sent` / `pending-confirm` / `busy` / `error: …`）对发送方结论稳定，无论由哪一侧（room 闸门或家族直发）产生。
 - 闸门所有权单一：room 认领时家族绝不投递，room 的待确认卡流程不可能被绕过。
 - 宿主崩溃会留下残留的 `dsh-member-*` kimi 配置条目；下一次 run 的写入会清理。token 比宿主进程长寿的 run 失败关闭（未知 token）。
-- codex 的模型调用腿仍**待验证**（注入语法已被真实 CLI 接受；模型调用待配额重置后复跑）——argv 形态有单测覆盖。claude-code 与 kimi 已过端到端探针；dsh 复用 harness 自己的 mcp-client，其工具调用路径有上游测试。
+- codex 的模型调用腿已**端到端通过**（2026-08-20 配额重置后复跑：模型真实调用了 `member_message`，桥接往返成功）。该次运行钉住了一个 exec 模式的必要条件：codex 的 MCP elicitation 闸门会自动取消没有 readOnlyHint 的工具，因此覆盖里必须携带 `default_tools_approval_mode="approve"`。claude-code 与 kimi 已过端到端探针；dsh 复用 harness 自己的 mcp-client，其工具调用路径有上游测试。
 - 每 provider 的 argv/env 面是各 provider 的内部事务（kimi 的 mcp.json 条目、claude 的 `--mcp-config` JSON、codex 的 `-c` TOML、dsh 的 bundle 行）——四套机制，一份 registry 契约。
 - 桥讲 NDJSON stdio（MCP TypeScript SDK 的帧格式）；用 header 帧的 client 不互通——接受：桥面向的是有文档的 kimi client 行为。
 

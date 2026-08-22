@@ -1,6 +1,10 @@
 /* Conversation datasets view: binding bar on top, then a two-pane browser
    (dataset/item tree + content preview) filling the bounded view area; each
-   pane scrolls independently. */
+   pane scrolls independently. The tree follows the IDE explorer anatomy:
+   compact 24px rows, chevron disclosure, hairline indent guides under each
+   expanded group, folder/file glyphs, and full-row subtle state backgrounds.
+   The preview pane follows the products tab's skeleton: one quiet header
+   line, a hairline, then the content in the chat's reading measure. */
 
 .view {
   display: flex;
@@ -29,6 +33,7 @@
   gap: 8px;
   min-width: 0;
   font-size: 12px;
+  line-height: 18px;
 }
 
 .bindingRepo {
@@ -51,24 +56,14 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.action {
-  flex: none;
-  padding: 2px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.action:hover {
-  border-color: var(--dsw-static-deepseek-500);
-}
-
 .notice {
-  color: var(--dsw-alias-label-danger, #d43f3a);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .bindForm {
@@ -81,28 +76,16 @@
 .bindFormTitle {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-}
-
-.bindInput {
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  outline: none;
-  background: var(--dsw-alias-bg-base);
-  font-size: 12px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.bindInput:focus {
-  border-color: var(--dsw-static-deepseek-500);
-}
-
-.bindInput::placeholder {
-  color: var(--dsw-alias-label-tertiary);
+  line-height: 18px;
 }
 
 .bindFormActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The one-tap repo sources: current workspace / native chooser. */
+.bindShortcuts {
   display: flex;
   gap: 8px;
 }
@@ -118,11 +101,10 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 2px;
-  width: 260px;
+  width: 300px;
   min-width: 0;
   min-height: 0;
-  padding: 8px 8px calc(8px + var(--dsh-datasets-bottom-clearance, 0px));
+  padding: 6px 6px calc(8px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow-y: auto;
   border-right: 1px solid var(--dsw-alias-border-l2);
 }
@@ -131,6 +113,7 @@
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .dataset {
@@ -138,123 +121,182 @@
   flex-direction: column;
 }
 
-.datasetRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.datasetRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
-}
-
-.twisty {
-  flex: none;
-  width: 12px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.datasetId {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.datasetName {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.datasetCount {
-  flex: none;
-  margin-left: auto;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.item {
-  display: flex;
-  flex-direction: column;
-  padding-left: 12px;
-}
-
-.itemRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.itemRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
-}
-
-.itemId {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.itemMeta {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+.item,
 .layer {
   display: flex;
   flex-direction: column;
-  padding-left: 20px;
 }
 
-.layerRow {
-  padding: 2px 8px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+/* Every expanded group's children hang on a hairline indent guide set under
+   the parent's chevron center — the explorer's orientation cue. */
+.children {
+  display: flex;
+  flex-direction: column;
+  margin-left: 11px;
+  padding-left: 9px;
+  border-left: 1px solid var(--dsw-alias-border-l3);
 }
 
-.fileRow {
-  display: block;
+/* One tree row (dataset / item / layer): explorer-compact, flush with the
+   column, the state background spanning the whole row. */
+.row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 24px;
+  padding: 2px 6px 2px 2px;
   overflow: hidden;
-  padding: 2px 8px 2px 20px;
   border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--dsw-alias-label-secondary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   font-size: 12px;
-  font-family: var(--dsw-alias-font-mono, monospace);
+  line-height: 20px;
   text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.folderIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Group titles give up their grow: counts/chips cluster right after them. */
+.rowTitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rowTitleStrong {
+  composes: rowTitle;
+  font-weight: 500;
+}
+
+/* Quiet count suffix, immediately after the title (`· N 个文件`). */
+.rowCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A validation warning under the dataset row: quiet, wraps when long. */
+.datasetWarn {
+  padding: 2px 8px 2px 20px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The dataset-level layers group label: a quiet line, like the dataset note. */
+.sharedGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.sharedLabel {
+  overflow: hidden;
+  height: 18px;
+  padding: 0 8px 0 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The dataset's descriptor name gets its own quiet line under the row. */
+.datasetNote {
+  overflow: hidden;
+  height: 18px;
+  padding: 0 8px 0 20px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A file leaf: the inline glyph plus the layer-relative path. */
+.fileRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 2px 6px;
+  overflow: hidden;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: left;
   cursor: pointer;
 }
 
 .fileRow:hover {
-  background: var(--dsw-alias-bg-hover, rgba(0, 0, 0, 0.04));
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
-.fileRowSelected {
-  background: var(--dsw-alias-bg-selected, rgba(0, 0, 0, 0.08));
+.fileRowSelected,
+.fileRowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-interactive-bg-hover));
   color: var(--dsw-alias-label-primary);
+}
+
+.fileIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ds-font-family-code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The selected item's metadata chips live in the preview header, not the tree. */
+.metaPills {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.metaPill {
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .preview {
@@ -265,33 +307,54 @@
   min-height: 0;
 }
 
+/* The selected file's header: one quiet line — the file glyph, the
+   item/layer/path, the item's metadata chips, the pinned commit — over a
+   hairline (the products tab's header rhythm). */
 .previewHeader {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  font-size: 12px;
 }
 
 .previewPath {
+  flex: none;
+  max-width: 50%;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-alias-font-mono, monospace);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .previewCommit {
   flex: none;
+  margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-alias-font-mono, monospace);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
 .previewScroll {
   flex: 1;
   min-height: 0;
-  padding: 12px 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
+  padding: 0 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow: auto;
+}
+
+/* The content column keeps the chat's reading measure, so the official block
+   chrome (banner + surface) reads as one card instead of a full-width strip. */
+.previewContent {
+  max-width: 760px;
+}
+
+/* Tighten the first block's top margin against the pane header. */
+.previewContent > *:first-child {
+  margin-top: 4px;
 }

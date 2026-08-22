@@ -3,6 +3,9 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentRegistry } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
@@ -25,6 +28,51 @@ declare module '@deepseek-ai/cordis' {
  * the web face is an optional additive host, absent in headless compositions. */
 interface ImageRouteHost {
   register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
+}
+
+/** The slice of the skill registry this package consumes (optional service). */
+interface SkillRegistrySlice {
+  register: (skill: { name: string; description: string; content: string }) => () => void
+}
+
+/**
+ * Register the 3d-artifact skill — the generation-side contract for
+ * sandbox-runnable interactive 3D / digital-twin single-file HTML (self-
+ * contained, zero runtime network, GLB-inline zero-fetch models). Pull-based
+ * discovery: an agent whose task involves generating such an HTML page finds
+ * the contract through the skill catalog — no per-session push notice.
+ * Optional: compositions without the skill capability skip the registration.
+ * A missing/malformed shipped SKILL.md degrades to a warning — a discovery
+ * aid must never take a boot down; the pack-smoke test owns the file's
+ * presence in the tarball.
+ * @param ctx - plugin context.
+ */
+function registerArtifactSkill(ctx: Context): void {
+  const skills = ctx.get('skills') as SkillRegistrySlice | undefined
+  if (skills === undefined) {
+    // Not a crash: file preview degrades without the skill (and a minimal
+    // composition may legitimately lack the capability). The line exists so a
+    // host-API migration that drops or renames the skills service shows up in
+    // boot logs instead of failing silently — same diagnostic as ankh-guard's
+    // restart-skill registration; grep "skill .* not registered".
+    ctx.logger.warn('file-preview: skills capability absent — the 3d-artifact skill is not registered')
+    return
+  }
+  try {
+    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact', 'SKILL.md')
+    const raw = readFileSync(skillFile, 'utf8')
+    const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
+    const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const description = /^description: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const content = match?.[2]
+    if (match === null || name === undefined || description === undefined || content === undefined) {
+      ctx.logger.warn('file-preview: shipped SKILL.md is malformed — the 3d-artifact skill is not registered')
+      return
+    }
+    ctx.effect(() => skills.register({ name, description, content }))
+  } catch (error) {
+    ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
+  }
 }
 
 /** Extensions treated as binary without reading (their text decode is meaningless). */
@@ -71,6 +119,27 @@ function isImagePath(path: string): boolean {
   return dot >= 0 && IMAGE_EXTENSIONS.has(path.slice(dot).toLowerCase())
 }
 
+/** HTML extensions served through the sandboxed render channel. */
+const HTML_EXTENSIONS: ReadonlySet<string> = new Set(['.html', '.htm'])
+
+/** Detect an HTML document from its display path extension. */
+function isHtmlPath(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  return dot >= 0 && HTML_EXTENSIONS.has(path.slice(dot).toLowerCase())
+}
+
+/** Best-effort scripted-HTML detection: any `<script>` tag, inline event
+ *  handler (`on*="…"`), or `javascript:` URL marks the document as scripted.
+ *  Only a hint for default-mode selection and warning — never a trust
+ *  decision; the sandbox and the Tier1 CSP are the real boundary. The scan
+ *  runs on the read content as delivered (a truncated read may miss markers
+ *  in the tail; acceptable for a hint). */
+function isScriptedHtml(content: string): boolean {
+  return /<\s*script[\s>]/i.test(content)
+    || /\son[a-z]+\s*=/i.test(content)
+    || /javascript:/i.test(content)
+}
+
 /** Stable error text for a failed read, without leaking backend internals. */
 function readErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -89,6 +158,7 @@ export class FilePreviewService extends TypertRemoteService {
 
   static Config: z<FilePreviewConfig> = z.object({
     maxReadBytes: z.natural().min(1).default(512 * 1024),
+    htmlMaxReadBytes: z.natural().min(1).default(4 * 1024 * 1024),
     maxFiles: z.natural().min(1).default(500),
     captureBashWrites: z.boolean().default(true),
   })
@@ -124,6 +194,7 @@ export class FilePreviewService extends TypertRemoteService {
     super(ctx, 'filePreview')
     this.resolved = {
       maxReadBytes: config.maxReadBytes ?? 512 * 1024,
+      htmlMaxReadBytes: config.htmlMaxReadBytes ?? 4 * 1024 * 1024,
       maxFiles: config.maxFiles ?? 500,
       captureBashWrites: config.captureBashWrites ?? true,
     }
@@ -153,6 +224,7 @@ export class FilePreviewService extends TypertRemoteService {
         'file-preview: image route',
       )
     }
+    registerArtifactSkill(ctx)
   }
 
   private get fs(): FileSystem {
@@ -337,7 +409,12 @@ export class FilePreviewService extends TypertRemoteService {
     if (info === undefined || info.type !== 'file') {
       return { path, kind: 'missing' }
     }
-    if (info.size !== undefined && info.size > this.resolved.maxReadBytes) {
+    // HTML gets its own, wider render-channel cap; every other text read
+    // keeps `maxReadBytes`. Images keep the base cap (their route serves
+    // bytes, not the render channel).
+    const html = isHtmlPath(path)
+    const cap = html ? this.resolved.htmlMaxReadBytes : this.resolved.maxReadBytes
+    if (info.size !== undefined && info.size > cap) {
       return { path, kind: 'too-large', size: info.size }
     }
     if (isImagePath(path)) {
@@ -361,12 +438,13 @@ export class FilePreviewService extends TypertRemoteService {
       if (hasNulByte(content)) {
         return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
       }
-      const truncated = content.length > this.resolved.maxReadBytes
+      const truncated = content.length > cap
       return {
         path,
         kind: 'text',
-        content: truncated ? content.slice(0, this.resolved.maxReadBytes) : content,
+        content: truncated ? content.slice(0, cap) : content,
         truncated,
+        ...(html && isScriptedHtml(content) ? { htmlScripted: true } : {}),
         ...(info.size === undefined ? {} : { size: info.size }),
       }
     } catch (error) {

@@ -182,6 +182,23 @@ function joinText(blocks: readonly unknown[]): string {
 }
 
 /**
+ * Join an assistant message's visible text. Normal replies use text blocks;
+ * interrupted replies may contain only reasoning. Prefer text when present,
+ * otherwise preserve the reasoning so a restore does not drop the only
+ * assistant content the user saw.
+ */
+function joinAssistantMessageText(blocks: readonly unknown[]): string {
+  const text = joinText(blocks)
+  if (text !== '') return text
+  return blocks
+    .filter((block): block is { type: string; text: string } =>
+      (block as { type?: string; text?: string }).type === 'reasoning'
+      && typeof (block as { text?: unknown }).text === 'string')
+    .map(block => block.text)
+    .join('')
+}
+
+/**
  * The full log seqs shadowed by the latest message-tools withdrawal
  * replacement citing `targetSeq`, or undefined when no such replacement exists
  * (the message left the surface through another producer, e.g. compaction).
@@ -322,7 +339,7 @@ function replayEntries(
         pending.finalized = true
       }
       flushPending()
-      pushAssistantText(joinText(event.data.message.content), seq)
+      pushAssistantText(joinAssistantMessageText(event.data.message.content), seq)
       continue
     }
     // Log-only events (boundaries, headers, titles) do not split a chunk run;

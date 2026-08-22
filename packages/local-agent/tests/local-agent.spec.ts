@@ -120,7 +120,7 @@ describe('LocalAgentRegistry', () => {
         { id: 's2', workDir: '/w2' },
       ] },
     }))
-    const execution = await ctx.commands.execute(agent, '/fake sessions', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake sessions', [], new AbortController().signal)
     expectSuccess(execution, 's1 (workDir: /w1)')
   })
 
@@ -128,7 +128,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('empty-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness())
-    const execution = await ctx.commands.execute(agent, '/fake sessions', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake sessions', [], new AbortController().signal)
     expectSuccess(execution, 'No Fake Agent sessions')
   })
 
@@ -136,7 +136,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('roster-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ displayName: 'Fake Agent' }))
-    const execution = await ctx.commands.execute(agent, '/local-agent list', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/local-agent list', [], new AbortController().signal)
     expectSuccess(execution, 'fake: Fake Agent')
   })
 
@@ -144,7 +144,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('status-yes-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ isAuthenticated: async () => true }))
-    const execution = await ctx.commands.execute(agent, '/fake status', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
     expectSuccess(execution, 'authenticated: yes')
     expectSuccess(execution, 'homeDir:')
   })
@@ -153,7 +153,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('status-no-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness())
-    const execution = await ctx.commands.execute(agent, '/fake status', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
     expectSuccess(execution, 'authenticated: no')
   })
 
@@ -169,14 +169,14 @@ describe('LocalAgentRegistry', () => {
     registry.register(harness({ name: 'dshlike', login: undefined, logout: undefined }))
     status = await registry.statusOf('dshlike')
     expect(status).toMatchObject({ loginable: false, logoutable: false })
-    void ctx.commands.execute(agent, '/fake status', new AbortController().signal)
+    void ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
   })
 
   it('rejects an unknown subcommand', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('bogus-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness())
-    const execution = await ctx.commands.execute(agent, '/fake bogus', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake bogus', [], new AbortController().signal)
     expectError(execution, 'Unknown /fake subcommand')
   })
 
@@ -185,7 +185,7 @@ describe('LocalAgentRegistry', () => {
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     const loggedOut: string[] = []
     registry.register(harness({ logout: async (homeDir: string) => { loggedOut.push(homeDir) } }))
-    const execution = await ctx.commands.execute(agent, '/fake logout', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake logout', [], new AbortController().signal)
     expectSuccess(execution, 'signed out')
     expect(loggedOut).toHaveLength(1)
     expect(loggedOut[0]).toContain('logout-ok-')
@@ -195,7 +195,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('logout-none-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness())
-    const execution = await ctx.commands.execute(agent, '/fake logout', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake logout', [], new AbortController().signal)
     expectError(execution, 'no logout path')
   })
 
@@ -205,11 +205,11 @@ describe('LocalAgentRegistry', () => {
     registry.register(harness({
       login: { command: fakeCli('echo "device URL=TEST-URL code=TEST-CODE" >&2\nexit 0'), args: [] },
     }))
-    const first = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const first = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectSuccess(first, 'TEST-URL')
     // The guard clears once the polling child exits; a later login starts fresh.
     await new Promise((resolve) => { setTimeout(resolve, 300) })
-    const again = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const again = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectSuccess(again, 'TEST-URL')
   })
 
@@ -223,7 +223,7 @@ describe('LocalAgentRegistry', () => {
         capture: 'stdout',
       },
     }))
-    const result = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const result = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectSuccess(result, 'STDOUT-URL')
   })
 
@@ -231,16 +231,27 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pending-'), loginPromptTimeoutMs: 400 })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ login: { command: fakeCli('sleep 30'), args: [] } }))
-    const pending = ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const pending = ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     await new Promise((resolve) => { setTimeout(resolve, 150) })
     // A second login terminates the stale child and starts a fresh one — the
     // user's retry gets a new code instead of being locked out by an
     // abandoned login. The replaced first attempt reports its child was
     // terminated; the replacement itself times out like any silent child.
-    const second = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const second = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(second, 'printed no device-code prompt')
     const first = await pending
-    expectError(first, 'exited with code unknown')
+    // The replaced login's error text is platform-timing dependent: where
+    // /bin/sh is dash (Linux), a sh waiting on a foreground child defers
+    // SIGTERM until the child exits, so the replaced login's own prompt
+    // timeout fires first ('printed no device-code prompt'); where sh is
+    // bash (macOS), the SIGTERM kills it immediately ('exited with code
+    // unknown'). Both prove the replacement happened.
+    expect(first?.result).toMatchObject({ kind: 'error' })
+    const firstResult = first?.result
+    const firstText = firstResult?.kind === 'error' ? firstResult.text : ''
+    expect(
+      ['exited with code unknown', 'printed no device-code prompt'].some((fragment) => firstText.includes(fragment)),
+    ).toBe(true)
   })
 
   it('SIGKILLs a replaced login child that ignores SIGTERM', async () => {
@@ -250,12 +261,23 @@ describe('LocalAgentRegistry', () => {
     // replacement must fall back to SIGKILL so no zombie polling process
     // survives the grace period.
     registry.register(harness({ login: { command: fakeCli("trap '' TERM\nexec sleep 30"), args: [] } }))
-    const pending = ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const pending = ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     await new Promise((resolve) => { setTimeout(resolve, 150) })
-    const second = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const second = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(second, 'printed no device-code prompt')
     const first = await pending
-    expectError(first, 'exited with code unknown')
+    // Which error the replaced login reports is platform-timing dependent:
+    // once the child has installed its TERM trap it outlives the
+    // replacement's SIGTERM and only dies to the SIGKILL after the 5s grace —
+    // far past its own 400ms prompt timeout, so it reports the timeout; a
+    // child still starting up dies to the SIGTERM itself. Both prove the
+    // replacement happened; the zombie reaping is what this test guards.
+    expect(first?.result).toMatchObject({ kind: 'error' })
+    const firstResult = first?.result
+    const firstText = firstResult?.kind === 'error' ? firstResult.text : ''
+    expect(
+      ['exited with code unknown', 'printed no device-code prompt'].some((fragment) => firstText.includes(fragment)),
+    ).toBe(true)
     // The SIGKILL grace is 5s; wait it out so the hard kill lands before the
     // test ends (the child would otherwise linger as a zombie).
     await new Promise((resolve) => { setTimeout(resolve, 5_200) })
@@ -265,7 +287,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-spawn-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ login: { command: join(tempDir('missing-'), 'no-such-cli'), args: [] } }))
-    const execution = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(execution, 'failed to start')
   })
 
@@ -275,7 +297,7 @@ describe('LocalAgentRegistry', () => {
     // The dsh harness has no device-code login: it authenticates through the
     // host instance's credentials. /login must answer, never spawn anything.
     registry.register(harness({ login: undefined }))
-    const execution = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(execution, 'has no device-code login')
   })
 
@@ -283,7 +305,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-exit-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ login: { command: fakeCli('exit 1'), args: [] } }))
-    const execution = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(execution, 'exited with')
   })
 
@@ -291,7 +313,7 @@ describe('LocalAgentRegistry', () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-timeout-'), loginPromptTimeoutMs: 200 })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     registry.register(harness({ login: { command: fakeCli('sleep 30'), args: [] } }))
-    const execution = await ctx.commands.execute(agent, '/fake login', new AbortController().signal)
+    const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(execution, 'printed no device-code prompt')
   })
 

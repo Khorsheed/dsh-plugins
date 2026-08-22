@@ -1,45 +1,50 @@
 # `@khorsheed/dsh-local-agent-codex`
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-The Codex harness of the [local-agent family](../../local-agent/local-agent/README.md). The bundle patch registers the `codex` harness (`CODEX_HOME` scoped home, `codex login --device-auth` device-code flow, rollout-file session records) and mounts the `subagent_codex_local` tool at the **profile root** — the `codex-local` one-shot provider spawns `codex exec` under the harness's scoped home, so every agent preset can delegate without per-preset variants. The browser settings section ships with the family core's `./client` half (Settings → 本地 Agent), roster-driven per harness.
+把编码任务从任意 dsh agent preset 委派给你本地安装的 Codex CLI。委派在插件隔离的作用域目录下运行，你个人的 `~/.codex`——config、凭据、会话——完全不被触碰。
 
-> The family core (`local-agent` row, shared scoped-homes root) ships in the framework bundle `@khorsheed/dsh-local-agent`'s own patch, which this bundle declares as a dependency — `dsh plugin add` reconciles only *direct* dependencies into the profile's bundles layer, so install the core bundle together with this one (two commands). The codex bundle deliberately does not re-insert that row — a duplicate would mount the core twice.
+## 特性
 
-## Prerequisites
+- **任意 preset 皆可委派**——`subagent_codex_local` 工具挂在 profile 根，无需逐 preset 配置。
+- **作用域目录隔离**——Codex 的全部状态留在 `$DSH_HOME/local-agent/codex`，与你的 `~/.codex` 互不干扰。
+- **会话内登录**——device-code `/codex login`，设置 → 本地 Agent 显示认证状态并提供退出登录按钮。
+- **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程。
+- **自定义端点**——经作用域 `config.toml` 的自定义 provider 把 Codex 的 LLM 请求路由到你自己的路由端点。
 
-- A running dsh profile (`dsh --profile web`, `--profile headless`, or a custom one); install the family core bundle alongside this one.
-- The Codex CLI (`codex`) on `PATH` (the same binary the user runs interactively). The plugin does not install it, log in on the user's behalf, or touch the user's own `~/.codex`.
+## 安装
 
-## Install
+前置依赖：一个可运行的 dsh profile 和 `PATH` 上的 Codex CLI（`codex`）——插件不安装它、也不替你登录。
 
 ```sh
-# 1. Install the family core and this bundle into a profile.
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
-
-# 2. Restart the profile. The first start provisions the scoped home; the
-#    subagent_codex_local tool mounts at the profile root, so every preset
-#    can delegate — no preset step needed.
-
-# 3. Run /codex login once from a session.
+# restart the profile, then run /codex login once from a session
 ```
 
-## Uninstall
+两个包必须同时点名——`dsh plugin add` 只调和**直接**依赖。
+
+卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 ```
 
-Removing the bundle unregisters the harness, its `/<name>` command family, the tool row, and the UI rows. One user-owned directory is left in place on purpose: the scoped home (`$DSH_HOME/local-agent/codex`) keeps sessions and credentials so a reinstall needs no fresh login. Delete it to remove every trace.
+作用域目录（`$DSH_HOME/local-agent/codex`）会刻意保留，重装无需重新登录；删除它即可清除全部痕迹。
 
-## Scope isolation
+## 配置
 
-Every Codex process the bundle starts (login, delegation) runs with `CODEX_HOME` set to the harness's scoped home (default `$DSH_HOME/local-agent/codex`). Config, credentials, and sessions stay there, never colliding with the user's own `~/.codex`. Login is device-code only: `/codex login` surfaces the authorization URL and code in the session and the CLI polls in the background; credentials land in the scoped home when the user authorizes. The first start writes a minimal `config.toml` into the scoped home pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` resolves to the OS keychain on macOS, which would both leak credentials outside the scoped home and defeat this package's `auth.json` presence check. An existing config is respected untouched. `/codex logout` removes the scoped `auth.json`, so a later login authorizes a fresh account.
+可选，写在 profile patch 层：
 
-## Custom endpoint
+```yaml
+- id: local-agent-codex
+  config:
+    sandbox: workspace-write   # codex exec 策略:read-only | workspace-write | danger-full-access
+```
 
-Codex's LLM requests can be routed through a custom endpoint, but only by adding a **custom provider** to the scoped `config.toml` (`$DSH_HOME/local-agent/codex/config.toml`) — codex refuses to override a built-in provider (`model_providers contains reserved built-in provider IDs`), and the `OPENAI_BASE_URL` environment variable is not honored. Edit in place (provisioning never overwrites an existing config):
+## 自定义端点
+
+把 Codex 的 LLM 请求路由到你自己的端点：在作用域 `$DSH_HOME/local-agent/codex/config.toml` 里**新增自定义 provider**（内置 provider 不可覆盖、`OPENAI_BASE_URL` 不生效、预置逻辑从不覆盖已存在的 config）：
 
 ```toml
 [model_providers.dsh-router]
@@ -48,64 +53,42 @@ base_url = "https://your-router.example/v1"
 model_provider = "dsh-router"
 ```
 
-The last line selects the custom provider for delegations. Everything else in the file (`cli_auth_credentials_store`, any other providers) must be preserved.
+最后一行为委派选择该 provider；文件其余内容必须保留。
 
-⚠️ **Credential exposure**: codex's scoped `auth.json` token is sent to whatever endpoint serves the request. Pointing `base_url` at an untrusted address hands that token to it; only use endpoints you control or trust.
-
-Every delegation logs the effective custom endpoint at info level (`subagent-codex: delegating via <endpoint>`), and a failed run's error text names the endpoint it used. A richer provider editor (endpoint + model + auth key) is planned separately.
-
-## Session records
-
-`/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` rollout files (Codex's own append-only session log) — the sessions this agent's delegations created, never the user's personal sessions. The family core's browser settings section renders the same listing narrowed to the current session's workspace (only records whose `workDir` matches the session cwd), so one project's codex sessions never surface in another project's session; `/codex sessions` itself always shows the full list. The settings section (Settings → 本地 Agent) shows the harness auth status with a web-login button that surfaces the device-code URL; while a login is pending, the status keeps re-probing until the credentials land. An authenticated row adds a sign-out button that runs `/codex logout`, so switching accounts is a sign-out then a fresh login.
-
-## Continuation (resume)
-
-The `subagent_codex_local` tool is the family-owned tool (`@khorsheed/dsh-local-agent-tool-subagent`) — the official subset (`description`/`prompt`) plus an optional `resume` parameter. A **fresh** delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as `resume` in a later round continues the SAME codex thread (`codex exec --json resume <thread_id>`) inside the SAME dsh child session, with per-round accounting: the turn number increments, `turn/start`/`turn/end` pair per round, and usage rides that round's assistant message.
-
-The handle never rides the prompt: it is read only from the `resume` parameter, and the localAgent registry resolves it only for the same parent session and provider that recorded the delegation — a forged handle (unknown child session, another parent's session, or the wrong provider) is rejected before any CLI process starts. The descriptor cannot carry the target (its schema rejects unknown fields), so the family passes it through the `localAgent` service's delegation registry instead.
-
-## Model Experience
-
-### Child request
-
-#### What the model sees
-
-The Codex child is a fresh one-shot `codex exec` process in the delegating Session's workspace, started under the scoped home. The parent submits the standalone task text; the parent conversation never crosses the process boundary.
-
-#### Token effect
-
-The child pays for an independent Codex context and turn. Child tokens never enter the parent's context.
-
-#### KV Cache effect
-
-Independent of the parent request cache. Reuse depends only on the scoped Codex installation's own provider, model, and history.
-
-### Parent tool result, indirectly
-
-#### What the model sees
-
-Through the family tool (`subagent_codex_local`), the parent sees only the selected final Codex answer or the consumer's exact error, plus the resume self-description on a fresh delegation. Codex commentary, tool activity, and workspace diffs are not copied into the parent Session.
-
-#### Token effect
-
-Parent input grows only by the final answer or error retained in the tool result. This bundle adds no parent tool schema by itself.
-
-#### KV Cache effect
-
-No effect.
-
-### Delegation accounting
-
-The child session carries real usage and timing: the provider opens `turn/start` when the CLI spawns and closes `turn/end` when it settles — including on failure or cancellation (reason `error`/`aborted`) — so the `subagentTiming` projection's duration equals the actual CLI runtime and the window never stays open on a failed run; the final `assistant/message` carries the turn's token usage parsed from the `codex exec --json` event stream. Codex's `input_tokens` is the TOTAL input including cache hits (OpenAI-style; `input_tokens + output_tokens` equals the rollout's `total_tokens`), so the uncached bucket is `input_tokens − cached_input_tokens`, `cached_input_tokens` maps to cache read, `output_tokens` to output; codex has no cache-write concept. The `tokenUsage` projection counts the delegation without double counting cache hits. Each resumed round repeats this accounting under its own incrementing turn number.
+⚠️ **凭据暴露**：作用域 `auth.json` token 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- 源码线(deepseek-harness master):✅
 
-## Known Limitations and Deferred Work
+## 已知限制
 
-- **Login requires one interactive step** — the device-code URL appears in the session; credentials appear only after the user authorizes in the browser. No API-key path.
-- **Full event-stream mirror** — the dsh subagent session mirrors the `codex exec --json` event stream in order: `reasoning` items fold to `reasoning` blocks, `agent_message` items to reply text, and `command_execution`/`web_search_call`/`function_call_output` items to tool lines (`[工具 Bash] <command> → output`); the final `agent_message` is the run output and the round's usage rides the last mirrored assistant message. The stream is naturally incremental per round, so resumed rounds append their own turn without duplication. Aborting a run settles the tool result immediately and still mirrors the events already received, so a cancelled round keeps its partial reasoning/commands and real usage.
-- **`codex exec` runs non-interactively** — actions the sandbox policy would need to approve are denied rather than prompted; `sandbox` plugin config (default `workspace-write`) selects the policy.
-- **Headless caveat** — `/codex` commands and the header dropdown need a Web session; `--profile headless` can still delegate through a composition that mounts the tool row.
+- **登录需要一次浏览器授权**——仅 device-code，没有 API key 路径。
+- **`codex exec` 非交互运行**——沙箱策略本需审批的动作会被拒绝而非弹提示；见 `sandbox` 配置。
+- **headless 注意**——`/codex` 命令需要 Web 会话；headless 仍可通过挂载工具行的组合进行委派。
+
+## 实现原理
+
+<details>
+<summary>内部结构（点击展开）</summary>
+
+**bundle 组成。** patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、device-code 登录、rollout 文件会话记录），并把 `subagent_codex_local` 工具挂到 profile 根；`codex-local` 一次性 provider 在该作用域目录下 spawn `codex exec`。设置分区随家族 core 的 `./client` 半提供；core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+
+**登录与凭据。** `/codex login` 在会话中显示 device-code URL 并在后台轮询；用户授权后凭据写入作用域目录。首次启动写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain，把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效；已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`，之后重新登录即可换账号。
+
+**会话记录。** `/codex sessions` 列出作用域目录的 `sessions/YYYY/MM/DD/rollout-*.jsonl` 文件——仅本插件委派产生的会话，绝不含你的私人会话。设置分区把列表收窄到 `workDir` 与当前会话 cwd 一致的记录。
+
+**续聊（resume）。** 家族工具（`@khorsheed/dsh-local-agent-tool-subagent`）在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程（`codex exec --json resume <thread_id>`），按轮记账。句柄只从 `resume` 参数读取，localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
+
+**事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。中止会让工具结果立即 settle，并保留已收到的事件与用量。
+
+**模型体验。** 每次委派都是委派 Session 工作区内一个全新的一次性 `codex exec` 进程。父级只提交任务文本、只看到最终回答或精确错误——Codex 的评论、工具活动、工作区 diff 不会跨进父级会话，子会话 token 也永不进入父级上下文。
+
+**委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。
+
+</details>
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/local-agent-codex`）。问题与贡献请移步该仓库。

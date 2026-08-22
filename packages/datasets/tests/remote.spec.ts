@@ -52,15 +52,26 @@ async function bench(defaultRepo = '') {
 
 describe('DatasetsRemoteService', () => {
   it('bind records the binding, binding reads it, unbind clears it', async () => {
+    repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
     expect(remote.binding(agent)).toBeNull()
 
-    const recorded = remote.bind(agent, { repoPath: '/repo', layers: ['visible'] })
-    expect(recorded).toEqual({ repoPath: '/repo', layers: ['visible'] })
-    expect(remote.binding(agent)).toEqual({ repoPath: '/repo', layers: ['visible'] })
+    const recorded = await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    expect(recorded).toEqual({ repoPath: repo.dir, layers: ['visible'] })
+    expect(remote.binding(agent)).toEqual({ repoPath: repo.dir, layers: ['visible'] })
 
     expect(remote.unbind(agent)).toBeNull()
+    expect(remote.binding(agent)).toBeNull()
+    await fiber.dispose()
+  })
+
+  it('bind rejects a non-repository path loud and records nothing', async () => {
+    repo = makeFixtureRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await expect(remote.bind(agent, { repoPath: join(repo.dir, 'no-such-dir') }))
+      .rejects.toMatchObject({ code: 'NOT_A_REPO' })
     expect(remote.binding(agent)).toBeNull()
     await fiber.dispose()
   })
@@ -69,7 +80,7 @@ describe('DatasetsRemoteService', () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
-    remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
     const datasets = await remote.list(agent, {})
     if (datasets.kind !== 'datasets') throw new Error('expected datasets result')
@@ -87,7 +98,7 @@ describe('DatasetsRemoteService', () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
-    remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
     await expect(remote.read(agent, {
       dataset: 'alpha', item: 'i1', layer: 'hidden', path: 'notes.md',
@@ -105,11 +116,13 @@ describe('DatasetsRemoteService', () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
-    remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
     const result = await remote.show(agent, { dataset: 'alpha', item: 'i1' })
     expect(result.commit).toBe(repo.commit)
     expect(result.dataset.layers).toEqual(['visible'])
+    expect(result.dataset.warnings.map(warning => warning.layer)).toEqual(['visible'])
+    expect(result.datasetLayers).toEqual({ visible: ['guide.md'] })
     expect((result.descriptor['extra'] as Record<string, unknown>)['passthrough']).toBe(true)
     expect(result.items).toHaveLength(1)
     expect(Object.keys(result.items[0]?.layers ?? {})).toEqual(['visible'])
@@ -133,7 +146,7 @@ describe('DatasetsRemoteService', () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
-    remote.bind(agent, { repoPath: repo.dir, datasets: ['beta'] })
+    await remote.bind(agent, { repoPath: repo.dir, datasets: ['beta'] })
 
     const result = await remote.list(agent, {})
     if (result.kind !== 'datasets') throw new Error('expected datasets result')

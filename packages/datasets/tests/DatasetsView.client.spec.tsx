@@ -34,18 +34,23 @@ interface Harness {
   unbindSession: ReturnType<typeof vi.fn>
   listDatasets: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
+  pickDirectory: ReturnType<typeof vi.fn>
 }
 
 const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
 
 const DATASETS: ListDatasetsResult = {
   kind: 'datasets',
-  datasets: [{ id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1 }],
+  datasets: [{
+    id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1,
+    warnings: [{ code: 'MODELFACING_UNDECLARED', layer: 'visible', message: 'visible undeclared' }],
+  }],
 }
 
 const ITEMS: ListItemsResult = {
   kind: 'items',
   dataset: DATASETS.datasets[0]!,
+  datasetLayers: { visible: ['guide.md'] },
   items: [{
     id: 'i1',
     metadata: { difficulty: 'hard' },
@@ -65,17 +70,22 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
       { ok: true, value: dataset === undefined ? DATASETS : ITEMS }
     )),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
+    pickDirectory: vi.fn(async () => '/picked-repo'),
   }
 }
 
-function renderView(h: Harness) {
+function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
+  const canPick = opts.canPick ?? true
   const props = {
     sessionId: 's1' as SessionId,
     useSession: undefined,
     useInput: undefined,
     inputActions: undefined,
     useProjection: undefined,
-    useSessions: undefined,
+    useSessions: ((sel: (s: unknown) => unknown) => sel({
+      current: 's1',
+      byId: { s1: { cwd: '/work' } },
+    })) as never,
     useWorkspaces: undefined,
     useStore: hookOf(h.instance),
     actions: h.actions,
@@ -84,6 +94,9 @@ function renderView(h: Harness) {
     unbindSession: h.unbindSession,
     listDatasets: h.listDatasets,
     readFile: h.readFile,
+    isLoopback: canPick,
+    useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
+    pickDirectory: h.pickDirectory,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -109,12 +122,23 @@ describe('DatasetsView', () => {
     expect(await screen.findByText(/binding\.repo/)).toBeTruthy()
     const row = await screen.findByText('alpha')
     expect(h.listDatasets).toHaveBeenCalledWith('s1')
+    // The descriptor name renders on its own quiet line, not crammed into the row.
+    expect(screen.getByText('Alpha')).toBeTruthy()
+    // A mixed-sensitivity dataset's undeclared layer surfaces as a quiet warning line.
+    expect(screen.getByText(/tree\.warnModelFacing/)).toBeTruthy()
 
     fireEvent.click(row)
     expect(await screen.findByText('i1')).toBeTruthy()
     expect(h.listDatasets).toHaveBeenCalledWith('s1', 'alpha')
+    // An explorer carries no chips: the item row is the bare id.
+    expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
+    // The layer header is one quiet phrase: name, middot, count — never a right-floated count
+    // (it appears once per layer group: the shared group and the item's own).
+    expect((await screen.findAllByText(/· tree\.fileCount/)).length).toBeGreaterThan(0)
+    // Dataset-level (shared) layers group under the quiet label, ahead of the items.
+    expect(screen.getByText('tree.shared')).toBeTruthy()
     const file = await screen.findByText('task.md')
     fireEvent.click(file)
     expect(h.readFile).toHaveBeenCalledWith('s1', {
@@ -123,6 +147,23 @@ describe('DatasetsView', () => {
     // The markdown content renders through the official MarkdownText pipeline.
     expect(await screen.findByText('Task')).toBeTruthy()
     expect(screen.getByText('@a4f9c2e')).toBeTruthy()
+    // The item's metadata surfaces in the preview header as quiet chips,
+    // never the raw JSON string.
+    expect(await screen.findByText('difficulty: hard')).toBeTruthy()
+    expect(screen.queryByText('{\"difficulty\":\"hard\"}')).toBeNull()
+    // A shared (dataset-level) file reads WITHOUT an item selector.
+    fireEvent.click(screen.getByText('guide.md'))
+    expect(h.readFile).toHaveBeenCalledWith('s1', {
+      dataset: 'alpha', layer: 'visible', path: 'guide.md',
+    })
+  })
+
+  it('a failed binding fetch settles the bar instead of loading forever', async () => {
+    const h = makeHarness()
+    h.fetchBinding.mockResolvedValue({ ok: false, error: { code: 'internal', message: 'resume failed' } })
+    renderView(h)
+    expect(await screen.findByText('binding.none')).toBeTruthy()
+    expect(await screen.findByText(/list\.error/)).toBeTruthy()
   })
 
   it('bind form submits the parsed binding and refreshes', async () => {
@@ -153,6 +194,60 @@ describe('DatasetsView', () => {
     await waitFor(() => {
       expect(h.instance.getSnapshot().refreshRev).toBe(1)
     })
+  })
+
+  it('a JSON file previews through the official JsonTree inside the block chrome', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
+      ok: true as const,
+      value: dataset === undefined ? DATASETS : {
+        kind: 'items' as const,
+        dataset: DATASETS.datasets[0]!,
+        datasetLayers: {},
+        items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
+      },
+    }))
+    h.readFile.mockResolvedValue({
+      ok: true,
+      value: { content: '{\"difficulty\":\"hard\",\"tags\":[\"a\"]}\n', commit: 'a4f9c2e0000' },
+    })
+    renderView(h)
+    fireEvent.click(await screen.findByText('alpha'))
+    fireEvent.click(await screen.findByText('i1'))
+    fireEvent.click(await screen.findByText('meta.json'))
+    // The document view carries the official block chrome's format banner.
+    expect(await screen.findByText('json')).toBeTruthy()
+    // The JsonTree inspector renders the parsed keys, not the source text.
+    expect(await screen.findByText('difficulty:')).toBeTruthy()
+    expect(screen.queryByText('\"tags\"')).toBeNull()
+  })
+
+  it('the use-workspace shortcut fills the repo field with the session cwd', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.click(screen.getByText('binding.form.useWorkspace'))
+    expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/work')
+  })
+
+  it('browse fills the repo field through the native chooser, and hides without the capability', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.click(screen.getByText('binding.form.browse'))
+    await waitFor(() => {
+      expect((screen.getByLabelText('binding.form.repo') as HTMLInputElement).value).toBe('/picked-repo')
+    })
+    expect(h.pickDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it('the browse button hides when the host cannot show a native chooser', async () => {
+    const h = makeHarness(null)
+    renderView(h, { canPick: false })
+    fireEvent.click(await screen.findByText('binding.bind'))
+    expect(screen.queryByText('binding.form.browse')).toBeNull()
+    // The workspace shortcut stays — it needs no native capability.
+    expect(screen.getByText('binding.form.useWorkspace')).toBeTruthy()
   })
 
   it('a failed read surfaces the error message', async () => {

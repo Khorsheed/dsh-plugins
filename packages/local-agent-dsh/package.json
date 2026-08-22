@@ -60,18 +60,13 @@
       "patch": "./cordis.patch.yml"
     },
     "compat": {
-      "minHost": "0.1.0-rc.6"
+      "minHost": "0.1.0-rc.6",
+      "verifiedHost": "0.1.1-rc.1"
     }
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/records.js",
-    "lib/provision.js",
-    "lib/dsh-cli-provider.js",
-    "lib/client.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "dependencies": {
@@ -95,29 +90,30 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-commands": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-loader-smoke": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-session": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-subagent": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-tools": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-locale": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-commands": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-loader-smoke": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-session": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-subagent": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
     "jsdom": "^26.0.0",
     "react": "^18.3.1",
-    "vitest": "^4.1.10",
-    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.8"
+    "react-dom": "^18.3.1",
+    "vitest": "^4.1.10"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",

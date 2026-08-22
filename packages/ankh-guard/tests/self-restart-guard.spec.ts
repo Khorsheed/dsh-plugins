@@ -20,11 +20,12 @@ import * as selfRestartGuard from '../src/index.ts'
 import { currentHead } from '../src/git.ts'
 import { install as installInvariant } from '../src/invariant.ts'
 import {
-  acknowledgeRestartRecord, continueAndReportText, pendingRestartRecord, readInterruptedSnapshot,
-  restartContextText, writeInterruptedSnapshot,
+  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, pendingRestartRecord,
+  readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
+  writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeSkillRegistration,
 } from '../src/restart-context.ts'
 import { performExit } from '../src/exit-agent.ts'
-import { preflightInternals, resolveHarnessRoot, resolvePreflightBin, resolveRunnerCommand, resolveWdHome, runCli, type CliIo } from '../src/cli.ts'
+import { envInternals, preflightInternals, resolveHarnessRoot, resolvePreflightBin, resolveRunnerCommand, resolveWdHome, runCli, type CliIo } from '../src/cli.ts'
 import {
   clearCredential, emptyState, loadState, recordCredential, setCheckpoint,
   verifyCredential, type GuardState,
@@ -128,6 +129,53 @@ describe('state core', () => {
     expect(cleared.checkpoint?.revision).toBe('cp1')
   })
 
+  it('registers the restart-protocol skill when the skills service is present', async () => {
+    // The pull-based discovery channel: agents find the protocol through the
+    // skill catalog when a task involves restarting the instance — no
+    // per-session push notice.
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const registrations: Array<{ name: string; description: string; content: string }> = []
+    let disposed = false
+    ctx.provide('skills', {
+      register: (skill: { name: string; description: string; content: string }) => {
+        registrations.push(skill)
+        return () => { disposed = true }
+      },
+    } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    expect(registrations.map(skill => skill.name)).toEqual(['dsh-self-restart-guard'])
+    expect(registrations[0]?.description).toContain('restart')
+    expect(registrations[0]?.content).toContain('check-env')
+    // The shipped skill must not carry machine-specific paths from the
+    // development environment it was written on.
+    expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // The registration outcome is on disk for check-env to surface.
+    const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
+    expect(marker.registered).toBe(true)
+    await fiber.dispose()
+    expect(disposed).toBe(true)
+  })
+
+  it('records the failure loudly when the skills service is absent (host migrations must not lose the skill silently)', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    // No skills service provided — the composition lacks the capability.
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
+    expect(marker.registered).toBe(false)
+    expect(marker.reason).toContain('skills service absent')
+    await fiber.dispose()
+  })
+
   it('fails loud on a malformed state file', () => {
     const dir = tmpDir('guard-state-')
     writeFileSync(join(dir, 'self-restart-guard.json'), '{ nope')
@@ -217,8 +265,29 @@ function stubPreflightRunner(resolveRunner: (harnessRoot: string) => string | un
   cleanups.push(() => { preflightInternals.resolveRunner = original })
 }
 
+/** Fake the sandbox probe, restored after the test. */
+function stubSandboxProbe(sandboxed: boolean): void {
+  const original = envInternals.sandboxedByProbe
+  envInternals.sandboxedByProbe = () => sandboxed
+  cleanups.push(() => { envInternals.sandboxedByProbe = original })
+}
+
 describe('CLI', () => {
   const io = cliIo
+
+  it('verify and record warn while no watchdog supervises the instance', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    // The agent's first contacts in any restart flow: the bootstrap gap must
+    // surface HERE, before anyone considers a bare exit.
+    const rec = io()
+    expect(await runCli(['record', 'build', ...flags], rec.io)).toBe(0)
+    expect(rec.err.join('')).toContain('no live watchdog')
+    const ver = io()
+    expect(await runCli(['verify', ...flags], ver.io)).toBe(0)
+    expect(ver.err.join('')).toContain('no live watchdog')
+  })
 
   it('records and verifies, then denies after a new commit', async () => {
     const repo = makeRepo()
@@ -318,7 +387,7 @@ describe('CLI', () => {
       await waitForPort(port)
       const io2 = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', 'true', '--state-dir', stateDir, '--repo', repo],
+        ['restart', '--sync', '--port', String(port), '--start', 'true', '--state-dir', stateDir, '--repo', repo],
         io2.io,
       )).toBe(1)
       expect(io2.err.join('')).toContain('restart refused')
@@ -341,7 +410,7 @@ describe('CLI', () => {
       const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
       const restarted = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
+        ['restart', '--sync', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
         restarted.io,
       )).toBe(0)
       expect(restarted.out.join('')).toContain('restart + canary PASS')
@@ -366,7 +435,7 @@ describe('CLI', () => {
       const started = Date.now()
       const out = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', startCmd, '--delay-ms', '500',
+        ['restart', '--sync', '--port', String(port), '--start', startCmd, '--delay-ms', '500',
           '--state-dir', stateDir, '--repo', repo],
         out.io,
       )).toBe(0)
@@ -403,7 +472,7 @@ tryListen();
       const out = io()
       const started = Date.now()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', startCmd, '--stop-timeout-ms', '700',
+        ['restart', '--sync', '--port', String(port), '--start', startCmd, '--stop-timeout-ms', '700',
           '--state-dir', stateDir, '--repo', repo],
         out.io,
       )).toBe(0)
@@ -447,7 +516,7 @@ tryListen();
       const broken = `"${process.execPath}" -e "process.exit(3)"`
       const failed = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', broken, '--rollback', '--timeout-ms', '2000',
+        ['restart', '--sync', '--port', String(port), '--start', broken, '--rollback', '--timeout-ms', '2000',
           '--state-dir', stateDir, '--repo', repo],
         failed.io,
       )).toBe(1)
@@ -477,7 +546,7 @@ tryListen();
       const broken = `"${process.execPath}" -e "process.exit(3)"`
       const failed = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', broken, '--rollback', '--timeout-ms', '2000',
+        ['restart', '--sync', '--port', String(port), '--start', broken, '--rollback', '--timeout-ms', '2000',
           '--state-dir', stateDir, '--repo', repo],
         failed.io,
       )).toBe(1)
@@ -688,7 +757,7 @@ describe('composition preflight gate', () => {
       stubPreflight('false')
       const out = io()
       expect(await runCli(
-        ['restart', '--port', String(port), '--start', 'true', '--state-dir', stateDir, '--repo', repo],
+        ['restart', '--sync', '--port', String(port), '--start', 'true', '--state-dir', stateDir, '--repo', repo],
         out.io,
       )).toBe(1)
       expect(out.err.join('')).toContain('restart refused: composition preflight failed')
@@ -847,9 +916,418 @@ describe('supervise', () => {
         await new Promise((resolve) => { setTimeout(resolve, 300) })
       }
       expect(await fetchBody(port)).toBe('new')
-      // Unplanned exit (SIGTERM, no restart marker): the watchdog leaves a
-      // report record so the recovery reaches a session instead of staying
-      // silent.
+      // A live owner existed at supervise time: this takeover is an ADOPTION
+      // restart, and the watchdog files a report record addressed to the
+      // supervising session (empty initiator here — no DSH_SESSION_ID in this
+      // test's env). The no-false-positive guard covers the first-EVER boot
+      // (no owner), asserted by the next test.
+      const record = join(env.home, 'state', 'last-restart.json')
+      const recordDeadline = Date.now() + 5000
+      while (!existsSync(record) && Date.now() < recordDeadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      const outcome = JSON.parse(readFileSync(record, 'utf8'))
+      expect(outcome.unexpected).toBeUndefined()
+      expect(typeof outcome.exitAt).toBe('number')
+    } finally {
+      env.stop()
+      host.kill('SIGKILL')
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
+  it('a first-EVER boot (no previous owner) files no report record', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    try {
+      // Nothing listens on the port: supervise boots the instance directly.
+      // No owner was stopped, nothing was interrupted — a record here would be
+      // a false alarm on first contact.
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        io().io,
+      )).toBe(0)
+      await waitForPort(port)
+      expect(await fetchBody(port)).toBe('new')
+      await new Promise((resolve) => { setTimeout(resolve, 1500) })
+      expect(existsSync(join(env.home, 'state', 'last-restart.json'))).toBe(false)
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
+  it('apply records how the instance was launched (instance-launch.json)', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const previous = process.env.DSH_HOME
+    process.env.DSH_HOME = stateDir
+    cleanups.push(() => {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+    })
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    const deadline = Date.now() + 5000
+    const file = join(stateDir, 'instance-launch.json')
+    while (!existsSync(file) && Date.now() < deadline) {
+      await new Promise((resolve) => { setTimeout(resolve, 50) })
+    }
+    const launch = JSON.parse(readFileSync(file, 'utf8'))
+    expect(launch.source).toBe('instance')
+    expect(launch.command).toContain(process.execPath)
+    expect(launch.command.startsWith(`cd '`)).toBe(true)
+    expect(launch.command).toContain(`DSH_HOME='${stateDir}'`)
+    await fiber.dispose()
+  })
+
+  it('restart without --start uses the recorded launch command', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    const port = await freePort()
+    try {
+      mkdirSync(stateDir, { recursive: true })
+      writeFileSync(join(stateDir, 'instance-launch.json'), JSON.stringify({
+        command: buildLaunchCommand(process.execPath, [], ['-e', `require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')`], repo, {}),
+        source: 'instance',
+        recordedAt: Date.now(),
+      }))
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubPreflight('true')
+      const host = spawn(process.execPath, ['-e',
+        `require('http').createServer((q,s)=>s.end('old')).listen(${port},'127.0.0.1')`],
+      { detached: true, stdio: 'ignore' })
+      host.unref()
+      await waitForPort(port)
+      // No --start: the launch record drives the respawn.
+      const out = io()
+      expect(await runCli(['restart', '--sync', '--port', String(port), ...flags], out.io)).toBe(0)
+      expect(out.out.join('')).toContain('restart + canary PASS')
+      expect(await fetchBody(port)).toBe('new')
+      host.kill('SIGKILL')
+      await killListener(port)
+    } finally {
+      env.restore()
+    }
+  }, 30_000)
+
+  it('restart FALLBACK refuses only when a watchdog is ALIVE; a dead-supervised record warns and rescues', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    try {
+      writeInstanceLaunchAsSupervisor(stateDir, { command: `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('ok')).listen(1,'127.0.0.1')"`, source: 'supervisor', supervised: true, recordedAt: Date.now() })
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubPreflight('true')
+      // Watchdog DEAD despite the supervised record: refusing here would send
+      // the agent to schedule-exit → the instance dies with nobody to respawn
+      // it. Warn and rescue with the recorded command instead.
+      const rescue = io()
+      await runCli(['restart', '--sync', '--port', '1', ...flags], rescue.io)
+      expect(rescue.err.join()).toContain('no live watchdog was found')
+      expect(rescue.err.join()).not.toContain('schedule-exit` (the watchdog respawns')
+      // Watchdog ALIVE (live pidfile): refuse all fallbacks, point at schedule-exit.
+      // (A SLEEPER's pid, never the test worker's own — env.stop() SIGKILLs
+      // whatever the pidfile names at teardown.)
+      mkdirSync(stateDir, { recursive: true })
+      const sleeper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
+      sleeper.unref()
+      writeFileSync(join(stateDir, 'watchdog.pid'), String(sleeper.pid))
+      const out = io()
+      expect(await runCli(['restart', '--sync', '--port', '1', ...flags], out.io)).toBe(2)
+      expect(out.err.join()).toContain('schedule-exit')
+      expect(out.err.join()).not.toContain('pass --start explicitly')
+      rmSync(join(stateDir, 'watchdog.pid'), { force: true })
+      try { process.kill(sleeper.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+      // The instance side never overwrites the supervisor's record.
+      expect(writeInstanceLaunch(stateDir, { command: 'echo inner', source: 'instance', recordedAt: Date.now() })).toBe(false)
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('buildLaunchCommand preserves execArgv (tsx chains stay bootable)', () => {
+    const command = buildLaunchCommand(
+      '/usr/local/bin/node',
+      ['--import', '/repo/node_modules/tsx/dist/esm/index.mjs'],
+      ['/repo/apps/cli/src/bin.ts', 'web', '--port', '8801'],
+      '/repo',
+      { DSH_HOME: '/home/user/.dsh' },
+    )
+    expect(command).toContain("--import")
+    expect(command).toContain('tsx/dist/esm/index.mjs')
+    expect(command.indexOf('--import')).toBeLessThan(command.indexOf('bin.ts'))
+    expect(command).toContain("DSH_HOME='/home/user/.dsh'")
+    expect(command.startsWith("cd '/repo' && ")).toBe(true)
+  })
+
+  it('supervise without --start falls back to the record and writes the supervisor record', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    try {
+      writeInstanceLaunch(stateDir, { command: `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('ok')).listen(${port},'127.0.0.1')"`, source: 'instance', recordedAt: Date.now() })
+      const out = io()
+      // No --start: supervise resolves the record, writes its own authoritative
+      // supervisor record, and spawns the watchdog.
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--state-dir', stateDir, '--repo', repo],
+        out.io,
+      )).toBe(0)
+      expect(out.out.join('')).toContain('watchdog spawned')
+      const record = readInstanceLaunch(stateDir)
+      expect(record?.source).toBe('supervisor')
+      expect(record?.supervised).toBe(true)
+      expect(record?.command).toContain(String(port))
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
+  it('check-env reports supervision, the restart command, and the bare-exit warning', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    try {
+      // Unsupervised: warning present, and the start command discovered live.
+      const host = spawn(process.execPath, ['-e',
+        `require('http').createServer((q,s)=>s.end('x')).listen(${port},'127.0.0.1')`],
+      { detached: true, stdio: 'ignore', env: { ...process.env, DSH_PROBE_MARKER: 'discovered-1' } })
+      host.unref()
+      await waitForPort(port)
+      const out = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo, '--port', String(port)], out.io)).toBe(0)
+      const text = out.out.join('')
+      expect(text).toContain('supervision: NOT supervised')
+      expect(text).toContain('leaves the service DOWN')
+      expect(text).toContain('live discovery')
+      expect(text).toContain(String(port))
+      host.kill('SIGKILL')
+      await killListener(port)
+      // Supervised: pidfile with a live pid → the chain names the watchdog.
+      // (A SLEEPER's pid, never the test worker's own — env.stop() SIGKILLs
+      // whatever the pidfile names at teardown.)
+      mkdirSync(stateDir, { recursive: true })
+      const sleeper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' })
+      sleeper.unref()
+      writeFileSync(join(stateDir, 'watchdog.pid'), String(sleeper.pid))
+      const out2 = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], out2.io)).toBe(0)
+      expect(out2.out.join('')).toContain(`supervised by ankh watchdog (pid ${sleeper.pid})`)
+      try { process.kill(sleeper.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('restart without --start or a record discovers the launch live from the port listener', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    const port = await freePort()
+    const serverFile = join(env.home, 'server.js')
+    writeFileSync(serverFile, `require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')`)
+    try {
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubPreflight('true')
+      // The "instance": a node process running serverFile — discovery must
+      // reconstruct `node <serverFile>` and re-run it after the stop.
+      const host = spawn(process.execPath, [serverFile], { detached: true, stdio: 'ignore' })
+      host.unref()
+      await waitForPort(port)
+      const out = io()
+      expect(await runCli(['restart', '--sync', '--port', String(port), ...flags], out.io)).toBe(0)
+      expect(out.out.join('')).toContain('restart + canary PASS')
+      expect(await fetchBody(port)).toBe('new')
+      host.kill('SIGKILL')
+      await killListener(port)
+    } finally {
+      env.restore()
+    }
+  }, 30_000)
+
+  it('restart self-detaches by default: the driver survives the caller and completes the loop', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    const port = await freePort()
+    const host = spawn(process.execPath, ['-e',
+      `require('http').createServer((q,s)=>s.end('old')).listen(${port},'127.0.0.1')`],
+    { detached: true, stdio: 'ignore' })
+    host.unref()
+    try {
+      await waitForPort(port)
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubPreflight('true')
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      // No --sync: the caller returns as soon as the driver is detached.
+      const out = io()
+      expect(await runCli(['restart', '--port', String(port), '--start', startCmd, ...flags], out.io)).toBe(0)
+      expect(out.out.join('')).toContain('driver detached')
+      // The driver does the real work: old stops, new comes up, lock released.
+      const deadline = Date.now() + 20_000
+      let body = ''
+      while (Date.now() < deadline) {
+        try {
+          body = await fetchBody(port)
+          if (body === 'new') break
+        } catch { /* mid-restart */ }
+        await new Promise((resolve) => { setTimeout(resolve, 300) })
+      }
+      expect(body).toBe('new')
+      const recordDeadline2 = Date.now() + 10_000
+      const outcomeFile = join(stateDir, 'last-restart.json')
+      while (!existsSync(outcomeFile) && Date.now() < recordDeadline2) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      // The restart verb records its outcome so the next boot reports it.
+      const outcome = JSON.parse(readFileSync(outcomeFile, 'utf8'))
+      expect(outcome.pid).toBe(host.pid)
+      expect(outcome.error).toBeUndefined()
+      const lockFile = join(stateDir, 'restart.lock')
+      const lockDeadline = Date.now() + 10_000
+      while (existsSync(lockFile) && Date.now() < lockDeadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      expect(existsSync(lockFile)).toBe(false)
+      expect(readFileSync(join(stateDir, 'restart.log'), 'utf8')).toContain('restart + canary PASS')
+    } finally {
+      host.kill('SIGKILL')
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
+  it('restart refuses while another restart holds the lock; a stale lock is reclaimed', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    try {
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubPreflight('true')
+      const port = await freePort()
+      // A LIVE holder (this test process): the second restart must refuse,
+      // and nothing must be stopped.
+      writeFileSync(join(stateDir, 'restart.lock'), String(process.pid))
+      const refused = io()
+      expect(await runCli(
+        ['restart', '--sync', '--port', String(port), '--start', 'true', ...flags], refused.io,
+      )).toBe(1)
+      expect(refused.err.join('')).toContain('already in flight')
+      // A STALE holder (dead pid): reclaimed, the restart proceeds (here it
+      // reaches the port check and finds nothing to restart).
+      writeFileSync(join(stateDir, 'restart.lock'), '999999')
+      const proceeded = io()
+      await runCli(['restart', '--sync', '--port', String(port), '--start', 'true', ...flags], proceeded.io)
+      expect(proceeded.err.join()).not.toContain('already in flight')
+      // An EMPTY lock (a writer SIGKILLed mid-create): nobody's claim —
+      // Number('') is 0 and kill(0, 0) always succeeds, which once read as
+      // "alive" and refused every restart forever.
+      writeFileSync(join(stateDir, 'restart.lock'), '')
+      const emptyLock = io()
+      await runCli(['restart', '--sync', '--port', String(port), '--start', 'true', ...flags], emptyLock.io)
+      expect(emptyLock.err.join()).not.toContain('already in flight')
+      // A FRESH pending marker (schedule-exit in flight): restart must see
+      // the other pending stop and refuse — the exit agent would otherwise
+      // SIGTERM the instance this restart just started.
+      writeFileSync(join(stateDir, 'restart-requested.json'), JSON.stringify({ requestedAt: Date.now() }))
+      const marked = io()
+      expect(await runCli(['restart', '--sync', '--port', String(port), '--start', 'true', ...flags], marked.io)).toBe(1)
+      expect(marked.err.join()).toContain('scheduled exit is still pending')
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('schedule-exit refuses while a restart marker is still pending', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    mkdirSync(stateDir, { recursive: true })
+    try {
+      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      stubPreflight('true')
+      writeFileSync(join(stateDir, 'restart-requested.json'), JSON.stringify({ requestedAt: Date.now() }))
+      const out = io()
+      // Two sessions racing to schedule: the second must not overwrite the
+      // first's initiator.
+      expect(await runCli(
+        ['schedule-exit', '--port', '1', '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo],
+        out.io,
+      )).toBe(1)
+      expect(out.err.join('')).toContain('already scheduled')
+      // A STALE marker (older than the TTL — a watchdog that died mid-flow
+      // never cleared it) is overwritten with a warning, not refused forever.
+      writeFileSync(join(stateDir, 'restart-requested.json'),
+        JSON.stringify({ requestedAt: Date.now() - 20 * 60_000 }))
+      const stale = io()
+      expect(await runCli(
+        ['schedule-exit', '--port', '1', '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo],
+        stale.io,
+      )).toBe(0)
+      expect(stale.err.join()).toContain('stale restart marker')
+      // And the reverse direction: a live restart lock means an instance is
+      // being restarted right now — the exit agent would kill the one it starts.
+      rmSync(join(stateDir, 'restart-requested.json'), { force: true })
+      writeFileSync(join(stateDir, 'restart.lock'), String(process.pid))
+      const locked = io()
+      expect(await runCli(
+        ['schedule-exit', '--port', '1', '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo],
+        locked.io,
+      )).toBe(1)
+      expect(locked.err.join()).toContain('restart is in flight')
+      rmSync(join(stateDir, 'restart.lock'), { force: true })
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('takeover of a previously-healthy deployment leaves an unplanned-exit record', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    // The deployment has come up before: the stamp exists (written by any
+    // healthy boot), so recovering an unplanned exit files the report record.
+    mkdirSync(join(env.home, 'state'), { recursive: true })
+    writeFileSync(join(env.home, 'state', 'last-good-boot.json'),
+      `${JSON.stringify({ revision: currentHead(repo), at: Date.now() })}\n`)
+    const host = spawn(process.execPath, ['-e',
+      `require('http').createServer((q,s)=>s.end('host')).listen(${port},'127.0.0.1')`],
+    { detached: true, stdio: 'ignore' })
+    host.unref()
+    try {
+      await waitForPort(port)
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        io().io,
+      )).toBe(0)
+      host.kill('SIGTERM')
+      const deadline = Date.now() + 20_000
+      let portDown = false
+      while (Date.now() < deadline) {
+        if (!portDown && !(await portListening(port))) portDown = true
+        if (portDown && (await portListening(port))) break
+        await new Promise((resolve) => { setTimeout(resolve, 300) })
+      }
+      expect(await fetchBody(port)).toBe('new')
       const crashRecord = join(env.home, 'state', 'last-restart.json')
       const recordDeadline = Date.now() + 5000
       while (!existsSync(crashRecord) && Date.now() < recordDeadline) {
@@ -863,6 +1341,77 @@ describe('supervise', () => {
       env.restore()
     }
   }, 30_000)
+
+  it('record-unexpected-exit writes once and never overwrites a pending record', async () => {
+    const stateDir = tmpDir('guard-cli-')
+    const first = io()
+    expect(await runCli(['record-unexpected-exit', '--state-dir', stateDir], first.io)).toBe(0)
+    expect(first.out.join('')).toContain('left a report record')
+    const record = JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))
+    expect(record.unexpected).toBe(true)
+    // A second recovery while the first still awaits its report: kept, not overwritten.
+    const second = io()
+    expect(await runCli(['record-unexpected-exit', '--state-dir', stateDir], second.io)).toBe(0)
+    expect(second.out.join('')).toContain('still pending')
+    expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
+  })
+
+  it('record-adoption carries the initiator and never overwrites a pending record', async () => {
+    const stateDir = tmpDir('guard-cli-')
+    const first = io()
+    expect(await runCli(['record-adoption', '--state-dir', stateDir, '--initiator', 'session-x'], first.io)).toBe(0)
+    expect(first.out.join('')).toContain('adoption takeover')
+    const record = JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))
+    expect(record.initiator).toBe('session-x')
+    expect(record.unexpected).toBeUndefined()
+    expect(typeof record.exitAt).toBe('number')
+    const second = io()
+    expect(await runCli(['record-adoption', '--state-dir', stateDir, '--initiator', 'session-y'], second.io)).toBe(0)
+    expect(second.out.join('')).toContain('still pending')
+    expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
+  })
+
+  it('the adoption takeover reports back to the session that established supervision', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    // No last-good-boot stamp: this deployment has never come up — the first
+    // takeover must file an ADOPTION record (addressed to the supervising
+    // session), never an unexpected-exit one.
+    const host = spawn(process.execPath, ['-e',
+      `require('http').createServer((q,s)=>s.end('host')).listen(${port},'127.0.0.1')`],
+    { detached: true, stdio: 'ignore' })
+    host.unref()
+    const previousSession = process.env.DSH_SESSION_ID
+    process.env.DSH_SESSION_ID = 'session-supervisor'
+    try {
+      await waitForPort(port)
+      const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        io().io,
+      )).toBe(0)
+      // The detached watchdog waits for the owner to exit, then takes over.
+      host.kill('SIGTERM')
+      const record = join(env.home, 'state', 'last-restart.json')
+      const deadline = Date.now() + 20_000
+      while (!existsSync(record) && Date.now() < deadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 300) })
+      }
+      const outcome = JSON.parse(readFileSync(record, 'utf8'))
+      expect(outcome.initiator).toBe('session-supervisor')
+      expect(outcome.unexpected).toBeUndefined()
+      expect(await fetchBody(port)).toBe('new')
+    } finally {
+      if (previousSession === undefined) delete process.env.DSH_SESSION_ID
+      else process.env.DSH_SESSION_ID = previousSession
+      env.stop()
+      host.kill('SIGKILL')
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
+
 
   it('reports an existing live watchdog instead of spawning a second', async () => {
     const env = supervisedEnv()
@@ -892,6 +1441,48 @@ describe('supervise', () => {
       env.restore()
     }
   })
+
+  it('reclaims a pidfile deleted underneath it, and yields to a live replacement owner', async () => {
+    // The state dir cleaned under a RUNNING watchdog must not fork
+    // supervision: the watchdog reclaims its claim within one poll; and when
+    // the claim is held by another live process it yields instead of fighting.
+    const home = tmpDir('guard-heal-')
+    mkdirSync(join(home, 'state'), { recursive: true })
+    mkdirSync(join(home, 'home'), { recursive: true })
+    const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
+    const port = await freePort()
+    const wd = spawn('bash', [script, '--supervise'], {
+      env: { ...process.env, WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' },
+      stdio: 'ignore',
+      detached: true,
+    })
+    wd.unref()
+    const pidfile = join(home, 'state', 'watchdog.pid')
+    cleanups.unshift(() => {
+      try { process.kill(-(wd.pid ?? 0), 'SIGKILL') } catch { /* not a group leader */ }
+      try { process.kill(wd.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+    })
+    const until = async (fn: () => boolean, ms: number): Promise<boolean> => {
+      const deadline = Date.now() + ms
+      while (Date.now() < deadline) {
+        if (fn()) return true
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      return false
+    }
+    // Up and claimed.
+    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 15_000)).toBe(true)
+    // Deleted underneath → reclaimed by the same pid.
+    unlinkSync(pidfile)
+    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 10_000)).toBe(true)
+    // A live replacement owner → the watchdog yields (exits) rather than fighting.
+    writeFileSync(pidfile, String(process.pid))
+    expect(await until(() => {
+      try { process.kill(wd.pid ?? 0, 0); return false } catch { return true }
+    }, 10_000)).toBe(true)
+    // ...and its pidfile claim was NOT stolen back or deleted (it names us).
+    expect(readFileSync(pidfile, 'utf8').trim()).toBe(String(process.pid))
+  }, 45_000)
 
   it('claims the pidfile atomically — concurrent watchdogs leave exactly one supervisor', async () => {
     // The CLI check above serializes two SEQUENTIAL supervise calls. This
@@ -984,6 +1575,76 @@ describe('supervise', () => {
     } finally {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
+    }
+  })
+
+  it('schedule-exit warns when no live watchdog will respawn the instance', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    try {
+      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      stubPreflight('true')
+      const port = await freePort()
+      const out = io()
+      // No watchdog has ever run here: the first-install bootstrap gap must
+      // surface as a warning, not as a silently dead service.
+      expect(await runCli(
+        ['schedule-exit', '--port', String(port), '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo],
+        out.io,
+      )).toBe(0)
+      expect(out.err.join('')).toContain('no live watchdog')
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('restart refuses in a sandboxed environment; --force overrides', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    try {
+      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      stubSandboxProbe(true)
+      const refused = io()
+      expect(await runCli(['restart', '--sync', '--port', '1', '--start', 'true', ...flags], refused.io)).toBe(1)
+      expect(refused.err.join()).toContain('/permission danger-full-access')
+      stubPreflight('true')
+      const forced = io()
+      await runCli(['restart', '--sync', '--port', '1', '--start', 'true', '--force', ...flags], forced.io)
+      expect(forced.err.join()).not.toContain('/permission danger-full-access')
+    } finally {
+      env.restore()
+    }
+  }, 15_000)
+
+  it('check-env reports sandbox, watchdog, and git readiness', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    try {
+      const out = io()
+      // This test process is unsandboxed → exit 0 with the full readout.
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], out.io)).toBe(0)
+      const text = out.out.join('')
+      expect(text).toContain('unsandboxed')
+      expect(text).toContain('supervision: NOT supervised')
+      expect(text).toContain('git repo: yes')
+      // No skill-registration marker in this throwaway state: reported as absent.
+      expect(text).toContain('skill: not recorded')
+      // A registered marker surfaces as the catalog confirmation.
+      writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
+      const second = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], second.io)).toBe(0)
+      expect(second.out.join('')).toContain('skill: dsh-self-restart-guard registered')
+      // And a failure marker names the reason.
+      writeSkillRegistration(stateDir, { registered: false, reason: 'skills service absent in this composition', at: Date.now() })
+      const third = io()
+      expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], third.io)).toBe(0)
+      expect(third.out.join('')).toContain('skill: NOT registered (skills service absent')
+    } finally {
+      env.restore()
     }
   })
 
@@ -1977,5 +2638,9 @@ describe('pack smoke', () => {
     }
     // The bin entry is a runnable shebang script, not just a bundled file.
     expect(readFileSync(join(artifactLib, 'cli.js'), 'utf8')).toMatch(/^#!\/usr\/bin\/env node/)
+    // The restart-protocol skill ships with the package — apply() reads it
+    // from <pkg>/skills/ and degrades to a bare warning when it is missing.
+    expect(existsSync(join(unpack, 'package', 'skills', 'dsh-self-restart-guard', 'SKILL.md')),
+      'the restart-protocol skill is missing from the tarball').toBe(true)
   })
 })

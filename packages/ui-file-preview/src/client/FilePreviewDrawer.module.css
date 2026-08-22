@@ -11,11 +11,46 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  width: min(520px, 100vw);
+  /* The width lives in a document-level CSS variable so the conversation
+     push below tracks the drawer; the component sets it while open (and
+     restores the default when closed). */
+  width: var(--dsh-file-preview-drawer-w, min(520px, 100vw));
   border-left: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
   pointer-events: auto;
+}
+
+/* Drag handle on the left edge: adjust the drawer width without fullscreen. */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  z-index: 5;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:active::after {
+  opacity: 1;
 }
 
 /* The document mark is set by the drawer component's open effect; the push
@@ -25,7 +60,7 @@
    the shrunken container on its own — a seat-level margin would double the
    push. */
 :global(html[data-file-preview-drawer-open]) :global([data-slot='conversation']) [data-conversation-scroll] {
-  margin-right: min(520px, 100vw);
+  margin-right: var(--dsh-file-preview-drawer-w, min(520px, 100vw));
 }
 
 .header {
@@ -105,4 +140,29 @@
   padding: 16px 12px;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* Pin button: keeps the drawer open across session switches when active. */
+.pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.pin:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pinActive {
+  color: #7fd4ff;
+  border-color: rgba(88, 196, 255, 0.4);
+  background: rgba(88, 196, 255, 0.1);
 }

@@ -104,7 +104,9 @@ lab 单向依赖 mission，走**服务面**（`ctx.get('mission')`）而非模�
 
 ## 实现记录
 
-- **M1 已交付**（2026-08-20）：`packages/lab`（`@khorsheed/dsh-lab`）——`ctx.lab` 服务面 + docker provider（acquire / populate / collect / release / status）、环境指纹入 refs、容器标签即注册表（宿主重启后 reconcile，gate 不失效）、pidfile 终止补偿、`maxConcurrentUnits`；26 测试全绿（Exec 假件，无需 docker daemon）。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m1.md`（含偏离说明：populate 语义=acquire 时挂载 + 拷入单元；无 gate 的 release 需显式 force + warn；invariant 为无数据的所有权预留）。待办：活 profile + 真 daemon 冒烟（验收 1/5/6/7）。
+- **M1 已交付**（2026-08-20，commit `71147bf`）：`packages/lab`（`@khorsheed/dsh-lab`）——`ctx.lab` 服务面 + docker provider（acquire / populate / collect / release / status）、环境指纹入 refs、容器标签即注册表（宿主重启后 reconcile，gate 不失效）、pidfile 终止补偿、`maxConcurrentUnits`；26 测试全绿（Exec 假件，无需 docker daemon）。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m1.md`（含偏离说明：populate 语义=acquire 时挂载 + 拷入单元；无 gate 的 release 需显式 force + warn；invariant 为无数据的所有权预留）。
+- **M2 已交付**（2026-08-20）：`checkpoint` / `verify` / `archive` 三动词——checkpoint = 工作区 git（首次自动 init）+ tag，sha 入 mission checkpoint `ref`；verify 原样记录（退出码/stdout/stderr/耗时/超时事实）入 `lab` ns，无任何判断分支；archive = 工作区导出 + 逐文件 sha256 manifest。CLI 面 `dsh-lab`：同内核配 `child_process` 运行器，release gate 走 `dsh-mission is-releasable` 的 0/1 退出码（其他退出码 fail closed），登记动词随 mission CLI 补齐（`5ca20b1`）全部接线（set-refs / add-artifact / add-checkpoint / annotate）。51 包内测试全绿（含桩 docker/dsh-mission 二进制的 CLI 端到端）。Agent Note：`.agents/notes/implemented/feature/2026-08-20-lab-m2-verbs.md` 与 `2026-08-20-lab-m2-cli.md`（后者含 M1 遗留 docker 前缀缺陷的修复说明）。
+- **联调第二轮（失败路径）已过**（2026-08-20）：`scripts/integration-triad.spec.ts` 新增 5 个失败路径断言（`runTriadFailures` 驱动）——populate 失败响亮报错且单元仍被跟踪（不静默泄漏）、mission 状态不动且无幻影 history、working 态 release 被拒、未知 mission 绑定的 release 在查询异常上 fail closed 且 force 不可绕过、attested 拆除路径（attest → failed → release 销毁）。15/15 全绿（docker daemon 28.1.1）。证据见 `.agents/notes/implemented/testing/2026-08-20-triad-integration-test.md`。待办：活 profile 冒烟（验收 1）；验收 5/6/7 的 daemon 实测已由两轮联调覆盖大半。
 
 ## 风险 / 放弃的东西
 

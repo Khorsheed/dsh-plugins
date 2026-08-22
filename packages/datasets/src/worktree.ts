@@ -97,14 +97,19 @@ export interface ManagedWorktree {
 
 /**
  * Sparse-checkout patterns limiting a worktree to one dataset's layer
- * directories. Non-cone gitignore syntax: `*` matches one path segment, so
- * each pattern covers every item's directory for that layer and nothing else.
+ * directories, at BOTH levels: non-cone gitignore syntax — `*` matches one
+ * path segment, so the item-level pattern covers every item's directory for
+ * that layer, and the dataset-level pattern covers the shared layer directory
+ * of the same name. Nothing else materializes.
  * @param datasetId - the dataset whose layers are exposed.
  * @param layers - the allowed layers.
  * @returns the sparse-checkout patterns.
  */
 export function layerSparsePatterns(datasetId: string, layers: readonly string[]): string[] {
-  return [...layers].sort().map(layer => `/${datasetDir(datasetId)}/items/*/${layer}/`)
+  return [...layers].sort().flatMap(layer => [
+    `/${datasetDir(datasetId)}/items/*/${layer}/`,
+    `/${datasetDir(datasetId)}/${layer}/`,
+  ])
 }
 
 /**

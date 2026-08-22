@@ -18,19 +18,20 @@
  *              instance, so the post-restart canary runs even though the
  *              instance restart killed the session that used to own it.
  */
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
+import { fileURLToPath } from 'node:url'
+import { isDirectInvocation, resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
 import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
-import { findPidOnPort, killPidTree } from './processes.ts'
+import { discoverLaunchCommand, findPidOnPort, killPidTree } from './processes.ts'
+import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
@@ -49,6 +50,8 @@ interface CliOptions {
   log: string | undefined
   foreground: boolean
   rollback: boolean
+  force: boolean
+  sync: boolean
   initiator: string | undefined
   profile: string | undefined
   preflightTimeoutMs: number | undefined
@@ -60,6 +63,136 @@ export interface CliIo {
   stderr: (line: string) => void
 }
 
+/**
+ * Printed by the commands every agent-driven restart flow calls before
+ * restarting: the loop spawns detached processes and signals them, which a
+ * sandboxed tool runner denies (EPERM). Runtime hint, because the README
+ * prerequisite section is not reliably read.
+ */
+const FULL_ACCESS_HINT = 'hint: the restart loop spawns detached processes and signals them — a sandboxed session (not full-access) will fail with EPERM. You CANNOT switch the sandbox yourself (that is the point of it): ask the user to run /permission danger-full-access in THIS session (the settings page only affects NEW sessions; an open persistent terminal fences the switch)\n'
+
+/**
+ * Printed (by verify/record, and as a refusal-grade warning in schedule-exit)
+ * while no watchdog supervises the instance: a bare exit now leaves the
+ * service DOWN — the first-install bootstrap gap.
+ */
+const NO_WATCHDOG_HINT = 'warning: no live watchdog supervises the instance — a bare exit now leaves the service DOWN. Before the first restart, run `supervise --port N --start "CMD"` (it adopts the running instance and respawns ANY exit), or drive the restart with `restart` yourself\n'
+
+/**
+ * Best-effort sandbox detection: a workspace-write tool runner denies file
+ * writes outside the workspace, so a probe file in the home directory EPERMs
+ * exactly when the caller is sandboxed — the environment that reaps detached
+ * restart/watchdog processes the moment the agent's turn ends (observed:
+ * stale restart.lock with a dead holder, service left down).
+ */
+function sandboxedByProbe(): boolean {
+  const probe = join(homedir(), `.ankh-guard-probe-${process.pid}`)
+  try {
+    writeFileSync(probe, '', { flag: 'wx' })
+    unlinkSync(probe)
+    return false
+  } catch {
+    return true
+  }
+}
+
+/** Replaceable seams for tests; production keeps the defaults. */
+export const envInternals = {
+  sandboxedByProbe: (): boolean => sandboxedByProbe(),
+}
+
+/**
+ * The environment gate for every verb whose detached child must outlive the
+ * agent's turn (restart, schedule-exit, detached supervise): refuse when the
+ * probe says sandboxed — a "yes, authorized" answer from the user does NOT
+ * change the sandbox (only /permission in the session does), and a reaped
+ * restart leaves the service down.
+ */
+function sandboxGate(verb: string, options: CliOptions, io: CliIo): boolean {
+  if (options.force) return true
+  if (!envInternals.sandboxedByProbe()) return true
+  io.stderr(`${verb} refused: this environment is sandboxed (a probe write outside the workspace was denied), so a detached restart/watchdog process would be reaped when the turn ends. You cannot switch the sandbox yourself — ask the user to run /permission danger-full-access in THIS session (a yes/no "authorization" changes nothing), then verify with \`dsh-ankh-guard check-env\` and retry. Certain the probe is wrong? Re-run with --force\n`)
+  return false
+}
+
+/** The live supervising watchdog's pid, or null when none is (pidfile + kill 0). */
+function liveWatchdogPid(stateDir: string): number | null {
+  try {
+    const raw = readFileSync(stateFile(stateDir, 'watchdogPid'), 'utf8').trim()
+    const pid = Number(raw)
+    // raw '' → 0, and kill(0, 0) always succeeds (it probes our own process
+    // group): an empty pidfile must read as NO watchdog, never as alive.
+    if (raw !== '' && Number.isInteger(pid) && pid > 0) { process.kill(pid, 0); return pid }
+  } catch { /* no pidfile or a dead owner */ }
+  return null
+}
+
+/**
+ * Cross-session restart mutual exclusion: two concurrent restarts would both
+ * stop the listener and double-start the instance — a port race whose loser
+ * dies silently (stdio ignored). Atomic create, the watchdog pidfile's own
+ * discipline; a stale lock (dead holder, or an empty file left by a writer
+ * SIGKILLed mid-create) is reclaimed.
+ */
+function acquireRestartLock(stateDir: string, holderPid: number = process.pid): { ok: true; release(): void } | { ok: false; holder: string } {
+  const file = stateFile(stateDir, 'restartLock')
+  mkdirSync(stateDir, { recursive: true })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(file, String(holderPid), { flag: 'wx' })
+      return {
+        ok: true,
+        release: () => { try { unlinkSync(file) } catch { /* idempotent: the file is already gone */ } },
+      }
+    } catch {
+      // The lock exists. Reclaim only when the holder is provably dead.
+      let holder: string
+      try {
+        holder = readFileSync(file, 'utf8').trim()
+      } catch (error) {
+        return { ok: false, holder: `unreadable (${String(error)})` }
+      }
+      const pid = Number(holder)
+      if (holder !== '' && Number.isInteger(pid) && pid > 0) {
+        try {
+          process.kill(pid, 0)
+          return { ok: false, holder }
+        } catch { /* dead holder — reclaim below */ }
+      }
+      try {
+        unlinkSync(file)
+      } catch (error) {
+        return { ok: false, holder: `unreclaimable (${String(error)})` }
+      }
+    }
+  }
+  return { ok: false, holder: 'unknown' }
+}
+
+/** Release the restart lock only if it names this process (the detached driver's exit path). */
+function releaseRestartLock(stateDir: string): void {
+  const file = stateFile(stateDir, 'restartLock')
+  try {
+    if (readFileSync(file, 'utf8').trim() === String(process.pid)) unlinkSync(file)
+  } catch { /* already gone */ }
+}
+
+/**
+ * argv (after process.execPath) that runs this CLI with the given args, with
+ * the same source/built split as {@link guardInvocation} — array form for
+ * spawn (the restart driver's self-detach).
+ */
+function cliInvocation(args: readonly string[]): string[] {
+  const cliPath = fileURLToPath(import.meta.url)
+  if (cliPath.includes(`${sep}src${sep}`)) {
+    const nodeModules = resolve(dirname(cliPath), '../../../node_modules')
+    const tsx = join(nodeModules, 'tsx', 'dist', 'esm', 'index.mjs')
+    if (existsSync(tsx)) return ['--import', tsx, cliPath, ...args]
+    return [cliPath, ...args]
+  }
+  return [join(cliPath), ...args]
+}
+
 const USAGE = `usage: dsh-ankh-guard <command> [args] [flags]
 commands:
   verify [--state-dir DIR] [--repo DIR] [--max-age MIN]
@@ -69,7 +202,10 @@ commands:
   checkpoint [--message MSG] [--repo DIR] [--state-dir DIR]
   reset <sha> [--repo DIR]
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
+  check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
   preflight [--profile NAME] [--timeout-ms MS]
+  record-unexpected-exit [--state-dir DIR]   # watchdog-facing: record an unplanned-exit recovery
+  record-adoption [--initiator ID] [--state-dir DIR]   # watchdog-facing: record the first (adoption) takeover
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
@@ -83,6 +219,8 @@ flags:
   --command CMD    record: the command that produced the green state
   --message MSG    checkpoint: batch description
   --start "CMD"    restart/supervise: the shell command that starts the instance
+                   (optional once the plugin has booted — it records the launch
+                   command to <state-dir>/instance-launch.json)
   --pid PID        restart: process to stop (default: the listener on --port)
   --timeout-ms MS  restart: how long to wait for the new instance to listen (default 60000);
                    preflight: how long the dry-run boot may take (default 120000)
@@ -102,6 +240,9 @@ flags:
                    $DSH_PROFILE, else "web")
   --preflight-timeout-ms MS  schedule-exit/restart: bound on the composition preflight (default 120000)
   --rollback       restart: on failure, git reset --hard to the recorded checkpoint
+  --force          restart/schedule-exit/supervise: override the sandbox probe refusal
+  --sync           restart: run the whole loop in-process (debug/tests; the default
+                   self-detaches a driver so the loop survives the caller's teardown)
 `
 
 /**
@@ -116,7 +257,7 @@ export function parse(
     stateDir: '', repoDir: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined,
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
     log: undefined,
-    foreground: false, rollback: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
+    foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
   }
   const positionals: string[] = []
   let i = 0
@@ -191,6 +332,8 @@ export function parse(
           break
         }
         case '--rollback': options.rollback = true; break
+        case '--force': options.force = true; break
+        case '--sync': options.sync = true; break
         case '--help':
         case '-h':
           return { error: USAGE }
@@ -265,6 +408,40 @@ function exitAgentInvocation(): string[] {
 
 /** Default bound on one preflight subprocess run (a real web-profile boot takes tens of seconds). */
 const DEFAULT_PREFLIGHT_TIMEOUT_MS = 120_000
+
+/** A pending restart marker older than this is stale — its watchdog died mid-flow. */
+const RESTART_MARKER_TTL_MS = 15 * 60_000
+
+/**
+ * The restart marker's state. Every verb that can stop the instance must
+ * consult this (and the restart lock) — a stop right invisible to the other
+ * verb is how an exit agent once got to SIGTERM a freshly restarted instance.
+ */
+function restartMarkerState(stateDir: string): 'none' | 'fresh' | 'stale' {
+  const file = stateFile(stateDir, 'restartRequested')
+  if (!existsSync(file)) return 'none'
+  try {
+    const marker = JSON.parse(readFileSync(file, 'utf8')) as { requestedAt?: number }
+    return typeof marker.requestedAt === 'number' && Date.now() - marker.requestedAt <= RESTART_MARKER_TTL_MS ? 'fresh' : 'stale'
+  } catch {
+    return 'stale' // unparseable is stale by definition
+  }
+}
+
+/** The restart lock's live holder pid (as a string), or null when free/stale. */
+function liveRestartLockHolder(stateDir: string): string | null {
+  try {
+    const raw = readFileSync(stateFile(stateDir, 'restartLock'), 'utf8').trim()
+    const pid = Number(raw)
+    if (raw !== '' && Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0)
+        return raw
+      } catch { /* dead holder */ }
+    }
+  } catch { /* no lock file */ }
+  return null
+}
 
 /** Captured preflight output is diagnostics, not a log — cap it before it can grow without bound. */
 const PREFLIGHT_OUTPUT_CAP = 64 * 1024
@@ -350,6 +527,51 @@ export interface PreflightOutcome {
 /** POSIX single-quote one word for the shell command line. */
 function shellQuote(word: string): string {
   return `'${word.replace(/'/g, "'\\''")}'`
+}
+
+/**
+ * The --start command: the flag, else the launch record written at boot. The
+ * record is what lets an agent restart without reconstructing the instance's
+ * launch command (ps is sandbox-blocked; "who supervises me" sent
+ * fresh-machine agents into loops). On `restart`, a SUPERVISED record refuses
+ * the fallback: spawning the instance directly would fight the supervisor's
+ * respawn (double-start race) — schedule-exit is the supervised path.
+ */
+function resolveStartCommand(flag: string | undefined, stateDir: string, verb: 'restart' | 'supervise', io: CliIo, port: number | undefined): string | undefined {
+  if (flag !== undefined && flag !== '') return flag
+  // A LIVE supervisor owns every respawn; a bare restart would fight it —
+  // refuse all fallbacks, whatever their source.
+  if (verb === 'restart' && liveWatchdogPid(stateDir) !== null) {
+    io.stderr('restart: a watchdog is alive and owns this port — a bare restart would fight its respawn. Drive the restart with `schedule-exit` (the watchdog respawns and canaries)\n')
+    return undefined
+  }
+  const launch = readInstanceLaunch(stateDir)
+  if (launch?.supervised === true) {
+    // The record says supervised but the watchdog is DEAD: refusing here
+    // sends the agent to schedule-exit, which kills the instance with nobody
+    // to respawn it — the documented dead-end. Warn and rescue instead.
+    io.stderr('warning: the launch record says this instance was watchdog-supervised, but no live watchdog was found — proceeding with the recorded command as a rescue; re-establish `supervise` after this restart\n')
+  }
+  if (launch !== null) return launch.command
+  // No record (plugin never booted here): discover the launch live from the
+  // port's listener — the CLI reads ps/lsof the agent's sandbox denies.
+  if (port !== undefined) {
+    const pid = findPidOnPort(port)
+    if (pid !== null) {
+      try {
+        const discovered = discoverLaunchCommand(pid)
+        if (discovered !== null) return discovered
+      } catch (error) {
+        io.stderr(`live launch discovery failed (${String(error)}) — ps is sandbox-blocked in this turn; rerun this command escalated (sandbox_permissions) or pass --start explicitly\n`)
+      }
+    }
+  }
+  return undefined
+}
+
+/** check-env display: redact credential-shaped env values inside the command. */
+function redactLaunchCommand(command: string): string {
+  return command.replace(/([A-Z_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z_]*=)'(?:[^'\\]|\\')*'/g, "$1'<redacted>'")
 }
 
 /**
@@ -566,6 +788,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     case 'verify': {
       const result = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
       io.stdout(`${result.reason}\n`)
+      if (result.ok) {
+        io.stdout(FULL_ACCESS_HINT)
+        if (liveWatchdogPid(stateDir) === null) io.stderr(NO_WATCHDOG_HINT)
+      }
       return result.ok ? 0 : 1
     }
     case 'record': {
@@ -581,6 +807,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       recordCredential(stateDir, { scope, revision: head, command: options.command ?? '' }, Date.now())
       io.stdout(`recorded green credential: ${scope} @ ${head}\n`)
+      io.stdout(FULL_ACCESS_HINT)
+      if (liveWatchdogPid(stateDir) === null) io.stderr(NO_WATCHDOG_HINT)
       return 0
     }
     case 'status': {
@@ -646,84 +874,241 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       sink(summarizeOutput(outcome.output))
       return outcome.kind === 'pass' ? 0 : outcome.kind === 'composition-failed' ? 1 : 3
     }
+    case 'record-unexpected-exit': {
+      // Invoked by the watchdog when it recovers an unplanned exit (no restart
+      // marker). Never overwrites a record that still awaits its report; the
+      // two messages keep the watchdog log truthful about which happened.
+      const written = writeUnexpectedExitRecord(stateDir, Date.now())
+      io.stdout(written
+        ? '[watchdog] unplanned exit recovered — left a report record for the next session\n'
+        : '[watchdog] unplanned exit recovered — a report record is still pending, left it untouched\n')
+      return 0
+    }
+    case 'record-adoption': {
+      // Invoked by the watchdog at the ADOPTION takeover — the first restart
+      // a deployment ever sees (supervise handed it the port and a
+      // pre-existing owner was stopped). The session that established
+      // supervision promised a verification report; this record is what wakes
+      // it after the bounce. Same pending protection as the unexpected-exit
+      // record.
+      const written = writeAdoptionRecord(stateDir, Date.now(), options.initiator)
+      io.stdout(written
+        ? '[watchdog] adoption takeover — left a report record for the supervising session\n'
+        : '[watchdog] adoption takeover — a report record is still pending, left it untouched\n')
+      return 0
+    }
+    case 'check-env': {
+      // THE one-call readiness answer for an agent planning a restart: (1) is
+      // this instance supervised and by whom, (2) what command a restart
+      // should use, (3) the bare-exit warning when unsupervised — plus the
+      // sandbox verdict. An agent's FIRST hop; it must never need ps.
+      const sandboxed = envInternals.sandboxedByProbe()
+      io.stdout(`sandbox: ${sandboxed
+        ? 'SANDBOXED — detached processes are reaped when the turn ends; ask the user for /permission danger-full-access in THIS session'
+        : 'unsandboxed (full access)'}\n`)
+      const watchdogPid = liveWatchdogPid(stateDir)
+      if (watchdogPid !== null) {
+        let chain = `supervised by ankh watchdog (pid ${watchdogPid})`
+        if (existsSync(join(homedir(), 'Library', 'LaunchAgents', 'com.dsh.watchdog.plist'))) chain += '; the watchdog itself is supervised (launchd com.dsh.watchdog)'
+        else {
+          try {
+            const units = execFileSync('systemctl', ['--user', 'list-unit-files', 'dsh-watchdog.service'], { encoding: 'utf8', stdio: 'pipe' })
+            if (units.includes('dsh-watchdog.service')) chain += '; the watchdog itself is supervised (systemd dsh-watchdog.service)'
+          } catch { /* no systemd on this host */ }
+        }
+        io.stdout(`supervision: ${chain}\n`)
+      } else {
+        io.stdout('supervision: NOT supervised — a bare exit leaves the service DOWN with nothing to respawn it; establish the watchdog with `supervise` first, or drive the restart with the `restart` verb (self-contained stop→start→canary)\n')
+      }
+      const launch = readInstanceLaunch(stateDir)
+      const probePort = options.port ?? launch?.port
+      let startLine: string
+      if (launch !== null) {
+        startLine = `${redactLaunchCommand(launch.command)}  (source: launch record${launch.supervised === true ? ', watchdog-supervised' : ''})`
+      } else if (probePort !== undefined) {
+        const pid = findPidOnPort(probePort)
+        try {
+          const discovered = pid === null ? null : discoverLaunchCommand(pid)
+          startLine = discovered === null ? 'unknown — pass --start explicitly' : `${redactLaunchCommand(discovered)}  (source: live discovery from the port listener)`
+        } catch (error) {
+          startLine = `unknown — live discovery failed (${String(error)}); rerun escalated (sandbox_permissions) or pass --start explicitly`
+        }
+      } else {
+        startLine = 'unknown — pass --start explicitly (no launch record yet; give --port for live discovery)'
+      }
+      io.stdout(`start: ${startLine}\n`)
+      const skillReg = readSkillRegistration(stateDir)
+      io.stdout(`skill: ${skillReg === null
+        ? 'not recorded (the plugin has not booted with this state dir, or predates the record)'
+        : skillReg.registered
+          ? 'dsh-self-restart-guard registered in the skill catalog'
+          : `NOT registered (${skillReg.reason ?? 'unknown reason'}) — the restart protocol will not surface in the skill catalog`}\n`)
+      io.stdout(`git repo: ${currentHead(repoDir) !== null
+        ? `yes (${repoDir})`
+        : `no (${repoDir}) — git init + initial commit before record`}\n`)
+      return sandboxed ? 1 : 0
+    }
     case 'restart': {
-      const port = options.port
-      if (port === undefined || options.start === undefined || options.start === '') {
+      const port = options.port ?? readInstanceLaunch(stateDir)?.port
+      if (port === undefined) {
         io.stderr(`restart requires --port N and --start "CMD"\n\n${USAGE}`)
         return 2
       }
+      const start = resolveStartCommand(options.start, stateDir, 'restart', io, port)
+      if (start === undefined) {
+        return 2
+      }
+      const isDriver = process.env.DSH_ANKH_RESTART_DRIVER === '1'
       // THE GATE: never stop an instance on a denial.
       const gate = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`restart refused: ${gate.reason}\n`)
         return 1
       }
-      // THE COMPOSITION GATE: a green build does not prove the profile boots.
-      if (!(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
+      // THE ENVIRONMENT GATE: a sandboxed turn reaps the detached restart
+      // mid-flight — refuse before anything is stopped.
+      if (!sandboxGate('restart', options, io)) return 1
+      // THE COMPOSITION GATE (caller side only — the detached driver inherits
+      // a composition the caller already proved; re-running it would double a
+      // minute-long dry-run). A green build does not prove the profile boots.
+      if (!isDriver && !(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
         return 1
       }
-      // Graceful self-restart: wait out the delay so the scheduling agent's
-      // turn completes and its final message is delivered before the stop.
-      if (options.delayMs !== undefined && options.delayMs > 0) {
-        io.stdout(`scheduled restart in ${options.delayMs} ms — current turn may finish first\n`)
-        await sleep(options.delayMs)
-      }
-      const pid = options.pid ?? findPidOnPort(port)
-      if (pid === null || pid === '') {
-        io.stderr(`nothing listening on 127.0.0.1:${port} — nothing to restart\n`)
+      // See every other pending stop before becoming one: a scheduled exit's
+      // agent would SIGTERM the instance this restart starts.
+      if (restartMarkerState(stateDir) === 'fresh') {
+        io.stderr('restart refused: a scheduled exit is still pending (restart-requested.json) — its exit agent would kill the instance this restart starts; wait for it or remove the stale marker\n')
         return 1
       }
-      const pidNumber = Number(pid)
-      try {
-        process.kill(pidNumber, 'SIGTERM')
-      } catch (error) {
-        io.stderr(`stop ${pid} failed: ${String(error)}\n`)
-        return 1
-      }
-      // Graceful-exit deadline before the SIGKILL escalation: large sessions
-      // flushing out tens of thousands of log tokens can take longer than the
-      // old hardcoded 10 s. Configurable via --stop-timeout-ms.
-      const stopTimeoutMs = options.stopTimeoutMs ?? 30_000
-      const exited = await waitForExit(pidNumber, stopTimeoutMs, () => {
-        // This line lives in the CLI's stdout; the watchdog's own log carries
-        // the matching `Killed: 9` for the same pid — the two align on pid.
-        io.stdout(`pid ${pid} did not exit within ${stopTimeoutMs} ms of SIGTERM — sending SIGKILL (the watchdog log will show 'Killed: 9' for ${pid})\n`)
-      })
-      io.stdout(`stopped ${pid}${exited ? '' : ' (forced)'}\n`)
-      const child = spawn(options.start, { shell: true, detached: true, stdio: 'ignore' })
-      child.unref()
-      io.stdout(`started: ${options.start}\n`)
-      const timeoutMs = options.timeoutMs ?? 60_000
-      const deadline = Date.now() + timeoutMs
-      let listening = false
-      while (Date.now() < deadline) {
-        if (await checkPort(port)) {
-          listening = true
-          break
+      if (options.sync !== true && !isDriver) {
+        // SELF-DETACH: the stop→start→canary half must outlive the caller. A
+        // restart CLI inside the instance's managed process tree dies with it
+        // (teardown kills managed processes between "old stopped" and "new
+        // started" — observed on fresh machines); a setsid'd driver, like the
+        // exit agent and the watchdog, provably survives.
+        const logPath = options.log ?? stateFile(stateDir, 'restartLog')
+        mkdirSync(dirname(logPath), { recursive: true })
+        const driver = spawn(process.execPath, cliInvocation(argv), {
+          detached: true,
+          stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
+          env: { ...process.env, DSH_ANKH_RESTART_DRIVER: '1' },
+        })
+        driver.unref()
+        if (driver.pid === undefined) {
+          io.stderr('restart refused: could not detach the restart driver\n')
+          return 1
         }
-        await sleep(500)
+        // ONE restart at a time across sessions: the lock names the DRIVER
+        // (it outlives this caller by design); a live holder refuses.
+        const lock = acquireRestartLock(stateDir, driver.pid)
+        if (!lock.ok) {
+          try { process.kill(driver.pid, 'SIGKILL') } catch { /* already gone */ }
+          io.stderr(/^\d+$/.test(lock.holder)
+            ? `restart refused: another restart is already in flight (pid ${lock.holder})\n`
+            : `restart refused: cannot claim the restart lock (${lock.holder}) — remove ${stateFile(stateDir, 'restartLock')} if it is stale\n`)
+          return 1
+        }
+        io.stdout(`restart driver detached (pid ${driver.pid}) — log ${logPath}\nthe instance stops in ${options.delayMs ?? 0} ms and comes back on its own; check the log or \`status\` afterwards\n`)
+        return 0
       }
-      if (!listening) {
-        io.stderr(`new instance not listening on 127.0.0.1:${port} within ${timeoutMs}ms\n`)
-        if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
-        return 1
+      // Driver / --sync path. The lock covers the WHOLE verb, rollback
+      // included; try/finally so no return path or exception can strand it.
+      // The driver releases only a lock that names it; --sync acquires here.
+      let restartLock: { release(): void } | undefined
+      if (options.sync === true) {
+        const lock = acquireRestartLock(stateDir)
+        if (!lock.ok) {
+          io.stderr(/^\d+$/.test(lock.holder)
+            ? `restart refused: another restart is already in flight (pid ${lock.holder})\n`
+            : `restart refused: cannot claim the restart lock (${lock.holder}) — remove ${stateFile(stateDir, 'restartLock')} if it is stale\n`)
+          return 1
+        }
+        restartLock = lock
       }
-      const post = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
-      io.stdout(`canary verify: ${post.ok ? 'PASS' : 'FAIL'} — ${post.reason}\n`)
-      io.stdout(`canary port: PASS — listening on 127.0.0.1:${port}\n`)
-      if (!post.ok) {
-        if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
-        return 1
+      try {
+        // Graceful self-restart: wait out the delay so the scheduling agent's
+        // turn completes and its final message is delivered before the stop.
+        if (options.delayMs !== undefined && options.delayMs > 0) {
+          io.stdout(`scheduled restart in ${options.delayMs} ms — current turn may finish first\n`)
+          await sleep(options.delayMs)
+        }
+        const pid = options.pid ?? findPidOnPort(port)
+        if (pid === null || pid === '') {
+          io.stderr(`nothing listening on 127.0.0.1:${port} — nothing to restart\n`)
+          return 1
+        }
+        const pidNumber = Number(pid)
+        try {
+          process.kill(pidNumber, 'SIGTERM')
+        } catch (error) {
+          io.stderr(`stop ${pid} failed: ${String(error)}\n`)
+          return 1
+        }
+        // Graceful-exit deadline before the SIGKILL escalation: large sessions
+        // flushing out tens of thousands of log tokens can take longer than
+        // the old hardcoded 10 s. Configurable via --stop-timeout-ms.
+        const stopTimeoutMs = options.stopTimeoutMs ?? 30_000
+        const exited = await waitForExit(pidNumber, stopTimeoutMs, () => {
+          // This line lives in the CLI's stdout; the watchdog's own log carries
+          // the matching `Killed: 9` for the same pid — the two align on pid.
+          io.stdout(`pid ${pid} did not exit within ${stopTimeoutMs} ms of SIGTERM — sending SIGKILL (the watchdog log will show 'Killed: 9' for ${pid})\n`)
+        })
+        io.stdout(`stopped ${pid}${exited ? '' : ' (forced)'}\n`)
+        const stoppedAt = Date.now()
+        const startEnv = { ...process.env }
+        delete startEnv.DSH_ANKH_RESTART_DRIVER
+        const child = spawn(start, { shell: true, detached: true, stdio: 'ignore', env: startEnv })
+        child.unref()
+        io.stdout(`started: ${start}\n`)
+        const timeoutMs = options.timeoutMs ?? 60_000
+        const deadline = Date.now() + timeoutMs
+        let listening = false
+        while (Date.now() < deadline) {
+          if (await checkPort(port)) {
+            listening = true
+            break
+          }
+          await sleep(500)
+        }
+        // The restart verb must not be invisible to the report machinery:
+        // record the outcome (the exit agent's semantics) so the next boot's
+        // pendingRestartRecord delivers the report to its initiator.
+        const initiator = options.initiator ?? process.env.DSH_SESSION_ID
+        if (!listening) {
+          io.stderr(`new instance not listening on 127.0.0.1:${port} within ${timeoutMs}ms\n`)
+          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `new instance not listening on :${port}`, ...(initiator !== undefined ? { initiator } : {}) })
+          if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
+          return 1
+        }
+        const post = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+        io.stdout(`canary verify: ${post.ok ? 'PASS' : 'FAIL'} — ${post.reason}\n`)
+        io.stdout(`canary port: PASS — listening on 127.0.0.1:${port}\n`)
+        if (!post.ok) {
+          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `canary failed: ${post.reason}`, ...(initiator !== undefined ? { initiator } : {}) })
+          if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
+          return 1
+        }
+        writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, ...(initiator !== undefined ? { initiator } : {}) })
+        io.stdout('restart + canary PASS\n')
+        return 0
+      } finally {
+        if (restartLock !== undefined) restartLock.release()
+        else releaseRestartLock(stateDir)
       }
-      io.stdout('restart + canary PASS\n')
-      return 0
     }
     case 'supervise': {
       const port = options.port
-      if (port === undefined || options.start === undefined || options.start === '') {
+      if (port === undefined) {
         io.stderr(`supervise requires --port N and --start "CMD"\n\n${USAGE}`)
         return 2
       }
+      const start = resolveStartCommand(options.start, stateDir, 'supervise', io, port)
+      if (start === undefined) {
+        return 2
+      }
+      // The supervisor's record is authoritative: the FULL chain (watchdog +
+      // launch wrapper), not the inner argv the instance would self-record.
+      writeInstanceLaunchAsSupervisor(stateDir, { command: start, source: 'supervisor', supervised: true, ...(port !== undefined ? { port } : {}), recordedAt: Date.now() })
       // The supervised instance boots with THIS home (the watchdog exports it
       // as DSH_HOME): a home derived from the state dir would silently point
       // the instance at the wrong profiles/credentials, surfacing far from
@@ -733,6 +1118,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('supervise needs the dsh home: pass --home DIR or set DSH_HOME — the supervised instance reads its profiles/credentials from there, and deriving one from --state-dir would guess wrong\n')
         return 2
       }
+      // A detached watchdog spawned from a sandboxed turn is reaped with it —
+      // refuse before claiming anything. Foreground mode is driven by the
+      // external supervisor (launchd/systemd) and stays exempt.
+      if (options.foreground !== true && !sandboxGate('supervise', options, io)) return 2
       // One state directory owns every marker and the pidfile; the plugin,
       // this CLI, and the watchdog must agree on it. Deriving a home from
       // stateDir and re-appending 'state' breaks whenever stateDir is not
@@ -796,7 +1185,19 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         WD_HOME: wdHome,
         WD_STATE_DIR: stateDir,
         WD_REPO: repoDir,
-        WD_START: options.start,
+        WD_START: start,
+        // Let the instance mark its own launch record as supervised (the
+        // watchdog passes its env to the instance it spawns).
+        DSH_ANKH_SUPERVISED: '1',
+        // The session establishing supervision: the watchdog's adoption
+        // takeover reports back to it (record-adoption). Empty for
+        // human-driven supervise runs — the record then waits for the first
+        // root agent created.
+        WD_INITIATOR: process.env.DSH_SESSION_ID ?? '',
+        // Adoption vs first-ever boot, decided HERE — race-free: by the time
+        // a spawned watchdog would probe the port, the owner may already be
+        // gone.
+        WD_ADOPTION: findPidOnPort(port) !== null ? '1' : '0',
         // Foreground (launchd-supervised) mode: the watchdog owns the port by
         // adoption; the detached form waits for the current owner to exit.
         WD_WAIT_OWNER: options.foreground ? '0' : '1',
@@ -828,7 +1229,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return 0
     }
     case 'schedule-exit': {
-      const port = options.port
+      const port = options.port ?? readInstanceLaunch(stateDir)?.port
       const delayMs = options.delayMs
       if (port === undefined || delayMs === undefined) {
         io.stderr(`schedule-exit requires --port N and --delay-ms MS\n\n${USAGE}`)
@@ -840,8 +1241,38 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`schedule-exit refused: ${gate.reason}\n`)
         return 1
       }
+      // THE ENVIRONMENT GATE: the detached exit agent must outlive this turn.
+      if (!sandboxGate('schedule-exit', options, io)) return 1
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
       if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
+        return 1
+      }
+      // Bootstrap guard: with no live watchdog the scheduled exit leaves the
+      // service DOWN — the classic first-install gap (the running instance
+      // has not loaded the plugin yet, and no supervisor exists yet).
+      if (liveWatchdogPid(stateDir) === null) {
+        io.stderr(NO_WATCHDOG_HINT)
+      }
+      // One scheduled restart at a time: the marker carries a single
+      // initiator, so overwriting a FRESH one would silently reassign the
+      // pending report. A marker past the TTL is stale (the watchdog died
+      // mid-flow without clearing it) — overwrite with a warning instead of
+      // refusing forever.
+      const markerFile = stateFile(stateDir, 'restartRequested')
+      const markerState = restartMarkerState(stateDir)
+      if (markerState === 'fresh') {
+        io.stderr('schedule-exit refused: a restart is already scheduled (restart-requested.json still pending); a stale marker expires on its own after 15 minutes\n')
+        return 1
+      }
+      if (markerState === 'stale' && existsSync(markerFile)) {
+        io.stderr('warning: overwriting a stale restart marker (a previous schedule never completed)\n')
+      }
+      // And the other direction of the same invariant: a restart in flight
+      // (live lock holder) means an instance is being stopped/started right
+      // now — scheduling an exit would SIGTERM the one it just started.
+      const inFlight = liveRestartLockHolder(stateDir)
+      if (inFlight !== null) {
+        io.stderr(`schedule-exit refused: a restart is in flight (pid ${inFlight}) — the exit agent would kill the instance it is starting\n`)
         return 1
       }
       // Intentional-restart marker: the supervising watchdog runs the canary
@@ -888,9 +1319,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   }
 }
 
-// Direct invocation (`tsx src/cli.ts ...`) vs import by tests.
-const entry = process.argv[1]
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+// Direct invocation (`tsx src/cli.ts ...`) vs import by tests. Symlink-proof
+// (isDirectInvocation): a plain URL compare silently never-fires via /tmp.
+if (isDirectInvocation(import.meta.url)) {
   void runCli(process.argv.slice(2), {
     stdout: line => process.stdout.write(line),
     stderr: line => process.stderr.write(line),

@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record: the git blob hash of each side as of the
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write packages/whalesong/README.md
-packages/whalesong/README.md: 970afec43db60a676b6eb8901be8c70e59da67e9
-packages/whalesong/README.zh.md: 2bd3e029455fba22d805d4f1256406396ea85d86
+#   pnpm run verify-translation-pairing --write packages/whalesong/README.en.md
+packages/whalesong/README.en.md: 9b5666e062e471122b57e1b57aed3ee72c55ede1
+packages/whalesong/README.md: cb24f03f157853055f2ae18730a3a2dda8c33491

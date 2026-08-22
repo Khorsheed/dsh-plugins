@@ -182,4 +182,55 @@ describe('mirrorDshSession', () => {
     const texts = assistant.map(event => JSON.stringify(event.data))
     expect(new Set(texts).size).toBe(texts.length)
   })
+
+  it('passes todo/write through as the standing snapshot, idempotent across passes', async () => {
+    const home = tempHome()
+    const todos1 = { todos: [
+      { content: '读代码', status: 'completed' },
+      { content: '改实现', status: 'in_progress' },
+    ] }
+    writeSubDshSession(home, 'child-todo', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('任务', 'user'),
+      { type: 'todo/write', seq: 0, time: 1, data: todos1 },
+      assistantLine(1, '回复'),
+    ])
+    const child = childWithRounds('child-todo', 1)
+
+    const first = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
+    // The snapshot crosses verbatim (counted in the total, but not a text delta).
+    const writes = child.events.filter(event => event.type === 'todo/write')
+    expect(writes).toHaveLength(1)
+    expect(writes[0]?.data).toEqual(todos1)
+    expect(first.total).toBe(3)
+    expect(first.texts).toEqual(['任务', 'thinking 1回复'])
+
+    // A repeat pass over an unchanged log is a pure no-op — no duplicate
+    // identical snapshot lands in the child log.
+    const repeat = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
+    expect(repeat).toEqual({ texts: [], total: 3 })
+    expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(1)
+
+    // A CHANGED snapshot (the sub-dsh updated the list) mirrors as the new
+    // last-wins state; the intermediate one never entered the child log.
+    const todos2 = { todos: [
+      { content: '读代码', status: 'completed' },
+      { content: '改实现', status: 'completed' },
+    ] }
+    writeSubDshSession(home, 'child-todo', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('任务', 'user'),
+      { type: 'todo/write', seq: 0, time: 1, data: todos1 },
+      assistantLine(1, '回复'),
+      { type: 'todo/write', seq: 0, time: 1, data: todos2 },
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const second = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
+    expect(second).toEqual({ texts: [], total: 4 })
+    const after = child.events.filter(event => event.type === 'todo/write')
+    expect(after).toHaveLength(2)
+    expect(after[1]?.data).toEqual(todos2)
+  })
 })

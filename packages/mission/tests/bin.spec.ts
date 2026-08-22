@@ -7,7 +7,7 @@
  * the green gate (`pnpm build && pnpm test`) always builds first.
  */
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,6 +58,56 @@ describe.skipIf(!hasLib)('bin smoke (built artifact)', () => {
       const get = await bin(['get', 'm', '--data-dir', dir])
       expect(get.code, get.stderr).toBe(0)
       expect(get.stdout).toMatch(/"ns": "script"/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('registration verbs through the bin: set-refs → add-artifact → add-checkpoint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mission-bin-'))
+    try {
+      await bin(['create', '--id', 'm', '--data-dir', dir])
+      const refs = await bin(['set-refs', 'm', '--resource', 'box-1', '--session', 's-1', '--data-dir', dir])
+      expect(refs.code, refs.stderr).toBe(0)
+      const artifact = await bin(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir])
+      expect(artifact.code, artifact.stderr).toBe(0)
+      const checkpoint = await bin(['add-checkpoint', 'm', '--name', 'verify', '--ref', 'tag-9', '--data-dir', dir])
+      expect(checkpoint.code, checkpoint.stderr).toBe(0)
+      const missing = await bin(['add-artifact', 'm', '--path', 'x', '--data-dir', dir])
+      expect(missing.code).toBe(2)
+      const ghost = await bin(['set-refs', 'ghost', '--resource', 'x', '--data-dir', dir])
+      expect(ghost.code).toBe(1)
+      const get = await bin(['get', 'm', '--data-dir', dir])
+      expect(get.stdout).toMatch(/"resource": "box-1"/)
+      expect(get.stdout).toMatch(/"ref": "tag-9"/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('export through the bin: non-TTY refuses guarded layers, exports unguarded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mission-bin-'))
+    try {
+      await bin(['create', '--id', 'm', '--data-dir', dir])
+      const snap = join(dir, 'snapshot')
+      mkdirSync(join(snap, 'visible'), { recursive: true })
+      writeFileSync(join(snap, 'visible', 'task.md'), '# task\n')
+      mkdirSync(join(snap, 'answers'), { recursive: true })
+      writeFileSync(join(snap, 'answers', 'oracle.md'), '# answer\n')
+      const out = join(dir, 'exports')
+      // Spawned with piped stdio = non-TTY: the gate must refuse (fail-closed).
+      const refused = await bin([
+        'export', 'default', '--out', out, '--snapshot-dir', snap,
+        '--layer', 'visible', '--layer', 'answers', '--guarded', 'answers', '--data-dir', dir,
+      ])
+      expect(refused.code).toBe(1)
+      expect(refused.stderr).toMatch(/export refused/)
+      expect(existsSync(join(out, 'default-bundle'))).toBe(false)
+      const ok = await bin([
+        'export', 'default', '--out', out, '--snapshot-dir', snap, '--layer', 'visible', '--data-dir', dir,
+      ])
+      expect(ok.code, ok.stderr).toBe(0)
+      expect(existsSync(join(out, 'default-bundle', 'manifest.json'))).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

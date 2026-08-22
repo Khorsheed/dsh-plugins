@@ -39,6 +39,10 @@ export const zh = {
   'member.stop': '停止',
   'member.running': '成员运行中…',
   'member.sendFailed': '发送失败，请重试',
+  'member.stats.cacheHit': '缓存命中 {percent}%',
+  'member.stats.tokens': '输入 {input} tok · 输出 {output} tok',
+  'member.tasks.summary': '任务 {done}/{total}',
+  'member.tasks.active': ' · 进行中：{title}',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -77,6 +81,10 @@ export const en: Record<LocalAgentKey, string> = {
   'member.stop': 'Stop',
   'member.running': 'Member running…',
   'member.sendFailed': 'Send failed; try again',
+  'member.stats.cacheHit': 'Cache hit {percent}%',
+  'member.stats.tokens': 'Input {input} tok · Output {output} tok',
+  'member.tasks.summary': 'Tasks {done}/{total}',
+  'member.tasks.active': ' · Active: {title}',
 }
 
 /** Key domain of the `local-agent` namespace (zh is the source of truth). */

@@ -24,25 +24,84 @@ import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 /** Files copied from the package root into the staging dir when present. */
 const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'cordis.patch.yml']
+
+/** Expand a `dir` + double-star + `<pattern>` files glob into the relative
+ * paths present in the package, so pack-dist honors the same globs pnpm pack
+ * does — e.g. the `skills` glob shipping the 3d-artifact / restart-guard
+ * skill files. Supports the two shapes in use: recursive suffix match
+ * (`<dir>/**&#47;*.ext`) and every file (`<dir>/**&#47;*`). Returns [] for any
+ * other glob shape. */
+function expandGlobEntry(packageDir: string, entry: string): string[] {
+  const match = /^(.+?)\/\*\*\/(.+)$/.exec(entry)
+  if (match === null) return []
+  const [, root, rest] = match
+  const rootDir = join(packageDir, root)
+  if (!existsSync(rootDir) || !statSync(rootDir).isDirectory()) return []
+  const suffix = rest === '*' ? '' : rest.replace(/^\*/, '')
+  const out: string[] = []
+  const stack: string[] = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()!
+    for (const name of readdirSync(join(packageDir, dir))) {
+      const rel = join(dir, name)
+      if (statSync(join(packageDir, rel)).isDirectory()) {
+        stack.push(rel)
+      } else if (suffix === '' || name.endsWith(suffix)) {
+        out.push(rel)
+      }
+    }
+  }
+  return out
+}
 
 /**
  * Payload paths from the package's `files` field beyond what staging already
  * copies verbatim (the root documents above and lib/) — e.g. ankh-guard's
  * `scripts/dsh-watchdog.sh` and its supervisor installers, which the watchdog
- * cannot ship without. Glob entries are skipped: the lib globs are covered by
- * the recursive lib/ copy, and no package currently files anything else
- * globbed.
+ * cannot ship without. Glob entries are skipped unless a `packageDir` is given,
+ * in which case `dir` double-star globs (e.g. the `skills` glob) are expanded
+ * against it; the lib globs stay covered by the recursive lib/ copy.
  */
-export function filesDeclaredExtras(files: readonly string[] = []): string[] {
-  return files.filter(entry =>
-    !entry.includes('*')
-    && entry !== 'lib'
-    && !entry.startsWith('lib/')
-    && !(STAGED_ROOT_FILES as readonly string[]).includes(entry))
+/**
+ * The reverse completeness direction (declared ⊆ staging): every `files`
+ * entry must name something real. A glob that expands to nothing, or a plain
+ * entry whose path does not exist, means the package declares a payload it
+ * never stages — the exact shape of the skills-glob loss (the staging copy
+ * silently skipped it, and a staging⊆tarball check passes vacuously).
+ * `lib/` and the root documents are exempt: lib is asserted present by the
+ * build check, and root docs are staged on a when-present basis.
+ */
+export function assertDeclaredPayloadsExist(files: readonly string[] = [], packageDir: string): void {
+  const failures: string[] = []
+  for (const entry of files) {
+    if (entry === 'lib' || entry.startsWith('lib/')) continue
+    if ((STAGED_ROOT_FILES as readonly string[]).includes(entry)) continue
+    if (entry.includes('*')) {
+      if (expandGlobEntry(packageDir, entry).length === 0) failures.push(`${entry} (glob expands to nothing)`)
+      continue
+    }
+    if (!existsSync(join(packageDir, entry))) failures.push(`${entry} (no such path in the package)`)
+  }
+  if (failures.length > 0) {
+    throw new Error(`pack-dist: files declares payloads that do not exist: ${failures.join(', ')}`)
+  }
+}
+
+export function filesDeclaredExtras(files: readonly string[] = [], packageDir?: string): string[] {
+  const out: string[] = []
+  for (const entry of files) {
+    if (entry === 'lib' || entry.startsWith('lib/') || (STAGED_ROOT_FILES as readonly string[]).includes(entry)) continue
+    if (entry.includes('*')) {
+      if (packageDir !== undefined) out.push(...expandGlobEntry(packageDir, entry))
+      continue
+    }
+    out.push(entry)
+  }
+  return out
 }
 
 export interface PackDistOptions {
@@ -71,11 +130,13 @@ export type PackageJson = Record<string, unknown> & {
 /**
  * Rescope the manifest: new scoped name and dist version; `workspace:^`
  * dependency ranges become caret ranges on the SOURCE version (the workspace
- * releases in lockstep); `dependencies` (bundled into lib output) and
- * repo-only fields (publishConfig, repository) are dropped. Family members
- * (other packages dist'ed under the same scope, e.g. a host package a client
- * package peers on) are renamed to their dist names and ranged on the DIST
- * version — a family name left at the source scope is unresolvable for npm
+ * releases in lockstep); repo-only fields (publishConfig, repository) are
+ * dropped. `dependencies` is dropped too — runtime deps are bundled into lib
+ * or provided by the host composition — EXCEPT family edges, which are the
+ * loader-level core/companion contract (`dsh plugin add` reconciles direct
+ * dependencies into the profile's bundles layer): they survive, renamed to
+ * their dist names and ranged on the DIST version, like every other family
+ * reference — a family name left at the source scope is unresolvable for npm
  * installers (the source scope is not published).
  * @param pkg - the source manifest.
  * @param name - the dist package name.
@@ -90,13 +151,26 @@ export function rescopePackageJson(
   family?: ReadonlyMap<string, string>,
 ): PackageJson {
   const out: PackageJson = { ...pkg, name, version }
-  delete out.dependencies
   delete out['publishConfig']
   delete out['repository']
   // Lifecycle hooks reference the repo build toolchain, which exists neither
   // in the staging dir (pnpm pack would run `prepare` there) nor on
   // consumers' machines — dist manifests carry no scripts.
   delete out.scripts
+  // Runtime deps are bundled into lib or provided by the host composition, so
+  // the section goes — EXCEPT family edges: they are the loader-level
+  // core/companion contract (`dsh plugin add` reconciles *direct* dependencies
+  // into the profile's bundles layer, which is how installing a provider
+  // auto-mounts the core), so family entries survive, renamed to the dist
+  // scope and ranged on the dist version.
+  const deps = Object.fromEntries(
+    Object.entries(out.dependencies ?? {}).flatMap(([dep]) => {
+      const target = family?.get(dep)
+      return target !== undefined ? [[target, `^${version}`]] : []
+    }),
+  )
+  if (Object.keys(deps).length > 0) out.dependencies = deps
+  else delete out.dependencies
   for (const section of ['peerDependencies', 'devDependencies'] as const) {
     const deps = out[section]
     if (deps === undefined) continue
@@ -166,6 +240,7 @@ export function packDist(options: PackDistOptions): string {
   }
   assertNoStaleTypes(packageDir)
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as PackageJson
+  assertDeclaredPayloadsExist(pkg.files, packageDir)
   const distName = `${options.scope}/${basename(pkg.name)}`
   // Self first, then family members: cross-references in manifests, patch
   // rows, and every text artifact (js AND d.ts — type consumers resolve them).
@@ -181,7 +256,7 @@ export function packDist(options: PackDistOptions): string {
     // Every other path the manifest's `files` declares (scripts/, assets, …)
     // must ship too — staging only root docs + lib once dropped ankh-guard's
     // watchdog script from the tarball it was about to publish.
-    for (const extra of filesDeclaredExtras(pkg.files)) {
+    for (const extra of filesDeclaredExtras(pkg.files, packageDir)) {
       const source = join(packageDir, extra)
       if (!existsSync(source)) continue
       const dest = join(staging, extra)
@@ -219,9 +294,55 @@ export function packDist(options: PackDistOptions): string {
       throw new Error(`pack-dist: source-scope names survived the rewrite: ${leftovers.join(', ')}`)
     }
 
-    return execFileSync('pnpm', ['pack', '--pack-destination', outDir], { cwd: staging, encoding: 'utf8' }).trim()
+    const packOut = execFileSync('pnpm', ['pack', '--pack-destination', outDir], { cwd: staging, encoding: 'utf8' }).trim()
+    // pnpm pack prints a "Tarball Details" block; the path is the .tgz line.
+    const tarball = packOut.split('\n').map(line => line.trim()).find(line => line.endsWith('.tgz'))
+    if (tarball === undefined) throw new Error(`pack-dist: pnpm pack output carried no .tgz path: ${packOut}`)
+    verifyTarball(tarball, staging, distName)
+    return tarball
   } finally {
     rmSync(staging, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Post-pack verification. The tarball — not the staging dir — is what consumers
+ * boot, so the artifact itself is checked:
+ *
+ *   1. completeness — every staged file must be in the tarball (files-field
+ *      enumerations, glob gaps, and hashed-chunk misses all surface here;
+ *      learned when `skills/**` globs were silently dropped and when a hashed
+ *      tsdown chunk no files entry covered)
+ *   2. family edges — every `@khorsheed/*` name referenced by lib artifacts or
+ *      the bundle patch must have a dependencies/peerDependencies entry in the
+ *      staged manifest (the core/companion auto-mount contract)
+ */
+export function verifyTarball(tarball: string, staging: string, selfName: string): void {
+  const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
+  const packed = new Set(listing.split('\n').map(line => line.replace(/^package\//, '').trim()).filter(Boolean))
+  // Sourcemaps and incremental state are optional artifacts — not shipping
+  // them is correct, so they are outside the must-ship set.
+  const optional = (file: string): boolean => file.endsWith('.map') || file.endsWith('.tsbuildinfo')
+  const missing = walk(staging).filter(file => !optional(file) && !packed.has(relative(staging, file)))
+  if (missing.length > 0) {
+    throw new Error(`pack-dist: staged files missing from the tarball: ${missing.join(', ')}`)
+  }
+
+  const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson
+  const declared = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
+  const referenced = new Set<string>()
+  for (const file of walk(staging).filter(f => f.endsWith('.js') || f.endsWith('.d.ts') || f.endsWith('.yml'))) {
+    const text = readFileSync(file, 'utf8')
+    // Comments are not edges: a patch or artifact may mention a companion by
+    // name without depending on it (the host/client pair documents each other).
+    const effective = file.endsWith('.yml')
+      ? text.split('\n').filter(line => !line.trimStart().startsWith('#')).join('\n')
+      : text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1')
+    for (const m of effective.matchAll(/@khorsheed\/[a-z0-9-]+/g)) referenced.add(m[0])
+  }
+  const undeclared = [...referenced].filter(name => name !== selfName && !declared.has(name))
+  if (undeclared.length > 0) {
+    throw new Error(`pack-dist: family references without manifest edges: ${undeclared.join(', ')}`)
   }
 }
 
@@ -244,7 +365,7 @@ function main(argv: readonly string[]): void {
   if (packageDir === undefined || scope === undefined || version === undefined || outDir === undefined) {
     throw new Error('usage: pack-dist --package <dir> --scope <scope> --version <version> --out <dir> [--family <comma-separated source package names>]')
   }
-  const tarball = packDist({ packageDir, scope, version, outDir, ...(family === undefined ? {} : { family }) })
+  const tarball = packDist({ packageDir, scope, version, outDir: resolve(outDir), ...(family === undefined ? {} : { family }) })
   process.stdout.write(`${tarball}\n`)
 }
 

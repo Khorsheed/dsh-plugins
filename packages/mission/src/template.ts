@@ -83,11 +83,13 @@ function readGuard(raw: unknown, where: string, problems: string[]): Guard | und
         return undefined
       }
       const inputFrom = raw['inputFrom']
-      if (inputFrom !== undefined && inputFrom !== 'submission') {
-        problems.push(`${where}: schema-check inputFrom only supports 'submission'`)
+      if (inputFrom !== undefined && inputFrom !== 'submission' && inputFrom !== 'run-meta') {
+        problems.push(`${where}: schema-check inputFrom only supports 'submission' | 'run-meta'`)
         return undefined
       }
-      return { type: 'schema-check', schemaPath }
+      return inputFrom === 'run-meta'
+        ? { type: 'schema-check', schemaPath, inputFrom }
+        : { type: 'schema-check', schemaPath }
     }
     case 'attested': {
       const key = raw['key']

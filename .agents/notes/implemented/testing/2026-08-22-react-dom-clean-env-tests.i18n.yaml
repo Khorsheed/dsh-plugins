@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-22-react-dom-clean-env-tests.md
+.agents/notes/implemented/testing/2026-08-22-react-dom-clean-env-tests.md: 28909882bc9d3f0b059d2c729abc396ae0d16437
+.agents/notes/implemented/testing/2026-08-22-react-dom-clean-env-tests.zh.md: 6f72ebc500fbd229839e23c6df9fc414de5fdba6

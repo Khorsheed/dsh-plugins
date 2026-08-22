@@ -54,12 +54,19 @@ export interface FilePreviewRead {
   readonly path: string
   /** Outcome classification; `text`/`image` carry a renderable value, `error` carries message. */
   readonly kind: FilePreviewReadKind
-  /** Current text content for `text` reads, capped by the service's `maxReadBytes`. */
+  /** Current text content for `text` reads, capped by the service's `maxReadBytes`
+   * (HTML files by `htmlMaxReadBytes`). */
   readonly content?: string
   /** Browser-loadable URL for `image` reads (host-served bytes, session-scoped). */
   readonly url?: string
   /** Whether `content` was truncated to the byte cap. */
   readonly truncated?: boolean
+  /** HTML files only: best-effort hint that the document contains scripts
+   * (`<script>` tags, inline event handlers, or `javascript:` URLs). A hint
+   * for default-mode selection and warning — never a trust decision; the
+   * sandbox and CSP are the real boundary. Absent for non-HTML reads and for
+   * HTML without script markers. */
+  readonly htmlScripted?: boolean
   /** Byte size of the file when the backend reported one. */
   readonly size?: number
   /** Human-readable failure detail for `error` reads. */
@@ -70,6 +77,11 @@ export interface FilePreviewRead {
 export interface FilePreviewConfig {
   /** Byte cap for a single `read`; larger files answer `too-large` without reading. */
   readonly maxReadBytes?: number
+  /** Byte cap for reading HTML/HTM files — the sandboxed render channel can
+   * handle far larger documents than the code view, so HTML gets its own,
+   * wider cap (default 4 MiB) while every other text read keeps
+   * `maxReadBytes`. */
+  readonly htmlMaxReadBytes?: number
   /** Cap on the number of entries `list` returns. */
   readonly maxFiles?: number
   /** Whether the bash-write collector watches sessions for files bash wrote
@@ -100,7 +112,9 @@ export interface FilePreviewTurnFile {
   readonly step: number
   /** Lines added across the turn's mutations of this path. */
   readonly added?: number
-  /** Lines removed; absent when any mutation reported no prior content (create/overwrite). */
+  /** Lines removed; 0 for a create; absent when an uncounted mutation (a write
+   *  whose prior content was not diffable, a Code Mode dispatch) reported no
+   *  total. */
   readonly removed?: number
 }
 

@@ -84,6 +84,7 @@ function renderView(
 
 afterEach(() => { cleanup() })
 beforeEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.useRealTimers() })
 
 describe('FilePreviewView', () => {
   it('fetches the list on mount and shows products only', async () => {
@@ -526,17 +527,163 @@ describe('FilePreviewView', () => {
     const row = await screen.findByText('page.html')
     act(() => { row.click() })
     // Render view is the default: a fully sandboxed iframe carrying the
-    // document (no scripts/forms — the official pipeline keeps HTML literal,
-    // so the render view is the plugin's own sandboxed channel).
+    // document wrapped in the Tier1 srcDoc (meta CSP embedded — the parent
+    // shell has no CSP, so the policy must live inside the document; no
+    // scripts/forms — the official pipeline keeps HTML literal, so the
+    // render view is the plugin's own sandboxed channel).
     await waitFor(() => {
       const frame = document.querySelector('iframe')
-      expect(frame?.getAttribute('srcdoc')).toBe('<h1>Hello</h1>')
+      const srcDoc = frame?.getAttribute('srcdoc') ?? ''
+      expect(srcDoc).toContain('<h1>Hello</h1>')
+      expect(srcDoc).toContain('http-equiv="Content-Security-Policy"')
+      expect(srcDoc).toContain('connect-src')
       expect(frame?.getAttribute('sandbox')).toBe('')
     })
     // The toggle flips to the source code view.
     act(() => { screen.getByText('preview.htmlSource').click() })
     expect(await screen.findByText('<h1>Hello</h1>')).toBeTruthy()
     expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('gates scripted HTML behind a one-time confirm (Tier1 sandbox)', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>alert(1)</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Static render by default — scripts never run without a gesture.
+    await waitFor(() => {
+      expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    })
+    // The scripted segment opens the confirm gate; the sandbox stays locked.
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    expect(screen.getByText('preview.scriptConfirm')).toBeTruthy()
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    // Confirm → Tier1: allow-scripts (still opaque origin) + the bridge
+    // capability client in the document.
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    await waitFor(() => {
+      const frame = document.querySelector('iframe')
+      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame?.getAttribute('srcdoc') ?? '').toContain('dsh-bridge')
+    })
+    // Cancelling from the confirm gate keeps the static sandbox.
+    act(() => { screen.getByText('preview.htmlRender').click() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptCancel').click() })
+    expect(document.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    expect(screen.queryByText('preview.scriptConfirm')).toBeNull()
+  })
+
+  it('offers fullscreen for the html render view and requests it on the iframe', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<p>hi</p>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    // Fullscreen targets the wrapper around the iframe (so the exit control
+    // stays visible inside the fullscreen element).
+    const wrap = document.querySelector('iframe')!.parentElement!
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(wrap, 'requestFullscreen', { value: requestFullscreen, configurable: true })
+    act(() => { screen.getByRole('button', { name: 'preview.fullscreen' }).click() })
+    expect(requestFullscreen).toHaveBeenCalled()
+  })
+
+  it('shows an exit-fullscreen control inside the fullscreened frame', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/page.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/page.html', kind: 'text', content: '<p>hi</p>', truncated: false } })
+    renderView(h)
+    const row = await screen.findByText('page.html')
+    act(() => { row.click() })
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    const wrap = document.querySelector('iframe')!.parentElement!
+    const exitFullscreen = vi.fn()
+    Object.defineProperty(document, 'fullscreenElement', { value: wrap, configurable: true })
+    Object.defineProperty(document, 'exitFullscreen', { value: exitFullscreen, configurable: true })
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    // The in-frame exit control lives inside the fullscreened wrapper (the
+    // toolbar one also flips, but only the wrapper is visible in fullscreen).
+    const inFrame = document.querySelector('iframe')!.parentElement!.querySelector('button')
+    expect(inFrame?.getAttribute('aria-label')).toBe('preview.exitFullscreen')
+    expect(inFrame?.querySelector('svg')).toBeTruthy()
+    act(() => { inFrame!.click() })
+    expect(exitFullscreen).toHaveBeenCalled()
+  })
+
+  it('annotates a scripted page rendered statically with a static-preview hint', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    await waitFor(() => {
+      const srcDoc = document.querySelector('iframe')?.getAttribute('srcdoc') ?? ''
+      // The static tier explains why the page's own "loading…" never finishes.
+      expect(srcDoc).toContain('preview.staticHint')
+      expect(srcDoc).toContain('position:fixed')
+    })
+  })
+
+  it('reports a stall in the scripted tier only after the watchdog window without a load', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    // Render + fetch under real timers; fake them only for the watchdog clock.
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Let the async preview fetch settle (real timers) before faking the clock.
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    act(() => { vi.useFakeTimers() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    // No load within the window → the stall notice appears.
+    act(() => { vi.advanceTimersByTime(21_000) })
+    expect(screen.getByText('preview.slowHint')).toBeTruthy()
+    act(() => { vi.useRealTimers() })
+  })
+
+  it('clears the stall timer once the frame has loaded', async () => {
+    const h = makeHarness()
+    h.listFiles.mockResolvedValue({
+      ok: true,
+      value: { entries: [{ path: '/work/app.html', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: 1, truncated: false },
+    })
+    h.readFile.mockResolvedValue({ ok: true, value: { path: '/work/app.html', kind: 'text', content: '<script>go()</script>', truncated: false, htmlScripted: true } })
+    renderView(h)
+    const row = await screen.findByText('app.html')
+    act(() => { row.click() })
+    // Let the async preview fetch settle (real timers) before faking the clock.
+    await waitFor(() => { expect(document.querySelector('iframe')).toBeTruthy() })
+    act(() => { vi.useFakeTimers() })
+    act(() => { screen.getByText('preview.htmlScript').click() })
+    act(() => { screen.getByText('preview.scriptRun').click() })
+    // The frame loads → the pending stall timer is cancelled.
+    act(() => { fireEvent.load(document.querySelector('iframe')!) })
+    act(() => { vi.advanceTimersByTime(25_000) })
+    expect(screen.queryByText('preview.slowHint')).toBeNull()
+    act(() => { vi.useRealTimers() })
   })
 
   it('keeps non-markdown text in the syntax-highlighted code view', async () => {

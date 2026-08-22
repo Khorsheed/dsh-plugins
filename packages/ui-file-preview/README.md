@@ -1,30 +1,67 @@
 # @khorsheed/dsh-client-ui-file-preview
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Session file-preview surface built purely on official extension points: a `'file-preview'` tab (labeled 产物/Produced) in the conversation view ring (beside chat and trajectory) lists the files the session wrote or edited (folded host-side by `@khorsheed/dsh-file-preview`, nested Code Mode dispatches included) and previews the selected file — its current content by default, with a change-history tab that steps through every recorded write/edit diff (each carrying its turn/step), inline images for image files, and a content-search box that highlights matches and jumps between them — no IDE needed. Text previews render each file type in its document form where one exists, all inside the same block chrome the code and diff views use (a rounded code-block surface with a small format banner): markdown files (`*.md`/`*.mdx`) through the official `MarkdownText` pipeline (the same renderer the chat uses — headings, tables, emphasis, links, lists, footnotes, math), scaled to a preview-appropriate 14px body (the chat's 16px reads large in a pane, so the plugin overrides the markdown font tokens scoped to the preview only), JSON files (`*.json`/`*.jsonc`) through the official `JsonTree` inspector (collapsible, keyboard-accessible, per-node copy) when they parse, and CSV/TSV files as a table (also through the markdown pipeline, first row as header). HTML files (`*.html`/`*.htm`) get a **source ⇄ render** toggle in the preview toolbar: the render view is a sandboxed iframe (empty `sandbox` — no scripts, forms, or popups; CSS and images render, relative assets do not resolve against a file base), because the official pipeline keeps raw HTML literal by design and the official way to view HTML fully is opening it in the browser (the host opener treats `.html` as a browser document — the header's "open in IDE" gesture). Every other text file stays in the syntax-highlighted code view, and a content search switches any text read to the raw matched lines so hits stay visible either way. Each finished turn also ends with a mutation card (`conversation.chat.turnTail`) — collapsible from its header chevron, its file rows capped behind a "show more" overflow row — — a "N files changed" summary listing every file the turn created or edited, with per-file line deltas. The card reads the host `filePreview.turnFiles` RPC — the SAME single source of truth as the products tab (write/edit calls, Code Mode dispatches, render-intent paths from result diff meta, and bash captures all land there), fetched once per session through a client-side cache — so the card and the tab can never diverge; the old client-side write/edit-only fold and the official deliverables union retired with it, and the card claims every turn unconditionally (rendering nothing until its fetch settles or the turn has no files), so the official produced-files row never mounts. Clicking a file opens a content-only drawer that previews the path in place, leaving the conversation view untouched; the drawer header shows the file's host-resolved absolute path and offers a "copy path" action (browser clipboard, available in any context) plus "show in folder" and "open in IDE" host gestures when the deployment can hand paths to a native desktop (loopback + `canOpenPath`, the same gate the official row uses). The file view tab mirrors that header over its preview pane — the selected file's resolved path on the left, and copy path plus show-in-folder / open-in-IDE (when the deployment can open paths) on the right — so both surfaces read the same. "Show in folder" reveals the file through the host half's `filePreview.reveal` Remote method: the host resolves the path against the session cwd and opens the file's folder with the file selected (Finder `open -R`, Explorer `explorer /select`, or a select-capable Linux file manager), falling back to opening the parent folder when the file is gone or no file manager can select. The official prose mentions are rerouted the same way: a document capture-phase click interceptor (`mention-intercept.ts`) recognizes their `code > button[title]` structure and opens the drawer instead of the host OS, failing open to the official behavior on anything unrecognized. While the drawer is open the conversation (scroll body and composer seat) shifts left by the drawer's width so chat never sits underneath it. The plugin mounts its own `filePreview` Remote through `ctx.remote.$mount` and keeps the per-turn card on the same host `turnFiles` source — no core package is edited, so it distributes as an independent package and removes cleanly when uncomposed.
+在 dsh web GUI 里直接预览会话产出的文件——无需打开 IDE。"产物"tab 列出会话写入或编辑过的所有文件，选中即可在页面内查看当前内容与完整改动记录。
 
-Data flows one way: the view fetches `filePreview.list` on each tab activation and on refresh; selecting a row fetches `filePreview.read` for that path; the drawer fetches both on open. The list stays visible (the tab has room), defaults to the session's products with an all-files toggle, and orders latest activity first; whole values land in the session's store, and a stale in-flight request is dropped when the selection moves or the surface unmounts. The tab and the drawer each scroll independently of the surrounding page; diff lines soft-wrap through the plugin's own CSS (the shared `DiffBlock` is untouched).
-## Sharing
+<img src="../../docs/screenshots/file-preview1.png" width="480" alt="以文档形态预览 markdown 文件">
 
-This package is a pure additive browser plugin: it registers one conversation view, one turn-tail row, and one overlay drawer, mounts its own Remote, and removes cleanly when uncomposed. It depends on official extension points only — `conversation.view`, `conversation.chat.turnTail`, `shell.overlay`, `ctx.remote.$mount` — so a stock dsh core runs it with zero edits. Files in the turn mutation card and the official prose mentions open the plugin's own drawer — the card by chain preemption, the mentions by a capture-phase click interceptor — both marked `TODO(official-opener-seam)` to retire once the core offers a file-opener override; file links everywhere else keep the host OS open (the core has no third-party hook for arbitrary link interception). Because the plugin both mounts the `filePreview` namespace and consumes it, the namespace is not declared as an inject (that would deadlock the loader — the service only appears after this apply's `$mount` runs); the mount is awaited and the namespace is read back from the global service store via `ctx.get('remote.filePreview')`.
+<img src="../../docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
 
-## Model Experience
+<img src="../../docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
 
-None, as the view renders host-computed file data in the browser; nothing here reaches a model request.
+## 特性
 
-#### KV Cache effect
+- **产物 tab**——列出会话写入或编辑过的每个文件，按最近活动倒序，可切换到全部文件。
+- **文档形态预览**——Markdown 渲染为文档，JSON/CSV 呈现为检查树/表格，HTML 提供源码 ⇄ 沙箱渲染切换，图片内联。
+- **改动记录**——步进查看每一次 write/edit 的 diff，每条带所属轮次与步骤。
+- **回合变更卡片**——每个已完成回合末尾出现可收起的"N 个文件已修改"卡片，逐文件列出行数增减。
+- **就地抽屉**——预览在仅内容抽屉中打开，支持内容搜索；"复制路径"始终可用，部署可对接原生桌面时另有"在文件夹中打开"和"在 IDE 打开"。
 
-None; this package neither assembles nor sends a provider request.
+## 安装
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
+```
+
+然后重启 web 实例。
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
+```
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- 源码线(deepseek-harness master):✅
 
-## Known Limitations and Deferred Work
+## 已知限制
 
-- **Text preview only** — binary, oversized, and missing files render classified notices with their size, not content.
-- **Current session only** — the view shows the selected session's files; it does not browse arbitrary files on disk.
-- **Read-only** — previewing never edits; the session continues to own file mutations.
-- **Turn-card scope** — the mutation card lists each finished turn's created/edited files plus the produced files the official deliverables fold reports (line deltas show only when the tool's diff call view reported them), capping its visible rows behind an overflow toggle; the view tab lists the same products-only vocabulary (reads never appear). Arbitrary file paths in prose are not intercepted (only the official mention buttons are, and that interceptor tracks an unofficial DOM structure — if the core changes it, mention clicks silently degrade to the OS open). Directory grouping and heuristic path extraction from bash or prose are deferred.
+- **仅文本预览** —— 二进制、超大、缺失文件只渲染带大小的分类提示，不渲染内容。
+- **仅当前会话** —— 只显示当前所选会话的文件，不是任意文件浏览器。
+- **只读** —— 预览永不修改；文件变更仍归会话所有。
+- **mention 拦截是非官方的** —— 只有官方 mention 按钮会被改道，且依赖非官方 DOM 结构；核心改动该结构时，mention 点击会静默退回 OS 打开。
+
+## 实现原理
+
+<details>
+<summary>内部结构（点击展开）</summary>
+
+- `src/client/index.ts` —— apply：注册视图/回合行/抽屉并挂载 `filePreview` Remote
+- `src/client/FilePreviewView.tsx` —— 产物 tab（文件列表 + 预览区）
+- `src/client/FilePreviewDrawer.tsx` —— 就地预览抽屉
+- `src/client/TurnFileRow.tsx` —— 每回合的"N 个文件已修改"卡片
+- `src/client/structured.tsx` —— 文档形态渲染器（markdown/JSON/CSV/HTML 沙箱）
+- `src/client/mention-intercept.ts` —— 官方 mention 点击的捕获阶段改道
+
+纯增量插件：注册一个会话视图（`conversation.view`）、一个回合文件行（`conversation.chat.turnTail`）、一个抽屉（`shell.overlay`），并通过 `ctx.remote.$mount` 自挂载 `filePreview` Remote——原版 dsh 核心零改动即可运行。该命名空间不声明为 inject（自挂载会让加载器死锁）；挂载被 await 之后用 `ctx.get('remote.filePreview')` 读回。文件列表由 `@khorsheed/dsh-file-preview` 在宿主侧折叠（含嵌套 Code Mode 派发）。数据单向流动：tab 激活/刷新时拉取 `filePreview.list`，选中时拉取 `filePreview.read`，过期的在途请求丢弃。回合卡片经按会话的客户端缓存读同一个宿主 `filePreview.turnFiles` RPC——卡片与 tab 同一事实源——并无条件认领每个回合，官方产出文件行永不挂载。
+
+预览渲染：Markdown 走官方 `MarkdownText` 管线，缩放到预览专用的 14px（仅在预览范围内覆盖字体 token）；JSON 走官方 `JsonTree` 检查树；CSV/TSV 渲染为表格（首行作表头）；其余文本文件保持语法高亮的代码视图。HTML 文件提供源码 ⇄ 渲染切换：渲染视图是沙箱 iframe（空 `sandbox`——无脚本、无表单、无弹窗；相对资源无法解析），因为官方管线按设计把原始 HTML 当字面文本。内容搜索时任何文本切换为原始匹配行，命中始终可见。
+
+抽屉手势：头部显示宿主解析后的绝对路径，"复制路径"始终可用；"在文件夹中打开"和"在 IDE 打开"走与官方行相同的 loopback + `canOpenPath` 门禁。"在文件夹中打开"以会话 cwd 为基准解析路径，打开所在文件夹并选中文件（Finder `open -R`、Explorer `explorer /select`，或支持选中的 Linux 文件管理器），失败时回退为打开父文件夹。官方正文 mention 由捕获阶段点击拦截器（识别 `code > button[title]` 结构）改道到抽屉，无法识别时放行回官方行为；两处改道都标注 `TODO(official-opener-seam)`，待核心提供文件打开覆盖点后退役。抽屉打开时会话区按抽屉宽度向左让位。与模型无关：本包不组装也不发送任何提供方请求（无 KV 缓存影响）。
+
+</details>
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/ui-file-preview`）。问题与贡献请移步该仓库。

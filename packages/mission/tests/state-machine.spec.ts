@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { runCli } from '../src/cli-core.ts'
 import { MissionService } from '../src/service.ts'
 import { SIMPLE_TEMPLATE } from '../src/template.ts'
 
@@ -162,5 +163,69 @@ describe('guards', () => {
     const { mission } = service.get('m', 'g1')
     expect(mission.attempts[0]?.attestations).toHaveLength(1)
     expect(mission.attempts[0]?.attestations[0]).toMatchObject({ key: 'human-ok', by: 'cli' })
+  })
+})
+
+describe('schema-check inputFrom run-meta', () => {
+  // Bench-style: the earliest transition pins the dataset snapshot in run.meta.
+  const BENCH = {
+    states: ['pending', 'ws-ready', 'done'],
+    transitions: [
+      {
+        from: 'pending', to: 'ws-ready',
+        guard: { type: 'schema-check', schemaPath: 'schemas/run-meta.json', inputFrom: 'run-meta' },
+      },
+      { from: 'ws-ready', to: 'done' },
+    ],
+  }
+  const META_SCHEMA = {
+    type: 'object',
+    required: ['datasetId', 'commit'],
+    properties: {
+      datasetId: { type: 'string' },
+      commit: { type: 'string' },
+      repoPath: { type: 'string' },
+    },
+  }
+
+  beforeEach(() => {
+    mkdirSync(join(dir, 'schemas'), { recursive: true })
+    writeFileSync(join(dir, 'schemas', 'run-meta.json'), JSON.stringify(META_SCHEMA))
+    writeFileSync(join(dir, 'bench.json'), JSON.stringify(BENCH))
+  })
+
+  it('meta satisfying the schema passes; the transition does not touch submissions', async () => {
+    await service.runCreate({ templatePath: join(dir, 'bench.json'), runId: 'b', meta: { datasetId: 'suite-a', commit: 'abc123' } })
+    await service.create({ runId: 'b', id: 'cell' })
+    const result = await service.transition('cell', 'ws-ready', { runId: 'b' })
+    expect(result.changed).toBe(true)
+  })
+
+  it('missing meta fields fail the guard loud — the transition is refused', async () => {
+    await service.runCreate({ templatePath: join(dir, 'bench.json'), runId: 'b', meta: { datasetId: 'suite-a' } })
+    await service.create({ runId: 'b', id: 'cell' })
+    await expect(service.transition('cell', 'ws-ready', { runId: 'b' }))
+      .rejects.toThrow(/schema-check guard \(run meta\) failed[\s\S]*missing required property "commit"/)
+    expect(service.get('cell', 'b').mission.attempts[0]?.state).toBe('pending')
+  })
+
+  it('a submit payload is NOT validated against a run-meta guard', async () => {
+    await service.runCreate({ templatePath: join(dir, 'bench.json'), runId: 'b', meta: { datasetId: 's', commit: 'c' } })
+    await service.create({ runId: 'b', id: 'cell' })
+    // An arbitrary payload would violate the meta schema — submit must not apply it.
+    const result = await service.submit('cell', { runId: 'b', json: { anything: true } })
+    expect(result.checkpoint).toBe('submit')
+  })
+
+  it('run lint accepts the run-meta input', async () => {
+    const result = service.lintTemplateFile(join(dir, 'bench.json'))
+    expect(result.errors).toEqual([])
+    expect(result.warnings).toEqual([])
+    const c = { out: [] as string[], err: [] as string[] }
+    const code = await runCli(['run', 'lint', '--template', join(dir, 'bench.json'), '--data-dir', dir], {
+      stdout: line => c.out.push(line), stderr: line => c.err.push(line),
+    })
+    expect(code).toBe(0)
+    expect(c.out.join('')).toMatch(/lint ok/)
   })
 })

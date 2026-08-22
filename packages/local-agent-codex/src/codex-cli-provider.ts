@@ -67,12 +67,15 @@ export class CodexCliProvider implements SubagentProvider {
   /**
    * Register one run with the member channel and prepare the bridge MCP
    * declaration as a per-process `-c` config override (codex takes inline
-   * TOML: the syntax was spike-verified against the real CLI — the run reaches
-   * model invocation with the server configured; the model-call leg is
-   * verified-pending, awaiting a quota-reset rerun). Nothing is written to the
-   * scoped home, so there is nothing to prune at settle; `release` only
-   * invalidates the token. Returns undefined when the mounted core predates
-   * the member channel (declare-and-degrade: the run proceeds unchanged).
+   * TOML — spike-verified end-to-end against the real CLI on 2026-08-20,
+   * including the model-call leg). `default_tools_approval_mode="approve"` is
+   * required: codex's stable MCP elicitation gate auto-cancels tools lacking
+   * a readOnlyHint in non-interactive exec mode ("user cancelled MCP tool
+   * call"), and the bridge's member_message is a write tool. Nothing is
+   * written to the scoped home, so there is nothing to prune at settle;
+   * `release` only invalidates the token. Returns undefined when the mounted
+   * core predates the member channel (declare-and-degrade: the run proceeds
+   * unchanged).
    */
   private memberRun(
     childSessionId: string,
@@ -91,7 +94,8 @@ export class CodexCliProvider implements SubagentProvider {
     const configOverride = `mcp_servers.${serverName}={`
       + `command=${tomlString(bridge.command)},`
       + `args=[${bridge.args.map(tomlString).join(',')}],`
-      + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}}`
+      + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
+      + `default_tools_approval_mode=${tomlString('approve')}`
       + `}`
     let released = false
     return {

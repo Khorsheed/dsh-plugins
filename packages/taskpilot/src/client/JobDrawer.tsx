@@ -14,6 +14,7 @@ import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepse
 import type { HistoryEntry, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { buildJobTrajectory, type SessionLogRow } from './job-trajectory.ts'
+import { computeDrawerInset } from './drawer-inset.ts'
 import type { TrajectoryEntry } from '../types.ts'
 import type { createDrawerStore } from './drawer-store.ts'
 import type { NS } from './locales.ts'
@@ -42,6 +43,11 @@ export type JobDrawerProps =
   & PropsLocale<typeof NS>
 
 const PAGE_MESSAGES = 200
+
+/** Document mark set while the drawer pushes the conversation column. */
+const DRAWER_MARK = 'data-taskpilot-drawer-open'
+/** Document-level width variable the push rule reads (0px = overlay). */
+const DRAWER_W = '--dsh-taskpilot-drawer-w'
 
 type T = TranslateNS<typeof NS>
 
@@ -147,6 +153,29 @@ export function JobDrawer(props: JobDrawerProps): React.ReactElement | null {
     })
     return () => { cancelled = true }
   }, [open, sessionId, jobId, loadHistory, reloadRev])
+
+  // Push-layout: while the drawer is open the document carries a mark and the
+  // inset the drawer claims, so the conversation column (the chat scroll
+  // region and the composer seat inside it) shifts left instead of sitting
+  // under the drawer. The inset is responsive — narrow viewports keep the
+  // overlay behavior (inset 0) rather than crushing the column.
+  useEffect(() => {
+    if (!open || sessionId === null || jobId === null) return
+    const root = document.documentElement
+    const apply = (): void => {
+      const inset = computeDrawerInset(window.innerWidth)
+      root.style.setProperty(DRAWER_W, `${inset}px`)
+      if (inset > 0) root.setAttribute(DRAWER_MARK, '')
+      else root.removeAttribute(DRAWER_MARK)
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    return () => {
+      window.removeEventListener('resize', apply)
+      root.style.removeProperty(DRAWER_W)
+      root.removeAttribute(DRAWER_MARK)
+    }
+  }, [open, sessionId, jobId])
 
   const loadOlder = async (): Promise<void> => {
     if (sessionId === null || jobId === null || beforeSeq === undefined || loading) return

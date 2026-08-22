@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-taskpilot-drawer-push-layout.md
+.agents/notes/implemented/feature/2026-08-22-taskpilot-drawer-push-layout.md: bf10618b1395c945b59a9cb92afcf557c47364b6
+.agents/notes/implemented/feature/2026-08-22-taskpilot-drawer-push-layout.zh.md: 297e7202133d0542b042cc043a5d5e3b4b3ba6c3

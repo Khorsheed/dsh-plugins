@@ -26,6 +26,10 @@ export const STATE_FILES = {
   interruptedSessions: 'interrupted-sessions.json',
   /** The supervising watchdog's pidfile. */
   watchdogPid: 'watchdog.pid',
+  /** Cross-session mutual exclusion for the restart verb. */
+  restartLock: 'restart.lock',
+  /** The detached restart driver's log. */
+  restartLog: 'restart.log',
   /** Marker: exit the watchdog without respawn. */
   watchdogStop: 'watchdog-stop',
   /** Marker: the watchdog gave up; a crash page holds the port. */
@@ -38,6 +42,10 @@ export const STATE_FILES = {
   watchdogStderrLog: 'watchdog.stderr.log',
   /** The exit agent's log. */
   scheduleExitLog: 'schedule-exit.log',
+  /** How the current instance was launched (recorded by the plugin at apply). */
+  instanceLaunch: 'instance-launch.json',
+  /** Whether the restart-protocol skill registered at apply (and why not). */
+  skillRegistration: 'skill-registration.json',
 } as const
 
 /** A STATE_FILES key. */

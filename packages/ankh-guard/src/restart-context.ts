@@ -132,6 +132,143 @@ export function acknowledgeRestartRecord(stateDir: string, record: RestartRecord
 }
 
 /**
+ * Record an unplanned-exit recovery (the watchdog respawned the instance with
+ * no restart marker), unless a record still awaits its report. Returns whether
+ * the record was written — the caller (CLI verb, invoked by the watchdog) logs
+ * either way, so the watchdog log must never claim a write that was skipped.
+ * @param stateDir - state directory.
+ * @param now - epoch milliseconds of the recovery.
+ * @returns true when the record was written, false when a pending record was kept.
+ */
+export function writeUnexpectedExitRecord(stateDir: string, now: number): boolean {
+  if (pendingRestartRecord(stateDir) !== null) return false
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(restartRecordFile(stateDir), `${JSON.stringify({ exitAt: now, unexpected: true })}\n`)
+  return true
+}
+
+/**
+ * Record the restart verb's outcome for the report machinery (the restart
+ * verb is otherwise invisible to it: it writes no marker and no record, so a
+ * restart it drove would never be reported to any session). Mirrors the exit
+ * agent's record semantics; a still-pending earlier record is replaced only
+ * by a completed newer restart.
+ * @param stateDir - state directory.
+ * @param record - the outcome fields (exitAt/pid for a stop, error on failure).
+ */
+export function writeRestartOutcome(stateDir: string, record: { exitAt: number; pid?: number; error?: string; initiator?: string }): void {
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(restartRecordFile(stateDir), `${JSON.stringify(record)}\n`)
+}
+
+/**
+ * Record the watchdog's ADOPTION takeover — the first restart a deployment
+ * ever sees: `supervise` handed the port to the watchdog, which stopped the
+ * pre-existing owner and booted the supervised instance. The session that
+ * established supervision promised the user a verification report; without
+ * this record nothing wakes it after the bounce (the adoption writes no
+ * restart marker and no outcome record). Never overwrites a record that still
+ * awaits its report.
+ * @param stateDir - state directory.
+ * @param now - epoch milliseconds of the takeover boot.
+ * @param initiator - the session that established supervision, when known.
+ * @returns whether the record was written.
+ */
+export function writeAdoptionRecord(stateDir: string, now: number, initiator: string | undefined): boolean {
+  if (pendingRestartRecord(stateDir) !== null) return false
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(restartRecordFile(stateDir), `${JSON.stringify({
+    exitAt: now,
+    ...(initiator !== undefined && initiator !== '' ? { initiator } : {}),
+  })}\n`)
+  return true
+}
+
+/** How the current instance was launched, recorded at boot. */
+export interface InstanceLaunch {
+  /** The shell command that starts the instance. */
+  command: string
+  /** Who wrote the record: the instance itself, or its supervisor. */
+  source: 'instance' | 'supervisor'
+  /**
+   * The instance runs under a watchdog (the supervisor's respawn owns the
+   * port). A restart FALLING BACK to a bare per-instance command would spawn
+   * the instance directly and fight the supervisor's respawn — the fallback
+   * must refuse and point at schedule-exit instead.
+   */
+  supervised?: boolean
+  /** The instance's listening port, when discovered at apply time. */
+  port?: number
+  /** Epoch milliseconds when recorded. */
+  recordedAt: number
+}
+
+/**
+ * Persist the launch record (atomic). The instance-facing side of
+ * {@link writeInstanceLaunch}: only an `instance`-sourced record may be
+ * replaced by another — a `supervisor` record carries the FULL supervision
+ * chain (watchdog, launch wrapper) and the inner process must not overwrite
+ * it with its own bare argv.
+ * @param stateDir - state directory.
+ * @param launch - the launch facts.
+ * @returns whether the record was written.
+ */
+export function writeInstanceLaunch(stateDir: string, launch: InstanceLaunch): boolean {
+  const existing = readInstanceLaunch(stateDir)
+  if (existing?.source === 'supervisor') return false
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(stateFile(stateDir, 'instanceLaunch'), `${JSON.stringify(launch)}\n`)
+  return true
+}
+
+/** POSIX single-quote one word for a shell command line. */
+function shellQuote(word: string): string {
+  return `'${word.replace(/'/g, "'\\''")}'`
+}
+
+/**
+ * Render the instance's launch as a shell command: cwd, DSH_* env, and the
+ * FULL node invocation — execArgv included, because a tsx chain
+ * (`node --import tsx …`) rendered without it becomes a bare `node bin.ts`
+ * that cannot load TypeScript sources.
+ */
+/**
+ * Per-invocation transients, never launch configuration: the restart driver's
+ * own marker, the calling session's identity, and the shell/web hand-off
+ * vars. A recorded launch must not leak them into the next instance (a
+ * restart driver reading DSH_ANKH_RESTART_DRIVER would misbehave; a stale
+ * DSH_SESSION_ID misattributes reports).
+ */
+const TRANSIENT_ENV_KEYS = new Set(['DSH_ANKH_RESTART_DRIVER', 'DSH_SESSION_ID', 'DSH_SESSION_JSONL', 'DSH_WEB_URL', 'DSH_SHELL'])
+
+export function buildLaunchCommand(execPath: string, execArgv: readonly string[], args: readonly string[], cwd: string, env: Record<string, string>): string {
+  const envPart = Object.entries(env).filter(([key]) => !TRANSIENT_ENV_KEYS.has(key)).map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')
+  const argv = [execPath, ...execArgv, ...args].map(shellQuote).join(' ')
+  return `cd ${shellQuote(cwd)} && ${envPart !== '' ? `${envPart} ` : ''}${argv}`
+}
+
+/** Replace any record unconditionally (the supervisor's own write path). */
+export function writeInstanceLaunchAsSupervisor(stateDir: string, launch: InstanceLaunch): void {
+  mkdirSync(stateDir, { recursive: true })
+  atomicWrite(stateFile(stateDir, 'instanceLaunch'), `${JSON.stringify(launch)}\n`)
+}
+
+/**
+ * Read the launch record, or null when absent/unparseable (older deployments,
+ * or the plugin never applied in this home).
+ * @param stateDir - state directory.
+ * @returns the record, or null.
+ */
+export function readInstanceLaunch(stateDir: string): InstanceLaunch | null {
+  try {
+    const launch = JSON.parse(readFileSync(stateFile(stateDir, 'instanceLaunch'), 'utf8')) as InstanceLaunch
+    return typeof launch.command === 'string' ? launch : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Read the shutdown snapshot, or null when absent/unparseable. Malformed
  * snapshots are dropped by the caller's delete-after-read, never retried.
  * @param stateDir - state directory.
@@ -171,4 +308,45 @@ function atomicWrite(file: string, content: string): void {
   const tmp = `${file}.${process.pid}.tmp`
   writeFileSync(tmp, content)
   renameSync(tmp, file)
+}
+
+/** The plugin's skill-registration outcome, rewritten at every boot. */
+export interface SkillRegistrationRecord {
+  /** Whether the restart-protocol skill is in the skill catalog. */
+  registered: boolean
+  /** Why registration was skipped/failed, when registered is false. */
+  reason?: string
+  /** Epoch milliseconds of this boot's attempt. */
+  at: number
+}
+
+/**
+ * Persist the skill-registration outcome (atomic, best-effort). A migration
+ * or repackaging that drops the skill is otherwise invisible until someone
+ * notices the catalog entry missing — this record lets `check-env` surface it.
+ * @param stateDir - state directory.
+ * @param record - the outcome of this boot's registration attempt.
+ */
+export function writeSkillRegistration(stateDir: string, record: SkillRegistrationRecord): void {
+  try {
+    mkdirSync(stateDir, { recursive: true })
+    atomicWrite(stateFile(stateDir, 'skillRegistration'), `${JSON.stringify(record)}\n`)
+  } catch {
+    // Best-effort: the marker is an observability aid, never a boot blocker.
+  }
+}
+
+/**
+ * Read the skill-registration record, or null when absent/unparseable (the
+ * plugin never applied with this state dir, or predates the record).
+ * @param stateDir - state directory.
+ * @returns the record, or null.
+ */
+export function readSkillRegistration(stateDir: string): SkillRegistrationRecord | null {
+  try {
+    const record = JSON.parse(readFileSync(stateFile(stateDir, 'skillRegistration'), 'utf8')) as SkillRegistrationRecord
+    return typeof record.registered === 'boolean' && typeof record.at === 'number' ? record : null
+  } catch {
+    return null
+  }
 }

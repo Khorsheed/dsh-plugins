@@ -24,12 +24,16 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import { resolveSessionPreset, type PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
 import { stateFile } from './state-files.ts'
 import {
-  acknowledgeRestartRecord, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
+  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
+  writeInstanceLaunch, writeSkillRegistration,
   pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
   type RestartRecord,
 } from './restart-context.ts'
@@ -167,6 +171,51 @@ export const name = 'ankh-guard'
 /** Required services: the agents registry (root-agent gate for the followup path). */
 export const inject = ['agents']
 
+/** The slice of the skill registry this plugin consumes (optional service). */
+interface SkillRegistrySlice {
+  register: (skill: { name: string; description: string; content: string }) => () => void
+}
+
+/**
+ * Register the restart protocol as a runtime skill — the pull-based discovery
+ * channel: an agent whose task involves restarting the instance finds the
+ * protocol through the skill catalog, so no per-session push notice is needed
+ * (the boot notice this replaced injected into every root session on every
+ * boot). Optional: compositions without the skill capability skip the
+ * registration. A missing/malformed shipped SKILL.md degrades to a warning —
+ * a discovery aid must never take a boot down; the pack-smoke test owns the
+ * file's presence in the tarball.
+ * @param ctx - plugin context.
+ */
+function registerRestartSkill(ctx: Context, stateDir: string): void {
+  const skills = ctx.get('skills') as SkillRegistrySlice | undefined
+  if (skills === undefined) {
+    // Loud, not silent: a host migration that drops/renames the skill
+    // capability must not make the protocol skill vanish without a trace.
+    ctx.logger.warn('ankh-guard: the skills service is absent in this composition — the restart-protocol skill is not registered')
+    writeSkillRegistration(stateDir, { registered: false, reason: 'skills service absent in this composition', at: Date.now() })
+    return
+  }
+  try {
+    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dsh-self-restart-guard', 'SKILL.md')
+    const raw = readFileSync(skillFile, 'utf8')
+    const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
+    const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const description = /^description: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
+    const content = match?.[2]
+    if (match === null || name === undefined || description === undefined || content === undefined) {
+      ctx.logger.warn('ankh-guard: shipped SKILL.md is malformed — the restart-protocol skill is not registered')
+      writeSkillRegistration(stateDir, { registered: false, reason: 'shipped SKILL.md malformed', at: Date.now() })
+      return
+    }
+    ctx.effect(() => skills.register({ name, description, content }))
+    writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
+  } catch (error) {
+    ctx.logger.warn(`ankh-guard: shipped SKILL.md unreadable (${String(error)}) — the restart-protocol skill is not registered`)
+    writeSkillRegistration(stateDir, { registered: false, reason: `shipped SKILL.md unreadable: ${String(error)}`, at: Date.now() })
+  }
+}
+
 /** Probe whether something is listening on a TCP port (bounded, never hangs). */
 async function checkPort(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -223,6 +272,8 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   // `reportRestartContext: 'step'/'off'` silently disabled session recovery
   // (default-on!) with no warning — a misconfiguration failing silent.
   const followupReport = reportMode === 'followup'
+  registerRestartSkill(ctx, stateDir)
+
   if (followupReport || resumeInterrupted) {
     type FollowupAgent = { followup: (message: ReturnType<typeof createUserMessage>) => void }
     const pluginMessage = (text: string): ReturnType<typeof createUserMessage> => createUserMessage({
@@ -465,4 +516,38 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     },
   }
   ctx.provide('selfRestartGuard', service)
+
+  // Record how this instance was launched: restart/supervise can then default
+  // --start instead of the agent reconstructing the command (ps is
+  // sandbox-blocked, and the who-supervises-me question sent fresh-machine
+  // agents into loops). execArgv is recorded too — a tsx chain
+  // (`node --import tsx …`) rendered without it becomes a bare `node bin.ts`
+  // that cannot load the source. A SUPERVISED instance marks the record so the
+  // fallback refuses to bypass its watchdog; a supervisor's own record is
+  // never overwritten by the inner process (writeInstanceLaunch enforces it).
+  void (async () => {
+    try {
+      const env: Record<string, string> = {}
+      for (const [key, value] of Object.entries(process.env)) {
+        if (key.startsWith('DSH_') && value !== undefined) env[key] = value
+      }
+      let port: number | undefined
+      try {
+        const out = execFileSync('lsof', ['-a', '-p', String(process.pid), '-iTCP', '-sTCP:LISTEN', '-P'], { encoding: 'utf8', stdio: 'pipe' })
+        const match = /:(\d+) \(LISTEN\)/.exec(out)
+        if (match !== null) port = Number(match[1])
+      } catch {
+        // lsof unavailable or nothing listening yet — the record still helps.
+      }
+      writeInstanceLaunch(stateDir, {
+        command: buildLaunchCommand(process.execPath, process.execArgv, process.argv.slice(1), process.cwd(), env),
+        source: 'instance',
+        ...(process.env.DSH_ANKH_SUPERVISED === '1' ? { supervised: true } : {}),
+        ...(port !== undefined ? { port } : {}),
+        recordedAt: Date.now(),
+      })
+    } catch {
+      // Best-effort: the launch record is an optimization, never a boot blocker.
+    }
+  })()
 }

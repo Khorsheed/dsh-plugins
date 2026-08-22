@@ -1,13 +1,21 @@
 /**
  * The datasets tab's read-only preview: content rendering is delegated to the
- * official reader primitives — markdown files render through the official
- * `MarkdownText` pipeline (the same renderer the chat uses: headings, tables,
- * emphasis, links, math), everything else through the official `CodeBlock`
- * syntax highlighter. There is no self-rolled markdown renderer here; the tab
- * only navigates the tree and hands the selected file's content over.
+ * official reader primitives, replicating the products tab's scheme over them
+ * (that tab's pane is the community ui-file-preview package's private
+ * assembly — cross-plugin imports are forbidden, so this file re-assembles
+ * the same visual family from the same official parts). Markdown renders
+ * through the official `MarkdownText` pipeline (the chat's renderer), JSON
+ * through the official `JsonTree` inspector (the RPC payload panel's tree),
+ * everything else through the official `CodeBlock` syntax highlighter.
+ * Document forms (markdown/JSON) sit in the same block chrome the official
+ * code/diff blocks use — a rounded surface with a small format banner — so
+ * every preview reads as one family. There is no self-rolled renderer here.
  */
 
-import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReactNode } from 'react'
+import { CodeBlock, JsonTree, MarkdownText, type JsonTreeLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import css from './preview.module.css'
 
 /** Map a file extension to a prism language name for CodeBlock, or undefined to auto-detect. */
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
@@ -29,14 +37,66 @@ export function languageFor(path: string): string | undefined {
   return LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()]
 }
 
+/** JSON tree cap: beyond this many source chars the parsed tree is too heavy; keep the code view. */
+const JSON_TREE_MAX_CHARS = 150_000
+
+/** Localized JsonTree labels over this plugin's `datasets` namespace. */
+function jsonTreeLabels(t: TranslateNS<'datasets'>): JsonTreeLabels {
+  return {
+    copyValue: t('json.copyValue'),
+    copyJson: t('json.copyJson'),
+    copyPath: t('json.copyPath'),
+    copyPrettyJson: t('json.copyPrettyJson'),
+    copyCompactJson: t('json.copyCompactJson'),
+    copied: t('json.copied'),
+    copyFailed: t('json.copyFailed'),
+    collapseNode: t('json.collapseNode'),
+    expandNode: t('json.expandNode'),
+    copyButtonTitle: action => t('json.copyButtonTitle', { action }),
+  }
+}
+
 /**
- * One file's content through the official reading experience: markdown
- * renders as the document (MarkdownText), every other text file as
- * syntax-highlighted source (CodeBlock).
- * @param props - the layer-relative display path and the file content.
+ * Parse one text read as JSON for the tree preview. Only plain objects and
+ * arrays within the size cap qualify; scalars and any parse failure —
+ * including `.jsonc` comment syntax — fall back to the code view.
  */
-export function DatasetPreview(props: { path: string; content: string }) {
-  const { path, content } = props
-  if (languageFor(path) === 'markdown') return <MarkdownText text={content} />
-  return <CodeBlock code={content} lang={languageFor(path)} />
+function jsonTreeData(content: string): object | unknown[] | null {
+  if (content.length > JSON_TREE_MAX_CHARS) return null
+  try {
+    const value: unknown = JSON.parse(content)
+    return value !== null && typeof value === 'object' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * One file's content through the official reading experience. Structured
+ * document forms first (JSON tree, rendered markdown), wrapped in the block
+ * chrome; every other text file is a syntax-highlighted CodeBlock, which
+ * carries its own chrome.
+ * @param props - the layer-relative display path, the file content, and the locale seat.
+ */
+export function DatasetPreview(props: { path: string; content: string; t: TranslateNS<'datasets'> }) {
+  const { path, content, t } = props
+  const dot = path.lastIndexOf('.')
+  const ext = dot < 0 ? '' : path.slice(dot).toLowerCase()
+  const lang = languageFor(path)
+  let documentBody: ReactNode | null = null
+  if (ext === '.json' || ext === '.jsonc') {
+    const data = jsonTreeData(content)
+    if (data !== null) documentBody = <JsonTree data={data} labels={jsonTreeLabels(t)} />
+  } else if (lang === 'markdown') {
+    documentBody = <MarkdownText text={content} />
+  }
+  if (documentBody === null) return <CodeBlock code={content} lang={lang} />
+  return (
+    <div className={css.structured}>
+      <div className={css.structuredBanner}>
+        <span className={css.structuredInfo}>{lang ?? ext.slice(1)}</span>
+      </div>
+      <div className={css.structuredBody}>{documentBody}</div>
+    </div>
+  )
 }

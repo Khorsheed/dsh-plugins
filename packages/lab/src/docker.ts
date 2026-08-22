@@ -12,8 +12,10 @@
  * exec path only — processes others exec into the unit are out of lab's
  * reach, as the proposal's risk section states.
  */
-import type {
-  AcquireSpec, CollectOptions, Exec, ManagedResource, PopulateOptions, UnitProvider,
+import {
+  DEFAULT_WORKSPACE,
+  type AcquireSpec, type CollectOptions, type Exec, type ExecResult, type ManagedResource,
+  type PopulateOptions, type UnitProvider, type VerifyOptions, type VerifyResult,
 } from './types.ts'
 
 const MANAGED_LABEL = 'dsh-lab.managed'
@@ -21,9 +23,13 @@ const UNIT_LABEL = 'dsh-lab.unit'
 const MISSION_LABEL = 'dsh-lab.mission'
 const RUN_LABEL = 'dsh-lab.run'
 const FINGERPRINT_LABEL = 'dsh-lab.fingerprint'
+const WORKSPACE_LABEL = 'dsh-lab.workdir'
 
 /** In-container directory holding one pidfile per provider-spawned process. */
 const PID_DIR = '/run/dsh-lab/pids'
+
+/** In-container scratch directory verify material is copied into. */
+const VERIFY_DIR = '/run/dsh-lab/verify'
 
 /** Docker provider tuning. */
 export interface DockerProviderOptions {
@@ -31,6 +37,8 @@ export interface DockerProviderOptions {
   terminateGraceMs?: number
   /** Wait hook (tests substitute a no-op). */
   sleep?: (ms: number) => Promise<void>
+  /** Clock hook (tests). */
+  now?: () => number
 }
 
 /** The docker CLI provider for {@link import('./types.ts').UnitProvider}. */
@@ -38,6 +46,7 @@ export class DockerProvider implements UnitProvider {
   readonly kind = 'docker'
   private readonly terminateGraceMs: number
   private readonly sleep: (ms: number) => Promise<void>
+  private readonly now: () => number
 
   /**
    * @param exec - host command runner (`docker …` is prefixed here).
@@ -49,6 +58,7 @@ export class DockerProvider implements UnitProvider {
   ) {
     this.terminateGraceMs = options.terminateGraceMs ?? 2000
     this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+    this.now = options.now ?? (() => Date.now())
   }
 
   async fingerprint(spec: AcquireSpec): Promise<string> {
@@ -64,7 +74,7 @@ export class DockerProvider implements UnitProvider {
 
   /** The fingerprint is the first repo digest, falling back to the local image id. */
   private async inspectImage(image: string): Promise<string | undefined> {
-    const result = await this.exec(['image', 'inspect', image, '--format', '{{json .RepoDigests}} {{.Id}}'])
+    const result = await this.docker(['image', 'inspect', image, '--format', '{{json .RepoDigests}} {{.Id}}'])
     if (result.exitCode !== 0) return undefined
     const [digestsJson, id] = result.stdout.trim().split(' ')
     const digests = JSON.parse(digestsJson ?? '[]') as string[]
@@ -78,6 +88,7 @@ export class DockerProvider implements UnitProvider {
       '--label', `${MANAGED_LABEL}=true`,
       '--label', `${UNIT_LABEL}=${id}`,
       '--label', `${FINGERPRINT_LABEL}=${fingerprint}`,
+      '--label', `${WORKSPACE_LABEL}=${spec.workdir ?? DEFAULT_WORKSPACE}`,
     ]
     if (spec.missionId !== undefined) argv.push('--label', `${MISSION_LABEL}=${spec.missionId}`)
     if (spec.runId !== undefined) argv.push('--label', `${RUN_LABEL}=${spec.runId}`)
@@ -93,7 +104,8 @@ export class DockerProvider implements UnitProvider {
   }
 
   async populate(resource: string, options: PopulateOptions & { target: string }): Promise<void> {
-    await this.execInUnit(resource, ['mkdir', '-p', options.target])
+    const mkdir = await this.execInUnit(resource, ['mkdir', '-p', options.target])
+    if (mkdir.exitCode !== 0) throw new Error(`lab: cannot create ${options.target} in ${resource}: ${mkdir.stderr.trim()}`)
     await this.run(['cp', `${options.source}/.`, `${resource}:${options.target}`])
   }
 
@@ -101,12 +113,55 @@ export class DockerProvider implements UnitProvider {
     await this.run(['cp', `${resource}:${options.source}/.`, options.target])
   }
 
+  async checkpoint(resource: string, workspace: string, name: string): Promise<string> {
+    const inRepo = await this.execInUnit(resource, ['git', '-C', workspace, 'rev-parse', '--is-inside-work-tree'])
+    if (inRepo.exitCode !== 0) {
+      // First checkpoint on a plain populated workspace: initialize the repo
+      // the tag needs. A read-only mounted workspace fails loud here — it
+      // cannot be committed, which is the correct signal.
+      await this.execChecked(resource, ['git', '-C', workspace, 'init'])
+    }
+    await this.execChecked(resource, ['git', '-C', workspace, 'add', '-A'])
+    await this.execChecked(resource, [
+      'git', '-c', 'user.name=dsh-lab', '-c', 'user.email=dsh-lab@localhost',
+      '-C', workspace, 'commit', '--allow-empty', '-m', name,
+    ])
+    await this.execChecked(resource, ['git', '-C', workspace, 'tag', '-f', name])
+    const rev = await this.execChecked(resource, ['git', '-C', workspace, 'rev-parse', name])
+    return rev.stdout.trim()
+  }
+
+  async verify(resource: string, workspace: string, options: VerifyOptions): Promise<VerifyResult> {
+    if (options.source !== undefined) {
+      await this.execChecked(resource, ['rm', '-rf', VERIFY_DIR])
+      await this.execChecked(resource, ['mkdir', '-p', VERIFY_DIR])
+      await this.run(['cp', `${options.source}/.`, `${resource}:${VERIFY_DIR}`])
+    }
+    const started = this.now()
+    try {
+      const result = await this.execInUnit(resource, options.command, { workdir: workspace, ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}) })
+      return {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        durationMs: this.now() - started,
+        timedOut: result.timedOut === true,
+      }
+    } finally {
+      if (options.source !== undefined) {
+        // Material removal is best-effort: a dead unit must not mask the run's
+        // recorded outcome, and release reaps the container anyway.
+        await this.execInUnit(resource, ['rm', '-rf', VERIFY_DIR])
+      }
+    }
+  }
+
   async listManaged(): Promise<ManagedResource[]> {
-    const ps = await this.exec(['ps', '-a', '--filter', `label=${MANAGED_LABEL}=true`, '--format', '{{.Names}}'])
+    const ps = await this.docker(['ps', '-a', '--filter', `label=${MANAGED_LABEL}=true`, '--format', '{{.Names}}'])
     if (ps.exitCode !== 0) throw new Error(`lab: docker ps failed (exit ${ps.exitCode}): ${ps.stderr.trim()}`)
     const names = ps.stdout.split('\n').map((line) => line.trim()).filter((line) => line !== '')
     if (names.length === 0) return []
-    const inspect = await this.exec(['inspect', ...names])
+    const inspect = await this.docker(['inspect', ...names])
     if (inspect.exitCode !== 0) throw new Error(`lab: docker inspect failed (exit ${inspect.exitCode}): ${inspect.stderr.trim()}`)
     const parsed = JSON.parse(inspect.stdout) as {
       Name?: string
@@ -136,7 +191,7 @@ export class DockerProvider implements UnitProvider {
   async terminate(resource: string): Promise<void> {
     // Best-effort graceful sweep: TERM every pidfile-recorded process. The
     // container may already be stopped — that failure is expected and ignored.
-    await this.exec([
+    await this.docker([
       'exec', resource, 'sh', '-c',
       `for f in ${PID_DIR}/*.pid; do [ -f "$f" ] || continue; kill -TERM "$(cat "$f")" 2>/dev/null || true; done`,
     ])
@@ -148,15 +203,33 @@ export class DockerProvider implements UnitProvider {
    * Run a command inside the unit with orphan compensation: the wrapper
    * records its own pid (which `exec` forwards to the real command) under
    * {@link PID_DIR} so {@link terminate} can reach it after the host client
-   * is gone.
+   * is gone. The result is returned raw — a non-zero exit is data (verify
+   * records it verbatim), not an exception.
    */
-  private async execInUnit(resource: string, argv: string[]): Promise<void> {
-    await this.run(['exec', resource, 'sh', '-c', `echo $$ > ${PID_DIR}/$$.pid; exec "$@"`, 'dsh-lab', ...argv])
+  private async execInUnit(resource: string, argv: string[], options?: { workdir?: string; timeoutMs?: number }): Promise<ExecResult> {
+    const full = ['exec']
+    if (options?.workdir !== undefined) full.push('--workdir', options.workdir)
+    full.push(resource, 'sh', '-c', `echo $$ > ${PID_DIR}/$$.pid; exec "$@"`, 'dsh-lab', ...argv)
+    return this.docker(full, options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined)
+  }
+
+  /** {@link execInUnit} variant for setup steps where a failure IS an error. */
+  private async execChecked(resource: string, argv: string[]): Promise<ExecResult> {
+    const result = await this.execInUnit(resource, argv)
+    if (result.exitCode !== 0) {
+      throw new Error(`lab: in-unit ${argv[0] ?? ''} failed in ${resource} (exit ${result.exitCode}): ${result.stderr.trim()}`)
+    }
+    return result
+  }
+
+  /** Invoke the docker CLI — the one binary every provider command prefixes. */
+  private docker(argv: string[], options?: { timeoutMs?: number }): Promise<ExecResult> {
+    return this.exec(['docker', ...argv], options)
   }
 
   /** Run one docker invocation, throwing with stderr context on failure. */
   private async run(argv: string[]): Promise<void> {
-    const result = await this.exec(argv)
+    const result = await this.docker(argv)
     if (result.exitCode !== 0) {
       throw new Error(`lab: docker ${argv[0] ?? ''} failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
     }

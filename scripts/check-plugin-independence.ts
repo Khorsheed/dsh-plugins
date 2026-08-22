@@ -314,6 +314,17 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     if (!(json.keywords ?? []).includes('dsh-plugin')) {
       add('package.json', 'publish metadata', `keywords must include 'dsh-plugin'`)
     }
+    // Payload directories the runtime reads must be covered by `files` —
+    // a missing entry means the tarball ships without them (the skills loss
+    // reached prod because nothing checked this at commit time).
+    for (const payloadDir of ['scripts', 'skills', 'assets']) {
+      const dirPath = join(path, payloadDir)
+      if (!existsSync(dirPath)) continue
+      const covered = (json.files ?? []).some(f => f === payloadDir || f.startsWith(`${payloadDir}/`))
+      if (!covered) {
+        add('package.json', 'publish metadata', `${payloadDir}/ exists but is not covered by files — the tarball would ship without it`)
+      }
+    }
   }
 
   return findings

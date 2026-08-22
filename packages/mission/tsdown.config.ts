@@ -1,21 +1,8 @@
 /**
- * Package-local tsdown config: host-side package (no client half yet — the
- * session tab is M4). The CLI ships as a published artifact (lib/cli.js,
- * wired to the `dsh-mission` bin and the `./cli` export). The Client pass
- * emits nothing for this package.
+ * Package-local tsdown config via the shared helper: the host lib half
+ * (index/invariant/cli entries) plus the browser client bundle
+ * (lib/client.js, the missions tab) through clientBundle — never hand-rolled.
  */
-import { defineConfig } from 'tsdown'
+import { clientBundle } from '../../build/tsdown.client.ts'
 
-export default defineConfig(({ env }) => {
-  const client = env?.DSH_BUILD_FACE === 'client'
-  return {
-    entry: client ? '' : ['lib/types/{index,invariant,cli}.js'],
-    outDir: 'lib',
-    format: ['esm'],
-    platform: 'node',
-    target: 'es2024',
-    fixedExtension: false,
-    dts: false,
-    clean: false,
-  }
-})
+export default clientBundle('@khorsheed/dsh-mission', ['lib/types/index.js', 'lib/types/invariant.js', 'lib/types/cli.js'])

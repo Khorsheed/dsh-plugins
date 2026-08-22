@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-datasets-dataset-level-layers.md
+.agents/notes/implemented/feature/2026-08-20-datasets-dataset-level-layers.md: 5957e95c6a53f7d96b132d08c829399247b6e2a6
+.agents/notes/implemented/feature/2026-08-20-datasets-dataset-level-layers.zh.md: b267763f913617778b144fa200e1c8a8fa9882f0

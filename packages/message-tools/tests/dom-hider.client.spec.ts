@@ -182,7 +182,7 @@ describe('installDomHider', () => {
 })
 
 describe('hiddenFlowKeys edit-trigger hiding', () => {
-  it('hides the context row of an edit trigger, keeps other context rows', () => {
+  it('hides every message-tools context row, keeps other context rows', () => {
     const triggerRow = node('context', '7:context40', 40, {
       seq: 40, content: [], source: { kind: 'plugin', plugin: 'message-tools', op: 'edit-trigger' },
     })
@@ -192,7 +192,7 @@ describe('hiddenFlowKeys edit-trigger hiding', () => {
     const official = node('context', '7:context42', 42, {
       seq: 42, content: [], source: { kind: 'plugin', plugin: 'system-prompt' },
     })
-    expect(hiddenFlowKeys([triggerRow, restoreRow, official])).toEqual(['7:context40'])
+    expect(hiddenFlowKeys([triggerRow, restoreRow, official])).toEqual(['7:context40', '7:context41'])
   })
 
   it('hides the context rows duplicating restored and restored-assistant rows', () => {

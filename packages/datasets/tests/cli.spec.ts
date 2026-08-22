@@ -46,17 +46,22 @@ describe('read verbs', () => {
     const list = await run(['list'], env)
     expect(list.code).toBe(0)
     expect(list.out).toContain('alpha')
+    // Mixed fixture: the undeclared 'visible' layer warns on stderr (list/show/describe).
+    expect(list.err).toContain('MODELFACING_UNDECLARED')
     expect(list.out).toContain('non-model-facing: hidden')
 
     const items = await run(['list', '--dataset', 'alpha'], env)
+    expect(items.out).toContain('shared: visible/(1)')
     expect(items.out).toContain('i1')
 
     const show = await run(['show', '--dataset', 'alpha', '--item', 'i1'], env)
     expect(show.code).toBe(0)
+    expect(show.err).toContain('MODELFACING_UNDECLARED')
     expect(show.out).toContain('visible/task.md')
     expect(show.out).toContain('hidden/notes.md')
 
     const describeResult = await run(['describe', '--dataset', 'alpha'], env)
+    expect(describeResult.err).toContain('MODELFACING_UNDECLARED')
     expect(JSON.parse(describeResult.out)).toMatchObject({ id: 'alpha', extra: { passthrough: true } })
 
     const read = await run(['read', '--dataset', 'alpha', '--item', 'i1', '--layer', 'visible', '--path', 'task.md'], env)

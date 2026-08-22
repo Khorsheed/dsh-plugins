@@ -6,7 +6,7 @@ The upstream host lives at `~/code/deepseek-harness` (env `DSH_HARNESS`). We tra
 
 ## Multi-agent concurrency
 
-Several agents work this repo at once. The rules below exist because of real incidents — follow them mechanically.
+Several agents work this repo at once. The rules below exist because of real incidents — follow them mechanically. The full collaboration model — worktree-only development, the three paths (worktree → main → 3080, mainline host-tracking, npm waves), and the conflict rules — lives in [docs/development.md](docs/development.md).
 
 - **Pull before you start; push when arranged.** `git pull --rebase` before you start; commit each logical change as soon as it is green (committed work exists in git). **Pushes are coordinated by the human, not a same-day obligation** — never push unilaterally. Stage explicit paths only (`git add -A` / `git add .` / `git add -u` are forbidden: the index is shared checkout state, and broad staging has swept another agent's staged files into the wrong commit); review `git status` + `git diff --cached` before committing.
 - **Never develop in `/tmp`, `scratch/`, or any throwaway directory.** A message-tools production line (0.2→0.4.7) was lost this way. Clone/branch inside this repo or nowhere.
@@ -32,6 +32,8 @@ This repo is public — a hygiene check runs on every commit (`.githooks/pre-com
 
 Checked: **absolute local paths** (`/Users/<name>/…`, `/home/<name>/…` other than the `/home/user` fixture placeholder, `C:\Users\…`), **credential-shaped strings** (API keys, private-key headers, GitHub tokens, `key = "long value"` assignments), and **tooling/scratch state** that must stay ignored (`.playwright-mcp/`, `scratch-*`, `*.tsbuildinfo`, `*.log`, `.DS_Store`, `node_modules/`, package `lib/`, `.env`). Sanitize machine-specific fixture content to `/home/user/…` before committing; keep the checker's own spec green via `pnpm test:scripts`.
 
+Debug screenshots are scratch too: image extensions (`*.png`, `*.jpg`, `*.gif`, `*.webp`) are gitignored, so a screenshot left at the repo root or in a package dir never enters a commit. Delete them as soon as the debugging session ends. The deliberate exception is a doc page that actually references an image: those live in `docs/screenshots/` and are committed with an explicit `git add -f` (the tracked images already there are unaffected).
+
 A second whole-tree checker, `pnpm check:plugins` (`scripts/check-plugin-independence.ts`), mechanically enforces the package conventions below that make every plugin independently installable: self-mounting, the identity triangle, no foreign-scope self references, cross-plugin edges limited to the sanctioned pairs, and community-service injects limited to their owning family. Its spec re-runs it against the real tree, so `pnpm test:scripts` fails on a violation.
 
 ## Package conventions
@@ -50,9 +52,11 @@ A second whole-tree checker, `pnpm check:plugins` (`scripts/check-plugin-indepen
 - Semver per package, independent lines. Before publishing, check the registry (`npm view <name> version`): the new version must exceed it. Publishing at or below the published version fails 403/409.
 - Publish via `scripts/pack-dist.ts` (`--family` rewrites scopes in peer deps) and verify the tarball before `npm publish`.
 - The version in package.json is the next-release line; bump it when cutting a release, not per commit.
+- The full lifecycle — three environments (link for throwaway dev instances, **tarball-only into prod 3080**, npm for the community), the 3080 acceptance gate, the flow-not-approval change model, release cadence, the thin meta-pack plan, and the npm-release bar — lives in [docs/ops.md](docs/ops.md). The npm pre-publish checklist and failure-modes table live in [docs/publishing.md](docs/publishing.md) — follow them, do not improvise.
 
 ## Ops
 
+- Shipping a plugin to prod 3080 goes through the self-serve flow: `pnpm deploy:3080 --package <dir>` (scripts/deploy-3080.mts) — it runs the whole acceptance gate (build/test → pack-dist → profile refresh → credential → preflight → gated restart with canary watch) and prints the announcement. Any agent may run it; only the flow writes the profile.
 - The prod instance is watchdog-supervised (ankh-guard). Restarts are gated by `dsh preflight --profile web` — a FAIL blocks the restart; never bypass the gate.
 - ankh-guard binds restart credentials to git HEAD: run `build + test` before any restart-triggering change so the credential is green.
 - The watchdog can roll the *checkout* back on repeated boot failure. Keep the harness checkout it guards disposable (see the deploy/tracking split in the consolidation note) — uncommitted work in a guarded checkout is at risk.

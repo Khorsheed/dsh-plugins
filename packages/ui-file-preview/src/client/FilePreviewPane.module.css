@@ -160,6 +160,83 @@
   background: #fff;
 }
 
+/* Tier1 scripted-mode confirm bar: a one-time explicit gate before a
+   scripted document runs. Shown above the preview area, never over it. */
+.scriptConfirm {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(88, 196, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(88, 196, 255, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, #9fd4f0);
+}
+
+.scriptConfirmRun,
+.scriptConfirmCancel {
+  flex: none;
+  padding: 2px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+/* Fullscreen-able wrapper around the render iframe: in fullscreen the
+   wrapper fills the viewport and keeps the exit control visible (the toolbar
+   lives outside the iframe and would vanish). */
+.htmlFrameWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.htmlFrameWrap:fullscreen {
+  background: #0f1115;
+}
+
+.htmlFrameExit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  /* Neutral gray + a soft shadow: readable on both light and dark documents
+     without a frame that may clash with the artifact's own styling. */
+  color: #9aa0a6;
+  cursor: pointer;
+}
+
+.htmlFrameExit svg {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+
+.htmlFrameExit:hover {
+  background: rgb(0 0 0 / 0.10);
+  color: #6b7076;
+}
+
+.scriptConfirmRun {
+  border-color: rgba(88, 196, 255, 0.5);
+  color: #7fd4ff;
+}
+
 /* Search mode renders plain text with line-level hits and inline marks. */
 .markedPre {
   margin: 0;

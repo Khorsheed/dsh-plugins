@@ -15,6 +15,15 @@ export type FilePreviewKey =
   | 'preview.htmlToggle'
   | 'preview.htmlSource'
   | 'preview.htmlRender'
+  | 'preview.htmlScript'
+  | 'preview.htmlScriptStop'
+  | 'preview.scriptConfirm'
+  | 'preview.scriptRun'
+  | 'preview.scriptCancel'
+  | 'preview.slowHint'
+  | 'preview.fullscreen'
+  | 'preview.exitFullscreen'
+  | 'preview.staticHint'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -48,6 +57,9 @@ export type FilePreviewKey =
   | 'drawer.step.latest'
   | 'drawer.step.older'
   | 'drawer.step.newer'
+  | 'drawer.resize'
+  | 'drawer.pin'
+  | 'drawer.unpin'
   | 'drawer.previewEmpty'
   | 'drawer.loading'
   | 'drawer.kind.binary'
@@ -78,12 +90,24 @@ export const zh: Record<FilePreviewKey, string> = {
   'preview.htmlToggle': 'HTML 视图',
   'preview.htmlSource': '源码',
   'preview.htmlRender': '渲染',
+  'preview.htmlScript': '运行脚本',
+  'preview.htmlScriptStop': '停止运行',
+  'preview.scriptConfirm': '此文件含脚本，将在隔离沙箱中运行（无网络、无法访问宿主）',
+  'preview.scriptRun': '运行',
+  'preview.scriptCancel': '取消',
+  'preview.slowHint': '渲染超时——文档可能过大，可切源码视图或在浏览器中打开',
+  'preview.fullscreen': '全屏',
+  'preview.exitFullscreen': '退出全屏',
+  'preview.staticHint': '静态预览：此页面含脚本，脚本不会运行——点右上角「运行脚本」可交互',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
   'turn.collapse': '收起',
   'drawer.title': '文件预览',
   'drawer.close': '关闭',
+  'drawer.pin': '固定抽屉（切换会话不收回）',
+  'drawer.resize': '拖动调整抽屉宽度',
+  'drawer.unpin': '取消固定（切换会话自动收回）',
   'drawer.openFolder': '在文件夹中打开',
   'drawer.openIde': '在 IDE 打开',
   'drawer.action.folder': '文件夹',
@@ -135,12 +159,24 @@ export const en: Record<FilePreviewKey, string> = {
   'preview.htmlToggle': 'HTML view',
   'preview.htmlSource': 'Source',
   'preview.htmlRender': 'Render',
+  'preview.htmlScript': 'Run scripts',
+  'preview.htmlScriptStop': 'Stop',
+  'preview.scriptConfirm': 'This file contains scripts; they will run in an isolated sandbox (no network, no host access)',
+  'preview.scriptRun': 'Run',
+  'preview.scriptCancel': 'Cancel',
+  'preview.slowHint': 'Render timed out — the document may be too large; try the source view or open it in a browser',
+  'preview.fullscreen': 'Fullscreen',
+  'preview.exitFullscreen': 'Exit fullscreen',
+  'preview.staticHint': 'Static preview: this page contains scripts, which do not run here — use "Run scripts" above for interactivity',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',
   'turn.collapse': 'Collapse',
   'drawer.title': 'File preview',
   'drawer.close': 'Close',
+  'drawer.pin': 'Pin drawer (keep across session switches)',
+  'drawer.resize': 'Drag to resize the drawer',
+  'drawer.unpin': 'Unpin (collapse on session switch)',
   'drawer.openFolder': 'Show in folder',
   'drawer.openIde': 'Open in IDE',
   'drawer.action.folder': 'Folder',

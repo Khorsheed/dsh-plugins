@@ -11,7 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { DatasetBinding } from './binding.ts'
+import { validateBinding, type DatasetBinding } from './binding.ts'
 import {
   resolveScope, type DatasetScope, type DatasetsService,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
@@ -75,14 +75,18 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   }
 
   /**
-   * Record a binding for the session (a human gesture from the tab).
+   * Record a binding for the session (a human gesture from the tab). Fails
+   * loud BEFORE recording when the path is not a git repository, so the form
+   * surfaces a readable error instead of discovering it on the next list.
    * @param agent - owning live agent.
    * @param binding - the new binding; absent fields mean "everything".
    * @returns the validated binding as recorded.
    */
   @Remote('bind')
-  bind(agent: Agent, binding: DatasetBinding): DatasetBinding {
-    return this.datasets.bind(agent.session, binding)
+  async bind(agent: Agent, binding: DatasetBinding): Promise<DatasetBinding> {
+    const validated = validateBinding(binding)
+    await this.datasets.assertRepository(validated.repoPath)
+    return this.datasets.bind(agent.session, validated)
   }
 
   /**

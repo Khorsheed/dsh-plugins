@@ -51,7 +51,9 @@ export function commitAll(dir: string, message: string): string {
  * Create a fixture repository:
  * - dataset `alpha`: layers `visible`/`hidden` (hidden is modelFacing:false),
  *   items `i1` (metadata + one file per layer) and `i2` (visible only), plus
- *   a passthrough descriptor file.
+ *   a passthrough descriptor file. Dataset-level content: `visible/guide.md`
+ *   and `hidden/answers.md` (declared layers at the dataset level, shared
+ *   across items) plus `drafts/notes.md` (undeclared — stays passthrough).
  * - dataset `beta`: one `visible` layer, one item.
  */
 export function makeFixtureRepo(): FixtureRepo {
@@ -62,6 +64,9 @@ export function makeFixtureRepo(): FixtureRepo {
   writeFiles(dir, {
     'datasets/alpha/dataset.json': `${JSON.stringify(ALPHA_DESCRIPTOR, null, 2)}\n`,
     'datasets/alpha/handbook.md': '# handbook passthrough\n',
+    'datasets/alpha/drafts/notes.md': 'drafts passthrough\n',
+    'datasets/alpha/visible/guide.md': 'shared guide v1\n',
+    'datasets/alpha/hidden/answers.md': 'shared answers v1\n',
     'datasets/alpha/items/i1/item.json': '{"difficulty":"hard"}\n',
     'datasets/alpha/items/i1/visible/task.md': 'task one v1\n',
     'datasets/alpha/items/i1/hidden/notes.md': 'hidden notes v1\n',

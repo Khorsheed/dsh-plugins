@@ -66,6 +66,9 @@ describe('ui-local-agent browser half', () => {
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {
     const { ctx, fiber } = await bench()
+    // rc.8: the initial locale follows the browser (jsdom reports en-US);
+    // pin zh explicitly instead of assuming it is the default.
+    ctx.locale.setLocale('zh')
     const translate = ctx.locale.bind(NS)
     expect(translate('list.aria')).toBe(zh['list.aria'])
     ctx.locale.setLocale('en')

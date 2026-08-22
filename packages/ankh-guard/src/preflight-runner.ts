@@ -33,10 +33,11 @@
  * @module @khorsheed/dsh-ankh-guard/preflight-runner
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pathToFileURL } from 'node:url'
+import { isDirectInvocation } from './defaults.ts'
 
 const NAME = 'dsh'
 const PROFILE_ROOT_FILENAME = 'cordis.yml'
@@ -159,7 +160,13 @@ export async function composePreflightPatches(
     layers: Array<{ patches: unknown[] }>
   }
   const resolveDshHome = homePaths.resolveDshHome as (configured?: string) => string
-  const anchor = fileURLToPath(new URL('../package.json', import.meta.url))
+  // The heal/load anchor mirrors the real launcher's INSTALL_ANCHOR (the dsh
+  // app's own manifest) — never this runner's package: an installed runner's
+  // dependency closure resolves through the profile fallback itself, and
+  // healing then re-points fallback links into self-referential loops
+  // (observed on a second preflight from the installed CLI: ~20 links looped,
+  // the next real boot would have failed).
+  const anchor = join(root, 'apps', 'cli', 'package.json')
   const resolvedHome = resolveDshHome(home)
   healProfilesModuleFallback(anchor)
   const composed = loadProfile(NAME, profile, anchor, resolvedHome, { userLayer: true })
@@ -178,6 +185,34 @@ export async function composePreflightPatches(
       config: {
         ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
         roots: [{ path: join(root, 'apps/cli/config/agent-presets/'), trust: 'system' }],
+      },
+    })
+  }
+  if (rows.has('web-runtime')) {
+    // A dry-run must not have user-visible side effects: the real apply of
+    // the web-app row opens a browser tab on every preflight (openBrowser
+    // defaults true). Suppress it for the dry-run; the port stays 0 either
+    // way.
+    composedOverlays.push({
+      id: 'web-runtime',
+      config: {
+        ...(rows.get('web-runtime')?.config ?? {}) as Record<string, unknown>,
+        openBrowser: false,
+      },
+    })
+  }
+  if (rows.has('ankh-guard')) {
+    // The guard plugin writes state at apply (the instance-launch record,
+    // snapshots). A dry-run is NOT the real instance — isolate its state to a
+    // throwaway dir so a preflight can never poison the deployment's records
+    // (observed: a dry-run wrote instance-launch.json naming the preflight
+    // runner itself as the launch command; a restart falling back to that
+    // record would have spawned a preflight process instead of the instance).
+    composedOverlays.push({
+      id: 'ankh-guard',
+      config: {
+        ...(rows.get('ankh-guard')?.config ?? {}) as Record<string, unknown>,
+        stateDir: mkdtempSync(join(tmpdir(), 'ankh-guard-dry-run-')),
       },
     })
   }
@@ -321,7 +356,7 @@ export function parsePreflightArgs(argv: readonly string[]): { profile: string; 
 }
 
 // Standalone entry: only when executed directly (not imported by the CLI).
-if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (isDirectInvocation(import.meta.url)) {
   const { profile, patchFiles, error } = parsePreflightArgs(process.argv.slice(2))
   if (error !== undefined) {
     process.stderr.write(`${error}\n`)

@@ -16,6 +16,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import { memberDockLines, type MemberDockProjections } from './member-dock.ts'
 import { NS } from './locales.ts'
 import css from './MemberComposer.module.css'
 
@@ -78,13 +79,22 @@ type Membership = LocalAgentDelegationView | null | undefined
  * @returns the composer, or the read-only panel while checking / when not a
  *   member.
  */
-export function MemberComposer({ matched, useSession, memberOf, promptMember, stopMember, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(undefined)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   /** The last structured promptMember failure, rendered inline. */
   const [error, setError] = useState<string | null>(null)
   const running = useSession(snapshot => snapshot.running) ?? false
+  // The member dock self-renders ambient state from the projection seat: the
+  // official panels (StatsLine on 'conversation.composer.dock', TodoPanel on
+  // 'conversation.input.dock') live INSIDE the fallback InputBar that
+  // `overlay: true` hides on election, so no official dock row can reach a
+  // member session. One bag entry per projection a contributor reads.
+  const projections: MemberDockProjections = {
+    tokenUsage: useProjection('tokenUsage'),
+    todos: useProjection('todos'),
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -111,6 +121,7 @@ export function MemberComposer({ matched, useSession, memberOf, promptMember, st
   }
 
   const busy = sending || running
+  const dockLines = memberDockLines(projections, t)
   const send = (): void => {
     const text = draft.trim()
     if (text === '' || busy) return
@@ -178,6 +189,22 @@ export function MemberComposer({ matched, useSession, memberOf, promptMember, st
           )}
         </div>
       </div>
+      {dockLines.length > 0 && (
+        <div className={css.dock} data-member-dock>
+          {dockLines.map(line => (
+            <div
+              key={line.id}
+              className={css.dockRow}
+              // The stats row keeps the pre-dock test hook; every row also
+              // carries its contributor id as the generic hook.
+              data-member-stats={line.id === 'stats' ? '' : undefined}
+              data-member-dock-row={line.id}
+            >
+              {line.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

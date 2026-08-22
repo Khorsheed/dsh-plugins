@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-taskpilot-trajectory-command-lines.md
+.agents/notes/implemented/feature/2026-08-21-taskpilot-trajectory-command-lines.md: 9c8a1b3b2a4fe003d4db2f798a21bfaf845e97ae
+.agents/notes/implemented/feature/2026-08-21-taskpilot-trajectory-command-lines.zh.md: 3355116d17a4f1f3d5c4324bb4fdc1d6f925b8db

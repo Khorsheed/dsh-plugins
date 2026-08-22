@@ -6,7 +6,7 @@
  * mission has no auto-transition code path anywhere.
  */
 import { deriveShape } from './template.ts'
-import type { AttemptRecord, Bucket, MissionRecord, MissionView, RunRecord } from './types.ts'
+import type { AttemptRecord, Bucket, MissionRecord, MissionView, RunRecord, StateMachineDecl } from './types.ts'
 
 /** The current attempt of a mission (always present — attempts start at 1). */
 export function currentAttempt(mission: MissionRecord): AttemptRecord {
@@ -41,6 +41,29 @@ export function bucketOf(mission: MissionRecord, run: RunRecord, now: number): {
   return { bucket: 'active', blockedOn }
 }
 
+/**
+ * States where held resources are settled: the releasable states plus every
+ * state REACHABLE from them through the declared transitions (e.g. a
+ * `released` terminal downstream of `releasable`). A mission holding
+ * `refs.resource` in such a state is past the release gate — the record
+ * stays (immutable history), but it must not trip the unreleased-resource
+ * warning; only states UPSTREAM of the gate (working, archived, …) warn.
+ * Pure derivation from transitions — no new template field.
+ */
+export function releasableClosure(machine: StateMachineDecl): Set<string> {
+  const settled = new Set(machine.releasableStates)
+  const queue = [...settled]
+  while (queue.length > 0) {
+    const from = queue.shift() as string
+    for (const t of machine.transitions) {
+      if (t.from !== from || settled.has(t.to)) continue
+      settled.add(t.to)
+      queue.push(t.to)
+    }
+  }
+  return settled
+}
+
 /** Full view row for one mission (bucket + releasability + resource-hold flag). */
 export function viewOf(mission: MissionRecord, run: RunRecord, now: number): MissionView {
   const attempt = currentAttempt(mission)
@@ -55,7 +78,7 @@ export function viewOf(mission: MissionRecord, run: RunRecord, now: number): Mis
     currentAttempt: mission.currentAttempt,
     blockedOn,
     releasable,
-    resourceHeld: attempt.refs.resource !== undefined && !releasable,
+    resourceHeld: attempt.refs.resource !== undefined && !releasableClosure(run.stateMachine).has(attempt.state),
     enteredCurrentAt: attempt.enteredAt[attempt.state] ?? run.createdAt,
   }
   if (mission.title !== undefined) view.title = mission.title

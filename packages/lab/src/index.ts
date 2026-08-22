@@ -1,10 +1,10 @@
 /**
  * Controlled experiment units: lifecycle management for isolated, reproducible
- * execution environments. This line ships the service face (`ctx.lab`) with
- * the docker provider: `acquire` / `populate` / `collect` / `release` /
- * `status`, environment fingerprints into mission refs, the releasable gate
- * at release, and the `maxConcurrentUnits` safety valve. The CLI is M2, the
- * model tools are M3.
+ * Milestones M1–M2 ship the service face (`ctx.lab`) with the docker provider:
+ * `acquire` / `populate` / `collect` / `checkpoint` / `verify` / `archive` /
+ * `release` / `status`, environment fingerprints into mission refs, the
+ * releasable gate at release, and the `maxConcurrentUnits` safety valve.
+ * The CLI is the rest of M2, the model tools are M3.
  *
  * lab holds no state machine and judges nothing: content arrives as plain
  * directory paths (no code-level datasets dependency), and mission is an
@@ -64,31 +64,43 @@ export function apply(ctx: Context, config: LabConfig): void {
 
 /**
  * Adapt `ctx.subprocess` to the providers' {@link Exec} runner: spawn
- * collected, await settlement, read the batch result.
+ * collected, await settlement, read the batch result. A `timeoutMs` bound
+ * aborts the spawn (SIGTERM → grace → SIGKILL on the client tree); the
+ * in-container pid stays recorded for the release-time sweep.
  */
 function subprocessExec(ctx: Context): Exec {
-  return async (argv) => {
-    const handle = ctx.subprocess.spawn({
-      argv,
-      cwd: process.cwd(),
-      stdio: {
-        stdin: 'ignore',
-        stdout: { maxBytes: 16 * 1024 * 1024 },
-        stderr: { maxBytes: 1024 * 1024 },
-      },
-      graceMs: 5000,
-    })
-    const outcome = await handle.done
-    return {
-      exitCode: outcome.exitCode ?? 1,
-      stdout: handle.collected.stdout?.readFrom(0).text ?? '',
-      stderr: handle.collected.stderr?.readFrom(0).text ?? '',
+  return async (argv, options) => {
+    const controller = options?.timeoutMs !== undefined ? new AbortController() : undefined
+    const timer = options?.timeoutMs !== undefined
+      ? setTimeout(() => controller?.abort(), options.timeoutMs)
+      : undefined
+    try {
+      const handle = ctx.subprocess.spawn({
+        argv,
+        cwd: process.cwd(),
+        stdio: {
+          stdin: 'ignore',
+          stdout: { maxBytes: 16 * 1024 * 1024 },
+          stderr: { maxBytes: 1024 * 1024 },
+        },
+        graceMs: 5000,
+        ...(controller !== undefined ? { signal: controller.signal } : {}),
+      })
+      const outcome = await handle.done
+      return {
+        exitCode: outcome.exitCode ?? -1,
+        stdout: handle.collected.stdout?.readFrom(0).text ?? '',
+        stderr: handle.collected.stderr?.readFrom(0).text ?? '',
+        timedOut: controller?.signal.aborted === true,
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
     }
   }
 }
 
 export { DockerProvider } from './docker.ts'
 export type { DockerProviderOptions } from './docker.ts'
-export { DEFAULT_POPULATE_TARGET, LabService } from './service.ts'
+export { LAB_ANNOTATION_NS, LabService } from './service.ts'
 export type { LabServiceOptions } from './service.ts'
 export type * from './types.ts'

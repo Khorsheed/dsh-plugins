@@ -14,7 +14,7 @@
  * @module dsh-plugins/scripts
  */
 import { execFileSync } from 'node:child_process'
-import { globSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -49,11 +49,13 @@ function parseRecord(meta: string): Map<string, string> {
 
 const pairs: Pair[] = globSync('{packages,.agents}/**/*.i18n.yaml', { cwd: root })
   .filter((meta) => !meta.includes('/archived/'))
-  .map((meta) => ({
-    meta,
-    source: meta.replace(/\.i18n\.yaml$/, '.md'),
-    zh: meta.replace(/\.i18n\.yaml$/, '.zh.md'),
-  }))
+  .map((meta) => {
+    const base = meta.replace(/\.i18n\.yaml$/, '')
+    // Two layouts: EN-first (X.md + X.zh.md) and ZH-first (X.md is Chinese,
+    // X.en.md the English mirror — the repo's README convention).
+    if (existsSync(`${base}.zh.md`)) return { meta, source: `${base}.md`, zh: `${base}.zh.md` }
+    return { meta, source: `${base}.en.md`, zh: `${base}.md` }
+  })
 
 const args = process.argv.slice(2)
 const write = args[0] === '--write'

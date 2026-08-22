@@ -177,6 +177,38 @@ function sumKnown(a: number | undefined, b: number | undefined): number | undefi
   return a === undefined || b === undefined ? undefined : a + b
 }
 
+/** One write-tool call's create-fallback facts (see {@link foldFilePreviewByTurn}). */
+interface WriteCallFacts {
+  readonly path: string
+  /** The full content the call wrote. */
+  readonly content: string
+  /** Whether the path had never been touched in the session log before this call (a create). */
+  readonly firstTouch: boolean
+}
+
+/** Extract the full written content from a `write` tool call's arguments JSON. */
+function contentFromWriteCall(argumentsJson: string): string | undefined {
+  try {
+    const args = JSON.parse(argumentsJson) as unknown
+    if (args !== null && typeof args === 'object') {
+      const content = (args as Record<string, unknown>).content
+      if (typeof content === 'string') return content
+    }
+  } catch {
+    // Model arguments are expected JSON; a malformed payload has no content.
+  }
+  return undefined
+}
+
+/** Read the tool-result block's call identity and failure flag off a result message. */
+function resultCallFacts(
+  message: { readonly content: readonly unknown[] },
+): { callId: string; isError: boolean } | undefined {
+  const block = message.content[0] as { type?: unknown; toolCallId?: unknown; isError?: unknown } | undefined
+  if (block?.type !== 'tool-result' || typeof block.toolCallId !== 'string') return undefined
+  return { callId: block.toolCallId, isError: block.isError === true }
+}
+
 /**
  * Fold a session's events into per-turn file-mutation maps — the turn card's
  * single source of truth. Unlike {@link foldFilePreview}, this does NOT dedupe
@@ -186,7 +218,17 @@ function sumKnown(a: number | undefined, b: number | undefined): number | undefi
  * borrow the enclosing root call's turn (dispatch events carry none); a
  * `tool/result` whose presentation meta carries diffs registers its paths (the
  * render-intent vocabulary) with the result's turn, and per-turn line deltas
- * are summed from the diffs.
+ * are summed from the diffs. A `write` whose result carries no diffs is a
+ * create (the write tool records no diffs when the file had no prior content):
+ * its full written content — read from the call arguments, which the log keeps
+ * — is the added-line count, once per file per turn.
+ *
+ * Count discipline: a write/edit tool/call only registers the path's location
+ * and never touches counts (its counted result follows); the first count
+ * contribution for a turn+path is adopted verbatim, later ones accumulate per
+ * field with unknown-wins — an uncounted mutation (a Code Mode dispatch, or a
+ * diff whose side reports no prior content) poisons that field to undefined
+ * rather than reporting a misleading partial.
  * @param events - the session's events in ascending seq order.
  * @returns turn → path → facts, in event order per turn.
  */
@@ -194,6 +236,14 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
   const byTurn = new Map<number, Map<string, TurnFileFact>>()
   /** Root tool/call locations, so nested code dispatches borrow their turn/step. */
   const callSites = new Map<string, { turn: number; step: number }>()
+  /** Write-tool calls keyed by callId (create fallback; see {@link WriteCallFacts}). */
+  const writeCalls = new Map<string, WriteCallFacts>()
+  /** Every path the session log has written/edited or diff-reported so far
+   *  (create discrimination: a first-touch write is a create). */
+  const sessionSeen = new Set<string>()
+  /** Turn+path keys that have received a line-count contribution. */
+  const counted = new Set<string>()
+  const countKey = (turn: number, path: string): string => `${turn}:${path}`
   const turnMap = (turn: number): Map<string, TurnFileFact> => {
     let map = byTurn.get(turn)
     if (map === undefined) {
@@ -202,13 +252,34 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
     }
     return map
   }
-  const record = (
-    path: string, turn: number, seq: number, step: number,
-    added: number | undefined, removed: number | undefined,
-  ): void => {
+  /** Upsert a path's location without touching its line counts: a write/edit
+   *  tool/call precedes its counted result, so it must neither wipe counts a
+   *  sibling mutation contributed nor adopt anything itself. */
+  const recordLocation = (path: string, turn: number, seq: number, step: number): void => {
     const map = turnMap(turn)
     const existing = map.get(path)
-    if (existing === undefined) {
+    map.set(path, existing === undefined ? { path, seq, step } : { ...existing, seq, step })
+  }
+  /** Apply one mutation's line-count contribution. The first contribution for
+   *  a turn+path is adopted verbatim (a count-less placeholder from a
+   *  preceding tool/call must not poison it); later contributions accumulate
+   *  per field with unknown-wins. `unknown` marks an uncountable mutation (a
+   *  Code Mode dispatch): it poisons both fields. */
+  const recordContribution = (
+    path: string, turn: number, seq: number, step: number,
+    added: number | undefined, removed: number | undefined,
+    unknown: boolean,
+  ): void => {
+    const map = turnMap(turn)
+    const key = countKey(turn, path)
+    if (unknown) {
+      counted.add(key)
+      map.set(path, { path, seq, step })
+      return
+    }
+    const existing = map.get(path)
+    if (!counted.has(key)) {
+      counted.add(key)
       map.set(path, {
         path, seq, step,
         ...(added === undefined ? {} : { added }),
@@ -216,10 +287,12 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       })
       return
     }
-    const mergedAdded = sumKnown(existing.added, added)
-    const mergedRemoved = sumKnown(existing.removed, removed)
+    // Narrow the optional totals before the conditional spread so the fact
+    // never carries an explicit `undefined` (exactOptionalPropertyTypes).
+    const mergedAdded = added === undefined ? undefined : sumKnown(existing?.added, added)
+    const mergedRemoved = removed === undefined ? undefined : sumKnown(existing?.removed, removed)
     map.set(path, {
-      ...existing,
+      path, seq, step,
       ...(mergedAdded === undefined ? {} : { added: mergedAdded }),
       ...(mergedRemoved === undefined ? {} : { removed: mergedRemoved }),
     })
@@ -229,27 +302,54 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       callSites.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
       const target = pathFromToolCall(event.data.name, event.data.arguments)
       if (target === undefined) continue
-      record(target.path, event.data.turn, event.seq, event.data.step, undefined, undefined)
+      if (target.op === 'write') {
+        const content = contentFromWriteCall(event.data.arguments)
+        if (content !== undefined) {
+          const firstTouch = !sessionSeen.has(target.path)
+          sessionSeen.add(target.path)
+          writeCalls.set(String(event.data.callId), { path: target.path, content, firstTouch })
+        }
+      }
+      recordLocation(target.path, event.data.turn, event.seq, event.data.step)
       continue
     }
     if (event.type === 'tool/code-dispatch') {
+      // The dispatch event IS the settled outcome: a failed sub-call changed
+      // nothing, so only successful file touches record. Code Mode writes are
+      // uncountable (no result diffs reach the session), so they register the
+      // path and poison the line-count totals (unknown wins).
       if (event.data.isError) continue
       const target = targetFromArguments(event.data.name, event.data.arguments)
       if (target === undefined) continue
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
-      record(target.path, site.turn, event.seq, site.step, undefined, undefined)
+      sessionSeen.add(target.path)
+      recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
       continue
     }
     if (event.type === 'tool/result') {
       const diffs = diffsFromResultMeta(event.data.meta)
-      if (diffs === undefined) continue
-      for (const diff of diffs) {
-        record(
-          diff.path, event.data.turn, event.seq, event.data.step,
-          lineCount(diff.newText),
-          diff.oldText === null ? undefined : lineCount(diff.oldText),
-        )
+      if (diffs !== undefined) {
+        for (const diff of diffs) {
+          sessionSeen.add(diff.path)
+          recordContribution(
+            diff.path, event.data.turn, event.seq, event.data.step,
+            lineCount(diff.newText),
+            diff.oldText === null ? undefined : lineCount(diff.oldText),
+            false,
+          )
+        }
+        continue
       }
+      // Create fallback: a first-touch write whose result carries no diff meta
+      // — the write tool records no diffs when the file had no prior content —
+      // contributed the whole written content, so the full content IS the
+      // added-line count and a create removes 0. A later empty-meta write to
+      // the same path (an overwrite whose prior content was not diffable)
+      // contributes nothing rather than double-counting.
+      const call = resultCallFacts(event.data.message)
+      const write = call === undefined ? undefined : writeCalls.get(call.callId)
+      if (write === undefined || !write.firstTouch || call?.isError === true) continue
+      recordContribution(write.path, event.data.turn, event.seq, event.data.step, lineCount(write.content), 0, false)
     }
   }
   return byTurn

@@ -1,45 +1,66 @@
 # `@khorsheed/dsh-local-agent-dsh`
 
-[English](README.md) | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-The **dsh harness** for the local-agent family: delegate to dsh itself as a local CLI, sibling to the kimi / codex / claude-code harnesses. The parent spawns a sub-dsh headless process under the harness scoped home (`$DSH_HOME/local-agent/dsh`, its own `DSH_HOME`), with the parent's resolved `DEEPSEEK_API_KEY` injected explicitly, and resumes the SAME sub-dsh session across rounds by a caller-supplied session id.
+把任务委派给 dsh 自己——作为独立的本地 CLI 进程运行，与 kimi / codex / claude-code harness 平级。子 dsh 在自己的 scoped home 下运行，通过父级的 API key 认证，可跨轮续接；设置开关（默认关）打开后才启用委派工具。
 
-## The DeepSeek toggle
+## 特性
 
-Unlike the other family harnesses, this one mounts **nothing model-visible by default**. A mutually-exclusive switch sits inside the dsh harness row's action area in Settings → 本地 Agent (namespace `local-agent-dsh`, default **off**):
+- **委派给 dsh 自己**——spawn 一个子 dsh headless CLI 进程。
+- **Scoped home**——自己的 `DSH_HOME`（`$DSH_HOME/local-agent/dsh`）：profile、会话与状态绝不混入父实例。
+- **跨轮续接**——把子会话 id 传回即可续接同一个子 dsh 会话。
+- **无需单独登录**——通过父级的 `DEEPSEEK_API_KEY` 认证，无 device-code 流程。
+- **DeepSeek 开关，默认关**——在 设置 → 本地 Agent 打开开关之前，模型看不到任何委派工具。
 
-- **OFF** (default): the instance keeps exactly the current behavior — delegation runs through the official in-process subagent tools. The model never sees a dsh delegation tool.
-- **ON**: the controller registers the `dsh` harness, the `dsh-cli` delegation provider, and the family delegation tool (`subagent_dsh`). The switch flips the composition live via the settings watcher.
+## 安装
 
-The official in-process subagent tools are base-bundle-owned and stay outside the switch: OFF leaves only them, ON adds `subagent_dsh` alongside them — two coexisting delegation shapes with different semantics (in-process continuable vs. separate CLI process), which the family tool description ('separate process, its own scoped home') makes distinguishable.
+家族核心与本 bundle 必须在同一条命令里指名，然后重启 profile：
 
-## How delegation works
+```sh
+dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-dsh
+```
 
-1. The provider generates one uuid (`session-<uuid>`), records the delegation (`childSessionId → cliSessionId` identity mapping), and spawns
-   `dsh --profile headless-local-agent-dsh --session-id <uuid> "<task>"` with `env: { DSH_HOME: <scoped home>, DEEPSEEK_API_KEY: <resolved> }` and the parent session's cwd.
-2. The sub-dsh headless bundle (`@khorsheed/dsh-local-agent-dsh-headless`) creates a session with exactly that id, runs the task, prints the final assistant text, and exits 0/1.
-3. A later round passes the child session id as `resume`; the provider resolves the delegation and spawns `--resume <uuid>`; the sub-dsh resumes the same session via `agents.resume`.
+无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
 
-The sub-dsh session id is caller-supplied, never parsed from stdout — sub-dsh stdout stays format-pure.
+卸载：
 
-## Auth
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-dsh
+```
 
-No device-code login: the sub-dsh authenticates through the parent's `DEEPSEEK_API_KEY` credential (the `apiKeyRef` config, default `DEEPSEEK_API_KEY`). `/dsh login` reports the harness has no login flow; `/dsh status` reports whether the credential resolves; `/dsh sessions` lists the sub-dsh's own sessions from its scoped-home store (never the parent's session list).
+scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子 dsh 自己的会话；删除它即清除所有痕迹。
 
-## Sub-profile provisioning
+## 配置
 
-The sub-dsh profile lives under the scoped home (`profiles/headless-local-agent-dsh`): a manifest (`@deepseek-ai/dsh-base` + the family headless bundle), an empty user layer, and one symlink resolving the headless bundle. Everything else (dsh-base and its whole dependency graph) resolves from the dsh installation anchor, so provisioning costs no pnpm install and is idempotent. The parent replicates its own launch (`node --import tsx … bin.ts`, or a configured `cliLaunch`) so the sub-dsh runs the same dsh build as its parent.
-
-## Config
-
-| field | default | meaning |
+| 字段 | 默认 | 含义 |
 | --- | --- | --- |
-| `profileName` | `headless-local-agent-dsh` | sub-dsh profile under the scoped home |
-| `apiKeyRef` | `DEEPSEEK_API_KEY` | credential reference the sub-dsh resolves |
-| `cliLaunch` | parent's own launch | dsh launch argv prefix override |
-| `headlessBundleDir` | resolved from installation | headless bundle directory for the sub-profile symlink |
+| `profileName` | `headless-local-agent-dsh` | scoped home 下的子 dsh profile |
+| `apiKeyRef` | `DEEPSEEK_API_KEY` | 子 dsh 解析的凭据引用 |
+| `cliLaunch` | 父级自身启动 | dsh 启动 argv 前缀覆盖 |
+| `headlessBundleDir` | 从安装解析 | 子 profile 符号链接指向的 headless bundle 目录 |
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.8`): ✅ full — the rc.7→rc.8 API audit (2026-08-20) confirms every surface this plugin consumes (slots, core services, core events, cordis 4.x, schemastery) is unchanged or additive; no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- 源码线（deepseek-harness master）：✅
+
+## 已知限制
+
+- 无交互式或 device-code 登录流程——子 dsh 只能通过父级的 `DEEPSEEK_API_KEY` 凭据认证；`/dsh login` 报告该 harness 无登录流程。
+
+## 实现原理
+
+<details>
+<summary>内部结构（点击展开）</summary>
+
+**DeepSeek 开关。** 与其他家族 harness 不同，本包默认不挂载任何模型可见的东西。互斥开关位于 dsh harness 行的动作区内（设置 → 本地 Agent，namespace `local-agent-dsh`，默认 off）：OFF 时委派走官方 in-process subagent 工具；ON 时注册 `dsh` harness、`dsh-cli` 委派 provider 与家族工具 `subagent_dsh`，与官方工具并存——两种委派形态语义不同（in-process continuable vs. 独立 CLI 进程），家族工具描述让模型可以区分。开关经 settings watcher 实时翻转组合。
+
+**委派。** provider 生成一个 uuid（`session-<uuid>`），记录委派（`childSessionId → cliSessionId` 恒等映射），并 spawn `dsh --profile headless-local-agent-dsh --session-id <uuid> "<task>"`，env 为 `{ DSH_HOME: <scoped home>, DEEPSEEK_API_KEY: <resolved> }`，cwd 为父会话 cwd。headless bundle（`@khorsheed/dsh-local-agent-dsh-headless`）用该确切 id 创建会话——id 由调用方提供，绝不从 stdout 解析——运行任务、打印最终助手文本、退出 0/1。后续轮把子会话 id 作为 `resume` 传入；provider spawn `--resume <uuid>`，子 dsh 经 `agents.resume` 续接同一会话。
+
+**认证与供给。** 无 device-code 登录：子 dsh 通过父级的 `DEEPSEEK_API_KEY` 凭据认证（`apiKeyRef` 配置）；`/dsh status` 报告凭据是否可解析，`/dsh sessions` 从 scoped-home 存储列出子 dsh 自己的会话。子 profile 位于 `profiles/headless-local-agent-dsh`：一个 manifest（`@deepseek-ai/dsh-base` + 家族 headless bundle）、一个空用户层、一条解析 headless bundle 的符号链接——其余一切从 dsh 安装锚点解析，供给零 pnpm install 成本且幂等。父级复制自己的启动方式（或配置 `cliLaunch`），让子 dsh 与父级跑同一个 dsh 构建。
+
+</details>
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/local-agent-dsh`）。问题与贡献请移步该仓库。

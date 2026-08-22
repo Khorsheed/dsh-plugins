@@ -7,10 +7,25 @@
  * official reader primitives (see preview.tsx). All data comes from the
  * injected Remote callbacks; the whitelist the binding declares is enforced
  * host-side, so the tree only ever shows what the session may see.
+ *
+ * The tree follows the IDE explorer anatomy (VS Code): compact 24px rows,
+ * chevron disclosure at every group level, hairline indent guides under each
+ * expanded group, the official folder glyphs for layers (they ARE repo
+ * directories) and a minimal inline file glyph for leaves (no official
+ * per-extension icon set exists — see the M2 Agent Note), and full-row subtle
+ * hover/selected backgrounds. Item metadata stays OUT of the tree (an
+ * explorer has no chips); it surfaces in the preview header when one of the
+ * item's files is selected. The preview pane's skeleton follows the products
+ * tab: a single quiet header line (icon + path + metadata + commit), a
+ * hairline below it, then the content.
  */
 
 import { useEffect, useState } from 'react'
-import type { DatasetBinding, ItemRecord, ListItemsResult } from '../types.ts'
+import {
+  Button, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconFolderClose16, IconFolderOpen16, Input, Pill,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
@@ -22,6 +37,51 @@ function parseList(raw: string): string[] | undefined {
   return list.length === 0 ? undefined : list
 }
 
+/** At most this many metadata chips show in the preview header; the rest collapse into +N. */
+const MAX_META_PILLS = 3
+
+/** One metadata entry as quiet chip text: scalars inline, containers summarized. */
+function metaPillText(key: string, value: unknown): string {
+  if (Array.isArray(value)) return `${key} [${value.length}]`
+  if (value !== null && typeof value === 'object') return `${key} {…}`
+  return `${key}: ${String(value)}`
+}
+
+/** The selected item's metadata as quiet chips in the preview header — never raw JSON. */
+function MetaPills(props: { metadata: JsonObject; t: DatasetsViewProps['t'] }) {
+  const { metadata, t } = props
+  const entries = Object.entries(metadata)
+  if (entries.length === 0) return null
+  const shown = entries.slice(0, MAX_META_PILLS)
+  const rest = entries.length - shown.length
+  return (
+    <span className={css.metaPills} title={JSON.stringify(metadata, null, 2)}>
+      {shown.map(([key, value]) => <Pill key={key} className={css.metaPill}>{metaPillText(key, value)}</Pill>)}
+      {rest > 0 && <Pill className={css.metaPill}>{t('tree.moreMeta', { count: rest })}</Pill>}
+    </span>
+  )
+}
+
+/** The leaf file glyph: a minimal inline document outline (the official icon
+ * set ships folder glyphs but no file icon — see the M2 Agent Note). */
+function FileIcon() {
+  return (
+    <svg className={css.fileIcon} width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M4 1.5h5.5L13 5v9.5H4V1.5Z M9.5 1.5V5H13"
+        stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A group-row chevron: the official 14px disclosure glyphs. */
+function Chevron(props: { open: boolean }) {
+  return props.open
+    ? <IconChevronDownOutline14 className={css.chevron} />
+    : <IconChevronRightOutline14 className={css.chevron} />
+}
+
 /**
  * The bind/edit form: repo path plus optional dataset and layer whitelists.
  * Local state only — the submitted binding lands in the store through the
@@ -31,9 +91,16 @@ function BindingForm(props: {
   initial: DatasetBinding | null
   onSubmit: (binding: DatasetBinding) => void
   onCancel: () => void
+  /** The session workspace's directory, when one exists (the one-tap option). */
+  currentCwd: string | undefined
+  /** Whether the host can show its native directory chooser. */
+  canPick: boolean
+  pickDirectory: () => Promise<string | null>
+  /** A bind failure to surface inside the form. */
+  notice: string | null
   t: DatasetsViewProps['t']
 }) {
-  const { initial, onSubmit, onCancel, t } = props
+  const { initial, onSubmit, onCancel, currentCwd, canPick, pickDirectory, notice, t } = props
   const [repo, setRepo] = useState(initial?.repoPath ?? '')
   const [datasets, setDatasets] = useState(initial?.datasets?.join(', ') ?? '')
   const [layers, setLayers] = useState(initial?.layers?.join(', ') ?? '')
@@ -54,75 +121,130 @@ function BindingForm(props: {
       }}
     >
       <div className={css.bindFormTitle}>{t('binding.form.title')}</div>
-      <input
-        className={css.bindInput}
+      <Input
         value={repo}
         onChange={event => { setRepo(event.target.value) }}
         placeholder={t('binding.form.repo')}
         aria-label={t('binding.form.repo')}
       />
-      <input
-        className={css.bindInput}
+      <div className={css.bindShortcuts}>
+        {currentCwd !== undefined && (
+          <Button type="button" size="sm" onClick={() => { setRepo(currentCwd) }}>
+            {t('binding.form.useWorkspace')}
+          </Button>
+        )}
+        {canPick && (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              void pickDirectory().then((picked) => {
+                if (picked !== null) setRepo(picked)
+              })
+            }}
+          >
+            {t('binding.form.browse')}
+          </Button>
+        )}
+      </div>
+      <Input
         value={datasets}
         onChange={event => { setDatasets(event.target.value) }}
         placeholder={t('binding.form.datasets')}
         aria-label={t('binding.form.datasets')}
       />
-      <input
-        className={css.bindInput}
+      <Input
         value={layers}
         onChange={event => { setLayers(event.target.value) }}
         placeholder={t('binding.form.layers')}
         aria-label={t('binding.form.layers')}
       />
       <div className={css.bindFormActions}>
-        <button type="submit" className={css.action}>{t('binding.form.submit')}</button>
-        <button type="button" className={css.action} onClick={onCancel}>{t('binding.form.cancel')}</button>
+        <Button type="submit" variant="primary" size="sm">{t('binding.form.submit')}</Button>
+        <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
       </div>
+      {notice !== null && <div className={css.notice}>{notice}</div>}
     </form>
   )
 }
 
-/** One item's layer/file tree (files are the leaf rows that drive the preview). */
-function ItemNode(props: {
+/** One layer group: a collapsible folder row, then its file leaves under a guide. */
+function LayerNode(props: {
   dataset: string
-  item: ItemRecord
+  /** Item id, or null for a dataset-level (shared) layer. */
+  item: string | null
+  layer: string
+  paths: readonly string[]
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, selection, onSelect } = props
-  const [open, setOpen] = useState(false)
+  const { dataset, item, layer, paths, selection, onSelect, t } = props
+  const [open, setOpen] = useState(true)
   return (
-    <div className={css.item}>
-      <button type="button" className={css.itemRow} onClick={() => { setOpen(!open) }}>
-        <span className={css.twisty}>{open ? '▾' : '▸'}</span>
-        <span className={css.itemId}>{item.id}</span>
-        {item.metadata !== undefined && (
-          <span className={css.itemMeta} title={JSON.stringify(item.metadata, null, 2)}>
-            {JSON.stringify(item.metadata)}
-          </span>
-        )}
+    <div className={css.layer}>
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        {open ? <IconFolderOpen16 className={css.folderIcon} /> : <IconFolderClose16 className={css.folderIcon} />}
+        <span className={css.rowTitle}>{layer}</span>
+        <span className={css.rowCount}>· {t('tree.fileCount', { count: paths.length })}</span>
       </button>
-      {open && Object.entries(item.layers).map(([layer, paths]) => (
-        <div key={layer} className={css.layer}>
-          <div className={css.layerRow}>{layer} ({paths.length})</div>
+      {open && (
+        <div className={css.children}>
           {paths.map((path) => {
             const selected = selection !== null
-              && selection.dataset === dataset && selection.item === item.id
+              && selection.dataset === dataset && selection.item === item
               && selection.layer === layer && selection.path === path
             return (
               <button
                 key={path}
                 type="button"
                 className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
-                onClick={() => { onSelect({ dataset, item: item.id, layer, path }) }}
+                onClick={() => { onSelect({ dataset, item, layer, path }) }}
               >
-                {path}
+                <FileIcon />
+                <span className={css.fileName}>{path}</span>
               </button>
             )
           })}
         </div>
-      ))}
+      )}
+    </div>
+  )
+}
+
+/** One item: a disclosure row; its layers (and their files) sit under a guide. */
+function ItemNode(props: {
+  dataset: string
+  item: ItemRecord
+  selection: DatasetSelection | null
+  onSelect: (selection: DatasetSelection) => void
+  t: DatasetsViewProps['t']
+}) {
+  const { dataset, item, selection, onSelect, t } = props
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={css.item}>
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        <span className={css.rowTitle}>{item.id}</span>
+      </button>
+      {open && (
+        <div className={css.children}>
+          {Object.entries(item.layers).map(([layer, paths]) => (
+            <LayerNode
+              key={layer}
+              dataset={dataset}
+              item={item.id}
+              layer={layer}
+              paths={paths}
+              selection={selection}
+              onSelect={onSelect}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -133,9 +255,11 @@ function ItemNode(props: {
  */
 export function DatasetsView(props: DatasetsViewProps) {
   const {
-    sessionId, useStore, actions, t,
+    sessionId, useSessions, useStore, actions, t,
     fetchBinding, bindSession, unbindSession, listDatasets, readFile,
+    isLoopback, pickDirectory,
   } = props
+  const { useHostDescription } = props
   const binding = useStore(s => s.binding)
   const bindingLoaded = useStore(s => s.bindingLoaded)
   const notice = useStore(s => s.notice)
@@ -145,12 +269,15 @@ export function DatasetsView(props: DatasetsViewProps) {
   const refreshRev = useStore(s => s.refreshRev)
   const expandedDataset = useStore(s => s.expandedDataset)
   const items = useStore(s => s.items)
+  const sharedLayers = useStore(s => s.sharedLayers)
   const selection = useStore(s => s.selection)
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
   const previewError = useStore(s => s.previewError)
   // Component-private view state: whether the bind/edit form is open.
   const [formOpen, setFormOpen] = useState(false)
+  const currentCwd = useSessions(s => s.byId[sessionId]?.cwd)
+  const canPick = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   // Fetch the binding on mount and after bind/unbind refreshes, then the
   // dataset list of the bound scope; a stale request is dropped on cleanup.
@@ -162,6 +289,11 @@ export function DatasetsView(props: DatasetsViewProps) {
       if (cancelled) return
       if (!result.ok) {
         actions.setListLoading(false)
+        // Settle the bar too: an unanswerable binding read must not leave the
+        // tab on "loading" forever (a dead session errors on every fetch).
+        // setBinding resets the list error as part of its cascade, so the
+        // error goes on after it.
+        actions.setBinding(null)
         actions.setListError(result.error.message)
         return
       }
@@ -190,7 +322,10 @@ export function DatasetsView(props: DatasetsViewProps) {
     const dataset = expandedDataset
     void listDatasets(sessionId, dataset).then((result) => {
       if (cancelled || !result.ok) return
-      if (result.value.kind === 'items') actions.setItems(dataset, (result.value as ListItemsResult).items)
+      if (result.value.kind === 'items') {
+        const detail = result.value as ListItemsResult
+        actions.setItems(dataset, detail.items, detail.datasetLayers)
+      }
     })
     return () => { cancelled = true }
   }, [sessionId, expandedDataset, items, actions, listDatasets])
@@ -204,7 +339,9 @@ export function DatasetsView(props: DatasetsViewProps) {
     actions.setPreviewLoading(true)
     actions.setPreviewError(null)
     void readFile(sessionId, {
-      dataset: target.dataset, item: target.item, layer: target.layer, path: target.path,
+      dataset: target.dataset,
+      ...(target.item !== null ? { item: target.item } : {}),
+      layer: target.layer, path: target.path,
     }).then((result) => {
       if (cancelled) return
       actions.setPreviewLoading(false)
@@ -236,6 +373,10 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
   }
 
+  const selectedItem = selection === null || selection.item === null
+    ? undefined
+    : items[selection.dataset]?.find(item => item.id === selection.item)
+
   return (
     <div className={css.view} data-conversation-composer-overlay="">
       <div className={css.bindingBar}>
@@ -250,12 +391,12 @@ export function DatasetsView(props: DatasetsViewProps) {
                 {' · '}
                 {binding.layers !== undefined ? binding.layers.join(', ') : t('binding.allLayers')}
               </span>
-              <button type="button" className={css.action} onClick={() => { setFormOpen(true) }}>
+              <Button size="sm" onClick={() => { setFormOpen(true) }}>
                 {t('binding.edit')}
-              </button>
-              <button type="button" className={css.action} onClick={clearBinding}>
+              </Button>
+              <Button size="sm" onClick={clearBinding}>
                 {t('binding.unbind')}
-              </button>
+              </Button>
             </div>
           )
           : (
@@ -263,17 +404,21 @@ export function DatasetsView(props: DatasetsViewProps) {
               <span className={css.bindingNone}>
                 {bindingLoaded ? t('binding.none') : t('list.loading')}
               </span>
-              <button type="button" className={css.action} onClick={() => { setFormOpen(true) }}>
+              <Button size="sm" variant="outline" onClick={() => { setFormOpen(true) }}>
                 {t('binding.bind')}
-              </button>
+              </Button>
             </div>
           )}
-        {notice !== null && <div className={css.notice}>{notice}</div>}
+        {notice !== null && !formOpen && <div className={css.notice}>{notice}</div>}
         {formOpen && (
           <BindingForm
             initial={binding}
             onSubmit={submitBinding}
             onCancel={() => { setFormOpen(false) }}
+            currentCwd={currentCwd}
+            canPick={canPick}
+            pickDirectory={pickDirectory}
+            notice={notice}
             t={t}
           />
         )}
@@ -296,23 +441,53 @@ export function DatasetsView(props: DatasetsViewProps) {
               <div key={dataset.id} className={css.dataset}>
                 <button
                   type="button"
-                  className={css.datasetRow}
+                  className={css.row}
                   onClick={() => { actions.expand(expanded ? null : dataset.id) }}
+                  aria-expanded={expanded}
                 >
-                  <span className={css.twisty}>{expanded ? '▾' : '▸'}</span>
-                  <span className={css.datasetId}>{dataset.id}</span>
-                  {dataset.name !== undefined && <span className={css.datasetName}>{dataset.name}</span>}
-                  <span className={css.datasetCount}>{t('list.itemCount', { count: dataset.itemCount })}</span>
+                  <Chevron open={expanded} />
+                  <span className={css.rowTitleStrong}>{dataset.id}</span>
+                  <span className={css.rowCount}>· {t('list.itemCount', { count: dataset.itemCount })}</span>
                 </button>
-                {expanded && (items[dataset.id] ?? []).map(item => (
-                  <ItemNode
-                    key={item.id}
-                    dataset={dataset.id}
-                    item={item}
-                    selection={selection}
-                    onSelect={(next) => { actions.select(next) }}
-                  />
+                {dataset.name !== undefined && (
+                  <div className={css.datasetNote} title={dataset.name}>{dataset.name}</div>
+                )}
+                {dataset.warnings.map(warning => (
+                  <div key={warning.layer} className={css.datasetWarn}>
+                    {t('tree.warnModelFacing', { layer: warning.layer })}
+                  </div>
                 ))}
+                {expanded && (
+                  <div className={css.children}>
+                    {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (
+                      <div className={css.sharedGroup}>
+                        <div className={css.sharedLabel}>{t('tree.shared')}</div>
+                        {Object.entries(sharedLayers[dataset.id] ?? {}).map(([layer, paths]) => (
+                          <LayerNode
+                            key={layer}
+                            dataset={dataset.id}
+                            item={null}
+                            layer={layer}
+                            paths={paths}
+                            selection={selection}
+                            onSelect={(next) => { actions.select(next) }}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {(items[dataset.id] ?? []).map(item => (
+                      <ItemNode
+                        key={item.id}
+                        dataset={dataset.id}
+                        item={item}
+                        selection={selection}
+                        onSelect={(next) => { actions.select(next) }}
+                        t={t}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -320,9 +495,13 @@ export function DatasetsView(props: DatasetsViewProps) {
         <section className={css.preview}>
           {selection !== null && (
             <div className={css.previewHeader}>
+              <FileIcon />
               <span className={css.previewPath}>
-                {selection.item} / {selection.layer}/{selection.path}
+                {selection.item ?? t('tree.shared')} / {selection.layer}/{selection.path}
               </span>
+              {selectedItem?.metadata !== undefined && (
+                <MetaPills metadata={selectedItem.metadata} t={t} />
+              )}
               {preview !== null && (
                 <span className={css.previewCommit}>@{preview.commit.slice(0, 7)}</span>
               )}
@@ -335,11 +514,14 @@ export function DatasetsView(props: DatasetsViewProps) {
           )}
           {selection !== null && !previewLoading && previewError === null && preview !== null && (
             <div className={css.previewScroll}>
-              <DatasetPreview
-                key={`${selection.item}/${selection.layer}/${selection.path}`}
-                path={selection.path}
-                content={preview.content}
-              />
+              <div className={css.previewContent}>
+                <DatasetPreview
+                  key={`${selection.item}/${selection.layer}/${selection.path}`}
+                  path={selection.path}
+                  content={preview.content}
+                  t={t}
+                />
+              </div>
             </div>
           )}
         </section>

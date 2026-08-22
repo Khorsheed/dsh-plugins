@@ -33,6 +33,10 @@
 #   WD_GUARD="CMD"     how to invoke the guard CLI (default: dsh-ankh-guard)
 #   WD_WAIT_OWNER=1    don't adopt the port; wait for the current owner to exit
 #   WD_DELAY=N         sleep N seconds before adopting/observing the port
+#   WD_INITIATOR=ID    session that established supervision; the adoption
+#                      takeover's report record is addressed to it
+#   WD_ADOPTION=1      the CLI saw a live owner at supervise time — the first
+#                      boot is a takeover (report it), not a first-ever boot
 #   WD_SUPERVISE=1     write/check the pidfile (one watchdog only)
 #   WD_BOOT_TIMEOUT=N  seconds to wait for the port to answer 200 (default 60)
 #   WD_TEST_FAKE=1     launch a throwaway http server instead of the instance
@@ -288,6 +292,7 @@ rm -f "$GIVE_UP_MARKER"
 failures=0
 reset_done=0
 port_races=0
+yielded=0
 
 trap 'retry_on_usrs' USR1
 
@@ -298,7 +303,9 @@ trap 'retry_on_usrs' USR1
 # start's free_port covers that case. (`set -u` — guard every var.)
 cleanup() {
   if [ -n "${page_pid:-}" ]; then kill "$page_pid" 2>/dev/null; fi
-  if [ -n "${child:-}" ]; then kill_tree "$child" TERM; fi
+  # A YIELDING watchdog leaves its instance running for the new owner (the
+  # port is healthy; killing it would just make the successor respawn).
+  if [ -n "${child:-}" ] && [ "${yielded:-0}" != "1" ]; then kill_tree "$child" TERM; fi
   # Drop the pidfile ONLY while it names us: a successor watchdog may have
   # already claimed it in the restart window, and deleting theirs would let a
   # second supervisor in.
@@ -320,6 +327,27 @@ else
 fi
 
 while true; do
+  # Self-heal the ownership claim FIRST: if the state dir (or the pidfile) was
+  # cleaned underneath a live watchdog, reclaim it; if another LIVE watchdog
+  # now holds it, yield — two supervisors on one port reap each other's
+  # instance (observed: stale watchdog + deleted pidfile → second watchdog
+  # spawned → both fought over the port).
+  if [ "$SUPERVISE" = "1" ]; then
+    if [ ! -f "$PIDFILE" ]; then (set -C; echo $$ > "$PIDFILE") 2>/dev/null || true; fi
+    pidowner=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -n "$pidowner" ] && [ "$pidowner" != "$$" ] && kill -0 "$pidowner" 2>/dev/null; then
+      echo "[watchdog] pidfile now owned by live pid $pidowner — yielding"
+      yielded=1
+      exit 0
+    fi
+  fi
+  # Snapshot BEFORE this boot rewrites it: the stamp exists iff this
+  # deployment has ever come up healthy — the discriminator between
+  # "recovered an unplanned exit" and "first boot ever" (a first boot must
+  # not file a crash report). Durable (not a process flag) so a restarted
+  # watchdog still judges correctly.
+  had_boot_stamp=0
+  [ -f "$STATE_DIR/last-good-boot.json" ] && had_boot_stamp=1
   echo "[watchdog] starting instance on :$PORT (failures=$failures)"
   # Capture this attempt's output for failure-domain classification. Plain
   # redirection only — never > >(tee …) process substitution: a sandboxed or
@@ -444,26 +472,43 @@ while true; do
       continue
     fi
   else
-    # Unplanned exit (crash, or a stop outside the guard): the instance is
-    # back, but nobody knows — the report machinery only hears from the
-    # scheduled path. Leave a record the plugin reports on this boot, unless
-    # one still awaits its report (never overwrite a pending record).
-    node -e "
-      const fs = require('fs')
-      const file = '$STATE_DIR/last-restart.json'
-      try {
-        const r = JSON.parse(fs.readFileSync(file, 'utf8'))
-        if (r.reportedAt === undefined) process.exit(0)
-      } catch {}
-      fs.writeFileSync(file, JSON.stringify({ exitAt: Date.now(), unexpected: true }) + '\n')
-    " && echo "[watchdog] unplanned exit recovered — left a report record for the next session"
+    # Unplanned exit (crash, or a stop outside the guard): leave a record the
+    # plugin reports on this boot — crash recovery must not be silent. Only
+    # when the deployment has come up before (stamp snapshotted at the loop
+    # top); the record semantics (pending protection, atomic write) live in
+    # the guard CLI, where they typecheck and unit-test.
+    if [ "$had_boot_stamp" = "1" ]; then
+      guard_cmd record-unexpected-exit --state-dir "$STATE_DIR"
+    elif [ "${WD_ADOPTION:-0}" = "1" ]; then
+      # Adoption takeover — the first restart this deployment ever saw (the
+      # CLI detected the previous owner at supervise time; probing here would
+      # race the owner's exit). The session that established supervision
+      # promised a verification report; this record wakes it after the bounce.
+      # A first-EVER boot (WD_ADOPTION=0) reports nothing.
+      guard_cmd record-adoption --state-dir "$STATE_DIR" --initiator "${WD_INITIATOR:-}"
+    fi
   fi
 
   failures=0
   reset_done=0
   port_races=0
+  # Watch the instance with a poll loop rather than a bare wait: the ownership
+  # claim needs the same self-heal while the instance is healthy (the state
+  # dir can be cleaned underneath a live watchdog at any time — that is how a
+  # second supervisor once got spawned and both fought over the port).
+  while kill -0 "$child" 2>/dev/null; do
+    if [ "$SUPERVISE" = "1" ]; then
+      if [ ! -f "$PIDFILE" ]; then (set -C; echo $$ > "$PIDFILE") 2>/dev/null || true; fi
+      pidowner=$(cat "$PIDFILE" 2>/dev/null)
+      if [ -n "$pidowner" ] && [ "$pidowner" != "$$" ] && kill -0 "$pidowner" 2>/dev/null; then
+        echo "[watchdog] pidfile now owned by live pid $pidowner — yielding (instance left running for the new owner)"
+        yielded=1
+        exit 0
+      fi
+    fi
+    sleep 2
+  done
   wait "$child"
-  exit_code=$?
 
   # Explicit stop: exit the watchdog without respawn.
   if [ -f "$STOP_MARKER" ]; then

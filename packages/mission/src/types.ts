@@ -21,12 +21,17 @@ export type Guard =
     expectedFiles: string[]
   }
   | {
-    /** The last `submit` JSON payload must validate against this JSON Schema (subset, see schema.ts). */
+    /** The named JSON input must validate against this JSON Schema (subset, see schema.ts). */
     type: 'schema-check'
     /** Resolved against the template's directory (absolute paths used as-is). */
     schemaPath: string
-    /** Only `'submission'` exists: the payload recorded by `submit`. */
-    inputFrom?: 'submission'
+    /**
+     * What to validate: `'submission'` (default) — the payload recorded by
+     * `submit`; `'run-meta'` — the run's `meta` object (e.g. a template can
+     * require dataset-snapshot fields on the earliest transition, pinning
+     * comparability the way `refs.fingerprint` pins the environment).
+     */
+    inputFrom?: 'submission' | 'run-meta'
   }
   | {
     /** An external script/human attested this key for the current attempt (`attest`). */
@@ -187,8 +192,108 @@ export interface MissionView {
   blockedOn: string[]
   scheduledAt?: number
   releasable: boolean
-  /** True while the current attempt holds `refs.resource` without being releasable. */
+  /**
+   * True while the current attempt holds `refs.resource` in a state UPSTREAM of the
+   * release gate (not a releasable state and not reachable from one — `released`
+   * terminals downstream of the gate are settled and stay silent).
+   */
   resourceHeld: boolean
   /** Epoch ms when the current state was entered (the queue view's duration column). */
   enteredCurrentAt: number
 }
+
+/** The Remote wire contracts (the missions tab’s data face) live here so the
+ * Typert boundary types sit on the public `./types` subpath. */
+
+/** `queue` request: the bucket chips (multi-select), the run scope, the all-runs toggle. */
+export interface MissionQueueRequest {
+  /** Restrict to these projection buckets; absent = all five. */
+  buckets?: string[]
+  /** One run only; absent = the scope toggle decides. */
+  runId?: string
+  /** true = every run; absent/false = only runs this session originated. */
+  all?: boolean
+}
+
+/** One run's section of the queue payload. */
+export interface MissionQueueRun {
+  run: RunSummary
+  rows: MissionView[]
+}
+
+/** The queue payload: run sections in run order, plus the caller's session id. */
+export interface MissionQueueResult {
+  sessionId: string
+  runs: MissionQueueRun[]
+}
+
+/** `get` request: one mission's full detail. */
+export interface MissionGetRequest {
+  missionId: string
+  runId?: string
+}
+
+/** AttemptRecord on the wire: the Remote boundary constrains the submission payload to JSON. */
+export type MissionAttemptWire = Omit<AttemptRecord, 'submission'> & {
+  submission?: { json?: JsonValue; at: number; by: string }
+}
+
+/** AnnotationRecord on the wire: the Remote boundary constrains the payload to JSON. */
+export type MissionAnnotationWire = Omit<AnnotationRecord, 'payload'> & { payload: JsonValue }
+
+/** One mission's detail for the tab's row panel. */
+export interface MissionDetail {
+  runId: string
+  view: MissionView
+  title?: string
+  attempts: MissionAttemptWire[]
+  annotations: MissionAnnotationWire[]
+}
+
+/** `retry` / `isReleasable` request. */
+export interface MissionRefRequest {
+  missionId: string
+  runId?: string
+}
+
+/** `exportPlan` request: what the export dialog needs before confirming. */
+export interface MissionExportPlanRequest {
+  runId: string
+  outDir: string
+  /** Layer names to include; guarded flags are resolved host-side. */
+  layers?: string[]
+  snapshotDir?: string
+  snapshot?: SnapshotRef
+  /** Extra guarded declarations (explicit, additive to the datasets probe). */
+  guarded?: string[]
+}
+
+/** `exportRun` request: the confirmed export. */
+export interface MissionExportRequest extends MissionExportPlanRequest {
+  /** The guarded layers the human confirmed in the dialog — re-checked against a fresh plan. */
+  confirmed: string[]
+}
+
+/** The plan view the dialog renders (guarded list + expected ns + target path). */
+export interface MissionExportPlanView {
+  bundleDir: string
+  guardedLayers: string[]
+  expectedNs: string[] | null
+  missions: number
+  attempts: number
+}
+
+/** The export outcome view. */
+export interface MissionExportResultView {
+  bundleDir: string
+  files: number
+}
+
+// Named re-exports so every type the Remote boundary references (directly or
+// nested) is reachable from the public `./types` subpath (the Typert
+// generator's boundary-type rule); the imports give this module local bindings.
+import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { RunSummary } from './service.ts'
+import type { SnapshotRef } from './export.ts'
+export type { RunSummary } from './service.ts'
+export type { ExportLayer, SnapshotRef } from './export.ts'

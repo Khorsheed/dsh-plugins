@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { bucketOf, currentAttempt } from '../src/projection.ts'
+import { bucketOf, currentAttempt, releasableClosure } from '../src/projection.ts'
 import { MissionService } from '../src/service.ts'
 import { SIMPLE_TEMPLATE } from '../src/template.ts'
 
@@ -140,5 +140,70 @@ describe('DAG composition (layered chain) and retry semantics', () => {
     // The projection re-blocks downstream missions that have not run yet.
     const buckets = Object.fromEntries(service.runStatus('dag', { now: NOW }).rows.map(r => [r.id, r.bucket]))
     expect(buckets['dws-summary']).toBe('blocked')
+  })
+})
+
+describe('unreleased-resource warning (releasable closure)', () => {
+  // working → archived → releasable → released; the gate is `releasable`.
+  const GATE = {
+    states: ['working', 'archived', 'releasable', 'released'],
+    transitions: [
+      { from: 'working', to: 'archived' },
+      { from: 'archived', to: 'releasable', guard: { type: 'attested', key: 'ok' } },
+      { from: 'releasable', to: 'released' },
+    ],
+    releasableStates: ['releasable'],
+  }
+
+  async function gatedRun(): Promise<void> {
+    await service.runCreate({ template: GATE, runId: 'g' })
+    await service.create({ runId: 'g', id: 'm' })
+  }
+
+  it('a mission upstream of the gate holding a resource warns; one without does not', async () => {
+    await gatedRun()
+    await service.setRefs('m', { resource: 'box-1' }, { runId: 'g' })
+    await service.transition('m', 'archived', { runId: 'g' })
+    expect(service.runStatus('g').unreleased).toEqual(['m'])
+    const { mission } = service.get('m', 'g')
+    expect(mission.attempts[0]?.refs.resource).toBe('box-1') // record intact — immutable history
+  })
+
+  it('no resource reference, no warning', async () => {
+    await gatedRun()
+    await service.transition('m', 'archived', { runId: 'g' })
+    expect(service.runStatus('g').unreleased).toEqual([])
+  })
+
+  it('past the gate (released terminal) the record stays but the warning stops', async () => {
+    await gatedRun()
+    await service.setRefs('m', { resource: 'box-1' }, { runId: 'g' })
+    await service.transition('m', 'archived', { runId: 'g' })
+    await service.attest('m', 'ok', { runId: 'g' })
+    await service.transition('m', 'releasable', { runId: 'g' })
+    expect(service.runStatus('g').unreleased).toEqual([])
+    await service.transition('m', 'released', { runId: 'g' })
+    const status = service.runStatus('g')
+    expect(status.unreleased).toEqual([]) // released is downstream of the gate — settled, not a leak
+    expect(status.rows[0]?.state).toBe('released')
+    expect(status.rows[0]?.bucket).toBe('done')
+  })
+
+  it('the closure derives from transitions alone: several releasable states and branches', () => {
+    const machine = {
+      states: ['start', 'mid', 'r1', 'r2', 'a', 'b', 'c', 'd'],
+      transitions: [
+        { from: 'start', to: 'mid' },
+        { from: 'mid', to: 'r1' },
+        { from: 'mid', to: 'd' },
+        { from: 'r1', to: 'a' },
+        { from: 'a', to: 'b' },
+        { from: 'r2', to: 'c' },
+        { from: 'b', to: 'r2' },
+      ],
+      releasableStates: ['r1', 'r2'],
+    }
+    // r1→a→b→r2→c all settle; mid (upstream) and d (side branch off the path) do not.
+    expect([...releasableClosure(machine)].sort()).toEqual(['a', 'b', 'c', 'r1', 'r2'])
   })
 })

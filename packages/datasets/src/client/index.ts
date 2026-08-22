@@ -10,6 +10,7 @@
  * @module @khorsheed/dsh-datasets/client
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -32,7 +33,7 @@ export { DatasetsView }
  * fiber — declaring it would deadlock the loader. The mount is awaited and the
  * namespace is then read back from the global store with `ctx.get` (the
  * ui-file-preview precedent). */
-export const inject = ['slots', 'remote', 'locale']
+export const inject = ['slots', 'remote', 'locale', 'workspaces', 'connection']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries and the
@@ -57,6 +58,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // trip the property proxy — the namespace lives in the sibling fiber $mount
   // spawned).
   const remote = ctx.get('remote.datasets') as DatasetsRemote
+  const connection = ctx.get('connection') as ConnectionHandle
 
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
@@ -71,6 +73,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       unbindSession: (sid: SessionId) => remote.unbind(sid),
       listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
       readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
+      isLoopback: connection.isLoopback,
+      hooks: { hostDescription: connection.hostDescription },
+      pickDirectory: () => ctx.workspaces.pickDirectory(),
     }),
   }, DatasetsView))
 

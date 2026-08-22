@@ -2,20 +2,24 @@
   "name": "dsh-plugins",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.20.0",
   "engines": {
     "node": "^22.19 || >=24"
   },
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
-    "test:scripts": "vitest run scripts",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
     "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts",
     "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
-    "hooks:install": "node scripts/setup-hooks.mjs"
+    "hooks:install": "node scripts/setup-hooks.mjs",
+    "deploy:3080": "tsx scripts/deploy-3080.mts",
+    "compat:report": "tsx scripts/compat-report.ts",
+    "verify:package": "tsx scripts/verify-package.mts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

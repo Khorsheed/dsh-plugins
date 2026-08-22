@@ -2,7 +2,6 @@
   "name": "@khorsheed/dsh-message-timeline",
   "description": "Message timeline: a flat floating list over the conversation scrollport that jumps to any user message, with a tick-only rest state",
   "version": "0.1.0-rc.6",
-  "private": true,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -35,7 +34,8 @@
       "platform": "web"
     },
     "compat": {
-      "minHost": "0.1.0-rc.6"
+      "minHost": "0.1.0-rc.6",
+      "verifiedHost": "0.1.1-rc.1"
     }
   },
   "scripts": {
@@ -58,14 +58,13 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-test-runtime": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-web-react": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-locale": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
@@ -74,10 +73,21 @@
     "react-dom": "^18.2.0"
   },
   "files": [
-    "lib/index.js",
-    "lib/invariant.js",
-    "lib/client.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/message-timeline"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "message-timeline"
   ]
 }

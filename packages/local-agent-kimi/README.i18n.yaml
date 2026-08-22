@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record: the git blob hash of each side as of the
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write packages/local-agent-kimi/README.md
-packages/local-agent-kimi/README.md: b49c6c69aa92921d601bdeac8ad1466ef9e2f6fb
-packages/local-agent-kimi/README.zh.md: 492a122d72038bbe2c710169b88a4e60df667982
+#   pnpm run verify-translation-pairing --write packages/local-agent-kimi/README.en.md
+packages/local-agent-kimi/README.en.md: 42f597188079cec3e99c59e5f531ae8f2da49ef7
+packages/local-agent-kimi/README.md: 3847890917410379584defaf3ad030c4438d484c

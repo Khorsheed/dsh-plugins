@@ -12,6 +12,9 @@
 import { useEffect, useState } from 'react'
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { FilePreviewTurnRowProps } from './contract.ts'
+import {
+  IconChevronDownOutline14, IconChevronUpOutline14, IconFolderOpenOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { basename } from './turn-files.ts'
 import { parentPath } from './path-utils.ts'
 import css from './TurnFileRow.module.css'
@@ -52,16 +55,16 @@ export function TurnFileRow(props: FilePreviewTurnRowProps) {
         aria-expanded={!collapsed}
         onClick={() => { setCollapsed(value => !value) }}
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden className={css.headerIcon}>
-          <path
-            d="M3 2.5h6.5L13 6v7.5H3z M9.5 2.5V6H13"
-            fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"
-          />
-        </svg>
+        <IconFolderOpenOutline16 size={14} className={css.headerIcon} />
         <span className={css.headerText}>
           {t(files.length === 1 ? 'turn.summaryOne' : 'turn.summary', { count: files.length })}
         </span>
-        <span className={css.chevron} aria-hidden>{collapsed ? '▸' : '▾'}</span>
+        <span className={css.chevron} aria-hidden>
+          {/* Accordion convention: collapsed → down (click unfolds downward),
+              open → up (click folds the body back up). A right-pointing arrow
+              here read as "open a drawer to the side", which the card is not. */}
+          {collapsed ? <IconChevronDownOutline14 /> : <IconChevronUpOutline14 />}
+        </span>
       </button>
       {!collapsed && (
         <div className={css.list}>

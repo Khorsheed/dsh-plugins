@@ -10,11 +10,11 @@
 
 ## 条目
 
-### S1. 文件打开路由不可覆盖（产物行 / 正文 mention）
+### S1. 文件打开路由不可覆盖（产物行 / 正文 mention / 工具结果行）
 
 - **需求**：第三方能替换"打开文件"的目标（官方写死 `workspaces.openPath` → 跳 OS/IDE）。
-- **现状绕行**：turnTail chain 以 `priority: -1` 抢占官方产物行（first-match 选举）；正文 mention 用 document 捕获阶段 click 拦截（三道闸门 + fail-open）。代码标记 `TODO(official-opener-seam)`。
-- **退役条件**：ui-conversation 提供文件打开覆盖点（可选 opener 服务或可替换的 `chatFileMentions`)。每次官方升级核对：chain 选举语义、`deliverables` 回合数据形状、mention 的 `code > button[title]` 结构。
+- **现状绕行**：turnTail chain 以 `priority: -1` 抢占官方产物行（first-match 选举）；正文 mention 用 document 捕获阶段 click 拦截（三道闸门 + fail-open）。代码标记 `TODO(official-opener-seam)`。**2026-08-21 E2E 实测补丁**：官方**工具结果行**的文件链接（write/run_code 等工具输出里的 disclosure 行 `button.fileLink`）同样是官方 openPath，不在上述两个拦截面内——点击静默跳 IDE（headless 无反应），插件无法接管；该入口留作官方打开覆盖点落地后的统一受益者，暂不另做拦截（避免与工具行披露折叠交互冲突）。
+- **退役条件**：ui-conversation 提供文件打开覆盖点（可选 opener 服务或可替换的 `chatFileMentions`)。每次官方升级核对：chain 选举语义、`deliverables` 回合数据形状、mention 的 `code > button[title]` 结构、工具结果行的 `button.fileLink` 结构。
 - **状态**：绕行中（@khorsheed/dsh-client-ui-file-preview）。
 
 ### S2. bash/子进程写入的文件不进任何日志结构

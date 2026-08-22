@@ -41,11 +41,12 @@ wire 类型（`LocalAgentDelegationView`、`LocalAgentPromptResult`）放在 `sr
 - 官方未来若新增 priority 低于 -20 的条目会改变选举顺序——可见但安全（链条继续下落到本条目，再到只读接管）。
 - composer 抄了 `InputBar` 的皮，官方输入框改版需手工跟进——接受，与 message-tools 遮蔽官方渲染器属同一维护类别。
 - 父会话离线的发送以 facade 错误文案 fail loud；冷拉父 agent loop 留作后续。
-- 成员互通知（鸭子类型的 `room.receiveMemberMessage` 探针边、桥接 MCP server、每 run token）保留给 M3；local-agent → room 的可选边尚未引入，本次改动无需在 `check-plugin-independence` 登记新 sanction。
+- 成员互通知（鸭子类型的 `room.receiveMemberMessage` 探针边、桥接 MCP server、每 run token）在本 note 撰写时保留给 M3，此后已落地——见[成员互通知 note](2026-08-19-local-agent-member-notification.md)；local-agent → room 的边保持鸭子类型，`check-plugin-independence` 无需 sanction。
+- **更正（2026-08-20）：统计行并不随选举存活。** M2 计划假设官方 `StatsLine` 挂在独立于 composer 链的 `conversation.composer.dock` list 槽上；真实环境反馈确认 dock 是作为 fallback InputBar 的 `footer` prop 传入的（harness `ConversationRoot.tsx:154-156`），而 `overlay: true` 下当选条目会隐藏整个 fallback——成员会话因此没有统计行。提案写明的备选路径现为落地实现：MemberComposer 在可写卡片下方用 `tokenUsage` 投影自渲染一条独立居中的 dock 统计行（对齐官方 StatsLine 排版：chat 内容宽、居中、12/20 tertiary）（缓存命中率按三个计费桶计算 + 紧凑格式的输入/输出总量；会话无任何 token 活动时整行不渲染；run 进行中显示上次 settle 的数值）。降级只读分支刻意保持与官方面板视觉一致——那里没有统计行。turn/step 计数与时序分组是 dsh-agent 概念，CLI 成员不渲染。
 
 ## Testing
 
-`packages/local-agent/tests/gateway.spec.ts` 新增成员通道套件（7 例）：`memberOf` 命中/未命中；`promptMember` 对 fake subagents provider 的全链路（facade resume 收到记录里的 parent/provider，prompt 只含人的文本、绝不含 CLI 会话句柄），未知子会话、父会话无 live agent、resume 在飞三类结构化错误；`stopMember` 命中/未命中并观察到 abort 信号。`packages/local-agent/tests/member-composer.client.spec.tsx`（10 例）：selector 纯度（one-shot 当选 / continuable 拒绝 / 普通或缺省会话拒绝），`memberOf` 返回 null 时的只读降级渲染，发送以子会话 id 与 trim 后文本调用 `promptMember` 并清空草稿，结构化错误与 RPC 失败兜底内联渲染，成员运行中输入禁用且 Stop 调 `stopMember`。测试套件：local-agent 118/118，local-agent-tool-subagent 10/10。
+`packages/local-agent/tests/gateway.spec.ts` 新增成员通道套件（7 例）：`memberOf` 命中/未命中；`promptMember` 对 fake subagents provider 的全链路（facade resume 收到记录里的 parent/provider，prompt 只含人的文本、绝不含 CLI 会话句柄），未知子会话、父会话无 live agent、resume 在飞三类结构化错误；`stopMember` 命中/未命中并观察到 abort 信号。`packages/local-agent/tests/member-composer.client.spec.tsx`（14 例）：selector 纯度（one-shot 当选 / continuable 拒绝 / 普通或缺省会话拒绝），`memberOf` 返回 null 时的只读降级渲染，发送以子会话 id 与 trim 后文本调用 `promptMember` 并清空草稿，结构化错误与 RPC 失败兜底内联渲染，成员运行中输入禁用且 Stop 调 `stopMember`，以及统计行：无用量时不渲染、缓存命中率按三个计费桶计算、token 总量紧凑格式、降级只读分支不出现统计行。测试套件：local-agent 138/138，local-agent-tool-subagent 10/10。
 
 ## Cross-references
 
