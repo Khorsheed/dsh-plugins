@@ -97,6 +97,39 @@ export function subagentDelegationLabel(displayName: string, description: string
 }
 
 /**
+ * A harness's login flow. Two variants:
+ *
+ * - **device-code**: spawn the CLI's login command and capture its printed
+ *   prompt (the URL/code) for the reply while the CLI polls in the background.
+ * - **manual handoff**: the CLI's auth is TTY-only, so nothing is spawnable —
+ *   `/login` replies with instructions naming the command for the user's own
+ *   terminal, and the registry watches the scoped home for the credential.
+ */
+export type LocalAgentLogin =
+  | {
+    command: string
+    args: readonly string[]
+    /**
+     * Which stream carries the device-code prompt. Defaults to `stderr`
+     * (kimi's login prints there); harnesses whose CLI prints the prompt to
+     * stdout (codex `login --device-auth`, claude `setup-token`) declare
+     * `stdout` so the reply surfaces the URL instead of timing out.
+     */
+    capture?: 'stderr' | 'stdout'
+  }
+  | {
+    manual: {
+      /** The exact command line the user runs in their own terminal. */
+      commandDisplay: string
+    }
+    /**
+     * Credential probe polled while the handoff is in flight; defaults to the
+     * harness's own `isAuthenticated`.
+     */
+    watch?: (homeDir: string) => Promise<boolean>
+  }
+
+/**
  * One registered local code-agent harness.
  */
 export interface LocalAgentHarness {
@@ -114,22 +147,17 @@ export interface LocalAgentHarness {
    */
   delegationProvider?: string
   /**
-   * Device-code login invocation; the prompt is captured from stderr. Absent
-   * means the harness has no login flow — it authenticates through the host
-   * instance (e.g. by resolving a credential from the parent's store), so
-   * `/login` reports that instead of guessing a command.
+   * Login flow declaration. The device-code variant spawns the CLI and
+   * captures its printed prompt. The manual variant spawns NOTHING: the CLI's
+   * auth is TTY-only (claude ≥2.1 prints no OAuth URL off a TTY and
+   * `setup-token` needs Ink raw mode — scraping broke twice), so `/login`
+   * replies with instructions naming `manual.commandDisplay` for the user's
+   * own terminal, then watches for the credential to land. Absent means the
+   * harness has no login flow — it authenticates through the host instance
+   * (e.g. by resolving a credential from the parent's store), so `/login`
+   * reports that instead of guessing a command.
    */
-  login?: {
-    command: string
-    args: readonly string[]
-    /**
-     * Which stream carries the device-code prompt. Defaults to `stderr`
-     * (kimi's login prints there); harnesses whose CLI prints the prompt to
-     * stdout (codex `login --device-auth`, claude `setup-token`) declare
-     * `stdout` so the reply surfaces the URL instead of timing out.
-     */
-    capture?: 'stderr' | 'stdout'
-  }
+  login?: LocalAgentLogin
   /** Session records reader for this harness's format. */
   records: LocalAgentRecordsAdapter
   /**
@@ -170,6 +198,12 @@ export interface Config {
 
 /** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
 export const REPLACE_LOGIN_GRACE_MS = 5_000
+
+/** Poll interval for a manual-handoff login watch. */
+export const MANUAL_LOGIN_POLL_MS = 2_000
+
+/** How long a manual-handoff login watches before reporting the timeout. */
+export const MANUAL_LOGIN_LIMIT_MS = 5 * 60_000
 
 /** Heartbeat interval for facade-tracked in-flight runs. */
 export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
@@ -250,9 +284,13 @@ export const Config: z<Config> = z.object({
 export const LOCAL_AGENT_SERVICE = 'localAgent'
 
 /** One bounded login attempt: the polling child plus its settle signal. */
+/** One bounded login attempt: the polling child or manual watch, plus its settle signal. */
 interface LoginController {
-  child: ChildProcess
+  /** The device-code variant's CLI child; absent for a manual-handoff watch. */
+  child?: ChildProcess
   done: Promise<void>
+  /** Cancel a manual-handoff watch (the device variant cancels by killing its child). */
+  stop?: () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -1140,20 +1178,22 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Start the device-code login in the harness's scoped home. The URL and code
-   * arrive on stderr (verified against kimi-code 0.33.0; other harnesses print
-   * the same prompt shape); the reply surfaces that prompt immediately while
-   * the child keeps polling in the background. A second login while one is
-   * pending terminates the previous login's child and replaces it — a stale or
-   * abandoned login (browser never opened, user gave up) must not hold the
-   * slot forever, and the user's retry should just get a fresh code. An
-   * abandoned login with no retry self-heals when the CLI's own device code
-   * expires and its polling child exits (kimi/codex/claude all do); no
-   * idle timer is added because a too-short one would kill a user who is
-   * genuinely authorizing. A harness without a login flow answers with an
+   * Run one login flow. The device-code variant spawns the CLI in the scoped
+   * home and captures its prompt from stderr/stdout; the reply surfaces that
+   * prompt immediately while the child keeps polling in the background. The
+   * manual variant spawns nothing — the reply carries the terminal
+   * instructions and a watch polls the credential probe. A second login while
+   * one is pending replaces it — a stale or abandoned attempt (browser never
+   * opened, user gave up) must not hold the slot forever, and the user's
+   * retry should just get a fresh start. An abandoned device-code login with
+   * no retry self-heals when the CLI's own device code expires and its
+   * polling child exits (kimi/codex do); no idle timer is added because a
+   * too-short one would kill a user who is genuinely authorizing (the manual
+   * watch is bounded instead). A harness without a login flow answers with an
    * error instead of spawning anything.
-   * @param harness - the harness whose login command runs.
-   * @returns the device-code prompt as the command success text.
+   * @param harness - the harness whose login flow runs.
+   * @returns the command result: the device-code prompt, or the manual
+   *   handoff's terminal instructions.
    */
   private login(harness: LocalAgentHarness): Promise<CommandResult> {
     const login = harness.login
@@ -1165,21 +1205,28 @@ export class LocalAgentRegistry {
     }
     const existing = this.logins.get(harness.name)
     if (existing !== undefined) {
-      // A pending login is replaced, not refused: terminate its child so the
-      // new login gets a clean slot. The old controller's done signal already
-      // cleared the map entry or will (its settle path deletes only when the
-      // map still holds THAT controller, which the new set() below makes false).
+      // A pending login is replaced, not refused: stop its watch / terminate
+      // its child so the new login gets a clean slot. The old controller's
+      // done signal already cleared the map entry or will (its settle path
+      // deletes only when the map still holds THAT controller, which the new
+      // set() below makes false).
+      existing.stop?.()
       const stale = existing.child
-      stale.kill()
-      // SIGTERM first, then SIGKILL after a grace period: a CLI that ignores
-      // SIGTERM must not leave a zombie polling process behind (the slot is
-      // already replaced, so this is process hygiene, not a functional lock).
-      const hardKill = setTimeout(() => {
-        if (stale.exitCode === null && stale.signalCode === null) stale.kill('SIGKILL')
-      }, REPLACE_LOGIN_GRACE_MS)
-      stale.once('exit', () => { clearTimeout(hardKill) })
+      if (stale !== undefined) {
+        stale.kill()
+        // SIGTERM first, then SIGKILL after a grace period: a CLI that ignores
+        // SIGTERM must not leave a zombie polling process behind (the slot is
+        // already replaced, so this is process hygiene, not a functional lock).
+        const hardKill = setTimeout(() => {
+          if (stale.exitCode === null && stale.signalCode === null) stale.kill('SIGKILL')
+        }, REPLACE_LOGIN_GRACE_MS)
+        stale.once('exit', () => { clearTimeout(hardKill) })
+      }
     }
-    const controller: LoginController = { child: undefined as unknown as ChildProcess, done: Promise.resolve() }
+    // The manual handoff spawns nothing: reply with the terminal instructions
+    // and watch for the credential.
+    if ('manual' in login) return this.manualLogin(harness, login)
+    const controller: LoginController = { done: Promise.resolve() }
     this.logins.set(harness.name, controller)
     const resultPromise = this.runLogin(harness, login, controller)
     // The settle signal is the real one only after runLogin populated it;
@@ -1190,10 +1237,73 @@ export class LocalAgentRegistry {
     return resultPromise
   }
 
+  /**
+   * The manual-handoff login: the reply carries the exact command the user
+   * runs in their own terminal, and a bounded watch polls the credential probe
+   * (default: the harness's `isAuthenticated`) until the credential lands, the
+   * window expires, or a new login replaces the watch. The reply cannot carry
+   * the outcome — the command channel has already returned — so success and
+   * timeout are logged, and the surfaces' own status polling (the settings
+   * section re-probes every few seconds) picks the landed credential up.
+   * @param harness - the harness declaring the manual flow.
+   * @param login - the manual variant declaration.
+   * @returns the instructions as the command success text.
+   */
+  private manualLogin(
+    harness: LocalAgentHarness,
+    login: Extract<LocalAgentLogin, { manual: unknown }>,
+  ): Promise<CommandResult> {
+    const controller: LoginController = { done: Promise.resolve() }
+    this.logins.set(harness.name, controller)
+    const probe = login.watch ?? harness.isAuthenticated
+    if (probe !== undefined) {
+      const homeDir = this.homeDir(harness.name)
+      const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
+      let stopped = false
+      let timer: ReturnType<typeof setInterval> | undefined
+      controller.done = new Promise<void>((resolve) => {
+        const finish = (message: string, level: 'info' | 'warn'): void => {
+          if (stopped) return
+          stopped = true
+          if (timer !== undefined) clearInterval(timer)
+          this.ctx.logger[level](message)
+          resolve()
+        }
+        controller.stop = () => { finish(`${harness.name} login watch replaced`, 'info') }
+        const tick = async (): Promise<void> => {
+          if (stopped) return
+          try {
+            if (await probe(homeDir)) {
+              finish(`${harness.name} login detected in the scoped home`, 'info')
+              return
+            }
+          } catch {
+            // A probe failure is a transient read; keep watching.
+          }
+          if (Date.now() >= deadline) {
+            finish(
+              `${harness.name} login watch expired after ${Math.round(MANUAL_LOGIN_LIMIT_MS / 1000)}s with no credential; run /${harness.name} login again to retry`,
+              'warn',
+            )
+          }
+        }
+        timer = setInterval(() => { void tick() }, MANUAL_LOGIN_POLL_MS)
+        timer.unref()
+      })
+    }
+    void controller.done.then(() => {
+      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+    })
+    return Promise.resolve({
+      kind: 'success',
+      text: `${harness.displayName} CLI login needs an interactive terminal. Run this in your own terminal:\n\n  ${login.manual.commandDisplay}\n\nWatching the scoped home for the credential for up to ${Math.round(MANUAL_LOGIN_LIMIT_MS / 60_000)} minutes; this surface picks the login up automatically.`,
+    })
+  }
+
   /** Spawn the harness login command and capture its device-code prompt. */
   private runLogin(
     harness: LocalAgentHarness,
-    login: NonNullable<LocalAgentHarness['login']>,
+    login: Extract<LocalAgentLogin, { command: string }>,
     controller: LoginController,
   ): Promise<CommandResult> {
     const child = spawn(login.command, [...login.args], {

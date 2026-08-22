@@ -45,7 +45,7 @@ A custom composition mounts the core once:
 
 ## Known Limitations
 
-- **Login is a captured prompt** — no interactive terminal in the web GUI; the device-code URL arrives in the command reply while the CLI polls in the background.
+- **Login is a captured prompt or a manual handoff** — the web GUI has no interactive terminal: device-code harnesses (kimi/codex) surface the URL in the command reply while the CLI polls in the background; a harness whose auth is TTY-only (claude ≥2.1) declares the manual variant — `/login` replies with the exact command to run in the user's own terminal, and the registry watches the scoped home for the credential.
 - **Homes root placement** — defaults to `$DSH_HOME/local-agent`, pending a standardized `var/state` layout.
 - **Delegation log growth** — each harness's `delegations.jsonl` is append-only with no rotation.
 - **One-sample shape** — the harness contract is induced from Kimi alone; not yet frozen.
@@ -55,7 +55,7 @@ A custom composition mounts the core once:
 <details>
 <summary>Internals (click to expand)</summary>
 
-Each harness registers into `ctx.localAgent`: a scoped home, an optional device-code login command, a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
+Each harness registers into `ctx.localAgent`: a scoped home, an optional login declaration (a device-code command, or the manual-handoff variant for a TTY-only CLI), a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
 
 **Delegation stays out of this seam.** Each harness bundle mounts its own subagent-provider row into the existing `subagent` capability (subagent-acp for ACP-over-stdio harnesses, an app-server provider for Codex), reading the scoped home through `localAgent.homeDir(name)`.
 

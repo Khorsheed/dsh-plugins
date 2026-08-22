@@ -8,7 +8,7 @@ Delegate coding tasks to a locally installed Claude Code from any dsh agent pres
 
 - **Delegate from any preset** — the tool mounts once at the profile root; no per-preset variants.
 - **Scoped home** — every Claude process runs with `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/claude-code`; your personal `~/.claude` stays out of it.
-- **Browser login, one command** — `/claude-code login` surfaces the OAuth URL in-session; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
+- **Guided login, one command** — `/claude-code login` answers with the exact command to run in your own terminal (claude ≥2.1 prints its OAuth URL only on a TTY, so the host no longer spawns and scrapes) and watches the scoped home for the credential; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
 - **Resume a delegation** — pass back the result's `resume` handle to continue the same Claude session, with per-round accounting.
 - **Live stream mirror** — the child session mirrors Claude's thinking, tool calls, and replies live; aborting keeps the partial transcript and real token usage.
 

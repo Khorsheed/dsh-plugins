@@ -8,7 +8,7 @@
 
 - **任意 preset 都能委派**——工具只在 profile 根挂载一次,无需逐 preset 变体。
 - **作用域隔离**——每个 Claude 进程都以 `$DSH_HOME/local-agent/claude-code` 为 `CLAUDE_CONFIG_DIR` 运行;你的个人 `~/.claude` 置身事外。
-- **一条命令完成浏览器登录**——`/claude-code login` 在会话中呈现 OAuth URL;`sessions`/`status`/`logout` 与 设置 → 本地 Agent 面板构成完整一族。
+- **一条命令完成登录指引**——`/claude-code login` 在会话中给出需要在你自己终端运行的完整命令(claude ≥2.1 只在 TTY 打印 OAuth URL,宿主不再 spawn 抓取),并监听作用域目录识别登录完成;`sessions`/`status`/`logout` 与 设置 → 本地 Agent 面板构成完整一族。
 - **续聊委派**——把结果自述的 `resume` 句柄传回,即可继续同一个 Claude 会话,并按轮记账。
 - **实时流镜像**——子会话实时镜像 Claude 的思考、工具调用与回复;中止会保留部分转写与真实 token 用量。
 

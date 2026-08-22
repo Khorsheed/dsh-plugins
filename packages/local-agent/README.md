@@ -45,7 +45,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 ## 已知限制
 
-- **登录为抓取式 prompt**——web GUI 没有交互式终端面，device-code URL 通过命令回复呈现、CLI 在后台轮询。
+- **登录为抓取式 prompt 或人工交接**——web GUI 没有交互式终端面：device-code harness（kimi/codex）的 URL 通过命令回复呈现、CLI 在后台轮询；认证只在 TTY 可用的 harness（claude ≥2.1）声明 manual 变体——`/login` 回复用户在自己终端运行的完整命令，registry 监听作用域目录识别登录完成。
 - **homes 根位置**——默认 `$DSH_HOME/local-agent`，待 `var/state` 布局标准化后再议。
 - **委派日志增长**——每个 harness 的 `delegations.jsonl` 只增不减、无轮转。
 - **单样本形状**——harness 契约仅由 Kimi 归纳，尚未冻结。
@@ -55,7 +55,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 <details>
 <summary>内部结构（点击展开）</summary>
 
-每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的 device-code 登录命令、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
+每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的登录声明（device-code 命令，或 TTY-only CLI 的 manual 交接变体）、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
 
 **委派不属于这个 seam。** 每个 harness bundle 各自向既有的 `subagent` 能力挂载 subagent-provider 行（讲 stdio ACP 的 harness 用 subagent-acp，Codex 用其 app-server provider），经 `localAgent.homeDir(name)` 读取作用域目录。
 

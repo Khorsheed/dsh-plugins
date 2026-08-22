@@ -31,8 +31,16 @@ describe('local-agent-claude-code apply', () => {
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
-      login: { command: 'claude', args: ['auth', 'login'], capture: 'stdout' },
     })
+    // The manual-handoff login: no spawnable command, the exact terminal
+    // display command scrubbing the relay env and pinning the scoped home.
+    const login = registered[0]?.login
+    expect(login !== undefined && 'manual' in login).toBe(true)
+    if (login !== undefined && 'manual' in login) {
+      expect(login.manual.commandDisplay).toBe(
+        `env -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL CLAUDE_CONFIG_DIR=${home} claude auth login`,
+      )
+    }
     expect(registered[0]?.records).toBeDefined()
     // The scoped home is provisioned eagerly.
     await new Promise(resolve => setTimeout(resolve, 10))

@@ -1,8 +1,9 @@
 /**
  * Claude Code harness instantiation of the local-agent family. Registers the
  * `claude-code` harness into the core registry: scoped home under the shared
- * homes root (`CLAUDE_CONFIG_DIR`), browser-login through
- * `claude auth login` (prompt captured from stdout), and project-file
+ * homes root (`CLAUDE_CONFIG_DIR`), login as a manual handoff (claude ≥2.1
+ * prints no OAuth URL off a TTY, so `/login` replies with the exact terminal
+ * command and the registry watches for the credential), and project-file
  * session records. Delegation mounts through the `claude-local` provider
  * (one-shot `claude -p --output-format json` under the scoped home); the
  * bundle patch's `tool-subagent-claude-code-local` row puts the tool on the
@@ -77,11 +78,15 @@ export function apply(ctx: Context, config: Config): void {
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
       login: {
-        command: 'claude',
-        args: ['auth', 'login'],
-        // claude auth login prints the browser OAuth URL to stdout; the CLI
-        // polls in the background while the user authorizes in the browser.
-        capture: 'stdout',
+        // claude ≥2.1 (verified 2.1.235) prints no OAuth URL off a TTY and
+        // `setup-token` needs Ink raw mode — nothing the host can spawn. The
+        // user runs this verbatim in their own terminal; the relay env is
+        // scrubbed and the scoped home pinned so the credential lands where
+        // the delegations read it.
+        manual: {
+          commandDisplay: `env -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL CLAUDE_CONFIG_DIR=${homeDir} claude auth login`,
+        },
+        // The watch defaults to isAuthenticated (claudeAuthenticated below).
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
       isAuthenticated: claudeAuthenticated,
