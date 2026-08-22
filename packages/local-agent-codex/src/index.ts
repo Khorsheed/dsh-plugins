@@ -92,12 +92,11 @@ export function apply(ctx: Context, config: Config): void {
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
-      login: {
-        command: 'codex',
-        args: ['login', '--device-auth'],
-        // codex prints the device-code URL to stdout, not stderr.
-        capture: 'stdout',
-      },
+      // A PTY run of plain `codex login` starts a localhost callback server
+      // (no device code, no paste) and opens the browser itself — the
+      // first-class flow. `--device-auth` remains the documented headless
+      // fallback for remote terminals.
+      login: { pty: { command: 'codex', args: ['login'] } },
       records: { listSessions: homeDir => listCodexSessions(homeDir) },
       isAuthenticated: codexAuthenticated,
       credentialStamp: codexCredentialStamp,

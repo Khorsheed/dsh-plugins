@@ -31,7 +31,7 @@ describe('local-agent-codex apply', () => {
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
-      login: { command: 'codex', args: ['login', '--device-auth'], capture: 'stdout' },
+      login: { pty: { command: 'codex', args: ['login'] } },
     })
     // The records adapter is exercised end-to-end by the records spec.
     expect(registered[0]?.records).toBeDefined()

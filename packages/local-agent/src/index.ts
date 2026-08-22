@@ -228,6 +228,20 @@ export interface Config {
 /** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
 export const REPLACE_LOGIN_GRACE_MS = 5_000
 
+/**
+ * Strip ANSI escape sequences (colors, OSC-8 hyperlinks) from captured CLI
+ * output. Login prompts are scraped from terminal-targeted output, and a
+ * trailing `ESC[0m` glued onto an OAuth URL corrupts the link the user opens
+ * (a real 3080 incident: codex's device URL ended in `%1B[0m` and the page
+ * reported the session ended).
+ */
+const ANSI_ESCAPE = /\[[0-9;?]*[A-Za-z]|\]8;;[^\ ]*\\/g
+
+/** Remove terminal escape sequences from scraped CLI text. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_ESCAPE, '')
+}
+
 /** Poll interval for a manual-handoff login watch. */
 export const MANUAL_LOGIN_POLL_MS = 2_000
 
@@ -387,6 +401,7 @@ function renderStatus(status: LocalAgentStatus): string {
 function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signal: NodeJS.Signals | null): string {
   return `${harness.name} login exited with ${signal ?? `code ${exitCode ?? 'unknown'}`}; try /${harness.name} login again.`
 }
+
 
 /**
  * Registry of local code-agent harnesses and the per-harness command family.
@@ -1453,7 +1468,7 @@ export class LocalAgentRegistry {
       const promptTimeout = setTimeout(() => { resolve() }, this.loginPromptTimeoutMs)
       terminal.output.on('data', (chunk: Buffer) => {
         if (url === undefined) {
-          const match = /https?:\/\/[^\s\]]+/.exec(chunk.toString())
+          const match = /https?:\/\/[^\s\]]+/.exec(stripAnsi(chunk.toString()))
           if (match !== null) {
             url = match[0]
             clearTimeout(promptTimeout)
@@ -1517,6 +1532,7 @@ export class LocalAgentRegistry {
     })
     const capture = login.capture ?? 'stderr'
     let prompt = ''
+    let answered = false
     return new Promise<CommandResult>((resolve) => {
       const probe = capture === 'stderr' ? child.stderr : child.stdout
       if (capture === 'stdout') {
@@ -1524,8 +1540,15 @@ export class LocalAgentRegistry {
         child.stderr.resume()
       }
       probe.on('data', (chunk: Buffer) => {
-        if (prompt === '') {
-          prompt = chunk.toString()
+        // ANSI escapes ride CLI output even when piped (codex colorizes the
+        // auth URL); strip before the URL check and the reply.
+        prompt += stripAnsi(chunk.toString())
+        // Reply fast only once a URL is in hand — a fast print-and-exit CLI
+        // (kimi's already-logged-in 'Logged in to …') never prints one and
+        // must fall through to the close handler instead of showing a bogus
+        // 'complete the flow in the browser' wrapper.
+        if (!answered && /https?:\/\//.test(prompt)) {
+          answered = true
           resolve({
             kind: 'success',
             text: `Device login started in the scoped home.\n${prompt}\nComplete the flow in the browser; the CLI keeps polling in the background.`,
@@ -1536,20 +1559,33 @@ export class LocalAgentRegistry {
       // final data events are delivered, and a fast print-and-exit CLI would
       // then be misreported as prompt-less. close guarantees stdio drained.
       child.on('close', () => {
-        if (prompt === '') resolve({ kind: 'error', text: loginFailure(harness, child.exitCode, null) })
+        if (answered) return
+        answered = true
+        if (child.exitCode === 0) {
+          // The CLI finished without asking for anything — it considers the
+          // harness already authenticated (kimi's 'Logged in to …').
+          resolve({
+            kind: 'success',
+            text: prompt.trim() === '' ? `${harness.displayName} 已是登录状态。` : prompt.trim(),
+          })
+          return
+        }
+        resolve({ kind: 'error', text: loginFailure(harness, child.exitCode, null) })
       })
       child.on('error', (error) => {
-        if (prompt === '') resolve({ kind: 'error', text: `${harness.name} login failed to start: ${error.message}` })
+        if (answered) return
+        answered = true
+        resolve({ kind: 'error', text: `${harness.name} login failed to start: ${error.message}` })
       })
       // A CLI that prints nothing at all should not hold the reply hostage.
       setTimeout(() => {
-        if (prompt === '') {
-          child.kill('SIGTERM')
-          resolve({
-            kind: 'error',
-            text: `${harness.name} login printed no device-code prompt; is the ${harness.displayName} CLI installed and configured?`,
-          })
-        }
+        if (answered) return
+        answered = true
+        child.kill('SIGTERM')
+        resolve({
+          kind: 'error',
+          text: `${harness.name} login printed no device-code prompt; is the ${harness.displayName} CLI installed and configured?`,
+        })
       }, this.loginPromptTimeoutMs)
     })
   }
