@@ -4,9 +4,13 @@
 
 **dsh**(DeepSeek Harness)生态的社区插件 monorepo:**14 个纯增量插件**。其中 13 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 14 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。整套 13 个 bundle 已经同时跑在生产 profile 上,卸载即精确还原。
 
+**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),随整合包逐波上架 npm;local-agent 家族(后 5 行)正在做 member-channel 适配收尾,作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。
+
 本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
 ## 全家桶速览
+
+已发布(第一波,dsh-web-basic 成员):
 
 | 包名(npm) | 面 | 行 id | 一句话特性 |
 | --- | --- | --- | --- |
@@ -15,15 +19,20 @@
 | `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | 聊天区标题**内联编辑重命名**会话 |
 | `@khorsheed/dsh-file-preview` | host | `file-preview` | 宿主侧只读**文件预览 Remote 服务**(列表 + 内容 + diff) |
 | `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 会话「产物」tab、回合变更卡片、文件预览抽屉 |
+| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
+| `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
+| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
+| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
+
+适配收尾中(第二波,local-agent 家族,整体发布):
+
+| 包名(npm) | 面 | 行 id | 一句话特性 |
+| --- | --- | --- | --- |
 | `@khorsheed/dsh-local-agent` | host + client | `local-agent` | 本地编码 Agent 家族**核心**:作用域 home、登录/会话命令族、委派 registry |
 | `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness:`codex exec` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness:`claude -p` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host(工具) | *(随 harness 挂载)* | 家族自有委派工具,带 `resume` 续聊参数 |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
 
 版本为仓库内当前发布线,以 npm 实际发布为准。每个插件的功能介绍与截图见各自目录的 README(点包名进目录即达)。
 
@@ -58,7 +67,7 @@ dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 
-# 本地 Agent 家族(核心 + 你实际用的 harness,成对装)
+# 本地 Agent 家族(第二波,上架前从源码安装)
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
@@ -110,8 +119,6 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 平铺在会话滚动区左缘的悬浮时间轴:一行一条已加载用户消息(含回合中插入的 steering 消息,可配置),静止时只显示压淡刻度,悬停/键盘聚焦展开文字,点击跳转对应消息;跟随阅读位置、顶部翻页加载更早历史、面板宽度可配置,`enabled` 可整体关闭。纯读取会话快照,零事件、零提示词,对模型与 KV 缓存完全无影响。
 
-> **仅源码安装。** `dsh-message-timeline` 标记为 `private`,未发布到 npm——从本仓库安装(`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` 或打包成 tarball)。
-
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`。
 
 #### `dsh-client-session-title-edit` —— 会话标题编辑
@@ -135,6 +142,8 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`;除非保留 headless 服务,建议两个半边一起卸。
 
 ### 三、本地编码 Agent 家族
+
+> **发布状态:第二波。** 家族正在做 member-channel 适配收尾(claude-code / codex 两个 provider),完成后整体上架 npm;上架前从本仓库源码安装。
 
 让 dsh 能把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code——各自独立上下文、独立记账,还能跨轮续聊。
 

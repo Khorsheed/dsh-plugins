@@ -4,9 +4,13 @@ English | [中文](README.md)
 
 Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **14 packages** that extend the official web GUI. 13 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 14th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. The whole pack already runs together on the production profile, and nothing about the official UI is patched or replaced.
 
+**Release status**: wave one is the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below), landing on npm wave by wave with the bundle. The local-agent family (the last 5 rows) is finishing its member-channel adaptation and publishes as one wave two. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line.
+
 This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
 
 ## What's in the box
+
+Published (wave one, the dsh-web-basic members):
 
 | Package (npm) | Face | Row id | One-line feature |
 | --- | --- | --- | --- |
@@ -15,15 +19,20 @@ This README is the catalog: what each plugin does, how to load it, and exactly h
 | `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | Inline session-title editing in the chat header |
 | `@khorsheed/dsh-file-preview` | host | `file-preview` | Read-only file-preview Remote service (list + content + diffs) |
 | `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 「产物」tab, per-turn "N files changed" card, file-preview drawer |
+| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
+| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
+| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
+| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
+
+Finishing adaptation (wave two, the local-agent family, published together):
+
+| Package (npm) | Face | Row id | One-line feature |
+| --- | --- | --- | --- |
 | `@khorsheed/dsh-local-agent` | host + client | `local-agent` | Local coding-agent family **core**: scoped homes, login/session commands, delegation registry |
 | `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness: `kimi -p` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness: `codex exec` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness: `claude -p` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host (tool) | *(mounted by harnesses)* | Family-owned delegation tool with `resume` continuation |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 
 Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
 
@@ -41,7 +50,7 @@ Prerequisites: a dsh host ≥ `0.1.0-rc.6` (every bundle declares `minHost`), an
 # one plugin, by npm name
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
-# from a tarball / a source directory (message-timeline is source-only — see below)
+# from a tarball / a source directory
 dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
@@ -58,7 +67,7 @@ dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 
-# local-agent family (core + the harnesses you actually use)
+# local-agent family (wave two — install from source until it lands on npm)
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
@@ -110,8 +119,6 @@ Model impact (the one significant one in the pack): an edit/withdraw removes the
 
 A flat floating timeline along the left edge of the chat scrollport — one row per loaded user message (steering messages included, configurable), a dimmed tick at rest, text on hover/focus, click to jump. Follows the reading position, pages older history at its top, `enabled` is the master switch. Pure read of the session snapshot: zero events, zero prompts, zero model/KV impact.
 
-> **Source-only package.** `dsh-message-timeline` is `private` and not published to npm — install it from this repo (`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` or a packed tarball).
-
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`.
 
 #### `dsh-client-session-title-edit` — inline session-title editing
@@ -135,6 +142,8 @@ A 「产物」 tab in the conversation view ring (beside chat and trajectory) li
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`; remove both halves together unless you keep the headless service.
 
 ### The local coding-agent family
+
+> **Release status: wave two.** The family is finishing its member-channel adaptation (the claude-code / codex providers) and will land on npm as one wave; until then install from this repo's source.
 
 Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
 
