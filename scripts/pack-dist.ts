@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 /** Files copied from the package root into the staging dir when present. */
-const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'cordis.patch.yml']
+const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'CHANGELOG.md', 'cordis.patch.yml']
 
 /** Expand a `dir` + double-star + `<pattern>` files glob into the relative
  * paths present in the package, so pack-dist honors the same globs pnpm pack
@@ -263,7 +263,14 @@ export function packDist(options: PackDistOptions): string {
       mkdirSync(dirname(dest), { recursive: true })
       cpSync(source, dest, { recursive: true })
     }
-    writeFileSync(join(staging, 'package.json'), `${JSON.stringify(rescopePackageJson(pkg, distName, options.version, family), null, 2)}\n`)
+    const manifest = rescopePackageJson(pkg, distName, options.version, family)
+    // pnpm pack filters staging to `files` plus its always-include set
+    // (README*, LICENSE, package.json); CHANGELOG.md is not in that set, so
+    // a package carrying one must list it explicitly or the tarball drops it.
+    if (existsSync(join(staging, 'CHANGELOG.md')) && Array.isArray(manifest.files) && !manifest.files.includes('CHANGELOG.md')) {
+      manifest.files = [...manifest.files, 'CHANGELOG.md']
+    }
+    writeFileSync(join(staging, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 
     const patchPath = join(staging, 'cordis.patch.yml')
     if (existsSync(patchPath)) {
