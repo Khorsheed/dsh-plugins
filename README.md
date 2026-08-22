@@ -51,7 +51,7 @@
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
 # 从 tarball / 源码目录装(开发态)
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 

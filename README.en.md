@@ -51,7 +51,7 @@ Prerequisites: a dsh host ≥ `0.1.0-rc.6` (every bundle declares `minHost`), an
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
 # from a tarball / a source directory
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
