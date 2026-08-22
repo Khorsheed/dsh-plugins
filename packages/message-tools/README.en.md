@@ -76,3 +76,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/message-tools`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

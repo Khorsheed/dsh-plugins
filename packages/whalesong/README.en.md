@@ -78,3 +78,7 @@ State semantics: `anyRunning` counts only UI-listed session ids, and a low-frequ
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/whalesong`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

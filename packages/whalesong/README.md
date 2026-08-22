@@ -78,3 +78,7 @@ src/client/whalesong.module.css  水滴关键帧 + 开关 + reduced-motion 规�
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/whalesong`)。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

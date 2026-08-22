@@ -167,3 +167,7 @@ None.
 - **Checkpoint commits sweep the whole working tree** — intended (a checkpoint is a full rollback point), but note it also captures unrelated uncommitted work.
 - **`restart`/`supervise` discover the listener via `lsof`** (macOS/Linux with lsof); other platforms need `--pid`.
 - **Kills are per-pid with a descendant sweep, never per process group** — the instance is not setsid'd, so `restart`, `schedule-exit`'s exit agent, and the watchdog's `free_port` target the listener pid and (on the forced paths: the `restart` SIGKILL escalation, the watchdog's port adoption and exit cleanup) walk `pgrep -P` descendants instead of killing a group. The supervised instance is expected to manage its own children on graceful shutdown; the sweep is the best-effort net for the forced paths.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

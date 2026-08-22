@@ -35,6 +35,16 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 | git 源安装后没有 lib/ | 缺 `prepare` 脚本 | package.json 加 `"prepare": "npm run build"`(git 依赖安装时会执行) |
 | 消费者侧 `ERR_MODULE_NOT_FOUND` | tarball 内相对导入指向未包含的文件 | 跑 pack smoke:包内每个相对导入都必须可解析 |
 
+## 变更记录与发版标记
+
+每次发版在三个层级记录变更：
+
+- **包自己**:`packages/<包>/CHANGELOG.md` 记完整条目(版本号、日期、功能要点)。
+- **monorepo 根**:`CHANGELOG.md` 记一行摘要(什么包、什么版本)。
+- **整合包仓**:dsh-web-basic 的 `CHANGELOG.md` 记用户向大白话——仅当该包属于整合包成员时。
+
+发版时打 git tag,格式 `<包名去掉 @khorsheed/dsh- 前缀>-v<版本>`,如 `message-tools-v0.5.0`;并在 GitHub 上建对应 Release(可附 CHANGELOG 条目)。local-agent 家族整体一波发布,tag 逐包打。
+
 ## 纪律
 
 - **发布源只认仓库**:不从 /tmp、scratch 或任何一次性目录发;所有改动先入库再发。

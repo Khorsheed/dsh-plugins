@@ -67,3 +67,7 @@ Build and test: `pnpm install && pnpm run build && pnpm run typecheck && pnpm te
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/taskpilot`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

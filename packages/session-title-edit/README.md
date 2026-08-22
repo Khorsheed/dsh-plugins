@@ -64,3 +64,7 @@ src/client/slots.ts     槽位声明
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/session-title-edit`)。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。
