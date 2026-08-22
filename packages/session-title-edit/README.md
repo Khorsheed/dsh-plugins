@@ -4,9 +4,9 @@
 
 在 dsh web GUI 聊天区头部直接重命名会话:点击标题旁的铅笔,标题本身变成内联编辑器。Enter 提交、Escape 取消,超长草稿会被本地化警告拦下——模型对此完全无感。
 
-<img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="聊天头部的内联会话标题编辑器">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="480" alt="聊天头部的内联会话标题编辑器">
 
-<img src="../../docs/screenshots/session-title-edit2.png" width="480" alt="点击铅笔后标题变成输入框,回车即保存">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="480" alt="点击铅笔后标题变成输入框,回车即保存">
 
 ## 特性
 

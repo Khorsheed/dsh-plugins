@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/context-guard/README.en.md
-packages/context-guard/README.en.md: 564d473877811e2ef50d5aa1a4cb211f6a972c75
-packages/context-guard/README.md: e0c1b9998463e38280012de3702f55d22a4ca871
+packages/context-guard/README.en.md: a5b60704fc28b41ec715a70e3344c6cb378c7736
+packages/context-guard/README.md: 4b82673edb9bf4344156b4ff9d593d5e7a891c86

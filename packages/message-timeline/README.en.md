@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's left edge with one row per user message. Hover to reveal previews, click to scroll the transcript straight to that message.
 
-<img src="../../docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
 
-<img src="../../docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
 
 ## Features
 

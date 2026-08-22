@@ -6,9 +6,9 @@
 
 dsh web GUI 的状态氛围插件:只要有会话在跑,侧边栏的鲸鱼就喷水、标签页图标跟着动;任务完成或卡住等你时,播一小段提示音。零官方文件补丁、零模型可见副作用——装上,页面就活了。
 
-<img src="../../docs/screenshots/whalesong1.png" width="480" alt="任务运行时侧边栏鲸鱼喷水">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="480" alt="任务运行时侧边栏鲸鱼喷水">
 
-<img src="../../docs/screenshots/whalesong2.png" width="480" alt="任务结束时播放提示音,标签页图标同步变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="480" alt="任务结束时播放提示音,标签页图标同步变化">
 
 ## 特性
 

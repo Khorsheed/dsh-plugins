@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 Two capsule entries above the composer card — "Background jobs" and "Subagents" — for viewing, stopping, interrupting, and opening a job detail drawer.
 
-<img src="../../docs/screenshots/taskpilot1.png" width="480" alt="the sub-agent pill rides above the composer — open it to inspect or interrupt runs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="480" alt="the sub-agent pill rides above the composer — open it to inspect or interrupt runs">
 
-<img src="../../docs/screenshots/taskpilot2.png" width="480" alt="background-job pills and the job detail drawer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="480" alt="background-job pills and the job detail drawer">
 
 ## Features
 

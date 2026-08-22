@@ -4,11 +4,11 @@ English | [中文](README.md)
 
 Host service for dsh's file-preview surface: lists every file a session's tool calls touched — each write/edit change's diff included — and serves any file's current content for preview. Pair it with `@khorsheed/dsh-client-ui-file-preview` and the web GUI gains a Produced-files tab with inline previews and reveal-in-folder.
 
-<img src="../../docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
 
-<img src="../../docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
 
-<img src="../../docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
 
 ## Features
 

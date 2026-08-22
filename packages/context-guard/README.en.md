@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 A context-window compaction reminder for the dsh web GUI: once **context occupancy** — the same number the composer's context ring shows — crosses a configured share of the model's context window, a compact button appears in the composer, and clicking it runs the official `/compact` command. Uninstalling removes every surface it adds.
 
-<img src="../../docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
 
-<img src="../../docs/screenshots/context-guard-settings.png" width="480" alt="the trigger ratio is configurable in settings (0.01–1)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="480" alt="the trigger ratio is configurable in settings (0.01–1)">
 
 ## Features
 

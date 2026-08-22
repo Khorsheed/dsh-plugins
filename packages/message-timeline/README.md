@@ -4,9 +4,9 @@
 
 dsh web GUI 的历史消息导览:会话左缘的一条悬浮时间轴,每行一条用户消息。悬停显示预览,点击直接把会话滚动到对应消息。
 
-<img src="../../docs/screenshots/message-timeline1.png" width="480" alt="会话左缘的悬浮消息时间轴">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="480" alt="会话左缘的悬浮消息时间轴">
 
-<img src="../../docs/screenshots/message-timeline2.png" width="480" alt="时间轴日常收成一条细线不占视线,悬停才展开">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="480" alt="时间轴日常收成一条细线不占视线,悬停才展开">
 
 ## 特性
 

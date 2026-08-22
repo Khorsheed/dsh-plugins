@@ -6,9 +6,9 @@ English | [中文](README.md)
 
 A status-ambience plugin for the dsh web GUI: while any session is running, the sidebar whale spouts water and the tab favicon animates; when a task finishes or blocks on you, a short chime plays. Zero patches to official files, zero model-visible effects — install it and the page simply feels alive.
 
-<img src="../../docs/screenshots/whalesong1.png" width="480" alt="sidebar droplets while tasks run">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="480" alt="sidebar droplets while tasks run">
 
-<img src="../../docs/screenshots/whalesong2.png" width="480" alt="a chime when the run finishes, and the tab icon changes with it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="480" alt="a chime when the run finishes, and the tab icon changes with it">
 
 ## Features
 

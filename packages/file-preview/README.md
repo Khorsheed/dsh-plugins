@@ -4,11 +4,11 @@
 
 dsh 文件预览界面的宿主服务:列出会话工具调用触碰过的每个文件——附每次 write/edit 改动的 diff——并提供任一文件的当前内容用于预览。与 `@khorsheed/dsh-client-ui-file-preview` 成对安装,web GUI 即获得「产物」tab:内联预览与"在文件夹中打开"。
 
-<img src="../../docs/screenshots/file-preview1.png" width="480" alt="配套客户端的文件预览:文件列表与内联 markdown 预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="配套客户端的文件预览:文件列表与内联 markdown 预览">
 
-<img src="../../docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
 
-<img src="../../docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
 
 ## 特性
 

@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 Rename a session right in the dsh web GUI chat header: click the pencil next to the title and the title itself becomes an inline editor. Enter commits, Escape cancels, over-long drafts are blocked with a localized warning — and the model never sees any of it.
 
-<img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
 
-<img src="../../docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
 
 ## Features
 
