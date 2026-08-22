@@ -36,6 +36,9 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { ClaudeLiveDriver } from './live-driver.ts'
+import { syncClaudeCredentialFile } from './records.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -48,11 +51,74 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token/i
 
 /**
+ * Member channel registration for one claude process lifetime: mint the
+ * per-run token and build the bridge MCP declaration for the spawn argv
+ * (`--mcp-config <json>` — verified end-to-end against the real CLI).
+ * Nothing is written to the scoped home and there is nothing to prune at
+ * settle; `release` only invalidates the token. Returns undefined when the
+ * mounted core predates the member channel (declare-and-degrade). The exec
+ * driver registers per round; the live driver registers per resident
+ * process and releases on reclaim.
+ */
+export interface ClaudeMemberRunHandle {
+  readonly token: string
+  readonly mcpConfig: string
+  readonly allowedTool: string
+  bind(pid: number): void
+  release(): void
+}
+
+/** Register one member run with the channel; see {@link ClaudeMemberRunHandle}. */
+export function registerClaudeMemberRun(
+  ctx: Context,
+  childSessionId: string,
+  parentSessionId: string,
+): ClaudeMemberRunHandle | undefined {
+  const registry = ctx.localAgent
+  if (
+    typeof registry.registerMemberRun !== 'function'
+    || typeof registry.memberBridgeSocketPath !== 'function'
+    || typeof registry.memberBridgeCommand !== 'function'
+  ) return undefined
+  const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: 'claude-local' })
+  const serverName = `dsh-member-${token.slice(0, 8)}`
+  const bridge = registry.memberBridgeCommand()
+  const mcpConfig = JSON.stringify({
+    mcpServers: {
+      [serverName]: {
+        command: bridge.command,
+        args: bridge.args,
+        env: {
+          [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+          [MEMBER_BRIDGE_TOKEN_ENV]: token,
+        },
+      },
+    },
+  })
+  let released = false
+  return {
+    token,
+    mcpConfig,
+    // The one tool the bridge exposes, pre-allowed so the child (whose
+    // non-interactive mode auto-denies permission prompts) can call it.
+    allowedTool: `mcp__${serverName}__member_message`,
+    bind: pid => registry.bindMemberRunPid(token, pid),
+    release: () => {
+      if (released) return
+      released = true
+      registry.unregisterMemberRun(token)
+    },
+  }
+}
+
+/**
  * One-shot and resumable Claude Code CLI subagent provider: every accepted
  * FRESH run starts a `claude -p` process in the delegating Session's
  * workspace, under the harness scoped home; a resume round (the family tool's
  * staged resume intent) continues the SAME session with `claude -p --resume
- * <session_id>` inside the SAME dsh child session.
+ * <session_id>` inside the SAME dsh child session. With the live driver
+ * configured (`live: true`), rounds instead go to the resident stream-json
+ * process (see live-driver.ts); the exec path below stays the fallback.
  */
 export class ClaudeCliProvider implements SubagentProvider {
   readonly name = 'claude-local'
@@ -63,56 +129,15 @@ export class ClaudeCliProvider implements SubagentProvider {
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
+    private readonly live?: ClaudeLiveDriver,
   ) {}
 
-  /**
-   * Register one run with the member channel and prepare the bridge MCP
-   * declaration for the spawn argv. Claude Code takes a per-invocation
-   * `--mcp-config <json>` flag (verified end-to-end against the real CLI), so
-   * the declaration is a single JSON string — nothing is written to the
-   * scoped home and there is nothing to prune at settle; `release` only
-   * invalidates the token. Returns undefined when the mounted core predates
-   * the member channel (declare-and-degrade: the run proceeds unchanged).
-   */
+  /** Per-round member-channel registration for the exec path (see {@link registerClaudeMemberRun}). */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
-  ): { token: string; mcpConfig: string; allowedTool: string; bind(pid: number): void; release(): void } | undefined {
-    const registry = this.ctx.localAgent
-    if (
-      typeof registry.registerMemberRun !== 'function'
-      || typeof registry.memberBridgeSocketPath !== 'function'
-      || typeof registry.memberBridgeCommand !== 'function'
-    ) return undefined
-    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
-    const serverName = `dsh-member-${token.slice(0, 8)}`
-    const bridge = registry.memberBridgeCommand()
-    const mcpConfig = JSON.stringify({
-      mcpServers: {
-        [serverName]: {
-          command: bridge.command,
-          args: bridge.args,
-          env: {
-            [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
-            [MEMBER_BRIDGE_TOKEN_ENV]: token,
-          },
-        },
-      },
-    })
-    let released = false
-    return {
-      token,
-      mcpConfig,
-      // The one tool the bridge exposes, pre-allowed so `claude -p` (whose
-      // non-interactive mode auto-denies permission prompts) can call it.
-      allowedTool: `mcp__${serverName}__member_message`,
-      bind: pid => registry.bindMemberRunPid(token, pid),
-      release: () => {
-        if (released) return
-        released = true
-        registry.unregisterMemberRun(token)
-      },
-    }
+  ): ClaudeMemberRunHandle | undefined {
+    return registerClaudeMemberRun(this.ctx, childSessionId, parentSessionId)
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -138,9 +163,6 @@ export class ClaudeCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
-    // Member channel: register this run and carry the bridge declaration on
-    // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -171,6 +193,35 @@ export class ClaudeCliProvider implements SubagentProvider {
     // delegation reports which endpoint it actually used.
     const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
     this.ctx.logger.info(`subagent-claude: delegating via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
+    // Live driver: the round goes to the member's resident stream-json
+    // process. A channel that fails at spawn falls through to the exec
+    // one-shot below — and stays there until the breaker cools down.
+    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+      try {
+        return await this.live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          parentSessionId: request.parent.session.id,
+          // The stream-json session id arrives with the turn's system/init
+          // (server-assigned), far earlier than the exec path's settle parse.
+          onSessionId: (sessionId) => {
+            this.ctx.localAgent.recordDelegation({
+              childSessionId: runId,
+              provider: this.name,
+              parentSessionId: request.parent.session.id,
+              cliSessionId: sessionId,
+            })
+          },
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+        this.ctx.logger.warn(`subagent-claude: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startClaudeCliRun(request, {
         cwd: parentCwd,
@@ -227,9 +278,6 @@ export class ClaudeCliProvider implements SubagentProvider {
         `subagent-claude: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -239,28 +287,58 @@ export class ClaudeCliProvider implements SubagentProvider {
         )
       }
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      // Live driver: continue the member's resident stream-json session.
+      // Channel failure falls through to the exec one-shot below.
+      if (this.live !== undefined && !this.live.disabled) {
+        try {
+          const liveRun = await this.live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            parentSessionId: request.parent.session.id,
+            resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+          this.ctx.logger.warn(`subagent-claude: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
       const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
       this.ctx.logger.info(`subagent-claude: resuming via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
-      const run = await startClaudeCliRun(request, {
-        cwd: parentCwd,
-        env: {
-          CLAUDE_CONFIG_DIR: homeDir,
-          ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-        },
-        endpointLabel: effectiveBaseUrl,
-        permissionMode: this.permissionMode,
-        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-        spawn: spec => this.ctx.subprocess.spawn(spec),
-        onError: (error: unknown, stopReason) => {
-          this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-        },
-        onSpawned: (pid) => { member?.bind(pid) },
-        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
-        ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
-        childSession,
-        ctx: this.ctx,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-      })
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      let run: SubagentRun
+      try {
+        run = await startClaudeCliRun(request, {
+          cwd: parentCwd,
+          env: {
+            CLAUDE_CONFIG_DIR: homeDir,
+            ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+          },
+          endpointLabel: effectiveBaseUrl,
+          permissionMode: this.permissionMode,
+          disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+          spawn: spec => this.ctx.subprocess.spawn(spec),
+          onError: (error: unknown, stopReason) => {
+            this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+          },
+          onSpawned: (pid) => { member?.bind(pid) },
+          onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
+          ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
+          childSession,
+          ctx: this.ctx,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+        })
+      } catch (error) {
+        member?.release()
+        throw error
+      }
       void run.result.then(
         () => {
           this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
@@ -274,7 +352,6 @@ export class ClaudeCliProvider implements SubagentProvider {
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -655,7 +732,7 @@ function usageFromClaude(usage: unknown): TokenUsage {
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
  */
-export function startClaudeCliRun(
+export async function startClaudeCliRun(
   request: SubagentStartRequest,
   spec: ClaudeCliRunSpec,
 ): Promise<SubagentRun> {
@@ -663,6 +740,13 @@ export function startClaudeCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
+  // Keychain→file sync before EVERY spawn: claude 2.1.236 reads
+  // .credentials.json at runtime while login/refresh write the keychain, so
+  // the login watch's sync alone leaves a rotated grant stale at spawn time
+  // (the live driver's spawnRuntime does the same). Best-effort: a missing
+  // grant fails the run with the CLI's own auth error, not here.
+  const configDir = spec.env['CLAUDE_CONFIG_DIR']
+  if (configDir !== undefined) await syncClaudeCredentialFile(configDir).catch(() => false)
   const turn = spec.resume?.turn ?? 1
   // The member bridge flags ride every argv variant (skip and normal
   // permission modes alike): --allowedTools is redundant under
@@ -855,8 +939,9 @@ export function startClaudeCliRun(
 }
 
 /** Fold one transcript line into the child session as one assistant step. */
-function appendClaudeLine(
-  spec: ClaudeCliRunSpec,
+/** Fold one transcript line into the child session as one assistant step. */
+export function appendClaudeTranscriptLine(
+  childSession: Session,
   turn: number,
   step: number,
   line: ClaudeTranscriptLine,
@@ -870,7 +955,7 @@ function appendClaudeLine(
         text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
       }]
       : [{ type: 'text' as const, text: line.text }]
-  spec.childSession?.append('assistant/message', {
+  childSession.append('assistant/message', {
     turn,
     step,
     message: createAssistantMessage({
@@ -881,8 +966,20 @@ function appendClaudeLine(
   }, { surfaceOp: 'append' })
 }
 
+/** Fold one transcript line into the run's child session as one assistant step. */
+function appendClaudeLine(
+  spec: ClaudeCliRunSpec,
+  turn: number,
+  step: number,
+  line: ClaudeTranscriptLine,
+  usage: TokenUsage | undefined,
+): void {
+  if (spec.childSession === undefined) return
+  appendClaudeTranscriptLine(spec.childSession, turn, step, line, usage)
+}
+
 /** The delta-progress text for one transcript line. */
-function claudeLineText(line: ClaudeTranscriptLine): string {
+export function claudeLineText(line: ClaudeTranscriptLine): string {
   return line.kind === 'tool'
     ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
     : line.text

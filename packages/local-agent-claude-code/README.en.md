@@ -30,10 +30,13 @@ The scoped home is kept on uninstall so a reinstall needs no fresh login; delete
 
 ## Config
 
-Two optional fields on the bundle row:
+Optional fields on the bundle row:
 
 - `permissionMode` — `skip` (default) passes `--dangerously-skip-permissions` so the child can write files without an approval prompt; `normal` runs without it, so approval-requiring actions (e.g. writing files) are denied.
 - `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
+- `live` — live driver: one resident stream-json process per member (`--input-format stream-json`), one stdin message per round (runtime-level graceful control interrupt, same-shape push stream); off — or a channel that cannot come up — means the one-shot `claude -p` path.
+- `liveIdleMs` — idle lifetime of a resident runtime before reclaim (default 30 min).
+- `liveMirrorGranularity` — live mirror granularity (default `event`); `token` additionally spawns with `--include-partial-messages` and appends deltas as `assistant/chunk` (write amplification — opt-in).
 
 ⚠️ `skip` has no OS-level sandbox — the child can write anywhere the host user can, including outside the workspace — and the scoped login's OAuth token is sent to whatever `baseUrl` points at. Prefer `normal` when a delegation needs confinement; point `baseUrl` only at endpoints you trust.
 
@@ -72,6 +75,8 @@ The bundle patch registers the `claude-code` harness into the family core (`@kho
 **Stream mirror & accounting.** `thinking` blocks fold to `reasoning` blocks, `tool_use`/`tool_result` to tool lines (`[工具 Bash] <command> → output`), reply `text` to assistant text; resumed rounds append their own turn without duplication. The provider opens `turn/start` at spawn and closes `turn/end` on settle — including failure and cancellation — so `subagentTiming` duration equals actual CLI runtime and no window stays open; the final `assistant/message` carries token usage parsed from the JSON result (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` — Anthropic reports each separately).
 
 **Model experience.** The child is a fresh one-shot `claude -p` in the delegating session's workspace; the parent submits only the standalone task text and sees only the final answer or the exact error, plus the resume self-description on a fresh delegation — Claude commentary, tool activity, and workspace diffs are not copied over. Child tokens never enter the parent's context; the child pays for its own Claude context and turn (cache reuse depends only on the scoped installation's provider, model, and history); the parent's KV cache is unaffected.
+
+**Live driver (`live: true`).** Replaces the per-round spawn: the member's first delegation brings up one resident stream-json process (`claude -p --verbose --input-format stream-json --output-format stream-json`), the first stdin `user` message triggers `system/init` (the server-assigned session id becomes the delegation record's `cliSessionId`), and every later round is one stdin message. The event stream is byte-identical in shape to exec's stream-json, so each turn folds through the same `ClaudeStreamParser` (the last line held back until `result` carries usage, as in exec), and `cancel` lands as a `control_request interrupt` — the process survives and the session stays continuable. Reclaim is stdin EOF → SIGTERM; after a crash the next round reattaches with `--resume <session_id>`. The auth discipline is byte-identical to exec: only the scoped `CLAUDE_CONFIG_DIR` (plus an optional `baseUrl` override) is injected — the global `~/.claude` is never touched and no `auth` verb ever runs.
 
 **Config notes.** The host environment is a startup-time snapshot — a later `export ANTHROPIC_BASE_URL` in another shell has no effect until the host restarts; check the host's environment, not your current shell, when diagnosing routing. Every delegation logs the effective endpoint at info level (`subagent-claude: delegating via <endpoint>`), and a failed run's error text names it. `skip` is the default because a one-shot CLI subagent has no approval surface; scope the host's own sandbox (e.g. run the host inside a sandboxed workspace) when a delegation needs confinement.
 
