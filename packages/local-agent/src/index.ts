@@ -1222,7 +1222,10 @@ export class LocalAgentRegistry {
           })
         }
       })
-      child.on('exit', () => {
+      // 'close', not 'exit': exit can fire before the captured stream's
+      // final data events are delivered, and a fast print-and-exit CLI would
+      // then be misreported as prompt-less. close guarantees stdio drained.
+      child.on('close', () => {
         if (prompt === '') resolve({ kind: 'error', text: loginFailure(harness, child.exitCode, null) })
       })
       child.on('error', (error) => {
