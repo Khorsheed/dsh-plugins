@@ -12,7 +12,9 @@ Status: implemented
 
 只交付一个设计；`data-variant` 开关、`CAPSULE_VARIANT` 和两个 chrome 块全部删除（`RoomDockCapsules.tsx` / `.module.css`）。行为零变化——筛选、添加、编辑、完成、blocked 置灰、推进线、goal 编辑全部保留；只有结构和样式变了。
 
-**折叠行。** goal 胶囊以 SVG 进度环开头（tertiary 底弧 + 品牌色进度弧，`-90°` 旋转从十二点起笔），后接取整百分比和截断的 goal 文本；未设 goal 时渲染「＋ 设定目标」引导态，无环。任务胶囊以官方 primitives 的 `IconChecklistOutline14` 开头（unicode 符号从此绝迹），后接未结计数（pending + in_progress，cancelled 出局）和正在跑的成员（色点 + 名字 + 本地化 在做/doing 后缀）。两个胶囊都沿用官方 chip 体系（28px、r24、hover 浮底、13/20/500），有任务在跑时保留 ToolRow 扫光。尾部 caption 箭头删除——hover 浮底本身就是可点信号。
+**折叠行。** goal 胶囊以 SVG 进度环开头（tertiary 底弧 + 品牌色进度弧，`-90°` 旋转从十二点起笔），后接取整百分比和截断的 goal 文本；未设 goal 时渲染「＋ 设定目标」引导态，无环。任务胶囊以官方 primitives 的 `IconChecklistOutline14` 开头（unicode 符号从此绝迹），后接未结计数（pending + in_progress，cancelled 出局）和正在跑的成员（色点 + 名字 + 本地化 在做/doing 后缀）。两个胶囊都沿用官方 chip 体系（28px、r24、hover 浮底、13/20/500），并加可见描边（静止态取 InputBar 卡片的 `l2-darkmode-thin` 对，hover/展开收紧到 `l3`），让折叠行一眼可读为可点胶囊；有任务在跑时保留 ToolRow 扫光。尾部 caption 箭头删除——hover 浮底本身就是可点信号。
+
+**锚定。** 胶囊行锚定在输入卡片正上方：展开面板渲染在胶囊行之上的同一 flex 列里（自上而下：面板 → 胶囊行 → 输入卡片），只向上生长，开合时胶囊行在指针下零位移。
 
 **goal 展开卡。** goal 全文 + 行内 编辑、进度条现在配上 done/total 分数、最近推进列表，表面仍是官方 Menu 材质。
 
@@ -38,7 +40,7 @@ Status: implemented
 
 ## Testing
 
-143 测试保持绿，断言更新在 `room-dock-capsules.client.spec.tsx`（折叠行百分比/计数/runner 内容、卡片 `1/3` 分数）和 `room-composer.client.spec.tsx`（`tasks.doing` 键）。真机验证在 scratch :3199 上跑了三轮 Playwright（scratch-screenshots/design-a-*.png）：折叠态、goal 卡、任务面板、运行扫光 + 半环、完成动效、暗色模式、无 goal 引导态。第一轮暴露了 `composes` UA 描边 bug；第二、三轮验证修复和新播种房间的全流程（设 goal → 添加 → 完成 → 推进记录）。
+144 测试保持绿，断言更新在 `room-dock-capsules.client.spec.tsx`（折叠行百分比/计数/runner 内容、卡片 `1/3` 分数、面板在胶囊行之前的树序断言）和 `room-composer.client.spec.tsx`（`tasks.doing` 键）。真机验证在 scratch :3199 上跑了三轮 Playwright（scratch-screenshots/design-a-*.png）：折叠态、goal 卡、任务面板、运行扫光 + 半环、完成动效、暗色模式、无 goal 引导态。第一轮暴露了 `composes` UA 描边 bug；第二、三轮验证修复和新播种房间的全流程（设 goal → 添加 → 完成 → 推进记录）。描边 + 锚定的后续修正两个主题都验过（scratch-screenshots/capsules-*.png）：折叠胶囊有可见描边；折叠态与两种面板展开态下胶囊行的 `getBoundingClientRect().top` 完全相同（1280×800 视口下均为 642px）。
 
 ## Related
 

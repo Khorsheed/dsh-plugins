@@ -195,6 +195,17 @@ describe('RoomDockCapsules', () => {
     expect(screen.getByPlaceholderText('新任务…')).toBeDefined()
   })
 
+  it('the expanded panel renders above the capsule row, which stays anchored to the input card', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    const card = screen.getByText('出方案').closest('[class*="_card"]')!
+    const capsule = screen.getByRole('button', { name: '任务' })
+    // The panel precedes the capsule row in tree order (top-to-bottom: panel
+    // → capsules → input card), so the composer-anchored row never moves
+    // when the panel grows above it.
+    expect(card.compareDocumentPosition(capsule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('a click outside collapses the expanded card', async () => {
     await bench()
     fireEvent.click(screen.getByRole('button', { name: '任务' }))

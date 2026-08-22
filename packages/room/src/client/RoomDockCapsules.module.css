@@ -1,8 +1,13 @@
 /* Dock capsules: one collapsed row of two capsules (goal + tasks) plus the
    quick-add button, seated on the card-width axis inside the side clearance
    (the RoomComposer `.dock` wrapper; official dock insets: card minus 4 × 8).
+   The row is anchored just above the input card — an expanded panel renders
+   ABOVE the row in the same flex column (top-to-bottom: panel → capsules →
+   input card) and grows upward only, so toggling never shifts the row.
    The capsules ride the official chip register (28px, r24, transparent rest,
-   interactive hover fill, 13/20/500 secondary label); the goal capsule's
+   interactive hover fill, 13/20/500 secondary label) with a visible outline
+   (the InputBar card's l2-darkmode-thin pair, firming to l3 on
+   hover/expand); the goal capsule's
    single visual focus is its progress ring. The expanded cards are the
    official Menu surface (--dsw-specific-menu, r12, inverted hairline,
    shadow-lv3) — the same material the room's @-completion card and the model
@@ -31,8 +36,11 @@
 
 /* The capsule: the official chip register (model-selector trigger language)
    — 28px r24 chip, transparent rest, interactive hover fill, 13/20/500
-   secondary label. */
+   secondary label — plus a visible outline (the InputBar card's
+   l2-darkmode-thin pair) so the collapsed row reads as clickable pills; the
+   hover/expanded state firms the stroke up to l3. */
 .capsule {
+  box-sizing: border-box;
   position: relative; /* running-sweep overlay anchor */
   display: inline-flex;
   align-items: center;
@@ -41,7 +49,7 @@
   max-width: 60%;
   height: 28px;
   padding: 0 10px;
-  border: none;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
   border-radius: 24px;
   overflow: hidden;
   background: transparent;
@@ -54,6 +62,7 @@
 
 .capsule:hover,
 .capsule[aria-expanded='true'] {
+  border-color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
   background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
 

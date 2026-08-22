@@ -9,6 +9,11 @@
  * [◔33% 插件API v2上线]  [☑ 2 · ●ada 在做]  ＋
  * ```
  *
+ * The row is ANCHORED just above the input card: an expanded panel renders
+ * above the capsule row (top-to-bottom: panel → capsules → input card) and
+ * grows upward only, so folding/unfolding never shifts the row under the
+ * user's pointer.
+ *
  * The GOAL capsule's only visual focus is the progress ring: an SVG circle
  * (tertiary track + business-primary progress arc) followed by the percent
  * and the truncated goal text; without a goal it renders the 「＋ 设定目标」
@@ -35,7 +40,9 @@
  * outside; no overlay.
  *
  * Visual layer: the capsules ride the official chip register (28px, r24,
- * interactive hover fill, 13/20/500 label); the expanded cards are the
+ * interactive hover fill, 13/20/500 label) with a visible outline (the
+ * InputBar card's `l2-darkmode-thin` pair, firming to `l3` on hover/expand);
+ * the expanded cards are the
  * official Menu surface (`--dsw-specific-menu`, r12, inverted hairline,
  * shadow-lv3); the task capsule sweeps a restrained glare band while tasks
  * run (the ToolRow pattern, reduced-motion safe). Every token reference
@@ -304,67 +311,10 @@ export function RoomDockCapsules({
 
   return (
     <section ref={rootRef} className={css.root} aria-label={t('goal.label')}>
-      <div className={css.capsules}>
-        <button
-          type="button"
-          className={css.capsule}
-          aria-expanded={open === 'goal'}
-          aria-label={t('goal.label')}
-          onClick={() => { toggle('goal') }}
-        >
-          {state.goal === undefined ? (
-            <span className={css.capsuleGuide}>{t('goal.set')}</span>
-          ) : (
-            <>
-              <GoalRing fraction={fraction} />
-              <span className={css.capsulePercent}>{Math.round(fraction * 100)}%</span>
-              <span className={css.capsuleText}>{state.goal}</span>
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          className={css.capsule}
-          aria-expanded={open === 'tasks'}
-          aria-label={t('tasks.capsule')}
-          data-running={runners.length > 0 || undefined}
-          onClick={() => { toggle('tasks') }}
-        >
-          <IconChecklistOutline14 size={14} className={css.checklistIcon} />
-          {openCount === 0 ? (
-            <span className={css.capsuleText}>{t('tasks.capsule')}</span>
-          ) : (
-            <>
-              <span className={css.capsuleCount}>{openCount}</span>
-              {runners.length > 0 && (
-                <span className={css.runners}>
-                  {runners.map(name => (
-                    <span key={name} className={css.runner}>
-                      <span className={css.memberDot} style={{ background: memberColor(name) }} aria-hidden />
-                      {name}
-                    </span>
-                  ))}
-                  <span className={css.runnerSuffix}>{t('tasks.doing')}</span>
-                </span>
-              )}
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          className={css.addCapsule}
-          aria-label={t('tasks.addTrigger')}
-          onClick={() => {
-            setOpen('tasks')
-            setAddOpen(true)
-            setEditingGoal(false)
-            setError(null)
-          }}
-        >
-          ＋
-        </button>
-      </div>
-
+      {/* The expanded card renders ABOVE the capsule row (top-to-bottom:
+          panel → capsules → composer card): the row stays anchored just
+          above the input card, and the panel grows upward only — toggling a
+          capsule never shifts the row the user clicked. */}
       {open === 'goal' && (
         <div className={css.card}>
           {editingGoal ? (
@@ -554,6 +504,67 @@ export function RoomDockCapsules({
           {error !== null && <div className={css.error} role="alert">{error}</div>}
         </div>
       )}
+
+      <div className={css.capsules}>
+        <button
+          type="button"
+          className={css.capsule}
+          aria-expanded={open === 'goal'}
+          aria-label={t('goal.label')}
+          onClick={() => { toggle('goal') }}
+        >
+          {state.goal === undefined ? (
+            <span className={css.capsuleGuide}>{t('goal.set')}</span>
+          ) : (
+            <>
+              <GoalRing fraction={fraction} />
+              <span className={css.capsulePercent}>{Math.round(fraction * 100)}%</span>
+              <span className={css.capsuleText}>{state.goal}</span>
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          className={css.capsule}
+          aria-expanded={open === 'tasks'}
+          aria-label={t('tasks.capsule')}
+          data-running={runners.length > 0 || undefined}
+          onClick={() => { toggle('tasks') }}
+        >
+          <IconChecklistOutline14 size={14} className={css.checklistIcon} />
+          {openCount === 0 ? (
+            <span className={css.capsuleText}>{t('tasks.capsule')}</span>
+          ) : (
+            <>
+              <span className={css.capsuleCount}>{openCount}</span>
+              {runners.length > 0 && (
+                <span className={css.runners}>
+                  {runners.map(name => (
+                    <span key={name} className={css.runner}>
+                      <span className={css.memberDot} style={{ background: memberColor(name) }} aria-hidden />
+                      {name}
+                    </span>
+                  ))}
+                  <span className={css.runnerSuffix}>{t('tasks.doing')}</span>
+                </span>
+              )}
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          className={css.addCapsule}
+          aria-label={t('tasks.addTrigger')}
+          onClick={() => {
+            setOpen('tasks')
+            setAddOpen(true)
+            setEditingGoal(false)
+            setError(null)
+          }}
+        >
+          ＋
+        </button>
+      </div>
     </section>
   )
 }
