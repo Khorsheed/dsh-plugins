@@ -1,26 +1,26 @@
 # @khorsheed/dsh-client-session-title-edit
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Rename a session right in the dsh web GUI chat header: click the pencil next to the title, the title itself becomes an inline editor — Enter commits, Escape cancels, and a draft that would blow past the host's title-length budget is blocked with a localized warning instead of being silently truncated. No host half, no new RPC, no edits to official packages — and no model-visible effects whatsoever.
+在 dsh web GUI 聊天区头部直接重命名会话:点击标题旁的铅笔,标题本身变成内联编辑器。Enter 提交、Escape 取消,超长草稿会被本地化警告拦下——模型对此完全无感。
 
-<img src="docs/screenshots/03-session-title-edit.png" width="480" alt="inline session title editor in the chat header">
+<img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="聊天头部的内联会话标题编辑器">
 
-## Features
+## 特性
 
-- **Pencil in the header** — one `conversation.session.header.actions` entry immediately right of the session title swaps in an inline editor, prefilled with the current display title and fully selected.
-- **Predictable keys** — Enter commits, Escape cancels, a trimmed-empty draft disables save, and a host rejection keeps the editor open with a localized error.
-- **Auto-fitting input** — the box grows with the draft between the crumb's original width and the official 220px cap, so a long title widens the field instead of clipping.
-- **Budget-aware, not silently truncated** — a draft exceeding the host's 80-UTF-8-byte title budget shows a localized warning and blocks saving.
-- **Zero footprint** — rides the official `session.rename` RPC; the accepted user-sourced `session/title` event pins the title against automatic regeneration, and the title never enters the model context (no token or KV-cache effect).
+- **头部铅笔**——会话标题右侧的条目切换出内联编辑器,预填当前标题并全选。
+- **可预期的按键**——Enter 提交、Escape 取消、空草稿禁用保存、宿主拒绝时内联提示。
+- **宽度自适应**——输入框随草稿变宽,上限为官方 220px。
+- **预算把关**——超过宿主 80 UTF-8 字节标题预算的草稿被警告拦下,绝不静默截断。
+- **零足迹**——走官方 `session.rename` RPC;标题永远不会进入模型上下文(无 token 或 KV 缓存影响)。
 
-## Install
+## 安装
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 ```
 
-Then restart the web instance. Composing this plugin out of cordis.yml removes every surface it adds:
+安装后重启 web 实例;卸载即移除本插件添加的全部界面。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
@@ -28,30 +28,37 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码。
+- 源码线(deepseek-harness master):✅
 
-## Known Limitations
+## 已知限制
 
-- **In-place editing is a DOM-layer stopgap.** The official `ConversationSessionHeader` renders the title and exposes no title seat, so "the title becomes an input" is faked by hiding the official crumb and overlaying the plugin's input at the crumb's measured rect (viewport-fixed, re-measured on window resize). When the crumb cannot be located (the official DOM changed), the entry degrades to an inline editor in the actions row. TODO(session-title-edit): deprecate the overlay when the official header opens a title slot (or makes the crumb editable) — the entry then becomes a pure slot consumer.
-- **No optimistic update.** The header title refreshes from the session-list projection when the host settles the rename; the control does not rewrite the crumb itself.
-- **The title byte budget is host-owned, client-gated.** The client-side mirror (80 UTF-8 bytes by default in the base bundle) must track the host default — a host that raises the cap only widens what the editor permits once the constant follows. The official sidebar rename dialog still truncates silently.
+- **原位编辑是 DOM 层过渡方案**——官方 header 没有暴露标题槽位,编辑器通过隐藏官方标题 crumb 并原位覆盖实现;官方 DOM 变化时退回 actions 行内编辑器。
+- **无乐观更新**——header 标题只在宿主投影结算重命名后刷新。
+- **字节预算归宿主所有,由客户端把关**——客户端镜像宿主的 80 字节上限;宿主提高上限后,需常量同步跟进编辑器才会放宽。
 
-## How it works
+## 实现原理
 
 <details>
-<summary>Internals (click to expand)</summary>
+<summary>内部结构(点击展开)</summary>
 
-Pure browser-side plugin: the rename verb rides the official `session.rename` RPC (`session.rename` → `sessions.rename` → `ctx.sessionTitle.rename`), so the plugin needs no host half, no new RPC, and no edits to core packages. The `/client` exports are the plugin body (`apply`/`inject`) and the `TitleEditActionProps` type.
+```
+src/index.ts            导出(apply/inject + TitleEditActionProps)
+src/client/index.ts     插件主体;贡献 header-actions 条目
+src/client/TitleEditAction.tsx  铅笔条目、内联编辑器、覆盖与宽度适配
+src/client/title-length.ts      MAX_TITLE_BYTES 镜像 + 宿主归一化
+src/client/locales.ts   本地化警告与错误
+src/client/slots.ts     槽位声明
+```
 
-Editing is in place: clicking the pencil hides the official title crumb (a DOM-layer `data-ste-inplace` attribute) and overlays the plugin's own input at the crumb's measured rect, so the title itself reads as an editable field. The input's width is fitted to the draft — measured through a hidden mirror span at the input's font — between the crumb's original width and the crumb's 220px cap.
+纯浏览器侧插件:重命名走官方 `session.rename` RPC(`session.rename` → `sessions.rename` → `ctx.sessionTitle.rename`),因此无需宿主半边、无需新增 RPC、无需改动任何官方包。
 
-**Model experience:** nothing changes for the model. The title is a projection-only session property — it never enters the model context, and renaming appends only a `session/title` log event with a user source. Token effect: none. KV-cache effect: none. The header title flips when the host projection lands.
+编辑是原位的:点击铅笔后,通过 `data-ste-inplace` 隐藏官方标题 crumb,并在其测量矩形上覆盖本插件的输入框。输入框宽度借助隐藏的、与输入框同字体的镜像 span 按草稿适配,下限为 crumb 原宽度、上限为 crumb 的 220px 上限。
 
-**Byte budget:** `@deepseek-ai/dsh-session-title` caps the accepted title (`maxTitleBytes`, production default 80 UTF-8 bytes); the editor mirrors the cap client-side (`MAX_TITLE_BYTES` in `src/client/title-length.ts`) along with the host's pre-cap normalization (escape/control/directional sequences stripped, whitespace collapsed, trimmed), so gating fires exactly when the host would truncate.
+对模型没有任何变化:标题是仅投影的会话属性,永不进入模型上下文;重命名只是追加一条带用户来源的 `session/title` 事件——无 token 或 KV 缓存影响,投影落地后 header 标题随之刷新。另外,`@deepseek-ai/dsh-session-title` 限制接受的标题长度(`maxTitleBytes`,生产默认 80 UTF-8 字节);编辑器镜像该上限以及宿主截断前的归一化(剥离转义/控制/方向序列、折叠空白、去首尾空白),把关恰好在宿主会截断时触发。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/session-title-edit`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/session-title-edit`)。问题与贡献请移步该仓库。

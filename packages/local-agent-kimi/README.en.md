@@ -1,0 +1,80 @@
+# dsh-local-agent-kimi
+
+> Delegate to the Kimi Code CLI from any dsh session — your own `~/.kimi-code` stays untouched.
+
+English | [中文](README.md)
+
+The Kimi Code harness of the local-agent family: every agent preset gains a `subagent_kimi` delegation tool and a `/kimi` command family, backed by the real `kimi` CLI running in its own scoped home.
+
+## Features
+
+- **Delegate from any preset** — the `subagent_kimi` tool mounts at the profile root; no per-preset variants.
+- **Scoped home** — config, credentials, and sessions live under `$DSH_HOME/local-agent/kimi`, never in your `~/.kimi-code`.
+- **Device-code login** — `/kimi login` shows the auth URL in the session; `/kimi logout` clears scoped credentials for a fresh account.
+- **Resumable delegations** — pass back the self-described `resume` handle to continue the same Kimi session, with real per-round usage and timing.
+- **Session records + settings UI** — `/kimi sessions` lists your delegations; Settings → 本地 Agent shows auth status and the current workspace's sessions.
+
+## Install
+
+Requires a running dsh profile and the Kimi Code CLI (`kimi`) on `PATH` — the plugin installs neither and never logs in on your behalf.
+
+```sh
+# Name both: `dsh plugin add` reconciles only direct dependencies.
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
+# Restart the profile, then run /kimi login once from a session.
+```
+
+Uninstall:
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
+```
+
+The scoped home is kept on purpose so a reinstall needs no fresh login — delete `$DSH_HOME/local-agent/kimi` to remove every trace.
+
+## Config
+
+Optional: route Kimi's LLM requests through your own endpoint via the scoped `config.toml` (`$DSH_HOME/local-agent/kimi/config.toml`):
+
+```toml
+[providers."managed:kimi-code"]
+base_url = "https://your-router.example/v1"
+```
+
+Edit **only this key** — provisioning never overwrites an existing config, and the `[services.moonshot_*]` base URLs must stay (they route the built-in search/fetch tools).
+
+⚠️ **OAuth token exposure**: the scoped OAuth token is sent to whatever endpoint serves the request — point `base_url` only at endpoints you control or trust.
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- source line (deepseek-harness master): ✅
+
+## Known Limitations
+
+- **Login is interactive** — device-code only, one login at a time per harness, no API-key path.
+- **Process bookkeeping touches the real home** — kimi writes content-free `~/.kimi-code/server/instances/*.json` regardless of `KIMI_CODE_HOME`; config, credentials, and sessions stay scoped.
+- **No transcript replay yet** — `/kimi sessions` lists records but does not render a session's conversation.
+- **`/kimi` commands need a Web session** — headless profiles can still delegate through a composition that mounts the tool row.
+
+## How it works
+
+<details>
+<summary>Internals (click to expand)</summary>
+
+**Scoped home and login.** Every Kimi process the bundle starts runs with `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi`. Login is device-code only: `/kimi login` surfaces the authorization URL and code in the session, the CLI polls in the background, and credentials land in the scoped home. `/kimi logout` removes the scoped credentials and OAuth cache (the kimi CLI has no logout command). On first boot the scoped home is provisioned with a `config.toml` — the user's own config with every `api_key` blanked, or a minimal managed config when the user has none — because the CLI refuses to authenticate without provider and model definitions; an existing config is never overwritten.
+
+**Mounting.** The bundle patch registers the `kimi` harness and mounts the `subagent_kimi` tool at the profile root; the `kimi-cli` one-shot provider spawns `kimi -p` under the scoped home. The family core (`local-agent` row, shared scoped-homes root) ships in `@khorsheed/dsh-local-agent`'s own patch, declared here as a dependency; the browser settings section ships with the family core's `./client` half.
+
+**Session records.** `/kimi sessions` lists the scoped home's `session_index.jsonl` — this harness's delegations, never the user's personal sessions. The settings section renders the same list narrowed to records whose `workDir` matches the current session's cwd, and keeps re-probing auth status while a login is pending.
+
+**Resume.** A fresh delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as the tool's optional `resume` parameter continues the same kimi session (`kimi -S session_<id> -p`) inside the same dsh child session. The handle never rides the prompt: it is resolved through the `localAgent` delegation registry only for the same parent session and provider that recorded the delegation — a forged handle is rejected before any CLI process starts.
+
+**Isolation and accounting.** The child is a fresh session in the delegating session's workspace; the parent receives only the final answer or the exact error — child context, commentary, tool activity, and diffs never cross into the parent session. The provider opens `turn/start` at spawn and closes `turn/end` at settle, including on failure or abort (reason `error`/`aborted`), so durations equal real CLI runtime. Usage is the sum of the round's `usage.record` deltas (each one LLM request, not cumulative), carried on the round's final mirrored assistant message; the mirror filters kimi's auto-permission `<system-reminder>` messages, renders tool calls with arguments, pairs results to their calls, and advances incrementally so earlier messages never duplicate. Aborting settles the tool result immediately (SIGTERM→grace→SIGKILL) and keeps the partial work already mirrored.
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/local-agent-kimi`). Issues and contributions welcome there.

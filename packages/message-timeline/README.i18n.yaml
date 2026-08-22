@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record: the git blob hash of each side as of the
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write packages/message-timeline/README.md
-packages/message-timeline/README.md: 5b9fc7f8b3dd6dfa78afafa4f57317e5974cbc01
-packages/message-timeline/README.zh.md: 777773bfc4f43e21a41bd9c434fd09793fec0f6c
+#   pnpm run verify-translation-pairing --write packages/message-timeline/README.en.md
+packages/message-timeline/README.en.md: 1ace2487f3d6a49b87d78ff931b35d0de0c0e786
+packages/message-timeline/README.md: e19601591557b614d350c9aafb0b66c80af0c6bf

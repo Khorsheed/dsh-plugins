@@ -1,84 +1,78 @@
 # @khorsheed/dsh-ui-shortcuts
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-Keyboard shortcuts for the dsh web GUI: `Esc` pauses the running turn, `Ctrl/Cmd+S` steer-sends the current draft, `Ctrl/Cmd+O` starts a new session — every key rebindable in Settings, every action going through the same public operations as the composer's own buttons. Nothing here touches a model request; install it and the page simply answers the keyboard.
+dsh web GUI 的键盘快捷键插件:`Esc` 暂停运行中的回合,`Ctrl/Cmd+S` 插队发送当前草稿,`Ctrl/Cmd+O` 新建会话——每个键位都能在设置里重绑。
 
-<img src="docs/screenshots/07-ui-shortcuts.png" width="480" alt="keyboard shortcuts card in Settings">
+<img src="../../docs/screenshots/07-ui-shortcuts.png" width="480" alt="设置中的快捷键卡片">
 
-## Features
+## 特性
 
-- **Pause the running turn** (`Esc`) — the same cancel as the composer's Stop button, available anywhere on the page.
-- **Steer-send the draft** (`Ctrl/Cmd+S`) — sends the current draft with queue-jump (steer) delivery; the browser save gesture is suppressed while bound.
-- **New session** (`Ctrl/Cmd+O`) — the same entry as the sidebar New-session button; the browser open-file gesture is suppressed while bound.
-- **Rebindable keys** — click a binding in Settings → Plugins → Keyboard shortcuts to record a new chord, unbind it, or reset to the shipped default; preferences persist in `$DSH_HOME/settings.yaml`.
-- **A shortcuts registry for other plugins** — any plugin can contribute its own keyboard actions through `ctx.shortcuts` and gets the Settings row, rebinding, persistence, and conflict-free dispatch for free.
+- **暂停当前回合**(`Esc`)——等同于 composer 的 Stop 按钮,页面任意位置可用。
+- **插队发送草稿**(`Ctrl/Cmd+S`)——以插队方式投递当前草稿;绑定时抑制浏览器保存手势。
+- **新建会话**(`Ctrl/Cmd+O`)——侧边栏新会话按钮的同一入口;绑定时抑制浏览器的打开文件手势。
+- **键位可重绑**——在 设置 → 插件 → 快捷键 中点击键位即可录制、解绑或恢复默认;偏好持久化在 `$DSH_HOME/settings.yaml`。
 
-## Install
+## 安装
 
-The plugin is **not** part of the default web bundle; add it to a profile to install it. The package declares `dsh.bundle`, so one command installs it and mounts its loader row (no hand-edited `cordis.patch.yml`):
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts
-```
-
-Uninstall = remove the row (or set `disabled: true` on it):
+不在默认 web bundle 中;一条命令完成安装并挂载(通过 `dsh.bundle` 自挂载):
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts
+dsh plugin --profile web add @khorsheed/dsh-ui-shortcuts      # 安装
+dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 ```
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码。
+- 源码线(deepseek-harness master):✅
 
-## Known Limitations
+## 已知限制
 
-- **No user-defined actions** — plugins contribute actions through `ctx.shortcuts`; arbitrary user-defined actions (command lines, toggles) are not offered.
-- **Ctrl/Cmd+S is draft-only** — an empty draft does nothing; the plugin deliberately leaves whole-queue steering to the composer's `Cmd/Ctrl+Enter` gesture.
-- **No in-repo e2e** — the plugin is not in the default bundle, so it has no `apps/web` replay scenario; its wiring is covered by the apply-level browser spec against fakes.
+- **无用户自定义动作**——动作由插件通过 `ctx.shortcuts` 贡献;任意的命令行或开关暂不提供。
+- **Ctrl/Cmd+S 仅草稿**——空草稿不做事;整队列插队仍是 composer 的 `Cmd/Ctrl+Enter` 手势。
 
-## How it works
+## 实现原理
 
 <details>
-<summary>Internals (click to expand)</summary>
+<summary>内部结构(点击展开)</summary>
 
-The loader row's node half registers the `ui-shortcuts` settings namespace; its browser half (served at `/plugins/ui-shortcuts/client.js`) wires the keys and the keyboard-shortcuts card in the plugin configuration tab (Settings → Plugins). Disabling through the plugin inventory is a deployment concern, not this package's. One id note: the row id `ui-shortcuts` is shared with the official `@deepseek-ai/dsh-client-ui-shortcuts` bundle — compose at most one of them in a profile (duplicate loader ids fail loud at boot); the default web image mounts neither conflict, so the one-command install above is the normal path.
+- `src/index.ts`(node 半边)——注册 `ui-shortcuts` 设置命名空间。
+- `src/client/`(浏览器半边,`/plugins/ui-shortcuts/client.js`)——按键接线与 设置 → 插件 里的快捷键卡片。
 
-Action behavior, all through public services — the plugin never reaches into ui-conversation internals:
+行 id `ui-shortcuts` 与官方 `@deepseek-ai/dsh-client-ui-shortcuts` bundle 同名——一个 profile 里最多组合其一(重复 loader id 会在启动时 fail loud);官方默认镜像不挂载任何一方,上文的一条命令安装即常规路径。
 
-| Action | Behavior |
+动作全部走公开服务,从不触及 ui-conversation 内部:
+
+| 动作 | 行为 |
 | --- | --- |
-| 暂停当前任务 (Pause current task) | Cancels the current session's running turn through the public `conversation.cancel()` — the same operation as the composer's Stop button. Ordinary sessions and continuable subagents stop; one-shot subagents do not (mirroring the Stop button's visibility). |
-| 插队发送 (Send with priority) | Sends the current draft with `steer` delivery through the public `conversation.input.for(scope).submit('steer')` facade. Draft-only: an empty draft is a silent no-op (steering the whole queue stays `Cmd/Ctrl+Enter`'s gesture). |
-| 新建会话 (New session) | Starts a new session through the public `workspaces.startSession()` — the same entry as the sidebar New-session button. A global action, independent of focus. |
+| 暂停当前任务 | `conversation.cancel()`——与 composer 的 Stop 按钮同一操作。one-shot 子智能体不可停止(与 Stop 按钮的可见性一致)。 |
+| 插队发送 | 对当前草稿调用 `conversation.input.for(scope).submit('steer')`;空草稿保持静默无操作。 |
+| 新建会话 | `workspaces.startSession()`——侧边栏新会话按钮的同一入口;全局动作,不限定焦点。 |
 
-Rebinding: click a binding to record the next chord (`Esc` cancels, `Delete`/`Backspace` unbinds, `Ctrl/Cmd` counts as one `primary` modifier on every platform), or reset to the shipped default. Preferences persist in `$DSH_HOME/settings.yaml` under the `ui-shortcuts` section.
+重绑:点击键位录制下一个组合键(`Esc` 取消,`Delete`/`Backspace` 解绑,`Ctrl/Cmd` 在所有平台都计为一个 `primary` 修饰键),或恢复默认。偏好持久化在 `$DSH_HOME/settings.yaml` 的 `ui-shortcuts` 小节。
 
-**Escape layering**: Escape pause is global and yields to whatever owns the key first: a consumed keydown (`defaultPrevented` — the composer's slash menu, popupSelect), an open overlay (modals, menus, and the settings panel close on Escape without `preventDefault`, and their DOM is still present during dispatch), or a non-composer editable target (inline rename, search fields). Everywhere else — the composer textarea, the sidebar, the session list — Escape pauses the running turn. IME composition and held-repeat keys never trigger any action.
+**Escape 分层**:Escape 暂停是全局的,但让位于先消费该键的一方:已被消费的 keydown(`defaultPrevented`——composer 的斜杠菜单、popupSelect)、打开的弹层(模态框、菜单、设置面板)、以及 composer 之外的可编辑目标(行内重命名、搜索框)。其余任何位置——composer 文本框、侧边栏、会话列表——Escape 都会暂停运行中的回合。IME 组合输入与按住重复的按键不会触发任一动作。
 
-**For plugin authors**: contribute actions through the `ctx.shortcuts` registry:
+**给插件作者**——通过 `ctx.shortcuts` 注册表贡献动作:
 
 ```ts
 ctx.effect(() => ctx.shortcuts.registerAction({
-  id: 'my-plugin.myAction',          // unique id, <plugin>.<action> by convention
+  id: 'my-plugin.myAction',          // 唯一 id,惯例 <插件>.<动作>
   label: { ns: 'my-plugin', key: 'action.myAction' },
   description: { ns: 'my-plugin', key: 'action.myAction.desc' },
   defaultBinding: { kind: 'key', modifiers: ['primary', 'shift'], key: 'o' },
-  layering: 'global',                // 'global': capture-phase, browser default suppressed
-                                     // 'yield': bubble-phase, yields to consumed keys / open overlays / editables
-  available: () => true,             // optional dispatch-time gate
+  layering: 'global',                // 'global':capture 阶段,抑制浏览器默认
+                                     // 'yield':bubble 阶段,让位于已消费按键/打开的弹层/可编辑目标
+  available: () => true,             // 可选的分发时门禁
   run: () => { /* ... */ },
 }), 'my-plugin: shortcut')
 ```
 
-The contribution's locale entries stay in the contributing plugin's own namespace. Duplicate ids fail loud; when several actions share one chord, the first registration wins. Users rebind or unbind any action in Settings → Plugins → Keyboard shortcuts; preferences persist under the `ui-shortcuts` section keyed by action id.
-
-**Model experience**: none. The actions call existing public verbs (`conversation.cancel`, `conversation.input.submit`) that the composer's own controls already use; nothing here reaches a model request. KV cache effect: none; this package neither assembles nor sends a provider request.
+贡献项的文案留在贡献方自己的 locale 命名空间。id 重复会 loud 报错;多个动作共享同一组合键时先注册者生效。用户可在 设置 → 插件 → 快捷键 重绑或解绑任何动作。无模型请求、无 KV cache 影响——这些动作调用的正是 composer 自身控件使用的公开动词。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/ui-shortcuts`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/ui-shortcuts`)。问题与贡献请移步该仓库。

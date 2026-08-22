@@ -1,0 +1,82 @@
+# `@khorsheed/dsh-local-agent-claude-code`
+
+English | [中文](README.md)
+
+Delegate coding tasks to a locally installed Claude Code from any dsh agent preset — answers stream back live, and your personal `~/.claude` is never touched. The Claude Code harness of the [local-agent family](../local-agent/README.md).
+
+## Features
+
+- **Delegate from any preset** — the tool mounts once at the profile root; no per-preset variants.
+- **Scoped home** — every Claude process runs with `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/claude-code`; your personal `~/.claude` stays out of it.
+- **Browser login, one command** — `/claude-code login` surfaces the OAuth URL in-session; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
+- **Resume a delegation** — pass back the result's `resume` handle to continue the same Claude session, with per-round accounting.
+- **Live stream mirror** — the child session mirrors Claude's thinking, tool calls, and replies live; aborting keeps the partial transcript and real token usage.
+
+## Install
+
+Prerequisites: a running dsh profile, and the Claude Code CLI (`claude`) on `PATH` — the plugin does not install it. Install the family core together with this bundle (`dsh plugin add` reconciles only *direct* dependencies, so name both):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-claude-code
+```
+
+Restart the profile, then run `/claude-code login` once from a session. Uninstall:
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
+```
+
+The scoped home is kept on uninstall so a reinstall needs no fresh login; delete `$DSH_HOME/local-agent/claude-code` to remove every trace.
+
+## Config
+
+Two optional fields on the bundle row:
+
+- `permissionMode` — `skip` (default) passes `--dangerously-skip-permissions` so the child can write files without an approval prompt; `normal` runs without it, so approval-requiring actions (e.g. writing files) are denied.
+- `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
+
+⚠️ `skip` has no OS-level sandbox — the child can write anywhere the host user can, including outside the workspace — and the scoped login's OAuth token is sent to whatever `baseUrl` points at. Prefer `normal` when a delegation needs confinement; point `baseUrl` only at endpoints you trust.
+
+## Compatibility
+
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- source line (deepseek-harness master): ✅
+
+## Known Limitations
+
+- **macOS logout is config-only** — the keychain entry is left for the CLI's own `claude auth logout`; a fresh login rewrites the same slot, so the stale entry is harmless.
+- **Linux credentials are not isolated** (upstream bug #47661) — claude reads the default `~/.claude/.credentials.json` even when the scoped home has none.
+- **Interactive-session records may be missing** — under a custom `CLAUDE_CONFIG_DIR` the CLI may not write transcripts (upstream behavior).
+- **Headless caveat** — `/claude-code` commands need a Web session; `--profile headless` delegates through a composition that mounts the tool row.
+
+## How it works
+
+<details>
+<summary>Internals (click to expand)</summary>
+
+```
+src/index.ts                harness registration, /claude-code command family, config schema
+src/claude-cli-provider.ts  one-shot provider: spawn, stream mirror, turn/token accounting
+src/provision.ts            scoped-home provisioning and file-based logout
+src/records.ts              auth probe and session-record listing from the scoped home
+```
+
+The bundle patch registers the `claude-code` harness into the family core (`@khorsheed/dsh-local-agent`, declared as a dependency — the claude bundle deliberately does not re-insert the core row, which would mount it twice) and mounts the `claude-local` provider, which spawns `claude -p --verbose --output-format stream-json` under the harness's scoped home. The `subagent_claude_code_local` tool is the family-owned tool (`@khorsheed/dsh-local-agent-tool-subagent`): the official subset (`description`/`prompt`) plus an optional `resume` parameter.
+
+**Scope isolation.** On macOS the real credential lives in the OS keychain under a hashed entry (`Claude Code-credentials-<sha256(configDir)[:8]>`) keyed to the scoped home path — file-based logout cannot reach it, but a fresh login rewrites the same slot. On Linux, upstream bug #47661 means `CLAUDE_CONFIG_DIR` does not isolate the credentials file (see Known Limitations). Auth detection is a light file check of the scoped `.claude.json`'s `oauthAccount` — the CLI is never spawned just to probe.
+
+**Session records.** `/claude-code sessions` lists the scoped home's `projects/<cwd-slug>/<uuid>.jsonl` session files — this agent's delegations, never your personal sessions. The slug is a lossy encoding of the workspace path, so the listed `workDir` comes from the file content (the first `user` event's `cwd` field), never the directory name. The Settings panel shows the same listing narrowed to the current workspace.
+
+**Resume security.** The handle never rides the prompt: it is read only from the `resume` parameter, and the localAgent registry resolves it only for the same parent session and provider that recorded the delegation — a forged handle (unknown child session, another parent's session, or the wrong provider) is rejected before any CLI process starts.
+
+**Stream mirror & accounting.** `thinking` blocks fold to `reasoning` blocks, `tool_use`/`tool_result` to tool lines (`[工具 Bash] <command> → output`), reply `text` to assistant text; resumed rounds append their own turn without duplication. The provider opens `turn/start` at spawn and closes `turn/end` on settle — including failure and cancellation — so `subagentTiming` duration equals actual CLI runtime and no window stays open; the final `assistant/message` carries token usage parsed from the JSON result (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` — Anthropic reports each separately).
+
+**Model experience.** The child is a fresh one-shot `claude -p` in the delegating session's workspace; the parent submits only the standalone task text and sees only the final answer or the exact error, plus the resume self-description on a fresh delegation — Claude commentary, tool activity, and workspace diffs are not copied over. Child tokens never enter the parent's context; the child pays for its own Claude context and turn (cache reuse depends only on the scoped installation's provider, model, and history); the parent's KV cache is unaffected.
+
+**Config notes.** The host environment is a startup-time snapshot — a later `export ANTHROPIC_BASE_URL` in another shell has no effect until the host restarts; check the host's environment, not your current shell, when diagnosing routing. Every delegation logs the effective endpoint at info level (`subagent-claude: delegating via <endpoint>`), and a failed run's error text names it. `skip` is the default because a one-shot CLI subagent has no approval surface; scope the host's own sandbox (e.g. run the host inside a sandboxed workspace) when a delegation needs confinement.
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/local-agent-claude-code`). Issues and contributions welcome there.

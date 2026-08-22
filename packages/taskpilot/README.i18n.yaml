@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/taskpilot/README.en.md
+packages/taskpilot/README.en.md: 31d13e402f32e6d436e5ba6c3b390bec38e2e78c
+packages/taskpilot/README.md: 35871e4f6c5a223f343fea295cf3c55a83dfd49c

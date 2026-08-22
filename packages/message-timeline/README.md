@@ -1,72 +1,73 @@
 # dsh-message-timeline
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-A jump-to-message timeline for the dsh web GUI: a flat floating rail along the left edge of the chat scrollport — one row per loaded user message, a tick plus an ellipsized one-line preview. At rest only the dimmed ticks show, reading as ambient markers; hovering the strip or keyboard-focusing the list reveals every row's text, the current reading position stays lit blue, and clicking a row scrolls the transcript straight to that message. No model-visible effects, no patches to official code.
+dsh web GUI 的历史消息导览:会话左缘的一条悬浮时间轴,每行一条用户消息。悬停显示预览,点击直接把会话滚动到对应消息。
 
-<img src="docs/screenshots/02-message-timeline.png" width="480" alt="floating message timeline along the chat's left edge">
+<img src="../../docs/screenshots/message-timeline1.png" width="480" alt="会话左缘的悬浮消息时间轴">
 
-## Features
+## 特性
 
-- **One row per user message** — tick plus one-line preview; steering messages admitted mid-turn are included (configurable off).
-- **Ambient rest state** — only the dimmed ticks show, and only the narrow tick strip is pointer-sensitive: crossing the list on the way to the sidebar never lights it.
-- **Reading position tracking** — the current position's tick stays blue and brightest; inside a long assistant answer it anchors to the user message being answered.
-- **Click to jump** — a row scrolls the transcript to that message; the list follows the reading position, so a newly sent message keeps its lit row in view.
-- **Long-history friendly** — a short list centers vertically below the tab strip; a long one scrolls invisibly and pages older history at its top.
+- **每行一条用户消息**——竖刻度加单行省略预览;steering 消息也计入(可配置关闭)。
+- **环境化静止态**——只显示压淡的刻度,悬停刻度条或聚焦列表才展开文字。
+- **阅读位置跟踪**——当前位置的刻度保持蓝色高亮,停在超长回复中时锚定在所回答的用户消息上。
+- **点击跳转**——点击行把会话滚动到对应消息;列表跟随阅读位置。
+- **长历史友好**——列表短时垂直居中,长时隐形滚动并在顶部翻页加载更早历史。
 
-## Install
+## 安装
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-message-timeline
 ```
 
-Then restart the web instance. Uninstall removes every surface the plugin adds:
+然后重启 web 实例。卸载:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 ```
 
-## Config
+## 配置
 
-| Field | Default | Meaning |
+| 字段 | 默认 | 含义 |
 | --- | --- | --- |
-| `enabled` | `true` | Master switch; false hides the panel entirely. |
-| `includeSteering` | `true` | Count steering messages (user text admitted mid-turn) as rows. |
-| `panelWidth` | `360` | Preferred timeline panel width in px (clamped 120–640); the panel's right edge never crosses the message flow, so a narrow column shrinks the panel (long text ellipsizes), and a left gutter too small for 120px hides the panel entirely. |
-| `initialPages` | `5` | History pages (50 events each) prefetched when the panel opens; older pages load on demand when the panel is scrolled to its top (clamped 1–20). |
+| `enabled` | `true` | 总开关;false 时面板完全不渲染。 |
+| `includeSteering` | `true` | 回合中插入的用户消息(steering)是否也算行。 |
+| `panelWidth` | `360` | 面板宽度(px,限 120–640);窄列自动收缩,左缘沟槽放不下时整条隐藏。 |
+| `initialPages` | `5` | 面板打开时预取的历史页数(每页 50 条事件);更早历史在面板滚动到顶部时按需加载(限 1–20)。 |
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
-- source line (deepseek-harness master): ✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- 源码线(deepseek-harness master):✅
 
-## Known Limitations
+## 已知限制
 
-- **DOM probe coupling** — the panel targets the official row attributes `data-chat-anchor-key` / `data-chat-flow-kind` and the `[data-conversation-scroll]` scrollport. If the official DOM structure changes, the panel hides itself (one `console.warn`) until the probe is updated; there is no legacy-compat path by design.
-- **Single rendered session** — the tracker follows the one currently rendered conversation, so rows and jumps address that session only.
-- **Loaded history only** — rows cover materialized nodes. On a chat view the panel pulls history pages until the first user message materializes (a huge assistant turn can push every user message past the loaded event window) and up to `initialPages` total; older messages then arrive one page at a time when the panel is scrolled to its top (`conversation.loadOlder()`).
-- **No full index view yet** — a second `conversation.view` tab with a searchable message index is planned, reusing the same snapshot filter and jump path.
+- **依赖官方 DOM 探针** —— 面板针对官方行属性与 `[data-conversation-scroll]` 滚动区;官方结构变化时面板自行隐藏(console.warn 一次)直到探针更新。
+- **单会话渲染** —— 行与跳转只作用于当前渲染的会话。
+- **仅已加载历史** —— 行覆盖已物化的节点;更早消息在面板滚动到顶部时逐页加载。
+- **暂无整页导览** —— 可搜索的消息索引标签页在计划中。
 
-## How it works
+## 实现原理
 
 <details>
-<summary>Internals (click to expand)</summary>
+<summary>内部结构(点击展开)</summary>
 
-The plugin is purely additive and modifies no official code:
+插件纯增量、不改任何官方代码。
 
-- **Mount** — one entry in the official `conversation.session.header.utilities` seat (a right-aligned optional-utility slot) anchors the plugin into the session scope; the panel itself renders through a body portal with `position: fixed` geometry measured from the official `[data-conversation-scroll]` scrollport.
-- **Data** — the rows are derived from the framework `useSession` chat snapshot (`s.chat.order` / `s.chat.nodes`), filtered to `user` / `steering` nodes. No store outside the session, no event registration.
-- **Jump** — clicking a row finds the transcript row by the official `data-chat-anchor-key` attribute and writes `scrollTop`; the official ChatView treats that programmatic scroll as a normal reader move (bottom-follow and scroll memory keep working).
-- **Degradation** — the probed attributes are official render output, not a declared API. When they change, the panel hides itself with one `console.warn`; nothing throws and the boot never fails (`slots.inject` drops the contribution when the seat's declaration disappears).
+- `src/client/index.ts` —— 插件主体(`apply`/`inject`)
+- `src/client/rail-tracker.ts` —— 插件唯一接触的 DOM:只读探针加跳转时的滚动写入
+- `src/client/TimelineRail.tsx` —— 面板组件
+- `src/client/preview.ts` —— 消息内容转单行预览文本
+- `src/index.ts` —— 空的宿主 `apply`,只负责把插件锚定进宿主 Loader
 
-The panel is always on while the chat view shows, and the `enabled` config turns the plugin off entirely. Composing the plugin out of cordis.yml removes every surface it adds.
+**挂载与数据** —— 一个条目注册进官方 `conversation.session.header.utilities` 槽位,把插件锚定进会话作用域;面板通过 body portal 以固定几何渲染,数据从官方滚动区实测。行取自框架 `useSession` 会话快照(`s.chat.order` / `s.chat.nodes`),过滤 `user` / `steering` 节点——不持有会话外状态,不注册事件。
 
-The `/client` exports are the plugin body (`apply`/`inject`), the `TimelineRail` component, the store factory, and the injected face types. The host half is an empty `apply` that only anchors the plugin into the host cordis.yml / Loader.
+**跳转与降级** —— 点击行按官方 `data-chat-anchor-key` 属性找到会话行并写 `scrollTop`;官方 ChatView 把这种程序化滚动当正常读者移动处理(底部跟随与滚动记忆照常工作)。探测的属性是官方渲染产物而非契约 API:官方改结构时面板自行隐藏并 console.warn 一次,不抛错、boot 永不失败。
 
-**Model experience: none.** The panel reads the session snapshot and scrolls the transcript; it never sends prompts, appends session events, or enters the session log. KV cache effect: none.
+**模型体验:无。** 面板只读会话快照并滚动会话,不发送提示词、不追加会话事件、不进会话日志。KV 缓存影响:无。`enabled` 配置可整体关闭插件;从 cordis.yml 移除本插件即移除它添加的所有界面。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/message-timeline`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/message-timeline`)。问题与贡献请移步该仓库。

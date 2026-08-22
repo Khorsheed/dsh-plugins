@@ -1,40 +1,37 @@
 # @khorsheed/dsh-context-guard
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
-A context-window compaction reminder for the dsh web GUI: once the **context occupancy** — the same number the composer's context ring shows — crosses a configured share of the model's context window, a compact button appears in the composer's tool row, and clicking it runs the official `/compact` command. No new RPC, no edits to core packages; removing the plugin removes every surface it adds.
+dsh Web GUI 的上下文窗口压缩提醒：当**上下文占用**——与输入框旁边进度环显示的是同一个数——越过模型上下文窗口的配置比例时，输入框工具栏里会自动出现一枚压缩按钮，点击即执行官方 `/compact` 命令。卸载即清除它添加的所有界面。
 
-<img src="docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
-<img src="docs/screenshots/context-guard-settings.png" width="480" alt="the reminder-ratio setting in Settings → Plugins">
+<img src="../../docs/screenshots/context-guard-button.png" width="480" alt="上下文占用越过配置比例后，聊天框出现压缩按钮">
 
-## Features
+## 特性
 
-- **Compact button in the composer** — one `conversation.input.right` entry; renders nothing below the threshold, then appears automatically in the amber warning tint.
-- **Same number as the context ring** — driven by the official `contextPressure` session projection, so the button and the ring never disagree.
-- **Runs the official `/compact`** — through the host command channel, so idle-gating, the compaction lock, and the flow-node presentation stay host-owned.
-- **One live tunable** — the occupancy threshold, editable in the GUI (Settings → Plugins → "压缩提醒时机 / Compaction reminder timing") with no restart.
+- **输入框里的压缩按钮**——低于阈值时隐藏，越过后以琥珀警示色自动出现。
+- **与进度环同一个数**——由官方 `contextPressure` 投影驱动，按钮与进度环永不打架。
+- **执行官方 `/compact`**——空闲门控、压缩锁与流程节点展示都由宿主负责。
+- **一个实时可调项**——占用阈值，在设置 → 插件里改，无需重启。
 
-## Install
+## 安装
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-context-guard
 ```
 
-Then restart the web instance. Uninstall removes every surface the plugin adds:
+安装后重启 web 实例。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-context-guard
 ```
 
-## Config
+## 配置
 
-One tunable, editable in the GUI (Settings → Plugins → "压缩提醒时机 / Compaction reminder timing") and live — the button reacts to a saved value with no restart. The YAML composition entry below is the settings section's base layer; values the card does not override come from it.
+一个可调项，在 GUI 里改（设置 → 插件配置 →「压缩提醒时机 / Compaction reminder timing」）且实时生效，无需重启。
 
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 |---|---|---|
-| `thresholdRatio` | `0.8` | Context occupancy fraction at which the compact button appears (clamped to (0, 1]). Lower it to be reminded earlier — the provider rejection wall sits below 100% occupancy because the request reserves output tokens (see *How it works*). |
-
-Example composition (becomes the card's base layer):
+| `thresholdRatio` | `0.8` | 压缩按钮出现时的上下文占用比例（限制在 (0, 1]）。想更早收到提醒就调低——provider 拒绝墙在 100% 占用之下（见「实现原理」）。 |
 
 ```yaml
 plugins:
@@ -42,51 +39,45 @@ plugins:
     thresholdRatio: 0.65
 ```
 
-**This field tunes ONLY when the button appears.** The official compaction engine (compaction-basic) reads its own `thresholdRatio` / `auto` configuration and never touches this section — real compaction timing is not affected.
+**该字段只影响按钮出现的时机**——真实压缩时机仍由官方压缩引擎自己的 `thresholdRatio` / `auto` 配置决定。
 
-## Compatibility
+## 兼容性
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21)
-- source line (deepseek-harness master): ✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：`commands/execute` Remote 新增必填 `images` 参数（rc.6/rc.7 宿主会收到错位的参数）——在旧宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证（纯增量审计，2026-08-21）
+- source 线（deepseek-harness master）：✅
 
-## Known Limitations
+## 已知限制
 
-- **The button is a reminder, not a guarantee.** Between "button appears" and "click", the context may keep growing; the host's `/compact` may report `busy` while the agent is running, and the compaction summary is subject to the same window fit as any request.
-- **The output cap is not exposed in the UI.** The rejection wall depends on the model's output budget (`window − maxTokens`), which is a model property, not a user preference; the README carries the math and the "lower the ratio" guidance instead of a second confusing knob.
-- **No auto-compaction.** The plugin only surfaces the manual action; the official 80% auto-compaction keeps running unchanged, and a compacted-away guard button disappears as soon as the projection reflects the shrunken surface.
+- **提醒，不是保证**——从按钮出现到点击之间上下文可能继续增长，agent 运行中 `/compact` 可能报 `busy`。
+- **没有输出上限旋钮**——拒绝墙取决于 `window − maxTokens`，这是模型属性而非用户偏好。
+- **不自动压缩**——官方 80% 自动压缩保持原样运行。
 
-## How it works
+## 实现原理
 
 <details>
-<summary>Why it exists and internals (click to expand)</summary>
+<summary>它为什么存在与内部结构（点击展开）</summary>
 
-### Reminding you before the wall the meter does not show
+### 在进度环看不到的"墙"之前提醒你
 
-The official compaction-basic engine auto-compacts at `agent/pre-step` once the token-meter estimate crosses 80% of the context window. Two properties of that picture leave requests that can fail **before** the meter shows 80%:
+官方 compaction-basic 引擎在上下文窗口 80% 处自动压缩，且只在步间运行。但 provider 在 `prompt + max_tokens > context_length` 时拒绝请求——请求要预留输出 token，因此拒绝墙在 100% 占用之下。以 deepseek 适配器的默认值（窗口 1,000,000、输出上限 256,000）计，墙在约 74.4% 处，甚至低于官方 80% 压缩点；估算器还系统性低估 CJK 文本与 JSON schema，provider 侧计数比进度环显示的高。空闲会话上没有任何信号提示下一次发送会失败。
 
-1. **The rejection wall sits below 100% occupancy.** A provider rejects a request when `prompt + max_tokens > context_length` — the request reserves output tokens. With the deepseek adapter's defaults (window 1,000,000, output cap 256,000), the wall is at ~74.4% occupancy, far below both 100% and the official 80% compaction point. A CJK-heavy or schema-heavy session makes it worse: the estimator "systematically underprices CJK text and JSON schemas", so the provider-side count is higher than the ring shows.
-2. **The official auto-compaction only runs between steps.** On an idle session nothing signals that the next send will fail, and during a long tool-calling turn the output keeps accumulating.
+默认比例（0.8）下按钮与官方引擎要压缩的点重合；**调低比例（如 0.6–0.7）可更早收到提醒**——此时手动 `/compact` 的摘要调用还放得下。
 
-The guard is a reminder on top of the ring: at the default ratio (0.8) it appears exactly when the official engine would compact anyway; **lower the ratio (e.g. 0.6–0.7) to be reminded earlier** — while the summarization call of a manual `/compact` still fits comfortably.
+### 机制
 
-### Mechanics
+- **位置**：`conversation.input.right`（输入框工具栏、发送按钮之前）。
+- **数据**：官方 `contextPressure` 会话投影——`projectedTokens` 与 `contextWindow`，旧日志回退到 provider 裸样本。
+- **公式**：`projectedTokens / contextWindow >= thresholdRatio`——与进度环显示的是同一个占用数。
+- **动作**：官方 `/compact` 命令通道（`remote.commands.execute` → `ctx.commands` → `ctx.compaction.compactNow`）。
 
-- **Seat**: `conversation.input.right` (the composer's tool row, before the send button). Renders nothing until the threshold is crossed, then appears automatically in the amber warning tint.
-- **Data**: the official `contextPressure` session projection — `projectedTokens` (the provider-reported prompt sample carried forward over the surface's signed movement since, so a compaction shows immediately; the bare sample is the fallback for logs whose projection predates that field) and `contextWindow`.
-- **Formula**: `projectedTokens / contextWindow >= thresholdRatio` → the button appears. This is the **same occupancy the composer's context ring shows** — one number, no confusion.
-- **Action**: the official `/compact` command channel (`remote.commands.execute` → host `ctx.commands` → `ctx.compaction.compactNow`), so the host owns idle-gating, the compaction lock, and the flow-node presentation.
+### 模型体验
 
-### Model experience
+对模型没有任何变化：点击执行的是与用户手动输入相同的 `/compact`，会话日志里也是同样的命令生命周期。插件本身无 token 与 KV 缓存影响。
 
-Nothing changes for the model. The button is composer chrome; clicking it runs the same `/compact` the user could type, and the session log sees a normal command lifecycle (and any compaction transaction) exactly as if it had been typed.
-
-- **Token effect**: none from the plugin itself; the compact it triggers replaces the shadowed span with a checkpoint exactly as a manual `/compact` does.
-- **KV cache effect**: none.
-
-The `/client` exports are the plugin body (`apply`/`inject`) and the `CompactGuardButtonProps` / `ContextGuardSettingsCardProps` types.
+`/client` 导出即插件本体（`apply`/`inject`）与 `CompactGuardButtonProps` / `ContextGuardSettingsCardProps` 类型。
 
 </details>
 
-## Development
+## 开发
 
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/context-guard`). Issues and contributions welcome there.
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/context-guard`）。问题与贡献请移步该仓库。
