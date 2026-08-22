@@ -19,6 +19,7 @@
  * @module @khorsheed/dsh-local-agent-dsh/live-driver
  */
 
+import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -35,8 +36,6 @@ import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
   type LiveInitializeResult,
-  type LiveSessionEventParams,
-  type LiveSessionIdleParams,
   type LiveTurnReason,
   type LiveTurnStartResult,
 } from '@khorsheed/dsh-local-agent-dsh-headless/wire'
@@ -66,6 +65,9 @@ export const DEFAULT_LIVE_DISPOSE_CONVERGE_MS = 5_000
 /** Bounded wait for a reclaimed runtime's own shutdown before SIGTERM. */
 const RECLAIM_SHUTDOWN_GRACE_MS = 1_000
 
+/** How long the channel stays broken before a round retries live. */
+export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
+
 /**
  * The serve channel could not come up (spawn failure or handshake
  * timeout/mismatch). The provider catches exactly this and falls back to the
@@ -83,12 +85,15 @@ export interface DshLiveDriverTimeouts {
   readonly initializeMs: number
   readonly requestMs: number
   readonly convergeMs: number
+  /** How long a broken channel stays on the exec fallback before a retry. */
+  readonly channelRetryMs: number
 }
 
 const DEFAULT_TIMEOUTS: DshLiveDriverTimeouts = {
   initializeMs: DEFAULT_LIVE_INITIALIZE_TIMEOUT_MS,
   requestMs: DEFAULT_LIVE_REQUEST_TIMEOUT_MS,
   convergeMs: DEFAULT_LIVE_DISPOSE_CONVERGE_MS,
+  channelRetryMs: DEFAULT_LIVE_CHANNEL_RETRY_MS,
 }
 
 /** Fully resolved inputs for one live round (the live counterpart of DshCliRunSpec). */
@@ -131,21 +136,30 @@ class LiveRuntime {
   }>()
   private nextId = 0
   private buffer = ''
+  private readonly decoder = new StringDecoder('utf8')
+  private readonly stderrDecoder = new StringDecoder('utf8')
   private stderrTail = ''
 
-  /** Per-round handlers, installed by the active round (one at a time per member). */
-  onEvent: ((sessionId: string, event: SessionEvent) => void) | undefined
-  onIdle: ((sessionId: string, reason: LiveTurnReason | null) => void) | undefined
+  /**
+   * Per-round handlers, installed by the active round (one at a time per
+   * member) and CLEARED when it settles — a notification with no active
+   * round is dropped, never delivered into a stale closure.
+   */
+  onEvent: ((sessionId: string, turn: number | null, event: SessionEvent) => void) | undefined
+  onIdle: ((sessionId: string, turn: number, reason: LiveTurnReason | null) => void) | undefined
   /** Fires once when the process dies or is reclaimed (driver bookkeeping). */
   onDead: (() => void) | undefined
 
   constructor(
     readonly child: SubprocessHandle,
     private readonly timeouts: DshLiveDriverTimeouts,
+    private readonly warn: (message: string) => void,
   ) {
-    child.stdout?.on('data', (chunk: Buffer) => { this.feed(chunk.toString('utf8')) })
+    // StringDecoders hold a multi-byte UTF-8 tail split across chunks instead
+    // of corrupting it into U+FFFD (the wire carries arbitrary CJK text).
+    child.stdout?.on('data', (chunk: Buffer) => { this.feed(this.decoder.write(chunk)) })
     child.stderr?.on('data', (chunk: Buffer) => {
-      this.stderrTail = (this.stderrTail + chunk.toString('utf8')).slice(-4096)
+      this.stderrTail = (this.stderrTail + this.stderrDecoder.write(chunk)).slice(-4096)
     })
     void child.done.then(
       () => { this.markDead() },
@@ -166,15 +180,23 @@ class LiveRuntime {
       this.buffer = this.buffer.slice(index + 1)
       index = this.buffer.indexOf('\n')
       if (line.trim() === '') continue
-      let message: { id?: unknown; result?: unknown; error?: unknown; method?: unknown; params?: unknown }
-      try {
-        message = JSON.parse(line) as typeof message
-      } catch {
-        continue
-      }
+      this.dispatchLine(line)
+    }
+  }
+
+  /** Handle one wire line; a malformed or hostile line never escapes this frame. */
+  private dispatchLine(line: string): void {
+    let message: { id?: unknown; result?: unknown; error?: unknown; method?: unknown; params?: unknown }
+    try {
+      message = JSON.parse(line) as typeof message
+    } catch {
+      this.warn('subagent-dsh live: ignored a malformed wire line')
+      return
+    }
+    try {
       if (typeof message.id === 'number' && ('result' in message || 'error' in message)) {
         const request = this.pending.get(message.id)
-        if (request === undefined) continue
+        if (request === undefined) return
         this.pending.delete(message.id)
         clearTimeout(request.timer)
         const wireError = message.error as { message?: string } | undefined
@@ -183,15 +205,22 @@ class LiveRuntime {
         } else {
           request.resolve(message.result)
         }
-        continue
+        return
       }
+      const params = (message.params ?? {}) as { sessionId?: unknown; turn?: unknown; event?: unknown; reason?: unknown }
+      if (typeof params.sessionId !== 'string') return
       if (message.method === 'session/event') {
-        const params = message.params as LiveSessionEventParams
-        this.onEvent?.(params.sessionId, params.event)
+        const event = params.event as SessionEvent | undefined
+        if (event === null || typeof event !== 'object' || typeof event.type !== 'string') return
+        this.onEvent?.(params.sessionId, typeof params.turn === 'number' ? params.turn : null, event)
       } else if (message.method === 'session/idle') {
-        const params = message.params as LiveSessionIdleParams
-        this.onIdle?.(params.sessionId, params.reason)
+        if (typeof params.turn !== 'number') return
+        this.onIdle?.(params.sessionId, params.turn, (params.reason ?? null) as LiveTurnReason | null)
       }
+    } catch (error) {
+      // A handler fault (bad event shape, append failure) degrades to a warn;
+      // the wire pump and the process stay alive.
+      this.warn(`subagent-dsh live: notification handler failed: ${thrown(error).message}`)
     }
   }
 
@@ -252,9 +281,14 @@ class LiveRuntime {
  */
 export class DshLiveDriver {
   private readonly runtimes = new Map<string, LiveRuntime>()
+  /** In-flight spawns by member: concurrent rounds share one, disposeAll waits them out. */
+  private readonly ensuring = new Map<string, Promise<LiveRuntime>>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
-  /** Set when the channel proved unusable; the provider falls back to exec permanently. */
-  private channelBroken = false
+  /** When the channel last failed its spawn/handshake probe (breaker with cooldown). */
+  private channelBrokenAt: number | undefined
+  private disposed = false
+  /** Aborts in-flight spawns when the driver is disposed mid-handshake. */
+  private readonly disposeController = new AbortController()
 
   constructor(
     private readonly ctx: Context,
@@ -262,9 +296,15 @@ export class DshLiveDriver {
     private readonly timeouts: DshLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
 
-  /** Whether the channel already failed its spawn/handshake probe. */
+  /**
+   * Whether the channel is in its post-failure cooldown. A spawn/handshake
+   * failure trips the breaker (rounds fall back to exec), but only for
+   * `channelRetryMs` — a transient boot fault must not disable live driving
+   * until the next plugin reload.
+   */
   get disabled(): boolean {
-    return this.channelBroken
+    return this.channelBrokenAt !== undefined
+      && Date.now() - this.channelBrokenAt < (this.timeouts.channelRetryMs ?? DEFAULT_LIVE_CHANNEL_RETRY_MS)
   }
 
   /** Count of resident runtimes currently registered (zombie accounting in tests). */
@@ -298,26 +338,49 @@ export class DshLiveDriver {
 
   /** Reclaim every runtime (plugin unload); no process survives the profile. */
   async disposeAll(): Promise<void> {
+    this.disposed = true
+    // Abort in-flight spawns (their handshakes race this signal), then wait
+    // them out: each self-reclaims, so no process registers past the teardown.
+    this.disposeController.abort()
+    await Promise.all([...this.ensuring.values()].map(pending => pending.catch(() => undefined)))
     for (const key of [...this.runtimes.keys()]) {
       await this.reclaim(key)
     }
   }
 
   /**
-   * Spawn the member's resident runtime and prove the wire with a handshake.
-   * Spawn/handshake failure breaks the channel (exec fallback) and throws
-   * {@link LiveChannelUnavailableError}; a later crash is NOT a broken
-   * channel — the next round re-spawns and resumes the on-disk session.
+   * The member's live runtime, spawning it (once per member at a time) when
+   * absent or dead. `signal` abandons the spawn on cancellation.
    */
-  private async ensureRuntime(spec: DshLiveRoundSpec, apiKey: string): Promise<LiveRuntime> {
+  private ensureRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
     const key = spec.sessionId
     const existing = this.runtimes.get(key)
     if (existing !== undefined && !existing.dead) {
       this.clearIdleTimer(key)
-      return existing
+      return Promise.resolve(existing)
     }
     if (existing !== undefined) this.runtimes.delete(key)
+    const pending = this.ensuring.get(key)
+    if (pending !== undefined) return pending
+    const spawn = this.spawnRuntime(spec, apiKey, signal)
+      .finally(() => { this.ensuring.delete(key) })
+    this.ensuring.set(key, spawn)
+    return spawn
+  }
 
+  /**
+   * Spawn the member's resident runtime and prove the wire with a handshake.
+   * Spawn/handshake failure trips the channel breaker (exec fallback) and
+   * throws {@link LiveChannelUnavailableError}; a later crash is NOT a broken
+   * channel — the next round re-spawns and resumes the on-disk session. A
+   * cancellation mid-spawn reclaims the half-started runtime and throws the
+   * abort instead, without touching the breaker.
+   */
+  private async spawnRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
+    const key = spec.sessionId
+    if (this.disposed) {
+      throw new LiveChannelUnavailableError('the live driver is disposed')
+    }
     const profileName = this.config.profileName ?? DEFAULT_SUB_PROFILE_NAME
     // The member-channel coordinates ride the spawn env: the resident process
     // carries them for its whole lifetime, so the token is registered with the
@@ -341,28 +404,59 @@ export class DshLiveDriver {
       child = this.ctx.subprocess.spawn(spawnSpec)
     } catch (error) {
       member?.release()
-      this.channelBroken = true
+      this.markChannelBroken()
       throw new LiveChannelUnavailableError(`the serve process failed to spawn: ${thrown(error).message}`)
     }
     member?.bind(child.pid)
-    const runtime = new LiveRuntime(child, this.timeouts)
+    const runtime = new LiveRuntime(child, this.timeouts, message => { this.ctx.logger.warn(message) })
     runtime.onDead = () => {
       this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
     }
+    const aborted = new Promise<never>((_, reject) => {
+      const cancel = (): void => { reject(new Error('subagent-dsh: run cancelled locally')) }
+      const unload = (): void => { reject(new LiveChannelUnavailableError('the live driver was disposed during spawn')) }
+      if (signal.aborted) {
+        cancel()
+        return
+      }
+      if (this.disposeController.signal.aborted) {
+        unload()
+        return
+      }
+      signal.addEventListener('abort', cancel, { once: true })
+      this.disposeController.signal.addEventListener('abort', unload, { once: true })
+    })
+    aborted.catch(() => {})
     try {
-      const hello = await runtime.request<LiveInitializeResult>('initialize', {}, this.timeouts.initializeMs)
+      const hello = await Promise.race([
+        runtime.request<LiveInitializeResult>('initialize', {}, this.timeouts.initializeMs),
+        aborted,
+      ])
       if (hello.protocolVersion !== LIVE_WIRE_PROTOCOL_VERSION || hello.serverInfo.name !== LIVE_SERVER_NAME) {
         throw new Error('the serve handshake reported an unexpected identity')
       }
     } catch (error) {
       await runtime.reclaim()
-      this.channelBroken = true
+      // A caller-cancelled handshake says nothing about the channel's health.
+      if (signal.aborted) throw thrown(error)
+      this.markChannelBroken()
       throw new LiveChannelUnavailableError(`the serve handshake failed: ${thrown(error).message}`)
     }
+    if (this.disposed) {
+      // The plugin unloaded mid-spawn: reclaim instead of leaking the process.
+      await runtime.reclaim()
+      throw new LiveChannelUnavailableError('the live driver was disposed during spawn')
+    }
+    // A good handshake heals the breaker (the cooldown retry path).
+    this.channelBrokenAt = undefined
     this.runtimes.set(key, runtime)
     return runtime
+  }
+
+  private markChannelBroken(): void {
+    this.channelBrokenAt = Date.now()
   }
 
   /**
@@ -370,41 +464,60 @@ export class DshLiveDriver {
    * exec run's settlement contract exactly (settleRunResult + turn/end
    * bookkeeping) so the facade, the tool, and the projections cannot tell the
    * difference — except `cancel` is a runtime interrupt and the process
-   * survives.
+   * survives. Cancellation is honored in EVERY window: a slow spawn/handshake
+   * or a slow accept races the abort signal and settles aborted instead of
+   * running the turn to completion unwatched.
    */
   async startRound(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
     const task = dshTextTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-dsh: request was aborted before the run started')
     }
-    // Provisioning is idempotent; re-running heals a drifted sub-profile.
-    provisionDshSubProfile(spec.homeDir, this.config)
-    const apiKey = await resolveApiKey(this.ctx, this.config)
-    const runtime = await this.ensureRuntime(spec, apiKey)
+    if (this.disposed) {
+      throw new Error('subagent-dsh: the live driver is disposed')
+    }
 
     const turn = spec.resume?.turn ?? 1
     const childSession = spec.childSession
     const granularity: DshLiveMirrorGranularity = this.config.liveMirrorGranularity ?? 'event'
     const localAgent = this.ctx.get('localAgent')
 
-    // The turn opens BEFORE the wire request goes out: line processing is
-    // synchronous, so the accept ack's chunk could also carry the turn's first
-    // events, and a mirrored event landing before the parent's turn/start
-    // would break the fold's round scoping (and double-mirror at settle). A
-    // channel failure still leaves no dangling turn/start: the exec fallback
-    // triggers only on ensureRuntime's LiveChannelUnavailableError above; an
-    // accept failure below matches the exec path's spawn-failure precedent.
-    childSession.append('turn/start', { turn })
-
+    const runAbort = new AbortController()
+    let roundSettled = false
+    let runtime: LiveRuntime | undefined
+    /** True once turn/start may have reached the sub-dsh (interrupt becomes meaningful). */
+    let acceptSent = false
+    /** True once the parent's turn/start boundary is in the child session. */
+    let turnOpened = false
     let lastText = ''
     let mirroredMessages = 0
+    /** Events of this round that arrived before the boundary opened (same-chunk batching). */
+    const bufferedEvents: SessionEvent[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
       persistQueue = persistQueue.then(() =>
         this.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events))
     }
-    runtime.onEvent = (sessionId, event) => {
-      if (sessionId !== spec.sessionId) return
+
+    const requestCancel = (): void => {
+      if (roundSettled || runAbort.signal.aborted) return
+      runAbort.abort(new Error('subagent-dsh: run cancelled locally'))
+      // The live driver's core win: a graceful runtime interrupt instead of a
+      // process kill. Best-effort; local settlement does not wait for it.
+      if (acceptSent && runtime !== undefined && !runtime.dead) {
+        void runtime.request('turn/interrupt', { sessionId: spec.sessionId }).catch(() => {})
+      }
+    }
+    const onAbort = (): void => { requestCancel() }
+    // Registered before any await: a cancel during the slow spawn/handshake/
+    // accept windows is exactly where the graceful interrupt matters most.
+    request.signal.addEventListener('abort', onAbort, { once: true })
+
+    const abortBranch = new Promise<never>((_, reject) => {
+      runAbort.signal.addEventListener('abort', () => reject(new Error('subagent-dsh: run cancelled locally')), { once: true })
+    })
+
+    const mirrorOne = (event: SessionEvent): void => {
       const text = mirrorDshLiveEvent(childSession, event, { granularity })
       if (event.type === 'user/message' || event.type === 'assistant/message') {
         mirroredMessages += 1
@@ -416,94 +529,135 @@ export class DshLiveDriver {
       if (event.type === 'assistant/message' && text !== undefined && text !== '') lastText = text
     }
 
-    const idle = new Promise<{ reason: LiveTurnReason | null }>((resolve) => {
-      runtime.onIdle = (sessionId, reason) => {
-        if (sessionId === spec.sessionId) resolve({ reason })
+    const openTurn = (): void => {
+      // The boundary opens after the accept ack (a definitive reject leaves no
+      // dangling turn/start); events that arrived in the ack's chunk were
+      // buffered and flush now, in wire order, inside the boundary.
+      childSession.append('turn/start', { turn })
+      turnOpened = true
+      for (const event of bufferedEvents.splice(0)) mirrorOne(event)
+    }
+
+    let resolveIdle!: (outcome: { reason: LiveTurnReason | null }) => void
+    const idle = new Promise<{ reason: LiveTurnReason | null }>((resolve) => { resolveIdle = resolve })
+
+    const installHandlers = (rt: LiveRuntime): void => {
+      rt.onEvent = (sessionId, eventTurn, event) => {
+        // Only this round's events: a cancelled round's late unwind (tagged
+        // with ITS turn) and out-of-round events (null) never cross.
+        if (sessionId !== spec.sessionId || eventTurn !== turn) return
+        if (!turnOpened) {
+          bufferedEvents.push(event)
+          return
+        }
+        mirrorOne(event)
       }
-    })
-
-    try {
-      await runtime.request<LiveTurnStartResult>('turn/start', {
-        sessionId: spec.sessionId,
-        text: task,
-        resume: spec.resume !== undefined,
-      })
-    } catch (error) {
-      // The accept failed: the runtime's turn state is unknown, so do not
-      // reuse it — reclaim and fail the round loudly.
-      await this.reclaim(spec.sessionId)
-      throw thrown(error)
+      rt.onIdle = (sessionId, idleTurn, reason) => {
+        // Only this round's idle settles it — a cancelled round's unwind idle
+        // must not mis-settle the round that is actually running.
+        if (sessionId !== spec.sessionId || idleTurn !== turn) return
+        resolveIdle({ reason })
+      }
     }
 
-    const runAbort = new AbortController()
-    let roundSettled = false
-    const requestCancel = (): void => {
-      if (roundSettled || runAbort.signal.aborted) return
-      runAbort.abort(new Error('subagent-dsh: run cancelled locally'))
-      // The live driver's core win: a graceful runtime interrupt instead of a
-      // process kill. Best-effort; local settlement does not wait for it.
-      void runtime.request('turn/interrupt', { sessionId: spec.sessionId }).catch(() => {})
-    }
-    const onAbort = (): void => { requestCancel() }
-    request.signal.addEventListener('abort', onAbort, { once: true })
+    // Provisioning is idempotent; re-running heals a drifted sub-profile.
+    provisionDshSubProfile(spec.homeDir, this.config)
+    const apiKey = await resolveApiKey(this.ctx, this.config)
 
-    const abortBranch = new Promise<never>((_, reject) => {
-      runAbort.signal.addEventListener('abort', () => reject(new Error('subagent-dsh: run cancelled locally')), { once: true })
+    const accepted: Promise<void> = (async () => {
+      const rt = await this.ensureRuntime(spec, apiKey, request.signal)
+      runtime = rt
+      if (runAbort.signal.aborted) {
+        // Cancelled while the runtime came up and no turn exists sub-side: the
+        // fresh runtime serves nothing — reclaim it, don't warm an abandoned
+        // member.
+        await this.reclaim(spec.sessionId)
+        throw new Error('subagent-dsh: run cancelled locally')
+      }
+      installHandlers(rt)
+      acceptSent = true
+      try {
+        await rt.request<LiveTurnStartResult>('turn/start', {
+          sessionId: spec.sessionId,
+          text: task,
+          resume: spec.resume !== undefined,
+          turn,
+        })
+      } catch (error) {
+        // The accept failed: the runtime's turn state is unknown, so do not
+        // reuse it — reclaim and fail the round loudly. The turn never opened
+        // parent-side, so no dangling turn/start (an explicit reject means
+        // the sub-dsh provably never started the turn; the narrow timeout
+        // race is the same class as exec's SIGKILL-mid-turn window).
+        if (!runAbort.signal.aborted) await this.reclaim(spec.sessionId)
+        throw thrown(error)
+      }
+      openTurn()
+    })()
+
+    const attempt: Promise<SubagentResult> = accepted.then(async () => {
+      if (runAbort.signal.aborted) throw new Error('subagent-dsh: run cancelled locally')
+      const rt = runtime as LiveRuntime
+      const processFailure: Promise<never> = rt.child.done.then(
+        outcome => Promise.reject(new Error(
+          'subagent-dsh: the live runtime exited mid-round '
+          + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
+        )),
+        (error: unknown) => Promise.reject(thrown(error)),
+      )
+      processFailure.catch(() => {})
+      const { reason } = await Promise.race([idle, processFailure])
+      if (reason?.kind === 'aborted') {
+        return { output: collectOutput(), stopReason: 'aborted' as const }
+      }
+      if (reason?.kind === 'error') {
+        throw new Error(`subagent-dsh live: the turn failed: ${reason.error.message}`)
+      }
+      if (reason?.kind !== 'completed') {
+        throw new Error('subagent-dsh live: the turn produced no outcome')
+      }
+      const output = collectOutput()
+      if (output.length === 0) {
+        throw new Error('subagent-dsh live: the turn completed but produced no answer')
+      }
+      return { output, stopReason: 'completed' as const }
     })
-
-    const processFailure: Promise<never> = runtime.child.done.then(
-      outcome => Promise.reject(new Error(
-        'subagent-dsh: the live runtime exited mid-round '
-        + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
-      )),
-      (error: unknown) => Promise.reject(thrown(error)),
-    )
-    processFailure.catch(() => {})
 
     const collectOutput = (): ContentBlock[] =>
       lastText === '' ? [] : [{ type: 'text', text: lastText }]
 
     const result: Promise<SubagentResult> = settleRunResult({
-      attempt: () => Promise.race([
-        idle.then(({ reason }) => {
-          if (reason?.kind === 'aborted') {
-            return { output: collectOutput(), stopReason: 'aborted' as const }
-          }
-          if (reason?.kind === 'error') {
-            throw new Error(`subagent-dsh live: the turn failed: ${reason.error.message}`)
-          }
-          if (reason?.kind !== 'completed') {
-            throw new Error('subagent-dsh live: the turn produced no outcome')
-          }
-          const output = collectOutput()
-          if (output.length === 0) {
-            throw new Error('subagent-dsh live: the turn completed but produced no answer')
-          }
-          return { output, stopReason: 'completed' as const }
-        }),
-        processFailure,
-        abortBranch,
-      ]),
+      attempt: () => Promise.race([attempt, abortBranch]),
       collectOutput,
       cancelled: () => runAbort.signal.aborted,
       onError: (error: Error, stopReason: SubagentStopReason) => {
-        const suffix = runtime.diagnostics === '' ? '' : `; ${runtime.diagnostics}`
+        const diagnostics = runtime?.diagnostics ?? ''
+        const suffix = diagnostics === '' ? '' : `; ${diagnostics}`
         this.ctx.logger.warn(`subagent-dsh: live round failed (${stopReason}): ${error.message}${suffix}`)
       },
       signal: request.signal,
       onAbort,
     }).then((settled) => {
       roundSettled = true
-      // Identical turn/end bookkeeping to the exec path.
-      if (settled.stopReason === 'completed') {
-        childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-      } else if (settled.stopReason === 'aborted') {
-        childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-      } else {
-        childSession.append('turn/end', {
-          turn,
-          reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
-        })
+      // Identical turn/end bookkeeping to the exec path — but only for a turn
+      // that actually opened (a pre-accept cancel records no turn at all).
+      if (turnOpened) {
+        if (settled.stopReason === 'completed') {
+          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+        } else if (settled.stopReason === 'aborted') {
+          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+        } else {
+          childSession.append('turn/end', {
+            turn,
+            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
+          })
+        }
+      }
+      // Settlement clears the round's handlers: a late notification drops at
+      // the runtime frame instead of landing in a dead closure.
+      if (runtime !== undefined) {
+        runtime.onEvent = undefined
+        runtime.onIdle = undefined
       }
       return settled
     })
@@ -511,18 +665,22 @@ export class DshLiveDriver {
     // Settle reconciliation: the file-based mirror pass (the serve side flushed
     // before its idle notification) dedupes against the live-mirrored prefix
     // and catches anything the wire dropped; the final mirror progress report
-    // is authoritative, exactly as in the exec path. Then re-arm the reaper.
+    // is authoritative, exactly as in the exec path. Then re-arm the reaper. A
+    // round that never opened owns no span — skip the pass entirely (it would
+    // re-scan the previous round or, under exec fallback, fight its polling).
     void result.then(async () => {
       try {
-        await persistQueue
-        if (mirroredMessages > 0) persist()
-        await persistQueue.catch(() => {})
-        const delta = await mirrorDshSession(this.ctx, childSession, spec.homeDir, spec.sessionId)
-        if (localAgent !== undefined) {
-          for (const text of delta.texts) {
-            localAgent.reportRunProgress(childSession.id, { kind: 'delta', text })
+        if (turnOpened) {
+          await persistQueue
+          if (mirroredMessages > 0) persist()
+          await persistQueue.catch(() => {})
+          const delta = await mirrorDshSession(this.ctx, childSession, spec.homeDir, spec.sessionId)
+          if (localAgent !== undefined) {
+            for (const text of delta.texts) {
+              localAgent.reportRunProgress(childSession.id, { kind: 'delta', text })
+            }
+            localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
           }
-          localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-dsh: live settle mirror failed: ${thrown(error).message}`)
@@ -530,6 +688,12 @@ export class DshLiveDriver {
         this.armIdleTimer(spec.sessionId)
       }
     })
+
+    // Publication gate: hold start() until the turn is accepted (channel
+    // errors still throw for the provider's exec fallback), but NEVER hold it
+    // hostage to the slow windows — a cancel returns the run immediately and
+    // the result settles aborted.
+    await Promise.race([accepted, abortBranch.catch(() => undefined)])
 
     return subprocessRunHandle({
       id: childSession.id,

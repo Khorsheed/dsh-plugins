@@ -210,7 +210,7 @@ export class DshCliProvider implements SubagentProvider {
           parentSessionId: request.parent.session.id,
         })
       } catch (error) {
-        if (!(error instanceof LiveChannelUnavailableError)) throw error
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
         this.ctx.logger.warn(`subagent-dsh: live driver unavailable, using the exec one-shot: ${error.message}`)
       }
     }
@@ -283,7 +283,7 @@ export class DshCliProvider implements SubagentProvider {
           )
           return liveRun
         } catch (error) {
-          if (!(error instanceof LiveChannelUnavailableError)) throw error
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
           this.ctx.logger.warn(`subagent-dsh: live driver unavailable, using the exec one-shot: ${error.message}`)
         }
       }

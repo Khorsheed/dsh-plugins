@@ -61,6 +61,13 @@ export interface LiveTurnStartParams {
   readonly text: string
   /** True on a resume round: load the existing session, never create it. */
   readonly resume: boolean
+  /**
+   * The parent's delegation-round number (fresh = 1, each resume +1). The
+   * serve side echoes it on every `session/event` / `session/idle` of this
+   * turn, so the parent can drop a cancelled round's late unwind
+   * notifications instead of letting them mis-settle the next round.
+   */
+  readonly turn: number
 }
 
 /** `turn/start` result: the turn was accepted; its outcome arrives as `session/idle`. */
@@ -84,6 +91,12 @@ export type LiveTurnReason = SessionEvent<'turn/end'>['data']['reason']
 /** `session/event` notification params: one live session event, in order. */
 export interface LiveSessionEventParams {
   readonly sessionId: string
+  /**
+   * The round this event belongs to (the echo of `turn/start`'s `turn`), or
+   * null when the event landed outside any round — the parent mirrors only
+   * its own round's events.
+   */
+  readonly turn: number | null
   readonly event: SessionEvent
 }
 
@@ -94,6 +107,8 @@ export interface LiveSessionEventParams {
  */
 export interface LiveSessionIdleParams {
   readonly sessionId: string
+  /** The round this idle closes (the echo of `turn/start`'s `turn`). */
+  readonly turn: number
   /** Null when the owned interval recorded no turn (a broken turn). */
   readonly reason: LiveTurnReason | null
 }

@@ -49,11 +49,33 @@ and settles locally; the teardown ladder deliberately never kills the process
 
 **Lifecycle discipline** (the mode's main cost, shipped with M1 on purpose):
 idle reclaim after `liveIdleMs` (default 30 min; wire `shutdown` → grace →
-SIGTERM ladder), `disposeAll` on plugin unload, crash re-spawn with
-`agents.resume` of the on-disk session on the next round, and a permanent exec
-fallback when spawn/handshake fails (`LiveChannelUnavailableError` →
-`driver.disabled`). Every runtime sits in the driver's registry until
-reclaimed, so a profile restart leaves no zombies.
+SIGTERM ladder), `disposeAll` on plugin unload (aborting and waiting out
+in-flight spawns, so no process registers past the teardown), one spawn per
+member at a time (an in-flight spawn is shared, never doubled), crash
+re-spawn with `agents.resume` of the on-disk session on the next round, and a
+channel breaker with cooldown (default 5 min) instead of a permanent exec
+fallback — a transient boot fault must not disable live driving until reload,
+while a broken channel still falls back per round
+(`LiveChannelUnavailableError` → `driver.disabled`). Every runtime sits in the
+driver's registry until reclaimed, so a profile restart leaves no zombies.
+
+**Round correlation and cancel windows** (acceptance findings B1/B2). Every
+notification carries the parent's round number: `turn/start` takes the round
+`turn`, and `session/event` / `session/idle` echo it (out-of-round events
+carry null). The parent mirrors and settles ONLY its own round's tagged
+notifications, and settlement clears the round's handlers — a cancelled
+round's late unwind (the stop-then-rephrase gesture) can never mis-settle or
+mis-mirror the round that is actually running. The abort listener registers
+before any await: a cancel during the slow spawn/handshake/accept windows
+settles aborted immediately, reclaims a runtime that never started a turn,
+and never trips the channel breaker; a cancel after the accept sends
+`turn/interrupt`. The parent's `turn/start` boundary opens only after the
+accept ack (a definitive reject leaves no dangling boundary that would skew
+the child↔sub-dsh turn numbering the fold's round scoping relies on); events
+arriving in the ack's own chunk are buffered and flushed inside the boundary.
+Wire hygiene: StringDecoders hold multi-byte UTF-8 tails split across chunks,
+and a malformed or shapeless notification drops at the frame with a warn
+instead of crashing the parent.
 
 **Mirroring shares the fold, changes only the transport.** The new
 `mirrorDshLiveEvent` entry in `session-mirror.ts` reuses the file mirror's
@@ -97,8 +119,13 @@ reclaim/crash).
   the member-state collaboration protocol, the partner acceptance should
   review exactly this addition.
 - New failure surface accepted deliberately: resident processes (zombie/leak
-  risk) — contained by the reclaim registry, the idle reaper, and
-  `disposeAll`; pinned by lifecycle tests.
+  risk) — contained by the reclaim registry, the idle reaper, spawn dedupe,
+  and `disposeAll`; pinned by lifecycle tests.
+- Known narrow edge: an accept TIMEOUT (not a definitive reject) kills the
+  runtime on a turn the sub-dsh may have partially started without the child
+  ever opening the boundary — the child↔sub-dsh turn numbering the file
+  mirror's round scoping relies on can skew, the same class as exec's
+  SIGKILL-mid-turn window. A definitive wire reject is always aligned.
 - Token-granularity streaming is implemented and unit-tested but not yet
   verified against a live model; first real-instance run should confirm
   `assistant/chunk` events flow as expected.
@@ -120,7 +147,12 @@ reclaim/crash).
 - Provider: `tests/live-driver.spec.ts` (round settlement parity, runtime
   reuse, interrupt-survives-process, token granularity, idle reclaim, shutdown
   ladder, crash re-spawn, accept-failure reclaim, disposeAll zombie
-  accounting, provider dispatch, exec fallback), plus `mirrorDshLiveEvent`
-  fold-parity and offset-consistency cases in `tests/session-mirror.spec.ts`.
+  accounting, provider dispatch, exec fallback, breaker cooldown retry), the
+  acceptance-fix pins (cancel in the handshake and accept windows;
+  stop-then-rephrase stale-idle/stale-event tagging; malformed-notification
+  containment; UTF-8 split-chunk integrity; disposeAll during an in-flight
+  spawn; same-member spawn dedupe; accept-failure boundary hygiene), plus
+  `mirrorDshLiveEvent` fold-parity and offset-consistency cases in
+  `tests/session-mirror.spec.ts`.
 - Real-boot smoke: `--serve` against a real sub-dsh profile (initialize
   handshake + shutdown exit 0).

@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-local-agent-dsh-headless/serve
  */
 
+import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
@@ -66,8 +67,15 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
   const managed = new Map<string, AgentHandle>()
   /** Per-session turn serialization: one in-flight turn per session, FIFO. */
   const queues = new Map<string, Promise<void>>()
+  /**
+   * The in-flight round's parent-supplied turn number per session, set while
+   * a turn body runs and echoed on its notifications — the parent drops a
+   * cancelled round's late unwind instead of mis-settling the next round.
+   */
+  const activeTurns = new Map<string, number>()
   let shuttingDown = false
   let buffer = ''
+  const decoder = new StringDecoder('utf8')
 
   const send = (message: Record<string, unknown>): void => {
     io.stdout.write(JSON.stringify(message) + '\n')
@@ -83,10 +91,17 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
   }
 
   // Push every session event of a managed session the moment it lands; the
-  // parent mirrors event-by-event instead of polling the log file.
+  // parent mirrors event-by-event instead of polling the log file. Events
+  // outside a round (agent maintenance, load-time scaffolding) carry a null
+  // turn tag and the parent ignores them.
   ctx.on('session/event', (session, event) => {
     if (shuttingDown || !managed.has(String(session.id))) return
-    notify('session/event', { sessionId: String(session.id), event: event as unknown as Record<string, unknown> })
+    const id = String(session.id)
+    notify('session/event', {
+      sessionId: id,
+      turn: activeTurns.get(id) ?? null,
+      event: event as unknown as Record<string, unknown>,
+    })
   })
 
   const debug = process.env['DSH_SERVE_DEBUG'] === '1'
@@ -118,9 +133,10 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
   }
 
   /** Accept one turn: followup now, outcome later as `session/idle`. */
-  const startTurn = (sessionId: string, text: string, agent: AgentHandle['agent']): void => {
+  const startTurn = (sessionId: string, text: string, turn: number, agent: AgentHandle['agent']): void => {
     const previous = queues.get(sessionId) ?? Promise.resolve()
     const run = previous.then(async () => {
+      activeTurns.set(sessionId, turn)
       let reason: LiveTurnReason | null
       try {
         const firstSeq = agent.session.seq
@@ -137,8 +153,12 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
         // A turn-level failure must still close the parent's wait.
         reason = { kind: 'error', error: { message: messageOf(error), code: 'UNKNOWN' } }
       }
-      const params: LiveSessionIdleParams = { sessionId, reason }
-      notify('session/idle', params as unknown as Record<string, unknown>)
+      const params: LiveSessionIdleParams = { sessionId, turn, reason }
+      try {
+        notify('session/idle', params as unknown as Record<string, unknown>)
+      } finally {
+        activeTurns.delete(sessionId)
+      }
     })
     queues.set(sessionId, run)
   }
@@ -151,9 +171,11 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
       case 'turn/start': {
         const sessionId = params['sessionId']
         const text = params['text']
+        const turn = params['turn']
         const resume = params['resume'] === true
-        if (typeof sessionId !== 'string' || sessionId === '' || typeof text !== 'string') {
-          respondError(id, 'turn/start requires a sessionId and a text')
+        if (typeof sessionId !== 'string' || sessionId === '' || typeof text !== 'string'
+          || typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 1) {
+          respondError(id, 'turn/start requires a sessionId, a text, and a positive integer turn')
           return
         }
         let handle = managed.get(sessionId)
@@ -166,7 +188,7 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
           }
           managed.set(sessionId, handle)
         }
-        startTurn(sessionId, text, handle.agent)
+        startTurn(sessionId, text, turn, handle.agent)
         respond(id, { accepted: true })
         return
       }
@@ -194,7 +216,12 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
 
   io.stdin.on('data', (chunk: unknown) => {
     if (shuttingDown) return
-    buffer += String(chunk)
+    // A multi-byte UTF-8 sequence can straddle two chunks; the StringDecoder
+    // holds the partial tail instead of corrupting it into U+FFFD.
+    const text = typeof chunk === 'string'
+      ? chunk
+      : decoder.write(chunk as Buffer)
+    buffer += text
     let index = buffer.indexOf('\n')
     while (index >= 0) {
       const line = buffer.slice(0, index)

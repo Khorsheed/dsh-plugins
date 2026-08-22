@@ -21,6 +21,7 @@ import { DshLiveDriver } from '../src/live-driver.ts'
 /** One scripted turn: the events to push and the closing idle reason. */
 interface FakeTurn {
   events?: Partial<SessionEvent>[]
+  /** undefined closes completed; null means the turn never closes on its own. */
   reason?: unknown
 }
 
@@ -84,6 +85,21 @@ class FakeServeChild {
     this.stdout.push(JSON.stringify(message) + '\n')
   }
 
+  /** Push one session/event notification (turn-tagged like the real serve). */
+  pushEvent(sessionId: string, turn: number | null, event: Partial<SessionEvent>): void {
+    this.send({ jsonrpc: '2.0', method: 'session/event', params: { sessionId, turn, event: { seq: 1, time: 1, ...event } } })
+  }
+
+  /** Push one session/idle notification (the round's close). */
+  pushIdle(sessionId: string, turn: number, reason: unknown): void {
+    this.send({ jsonrpc: '2.0', method: 'session/idle', params: { sessionId, turn, reason } })
+  }
+
+  /** Push raw bytes (UTF-8 split-chunk tests). */
+  pushRaw(bytes: Buffer): void {
+    this.stdout.push(bytes)
+  }
+
   private dispatch(message: { id: number; method: string; params?: Record<string, unknown> }): void {
     const params = message.params ?? {}
     this.requests.push({ method: message.method, params })
@@ -102,15 +118,16 @@ class FakeServeChild {
       case 'turn/start': {
         const turn = this.script.turn?.(params) ?? {}
         const sessionId = String(params['sessionId'])
+        const round = params['turn'] as number
         if (this.script.batchWithAck === true) {
           // One chunk: the ack, every event, and idle arrive together.
           const lines: Record<string, unknown>[] = [
             { jsonrpc: '2.0', id: message.id, result: { accepted: true } },
             ...(turn.events ?? []).map((event, i) => ({
               jsonrpc: '2.0', method: 'session/event',
-              params: { sessionId, event: { seq: i + 1, time: i + 1, ...event } },
+              params: { sessionId, turn: round, event: { seq: i + 1, time: i + 1, ...event } },
             })),
-            { jsonrpc: '2.0', method: 'session/idle', params: { sessionId, reason: turn.reason ?? { kind: 'completed' } } },
+            { jsonrpc: '2.0', method: 'session/idle', params: { sessionId, turn: round, reason: turn.reason ?? { kind: 'completed' } } },
           ]
           this.stdout.push(lines.map(line => JSON.stringify(line)).join('\n') + '\n')
           return
@@ -121,13 +138,11 @@ class FakeServeChild {
             this.crash()
             return
           }
-          let seq = 0
           for (const event of turn.events ?? []) {
-            seq += 1
-            this.send({ jsonrpc: '2.0', method: 'session/event', params: { sessionId, event: { seq, time: seq, ...event } } })
+            this.pushEvent(sessionId, round, event)
           }
           if (turn.reason !== null) {
-            this.send({ jsonrpc: '2.0', method: 'session/idle', params: { sessionId, reason: turn.reason ?? { kind: 'completed' } } })
+            this.pushIdle(sessionId, round, turn.reason ?? { kind: 'completed' })
           }
         })
         return
@@ -501,7 +516,7 @@ describe('dsh-cli-provider live dispatch', () => {
     // channel and the provider retries the round on the exec one-shot (the
     // default oneShotChild, which prints the answer and exits 0).
     m.queueChild(new FakeServeChild({ silent: ['initialize'] }))
-    const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 50, requestMs: 50, convergeMs: 50 })
+    const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 50, requestMs: 50, convergeMs: 50, channelRetryMs: 60_000 })
     const provider = new DshCliProvider(m.ctx, { live: true }, driver)
     const run = await provider.start(request() as never)
     const result = await run.result
@@ -512,5 +527,194 @@ describe('dsh-cli-provider live dispatch', () => {
     expect(m.spawns[1]!.spec.argv).toContain('--session-id')
     expect(driver.disabled).toBe(true)
     await run.dispose()
+  })
+})
+
+describe('B1: cancel in the slow spawn/handshake/accept windows', () => {
+  it('cancel during the handshake window settles aborted fast, reclaims the half-spawn, and does not trip the breaker', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-b1-1'))
+    // The serve process boots but never answers initialize (slow cold boot).
+    const fake = new FakeServeChild({ silent: ['initialize'] })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const start = Date.now()
+    const run = await (async () => {
+      const pending = m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      setTimeout(() => { controller.abort() }, 20)
+      return pending
+    })()
+    // The cancel returned the run immediately instead of hanging for the
+    // 60s handshake timeout.
+    expect(Date.now() - start).toBeLessThan(5_000)
+    expect((await run.result).stopReason).toBe('aborted')
+    // No turn ever existed: no boundary, no interrupt, and the half-spawned
+    // runtime was reclaimed.
+    expect(child.events).toHaveLength(0)
+    expect(fake.requests.map(r => r.method)).not.toContain('turn/interrupt')
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    expect(fake.requests.map(r => r.method)).toContain('shutdown')
+    // A caller cancel says nothing about channel health: the breaker stays off.
+    expect(m.driver.disabled).toBe(false)
+  })
+
+  it('cancel during the accept window interrupts (the turn may exist sub-side) and settles aborted', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-b1-2'))
+    // Handshake answers; turn/start never does (a wedged accept).
+    const fake = new FakeServeChild({ silent: ['turn/start'] })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 1_000, requestMs: 200, convergeMs: 50, channelRetryMs: 1_000 })
+    const pending = driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.map(r => r.method)).toContain('turn/start') })
+    controller.abort()
+    const run = await pending
+    expect((await run.result).stopReason).toBe('aborted')
+    // The interrupt went out (the accept was in flight), the process survived
+    // to unwind gracefully, and no parent-side turn boundary was opened.
+    expect(fake.requests.map(r => r.method)).toContain('turn/interrupt')
+    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(0)
+    await driver.disposeAll()
+  })
+})
+
+describe('B2: stop-then-rephrase never mis-settles the next round', () => {
+  it('a cancelled round’s late unwind idle (and events) are tagged out of the resumed round', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-b2'))
+    child.append('turn/start', { turn: 1 })
+    // Round 1's turn never closes on its own; the test drives the unwind by hand.
+    const fake = new FakeServeChild({ turn: () => ({ events: [], reason: null }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const first = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    controller.abort()
+    expect((await first.result).stopReason).toBe('aborted')
+
+    // The user immediately rephrases: round 2 starts on the SAME runtime.
+    const second = await m.driver.startRound(request({ prompt: '换个说法' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
+    // Round 1's unwind lands late — tagged turn 1, it must not touch round 2.
+    fake.pushEvent('child-b2', 1, { type: 'assistant/message', data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'round1 残尾' }], source: { provider: 'p', model: 'm' } } } })
+    fake.pushIdle('child-b2', 1, { kind: 'aborted', reason: { kind: 'parent' } })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    // Round 2's real events and close arrive; only they settle it.
+    fake.pushEvent('child-b2', 2, { type: 'user/message', data: { content: [{ type: 'text', text: '换个说法' }], source: { kind: 'user' }, role: 'user' } })
+    fake.pushEvent('child-b2', 2, { type: 'assistant/message', data: { turn: 2, step: 1, message: { content: [{ type: 'text', text: '第二条回复' }], source: { provider: 'p', model: 'm' } } } })
+    fake.pushIdle('child-b2', 2, { kind: 'completed' })
+    expect((await second.result).stopReason).toBe('completed')
+    expect((await second.result).output).toEqual([{ type: 'text', text: '第二条回复' }])
+    // The stale round-1 event never entered the child session.
+    expect(child.events.filter(e => e.type === 'assistant/message')
+      .map(e => JSON.stringify(e.data))).toEqual([expect.stringContaining('第二条回复')] as unknown as string[])
+    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('follow-up hardening (S1–S6)', () => {
+  it('S3: malformed and shapeless notifications degrade to warns, the round still completes', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s3'))
+    const fake = new FakeServeChild({
+      turn: params => ({ events: answerEvents(params['turn'] as number, 't', '扛住') }),
+    })
+    m.queueChild(fake)
+    const pending = m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.map(r => r.method)).toContain('turn/start') })
+    fake.pushRaw(Buffer.from('{"jsonrpc":"2.0","method":"session/event","params":null}\n'))
+    fake.pushRaw(Buffer.from('{"jsonrpc":"2.0","method":"session/event","params":{"sessionId":123}}\n'))
+    fake.pushRaw(Buffer.from('{"jsonrpc":"2.0","method":"session/idle","params":{"sessionId":"child-s3"}}\n')) // no turn
+    fake.pushRaw(Buffer.from('not json at all\n'))
+    const run = await pending
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.driver.liveCount).toBe(1)
+    await m.driver.disposeAll()
+  })
+
+  it('S4: a multi-byte UTF-8 sequence split across chunks survives intact', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s4'))
+    const fake = new FakeServeChild({ turn: () => ({ events: [], reason: null }) })
+    m.queueChild(fake)
+    const pending = m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.map(r => r.method)).toContain('turn/start') })
+    const line = JSON.stringify({
+      jsonrpc: '2.0', method: 'session/event',
+      params: {
+        sessionId: 'child-s4', turn: 1,
+        event: { seq: 1, time: 1, type: 'user/message', data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' } },
+      },
+    }) + '\n'
+    const bytes = Buffer.from(line, 'utf8')
+    // Split inside the 3-byte sequence of 建 (E5 BB BA).
+    const splitAt = bytes.indexOf(0xe5) + 1
+    fake.pushRaw(bytes.subarray(0, splitAt))
+    await new Promise(resolve => setTimeout(resolve, 10))
+    fake.pushRaw(bytes.subarray(splitAt))
+    fake.pushIdle('child-s4', 1, { kind: 'completed' })
+    const run = await pending
+    expect((await run.result).stopReason).toBe('error') // no assistant answer — but the event survived
+    const mirrored = child.events.find(e => e.type === 'user/message')
+    expect(JSON.stringify(mirrored?.data)).toContain('建个文件')
+    await m.driver.disposeAll()
+  })
+
+  it('S1: disposeAll during an in-flight handshake reclaims the half-spawned runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s1'))
+    const fake = new FakeServeChild({ silent: ['initialize'] })
+    m.queueChild(fake)
+    const pending = m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(m.spawns).toHaveLength(1) })
+    await m.driver.disposeAll()
+    await expect(pending).rejects.toThrow()
+    // The reclaim ladder went out over the wire; the cooperative fake exited
+    // on shutdown, so SIGTERM was never needed.
+    expect(fake.requests.map(r => r.method)).toContain('shutdown')
+    expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('S2: concurrent rounds for one member share a single spawn', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s2'))
+    const fake = new FakeServeChild({ turn: () => ({ events: answerEvents(1, 't', 'a'), reason: null }) })
+    m.queueChild(fake)
+    // Both rounds enter before the handshake lands.
+    const first = m.driver.startRound(request() as never, roundSpec(m, child))
+    const second = m.driver.startRound(request() as never, roundSpec(m, child))
+    await Promise.all([first, second])
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('S5: a tripped breaker retries live after the cooldown instead of sticking to exec', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s5'))
+    m.queueChild(new FakeServeChild({ silent: ['initialize'] }))
+    const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 30, requestMs: 30, convergeMs: 30, channelRetryMs: 60 })
+    await expect(driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow()
+    expect(driver.disabled).toBe(true)
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(driver.disabled).toBe(false)
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, 't', '回来了') }) }))
+    const run = await driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await driver.disposeAll()
+  })
+
+  it('S6: an accept failure leaves no dangling turn/start and reclaims the runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-s6'))
+    const fake = new FakeServeChild({ silent: ['turn/start'] })
+    m.queueChild(fake)
+    const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 1_000, requestMs: 40, convergeMs: 40, channelRetryMs: 1_000 })
+    await expect(driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('timed out')
+    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(0)
+    await vi.waitFor(() => { expect(driver.liveCount).toBe(0) })
+    expect(fake.requests.map(r => r.method)).toContain('shutdown')
+    // An accept failure is a round failure, not a broken channel.
+    expect(driver.disabled).toBe(false)
+    await driver.disposeAll()
   })
 })

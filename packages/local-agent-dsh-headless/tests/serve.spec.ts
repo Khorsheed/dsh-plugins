@@ -182,19 +182,21 @@ describe('headless serve mode', () => {
     })
     const flushOrder: string[] = []
     test.ctx.on('session/flush', () => { flushOrder.push('flush') })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'do it', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'do it', resume: false, turn: 1 } })
     const ack = await test.waitLine(isResponseTo(1))
     expect(ack['result']).toEqual({ accepted: true })
     const idle = await test.waitLine(isNotification('session/idle'))
     expect(test.trace.creates).toEqual(['member-1'])
     expect(test.trace.resumes).toEqual([])
-    expect(idle['params']).toMatchObject({ sessionId: 'member-1', reason: { kind: 'completed' } })
-    // Events streamed BEFORE the idle close, and the flush preceded idle.
+    expect(idle['params']).toMatchObject({ sessionId: 'member-1', turn: 1, reason: { kind: 'completed' } })
+    // Events streamed BEFORE the idle close, tagged with their round, and the
+    // flush preceded idle.
     const idleIndex = test.observed.lines.indexOf(idle)
     const events = test.observed.lines.slice(0, idleIndex).filter(line => line['method'] === 'session/event')
     const types = events.map(line => ((line['params'] as { event: { type: string } }).event.type))
     expect(types).toContain('user/message')
     expect(types).toContain('assistant/message')
+    expect(events.every(line => (line['params'] as { turn: number }).turn === 1)).toBe(true)
     expect(flushOrder).toEqual(['flush'])
     test.stdin.end()
     await test.ctx.fiber.dispose()
@@ -205,12 +207,13 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt(session, message) { turn += 1; appendTurn(session, turn, message, `answer ${String(turn)}`) },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'one', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'one', resume: false, turn: 1 } })
     await test.waitLine(isNotification('session/idle'))
-    test.send({ jsonrpc: '2.0', id: 2, method: 'turn/start', params: { sessionId: 'member-1', text: 'two', resume: true } })
-    await test.waitLine(line =>
+    test.send({ jsonrpc: '2.0', id: 2, method: 'turn/start', params: { sessionId: 'member-1', text: 'two', resume: true, turn: 2 } })
+    const secondIdle = await test.waitLine(line =>
       isNotification('session/idle')(line)
       && test.observed.lines.filter(isNotification('session/idle')).length === 2)
+    expect((secondIdle['params'] as { turn: number }).turn).toBe(2)
     expect(test.trace.creates).toEqual(['member-1'])
     // The live agent absorbed the resume turn; no second load from disk.
     expect(test.trace.resumes).toEqual([])
@@ -222,7 +225,7 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 7, message, 'resumed answer') },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-9', text: 'continue', resume: true } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-9', text: 'continue', resume: true, turn: 3 } })
     const idle = await test.waitLine(isNotification('session/idle'))
     expect(test.trace.resumes).toEqual(['member-9'])
     expect(test.trace.creates).toEqual([])
@@ -249,7 +252,7 @@ describe('headless serve mode', () => {
       exit: () => {},
     }
     void runServe(ctx, io)
-    stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'turn/start', params: { sessionId: 'gone', text: 'x', resume: true } }) + '\n')
+    stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'turn/start', params: { sessionId: 'gone', text: 'x', resume: true, turn: 1 } }) + '\n')
     await new Promise(resolve => setImmediate(resolve))
     await new Promise(resolve => setTimeout(resolve, 10))
     const response = lines.find(line => line['id'] === 5)
@@ -261,7 +264,7 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'interrupted answer') },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false, turn: 1 } })
     await test.waitLine(isResponseTo(1))
     test.send({ jsonrpc: '2.0', id: 2, method: 'turn/interrupt', params: { sessionId: 'member-1' } })
     const ack = await test.waitLine(isResponseTo(2))
@@ -279,7 +282,7 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'x') },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false, turn: 1 } })
     await test.waitLine(isNotification('session/idle'))
     test.send({ jsonrpc: '2.0', id: 2, method: 'shutdown', params: {} })
     await test.waitLine(isResponseTo(2))
@@ -296,7 +299,7 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt(session, message) { appendTurn(session, 1, message, 'x') },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false, turn: 1 } })
     await test.waitLine(isNotification('session/idle'))
     test.stdin.end()
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -324,7 +327,7 @@ describe('headless serve mode', () => {
     const test = await bench({
       afterPrompt: async () => { throw new Error('driver exploded') },
     })
-    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false } })
+    test.send({ jsonrpc: '2.0', id: 1, method: 'turn/start', params: { sessionId: 'member-1', text: 'work', resume: false, turn: 1 } })
     const idle = await test.waitLine(isNotification('session/idle'))
     expect(idle['params']).toMatchObject({ sessionId: 'member-1', reason: { kind: 'error' } })
     test.stdin.end()
