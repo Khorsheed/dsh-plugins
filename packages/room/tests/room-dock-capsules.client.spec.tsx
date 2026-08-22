@@ -75,15 +75,17 @@ describe('RoomDockCapsules', () => {
     expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
   })
 
-  it('collapsed row: the goal capsule carries text + progress, the task capsule the open counts', async () => {
+  it('collapsed row: the goal capsule carries ring percent + text, the task capsule the open count and runners', async () => {
     await bench()
     const goal = screen.getByRole('button', { name: '目标' })
     expect(goal.textContent).toContain('插件 API v2 上线')
     // Progress: 1 done over 3 countable (the cancelled task leaves the denominator).
-    expect(goal.textContent).toContain('1/3')
+    expect(goal.textContent).toContain('33%')
     const tasks = screen.getByRole('button', { name: '任务' })
-    expect(tasks.textContent).toContain('1 待办')
-    expect(tasks.textContent).toContain('1 进行中')
+    // Open count (pending + in_progress; cancelled excluded) and the runner.
+    expect(tasks.textContent).toContain('2')
+    expect(tasks.textContent).toContain('ada')
+    expect(tasks.textContent).toContain('在做')
     // Collapsed: no task rows yet.
     expect(screen.queryByText('出方案')).toBeNull()
   })
@@ -105,6 +107,8 @@ describe('RoomDockCapsules', () => {
     // The capsule and the card both carry the goal text.
     expect(screen.getAllByText('插件 API v2 上线')).toHaveLength(2)
     expect(screen.getByRole('progressbar')).toBeDefined()
+    // The card's progress bar carries the done/total fraction.
+    expect(screen.getByText('1/3')).toBeDefined()
     // The done task is the advance record (3 minutes ago).
     expect(screen.getByText(/✓ ada 完成了「出方案」/)).toBeDefined()
     expect(screen.getByText(/3 分钟前/)).toBeDefined()

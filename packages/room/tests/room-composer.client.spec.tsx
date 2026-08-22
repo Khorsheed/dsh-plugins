@@ -154,11 +154,11 @@ describe('RoomComposer', () => {
   it('renders the dock capsules above the card (the dock seat hides with the official fallback)', async () => {
     await bench(vi.fn())
     // The collapsed row carries the goal guide state (no goal in the fixture)
-    // and the task capsule with its running count (key-passthrough t).
+    // and the task capsule with its running member (key-passthrough t).
     const goalCapsule = screen.getByRole('button', { name: 'goal.label' })
     expect(goalCapsule.textContent).toContain('goal.set')
     const taskCapsule = screen.getByRole('button', { name: 'tasks.capsule' })
-    expect(taskCapsule.textContent).toContain('tasks.summary.running')
+    expect(taskCapsule.textContent).toContain('tasks.doing')
     // The capsules sit before the composer card's textarea in tree order.
     const area = screen.getByRole('textbox')
     expect(taskCapsule.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

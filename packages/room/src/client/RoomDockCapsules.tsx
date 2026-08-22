@@ -6,53 +6,52 @@
  * quick-add button:
  *
  * ```
- * [◐ 插件API v2上线 · 2/5]  [▦ 任务 3待办·1进行中]  ＋
+ * [◔33% 插件API v2上线]  [☑ 2 · ●ada 在做]  ＋
  * ```
  *
- * The GOAL capsule carries the room's goal (truncated) and the task progress
- * (done over the countable total — cancelled tasks leave the denominator);
- * without a goal it renders the 「＋ 设定目标」 guide state. It expands into
- * the goal card: the full text with an inline [编辑], a progress bar, and the
- * recent advance records (who finished what, relative time). The TASK capsule
- * carries the aggregate counts and expands into the task panel: member filter
- * chips (全部 = grouped by member, a single member = a flat list), task rows
- * (tri-state glyph + title + member + status/relative time + a row-end
- * [完成]), and an inline add (member select + title + an optional "等谁"
- * dropdown — `blockedBy`, a member name, is DISPLAY ONLY: the blocked row
- * renders grey with a 「等 ada」 tag until that member has no open task left;
- * it never dispatches anything). The trailing ＋ opens the task panel with
- * the add form already expanded. Panels close on a second capsule click or a
- * click outside; no overlay.
+ * The GOAL capsule's only visual focus is the progress ring: an SVG circle
+ * (tertiary track + business-primary progress arc) followed by the percent
+ * and the truncated goal text; without a goal it renders the 「＋ 设定目标」
+ * guide state (no ring). It expands into the goal card: the full text with an
+ * inline [编辑], a progress bar with the done/total fraction, and the recent
+ * advance records (who finished what, relative time).
  *
- * Visual layer: TWO switchable chrome variants on one DOM (the variant rides
- * the root's `data-variant`; flip CAPSULE_VARIANT below or set the attribute
- * live to compare). Variant A (official chip register): the capsules take the
- * model-selector trigger's language — transparent rest, interactive hover
- * fill, r24 chip, 13/20/500 secondary label, caption chevron that rotates
- * open. Variant B (light text row): no chip chrome at all — tertiary 12/18
- * text with a state dot and the chevron, a hover-only fill. Both share the
- * expanded card, now the official Menu surface (`--dsw-specific-menu`, r12,
- * inverted hairline, shadow-lv3), and both sweep a restrained glare band over
- * the task capsule while tasks run (the ToolRow pattern, reduced-motion
- * safe). Every token reference carries the light-theme literal as fallback;
- * no divider lines anywhere.
+ * The TASK capsule leads with the checklist icon (IconChecklistOutline14 from
+ * the official primitives — never a Unicode glyph), then the open-task count
+ * and the members currently running (color dot + name). It expands into the
+ * Linear-style task panel: a member filter chip row (color-dot capsules, the
+ * selected one takes a tinted fill of the member color — no outline) with the
+ * ＋添加 trigger at its right end, small-caps tertiary group headers, and task
+ * rows (colored status icon — business-primary half-ring for in_progress,
+ * tertiary empty ring for pending, filled check for done — + title + member
+ * chip + right-aligned tertiary status/relative time + a row-end [完成]).
+ * Closing a task plays a restrained completion beat (the check pops, the
+ * title's strike draws in, <300ms, reduced-motion safe) — the row remounts on
+ * a status change (`key = id:status`) so the CSS animation replays. A blocked
+ * row greys with a 「等 ada」 tag until its `blockedBy` member has no open
+ * task left (display only: nothing auto-dispatches). The trailing ＋ opens
+ * the panel with the add form already expanded (member select + title +
+ * optional "等谁"). Panels close on a second capsule click or a click
+ * outside; no overlay.
+ *
+ * Visual layer: the capsules ride the official chip register (28px, r24,
+ * interactive hover fill, 13/20/500 label); the expanded cards are the
+ * official Menu surface (`--dsw-specific-menu`, r12, inverted hairline,
+ * shadow-lv3); the task capsule sweeps a restrained glare band while tasks
+ * run (the ToolRow pattern, reduced-motion safe). Every token reference
+ * carries the light-theme literal as fallback; no divider lines anywhere.
  */
 import {
-  useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore,
+  type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
+import { IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { taskProgress } from '../journal.ts'
 import type { RoomTask } from '../types.ts'
 import { formatRelativeTime } from './format.ts'
 import { memberColor } from './member-color.ts'
 import type { RoomDockCapsulesProps } from './slots.ts'
 import css from './RoomDockCapsules.module.css'
-
-/**
- * The capsule chrome variant: 'a' = official chip register, 'b' = light text
- * row. Both ship in the bundle — the attribute flips live for A/B comparison,
- * and this constant picks the default while the variants await a choice.
- */
-export const CAPSULE_VARIANT: 'a' | 'b' = 'a'
 
 /** Glyph tooltip text per status. */
 function statusLabel(status: RoomTask['status'], t: RoomDockCapsulesProps['t']): string {
@@ -64,69 +63,82 @@ function statusLabel(status: RoomTask['status'], t: RoomDockCapsulesProps['t']):
   }
 }
 
-/* The three status glyphs below replicate the official TodoPanel art
-   (figma 14×14 artboard, centered in the 16×16 `.glyph` cell). */
+/* The Linear-style status icons: colored, 14px, centered in the 16px cell. */
 
-function CompletedGlyph() {
+/** Done: filled success circle, check cut in the card surface tone. */
+function DoneGlyph() {
   return (
-    <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphCompleted}>
-      <circle cx="7" cy="7" r="6.4" stroke="currentColor" strokeWidth="1.2" />
+    <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphDone}>
+      <circle cx="7" cy="7" r="7" fill="currentColor" />
       <path
-        d="M10.9631 5.71411L7.70154 8.97571C7.48011 9.19714 7.27736 9.40099 7.09229 9.54993C6.89742 9.70669 6.66314 9.85279 6.3634 9.90027C6.2049 9.92534 6.04339 9.92534 5.88489 9.90027C5.58515 9.85279 5.35087 9.70669 5.15601 9.54993C4.97093 9.40099 4.76818 9.19714 4.54675 8.97571L3.03516 7.46411L3.96313 6.53613L5.47473 8.04773C5.7169 8.28989 5.86196 8.43389 5.97888 8.52795C6.08597 8.61409 6.10875 8.60701 6.08997 8.604C6.11259 8.60758 6.13571 8.60758 6.15833 8.604C6.13954 8.60701 6.16232 8.61409 6.26941 8.52795C6.38633 8.43389 6.53139 8.28989 6.77356 8.04773L10.0352 4.78613L10.9631 5.71411Z"
-        fill="currentColor"
+        d="M4.2 7.3L6.2 9.3L9.8 5.2"
+        stroke="var(--dsw-specific-menu, var(--dsw-alias-bg-base, #ffffff))"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   )
 }
 
-/** In-progress: business-blue ring fading out; CSS spins the svg. */
+/** In-progress: business-primary half ring; CSS spins the svg. */
 function ProgressGlyph() {
-  const gradientId = useId()
   return (
     <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphProgress}>
-      <defs>
-        <linearGradient id={gradientId} x1="2.5" y1="12" x2="10.5" y2="3.5" gradientUnits="userSpaceOnUse">
-          <stop stopColor="currentColor" />
-          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <circle cx="7" cy="7" r="6.4" stroke={`url(#${gradientId})`} strokeWidth="1.2" />
+      <circle
+        cx="7" cy="7" r="5.5"
+        stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
+        strokeDasharray={`${Math.PI * 5.5} ${2 * Math.PI * 5.5}`}
+      />
     </svg>
   )
 }
 
-/** Pending: dashed unstarted ring (figma dash 2.4 2.4). */
+/** Pending: the tertiary empty ring. */
 function PendingGlyph() {
   return (
     <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphPending}>
-      <circle cx="7" cy="7" r="6.4" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2.4 2.4" />
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   )
 }
 
-/** Cancelled has no official glyph: the pending dashed ring in the dimmer tertiary tone. */
+/** Cancelled: the pending ring in the dimmer caption tone. */
 function CancelledGlyph() {
   return (
     <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphCancelled}>
-      <circle cx="7" cy="7" r="6.4" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2.4 2.4" />
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   )
 }
 
 function StatusGlyph({ status }: { status: RoomTask['status'] }) {
   switch (status) {
-    case 'done': return <CompletedGlyph />
+    case 'done': return <DoneGlyph />
     case 'in_progress': return <ProgressGlyph />
     case 'pending': return <PendingGlyph />
     case 'cancelled': return <CancelledGlyph />
   }
 }
 
-/** The capsule's trailing chevron (12px caption; CSS rotates it open). */
-function ChevronGlyph() {
+/**
+ * The goal capsule's progress ring — the collapsed row's single visual focus:
+ * a tertiary track arc plus the business-primary progress arc, -90° rotated
+ * so the arc starts at twelve o'clock.
+ */
+function GoalRing({ fraction }: { readonly fraction: number }) {
+  const clamped = Math.min(1, Math.max(0, fraction))
+  const R = 5.5
+  const C = 2 * Math.PI * R
   return (
-    <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" className={css.chevron}>
-      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.ring}>
+      <circle cx="7" cy="7" r={R} className={css.ringTrack} strokeWidth="2" />
+      <circle
+        cx="7" cy="7" r={R}
+        className={css.ringFill} strokeWidth="2" strokeLinecap="round"
+        strokeDasharray={`${C * clamped} ${C}`}
+        transform="rotate(-90 7 7)"
+      />
     </svg>
   )
 }
@@ -148,11 +160,9 @@ function isBlocked(task: RoomTask, tasks: readonly RoomTask[]): boolean {
 const RECENT_ADVANCES = 5
 
 /** One task row of the task panel. */
-function TaskRow({ task, tasks, showMember, now, closeTask, t }: {
+function TaskRow({ task, tasks, now, closeTask, t }: {
   readonly task: RoomTask
   readonly tasks: readonly RoomTask[]
-  /** Flat (single-member filter) rows repeat the member name; grouped rows don't. */
-  readonly showMember: boolean
   readonly now: number
   readonly closeTask: RoomDockCapsulesProps['closeTask']
   readonly t: RoomDockCapsulesProps['t']
@@ -164,8 +174,15 @@ function TaskRow({ task, tasks, showMember, now, closeTask, t }: {
       <span className={css.glyph} title={statusLabel(task.status, t)}>
         <StatusGlyph status={task.status} />
       </span>
-      <span className={css.content}>{task.title}</span>
-      {showMember && <span className={css.meta}>{task.member}</span>}
+      <span className={css.content}>
+        {/* The inner inline span carries the done strike so the line spans
+            the text, not the flex-stretched row. */}
+        <span className={css.title}>{task.title}</span>
+      </span>
+      <span className={css.memberChip}>
+        <span className={css.memberDot} style={{ background: memberColor(task.member) }} aria-hidden />
+        {task.member}
+      </span>
       {blocked && <span className={css.blockedTag}>{t('tasks.blocked', { member: task.blockedBy ?? '' })}</span>}
       <span className={css.meta}>
         {statusLabel(task.status, t)} · {formatRelativeTime(task.updatedAt, now, t)}
@@ -220,8 +237,10 @@ export function RoomDockCapsules({
 
   const now = Date.now()
   const progress = taskProgress(state.tasks)
-  const pending = state.tasks.filter(task => task.status === 'pending').length
-  const running = state.tasks.filter(task => task.status === 'in_progress').length
+  const openCount = state.tasks.filter(task => task.status === 'pending' || task.status === 'in_progress').length
+  const runners = [...new Set(
+    state.tasks.filter(task => task.status === 'in_progress').map(task => task.member),
+  )]
   const members = state.members
   const chosen = members.some(member => member.name === draftMember)
     ? draftMember
@@ -230,6 +249,7 @@ export function RoomDockCapsules({
     .filter(task => task.status === 'done')
     .slice()
     .sort((a, b) => b.updatedAt - a.updatedAt)
+  const fraction = progress.total === 0 ? 0 : progress.done / progress.total
 
   const toggle = (panel: 'goal' | 'tasks'): void => {
     if (open === panel) {
@@ -283,44 +303,52 @@ export function RoomDockCapsules({
     : state.tasks.filter(task => task.member === filter)
 
   return (
-    <section ref={rootRef} className={css.root} data-variant={CAPSULE_VARIANT} aria-label={t('goal.label')}>
+    <section ref={rootRef} className={css.root} aria-label={t('goal.label')}>
       <div className={css.capsules}>
         <button
           type="button"
-          className={open === 'goal' ? css.capsuleActive : css.capsule}
+          className={css.capsule}
           aria-expanded={open === 'goal'}
           aria-label={t('goal.label')}
           onClick={() => { toggle('goal') }}
         >
-          <span className={css.capsuleIcon} aria-hidden>◐</span>
-          <span className={css.capsuleDot} data-tone={state.goal === undefined ? 'idle' : 'set'} aria-hidden />
           {state.goal === undefined ? (
             <span className={css.capsuleGuide}>{t('goal.set')}</span>
           ) : (
             <>
+              <GoalRing fraction={fraction} />
+              <span className={css.capsulePercent}>{Math.round(fraction * 100)}%</span>
               <span className={css.capsuleText}>{state.goal}</span>
-              <span className={css.capsuleMeta}>{progress.done}/{progress.total}</span>
             </>
           )}
-          <ChevronGlyph />
         </button>
         <button
           type="button"
-          className={open === 'tasks' ? css.capsuleActive : css.capsule}
+          className={css.capsule}
           aria-expanded={open === 'tasks'}
           aria-label={t('tasks.capsule')}
-          data-running={running > 0 || undefined}
+          data-running={runners.length > 0 || undefined}
           onClick={() => { toggle('tasks') }}
         >
-          <span className={css.capsuleIcon} aria-hidden>▦</span>
-          <span className={css.capsuleDot} data-tone={running > 0 ? 'running' : 'idle'} aria-hidden />
-          <span className={css.capsuleText}>{t('tasks.capsule')}</span>
-          <span className={css.capsuleMeta}>
-            {pending > 0 ? t('tasks.summary.pending', { count: pending }) : ''}
-            {pending > 0 && running > 0 ? '·' : ''}
-            {running > 0 ? t('tasks.summary.running', { count: running }) : ''}
-          </span>
-          <ChevronGlyph />
+          <IconChecklistOutline14 size={14} className={css.checklistIcon} />
+          {openCount === 0 ? (
+            <span className={css.capsuleText}>{t('tasks.capsule')}</span>
+          ) : (
+            <>
+              <span className={css.capsuleCount}>{openCount}</span>
+              {runners.length > 0 && (
+                <span className={css.runners}>
+                  {runners.map(name => (
+                    <span key={name} className={css.runner}>
+                      <span className={css.memberDot} style={{ background: memberColor(name) }} aria-hidden />
+                      {name}
+                    </span>
+                  ))}
+                  <span className={css.runnerSuffix}>{t('tasks.doing')}</span>
+                </span>
+              )}
+            </>
+          )}
         </button>
         <button
           type="button"
@@ -381,17 +409,20 @@ export function RoomDockCapsules({
               </button>
             </div>
           )}
-          <div
-            className={css.progressTrack}
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={progress.total}
-            aria-valuenow={progress.done}
-          >
+          <div className={css.progressRow}>
             <div
-              className={css.progressFill}
-              style={{ width: progress.total === 0 ? '0%' : `${(progress.done / progress.total) * 100}%` }}
-            />
+              className={css.progressTrack}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+              aria-valuenow={progress.done}
+            >
+              <div
+                className={css.progressFill}
+                style={{ width: `${fraction * 100}%` }}
+              />
+            </div>
+            <span className={css.progressMeta}>{progress.done}/{progress.total}</span>
           </div>
           <div className={css.recentLabel}>{t('goal.recent')}</div>
           {advances.length === 0 ? (
@@ -412,25 +443,35 @@ export function RoomDockCapsules({
 
       {open === 'tasks' && (
         <div className={css.card}>
-          <div className={css.chips} role="group" aria-label={t('tasks.capsule')}>
-            <button
-              type="button"
-              className={filter === '' ? css.chipActive : css.chip}
-              onClick={() => { setFilter('') }}
-            >
-              {t('tasks.filter.all')}
-            </button>
-            {members.map(member => (
+          <div className={css.panelBar}>
+            <div className={css.chips} role="group" aria-label={t('tasks.capsule')}>
               <button
-                key={member.name}
                 type="button"
-                className={filter === member.name ? css.chipActive : css.chip}
-                onClick={() => { setFilter(member.name) }}
+                className={css.chip}
+                data-active={filter === '' || undefined}
+                onClick={() => { setFilter('') }}
               >
-                <span className={css.dot} style={{ background: memberColor(member.name) }} aria-hidden />
-                {member.name}
+                {t('tasks.filter.all')}
               </button>
-            ))}
+              {members.map(member => (
+                <button
+                  key={member.name}
+                  type="button"
+                  className={css.chip}
+                  data-active={filter === member.name || undefined}
+                  style={{ '--room-chip-color': memberColor(member.name) } as CSSProperties}
+                  onClick={() => { setFilter(member.name) }}
+                >
+                  <span className={css.memberDot} style={{ background: memberColor(member.name) }} aria-hidden />
+                  {member.name}
+                </button>
+              ))}
+            </div>
+            {!addOpen && (
+              <button type="button" className={css.addTrigger} onClick={() => { setAddOpen(true) }}>
+                ＋ {t('tasks.addTrigger')}
+              </button>
+            )}
           </div>
           <div className={css.groups}>
             {filter === ''
@@ -439,17 +480,13 @@ export function RoomDockCapsules({
                 if (own.length === 0) return null
                 return (
                   <div key={member.name} className={css.group}>
-                    <div className={css.member}>
-                      <span className={css.dot} style={{ background: memberColor(member.name) }} aria-hidden />
-                      {member.name}
-                    </div>
+                    <div className={css.head}>{member.name}</div>
                     <ul className={css.list}>
                       {own.map(task => (
                         <TaskRow
-                          key={task.id}
+                          key={`${task.id}:${task.status}`}
                           task={task}
                           tasks={state.tasks}
-                          showMember={false}
                           now={now}
                           closeTask={closeTask}
                           t={t}
@@ -463,10 +500,9 @@ export function RoomDockCapsules({
                 <ul className={css.list}>
                   {(visibleTasks ?? []).map(task => (
                     <TaskRow
-                      key={task.id}
+                      key={`${task.id}:${task.status}`}
                       task={task}
                       tasks={state.tasks}
-                      showMember
                       now={now}
                       closeTask={closeTask}
                       t={t}
@@ -475,7 +511,7 @@ export function RoomDockCapsules({
                 </ul>
               )}
           </div>
-          {addOpen ? (
+          {addOpen && (
             <div className={css.addRow}>
               <select
                 className={css.memberSelect}
@@ -514,10 +550,6 @@ export function RoomDockCapsules({
                 {t('tasks.add')}
               </button>
             </div>
-          ) : (
-            <button type="button" className={css.addExpander} onClick={() => { setAddOpen(true) }}>
-              ＋ {t('tasks.addTrigger')}
-            </button>
           )}
           {error !== null && <div className={css.error} role="alert">{error}</div>}
         </div>

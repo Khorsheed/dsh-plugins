@@ -36,3 +36,7 @@ Both variants ship in one bundle, keyed off the root section's `data-variant` at
 ## Testing
 
 The existing capsule client spec (`room-dock-capsules.client.spec.tsx`, 10 tests) pins the unchanged behavior against the new DOM. Visual verification is manual: Playwright screenshots of both variants collapsed/expanded on the scratch instance (scratch-screenshots/variant-a-*.png / variant-b-*.png), taken against the live :3199 room session.
+
+## Related
+
+Superseded by [the quest-bar redesign note](2026-08-22-room-quest-bar-redesign.md): the user rejected both candidates, and the `data-variant` mechanism (this note's Decision) is deleted. The Menu-surface panel, the chip register, and the running sweep survive into the redesign.

@@ -1,18 +1,15 @@
 /* Dock capsules: one collapsed row of two capsules (goal + tasks) plus the
    quick-add button, seated on the card-width axis inside the side clearance
    (the RoomComposer `.dock` wrapper; official dock insets: card minus 4 × 8).
-   TWO chrome variants share this stylesheet, keyed off the root's
-   `data-variant` (RoomDockCapsules.tsx's CAPSULE_VARIANT picks the default;
-   the attribute flips live for A/B comparison):
-   - A (official chip register): the model-selector trigger's language —
-     transparent rest, interactive hover fill, r24 chip, 13/20/500 secondary
-     label, caption chevron rotating open.
-   - B (light text row): no chip chrome — tertiary 12/18 text with a state
-     dot and the chevron, a hover-only fill.
-   Both share the expanded card (the official Menu surface: --dsw-specific-menu,
-   r12, inverted hairline, shadow-lv3) and the running sweep (the ToolRow
-   pattern, reduced-motion safe). Every token reference carries the
-   light-theme literal as fallback; no divider lines anywhere. */
+   The capsules ride the official chip register (28px, r24, transparent rest,
+   interactive hover fill, 13/20/500 secondary label); the goal capsule's
+   single visual focus is its progress ring. The expanded cards are the
+   official Menu surface (--dsw-specific-menu, r12, inverted hairline,
+   shadow-lv3) — the same material the room's @-completion card and the model
+   selector's dropdown already use. The task capsule sweeps a restrained glare
+   band while tasks run (the ToolRow pattern, reduced-motion safe). Every
+   token reference carries the light-theme literal as fallback; no divider
+   lines anywhere. */
 
 .root {
   box-sizing: border-box;
@@ -32,108 +29,111 @@
   min-width: 0;
 }
 
-/* The capsule's shared skeleton; the variant blocks below own the skin. */
+/* The capsule: the official chip register (model-selector trigger language)
+   — 28px r24 chip, transparent rest, interactive hover fill, 13/20/500
+   secondary label. */
 .capsule {
   position: relative; /* running-sweep overlay anchor */
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   max-width: 60%;
-  border: none;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-/* Variant A — the official chip register (model-selector trigger): 28px
-   rounded chip, transparent rest, interactive hover fill, 13/20/500
-   secondary label, caption chevron. */
-.root[data-variant='a'] .capsule {
   height: 28px;
   padding: 0 10px;
+  border: none;
   border-radius: 24px;
+  overflow: hidden;
   background: transparent;
   font-size: 13px;
   line-height: 20px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
 }
 
-.root[data-variant='a'] .capsule:hover {
+.capsule:hover,
+.capsule[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
 
-.root[data-variant='a'] .capsule[aria-expanded='true'] {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+/* The expanded capsule raises its label to the primary tone. */
+.capsule[aria-expanded='true'] {
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
 }
 
-/* Variant B — the light text row (compaction/dim-line language): no chip
-   chrome, tertiary 12/18 text led by the state dot, a hover-only fill. */
-.root[data-variant='b'] .capsule {
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  line-height: 18px;
+/* The goal capsule's progress ring: tertiary track, business-primary arc —
+   the collapsed row's single visual focus. */
+.ring {
+  flex: none;
+}
+
+.ringTrack {
+  stroke: var(--dsw-alias-fill-l2, rgba(0, 0, 0, 0.1));
+}
+
+.ringFill {
+  stroke: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  transition: stroke-dasharray 0.2s ease;
+}
+
+.capsulePercent {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  white-space: nowrap;
+}
+
+.capsuleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.capsuleGuide {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+/* The task capsule: checklist icon + open count + running members. */
+.checklistIcon {
+  flex: none;
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
-.root[data-variant='b'] .capsule:hover,
-.root[data-variant='b'] .capsule[aria-expanded='true'] {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+.capsule:hover .checklistIcon,
+.capsule[aria-expanded='true'] .checklistIcon {
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
 }
 
-.capsuleActive {
-  composes: capsule;
-  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
-}
-
-/* The ◐/▦ leading icons belong to variant A's chip register; variant B's
-   text row is led by the state dot instead. */
-.capsuleIcon {
-  display: none;
+.capsuleCount {
   flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
 }
 
-.root[data-variant='a'] .capsuleIcon {
-  display: inline;
+.runners {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-/* The state dot (variant B's lead): business-primary while the capsule's
-   concern is live (goal set / tasks running), caption tone at rest. */
-.capsuleDot {
-  display: none;
+.runner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.runnerSuffix {
   flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.root[data-variant='b'] .capsuleDot {
-  display: inline-block;
-}
-
-.capsuleDot[data-tone='set'],
-.capsuleDot[data-tone='running'] {
-  background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
-}
-
-.capsuleDot[data-tone='idle'] {
-  background: var(--dsw-alias-label-caption, rgb(173, 178, 184));
-}
-
-/* The trailing chevron: caption tone in both variants, rotating open like
-   the model selector's. */
-.chevron {
-  flex: none;
-  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
-  transition: transform 120ms ease;
-}
-
-.capsule[aria-expanded='true'] .chevron {
-  transform: rotate(180deg);
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
 /* Running sweep (the ToolRow pattern): a fixed-width glare band — theme
@@ -168,42 +168,17 @@
     display: none;
   }
 
-  .chevron {
+  .ringFill {
     transition: none;
   }
-}
-
-.capsuleText {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-/* Variant B's text row keeps the dim-line register: regular weight. */
-.root[data-variant='b'] .capsuleText {
-  font-weight: 400;
-}
-
-.capsuleMeta {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
-  white-space: nowrap;
-}
-
-.capsuleGuide {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
-  white-space: nowrap;
 }
 
 .addCapsule {
   display: grid;
   flex: none;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -219,20 +194,13 @@
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
 }
 
-/* Variant A's quick-add rides the same 28px chip axis as its capsules. */
-.root[data-variant='a'] .addCapsule {
-  width: 28px;
-  height: 28px;
-}
-
 /* Expanded card: the official Menu surface (menu background, r12, inverted
-   hairline, shadow-lv3) — the same material the room's @-completion card and
-   the model selector's dropdown already use. Shared by both variants. */
+   hairline, shadow-lv3). */
 .card {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0));
   border-radius: 12px;
   background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
@@ -270,7 +238,14 @@
   gap: 8px;
 }
 
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .progressTrack {
+  flex: 1 1 auto;
   height: 4px;
   border-radius: 2px;
   background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
@@ -282,6 +257,13 @@
   border-radius: 2px;
   background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
   transition: width 0.2s ease;
+}
+
+.progressMeta {
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
 .recentLabel {
@@ -299,14 +281,26 @@
   white-space: nowrap;
 }
 
-/* Member filter chips: the capsule register again, with the member dot. */
+/* Task panel top bar: the member filter chips left, the ＋添加 trigger at
+   the right end. */
+.panelBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .chips {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
+/* Member filter chips: color-dot capsules; the selected one takes a tinted
+   fill of its color (--room-chip-color, inline per member) — no outline. */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -325,16 +319,38 @@
   background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
 
-.chipActive {
-  composes: chip;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
-  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+.chip[data-active] {
+  background: color-mix(
+    in srgb,
+    var(--room-chip-color, var(--dsw-alias-label-primary, rgb(15, 17, 21))) 14%,
+    transparent
+  );
+  color: var(--room-chip-color, var(--dsw-alias-label-primary, rgb(15, 17, 21)));
+  font-weight: 500;
 }
 
-.dot {
+.addTrigger {
   flex: none;
-  width: 8px;
-  height: 8px;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.addTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.memberDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 
@@ -342,7 +358,7 @@
 .groups {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   max-height: 180px;
   overflow-y: auto;
 }
@@ -350,37 +366,47 @@
 .group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
-/* Group header: the official tertiary small-text convention (12/18
-   tertiary), plus the room's member color dot. */
-.member {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 18px;
+/* Group header: Linear's small-caps register — tertiary, letter-spaced,
+   uppercase. */
+.head {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Task row: hover takes the interactive fill; the negative horizontal margin
+   keeps the glyph/title optically aligned with the card padding. */
 .item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border-radius: 6px;
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
 
 .glyph {
@@ -391,16 +417,22 @@
   height: 16px;
 }
 
-.glyphCompleted {
+.glyphDone {
   color: var(--dsw-alias-state-success-primary, rgb(34, 197, 94));
+  animation: room-glyph-pop 240ms ease-out;
+}
+
+@keyframes room-glyph-pop {
+  from { transform: scale(0.6); }
+  to { transform: scale(1); }
 }
 
 .glyphPending {
-  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
 .glyphCancelled {
-  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
 }
 
 .glyphProgress {
@@ -423,14 +455,63 @@
   white-space: nowrap;
 }
 
-/* Cancelled rows read as closed noise: the content drops to tertiary. */
-.item[data-status="cancelled"] .content {
+/* Done rows: the title dims and its strike draws in (the completion beat,
+   replayed by the id:status row remount). The line rides a background
+   gradient on the inner inline span so it spans the text, not the row. */
+.item[data-status='done'] .title {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 55%;
+  background-size: 100% 1px;
+  animation: room-task-strike 240ms ease-out;
+}
+
+@keyframes room-task-strike {
+  from {
+    background-size: 0 1px;
+    opacity: 0.5;
+  }
+  to {
+    background-size: 100% 1px;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyphDone {
+    animation: none;
+  }
+
+  .item[data-status='done'] .title {
+    animation: none;
+  }
+}
+
+/* Cancelled rows read as closed noise: the content drops to tertiary (no
+   strike — that belongs to the done state). */
+.item[data-status='cancelled'] .title {
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
 /* Blocked rows ("等 ada") grey out until the wait clears. */
-.item[data-blocked] .content {
+.item[data-blocked] .title {
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* The row's member chip: color dot + name on a subtle fill capsule. */
+.memberChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  white-space: nowrap;
 }
 
 .blockedTag {
@@ -443,6 +524,7 @@
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
 }
 
+/* Right-aligned tertiary grey status/time. */
 .meta {
   flex: none;
   font-size: 12px;
@@ -482,23 +564,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.addExpander {
-  align-self: flex-start;
-  padding: 1px 6px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
-  cursor: pointer;
-}
-
-.addExpander:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
-  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
 }
 
 .memberSelect {

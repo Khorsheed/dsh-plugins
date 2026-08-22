@@ -36,3 +36,7 @@ dock 双胶囊（目标 + 任务）的第一位评审者给出了"设计感差"�
 ## Testing
 
 现有胶囊客户端 spec（`room-dock-capsules.client.spec.tsx`，10 个测试）对新 DOM 钉住不变的行为。视觉验证是手动的：在 scratch 实例上对两个变体的折叠/展开做 Playwright 截图（scratch-screenshots/variant-a-*.png / variant-b-*.png），对象是 :3199 的活 room 会话。
+
+## Related
+
+已被 [quest-bar 重设计笔记](2026-08-22-room-quest-bar-redesign.zh.md) 取代：用户否决了两个候选，`data-variant` 机制（本笔记的 Decision）已删除。Menu 表面面板、chip 体系和运行扫光存活进了重设计。
