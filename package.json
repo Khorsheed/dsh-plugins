@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
-    "test:scripts": "vitest run scripts",
+    "test:scripts": "vitest run --config vitest.scripts.config.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
     "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
