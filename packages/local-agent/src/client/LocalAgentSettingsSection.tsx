@@ -53,6 +53,8 @@ interface HarnessView {
   logoutable?: boolean
   loginText?: string
   loginUrl?: string
+  /** A pty login waits for the user to paste the OAuth code. */
+  loginAwaitingCode?: boolean
 }
 
 /** The first http(s) URL in a login prompt, if any. */
@@ -86,6 +88,8 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
   /** A login-completion toast awaiting mount; seq forces a re-show for repeats. */
   const [loginToast, setLoginToast] = useState<{ seq: number; harness: string } | null>(null)
   const toastSeq = useRef(0)
+  /** OAuth code drafts for pty logins awaiting a paste, keyed by harness id. */
+  const [codeDrafts, setCodeDrafts] = useState<Readonly<Record<string, string>>>({})
   /** Whether the last roster fetch failed; the retry button bumps the tick. */
   const [rosterFailed, setRosterFailed] = useState(false)
   const [retryTick, setRetryTick] = useState(0)
@@ -100,7 +104,11 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
         : probe.authenticated ? 'authenticated' : 'anonymous'
       const capabilities = probe === undefined
         ? {}
-        : { loginable: probe.loginable ?? true, logoutable: probe.logoutable ?? true }
+        : {
+          loginable: probe.loginable ?? true,
+          logoutable: probe.logoutable ?? true,
+          ...probe.loginAwaitingCode === true ? { loginAwaitingCode: true } : {},
+        }
       setViews((prev) => {
         const current = prev[id]
         // A completed login drops the stale device prompt.
@@ -293,6 +301,39 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
                       {t('settings.openPage')}
                     </a>
                   )}
+                </div>
+              )}
+              {view?.loginAwaitingCode === true && (
+                <div className={css.loginPrompt}>
+                  <input
+                    className={css.codeInput}
+                    value={codeDrafts[harness.id] ?? ''}
+                    placeholder={t('settings.pasteCode')}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value
+                      setCodeDrafts(prev => ({ ...prev, [harness.id]: value }))
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={css.loginButton}
+                    disabled={(codeDrafts[harness.id] ?? '').trim() === ''}
+                    onClick={() => {
+                      const code = (codeDrafts[harness.id] ?? '').trim()
+                      if (code === '' || sessionId === undefined) return
+                      void runCommand(sessionId, `/${harness.id} code ${code}`).then((text) => {
+                        setViews(prev => {
+                          const current = prev[harness.id] ?? { status: 'checking' as const }
+                          // Drop the awaiting flag; the command reply becomes the prompt text.
+                          const { loginAwaitingCode: _cleared, ...rest } = current
+                          return { ...prev, [harness.id]: { ...rest, loginText: text ?? '' } }
+                        })
+                        setCodeDrafts(prev => ({ ...prev, [harness.id]: '' }))
+                      })
+                    }}
+                  >
+                    {t('settings.submitCode')}
+                  </button>
                 </div>
               )}
             </li>

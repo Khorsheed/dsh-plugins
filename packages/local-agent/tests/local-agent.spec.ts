@@ -1,5 +1,6 @@
-import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { Readable } from 'node:stream'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -446,8 +447,56 @@ describe('LocalAgentRegistry', () => {
     })
   })
 
-  describe('auth failure marks', () => {
-    /** A harness whose probe and stamp the test controls directly. */
+  describe('pty login variant', () => {
+    /** A fake subprocess seam whose spawnTerminal returns a controllable terminal. */
+    function fakeTerminal(output: string, written: string[]): {
+      spawnTerminal: (spec: { argv: readonly string[] }) => unknown
+      finish: () => void
+    } {
+      let finish!: () => void
+      const done = new Promise<{ exitCode: number }>((resolve) => { finish = () => { resolve({ exitCode: 0 }) } })
+      return {
+        finish,
+        spawnTerminal: () => ({
+          pid: 7777,
+          output: Readable.from([output]),
+          done,
+          write: async (data: string) => { written.push(data) },
+          terminate: async () => {},
+        }),
+      }
+    }
+
+    it('spawns the CLI on a pty, surfaces the OAuth URL, and delivers the pasted code', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pty-'), loginPromptTimeoutMs: 5_000 })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const written: string[] = []
+      ctx.provide('subprocess', fakeTerminal('Opening browser to sign in https://example.com/oauth?x=1\r\n', written) as never)
+      registry.register(harness({
+        login: { pty: { command: 'fake-cli', args: ['auth', 'login'] } },
+        records: { listSessions: async () => [] },
+      }))
+
+      const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+      expectSuccess(execution, 'https://example.com/oauth?x=1')
+      expectSuccess(execution, '/fake code')
+      expect((await registry.statusOf('fake')).loginAwaitingCode).toBe(true)
+
+      const codeResult = await ctx.commands.execute(agent, '/fake code abc123', [], new AbortController().signal)
+      expectSuccess(codeResult, 'code')
+      expect(written).toEqual(['abc123\r'])
+    })
+
+    it('rejects a code submission with no pending pty login', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pty-none-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      registry.register(harness({ records: { listSessions: async () => [] } }))
+      const result = await ctx.commands.execute(agent, '/fake code abc123', [], new AbortController().signal)
+      expectError(result, '没有等待授权 code')
+    })
+  })
+
+  describe('auth failure marks', () => {    /** A harness whose probe and stamp the test controls directly. */
     function stampedHarness(state: { authenticated: boolean; stamp: number | undefined }): LocalAgentHarness {
       return harness({
         isAuthenticated: async () => state.authenticated,

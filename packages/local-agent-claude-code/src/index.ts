@@ -78,13 +78,15 @@ export function apply(ctx: Context, config: Config): void {
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
       login: {
-        // claude ≥2.1 (verified 2.1.235) prints no OAuth URL off a TTY and
-        // `setup-token` needs Ink raw mode — nothing the host can spawn. The
-        // user runs this verbatim in their own terminal; the relay env is
-        // scrubbed and the scoped home pinned so the credential lands where
-        // the delegations read it.
-        manual: {
-          commandDisplay: `env -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL CLAUDE_CONFIG_DIR=${homeDir} claude auth login`,
+        // claude ≥2.1 (verified 2.1.235+) runs its auth only on a TTY: under
+        // the pty wrapper it auto-opens the user's browser and prints the
+        // OAuth URL as fallback; the page hands back a code the user pastes
+        // via /claude-code code <value>. The relay env is scrubbed and the
+        // scoped home pinned so the credential lands where delegations read
+        // it (the wrapper passes the harness env through).
+        pty: {
+          command: 'env',
+          args: ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${homeDir}`, 'claude', 'auth', 'login'],
         },
         // The watch defaults to isAuthenticated (claudeAuthenticated below).
       },

@@ -212,6 +212,18 @@
   overflow-wrap: anywhere;
 }
 
+.codeInput {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-line-normal, currentColor);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+
 .openPage {
   flex: none;
   font-size: 12px;

@@ -37,6 +37,11 @@ export interface LocalAgentStatus {
    */
   loginable?: boolean
   /**
+   * A pty login is waiting for the user to paste the OAuth code
+   * (`/<name> code <value>`). Surfaces render the paste box while set.
+   */
+  loginAwaitingCode?: boolean
+  /**
    * Whether the harness declares a sign-out path (`/<name> logout`). A
    * harness without one has no account to switch, so surfaces must not offer
    * a logout action.

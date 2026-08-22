@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -124,6 +125,24 @@ export type LocalAgentLogin =
     }
     /**
      * Credential probe polled while the handoff is in flight; defaults to the
+     * harness's own `isAuthenticated`.
+     */
+    watch?: (homeDir: string) => Promise<boolean>
+  }
+  | {
+    /**
+     * The CLI's auth needs a TTY but drives the browser itself (claude ≥2.1):
+     * the command is spawned under a pseudo-terminal wrapper so it opens the
+     * user's browser, and its output is watched for an OAuth URL to show as a
+     * fallback. When the CLI prompts for a code, the user pastes it via
+     * `/<name> code <value>`, which the registry writes to the child's stdin.
+     */
+    pty: {
+      command: string
+      args: readonly string[]
+    }
+    /**
+     * Credential probe polled while the login is in flight; defaults to the
      * harness's own `isAuthenticated`.
      */
     watch?: (homeDir: string) => Promise<boolean>
@@ -298,9 +317,19 @@ export const LOCAL_AGENT_SERVICE = 'localAgent'
 interface LoginController {
   /** The device-code variant's CLI child; absent for a manual-handoff watch. */
   child?: ChildProcess
+  /** The pty variant's terminal; written to when the CLI prompts for a code. */
+  terminal?: SubprocessTerminalHandle
   done: Promise<void>
   /** Cancel a manual-handoff watch (the device variant cancels by killing its child). */
   stop?: () => void
+  /**
+   * The pty variant: the CLI runs on a real pseudo-terminal (it auto-opens
+   * the browser itself) and may prompt for an OAuth code on stdin.
+   * `writeCode` delivers the user's pasted code; `awaitingCode` tells the
+   * settings surface to render the paste box.
+   */
+  awaitingCode?: boolean
+  writeCode?: (code: string) => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -565,6 +594,7 @@ export class LocalAgentRegistry {
       // neither).
       loginable: harness.login !== undefined,
       logoutable: harness.logout !== undefined,
+      ...this.logins.get(name)?.awaitingCode === true ? { loginAwaitingCode: true } : {},
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
     }
   }
@@ -1191,6 +1221,7 @@ export class LocalAgentRegistry {
   private handle(invocation: CommandInvocation, harness: LocalAgentHarness): Promise<CommandResult> {
     const input = invocation.rawInput.trim()
     if (input === 'login') return this.login(harness)
+    if (input.startsWith('code ')) return Promise.resolve(this.submitLoginCode(harness, input.slice('code '.length).trim()))
     if (input === 'status') {
       return this.statusOf(harness.name).then(status => ({ kind: 'success', text: renderStatus(status) }))
     }
@@ -1252,6 +1283,7 @@ export class LocalAgentRegistry {
       // deletes only when the map still holds THAT controller, which the new
       // set() below makes false).
       existing.stop?.()
+      if (existing.terminal !== undefined) void existing.terminal.terminate()
       const stale = existing.child
       if (stale !== undefined) {
         stale.kill()
@@ -1267,6 +1299,7 @@ export class LocalAgentRegistry {
     // The manual handoff spawns nothing: reply with the terminal instructions
     // and watch for the credential.
     if ('manual' in login) return this.manualLogin(harness, login)
+    if ('pty' in login) return this.ptyLogin(harness, login)
     const controller: LoginController = { done: Promise.resolve() }
     this.logins.set(harness.name, controller)
     const resultPromise = this.runLogin(harness, login, controller)
@@ -1276,6 +1309,66 @@ export class LocalAgentRegistry {
       if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
     })
     return resultPromise
+  }
+
+  /**
+   * The shared credential watch behind the manual and pty login variants:
+   * polls the probe until the credential lands (presence AND, when the
+   * harness exposes a credential stamp, a stamp rewritten after the watch
+   * started — a leftover marker must not conclude a login), the window
+   * expires, or a new login replaces the watch. Outcomes are logged; the
+   * surfaces' own status polling picks the landed credential up.
+   * @param harness - the harness being logged in.
+   * @param probe - the credential probe.
+   * @param controller - the pending login's controller (done resolves here).
+   */
+  private watchCredential(
+    harness: LocalAgentHarness,
+    probe: (homeDir: string) => Promise<boolean>,
+    controller: LoginController,
+  ): void {
+    const homeDir = this.homeDir(harness.name)
+    const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
+    const watchStart = Date.now()
+    let stopped = false
+    let timer: ReturnType<typeof setInterval> | undefined
+    controller.done = new Promise<void>((resolve) => {
+      const finish = (message: string, level: 'info' | 'warn'): void => {
+        if (stopped) return
+        stopped = true
+        if (timer !== undefined) clearInterval(timer)
+        this.ctx.logger[level](message)
+        resolve()
+      }
+      controller.stop = () => { finish(`${harness.name} login watch replaced`, 'info') }
+      const tick = async (): Promise<void> => {
+        if (stopped) return
+        try {
+          if (await probe(homeDir)) {
+            // Presence alone must not conclude a login: a stale marker (e.g.
+            // a revoked token's leftover record) would report success without
+            // any new login. When the harness exposes a credential stamp,
+            // require it to be rewritten after this watch started.
+            if (harness.credentialStamp !== undefined) {
+              const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+              if (stamp === undefined || stamp <= watchStart) return
+            }
+            finish(`${harness.name} login detected in the scoped home`, 'info')
+            return
+          }
+        } catch {
+          // A probe failure is a transient read; keep watching.
+        }
+        if (Date.now() >= deadline) {
+          finish(
+            `${harness.name} login watch expired after ${Math.round(MANUAL_LOGIN_LIMIT_MS / 1000)}s with no credential; run /${harness.name} login again to retry`,
+            'warn',
+          )
+        }
+      }
+      timer = setInterval(() => { void tick() }, MANUAL_LOGIN_POLL_MS)
+      timer.unref()
+    })
   }
 
   /**
@@ -1297,50 +1390,7 @@ export class LocalAgentRegistry {
     const controller: LoginController = { done: Promise.resolve() }
     this.logins.set(harness.name, controller)
     const probe = login.watch ?? harness.isAuthenticated
-    if (probe !== undefined) {
-      const homeDir = this.homeDir(harness.name)
-      const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
-      const watchStart = Date.now()
-      let stopped = false
-      let timer: ReturnType<typeof setInterval> | undefined
-      controller.done = new Promise<void>((resolve) => {
-        const finish = (message: string, level: 'info' | 'warn'): void => {
-          if (stopped) return
-          stopped = true
-          if (timer !== undefined) clearInterval(timer)
-          this.ctx.logger[level](message)
-          resolve()
-        }
-        controller.stop = () => { finish(`${harness.name} login watch replaced`, 'info') }
-        const tick = async (): Promise<void> => {
-          if (stopped) return
-          try {
-            if (await probe(homeDir)) {
-              // Presence alone must not conclude a handoff: a stale marker
-              // (e.g. a revoked token's leftover record) would report success
-              // without any new login. When the harness exposes a credential
-              // stamp, require it to be rewritten after this watch started.
-              if (harness.credentialStamp !== undefined) {
-                const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
-                if (stamp === undefined || stamp <= watchStart) return
-              }
-              finish(`${harness.name} login detected in the scoped home`, 'info')
-              return
-            }
-          } catch {
-            // A probe failure is a transient read; keep watching.
-          }
-          if (Date.now() >= deadline) {
-            finish(
-              `${harness.name} login watch expired after ${Math.round(MANUAL_LOGIN_LIMIT_MS / 1000)}s with no credential; run /${harness.name} login again to retry`,
-              'warn',
-            )
-          }
-        }
-        timer = setInterval(() => { void tick() }, MANUAL_LOGIN_POLL_MS)
-        timer.unref()
-      })
-    }
+    if (probe !== undefined) this.watchCredential(harness, probe, controller)
     void controller.done.then(() => {
       if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
     })
@@ -1349,6 +1399,106 @@ export class LocalAgentRegistry {
       text: `${harness.displayName} CLI login needs an interactive terminal. Run this in your own terminal:\n\n  ${login.manual.commandDisplay}\n\nWatching the scoped home for the credential for up to ${Math.round(MANUAL_LOGIN_LIMIT_MS / 60_000)} minutes; this surface picks the login up automatically.`,
     })
   }
+
+  /**
+   * The pty login: spawn the CLI under a pseudo-terminal wrapper so its
+   * TTY-only auth flow runs — current claude auto-opens the user's browser
+   * itself. The OAuth URL is captured from the merged output as a fallback,
+   * and when the CLI prompts for a code the user pastes it through
+   * `/<name> code <value>` (written to the child's stdin). Completion is the
+   * shared credential watch. Windows has no script(1) wrapper; there the
+   * reply falls back to the manual instruction.
+   * @param harness - the harness declaring the pty flow.
+   * @param login - the pty variant declaration.
+   * @returns the browser/paste instructions as the command success text.
+   */
+  private async ptyLogin(
+    harness: LocalAgentHarness,
+    login: Extract<LocalAgentLogin, { pty: unknown }>,
+  ): Promise<CommandResult> {
+    const homeDir = this.homeDir(harness.name)
+    const displayCommand = [login.pty.command, ...login.pty.args].join(' ')
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) {
+      // The seam is absent in this composition: degrade to the manual handoff.
+      const controller: LoginController = { done: Promise.resolve() }
+      this.logins.set(harness.name, controller)
+      const probe = login.watch ?? harness.isAuthenticated
+      if (probe !== undefined) this.watchCredential(harness, probe, controller)
+      void controller.done.then(() => {
+        if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+      })
+      return Promise.resolve({
+        kind: 'success',
+        text: `${harness.displayName} CLI login needs an interactive terminal. Run this in your own terminal:\n\n  ${displayCommand}\n\nWatching the scoped home for the credential; this surface picks the login up automatically.`,
+      })
+    }
+    const controller: LoginController = { done: Promise.resolve(), awaitingCode: true }
+    const terminal = await subprocess.spawnTerminal({
+      argv: [login.pty.command, ...login.pty.args],
+      cwd: homeDir,
+      env: { [harness.homeEnvVar]: homeDir },
+      rows: 24,
+      cols: 80,
+      graceMs: REPLACE_LOGIN_GRACE_MS,
+    })
+    controller.terminal = terminal
+    this.logins.set(harness.name, controller)
+    controller.writeCode = (code) => {
+      void terminal.write(`${code}\r`)
+      controller.awaitingCode = false
+    }
+    let url: string | undefined
+    const urlCaptured = new Promise<void>((resolve) => {
+      const promptTimeout = setTimeout(() => { resolve() }, this.loginPromptTimeoutMs)
+      terminal.output.on('data', (chunk: Buffer) => {
+        if (url === undefined) {
+          const match = /https?:\/\/[^\s\]]+/.exec(chunk.toString())
+          if (match !== null) {
+            url = match[0]
+            clearTimeout(promptTimeout)
+            resolve()
+          }
+        }
+      })
+      void terminal.done.then(() => { clearTimeout(promptTimeout); resolve() }, () => { clearTimeout(promptTimeout); resolve() })
+    })
+    controller.done = new Promise<void>((resolve) => {
+      void terminal.done.then(() => { resolve() }, () => { resolve() })
+    })
+    const probe = login.watch ?? harness.isAuthenticated
+    if (probe !== undefined) this.watchCredential(harness, probe, controller)
+    void controller.done.then(() => {
+      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+    })
+    // Give the CLI a bounded moment to print its OAuth URL so the reply can
+    // carry the fallback link; the browser opens on its own either way.
+    return urlCaptured.then(() => ({
+      kind: 'success',
+      text: `${harness.displayName} 授权页应已在浏览器中打开。`
+        + (url !== undefined ? `\n\n若浏览器未打开，请访问：\n  ${url}` : '')
+        + `\n\n授权完成后若页面给出一个 code，请粘贴回来：\n  /${harness.name} code <你的code>`,
+    }))
+  }
+
+  /**
+   * Deliver the user's pasted OAuth code to a pending pty login's stdin.
+   * @param harness - the harness whose login is pending.
+   * @param code - the pasted code.
+   * @returns the command result.
+   */
+  private submitLoginCode(harness: LocalAgentHarness, code: string): CommandResult {
+    const controller = this.logins.get(harness.name)
+    if (controller?.writeCode === undefined || code === '') {
+      return {
+        kind: 'error',
+        text: `${harness.name} 没有等待授权 code 的登录；先运行 /${harness.name} login。`,
+      }
+    }
+    controller.writeCode(code)
+    return { kind: 'success', text: 'code 已提交，等待授权完成…' }
+  }
+
 
   /** Spawn the harness login command and capture its device-code prompt. */
   private runLogin(
