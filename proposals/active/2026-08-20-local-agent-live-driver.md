@@ -66,6 +66,7 @@ driver 接口预留 `onPermissionRequest` 钩子；接到后的呈现（房间�
 - 动机讨论：与 Agents-Anywhere connector 模型的对比评估（2026-08-19，结论是「他们的复杂度在生命周期管理，我们的优势在静止零成本与 scoped 隔离，混合驱动取两边」）。
 - 前置：delegation-api 提案 M1–M4（facade/持久化/锁/reattach）、member-channel 提案（成员 composer/桥接）——本提案对它们是透明的。
 - 协作分工（2026-08-22）：本提案由独立 agent 推进，member-state 提案由 local-agent 家族线（本会话）推进，互为验收方；共享契约是共享折叠层（member-state 的翻译规则挂在这里，本提案改它的传输），折叠层接口变更需双方确认；排期按 provider 打包（落地某家时该家的任务翻译 spike 邻近安排）。
+- **M1（dsh 长驻驱动）验收记录（2026-08-22，验收方：member-state 线）**：交付 commit `ac8118a`（worktree `dsh-plugins-wt-live-driver`）。通过项：折叠层契约（`mirrorDshLiveEvent` 与文件镜像共享过滤与 append 核，offset/skip 核算不受 chunk 粒度干扰）；seam registry S8 登记规范；headless 33/33、local-agent-dsh 54/54；验收方独立冒烟（真实模型 + 真实凭证）：握手、fresh turn、**运行中 interrupt 后进程存活**、resume 续轮、shutdown 干净退出全过；serve 的降级路径（无桥接 env 时 fail-open）在真实 boot 中验证。**结论：不予通过，打回修复**——对抗性审查发现两个 blocker：B1 cancel 在 spawn/握手/accept 窗口内被静默丢弃（abort 监听器在 ensureRuntime 与 accept 之后才挂载，`live-driver.ts:377/448`，而这恰是 graceful cancel 最重要的慢窗口）；B2 `session/idle` 无 turn 关联且 `onIdle` 单槽不在 settle 时清除，stop→改口 的连发场景下 round 1 的 unwind idle 会错误 settle round 2（`live-driver.ts:419-423` + `serve.ts:121-144`）。follow-up 梯队：S1 disposeAll 与进行中 spawn 竞态、S2 同 key 双 spawn 无互斥、S3 畸形 notification 可使父进程崩溃、S4 UTF-8 跨块截断静默损坏、S5 通道熔断粒度过粗、S6 accept 失败留 dangling turn/start 使镜像永久失配。修复后重报验收；冒烟脚本留在 worktree `scratch-serve-smoke.mjs` 可复用。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
