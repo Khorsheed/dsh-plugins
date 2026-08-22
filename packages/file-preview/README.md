@@ -6,6 +6,10 @@ dsh 文件预览界面的宿主服务:列出会话工具调用触碰过的每个
 
 <img src="../../docs/screenshots/file-preview1.png" width="480" alt="配套客户端的文件预览:文件列表与内联 markdown 预览">
 
+<img src="../../docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
+
+<img src="../../docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
+
 ## 特性
 
 - **会话文件清单**——会话 `read`/`write`/`edit` 调用触碰过的每个文件,每次 write/edit 改动附 diff。

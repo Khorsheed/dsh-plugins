@@ -6,6 +6,8 @@ A context-window compaction reminder for the dsh web GUI: once **context occupan
 
 <img src="../../docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
 
+<img src="../../docs/screenshots/context-guard-settings.png" width="480" alt="the trigger ratio is configurable in settings (0.01–1)">
+
 ## Features
 
 - **Compact button in the composer** — hidden below the threshold, appears in the amber warning tint above it.

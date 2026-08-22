@@ -6,6 +6,8 @@
 
 <img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="聊天头部的内联会话标题编辑器">
 
+<img src="../../docs/screenshots/session-title-edit2.png" width="480" alt="点击铅笔后标题变成输入框,回车即保存">
+
 ## 特性
 
 - **头部铅笔**——会话标题右侧的条目切换出内联编辑器,预填当前标题并全选。

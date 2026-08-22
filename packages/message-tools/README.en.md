@@ -6,6 +6,14 @@ Edit, withdraw, and restore user messages in the dsh web GUI: every user message
 
 <img src="../../docs/screenshots/message-actions1.png" width="480" alt="copy / edit / withdraw action row on a user message">
 
+<img src="../../docs/screenshots/message-actions2.png" width="480" alt="in-place editing: saving re-sends as a new message; the edited original leaves the model context">
+
+<img src="../../docs/screenshots/message-actions3.png" width="480" alt="the confirmation dialog before withdrawing, spelling out the consequences">
+
+<img src="../../docs/screenshots/message-actions4.png" width="480" alt="withdrawn messages collapse into a divider, restorable to the end of the conversation">
+
+<img src="../../docs/screenshots/message-actions5.png" width="480" alt="restored messages return to the conversation as they were">
+
 ## Features
 
 - **Action row on every user message** — copy, edit, and withdraw on user bubbles and admitted steering messages.

@@ -4,6 +4,8 @@
 
 在聊天框上方放两枚胶囊入口——「后台任务」和「子 agent」——随时查看、停止、中断,并打开任务详情抽屉。
 
+<img src="../../docs/screenshots/taskpilot1.png" width="480" alt="子 agent 胶囊附着在聊天框上方,点开可看列表、随时中止">
+
 <img src="../../docs/screenshots/taskpilot2.png" width="480" alt="后台任务胶囊与任务详情抽屉">
 
 ## 功能

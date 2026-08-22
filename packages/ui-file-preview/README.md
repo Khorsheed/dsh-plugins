@@ -6,6 +6,10 @@
 
 <img src="../../docs/screenshots/file-preview1.png" width="480" alt="以文档形态预览 markdown 文件">
 
+<img src="../../docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
+
+<img src="../../docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
+
 ## 特性
 
 - **产物 tab**——列出会话写入或编辑过的每个文件，按最近活动倒序，可切换到全部文件。

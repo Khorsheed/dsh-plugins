@@ -6,6 +6,8 @@ Rename a session right in the dsh web GUI chat header: click the pencil next to 
 
 <img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
 
+<img src="../../docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
+
 ## Features
 
 - **Pencil in the header** — an entry right of the session title swaps in an inline editor, prefilled and fully selected.

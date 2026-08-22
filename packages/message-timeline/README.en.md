@@ -6,6 +6,8 @@ A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's le
 
 <img src="../../docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
 
+<img src="../../docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
+
 ## Features
 
 - **One row per user message** — tick plus ellipsized one-line preview; steering messages count too (configurable off).

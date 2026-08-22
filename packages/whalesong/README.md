@@ -8,6 +8,8 @@ dsh web GUI 的状态氛围插件:只要有会话在跑,侧边栏的鲸鱼就喷
 
 <img src="../../docs/screenshots/whalesong1.png" width="480" alt="任务运行时侧边栏鲸鱼喷水">
 
+<img src="../../docs/screenshots/whalesong2.png" width="480" alt="任务结束时播放提示音,标签页图标同步变化">
+
 ## 特性
 
 - **favicon 水位气泡(主指示器)**——有任务在跑时标签页图标是吐泡的鲸鱼动画;空闲时定格为与页面配色一致的静态鲸鱼(官方图标的 `prefers-color-scheme` 跟随操作系统,浅色页面+深色系统下会隐形)。

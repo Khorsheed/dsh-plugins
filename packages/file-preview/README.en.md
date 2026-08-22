@@ -6,6 +6,10 @@ Host service for dsh's file-preview surface: lists every file a session's tool c
 
 <img src="../../docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
 
+<img src="../../docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
+
+<img src="../../docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+
 ## Features
 
 - **Session file list** — every file the session's `read`/`write`/`edit` calls touched, with each write/edit change's diff attached.

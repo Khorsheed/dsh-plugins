@@ -6,6 +6,8 @@ dsh Web GUI 的上下文窗口压缩提醒：当**上下文占用**——与输�
 
 <img src="../../docs/screenshots/context-guard-button.png" width="480" alt="上下文占用越过配置比例后，聊天框出现压缩按钮">
 
+<img src="../../docs/screenshots/context-guard-settings.png" width="480" alt="提醒比例可在设置中按偏好调整(0.01–1)">
+
 ## 特性
 
 - **输入框里的压缩按钮**——低于阈值时隐藏，越过后以琥珀警示色自动出现。

@@ -6,6 +6,14 @@
 
 <img src="../../docs/screenshots/message-actions1.png" width="480" alt="用户消息上的复制/编辑/撤回操作行">
 
+<img src="../../docs/screenshots/message-actions2.png" width="480" alt="原位编辑:保存后以新消息重新发送,被编辑消息不再进入模型上下文">
+
+<img src="../../docs/screenshots/message-actions3.png" width="480" alt="撤回前的确认弹窗,说明影响范围">
+
+<img src="../../docs/screenshots/message-actions4.png" width="480" alt="撤回后折叠成分隔线,可一键恢复到对话末尾">
+
+<img src="../../docs/screenshots/message-actions5.png" width="480" alt="恢复后消息原样回到对话">
+
 ## 特性
 
 - **每条用户消息都有操作行**——用户气泡与已吸入轮次的 steering 消息带复制、编辑、撤回操作。

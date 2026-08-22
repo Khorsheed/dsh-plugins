@@ -8,6 +8,8 @@ A status-ambience plugin for the dsh web GUI: while any session is running, the 
 
 <img src="../../docs/screenshots/whalesong1.png" width="480" alt="sidebar droplets while tasks run">
 
+<img src="../../docs/screenshots/whalesong2.png" width="480" alt="a chime when the run finishes, and the tab icon changes with it">
+
 ## Features
 
 - **Favicon waterline bubbles (primary indicator)** — the tab icon animates while anything runs and rests as a static, page-palette-matched whale when idle (the stock icon's OS-driven `prefers-color-scheme` can render an invisible white whale on light pages).

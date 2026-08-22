@@ -6,6 +6,10 @@ Preview your session's files right in the dsh web GUI — no IDE needed. A 产�
 
 <img src="../../docs/screenshots/file-preview1.png" width="480" alt="previewing a markdown file rendered as a document">
 
+<img src="../../docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
+
+<img src="../../docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+
 ## Features
 
 - **Produced tab** — every file the session wrote or edited, latest activity first, with an all-files toggle.
