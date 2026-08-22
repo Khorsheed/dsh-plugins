@@ -34,6 +34,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
 
 /** Quote one TOML basic string for the `-c` config override. */
@@ -48,11 +50,70 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /**
+ * Member channel registration for one codex process lifetime: mint the
+ * per-run token and build the bridge MCP declaration as a per-process `-c`
+ * config override (codex takes inline TOML — spike-verified end-to-end
+ * against the real CLI on 2026-08-20, including the model-call leg).
+ * `default_tools_approval_mode="approve"` is required: codex's stable MCP
+ * elicitation gate auto-cancels tools lacking a readOnlyHint in
+ * non-interactive mode ("user cancelled MCP tool call"), and the bridge's
+ * member_message is a write tool. Nothing is written to the scoped home, so
+ * there is nothing to prune at settle; `release` only invalidates the token.
+ * Returns undefined when the mounted core predates the member channel
+ * (declare-and-degrade: the run proceeds unchanged). The exec driver
+ * registers per round; the live driver registers per resident process and
+ * releases on reclaim.
+ */
+export interface CodexMemberRunHandle {
+  readonly token: string
+  readonly configOverride: string
+  bind(pid: number): void
+  release(): void
+}
+
+/** Register one member run with the channel; see {@link CodexMemberRunHandle}. */
+export function registerCodexMemberRun(
+  ctx: Context,
+  childSessionId: string,
+  parentSessionId: string,
+): CodexMemberRunHandle | undefined {
+  const registry = ctx.localAgent
+  if (
+    typeof registry.registerMemberRun !== 'function'
+    || typeof registry.memberBridgeSocketPath !== 'function'
+    || typeof registry.memberBridgeCommand !== 'function'
+  ) return undefined
+  const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: 'codex-local' })
+  // Dashed server names are valid TOML bare keys (spike-verified parse).
+  const serverName = `dsh-member-${token.slice(0, 8)}`
+  const bridge = registry.memberBridgeCommand()
+  const configOverride = `mcp_servers.${serverName}={`
+    + `command=${tomlString(bridge.command)},`
+    + `args=[${bridge.args.map(tomlString).join(',')}],`
+    + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
+    + `default_tools_approval_mode=${tomlString('approve')}`
+    + `}`
+  let released = false
+  return {
+    token,
+    configOverride,
+    bind: pid => registry.bindMemberRunPid(token, pid),
+    release: () => {
+      if (released) return
+      released = true
+      registry.unregisterMemberRun(token)
+    },
+  }
+}
+
+/**
  * One-shot and resumable Codex CLI subagent provider: every accepted FRESH run
  * starts a `codex exec` process in the delegating Session's workspace, under
  * the harness scoped home; a resume round (the family tool's staged resume
  * intent) continues the SAME thread with `codex exec --json resume <thread_id>`
- * inside the SAME dsh child session.
+ * inside the SAME dsh child session. With the live driver configured
+ * (`live: true`), rounds instead go to the resident app-server process (see
+ * live-driver.ts); the exec path below stays the fallback.
  */
 export class CodexCliProvider implements SubagentProvider {
   readonly name = 'codex-local'
@@ -62,52 +123,15 @@ export class CodexCliProvider implements SubagentProvider {
   constructor(
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
+    private readonly live?: CodexLiveDriver,
   ) {}
 
-  /**
-   * Register one run with the member channel and prepare the bridge MCP
-   * declaration as a per-process `-c` config override (codex takes inline
-   * TOML — spike-verified end-to-end against the real CLI on 2026-08-20,
-   * including the model-call leg). `default_tools_approval_mode="approve"` is
-   * required: codex's stable MCP elicitation gate auto-cancels tools lacking
-   * a readOnlyHint in non-interactive exec mode ("user cancelled MCP tool
-   * call"), and the bridge's member_message is a write tool. Nothing is
-   * written to the scoped home, so there is nothing to prune at settle;
-   * `release` only invalidates the token. Returns undefined when the mounted
-   * core predates the member channel (declare-and-degrade: the run proceeds
-   * unchanged).
-   */
+  /** Per-round member-channel registration for the exec path (see {@link registerCodexMemberRun}). */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
-  ): { token: string; configOverride: string; bind(pid: number): void; release(): void } | undefined {
-    const registry = this.ctx.localAgent
-    if (
-      typeof registry.registerMemberRun !== 'function'
-      || typeof registry.memberBridgeSocketPath !== 'function'
-      || typeof registry.memberBridgeCommand !== 'function'
-    ) return undefined
-    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
-    // Dashed server names are valid TOML bare keys (spike-verified parse).
-    const serverName = `dsh-member-${token.slice(0, 8)}`
-    const bridge = registry.memberBridgeCommand()
-    const configOverride = `mcp_servers.${serverName}={`
-      + `command=${tomlString(bridge.command)},`
-      + `args=[${bridge.args.map(tomlString).join(',')}],`
-      + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
-      + `default_tools_approval_mode=${tomlString('approve')}`
-      + `}`
-    let released = false
-    return {
-      token,
-      configOverride,
-      bind: pid => registry.bindMemberRunPid(token, pid),
-      release: () => {
-        if (released) return
-        released = true
-        registry.unregisterMemberRun(token)
-      },
-    }
+  ): CodexMemberRunHandle | undefined {
+    return registerCodexMemberRun(this.ctx, childSessionId, parentSessionId)
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -133,9 +157,6 @@ export class CodexCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
-    // Member channel: register this run and carry the bridge declaration on
-    // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -159,6 +180,35 @@ export class CodexCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Live driver: the round goes to the resident app-server process (one per
+    // member). A channel that fails at spawn/handshake falls through to the
+    // exec one-shot below — and stays there until the breaker cools down.
+    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+      try {
+        return await this.live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          parentSessionId: request.parent.session.id,
+          // The thread id arrives with thread/start (server-assigned), far
+          // earlier than the exec path's settle-time parse.
+          onThreadId: (threadId) => {
+            this.ctx.localAgent.recordDelegation({
+              childSessionId: runId,
+              provider: this.name,
+              parentSessionId: request.parent.session.id,
+              cliSessionId: threadId,
+            })
+          },
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+        this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     // Resolve the effective custom endpoint from the scoped config.toml for
     // diagnostics: codex reads it directly (a user manually editing the
     // config to route through a custom provider is authoritative). Log it so
@@ -217,9 +267,6 @@ export class CodexCliProvider implements SubagentProvider {
         `subagent-codex: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -229,24 +276,54 @@ export class CodexCliProvider implements SubagentProvider {
         )
       }
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      // Live driver: continue the member's resident app-server thread. Channel
+      // spawn/handshake failure falls through to the exec one-shot below.
+      if (this.live !== undefined && !this.live.disabled) {
+        try {
+          const liveRun = await this.live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            parentSessionId: request.parent.session.id,
+            resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+          this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
       const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
-      const run = await startCodexCliRun(request, {
-        cwd: parentCwd,
-        env: { CODEX_HOME: homeDir },
-        endpointLabel: baseUrl,
-        sandbox: this.sandbox,
-        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-        spawn: spec => this.ctx.subprocess.spawn(spec),
-        onError: (error: unknown, stopReason) => {
-          this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-        },
-        onSpawned: (pid) => { member?.bind(pid) },
-        ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
-        childSession,
-        ctx: this.ctx,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-      })
+      let run: SubagentRun
+      try {
+        run = await startCodexCliRun(request, {
+          cwd: parentCwd,
+          env: { CODEX_HOME: homeDir },
+          endpointLabel: baseUrl,
+          sandbox: this.sandbox,
+          disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+          spawn: spec => this.ctx.subprocess.spawn(spec),
+          onError: (error: unknown, stopReason) => {
+            this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+          },
+          onSpawned: (pid) => { member?.bind(pid) },
+          ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
+          childSession,
+          ctx: this.ctx,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+        })
+      } catch (error) {
+        member?.release()
+        throw error
+      }
       void run.result.then(
         () => {
           this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
@@ -260,7 +337,6 @@ export class CodexCliProvider implements SubagentProvider {
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -690,8 +766,8 @@ export function startCodexCliRun(
 }
 
 /** Fold one transcript line into the child session as one assistant step. */
-function appendCodexLine(
-  spec: CodexCliRunSpec,
+export function appendCodexTranscriptLine(
+  childSession: Session,
   turn: number,
   step: number,
   line: CodexTranscriptLine,
@@ -702,7 +778,7 @@ function appendCodexLine(
     : line.kind === 'tool'
       ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
       : [{ type: 'text' as const, text: line.text }]
-  spec.childSession?.append('assistant/message', {
+  childSession.append('assistant/message', {
     turn,
     step,
     message: createAssistantMessage({
@@ -713,8 +789,20 @@ function appendCodexLine(
   }, { surfaceOp: 'append' })
 }
 
+/** Fold one transcript line into the run's child session as one assistant step. */
+function appendCodexLine(
+  spec: CodexCliRunSpec,
+  turn: number,
+  step: number,
+  line: CodexTranscriptLine,
+  usage: TokenUsage | undefined,
+): void {
+  if (spec.childSession === undefined) return
+  appendCodexTranscriptLine(spec.childSession, turn, step, line, usage)
+}
+
 /** The delta-progress text for one transcript line. */
-function codexLineText(line: CodexTranscriptLine): string {
+export function codexLineText(line: CodexTranscriptLine): string {
   return line.kind === 'tool'
     ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}`
     : line.text

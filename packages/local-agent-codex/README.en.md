@@ -40,6 +40,9 @@ Optional, in the profile patch layer:
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec policy: read-only | workspace-write | danger-full-access
+    live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
+    liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
+    liveMirrorGranularity: event  # live mirror granularity; token additionally appends assistant/chunk deltas (write amplification — opt-in)
 ```
 
 ## Custom endpoint
@@ -84,6 +87,8 @@ The last line selects the provider for delegations; keep the rest of the file in
 **Event-stream mirror.** The subagent session mirrors the `codex exec --json` stream in order: `reasoning` → reasoning blocks, `agent_message` → reply text, `command_execution`/`web_search_call`/`function_call_output` → tool lines (`[工具 Bash] <command> → output`); the final `agent_message` is the run output and the round's usage rides the last mirrored assistant message. Resumed rounds append their own turn without duplication. Aborting settles the tool result immediately while keeping the events and usage already received.
 
 **Model experience.** Each delegation is a fresh one-shot `codex exec` in the delegating session's workspace. The parent submits only the task text and sees only the final answer or the exact error — Codex commentary, tool activity, and workspace diffs never cross into the parent session, and child tokens never enter the parent's context.
+
+**Live driver (`live: true`).** Replaces the per-round spawn: the member's first delegation brings up one resident `codex app-server --stdio` process (same scoped home, same `-c` member-bridge declaration), creates a persisted thread (`thread/start` with `ephemeral: false`), and every later round is a `turn/start` to that living runtime; `item/completed` events fold into the child session as they arrive (same `CodexTranscriptLine` fold and append core as exec, the last line held back until `turn/completed` to carry usage), and `cancel` lands as `turn/interrupt` — the process survives and the thread stays continuable. Approval-shaped server→client requests are auto-answered unattended (cancel/decline, matching exec behavior). Runtimes are reclaimed after an idle timeout (the app-server wire has no shutdown method: stdin EOF → SIGTERM ladder); after a crash the next round re-spawns and `thread/resume`s the on-disk thread; a handshake failure trips a cooldown breaker and falls back to exec per round.
 
 **Accounting.** The provider opens `turn/start` at spawn and closes `turn/end` at settle — including on `error`/`aborted` — so `subagentTiming` duration equals real CLI runtime; the final assistant message carries token usage parsed from the event stream. Codex's `input_tokens` includes cache hits, so the uncached bucket is `input_tokens − cached_input_tokens`, `cached_input_tokens` maps to cache read, and there is no cache-write concept — the `tokenUsage` projection never double-counts cache hits. Resumed rounds repeat this under their own turn number.
 

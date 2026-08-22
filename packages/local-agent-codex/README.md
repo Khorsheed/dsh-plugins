@@ -40,6 +40,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec 策略:read-only | workspace-write | danger-full-access
+    live: false                # 长驻驱动:每成员常驻一个 codex app-server 进程,按轮发 turn(runtime 级优雅中断、事件推送镜像);关闭或通道不可用即回一次性 exec
+    liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
+    liveMirrorGranularity: event  # live 镜像粒度;token 额外写入 assistant/chunk 增量(写放大,opt-in)
 ```
 
 ## 自定义端点
@@ -84,6 +87,8 @@ model_provider = "dsh-router"
 **事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。中止会让工具结果立即 settle，并保留已收到的事件与用量。
 
 **模型体验。** 每次委派都是委派 Session 工作区内一个全新的一次性 `codex exec` 进程。父级只提交任务文本、只看到最终回答或精确错误——Codex 的评论、工具活动、工作区 diff 不会跨进父级会话，子会话 token 也永不进入父级上下文。
+
+**长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `codex app-server --stdio` 进程（同 scoped home、同 `-c` 成员桥声明），创建持久线程（`thread/start`，`ephemeral: false`），之后每轮 = 向活着的 runtime 发 `turn/start`；`item/completed` 事件即时折进子会话（与 exec 共享同一 `CodexTranscriptLine` 折叠与 append 核，最后一行留置到 `turn/completed` 以挂用量），`cancel` 落地为 `turn/interrupt`——进程不死、线程可续。审批类 server→client 请求按无人值守策略自动应答（cancel/decline，与 exec 行为一致）。runtime 空闲超时回收（app-server 无 shutdown 方法：stdin EOF → SIGTERM 阶梯），崩溃后下一轮自动重连并 `thread/resume` 盘上线程；握手失败进冷却熔断，逐轮回退 exec。
 
 **委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。
 
