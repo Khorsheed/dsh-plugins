@@ -40,13 +40,15 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm run build:lib:host
 
-      - name: Install (repo)
-        run: pnpm install --frozen-lockfile
-
+      # Before the repo install: taskpilot's prepare builds, and the build
+      # needs the gitignored harness paths file.
       - name: Generate taskpilot harness type paths
         run: node scripts/sync-harness-paths.mjs
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Install (repo)
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm run build
