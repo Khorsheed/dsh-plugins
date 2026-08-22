@@ -311,8 +311,29 @@ describe('DispatchEngine (real composition)', () => {
       ok: true,
       value: { runs: [{ member: 'main', state: 'failed', error: 'the room session has no live agent' }] },
     })
-    // A failed run leaves the auto-opened task open for the human.
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'main', status: 'in_progress' }] } })
+    // A failed run closes the auto-opened task as failed — the board shows
+    // the failed row for the human (never a stranded spinning in_progress).
+    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'main', status: 'failed' }] } })
+  })
+
+  it('a failed task stays human-actionable: closeTask dismisses it to cancelled', async () => {
+    const bench = await bootRoom({ liveAgent: false })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@main 在吗' })
+    await bench.service.engine.idle()
+    const before = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!before.ok) throw new Error('narrowing')
+    const task = before.value.tasks[0]!
+    expect(task.status).toBe('failed')
+    // The board's [关闭]: a failed task is NOT task-closed — it closes to cancelled.
+    expect(await bench.service.closeTask({ sessionId: bench.sessionId, taskId: task.id, status: 'cancelled' }))
+      .toEqual({ ok: true, value: { id: task.id } })
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({
+      ok: true,
+      value: { tasks: [{ id: task.id, status: 'cancelled' }] },
+    })
+    // Closed for real now: a second close is the usual task-closed rejection.
+    expect(await bench.service.closeTask({ sessionId: bench.sessionId, taskId: task.id }))
+      .toEqual({ ok: false, error: { code: 'task-closed' } })
   })
 
   it('fails the run when the facade vanishes mid-flight', async () => {
@@ -326,7 +347,10 @@ describe('DispatchEngine (real composition)', () => {
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     expect(state).toMatchObject({
       ok: true,
-      value: { runs: [{ member: 'ada', state: 'failed', error: 'the local-agent delegation facade is unavailable' }] },
+      value: {
+        runs: [{ member: 'ada', state: 'failed', error: 'the local-agent delegation facade is unavailable' }],
+        tasks: [{ member: 'ada', status: 'failed' }],
+      },
     })
   })
 

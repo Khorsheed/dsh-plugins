@@ -558,7 +558,9 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Close an open task (done by default, or cancelled).
+   * Close an open task (done by default, or cancelled). A failed task is
+   * still open for closing — that is the human's dismiss path after a
+   * failed run (the board's [关闭] passes 'cancelled').
    * @param request - room session, task id, optional closing status.
    * @returns the closed task's id, or a rejection.
    */

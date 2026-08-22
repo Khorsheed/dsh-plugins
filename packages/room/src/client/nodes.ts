@@ -83,7 +83,7 @@ export interface RoomTaskLineData {
   readonly taskId: string
   readonly member: string
   readonly title: string
-  readonly status: 'pending' | 'in_progress' | 'done' | 'cancelled'
+  readonly status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'failed'
 }
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {

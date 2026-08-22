@@ -451,6 +451,11 @@
   color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
 }
 
+/* Failed: the error tone (no spin, no strike — a terminal loud state). */
+.glyphFailed {
+  color: var(--dsw-alias-state-error-primary, rgb(236, 19, 19));
+}
+
 .glyphProgress {
   color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
   animation: room-task-progress-spin 1s linear infinite;

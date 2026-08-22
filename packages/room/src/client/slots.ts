@@ -41,8 +41,12 @@ export interface RoomTasksInjected {
   readonly roomStore: RoomStore
   /** Add a pending task to a member's lane, optionally waiting on another member. */
   readonly addTask: (member: string, title: string, blockedBy?: string) => Promise<RoomMutationOutcome>
-  /** Close an open task (done). */
-  readonly closeTask: (taskId: string) => Promise<RoomMutationOutcome>
+  /**
+   * Close an open task. The status is the closing state: 'done' by default;
+   * the failed row's [关闭] passes 'cancelled' — the failure already speaks
+   * for itself, and a failed task must not count as goal progress.
+   */
+  readonly closeTask: (taskId: string, status?: 'done' | 'cancelled') => Promise<RoomMutationOutcome>
   /** Set (or, with a blank text, clear) the room's goal. */
   readonly setGoal: (text: string) => Promise<RoomMutationOutcome>
 }

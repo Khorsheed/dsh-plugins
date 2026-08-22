@@ -131,8 +131,13 @@ export interface RoomRelayResolvedEvent {
   readonly state: 'confirmed' | 'dismissed' | 'sent'
 }
 
-/** Task-board task statuses. */
-export type RoomTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled'
+/**
+ * Task-board task statuses. `failed` is terminal-from-the-engine (the run
+ * settle writes it) but stays human-actionable: the board keeps the row
+ * visible until the human dismisses it (closeTask → cancelled) or
+ * re-dispatches.
+ */
+export type RoomTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'failed'
 
 /**
  * The room's goal was set (or cleared: an empty text). Log-only; the journal
@@ -159,10 +164,14 @@ export interface RoomTaskAddedEvent {
   readonly blockedBy?: string
 }
 
-/** A task changed status (speech settle closes it; the human manages the rest). */
+/**
+ * A task changed status (a run settle closes the auto-opened task to the
+ * run's own terminal state — done/cancelled/failed; the human manages the
+ * rest).
+ */
 export interface RoomTaskUpdatedEvent {
   readonly id: string
-  readonly status: 'in_progress' | 'done' | 'cancelled'
+  readonly status: 'in_progress' | 'done' | 'cancelled' | 'failed'
 }
 
 /**
@@ -275,7 +284,8 @@ export interface RoomState {
 
 /**
  * The goal progress pair: done tasks over the COUNTABLE total — cancelled
- * tasks leave the denominator (a cancelled task was never part of the plan).
+ * and failed tasks leave the denominator (a cancelled task was never part of
+ * the plan; a failed one never advanced it).
  */
 export interface RoomTaskProgress {
   readonly done: number

@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RoomDockCapsules } from '../src/client/RoomDockCapsules.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
@@ -204,6 +204,37 @@ describe('RoomDockCapsules', () => {
     // → capsules → input card), so the composer-anchored row never moves
     // when the panel grows above it.
     expect(card.compareDocumentPosition(capsule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a failed task: error glyph, 失败 label, [关闭] closing to cancelled — and it drives neither the count nor the runners', async () => {
+    const { closeTask } = await bench({
+      state: {
+        ...STATE,
+        tasks: [
+          { id: 't1', member: 'ada', title: '出方案', status: 'in_progress', updatedAt: NOW - 60_000 },
+          { id: 't2', member: 'bill', title: '调接口', status: 'failed', updatedAt: NOW - 3 * 60_000 },
+        ],
+      },
+    })
+    // The capsule: open count pending+in_progress only, runners in_progress
+    // only — a failed task drives neither (no sweeping glare, no 在做).
+    const capsule = screen.getByRole('button', { name: '任务' })
+    expect(capsule.getAttribute('data-running')).toBe('true')
+    expect(capsule.textContent).toContain('1')
+    expect(capsule.textContent).toContain('ada')
+    expect(capsule.textContent).not.toContain('bill')
+    fireEvent.click(capsule)
+    // The failed row: 失败 meta, NO [完成], a [关闭] that closes to cancelled.
+    const row = screen.getByText('调接口').closest('li')!
+    expect(row.textContent).toContain('失败')
+    expect(row.querySelector('[class*="_glyphFailed"]')).not.toBeNull()
+    expect(row.querySelector('[class*="_glyphProgress"]')).toBeNull()
+    expect(screen.getAllByRole('button', { name: '完成' })).toHaveLength(1)
+    fireEvent.click(within(row).getByRole('button', { name: '关闭' }))
+    await waitFor(() => { expect(closeTask).toHaveBeenCalledWith('t2', 'cancelled') })
+    // The goal ring excludes the failed task from the denominator too.
+    const goal = screen.getByRole('button', { name: '目标' })
+    expect(goal.textContent).toContain('0%')
   })
 
   it('a click outside collapses the expanded card', async () => {

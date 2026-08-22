@@ -241,12 +241,13 @@ export function replay(events: readonly SessionEvent[]): RoomState {
 
 /**
  * The goal progress pair: done tasks over the COUNTABLE total — cancelled
- * tasks leave the denominator (a cancelled task was never part of the plan).
+ * and failed tasks leave the denominator (a cancelled task was never part
+ * of the plan; a failed one was planned but never advanced it).
  * @param tasks - the folded task board.
  * @returns done/total.
  */
 export function taskProgress(tasks: readonly RoomTask[]): RoomTaskProgress {
-  const countable = tasks.filter(task => task.status !== 'cancelled')
+  const countable = tasks.filter(task => task.status !== 'cancelled' && task.status !== 'failed')
   return { done: countable.filter(task => task.status === 'done').length, total: countable.length }
 }
 

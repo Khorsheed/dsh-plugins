@@ -161,9 +161,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       void roomStore.refresh(sessionId)
       return { ok: true }
     },
-    closeTask: async (taskId) => {
+    closeTask: async (taskId, status) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.closeTask({ sessionId, taskId })
+      const carried = await remote.closeTask({
+        sessionId, taskId, ...status === undefined ? {} : { status },
+      })
       if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
       void roomStore.refresh(sessionId)
       return { ok: true }

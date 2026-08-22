@@ -209,16 +209,18 @@ describe('replay (pure journal fold)', () => {
     ])
   })
 
-  it('taskProgress counts done over the countable total (cancelled leaves the denominator)', () => {
+  it('taskProgress counts done over the countable total (cancelled and failed leave the denominator)', () => {
     resetSeq()
     const state = replay([
       ev('room/task-added', { id: 't1', member: 'ada', title: '一', status: 'pending' }),
       ev('room/task-added', { id: 't2', member: 'ada', title: '二', status: 'pending' }),
       ev('room/task-added', { id: 't3', member: 'ada', title: '三', status: 'pending' }),
       ev('room/task-added', { id: 't4', member: 'ada', title: '四', status: 'pending' }),
+      ev('room/task-added', { id: 't5', member: 'ada', title: '五', status: 'pending' }),
       ev('room/task-updated', { id: 't1', status: 'done' }),
       ev('room/task-updated', { id: 't2', status: 'done' }),
       ev('room/task-updated', { id: 't3', status: 'cancelled' }),
+      ev('room/task-updated', { id: 't4', status: 'failed' }),
     ])
     expect(taskProgress(state.tasks)).toEqual({ done: 2, total: 3 })
     expect(taskProgress([])).toEqual({ done: 0, total: 0 })

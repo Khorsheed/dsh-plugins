@@ -271,9 +271,12 @@ export class DispatchEngine {
    * Append a terminal run-state edge, unless a cancel() already moved THIS
    * run (same startedAt) to a terminal state — the first terminal edge wins.
    * A settle also closes the member's open in_progress task (the dispatch
-   * auto-opened it): done on a completed run, cancelled on an abort; a failed
-   * run leaves the task for the human. A failed settle carries the human-
-   * readable reason on the edge (the client's dim row surfaces it).
+   * auto-opened it) to the run's OWN terminal state: done on a completed
+   * run, cancelled on an abort, failed on a fault. A failed task stays on
+   * the board for the human — visible as failed, never spinning — until
+   * they dismiss it (closeTask) or re-dispatch. A failed settle carries
+   * the human-readable reason on the edge (the client's dim row surfaces
+   * it).
    */
   private async settle(
     room: Session, memberName: string, startedAt: number,
@@ -285,11 +288,9 @@ export class DispatchEngine {
       member: memberName, state, startedAt, elapsedMs: Date.now() - startedAt,
       ...error === undefined ? {} : { error },
     })
-    if (state === 'done' || state === 'cancelled') {
-      for (const task of replay(room.events).tasks) {
-        if (task.member === memberName && task.status === 'in_progress') {
-          room.append('room/task-updated', { id: task.id, status: state })
-        }
+    for (const task of replay(room.events).tasks) {
+      if (task.member === memberName && task.status === 'in_progress') {
+        room.append('room/task-updated', { id: task.id, status: state })
       }
     }
     await this.ctx.sessions.flush(room)

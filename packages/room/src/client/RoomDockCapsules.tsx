@@ -28,8 +28,10 @@
  * selected one takes a tinted fill of the member color — no outline) with the
  * ＋添加 trigger at its right end, small-caps tertiary group headers, and task
  * rows (colored status icon — business-primary half-ring for in_progress,
- * tertiary empty ring for pending, filled check for done — + title + member
- * chip + right-aligned tertiary status/relative time + a row-end [完成]).
+ * tertiary empty ring for pending, filled check for done, filled error × for
+ * failed — + title + member chip + right-aligned tertiary status/relative
+ * time + a row-end [完成]; a failed row's action is [关闭], dismissing to
+ * cancelled — the run did not finish, so it never closes done).
  * Closing a task plays a restrained completion beat (the check pops, the
  * title's strike draws in, <300ms, reduced-motion safe) — the row remounts on
  * a status change (`key = id:status`) so the CSS animation replays. A blocked
@@ -67,6 +69,7 @@ function statusLabel(status: RoomTask['status'], t: RoomDockCapsulesProps['t']):
     case 'in_progress': return t('tasks.status.in_progress')
     case 'done': return t('tasks.status.done')
     case 'cancelled': return t('tasks.status.cancelled')
+    case 'failed': return t('tasks.status.failed')
   }
 }
 
@@ -119,12 +122,28 @@ function CancelledGlyph() {
   )
 }
 
+/** Failed: filled error circle, × cut in the card surface tone (DoneGlyph's cutout idiom). */
+function FailedGlyph() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden="true" className={css.glyphFailed}>
+      <circle cx="7" cy="7" r="7" fill="currentColor" />
+      <path
+        d="M4.8 4.8L9.2 9.2M9.2 4.8L4.8 9.2"
+        stroke="var(--dsw-specific-menu, var(--dsw-alias-bg-base, #ffffff))"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function StatusGlyph({ status }: { status: RoomTask['status'] }) {
   switch (status) {
     case 'done': return <DoneGlyph />
     case 'in_progress': return <ProgressGlyph />
     case 'pending': return <PendingGlyph />
     case 'cancelled': return <CancelledGlyph />
+    case 'failed': return <FailedGlyph />
   }
 }
 
@@ -201,6 +220,19 @@ function TaskRow({ task, tasks, now, closeTask, t }: {
           onClick={() => { void closeTask(task.id) }}
         >
           {t('tasks.close')}
+        </button>
+      )}
+      {/* A failed row never offers [完成] — the run did not finish, so a
+          done-close would fake goal progress. Its [关闭] dismisses the row
+          to cancelled; the failure stays the record. Re-dispatch is a fresh
+          @-message, not a board action. */}
+      {task.status === 'failed' && (
+        <button
+          type="button"
+          className={css.action}
+          onClick={() => { void closeTask(task.id, 'cancelled') }}
+        >
+          {t('tasks.dismiss')}
         </button>
       )}
     </li>
