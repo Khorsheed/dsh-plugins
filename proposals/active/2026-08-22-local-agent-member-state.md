@@ -78,6 +78,7 @@
 
 - M1 member dock 已落地（分支 `local-agent-member-state`）：`packages/local-agent/src/client/member-dock.ts` 贡献者注册表（`(projections, t) => line | null`，登记序渲染、无数据整行隐藏、空栈不渲染），stats 贡献者自 member-channel 的统计行迁入（行为逐字节不变），dock 渲染于卡片下方、行样式取官方 StatsLine 指标；降级只读分支无 dock。Agent Note：`.agents/notes/implemented/feature/2026-08-22-local-agent-member-dock.md`。
 - M2 dsh 透传 + 任务行已落地：镜像放行 `todo/write`（standing 整表快照，last-wins 冪等——重复趟不复制相同快照、中间快照不进日志），member dock 新增 tasks 贡献者（`任务 <done>/<total> · 进行中：<标题>`，读 `todos` 投影，登记在 stats 之后）。全链路打通：成员 CLI 任务状态 → 成员子会话 `todo/write` → dock 任务行。Agent Note：`.agents/notes/implemented/feature/2026-08-22-local-agent-member-tasks.md`。
+- M3 claude 适配器已落地：TodoWrite 在共享折叠层拦截翻译（live + settle 两路，全日志 JSON 比较冪等，跨轮重建），形态歪斜降级为文本折叠 + 告警。注意：真实 CLI 探针因凭证失效未完成（scoped home OAuth 过期），适配器以文档化 schema 为准 + 失败软化；拿到真实捕获后需重新钉住金样。
 - 依赖与邻接：member-channel 提案（MemberComposer 宿主、统计行更正记录）；live-driver 提案（§3 的顺序约定；后台 bash 归属）。
 - 讨论来源：2026-08-22 与 room/用户的展示层对齐（taskpilot 口径不合、room 任务板概念不同、fallback 隐藏两次实锤）；同日的协作分工决定（本提案归 local-agent 家族线，live-driver 归另一 agent，互为验收方，折叠层为共享契约）与消息格式适配核查（官方 subagent-codex 无结构化镜像可参照）。
 

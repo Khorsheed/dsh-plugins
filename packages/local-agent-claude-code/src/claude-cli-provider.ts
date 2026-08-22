@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import {
   NO_START_CAPABILITIES,
   settleRunResult,
@@ -360,6 +361,58 @@ interface ClaudeStreamFoldState {
   error: string | undefined
   /** Whether the stream's terminal `result` event was folded. */
   completed: boolean
+  /**
+   * The last TodoWrite translation (last-wins within the stream). TodoWrite
+   * blocks are intercepted BEFORE the text fold — the member's task list
+   * crosses as a native `todo/write` snapshot, never a `[工具 TodoWrite]` line.
+   */
+  todos: TodoItem[] | undefined
+  /** A TodoWrite whose input missed the documented shape (degraded to the text fold). */
+  todoSkew: boolean
+}
+
+/**
+ * Translate one TodoWrite tool input into the dsh whole-list snapshot.
+ * Claude's documented schema is `{todos: [{content, status, activeForm}]}`
+ * with status `pending | in_progress | completed` — dsh's TodoItem vocabulary
+ * minus `activeForm` (display-only). Unknown statuses map to `pending`; a
+ * shape-skewed input returns undefined and the caller degrades to the plain
+ * text fold — shape skew must never throw into the mirror.
+ * @param input - the tool_use block's `input` payload.
+ * @returns the dsh todo list, or undefined on shape skew.
+ */
+export function todosFromTodoWrite(input: unknown): TodoItem[] | undefined {
+  if (typeof input !== 'object' || input === null) return undefined
+  const todos = (input as { todos?: unknown }).todos
+  if (!Array.isArray(todos)) return undefined
+  const out: TodoItem[] = []
+  for (const item of todos) {
+    if (typeof item !== 'object' || item === null) return undefined
+    const content = (item as { content?: unknown }).content
+    if (typeof content !== 'string' || content.trim() === '') return undefined
+    const status = (item as { status?: unknown }).status
+    out.push({ content, status: status === 'in_progress' || status === 'completed' ? status : 'pending' })
+  }
+  return out
+}
+
+/**
+ * Append the todo/write snapshot unless the child session's last snapshot is
+ * identical — the M2 dsh mirror's JSON-comparison idempotency: repeated passes
+ * over the same state never duplicate it. The comparison base is the whole
+ * log, not the current round: a standing whole-list snapshot has no round
+ * scope, so a resume round with an unchanged list re-appends nothing and the
+ * earlier round's list keeps standing.
+ * @param childSession - the parent-side dsh subagent session.
+ * @param todos - the translated whole list.
+ * @returns whether a snapshot was appended.
+ */
+function appendTodosIfChanged(childSession: Session, todos: TodoItem[]): boolean {
+  const last = childSession.events.filter(event => event.type === 'todo/write').at(-1)
+  if (last !== undefined && JSON.stringify(last.data) === JSON.stringify({ todos })) return false
+  // todo/write's append takes no surface options (log-only UI state).
+  childSession.append('todo/write', { todos })
+  return true
 }
 
 /**
@@ -412,6 +465,15 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
       state.lines.push({ kind: 'think', text: record['thinking'] as string })
     } else if (kind === 'tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
+      if (name === 'TodoWrite') {
+        const todos = todosFromTodoWrite(record['input'])
+        if (todos !== undefined) {
+          state.todos = todos
+          continue // intercepted before the text fold
+        }
+        // Shape skew: degrade to the plain text fold; the mirror paths warn.
+        state.todoSkew = true
+      }
       const detail = inputDetail(record['input'])
       state.lines.push({
         kind: 'tool',
@@ -446,6 +508,8 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
   sessionId: string | undefined
   error: string | undefined
   completed = false
+  todos: TodoItem[] | undefined
+  todoSkew = false
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
   push(chunk: string): void {
@@ -475,6 +539,10 @@ export function parseClaudeStreamJson(output: string): {
   usage?: TokenUsage
   error?: string
   sessionId?: string
+  /** The stream's last TodoWrite translation, when one was folded. */
+  todos?: TodoItem[]
+  /** Whether a shape-skewed TodoWrite degraded to the text fold. */
+  todoSkew?: boolean
 } {
   const state: ClaudeStreamFoldState = {
     lines: [],
@@ -483,6 +551,8 @@ export function parseClaudeStreamJson(output: string): {
     sessionId: undefined,
     error: undefined,
     completed: false,
+    todos: undefined,
+    todoSkew: false,
   }
   for (const raw of output.split('\n')) foldClaudeStreamLine(state, raw)
   return {
@@ -491,6 +561,8 @@ export function parseClaudeStreamJson(output: string): {
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.error === undefined ? {} : { error: state.error },
     ...state.sessionId === undefined ? {} : { sessionId: state.sessionId },
+    ...state.todos === undefined ? {} : { todos: state.todos },
+    ...state.todoSkew === false ? {} : { todoSkew: true },
   }
 }
 
@@ -809,6 +881,8 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
   const ctx = spec.ctx as Context
   let mirrored = 0
   let userMirrored = false
+  let lastTodos: TodoItem[] | undefined
+  let todoSkewWarned = false
   let queue: Promise<void> = Promise.resolve()
 
   const mirror: ClaudeLiveMirror = {
@@ -820,6 +894,19 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
     },
     push(chunk) {
       parser.push(chunk)
+      // TodoWrite translations cross immediately — they are not text lines, so
+      // the mirrored/upto accounting does not see them. Reference-change is the
+      // per-push trigger; content identity vs the child log is
+      // appendTodosIfChanged's job (repeat passes over the same state do not
+      // duplicate the snapshot).
+      if (parser.todos !== undefined && parser.todos !== lastTodos) {
+        lastTodos = parser.todos
+        appendTodosIfChanged(childSession, parser.todos)
+      }
+      if (parser.todoSkew && !todoSkewWarned) {
+        todoSkewWarned = true
+        ctx.logger.warn('subagent-claude: a TodoWrite call missed the documented input shape; folded as a plain tool line')
+      }
       const upto = parser.completed ? parser.lines.length : parser.lines.length - 1
       if (upto <= mirrored) return
       void mirror.enqueue(async () => {
@@ -916,13 +1003,21 @@ async function mirrorClaudeAfterExit(
   live: ClaudeLiveMirror | undefined,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
+  const childSession = spec.childSession
   const work = async (): Promise<void> => {
     const parsed = parseClaudeStreamJson(output)
     if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
+    // TodoWrite translations that only the final transcript carries still
+    // cross; idempotency vs the live mirror's appends is appendTodosIfChanged's.
+    if (parsed.todoSkew === true) {
+      spec.ctx?.logger.warn('subagent-claude: a TodoWrite call missed the documented input shape; folded as a plain tool line')
+    }
+    if (parsed.todos !== undefined) appendTodosIfChanged(childSession, parsed.todos)
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
     // Nothing streamed at all (e.g. the CLI died before the first event):
-    // keep the pre-live-mirror behavior of recording nothing.
+    // keep the pre-live-mirror behavior of recording nothing. A todos-only
+    // stream still mirrors its snapshot (handled above).
     if (parsed.lines.length === 0 && !userMirrored) return
     const trimmed = parsed.text?.trim()
     await appendClaudeResponse(spec, task, turn, {
