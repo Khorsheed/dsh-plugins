@@ -363,12 +363,19 @@
   border-radius: 50%;
 }
 
-/* The official `.list` scroll region (180px cap) wraps the member groups. */
+/* The official `.list` scroll region (180px cap) wraps the member groups.
+   The 6px horizontal padding absorbs the rows' negative margins inside the
+   scrollport (a bare negative margin overflows `overflow-y: auto` and raises
+   a horizontal scrollbar); the countering negative margin keeps the region's
+   own box — and so the glyph alignment and the hover-fill bleed — exactly
+   where they were. */
 .groups {
   display: flex;
   flex-direction: column;
   gap: 10px;
   max-height: 180px;
+  margin: 0 -6px;
+  padding: 0 6px;
   overflow-y: auto;
 }
 
