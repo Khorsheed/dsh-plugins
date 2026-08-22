@@ -669,7 +669,10 @@ export function startClaudeCliRun(
   // --dangerously-skip-permissions but keeps the injection uniform.
   const memberArgv = spec.member === undefined
     ? []
-    : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool]
+    // `--allowedTools` is variadic and greedily consumes following argv
+    // entries — without the `--` separator it swallows the task itself and
+    // the CLI exits 1 with "Input must be provided … as a prompt argument".
+    : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool, '--']
   // --verbose is required by the CLI when --print and stream-json combine.
   const argv = spec.resume === undefined
     ? spec.permissionMode === 'skip'

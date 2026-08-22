@@ -88,6 +88,9 @@ describe('claude-cli-provider member bridge injection', () => {
     const toolsIndex = argv.indexOf('--allowedTools')
     expect(toolsIndex).toBeGreaterThan(-1)
     expect(argv[toolsIndex + 1]).toBe('mcp__dsh-member-token-xy__member_message')
+    // `--allowedTools` is variadic: a `--` separator must terminate it, or it
+    // greedily swallows the positional task and the CLI exits 1.
+    expect(argv[toolsIndex + 2]).toBe('--')
   }
 
   it('appends --mcp-config and --allowedTools to the fresh argv, binds the pid, cleans up at settle', async () => {
