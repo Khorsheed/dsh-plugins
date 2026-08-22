@@ -65,6 +65,7 @@ driver 接口预留 `onPermissionRequest` 钩子；接到后的呈现（房间�
 
 - 动机讨论：与 Agents-Anywhere connector 模型的对比评估（2026-08-19，结论是「他们的复杂度在生命周期管理，我们的优势在静止零成本与 scoped 隔离，混合驱动取两边」）。
 - 前置：delegation-api 提案 M1–M4（facade/持久化/锁/reattach）、member-channel 提案（成员 composer/桥接）——本提案对它们是透明的。
+- 协作分工（2026-08-22）：本提案由独立 agent 推进，member-state 提案由 local-agent 家族线（本会话）推进，互为验收方；共享契约是共享折叠层（member-state 的翻译规则挂在这里，本提案改它的传输），折叠层接口变更需双方确认；排期按 provider 打包（落地某家时该家的任务翻译 spike 邻近安排）。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 

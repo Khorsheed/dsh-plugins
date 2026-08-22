@@ -45,7 +45,19 @@
 - 迁移安全点：翻译规则在共享折叠层，live-driver 把镜像从拉改推时翻译零改动——这是本提案与 live-driver 之间唯一的结构约定，写死在此。
 - 后台 bash 列表归 live-driver（其验收标准已含）；成员的 token 级流式在 live 模式开启后，member dock 可加「进行中」行（数据来自 M2/M3 进度事件，/exec 时代相同）。
 
-### 4. 测试
+### 4. 消息格式适配（工具调用/思考的原生化）
+
+现状：外部 provider 的活动在子会话里大部分是平文本。kimi 已把 think 折成原生 `reasoning` 块；工具调用（含 bash）折叠为 `[工具 name] args → result` 文本行。官方无线索可抄——`subagent-codex` 不把 codex 的活动结构化进子会话（其 run.ts 只接触 SessionId，2026-08-22 核实），官方子代理面板只呈现结果。
+
+目标：把成员的工具活动写成原生 `tool/call` + `tool/result` 事件对（id 由镜像铸造），让官方聊天渲染器以工具行（可折叠、结构化参数/输出）呈现。spike 先行：向测试会话写合成 tool 事件对，验证官方渲染与 invariant/投影（turn metrics 会顺带获得 toolMs）全部安静。bash 本质是 codex/claude 的 `command_execution`/Bash 工具调用，同一映射覆盖；thinking 已解决（reasoning 块），各 provider 对齐 kimi 的做法即可。
+
+### 5. 协作分工（与 live-driver 并行推进）
+
+- 本提案由 local-agent 家族线（本会话）推进；live-driver 提案由另一个 agent 推进。**互为验收方**：各自里程碑的验收标准由对方执行；两方的 Agent Note 互审。
+- 共享结构契约 = 共享折叠层（翻译规则挂在这里，live-driver 改它的传输）：折叠层接口的变更需双方确认。
+- 排期按 provider 打包的约定不变（同一家 CLI 的协议认知一次吃透：live-driver 落地某家时，该家的任务翻译 spike 邻近安排）。
+
+### 6. 测试
 
 - member dock：贡献者注册表（空栈不渲染、无数据行隐藏、多行叠加顺序）；tasks 贡献者读投影的摘要格式。
 - 翻译适配器：每 provider 的金样测试（原生事件序列 → todo/write 快照序列）；run 间状态重建；dsh 透传的幂等（重复镜像不重复写）。
@@ -58,13 +70,14 @@
 - **M3 claude**：TodoWrite → todo/write 适配器。
 - **M4 kimi**：wire spike 定格式 → 适配器。
 - **M5 codex**：plan 格式 spike → 适配器。
+- **M6 消息格式适配**：tool/call + tool/result 原生化的 spike → 逐家接入折叠层（thinking 各家对齐 kimi 的 reasoning 块做法）。
 
 每个里程碑独立 commit + Agent Note；M4/M5 的 spike 结果若否决（格式不存在/不可用），该里程碑降级为文档记录，不阻塞其他家。
 
 ## 实现记录
 
 - 依赖与邻接：member-channel 提案（MemberComposer 宿主、统计行更正记录）；live-driver 提案（§3 的顺序约定；后台 bash 归属）。
-- 讨论来源：2026-08-22 与 room/用户的展示层对齐（taskpilot 口径不合、room 任务板概念不同、fallback 隐藏两次实锤）。
+- 讨论来源：2026-08-22 与 room/用户的展示层对齐（taskpilot 口径不合、room 任务板概念不同、fallback 隐藏两次实锤）；同日的协作分工决定（本提案归 local-agent 家族线，live-driver 归另一 agent，互为验收方，折叠层为共享契约）与消息格式适配核查（官方 subagent-codex 无结构化镜像可参照）。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 
