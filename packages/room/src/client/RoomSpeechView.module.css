@@ -100,3 +100,9 @@
     opacity: 1;
   }
 }
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.action:focus:not(:focus-visible) {
+  outline: none;
+}

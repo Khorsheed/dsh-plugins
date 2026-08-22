@@ -111,3 +111,11 @@
   opacity: 0.45;
   cursor: default;
 }
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. (The text fields carry no outline at all — their focus cue is
+   the accent border.) */
+.button:focus:not(:focus-visible),
+.primary:focus:not(:focus-visible) {
+  outline: none;
+}

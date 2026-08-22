@@ -200,7 +200,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // with the next view mount.
     roomCwd: ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd,
     openSession,
-    cancelMember: member => cancelMember(sessionId, member),
     removeMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.removeMember({ sessionId, name: member })

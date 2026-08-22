@@ -186,3 +186,11 @@
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.primary:focus:not(:focus-visible),
+.item:focus:not(:focus-visible),
+.itemActive:focus:not(:focus-visible) {
+  outline: none;
+}

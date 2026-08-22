@@ -35,3 +35,9 @@
   background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
   color: var(--dsw-alias-label-primary, rgba(30, 30, 30, 1));
 }
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.action:focus:not(:focus-visible) {
+  outline: none;
+}

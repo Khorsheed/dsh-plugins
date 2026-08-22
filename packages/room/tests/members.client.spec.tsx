@@ -24,6 +24,7 @@ const STATE: RoomState = {
     { name: 'main', kind: 'main-agent', invitedBy: 'human' },
     { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-1' as SessionId, instructions: '后端' },
     { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent', childSessionId: 'child-2' as SessionId },
+    { name: 'cathy', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
   ],
   relays: [],
   tasks: [],
@@ -41,12 +42,16 @@ const PROVIDERS: RoomProviderList = {
 interface Bench {
   face: RoomMembersInjected & {
     openSession: ReturnType<typeof vi.fn>
-    cancelMember: ReturnType<typeof vi.fn>
     removeMember: ReturnType<typeof vi.fn>
     updateMember: ReturnType<typeof vi.fn>
     invite: ReturnType<typeof vi.fn>
     listProviders: ReturnType<typeof vi.fn>
   }
+}
+
+/** The member card carrying the given name. */
+function cardOf(name: string): HTMLElement {
+  return screen.getByText(name, { selector: 'span' }).closest('[data-member]') as HTMLElement
 }
 
 /** Render the tab against a primed store and a vi.fn inject face. */
@@ -65,7 +70,6 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
     roomStore,
     roomCwd: '/home/user/room',
     openSession: vi.fn(),
-    cancelMember: vi.fn(async () => {}),
     removeMember: vi.fn(async () => ({ ok: true as const })),
     updateMember: vi.fn(async () => ({ ok: true as const })),
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
@@ -82,45 +86,67 @@ describe('MembersView', () => {
     expect(screen.getByText('此会话不是 room')).toBeDefined()
   })
 
-  it('renders roster rows with kind/provider, status, and conditional actions', async () => {
+  it('renders member cards with avatar letters, provider/kind, and status chips', async () => {
     await bench()
-    // main: kind label, no edit/remove.
-    const mainRow = screen.getByText('main').closest('div')!
-    expect(mainRow.textContent).toContain('主 agent')
-    expect(mainRow.textContent).not.toContain('编辑')
-    expect(mainRow.textContent).not.toContain('移除')
-    // ada: provider, role instructions, idle, trajectory + edit + remove.
-    const adaRow = screen.getByText('ada').closest('div')!
-    expect(adaRow.textContent).toContain('kimi')
-    expect(adaRow.textContent).toContain('后端')
-    expect(adaRow.textContent).toContain('空闲')
-    expect(adaRow.textContent).toContain('轨迹→')
-    expect(adaRow.textContent).toContain('编辑')
-    expect(adaRow.textContent).toContain('移除')
-    // bill: running with elapsed and the interrupt action.
-    const billRow = screen.getByText('bill').closest('div')!
-    expect(billRow.textContent).toContain('运行中')
-    expect(billRow.textContent).toContain('中断')
+    // main: kind label, no instructions row, no edit/remove.
+    const mainCard = cardOf('main')
+    expect(mainCard.textContent).toContain('主 agent')
+    expect(mainCard.textContent).not.toContain('未设置角色')
+    expect(mainCard.textContent).not.toContain('编辑')
+    expect(mainCard.textContent).not.toContain('移除')
+    // ada: provider, role instructions, idle chip, trajectory + edit + remove,
+    // and the avatar block carries the uppercased name.
+    const adaCard = cardOf('ada')
+    expect(adaCard.textContent).toContain('ADA')
+    expect(adaCard.textContent).toContain('kimi')
+    expect(adaCard.textContent).toContain('后端')
+    expect(adaCard.textContent).toContain('空闲')
+    expect(adaCard.textContent).toContain('轨迹→')
+    expect(adaCard.textContent).toContain('编辑')
+    expect(adaCard.textContent).toContain('移除')
+    // bill: the running chip with elapsed; no instructions → the placeholder.
+    const billCard = cardOf('bill')
+    expect(billCard.textContent).toContain('运行中')
+    expect(billCard.textContent).toContain('未设置角色')
+  })
+
+  it('carries no interrupt action — interrupt lives on the run surfaces', async () => {
+    await bench()
+    expect(screen.queryByRole('button', { name: '中断' })).toBeNull()
+    expect(screen.queryByText('中断')).toBeNull()
   })
 
   it('the trajectory action opens the child session', async () => {
     const { face } = await bench()
-    const adaRow = screen.getByText('ada').closest('div')!
-    fireEvent.click(Array.from(adaRow.querySelectorAll('button')).find(b => b.textContent === '轨迹→')!)
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '轨迹→')!)
     expect(face.openSession).toHaveBeenCalledWith('child-1')
   })
 
-  it('interrupt cancels the running member', async () => {
+  it('the running chip jumps into the member session', async () => {
     const { face } = await bench()
-    fireEvent.click(screen.getByRole('button', { name: '中断' }))
-    expect(face.cancelMember).toHaveBeenCalledWith('bill')
+    fireEvent.click(screen.getByRole('button', { name: /运行中/ }))
+    expect(face.openSession).toHaveBeenCalledWith('child-2')
+  })
+
+  it('greys the trajectory action when the member has no child session', async () => {
+    await bench()
+    const cathyCard = cardOf('cathy')
+    const trajectory = Array.from(cathyCard.querySelectorAll('button')).find(b => b.textContent === '轨迹→')!
+    expect((trajectory as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the dashed invite card opens the invite dialog', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
   })
 
   it('remove asks for confirmation first', async () => {
     const { face } = await bench()
     vi.stubGlobal('confirm', vi.fn(() => false))
-    const adaRow = screen.getByText('ada').closest('div')!
-    const removeButton = Array.from(adaRow.querySelectorAll('button')).find(b => b.textContent === '移除')!
+    const adaCard = cardOf('ada')
+    const removeButton = Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '移除')!
     fireEvent.click(removeButton)
     expect(face.removeMember).not.toHaveBeenCalled()
 
@@ -131,8 +157,8 @@ describe('MembersView', () => {
 
   it('the edit dialog saves instructions through updateMember', async () => {
     const { face } = await bench()
-    const adaRow = screen.getByText('ada').closest('div')!
-    fireEvent.click(Array.from(adaRow.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
     expect(screen.getByText('编辑 ada')).toBeDefined()
     const area = screen.getByRole('dialog').querySelector('textarea')!
     expect((area as HTMLTextAreaElement).value).toBe('后端')

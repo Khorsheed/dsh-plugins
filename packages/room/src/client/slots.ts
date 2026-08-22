@@ -107,8 +107,6 @@ export interface RoomMembersInjected {
   readonly roomCwd?: string | undefined
   /** Open a session (the member's child-session trajectory jump). */
   readonly openSession: (sessionId: SessionId) => void
-  /** Cancel the named member's in-flight run. */
-  readonly cancelMember: (member: string) => Promise<void>
   /** Remove the named member from the roster. */
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /** Rewrite the named member's role instructions. */
