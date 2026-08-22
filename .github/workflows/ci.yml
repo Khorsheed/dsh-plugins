@@ -36,9 +36,11 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm install --frozen-lockfile
 
-      - name: Build harness host libs (type seed)
+      # Host + client: taskpilot's generated paths point at the client
+      # ui-slots type lib, so host-only is not enough.
+      - name: Build harness libs (type seed)
         working-directory: deepseek-harness
-        run: pnpm run build:lib:host
+        run: pnpm run build:lib
 
       # Before the repo install: taskpilot's prepare builds, and the build
       # needs the gitignored harness paths file.
