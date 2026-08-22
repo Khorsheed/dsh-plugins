@@ -29,7 +29,18 @@ only when the plugin config supplies it. The OAuth marker in the scoped
 `.claude.json` and the keychain entry hashed to that path are precisely what
 exec's one-shot processes already use; the driver never touches the user's
 global `~/.claude`, never runs any `auth` verb, and every probe was done
-against throwaway scoped homes.
+against throwaway scoped homes. **Credential sync**: claude 2.1.236 reads
+`<home>/.credentials.json` at runtime while login and the process's own
+refresh write the keychain — so EVERY spawn (live `spawnRuntime` and exec
+`startClaudeCliRun` alike) syncs keychain→file first, best-effort. The login
+watch's sync alone cannot carry a resident runtime across rotations: access
+tokens expire in 8h and refresh tokens are single-rotation, so a stale file
+copy is poison for the next spawn. Coexistence risk, accepted and recorded: a
+resident process and an occasional exec process sharing one scoped home each
+refresh the same grant, and single-rotation can kill the other (the codex
+dual-home incident's mechanism); live mode lowers the rate by reducing
+process count, but sync-on-spawn is a necessary discipline, not a sufficient
+guarantee.
 
 **Channel** (all facts probed against claude 2.1.236): the first stdin `user`
 message triggers `system/init` carrying the server-assigned session id (EVERY

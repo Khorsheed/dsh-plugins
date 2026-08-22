@@ -12,7 +12,7 @@ Status: implemented
 
 `@khorsheed/dsh-local-agent-claude-code` 上 `live: true` 把委派轮切到每成员一个常驻 stream-json 进程,不触碰 facade、委派记录、resume 锁与成员通道契约。
 
-**授权纪律(硬性要求)。** 常驻进程拿到的恰好是 exec 路径的 env:scoped `CLAUDE_CONFIG_DIR`,外加仅当插件配置给出时的 `ANTHROPIC_BASE_URL`。scoped `.claude.json` 里的 OAuth 标记和以该路径哈希的 keychain 条目,正是 exec 一次性进程本来就在用的;驱动绝不碰用户全局 `~/.claude`,绝不执行任何 `auth` 命令,所有探针都在一次性 scoped home 上完成。
+**授权纪律(硬性要求)。** 常驻进程拿到的恰好是 exec 路径的 env:scoped `CLAUDE_CONFIG_DIR`,外加仅当插件配置给出时的 `ANTHROPIC_BASE_URL`。scoped `.claude.json` 里的 OAuth 标记和以该路径哈希的 keychain 条目,正是 exec 一次性进程本来就在用的;驱动绝不碰用户全局 `~/.claude`,绝不执行任何 `auth` 命令,所有探针都在一次性 scoped home 上完成。**凭证同步**:claude 2.1.236 运行时读 `<home>/.credentials.json`,而登录与进程自刷写 keychain——所以**每次** spawn(live 的 `spawnRuntime` 与 exec 的 `startClaudeCliRun` 同款)先做 keychain→文件同步,best-effort。登录 watch 的同步无法撑住常驻进程的轮换:access token 8 小时过期、refresh token 单次旋转,陈旧的文件副本对下一个 spawn 就是毒药。共存风险(接受并记录):常驻进程与偶发 exec 进程共享同一 scoped home 时各自刷新同一 grant,单次旋转可能互杀(codex 双 home 事故同款机制);live 减少进程数使风险降低,但 sync-on-spawn 是必要纪律而非充分保证。
 
 **通道**(全部事实对 claude 2.1.236 探针验证):第一条 stdin `user` 消息触发 `system/init` 并携带 server 分配的 session id(每一轮都会重发 init——委派记录第一条);每轮以 `result` 事件关闭(`is_error`、usage、session id);`control_request {subtype:'interrupt'}` 得到 `control_response` 成功应答,即优雅 runtime 中断;新进程带 `--resume <session_id>` 以同一模式重挂盘上会話(崩溃恢复);stdin EOF 让进程静默退出(回收阶梯)。没有握手消息——通道靠首轮的 init 在有界窗口内自证(超时跳熔断);spawn 失败是唯一的另一处熔断点。
 
