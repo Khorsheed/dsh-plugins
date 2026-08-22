@@ -4,7 +4,7 @@
 
 **dsh**(DeepSeek Harness)生态的社区插件 monorepo:**14 个纯增量插件**。其中 13 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 14 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。整套 13 个 bundle 已经同时跑在生产 profile 上,卸载即精确还原。
 
-**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),随整合包逐波上架 npm;local-agent 家族(后 5 行)正在做 member-channel 适配收尾,作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。
+**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(0.1.0);local-agent 家族(后 5 行)正在做 member-channel 适配收尾,作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
 
 本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
