@@ -255,7 +255,18 @@ describe('LocalAgentRegistry', () => {
     const second = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(second, 'printed no device-code prompt')
     const first = await pending
-    expectError(first, 'exited with code unknown')
+    // Which error the replaced login reports is platform-timing dependent:
+    // once the child has installed its TERM trap it outlives the
+    // replacement's SIGTERM and only dies to the SIGKILL after the 5s grace —
+    // far past its own 400ms prompt timeout, so it reports the timeout; a
+    // child still starting up dies to the SIGTERM itself. Both prove the
+    // replacement happened; the zombie reaping is what this test guards.
+    expect(first?.result).toMatchObject({ kind: 'error' })
+    const firstResult = first?.result
+    const firstText = firstResult?.kind === 'error' ? firstResult.text : ''
+    expect(
+      ['exited with code unknown', 'printed no device-code prompt'].some((fragment) => firstText.includes(fragment)),
+    ).toBe(true)
     // The SIGKILL grace is 5s; wait it out so the hard kill lands before the
     // test ends (the child would otherwise linger as a zombie).
     await new Promise((resolve) => { setTimeout(resolve, 5_200) })
