@@ -6,6 +6,8 @@ Let an agent change its own code and restart its own service — without taking 
 
 When the agent wants to restart after editing code, this plugin asks one question first: did the build and tests pass? Yes, go ahead. No, blocked — so broken code can't take the service, and the conversation running inside it, down with it.
 
+<img src="../../docs/screenshots/ankh-guard.JPG" width="640" alt="a guarded restart: the agent announces its verification plan beforehand, and the canary reactivates the session afterwards to keep verifying">
+
 ## How it works
 
 One rule at the core: **prove the code is good before you allow a restart.**
