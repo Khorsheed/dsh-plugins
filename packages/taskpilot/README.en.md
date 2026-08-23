@@ -11,7 +11,7 @@ Two capsule entries above the composer card — "Background jobs" and "Subagents
 ## Features
 
 - **Jobs capsule** — all background jobs of the current session, ticking once per second, a stop verb on running rows, click-through to the detail drawer; same source as the header list.
-- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows, click-through to the subagent conversation.
+- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows, click-through to the subagent conversation. One-shot external-CLI rows delegated to the local-agent family (which have no live agent) are recognized through the family's read-only delegation poll and carry the interrupt verb while their run is in flight.
 - **Detail drawer** — right-side overlay with command/kind/status/start-end/duration plus an execution trail folded from the session log, collapsed by default. While open on a wide viewport it **pushes the conversation and composer left** by the drawer width so nothing sits underneath it; on narrow viewports (where the remaining chat column would be too cramped) it overlays instead.
 - **Session-scoped visibility** — switching sessions switches data; each capsule renders only when its own data is non-empty.
 - **Zero intrusion** — product extension points only (slots, commands, mirrors, session log); no new RPC, no product files touched.

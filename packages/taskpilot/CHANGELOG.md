@@ -1,5 +1,10 @@
 # 变更记录
 
+## Unreleased
+
+- 子 agent 行的 running 判定改为双源:官方 summary 标志之外,增加对 local-agent 家族只读委派通道(`localAgentGateway.activeDelegations`)的轮询(有行展示时每 1.5s 一次)。一次性外部 CLI 委派(kimi/codex/claude/dsh)在飞期间现在会显示中止按钮,点击走既有 `/taskpilot-interrupt` → `/local-agent stop` 链路;未安装 local-agent 时软失败为空集,行为与之前完全一致,两家插件仍互不依赖。
+- `/taskpilot-interrupt` 注册补上 `input` hint(`<child-session-id> [parent-session-id]`),手打带参数的命令现在会被 composer 拦截。
+
 ## 0.1.0（2026-08-22）
 
 首个公开发布。

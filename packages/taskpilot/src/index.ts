@@ -50,6 +50,7 @@ export function apply(ctx: Context): void {
     name: 'taskpilot-interrupt',
     description: 'Interrupt a running subagent by its session id; an optional direct-parent id authorizes a deep descendant '
       + '(e.g. /taskpilot-interrupt <child-session-id> [parent-session-id]).',
+    input: { hint: '<child-session-id> [parent-session-id]' },
     handler: async (invocation) => {
       const parts = invocation.rawInput.trim().split(/\s+/)
       const childId = parts[0] ?? ''

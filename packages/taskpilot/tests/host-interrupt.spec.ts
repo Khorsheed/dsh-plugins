@@ -28,9 +28,13 @@ function harness(
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let handler: ((invocation: any) => unknown) | undefined
+  let definition: { name?: string; input?: { hint?: string } } = {}
   const ctx = {
     commands: {
-      register: (definition: { name: string; handler: typeof handler }) => { handler = definition.handler },
+      register: (def: { name: string; input?: { hint?: string }; handler: typeof handler }) => {
+        definition = def
+        handler = def.handler
+      },
       execute: async (_agent: unknown, line: string) => {
         calls.execute.push(line)
         const result = execute?.(line)
@@ -45,6 +49,7 @@ function harness(
   apply(ctx as any)
   return {
     calls,
+    definition,
     run: async (rawInput: string, agentId = 'parent-1') => {
       const out = handler?.({
         rawInput,
@@ -61,6 +66,12 @@ function runningAgent(parent: string): AgentMock {
 }
 
 describe('taskpilot-interrupt host command', () => {
+  it('declares the input hint so composer intercepts typed args', async () => {
+    const h = harness()
+    expect(h.definition.name).toBe('taskpilot-interrupt')
+    expect(h.definition.input).toEqual({ hint: '<child-session-id> [parent-session-id]' })
+  })
+
   it('routes a direct child through subagents.interrupt with the dispatching session as parent', async () => {
     const h = harness(undefined, () => ({ kind: 'success', text: 'child session child-1 has no in-flight local-agent run to stop' }))
     const result = await h.run(' child-1')

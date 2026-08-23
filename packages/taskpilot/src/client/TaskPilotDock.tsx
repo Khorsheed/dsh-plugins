@@ -6,7 +6,11 @@
  * session summaries (the same index the header tree counts), so counts and
  * rows stay consistent with the title by construction. Jobs tick once per
  * second while a popover is open; each row carries its stop/interrupt verb,
- * the detail drawer entry, and the session jump target.
+ * the detail drawer entry, and the session jump target. A subagent row's
+ * running state is dual-source: the official summary flag, or membership in
+ * the polled local-agent delegation set (one-shot external CLI rows, which
+ * never carry a live agent). The delegation poll runs every 1.5s while
+ * subagent rows exist and fails soft when the local-agent family is absent.
  *
  * @module dsh-taskpilot/client/dock
  */
@@ -24,6 +28,9 @@ export type TaskPilotLocaleKey = TaskPilotLocale
 
 /** Stable empty list so a session with no jobs keeps one array identity. */
 const NO_JOBS: readonly JobView[] = []
+
+/** Stable empty set so an empty delegation poll keeps one identity across renders. */
+const NO_ACTIVE: ReadonlySet<string> = new Set()
 
 type T = TranslateNS<typeof NS>
 
@@ -121,6 +128,13 @@ export interface TaskPilotDockInjected {
   interruptSubagent: (childId: SessionId, parentId?: SessionId) => Promise<unknown>
   openJob: (jobId: JobView['id']) => void
   openSession: (sessionId: SessionId) => void
+  /**
+   * Poll the local-agent family's in-flight delegation child session ids.
+   * Fail-soft contract: resolves an empty list when the family is not
+   * installed or a call fails, so the second running source below is a no-op
+   * in that case and the dock matches the single-source behavior exactly.
+   */
+  pollActiveDelegations: () => Promise<readonly string[]>
 }
 
 export type TaskPilotDockProps =
@@ -160,6 +174,7 @@ interface DescendantRow {
   /** Direct parent session, used to authorize the interrupt verb. */
   readonly parentId: SessionId
   readonly label: string
+  /** Effective running state: the official summary flag OR the polled delegation set. */
   readonly running: boolean
   readonly level: number
   readonly summary: SubagentSummary | undefined
@@ -171,11 +186,16 @@ interface DescendantRow {
  * `indexSubagentDescendants`; this walk supplies the rows it aggregates.
  * @param summaries - retained session summaries keyed by id.
  * @param parentId - the session whose lineage to walk.
+ * @param active - optional set of child session ids with an in-flight
+ *   local-agent delegation; a row whose id is present counts as running even
+ *   when its summary never set the official flag (one-shot external CLI rows
+ *   have no live agent, so the flag stays false for them). Defaults to empty.
  * @returns descendant rows in tree order with their depth.
  */
 export function collectDescendants(
   summaries: Readonly<Record<string, unknown>>,
   parentId: SessionId,
+  active: ReadonlySet<string> = NO_ACTIVE,
 ): DescendantRow[] {
   const rows: DescendantRow[] = []
   const seen = new Set<SessionId>()
@@ -189,7 +209,7 @@ export function collectDescendants(
         id: summary.id,
         parentId: pid,
         label: summary.displayTitle || summary.id,
-        running: summary.running === true,
+        running: summary.running === true || active.has(summary.id),
         level,
         summary: summary as unknown as SubagentSummary | undefined,
       })
@@ -201,14 +221,16 @@ export function collectDescendants(
 }
 
 export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | null {
-  const { sessionId, useSessions, stopJob, interruptSubagent, openJob, openSession, t } = props
+  const {
+    sessionId, useSessions, stopJob, interruptSubagent, openJob, openSession, t,
+    pollActiveDelegations,
+  } = props
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
   const summaries = useSessions(state => state.byId) ?? {}
   const catalog = useSessions(state => state.subagentsByParent?.[sessionId])
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveJobs = useMemo(() => jobs.filter(isLive), [jobs])
-  const descendants = useMemo(() => collectDescendants(summaries, sessionId), [summaries, sessionId])
   // Direct children carry the durable creation label (descriptor label, same
   // source as the header tree); deep descendants fall back to the summary's
   // displayTitle, whose session-title projection can lag one beat.
@@ -218,9 +240,43 @@ export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | n
       .map(entry => [entry.id, entry.label]),
   ), [catalog])
   const stats = useMemo(() => indexSubagentDescendants(summaries).get(sessionId), [summaries, sessionId])
+
+  // Second running source: one-shot external-CLI rows (local-agent family)
+  // carry no live agent, so their summary `running` flag stays false and the
+  // official index never counts them. The polled active-delegation set from
+  // `localAgentGateway.activeDelegations` covers those rows. Poll only while
+  // descendant rows exist; the injected poll fails soft to an empty set, so
+  // without the family installed this source is a no-op (single-source
+  // behavior preserved).
+  const [activeDelegations, setActiveDelegations] = useState<ReadonlySet<string>>(NO_ACTIVE)
+  const descendants = useMemo(
+    () => collectDescendants(summaries, sessionId, activeDelegations),
+    [summaries, sessionId, activeDelegations],
+  )
+  // The lineage size is independent of the running flags, so this condition is
+  // stable across poll updates and never re-triggers the effect from its own
+  // state writes.
+  const hasDescendants = descendants.length > 0
+  useEffect(() => {
+    if (!hasDescendants) return
+    let cancelled = false
+    const tick = (): void => {
+      void pollActiveDelegations().then((ids) => {
+        if (cancelled) return
+        setActiveDelegations(ids.length === 0 ? NO_ACTIVE : new Set(ids))
+      })
+    }
+    tick()
+    const timer = setInterval(tick, 1_500)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [hasDescendants, pollActiveDelegations])
+
   const subagentCount = stats?.count ?? descendants.length
   const runningSubagents = useMemo(() => descendants.filter(row => row.running), [descendants])
-  const runningCount = stats?.runningCount ?? runningSubagents.length
+  // Dual-source count: the official index only sees summary flags, which miss
+  // one-shot delegation rows; the row walk over the same lineage plus the
+  // active set is a strict superset, so it is the truthful capsule dot.
+  const runningCount = runningSubagents.length
 
   // Which capsule's popover is open: 'jobs' | 'subagents' | null.
   const [open, setOpen] = useState<'jobs' | 'subagents' | null>(null)
