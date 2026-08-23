@@ -64,7 +64,8 @@
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.8"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
