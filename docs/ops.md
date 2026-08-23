@@ -49,7 +49,7 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 三步,做完才算迁移完成——写给所有迁移方(包括未来的我们):
 
-1. **会话里能列出 skill**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见
+1. **会话里能列出 skill,并且真调用一次**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见——还要**真的触发一次调用**:宿主在 load 时才校验注册载荷(`source` 等字段),只看目录会漏掉"列出即正常、调用即炸"这一类(0.1.0 的教训)
 2. **check-env 读数正常**:`dsh-ankh-guard check-env --port 3080` 的监督/启动读数无异常(缺能力、降级项要出声,不允许静默)
 3. **跑一次门禁重启**:`deploy:3080` 或 `schedule-exit` 走一遍完整闸,canary PASS 才算闭环
 
