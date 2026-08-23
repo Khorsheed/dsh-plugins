@@ -66,6 +66,13 @@
 - **退役条件**：官方 SDK wire 增加 turn 级 interrupt 方法（且保持调用方指定 session id 的懒创建语义）。届时 serve 模式整体退役，provider 的 live driver 改挂官方 server。
 - **状态**：绕行中（@khorsheed/dsh-local-agent-dsh live driver + headless serve 模式）。
 
+### S9. `dsh.bundle` 声明把"要被安装"和"要被挂载"绑死
+
+- **需求**：家族内部 bundle（如 `@khorsheed/dsh-local-agent-dsh-headless`）需要声明 patch 供自己的子 profile 引用（app-boot 对 layer 列表里不声明 `dsh.bundle` 的包 fail loud)，但**不能**被 reconcilePlugins 自动挂进交互式组合——reconcile 把声明 `dsh.bundle` 的 profile 直接依赖全部挂进 layer 栈。2026-08-23 P0:headless bundle 作为 prod web profile 直接依赖被自动挂载，其 `code-runtime` insert 行与 web-app 同名行撞 duplicate entry id，全实例 boot 失败。
+- **现状绕行**：纪律 + 哨兵——ops 文档明示"内部 bundle 只作传递依赖"，包内不变量检出 web 组合（`webStartup` 服务存在）即 fail loud,patch 测试钉住撞 id 的行。安装路径不变（传递依赖天然不被挂载）。
+- **退役条件**：官方把声明拆开——例如 `dsh.bundle.autoMount: false`（或 `profileOnly`)，让 reconcilePlugins 跳过这类包；届时内部 bundle 可以放心作直接依赖（例如显式锁定版本），哨兵不变量可留作防御。
+- **状态**：绕行中（@khorsheed/dsh-local-agent-dsh-headless)。
+
 ### S9. runtime skill 注册的 `source` 只在加载期校验
 
 - **需求**：`ctx.skills.register()` 在注册期就要求（或默认）`source`——官方 `register()` 默认了 `provider`/`invocation` 但不默认 `source`，而加载路径 `validateDefinition` 强制 `source` 为 string：于是注册成功、catalog 正常列出、调用才炸（8.9 的 `dsh-self-restart-guard` 就是这个炸法）。

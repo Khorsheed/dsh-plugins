@@ -62,4 +62,15 @@ describe('dsh-local-agent-dsh-headless bundle patch', () => {
     expect(env.DSH_MEMBER_SOCKET).toHaveProperty('__jsExpr')
     expect(env.DSH_MEMBER_TOKEN).toHaveProperty('__jsExpr')
   })
+
+  it('pins the code-runtime insert row id — the documented web-composition collision', () => {
+    // 2026-08-23 P0: mounted into the prod web profile (reconcilePlugins
+    // auto-mounts dsh.bundle direct deps), this row hit the web-app bundle's
+    // same-id row and the duplicate entry id failed the whole instance's
+    // boot. The id is pinned so a rename or removal is a conscious act that
+    // revisits docs/upstream-seam-registry.md S9, never a silent edit.
+    const inserted = loadPatch().flatMap(row => row.insert ?? [])
+    const codeRuntime = inserted.find(entry => entry.id === 'code-runtime')
+    expect(codeRuntime?.name).toBe('@deepseek-ai/dsh-code-runtime-worker-thread')
+  })
 })

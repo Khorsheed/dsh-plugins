@@ -42,6 +42,7 @@ With neither flag the runner generates its own `session-<uuid>` id (the official
 ## Known Limitations
 
 - **Never add this bundle to an interactive profile's `bundles`** — its sub-profile-only patch rows (persona override, `hmr` off, `tools` mode, `code-runtime` insert, member-bridge MCP) collide with an interactive composition and leak overrides into real user sessions.
+- **And never list it as a direct dependency of any profile** — `dsh plugin add` / reconcilePlugins auto-mounts every `dsh.bundle`-declaring direct dependency into the composition's layer stack. 2026-08-23 P0: as a direct dependency of the prod web profile it was auto-mounted, and its `code-runtime` row hit the web-app bundle's same-id row — the duplicate entry id failed the whole instance's boot. A **transitive** install through `@khorsheed/dsh-local-agent-dsh` is enough (reconcile only reads direct dependencies); the package's own invariant fails loud when it detects a web composition (the `webStartup` service).
 - Sub-dsh sessions never appear in the parent instance's session list (separate scoped-home store).
 - No other `local-agent` family bundles belong in this composition — nothing here spawns another dsh.
 - Patch edits must be boot-verified before landing (`dsh preflight` or one real sub-dsh launch): the `!!js` tag is scalar-only, and a mistagged collection fails at profile boot.
