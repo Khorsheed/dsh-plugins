@@ -138,7 +138,7 @@ describe('state core', () => {
     const ctx = new Context()
     await ctx.plugin(Loader)
     ctx.provide('agents', { roots: () => [], list: () => [] } as never)
-    const registrations: Array<{ name: string; description: string; content: string }> = []
+    const registrations: Array<{ name: string; description: string; content: string; source?: string }> = []
     let disposed = false
     ctx.provide('skills', {
       register: (skill: { name: string; description: string; content: string }) => {
@@ -154,11 +154,36 @@ describe('state core', () => {
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // The registry validates `source` at LOAD time — a registration without
+    // it lists fine in the catalog but explodes on invocation ("loaded skill
+    // ... source must be a string", published 8.9). Pin it here.
+    expect(registrations[0]?.source).toBe('runtime')
     // The registration outcome is on disk for check-env to surface.
     const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
     expect(marker.registered).toBe(true)
     await fiber.dispose()
     expect(disposed).toBe(true)
+  })
+
+  it('the registered skill survives the real registry round-trip (catalog list + body load)', async () => {
+    // The catalog lists registrations even when a required field is missing;
+    // the registry validates at LOAD time — published 8.9 failed exactly here
+    // ("loaded skill ... source must be a string"). Exercise the real
+    // registry so a payload contract drift cannot pass on a recording stub.
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
+    const registry = new SkillRegistry(ctx as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    const names = (await registry.list({ cwd: repo })).map((skill: { name: string }) => skill.name)
+    expect(names).toContain('dsh-self-restart-guard')
+    const loaded = await registry.get('dsh-self-restart-guard', { cwd: repo })
+    expect(loaded?.content).toContain('check-env')
+    await fiber.dispose()
   })
 
   it('records the failure loudly when the skills service is absent (host migrations must not lose the skill silently)', async () => {
