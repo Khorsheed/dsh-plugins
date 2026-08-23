@@ -39,6 +39,10 @@ export interface MemberComposerMatch {
  *   election down the chain.
  */
 export function selectCliMember(owner: ComposerChainProps): MemberComposerMatch | null {
+  // Pending interactions (questions/approvals) belong to the official
+  // ApprovalPanel — a chain entry at priority 1. Election runs ascending, so
+  // this -20 entry would shadow it: decline and let the interaction render.
+  if (owner.interactions.length > 0) return null
   const session = owner.session
   const subagent = session?.subagent
   if (session === undefined || subagent === undefined || subagent === null) return null

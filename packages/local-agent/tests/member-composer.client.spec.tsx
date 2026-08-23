@@ -91,6 +91,17 @@ describe('selectCliMember', () => {
     expect(selectCliMember(owner({ subagent: null }))).toBeNull()
     expect(selectCliMember(owner(undefined))).toBeNull()
   })
+
+  it('declines while an interaction is pending — the ApprovalPanel elects at priority 1', () => {
+    const base = owner({
+      subagent: {
+        address: { mode: 'one-shot', parentSessionId: 'p' as SessionId, childSessionId: CHILD as SessionId },
+        parentAvailable: true,
+      },
+    })
+    const pending = { ...base, interactions: [{ kind: 'question' } as never] }
+    expect(selectCliMember(pending)).toBeNull()
+  })
 })
 
 describe('MemberComposer', () => {
