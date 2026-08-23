@@ -46,6 +46,19 @@ if (!existsSync(TOOLCHAIN_BIN)) {
   process.exit(2)
 }
 
+// The vanilla toolchain must track the official latest: a clean image that
+// silently ages is a false oracle. Refresh it from the registry before
+// verifying (skip with --no-refresh, e.g. when pinning a host line on
+// purpose).
+if (!args.includes('--no-refresh')) {
+  const installed = JSON.parse(readFileSync(join(VANILLA_HOME, 'toolchain', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8')).version
+  const latest = execFileSync('npm', ['view', '@deepseek-ai/dsh', 'version'], { encoding: 'utf8' }).trim()
+  if (installed !== latest) {
+    process.stdout.write(`verify-package: refreshing vanilla toolchain ${installed} → ${latest}\n`)
+    run('npm', ['install', `@deepseek-ai/dsh@${latest}`], { cwd: join(VANILLA_HOME, 'toolchain') })
+  }
+}
+
 let failures = 0
 for (const dir of packages) {
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))

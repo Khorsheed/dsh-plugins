@@ -4,6 +4,16 @@
 
 本文只写流程,不记录任何版本状态。当前线上运行版本以 profile 清单(`$DSH_HOME/profiles/web/package.json`)与 `dist-publish/` 为准;每次 `deploy:3080` 会自动维护它们并输出通报。流程本身变化时才改本文。
 
+## 环境拓扑(每个目录/实例是谁、能干嘛)
+
+| 路径 | 角色 | 纪律 |
+|---|---|---|
+| `~/code/dsh-plugins` | 主仓(mainline) | 多 agent 共享,worktree 开发、合并回 main |
+| `~/code/deepseek-harness` | **部署检出**:prod 3080 从这里启动,guard 凭证绑定它的 HEAD | 只准 `reset --hard` 到官方 tag + guard checkpoint 提交;禁止任何其他本地改动 |
+| `~/.dsh-vanilla`(3081) | **纯净官方镜像**:npm 安装的官方宿主,零插件 | `verify:package` 的干净镜像基座,每次验证前自动比对并刷新到 registry latest;不需要任何物理镜像仓(官方最新以 npm registry 为准) |
+| `~/.dsh-acceptance`(3082) | 验收实例:候选 tarball 的人工/agent 实测 | 装了什么以它的 profile 清单为准,随验随换 |
+| `~/.dsh-official`(3080) | prod | 见下文门禁 |
+
 ## 三层环境与交付形态
 
 | 环境 | 用途 | 交付形态 | 规则 |
