@@ -1109,6 +1109,16 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * The child session ids with an in-flight delegation run — the gateway's
+   * `activeDelegations` Remote exposes this to the browser so surfaces can
+   * mark one-shot rows as running.
+   * @returns the in-flight child session ids.
+   */
+  activeDelegations(): readonly string[] {
+    return [...this.runs.keys()]
+  }
+
+  /**
    * Read the kimi transcript lines already mirrored into one child session,
    * so a resumed round mirrors only its delta instead of duplicating earlier
    * messages. Absent means the first round has not mirrored yet. Reads the

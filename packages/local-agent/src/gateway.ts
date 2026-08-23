@@ -40,6 +40,20 @@ export default class LocalAgentGateway extends TypertRemoteService {
   }
 
   /**
+   * The child session ids with an in-flight delegation run (the
+   * active-delegation registry's key set). Surfaces that render one-shot
+   * subagent rows poll this to mark a row as actually running — the official
+   * session summary's `running` flag is agent-based and stays false for
+   * external CLI one-shots, which have no live agent — and to offer the
+   * stop verb that dispatches `/local-agent stop <childSessionId>`.
+   * @returns the in-flight child session ids.
+   */
+  @Remote('activeDelegations')
+  activeDelegations(): readonly string[] {
+    return this.ctx.localAgent.activeDelegations()
+  }
+
+  /**
    * One harness's auth status.
    * @param name - the harness name.
    * @returns the status snapshot.

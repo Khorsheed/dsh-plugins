@@ -47,6 +47,22 @@ describe('LocalAgentGateway', () => {
     expect(gateway.roster()).toEqual([{ name: 'fake', displayName: 'Fake Agent' }])
   })
 
+  it('exposes the in-flight delegation ids for one-shot row running state', async () => {
+    const { gateway, ctx } = await mount({ homesRoot: tempHome('gw-active-') })
+    expect(gateway.activeDelegations()).toEqual([])
+    const registry = ctx.localAgent as unknown as {
+      trackDelegationRun: (id: string, run: unknown, cancel: () => void) => void
+    }
+    let settled!: (value: unknown) => void
+    const run = { result: new Promise(resolve => { settled = resolve }) }
+    registry.trackDelegationRun('child-active-1', run, () => {})
+    expect(gateway.activeDelegations()).toEqual(['child-active-1'])
+    settled({ stopReason: 'completed' })
+    await run.result
+    await new Promise(resolve => { setImmediate(resolve) })
+    expect(gateway.activeDelegations()).toEqual([])
+  })
+
   it('reports auth status through the harness probe', async () => {
     const { ctx, gateway } = await mount({ homesRoot: tempHome('gw-status-') })
     ;(ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry).register(harness({ isAuthenticated: async () => true }))
