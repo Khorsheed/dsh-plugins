@@ -32,7 +32,7 @@ interface ImageRouteHost {
 
 /** The slice of the skill registry this package consumes (optional service). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string }) => () => void
+  register: (skill: { name: string; description: string; content: string; source: string }) => () => void
 }
 
 /**
@@ -69,7 +69,7 @@ function registerArtifactSkill(ctx: Context): void {
       ctx.logger.warn('file-preview: shipped SKILL.md is malformed — the 3d-artifact skill is not registered')
       return
     }
-    ctx.effect(() => skills.register({ name, description, content }))
+    ctx.effect(() => skills.register({ name, description, content, source: 'runtime' }))
   } catch (error) {
     ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
   }
