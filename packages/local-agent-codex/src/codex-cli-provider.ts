@@ -32,7 +32,7 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
@@ -226,7 +226,7 @@ export class CodexCliProvider implements SubagentProvider {
     try {
       const run = await startCodexCliRun(request, {
         cwd: parentCwd,
-        env: { CODEX_HOME: homeDir },
+        env: delegationEnv({ CODEX_HOME: homeDir }),
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -316,7 +316,7 @@ export class CodexCliProvider implements SubagentProvider {
       try {
         run = await startCodexCliRun(request, {
           cwd: parentCwd,
-          env: { CODEX_HOME: homeDir },
+          env: delegationEnv({ CODEX_HOME: homeDir }),
           endpointLabel: baseUrl,
           sandbox: this.sandbox,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -358,7 +358,7 @@ export interface CodexCliRunSpec {
   /** Parent Session workspace; also the codex process cwd. */
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */

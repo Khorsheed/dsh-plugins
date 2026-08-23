@@ -36,6 +36,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendCodexTranscriptLine,
@@ -502,7 +503,7 @@ export class CodexLiveDriver {
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: { CODEX_HOME: spec.homeDir },
+      env: delegationEnv({ CODEX_HOME: spec.homeDir }),
     }
     let child: SubprocessHandle
     try {

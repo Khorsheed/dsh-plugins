@@ -27,7 +27,7 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
@@ -203,7 +203,7 @@ export class KimiCliProvider implements SubagentProvider {
     try {
       const run = await startKimiCliRun(request, {
         cwd: parentCwd,
-        env: { KIMI_CODE_HOME: homeDir },
+        env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         endpointLabel: baseUrl,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -292,7 +292,7 @@ export class KimiCliProvider implements SubagentProvider {
       try {
         run = await startKimiCliRun(request, {
           cwd: parentCwd,
-          env: { KIMI_CODE_HOME: homeDir },
+          env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
           endpointLabel: baseUrl,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -333,7 +333,7 @@ export interface KimiCliRunSpec {
   /** Parent Session workspace; also the kimi process cwd. */
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */

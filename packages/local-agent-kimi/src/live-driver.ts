@@ -43,6 +43,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
@@ -469,7 +470,7 @@ export class KimiAcpLiveDriver {
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: { KIMI_CODE_HOME: spec.homeDir },
+      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir }),
     }
     let child: SubprocessHandle
     try {

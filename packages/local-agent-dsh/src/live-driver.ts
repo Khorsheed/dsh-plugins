@@ -32,6 +32,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
@@ -395,11 +396,11 @@ export class DshLiveDriver {
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       // Same explicit env layer as the exec path: the credential-shaped key
       // and the DSH_* facts survive the shared scrub only here.
-      env: {
+      env: delegationEnv({
         DSH_HOME: spec.homeDir,
         DEEPSEEK_API_KEY: apiKey,
         ...member === undefined ? {} : member.env,
-      },
+      }),
     }
     let child: SubprocessHandle
     try {

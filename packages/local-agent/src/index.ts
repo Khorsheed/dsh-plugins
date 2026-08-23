@@ -71,6 +71,8 @@ export type {
   RoomMemberMessageResult,
 } from './types.ts'
 
+export { delegationEnv } from './env.ts'
+
 /** Per-harness session listing: reads the harness's own records format. */
 export interface LocalAgentRecordsAdapter {
   /**

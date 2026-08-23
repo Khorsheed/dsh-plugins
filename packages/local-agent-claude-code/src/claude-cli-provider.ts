@@ -34,7 +34,7 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
@@ -225,14 +225,10 @@ export class ClaudeCliProvider implements SubagentProvider {
     try {
       const run = await startClaudeCliRun(request, {
         cwd: parentCwd,
-        env: {
+        env: delegationEnv({
           CLAUDE_CONFIG_DIR: homeDir,
-          // claude 2.1.236's credential resolution breaks when USER is present
-          // (bisected on the 3080 host: full env minus USER works, USER alone
-          // reintroduces 'OAuth session expired'). Tombstone it.
-          USER: undefined as unknown as string,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-        },
+        }),
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -321,13 +317,10 @@ export class ClaudeCliProvider implements SubagentProvider {
       try {
         run = await startClaudeCliRun(request, {
           cwd: parentCwd,
-          env: {
+          env: delegationEnv({
             CLAUDE_CONFIG_DIR: homeDir,
-            // See the fresh path: USER presence breaks 2.1.236 credential
-            // resolution; tombstone it here too.
-            USER: undefined as unknown as string,
             ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-          },
+          }),
           endpointLabel: effectiveBaseUrl,
           permissionMode: this.permissionMode,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -373,7 +366,7 @@ export interface ClaudeCliRunSpec {
    * `undefined` value tombstones an inherited ambient entry, a string
    * restores or overrides it.
    */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Permission mode passed to `claude -p`. */

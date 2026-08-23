@@ -30,7 +30,7 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
@@ -67,7 +67,7 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
  * resident process and releases on reclaim.
  */
 export interface MemberRunHandle {
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   bind(pid: number): void
   release(): void
 }
@@ -353,7 +353,7 @@ export interface DshCliRunSpec {
    * bridge entry) merged into the explicit env layer — the sub-dsh's
    * mcp-client row reads them via `!!js` env lookups.
    */
-  readonly memberEnv?: Record<string, string> | undefined
+  readonly memberEnv?: Readonly<NodeJS.ProcessEnv> | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
 }
@@ -438,14 +438,14 @@ export async function startDshCliRun(
     // both the credential-shaped key and the DSH_* fact survive into the
     // child — without DSH_HOME the sub-dsh would default to ~/.dsh and write
     // sessions into the parent instance's store.
-    env: {
+    env: delegationEnv({
       DSH_HOME: spec.homeDir,
       DEEPSEEK_API_KEY: apiKey,
       // Member channel coordinates ride the same explicit layer (DSH_* names
       // are scrubbed from the ambient env; this layer is the sanctioned
       // override).
       ...spec.memberEnv,
-    },
+    }),
   }
   const child = ctx.subprocess.spawn(spawnSpec)
   spec.onSpawned?.(child.pid)
