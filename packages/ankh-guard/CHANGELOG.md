@@ -2,6 +2,7 @@
 
 ## 0.1.1（2026-08-23）
 
+- 修复：schedule-exit 与 restart 的竞态——schedule-exit 现在全程持 restart.lock（读→写→拉起），不再误杀并发重启刚拉起的新实例
 - 修复：随包 skill 在目录里可见、调用即炸——宿主在 load 时才校验注册的 `source` 字段，之前没传；已补 `source: 'runtime'`，并加了真实 SkillRegistry 往返测试（list + load）防回归
 
 ## 0.1.0（2026-08-22）
