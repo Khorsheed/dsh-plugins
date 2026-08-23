@@ -36,7 +36,7 @@ const install: InvariantInstaller = (ctx, fail) => {
     fail(
       'mounted into a web composition — this bundle is sub-profile-only. '
       + 'Remove it from the profile’s direct dependencies: the parent '
-      + '@khorsheed/dsh-local-agent-dsh installs it transitively, and the '
+      + 'local-agent-dsh bundle installs it transitively, and the '
       + 'sub-profile symlink resolves from that closure',
     )
   }
