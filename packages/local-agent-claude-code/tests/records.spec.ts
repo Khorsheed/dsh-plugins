@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { claudeAuthenticated, listClaudeSessions, projectRecord } from '../src/records.ts'
+import { claudeAuthenticated, internals, listClaudeSessions, projectRecord, syncClaudeCredentialFile } from '../src/records.ts'
 
 function tempHome(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -83,5 +83,49 @@ describe('claudeAuthenticated credential file', () => {
   it('rejects a credentials file past its expiry', async () => {
     const home = homeWithCredentialFile(Date.now() - 1_000)
     await expect(claudeAuthenticated(home)).resolves.toBe(false)
+  })
+})
+describe('keychain credential sync', () => {
+  const realExec = internals.exec
+
+  function stubKeychain(blob: string | undefined): void {
+    internals.exec = (async (file: string, args: string[]) => {
+      // The regression guard: the executable must be `security`, with the
+      // subcommand as an argument — calling execFile('find-generic-password')
+      // was the shipped bug this suite exists to catch.
+      expect(file).toBe('security')
+      expect(args[0]).toBe('find-generic-password')
+      if (blob === undefined) throw new Error('item not found')
+      return { stdout: blob + '\n', stderr: '' }
+    }) as never
+  }
+
+  function restoreExec(): void {
+    internals.exec = realExec
+  }
+
+  it('writes the keychain blob into .credentials.json (0600)', async () => {
+    const home = tempHome('claude-sync-')
+    const blob = JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + 3_600_000 } })
+    stubKeychain(blob)
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(blob)
+      await expect(claudeAuthenticated(home)).resolves.toBe(true)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('returns false and writes nothing when the keychain entry is missing', async () => {
+    const home = tempHome('claude-sync-missing-')
+    stubKeychain(undefined)
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
+      await expect(claudeAuthenticated(home)).resolves.toBe(false)
+    } finally {
+      restoreExec()
+    }
   })
 })

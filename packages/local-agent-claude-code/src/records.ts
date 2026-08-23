@@ -25,7 +25,10 @@ const PROJECTS_ROOT = 'projects'
 /** Bound on the head prefix read from one session file. */
 const HEAD_BYTES = 64 * 1024
 
-const security = promisify(execFile)
+/** Test-swappable process exec (the keychain read goes through `security`). */
+export const internals = {
+  exec: promisify(execFile),
+}
 
 /**
  * The scoped `.claude.json`'s modification stamp (epoch ms), undefined when
@@ -63,7 +66,7 @@ function keychainService(homeDir: string): string {
  */
 async function readCredentialExpiry(homeDir: string): Promise<number | undefined> {
   try {
-    const { stdout } = await security('find-generic-password', ['-s', keychainService(homeDir), '-w'])
+    const { stdout } = await internals.exec('security', ['find-generic-password', '-s', keychainService(homeDir), '-w'])
     const parsed = JSON.parse(stdout.trim()) as { claudeAiOauth?: { expiresAt?: unknown } }
     const expiry = parsed.claudeAiOauth?.expiresAt
     return typeof expiry === 'number' ? expiry : undefined
@@ -86,7 +89,7 @@ async function readCredentialExpiry(homeDir: string): Promise<number | undefined
 export async function syncClaudeCredentialFile(homeDir: string): Promise<boolean> {
   let blob: string
   try {
-    const { stdout } = await security('find-generic-password', ['-s', keychainService(homeDir), '-w'])
+    const { stdout } = await internals.exec('security', ['find-generic-password', '-s', keychainService(homeDir), '-w'])
     blob = stdout.trim()
     JSON.parse(blob)
   } catch {
