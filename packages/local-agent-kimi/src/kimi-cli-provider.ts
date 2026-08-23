@@ -606,7 +606,10 @@ export function startKimiCliRun(
   processFailure.catch(() => {})
 
   const collectOutput = (): ContentBlock[] => {
-    const text = output.trim()
+    // Post-exit the seam's collected buffer is authoritative — a fast-exiting
+    // process can settle `done` before the streamed data events land.
+    const drained = child.collected.stdout?.readFrom(0).text
+    const text = (drained !== undefined && drained !== '' ? drained : output).trim()
     return text === '' ? [] : [{ type: 'text', text }]
   }
 

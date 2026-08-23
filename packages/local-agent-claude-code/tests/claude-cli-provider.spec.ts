@@ -34,7 +34,9 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
     stdout,
     stderr,
     collected: {
-      stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      // The settle path reads the collected buffer first (post-exit
+      // authoritative); the stream keeps it for live-mirror consumers.
+      stdout: { readFrom: () => ({ text: streamJson + '\n', nextOffset: 0, lossy: false }) },
       stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
     },
     done,

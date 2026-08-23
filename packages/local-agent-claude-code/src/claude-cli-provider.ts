@@ -837,8 +837,11 @@ export async function startClaudeCliRun(
   const collectOutput = (): ContentBlock[] => {
     // Parse fresh at call time: stdout 'data' events may still be flushing
     // when the settle callback computes its first output, and the consumer
-    // may poll output again later.
-    const text = parseClaudeStreamJson(output).text?.trim()
+    // may poll output again later. Post-exit the seam's collected buffer is
+    // authoritative — a fast-exiting process can settle `done` before the
+    // streamed data events land.
+    const drained = child.collected.stdout?.readFrom(0).text
+    const text = parseClaudeStreamJson(drained !== undefined && drained !== '' ? drained : output).text?.trim()
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
