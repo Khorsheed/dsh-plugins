@@ -441,6 +441,14 @@ export async function startDshCliRun(
     env: delegationEnv({
       DSH_HOME: spec.homeDir,
       DEEPSEEK_API_KEY: apiKey,
+      // The launch replicates the parent's tsx ESM hook (dshLaunchArgv), so
+      // the hook's tsconfig path is a hard launch dependency: without it tsx
+      // compiles the harness source with default options and the child dies
+      // at import time ('FiberState' export mismatch). Pass it explicitly —
+      // the delegation env allowlist tombstones it otherwise.
+      ...process.env.TSX_TSCONFIG_PATH === undefined
+        ? {}
+        : { TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH },
       // Member channel coordinates ride the same explicit layer (DSH_* names
       // are scrubbed from the ambient env; this layer is the sanctioned
       // override).

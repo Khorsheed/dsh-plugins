@@ -399,6 +399,10 @@ export class DshLiveDriver {
       env: delegationEnv({
         DSH_HOME: spec.homeDir,
         DEEPSEEK_API_KEY: apiKey,
+        // Same tsx tsconfig carry-over as the exec path (see startDshCliRun).
+        ...process.env.TSX_TSCONFIG_PATH === undefined
+          ? {}
+          : { TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH },
         ...member === undefined ? {} : member.env,
       }),
     }

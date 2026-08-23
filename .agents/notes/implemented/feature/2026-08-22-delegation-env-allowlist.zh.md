@@ -25,3 +25,4 @@ Status: implemented
 - 登录流程有意不收敛:交互式 `/<harness> login` 的 spawn 保留全量环境(要开浏览器,需要用户完整上下文)。
 - provider 内部 option 类型(`start*CliRun` 的 options、`memberEnv`)从 `Record<string, string>` 放宽为 `Readonly<NodeJS.ProcessEnv>`,tombstone 才能通过类型检查。
 - provider 测试里既有的 `toEqual` env 断言继续通过(vitest 忽略 undefined 值属性);助手的新测试在 `packages/local-agent/tests/env.spec.ts`。
+- 白名单上线后抓到的第一个隐性依赖(正是设计目的,3080 冒烟中发现):dsh 子代理由父进程的 tsx ESM hook 启动,`TSX_TSCONFIG_PATH` 是启动硬依赖——被 tombstone 后子进程在 import 阶段即死('FiberState' 导出缺失),表现为静默快速退出。dsh provider(exec + live)现在显式传递该变量(父进程有才传)。
