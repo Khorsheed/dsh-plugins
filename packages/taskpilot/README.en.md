@@ -47,7 +47,7 @@ The capsules are pure presentation over the product's existing mirrors and proje
 
 - Jobs: `useSessions(jobsBySession[sessionId])`, same source as the header job list.
 - Subagents: the whole lineage folded from session summaries `byId` (`indexSubagentDescendants` count matches the header tree; four-bucket token sum, `settledMs + active` duration).
-- Stop/interrupt: verbs registered on the `commands` extension point (`/taskpilot-stop <jobId>`, `/taskpilot-interrupt <childId> [parentId]`), authorized through the dispatching session agent (deep subagents pass their direct parent); the UI calls them via `ctx.remote.commands.execute`.
+- Stop/interrupt: verbs registered on the `commands` extension point (`/taskpilot-stop <jobId>`, `/taskpilot-interrupt <childId> [parentId]`), authorized through the dispatching session agent (deep subagents pass their direct parent); the UI calls them via `ctx.remote.commands.execute`. For a one-shot row with NO live agent (most commonly a local-agent family member — its child session is a pure CLI transcript container with no dsh agent), `/taskpilot-interrupt` routes the stop through the commands seam to `/local-agent stop <childSessionId>`, cancelling the family's in-flight delegation for that child; when the local-agent core is absent (the command does not resolve) it degrades to an explicit "cannot stop" error rather than pretending success.
 - Trail: replays the session log through `sessions.history` RPC — never touches the consumptive `jobs.read` output cursor.
 
 No configuration. The capsules register at `conversation.input.dock` order 30 and the drawer at `shell.overlay` order 120, alongside todo/goal/queue. Custom profiles can compose the row by hand:

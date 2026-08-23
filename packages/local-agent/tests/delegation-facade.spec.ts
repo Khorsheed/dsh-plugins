@@ -464,4 +464,52 @@ describe('LocalAgentRegistry delegation facade', () => {
       expect(h.consumed).toEqual([{ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'cli-42' }])
     })
   })
+
+  describe('active-delegation registry (tool registration + stop)', () => {
+    it('tracks a tool-registered run and cancel() fires its cancel lever', async () => {
+      const h = await mountFacade()
+      const controllable = makeRun('child-tool')
+      let cancelled = 0
+      h.registry.trackDelegationRun('child-tool', controllable.run, () => { cancelled += 1 })
+
+      expect(h.registry.isDelegationActive('child-tool')).toBe(true)
+      expect(h.registry.cancel('child-tool')).toBe(true)
+      expect(cancelled).toBe(1)
+
+      // The entry clears itself once the run settles (any stop reason).
+      controllable.settle({ stopReason: 'aborted', output: [] })
+      await controllable.run.result
+      await Promise.resolve()
+      expect(h.registry.isDelegationActive('child-tool')).toBe(false)
+      expect(h.registry.cancel('child-tool')).toBe(false)
+    })
+
+    it('keeps the facade entry when a tool registration lands for the same child session', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      const controllable = makeRun('child-fresh')
+      h.setStartHandler((request) => {
+        h.consumeIntent(request)
+        return controllable.run
+      })
+      await h.registry.start(PARENT, PROVIDER, PROMPT)
+      // The facade already tracks the child; a tool registration must not
+      // replace the facade controller (which owns cancellation + progress).
+      let strayCancelled = 0
+      h.registry.trackDelegationRun('child-fresh', controllable.run, () => { strayCancelled += 1 })
+
+      expect(h.registry.isDelegationActive('child-fresh')).toBe(true)
+      expect(h.registry.cancel('child-fresh')).toBe(true)
+      // The facade controller aborted the run; the tool lever never fired.
+      expect(strayCancelled).toBe(0)
+      controllable.settle({ stopReason: 'aborted', output: [] })
+      await controllable.run.result
+    })
+
+    it('reports a miss for an unknown child without throwing', async () => {
+      const h = await mountFacade()
+      expect(h.registry.isDelegationActive('nope')).toBe(false)
+      expect(h.registry.cancel('nope')).toBe(false)
+    })
+  })
 })

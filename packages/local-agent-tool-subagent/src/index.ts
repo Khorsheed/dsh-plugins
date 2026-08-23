@@ -86,6 +86,16 @@ function stopReasonError(result: SubagentResult): string | undefined {
 }
 
 /**
+ * Fuse a caller-owned controller with the tool execution's signal so EITHER
+ * abort cancels the run — the same shape the facade's tracked controller
+ * uses. The active-delegation registry's stop lever aborts the controller;
+ * the tool's own execution abort flows through the execution signal.
+ */
+function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
+  return caller === undefined ? controller.signal : AbortSignal.any([controller.signal, caller])
+}
+
+/**
  * Append the child's preserved partial answer to a stop-reason error so a
  * truncated or cancelled child's real text still reaches the parent model.
  * @param error - the stop-reason headline.
@@ -242,10 +252,27 @@ export function apply(ctx: Context, config: Config): void {
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
         }
+        // The run's own cancel lever: a controller fused with the tool
+        // execution signal, so the active-delegation registry's stop can
+        // abort it without touching the execution's own signal.
+        const controller = new AbortController()
         const run: SubagentRun = await ctx.subagents.start(config.provider, {
           ...request,
-          signal: exec.signal,
+          signal: fusedSignal(controller, exec.signal),
         })
+        // Register the in-flight run with the family's active-delegation
+        // registry (keyed by child session id) so `/local-agent stop
+        // <childSessionId>` — and the taskpilot stop button that dispatches
+        // it — can cancel a tool-started delegation. The tool starts runs
+        // directly (not through the facade), so without this registration the
+        // stop command would miss them. Declare-and-degrade: a core that
+        // predates the registry simply leaves the run untracked, as before.
+        const registry = ctx.localAgent as unknown as {
+          trackDelegationRun?: (childSessionId: string, run: SubagentRun, cancel: () => void) => void
+        }
+        if (typeof registry.trackDelegationRun === 'function') {
+          registry.trackDelegationRun(String(run.id), run, () => controller.abort())
+        }
         const settled = await settleForegroundRun(run)
         if (resume === undefined) {
           // Fresh delegation: self-describe the resume handle (the dsh child

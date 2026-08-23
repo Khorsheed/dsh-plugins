@@ -50,7 +50,7 @@ export function apply(ctx: Context): void {
     name: 'taskpilot-interrupt',
     description: 'Interrupt a running subagent by its session id; an optional direct-parent id authorizes a deep descendant '
       + '(e.g. /taskpilot-interrupt <child-session-id> [parent-session-id]).',
-    handler: (invocation) => {
+    handler: async (invocation) => {
       const parts = invocation.rawInput.trim().split(/\s+/)
       const childId = parts[0] ?? ''
       if (childId.length === 0) {
@@ -72,8 +72,33 @@ export function apply(ctx: Context): void {
         const agent = ctx.agents.get(childId as SessionId)
         if (agent !== undefined && agent.session.header.parentSession === parentSessionId) {
           agent.cancel({ kind: 'user' })
+          return { kind: 'success', text: `interrupt requested for subagent ${childId}` }
         }
-        return { kind: 'success', text: `interrupt requested for subagent ${childId}` }
+        if (agent !== undefined) {
+          // A live agent under ANOTHER parent is not this session's child to
+          // stop; the interrupt above was the only admissible action.
+          return { kind: 'success', text: `interrupt requested for subagent ${childId}` }
+        }
+        // No live agent at all: the row is a one-shot subagent — most often a
+        // local-agent family member CLI run, whose child session is a pure
+        // transcript container. Route the stop through the commands seam to
+        // the family's `/local-agent stop <childSessionId>`, which cancels the
+        // active delegation by child session id. Degrade when the local-agent
+        // core is not mounted: the command does not resolve, and the verb
+        // reports that it cannot stop instead of claiming success.
+        const stop = await ctx.commands.execute(
+          invocation.agent,
+          `/local-agent stop ${childId}`,
+          [],
+          invocation.signal,
+        )
+        if (stop === undefined) {
+          return {
+            kind: 'error',
+            text: `cannot stop subagent ${childId}: no live agent to cancel and the local-agent integration is not mounted`,
+          }
+        }
+        return stop.result
       } catch (error) {
         return { kind: 'error', text: `cannot interrupt subagent ${childId}: ${String(error)}` }
       }

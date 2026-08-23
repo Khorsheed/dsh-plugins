@@ -90,7 +90,7 @@ model_provider = "dsh-router"
 
 **长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `codex app-server --stdio` 进程（同 scoped home、同 `-c` 成员桥声明），创建持久线程（`thread/start`，`ephemeral: false`），之后每轮 = 向活着的 runtime 发 `turn/start`；`item/completed` 事件即时折进子会话（与 exec 共享同一 `CodexTranscriptLine` 折叠与 append 核，最后一行留置到 `turn/completed` 以挂用量），`cancel` 落地为 `turn/interrupt`——进程不死、线程可续。审批类 server→client 请求按无人值守策略自动应答（cancel/decline，与 exec 行为一致）。runtime 空闲超时回收（app-server 无 shutdown 方法：stdin EOF → SIGTERM 阶梯），崩溃后下一轮自动重连并 `thread/resume` 盘上线程；握手失败进冷却熔断，逐轮回退 exec。
 
-**委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。
+**委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。**非 completed 终态（aborted/error）的用量回落。** 被中止/失败的轮次永远收不到 `turn.completed`，事件流里没有用量——但 codex 已把本轮真实 token 消耗写进了 scoped home 的 rollout 文件。此时 exec 镜像改读**本次 run 的 rollout 文件末条 `token_count`** 挂用量：文件按线程 id（`session_meta` 头）定位，流在 `thread.started` 之前就被截断时按 spawn 时间窗回落；口径与 `turn.completed` 完全一致（`input − cached` 等桶，共享 `usageFromCodex`）。硬杀到连 `token_count` 都没写出的极端情况仍保持无用量，不猜测。
 
 </details>
 

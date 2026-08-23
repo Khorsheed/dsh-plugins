@@ -456,19 +456,31 @@ export class LocalAgentRegistry {
    */
   private readonly memberRuns = new Map<string, LocalAgentMemberRun>()
   /**
-   * Facade-tracked in-flight runs by dsh child session id, so
-   * {@link LocalAgentRegistry.cancel} can abort a run started through
-   * {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume} and
-   * the caller's `onProgress` receives the run's reports. Each entry clears
-   * itself (and its heartbeat timer) when the run's result settles (any stop
-   * reason).
+   * The ACTIVE DELEGATION REGISTRY — in-flight local-agent runs by dsh child
+   * session id, the key the `/local-agent stop <childSessionId>` command and
+   * {@link LocalAgentRegistry.cancel} look up. Two registration kinds share
+   * the map:
+   *
+   * - **facade-tracked** ({@link trackRun}): runs started through
+   *   {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume},
+   *   carrying the fused AbortController whose signal reached
+   *   `ctx.subagents.start`; cancel aborts it.
+   * - **tool-registered** ({@link trackDelegationRun}): runs the family tool
+   *   starts directly through `ctx.subagents.start`, carrying an explicit
+   *   cancel lever (its fused controller); cancel calls it.
+   *
+   * Every entry clears itself when the run's result settles (any stop
+   * reason), and facade entries also stop their heartbeat timer then.
    */
   private readonly runs = new Map<string, {
-    controller: AbortController
+    /** Facade-owned controller (start/resume); aborting it cancels the run. */
+    controller?: AbortController
+    /** Caller-supplied cancel lever for tool-registered (non-facade) runs. */
+    cancel?: () => void
     run: SubagentRun
     onProgress: ((event: LocalAgentRunProgress) => void) | undefined
     startedAt: number
-    heartbeat: ReturnType<typeof setInterval>
+    heartbeat?: ReturnType<typeof setInterval>
   }>()
   /**
    * Detach disposers for child sessions the facade reattached into the live
@@ -491,7 +503,9 @@ export class LocalAgentRegistry {
     // Reattached child sessions leave the live store, and in-flight run
     // heartbeats stop, when the plugin unloads.
     ctx.effect(() => () => {
-      for (const entry of this.runs.values()) clearInterval(entry.heartbeat)
+      for (const entry of this.runs.values()) {
+        if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
+      }
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
     })
@@ -1040,8 +1054,56 @@ export class LocalAgentRegistry {
   cancel(childSessionId: string): boolean {
     const entry = this.runs.get(childSessionId)
     if (entry === undefined) return false
-    entry.controller.abort()
+    if (entry.controller !== undefined) {
+      entry.controller.abort()
+    } else {
+      // Tool-registered run: the caller-supplied cancel lever (its fused
+      // controller), the same abort channel the facade entry aborts.
+      entry.cancel?.()
+    }
     return true
+  }
+
+  /**
+   * Register a NON-facade in-flight delegation run with the active-delegation
+   * registry, keyed by the dsh child session id, so the `/local-agent stop`
+   * command and {@link cancel} can reach it. This is the family TOOL's entry
+   * point: the tool starts its runs through `ctx.subagents.start` directly
+   * (not the facade), so without this registration its in-flight runs would
+   * be invisible to the stop command. The caller owns the cancel lever — a
+   * controller fused with the run's request signal, aborted exactly like the
+   * facade's tracked controller. The entry clears itself when the run's
+   * result settles (any stop reason); an existing facade entry for the same
+   * child session wins (it already owns cancellation and progress).
+   * @param childSessionId - the dsh child session id (the run id).
+   * @param run - the published subagent run.
+   * @param cancel - the lever that aborts the run's request signal.
+   */
+  trackDelegationRun(childSessionId: string, run: SubagentRun, cancel: () => void): void {
+    if (this.runs.has(childSessionId)) return
+    this.runs.set(childSessionId, {
+      cancel,
+      run,
+      onProgress: undefined,
+      startedAt: Date.now(),
+    })
+    const clear = (): void => {
+      const entry = this.runs.get(childSessionId)
+      if (entry?.run !== run) return
+      this.runs.delete(childSessionId)
+    }
+    void run.result.then(clear, clear)
+  }
+
+  /**
+   * Whether the active-delegation registry holds an in-flight run for the
+   * child session — the registry's read side for the `/local-agent stop`
+   * command's miss report (the command cancels through {@link cancel}).
+   * @param childSessionId - the dsh child session id.
+   * @returns whether a run is currently in flight under that id.
+   */
+  isDelegationActive(childSessionId: string): boolean {
+    return this.runs.has(childSessionId)
   }
 
   /**
@@ -1602,6 +1664,27 @@ function renderRoster(registry: LocalAgentRegistry): string {
 }
 
 /**
+ * The `/local-agent stop <childSessionId>` result: fire-and-return like the
+ * official `subagents.interrupt(targetSessionId)` — the cancel signal is
+ * issued before the reply, and an absent target (unknown child or no
+ * in-flight run) is an accepted no-op, named explicitly rather than a silent
+ * success. The authority is implicit: the dispatching agent's UI initiated
+ * the command, exactly as every other slash command.
+ * @param registry - the active-delegation registry.
+ * @param childSessionId - the dsh child session id of the delegation to stop.
+ * @returns the command result.
+ */
+function stopDelegation(registry: LocalAgentRegistry, childSessionId: string): CommandResult {
+  if (registry.cancel(childSessionId)) {
+    return { kind: 'success', text: `stop requested for child session ${childSessionId}` }
+  }
+  return {
+    kind: 'success',
+    text: `child session ${childSessionId} has no in-flight local-agent run to stop`,
+  }
+}
+
+/**
  * Mount the local-agent core: provide the harness registry and the family
  * command listing the registered harnesses (the client roster channel).
  * @param ctx - plugin context carrying the command registry.
@@ -1622,16 +1705,29 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => { void memberChannel.dispose() })
   ctx.commands.register({
     name: 'local-agent',
-    description: 'list the registered local code-agent harnesses',
-    input: { hint: 'list' },
+    description: 'list the registered local code-agent harnesses, or stop an in-flight delegation',
+    input: { hint: 'list | stop <childSessionId>' },
     handler: (invocation) => {
       const input = invocation.rawInput.trim()
       if (input === 'list' || input === '') {
         return Promise.resolve({ kind: 'success', text: renderRoster(registry) })
       }
+      if (input.startsWith('stop')) {
+        // /local-agent stop <childSessionId>: cancel the active delegation
+        // keyed by the child session id (semantics aligned with the official
+        // subagents.interrupt — fire-and-return, absent target accepted).
+        const childSessionId = input.slice('stop'.length).trim()
+        if (childSessionId === '') {
+          return Promise.resolve({
+            kind: 'error',
+            text: 'usage: /local-agent stop <childSessionId>',
+          })
+        }
+        return Promise.resolve(stopDelegation(registry, childSessionId))
+      }
       return Promise.resolve({
         kind: 'error',
-        text: 'Unknown /local-agent subcommand; use /local-agent list.',
+        text: 'Unknown /local-agent subcommand; use /local-agent list or /local-agent stop <childSessionId>.',
       })
     },
   })

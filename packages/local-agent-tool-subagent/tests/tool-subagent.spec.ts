@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -6,6 +6,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { LOCAL_AGENT_SERVICE, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 import * as tool from '../src/index.ts'
 import { mountScriptedProvider } from './scripted-provider.ts'
@@ -22,14 +23,22 @@ function fakeAgent(id = 'parent-1'): Agent {
  * provider + a real LocalAgentRegistry (delegation registry the tool stages
  * through), then invoke the tool through `ctx.tools.execute`.
  */
-async function setup(toolConfig: tool.Config, over: { parentId?: string } = {}) {
+async function setup(
+  toolConfig: tool.Config,
+  over: { parentId?: string; deferred?: Array<(result: SubagentResult) => void> } = {},
+) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(SubagentRuntime)
   const started: Array<{ label?: string; task: string }> = []
   const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
-  mountScriptedProvider(ctx, { name: toolConfig.provider, started, taken })
+  mountScriptedProvider(ctx, {
+    name: toolConfig.provider,
+    started,
+    taken,
+    ...over.deferred === undefined ? {} : { deferred: over.deferred },
+  })
   const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
   ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
@@ -198,5 +207,30 @@ describe('dsh-local-agent-tool-subagent', () => {
     const result = await callTool(ctx, { description: 'x', prompt: 'y' }, agent)
     expect(result).toMatchObject({ isError: true })
     expect(text(result)).toContain('unknown tool "subagent_test"')
+  })
+
+  it('registers tool-started runs in the active-delegation registry so /local-agent stop can cancel them', async () => {
+    const deferred: Array<(result: SubagentResult) => void> = []
+    const { ctx, registry } = await setup({ provider: 'mock', toolName: 'subagent_test' }, { deferred })
+    const agent = fakeAgent()
+    const executing = callTool(ctx, { description: '建个文件', prompt: '创建 hello.txt' }, agent)
+
+    // While the run is in flight, the registry holds it by child session id
+    // (the run id), so the stop command's cancel() reaches the tool's lever.
+    await vi.waitFor(() => {
+      expect(registry.isDelegationActive('scripted-child')).toBe(true)
+    })
+    expect(registry.cancel('scripted-child')).toBe(true)
+
+    // The provider observes the cancellation and settles the run 'aborted';
+    // the tool surfaces the stop reason as an isError result.
+    deferred[0]?.({ stopReason: 'aborted', output: [] })
+    const result = await executing
+    expect(result).toMatchObject({ isError: true })
+    expect(text(result)).toContain('subagent run was cancelled')
+    // The registry entry clears once the run settles.
+    await vi.waitFor(() => {
+      expect(registry.isDelegationActive('scripted-child')).toBe(false)
+    })
   })
 })

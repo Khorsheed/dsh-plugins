@@ -1,4 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -571,12 +574,21 @@ describe('codex-cli-provider abort path', () => {
     done: Promise<{ exitCode: number; signal: null }>
     terminated: () => boolean
   } {
-    const partialStream = [
+    return hangingChildWith([
       { type: 'thread.started', thread_id: 't-abort' },
       { type: 'turn.started' },
       { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: '我先创建一个文件。' } },
       { type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: 'echo hi > hi.txt', aggregated_output: '' } },
-    ].map(event => JSON.stringify(event)).join('\n')
+    ])
+  }
+
+  /** The fake CLI, emitting a caller-chosen partial NDJSON stream. */
+  function hangingChildWith(events: unknown[]): {
+    handle: SubprocessHandle
+    done: Promise<{ exitCode: number; signal: null }>
+    terminated: () => boolean
+  } {
+    const partialStream = events.map(event => JSON.stringify(event)).join('\n')
     const stdout = new Readable({ read() {} })
     const stderr = new Readable({ read() {} })
     stderr.push('')
@@ -611,6 +623,36 @@ describe('codex-cli-provider abort path', () => {
       stdout.push(null)
     })
     return { handle, done, terminated: () => terminated }
+  }
+
+  /**
+   * A scoped home whose sessions tree holds one rollout file for the fake
+   * run's thread, ending with the token_count codex writes at turn boundaries
+   * (including interrupted turns). The recorded usage is the number the
+   * fallback must attach to the aborted child session. The file is stamped
+   * NOW (the test's spawn moment), so the time-window fallback matches too.
+   */
+  function homeWithRollout(threadId: string): string {
+    const home = mkdtempSync(join(tmpdir(), 'codex-abort-rollout-'))
+    const now = new Date()
+    const dir = join(home, 'sessions', '2026', '08', '16')
+    mkdirSync(dir, { recursive: true })
+    const stamp = now.toISOString().replace(/[:.]/g, '-')
+    writeFileSync(join(dir, `rollout-${stamp}-${threadId}.jsonl`), [
+      JSON.stringify({ type: 'session_meta', payload: { id: threadId, timestamp: now.toISOString(), cwd: '/tmp' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25, total_tokens: 125 },
+            total_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25, total_tokens: 125 },
+          },
+        },
+      }),
+      '',
+    ].join('\n'))
+    return home
   }
 
   it('settles the result immediately on abort and mirrors the partial NDJSON after the kill', async () => {
@@ -661,6 +703,88 @@ describe('codex-cli-provider abort path', () => {
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '我先创建一个文件。' }])
     expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi > hi.txt' }])
+    await hanging.done
+  })
+
+  it('attaches the rollout file last token_count usage to a killed run (thread-id locator)', async () => {
+    const home = homeWithRollout('t-abort')
+    const child = Session.create(SessionId('child-abort-rollout'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const hanging = hangingChild()
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: home },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      ctx,
+    })
+    await new Promise(resolve => { setTimeout(resolve, 50) })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await run.dispose()
+
+    // The abort mirror preserves the partial stream AND recovers the usage
+    // codex wrote to the rollout file's last token_count (input 100 − cached
+    // 40 = 60 uncached), hanging it on the final mirrored assistant message.
+    await vi.waitFor(() => {
+      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      expect(assistant).toHaveLength(2)
+      expect(assistant[1]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+    })
+    await hanging.done
+  })
+
+  it('reaches the same usage via the time window when a kill truncated the stream before thread.started', async () => {
+    const home = homeWithRollout('t-window')
+    const child = Session.create(SessionId('child-abort-window'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    // No thread.started in the stream: the locator falls back to the spawn
+    // time window and still finds the run's rollout file.
+    const hanging = hangingChildWith([
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: '部分结果' } },
+    ])
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: home },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      ctx,
+    })
+    await new Promise(resolve => { setTimeout(resolve, 50) })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await run.dispose()
+
+    await vi.waitFor(() => {
+      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      expect(assistant).toHaveLength(1)
+      expect(assistant[0]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+    })
     await hanging.done
   })
 })

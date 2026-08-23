@@ -37,6 +37,7 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
+import { codexRolloutUsage, usageFromCodex } from './records.ts'
 
 /** Quote one TOML basic string for the `-c` config override. */
 function tomlString(value: string): string {
@@ -562,34 +563,6 @@ export function parseCodexJsonStream(stream: string): {
 }
 
 /**
- * Map codex's token-count payload onto the shared usage contract. Codex's
- * `input_tokens` is the TOTAL input including cache hits (OpenAI-style
- * accounting, confirmed against `total_tokens` in the rollout token_count),
- * and `cached_input_tokens` is the cache-read subset — so the uncached bucket
- * subtracts the cached portion to avoid double counting. There is no
- * cache-write concept, so that bucket is omitted.
- * @param usage - the raw codex usage object from `turn.completed`.
- * @returns the shared usage record.
- */
-function usageFromCodex(usage: unknown): TokenUsage {
-  const raw = usage as { input_tokens?: unknown; cached_input_tokens?: unknown; output_tokens?: unknown }
-  const input = Number(raw.input_tokens)
-  const cached = Number(raw.cached_input_tokens)
-  const output = Number(raw.output_tokens)
-  const uncached = Number.isFinite(input) && Number.isFinite(cached)
-    ? Math.max(0, input - cached)
-    : Number.isFinite(input)
-      ? input
-      : 0
-  const usageRecord: TokenUsage = {
-    inputTokens: uncached,
-    outputTokens: Number.isFinite(output) ? output : 0,
-  }
-  if (Number.isFinite(cached) && cached > 0) usageRecord.cacheReadTokens = cached
-  return usageRecord
-}
-
-/**
  * Start the real `codex exec` child and publish its run. The codex
  * reply arrives as an NDJSON event stream on stdout (`--json`): the final
  * `agent_message` item is the run output and the `turn.completed` usage is
@@ -624,6 +597,11 @@ export function startCodexCliRun(
     env: spec.env,
   })
   spec.onSpawned?.(child.pid)
+  // The spawn moment anchors the rollout-locator time window: the run's
+  // rollout file starts around here (thread creation ≈ turn start ≈ spawn),
+  // so the usage fallback can find it even when a kill truncated the stream
+  // before `thread.started` ever reached stdout.
+  const startedAtMs = Date.now()
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
@@ -778,7 +756,7 @@ export function startCodexCliRun(
           spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
         }
       }
-      return mirrorCodexAfterExit(spec, task, turn, output, liveMirror)
+      return mirrorCodexAfterExit(spec, task, turn, output, liveMirror, startedAtMs)
     },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
@@ -963,10 +941,23 @@ async function appendCodexResponse(
  * 'aborted'/'error' at the cancel moment, but codex may have produced content
  * before the kill landed. Also records the thread id (fresh rounds) so a
  * later resume can continue the partial thread.
+ *
+ * **Usage recovery**: a non-completed terminal state never emits
+ * `turn.completed`, so the parsed stream carries no usage even though codex
+ * wrote the run's real token spend to its rollout file. When the stream's
+ * usage is absent, the mirror falls back to the run's rollout file — located
+ * by the thread id (the `session_meta` head id) or by the spawn-time window —
+ * and attaches the file's LAST `token_count` entry (same
+ * `input − cached` caliber as `turn.completed`, via the shared
+ * {@link usageFromCodex}), so a killed or failed run still books its tokens.
+ * The fallback is best-effort and silent: no rollout file, an unreadable
+ * home, or a hard kill that wrote no token_count leaves the child without
+ * usage, exactly as before.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number.
  * @param output - the collected NDJSON stdout.
+ * @param startedAtMs - the spawn moment, anchoring the rollout time window.
  */
 async function mirrorCodexAfterExit(
   spec: CodexCliRunSpec,
@@ -974,6 +965,7 @@ async function mirrorCodexAfterExit(
   turn: number,
   output: string,
   live: CodexLiveMirror | undefined,
+  startedAtMs: number,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
   const work = async (): Promise<void> => {
@@ -984,10 +976,24 @@ async function mirrorCodexAfterExit(
     // Nothing streamed at all (e.g. the CLI died before the first item): keep
     // the pre-live-mirror behavior of recording nothing.
     if (parsed.lines.length === 0 && !userMirrored) return
+    // Non-completed terminal states (aborted/error) never emit turn.completed,
+    // so parsed.usage is absent; recover this run's last token_count from its
+    // rollout file (scoped home via the spawn env, located by thread id or
+    // the run's start-time window). A completed run keeps its stream usage.
+    let usage = parsed.usage
+    if (usage === undefined) {
+      const homeDir = spec.env['CODEX_HOME']
+      if (homeDir !== undefined && homeDir !== '') {
+        usage = await codexRolloutUsage(homeDir, {
+          threadId: parsed.threadId,
+          windowStart: startedAtMs,
+        })
+      }
+    }
     await appendCodexResponse(spec, task, turn, {
       lines: parsed.lines,
       output: collectOutputBlocks(parsed.text),
-      ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      ...usage === undefined ? {} : { usage },
     }, fromLines, userMirrored)
   }
   try {

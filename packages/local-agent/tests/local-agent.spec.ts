@@ -11,6 +11,7 @@ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type { CommandExecution } from '@deepseek-ai/dsh-commands'
+import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 
 /** One temporary directory removed by the OS temp cleaner; tests own its files. */
 function tempDir(prefix: string): string {
@@ -139,6 +140,41 @@ describe('LocalAgentRegistry', () => {
     registry.register(harness({ displayName: 'Fake Agent' }))
     const execution = await ctx.commands.execute(agent, '/local-agent list', [], new AbortController().signal)
     expectSuccess(execution, 'fake: Fake Agent')
+  })
+
+  it('the /local-agent stop command cancels an in-flight delegation by child session id', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('stop-hit-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    let cancelled = 0
+    let settle!: (result: SubagentResult) => void
+    const run: SubagentRun = {
+      id: SessionId('child-1'),
+      localAgent: undefined,
+      result: new Promise((resolve) => { settle = resolve }),
+      dispose: () => Promise.resolve(),
+    }
+    registry.trackDelegationRun('child-1', run, () => { cancelled += 1 })
+    expect(registry.isDelegationActive('child-1')).toBe(true)
+
+    const execution = await ctx.commands.execute(agent, '/local-agent stop child-1', [], new AbortController().signal)
+    expectSuccess(execution, 'stop requested for child session child-1')
+    expect(cancelled).toBe(1)
+    // The run settles afterwards (any stop reason) and clears the registry.
+    settle({ stopReason: 'aborted', output: [] })
+    await run.result
+    await Promise.resolve()
+    expect(registry.isDelegationActive('child-1')).toBe(false)
+  })
+
+  it('the /local-agent stop command accepts an absent target as an explicit no-op', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('stop-miss-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    const execution = await ctx.commands.execute(agent, '/local-agent stop ghost', [], new AbortController().signal)
+    expectSuccess(execution, 'child session ghost has no in-flight local-agent run to stop')
+    const usage = await ctx.commands.execute(agent, '/local-agent stop', [], new AbortController().signal)
+    expectError(usage, 'usage: /local-agent stop <childSessionId>')
+    const unknown = await ctx.commands.execute(agent, '/local-agent bogus', [], new AbortController().signal)
+    expectError(unknown, 'Unknown /local-agent subcommand')
   })
 
   it('reports authenticated status from the harness probe', async () => {
