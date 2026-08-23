@@ -1308,6 +1308,9 @@ describe('supervise', () => {
         stale.io,
       )).toBe(0)
       expect(stale.err.join()).toContain('stale restart marker')
+      // schedule-exit holds the restart lock only across its check→write→spawn
+      // critical section: a completed schedule leaves no lock behind.
+      expect(existsSync(join(stateDir, 'restart.lock'))).toBe(false)
       // And the reverse direction: a live restart lock means an instance is
       // being restarted right now — the exit agent would kill the one it starts.
       rmSync(join(stateDir, 'restart-requested.json'), { force: true })
