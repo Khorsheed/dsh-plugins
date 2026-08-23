@@ -59,6 +59,7 @@ import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
+  appendClaudeUsageChunk,
   claudeLineText,
   ClaudeStreamParser,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -489,13 +490,26 @@ export class ClaudeLiveDriver {
 
     /** Mirror folded lines [mirrored, upto); the last line is held back until `result`. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
+      // The usage rides the last NON-tool line (tool events carry no usage
+      // slot); a carrier mirrored in an earlier flush gets the accounting as
+      // a usage chunk pinned to its step.
+      let usageIndex = -1
+      if (withUsage) {
+        for (let index = 0; index < parser.lines.length; index += 1) {
+          if (parser.lines[index]?.kind !== 'tool') usageIndex = index
+        }
+      }
+      const carrierMirrored = withUsage && usageIndex !== -1 && usageIndex < mirrored
       for (let index = mirrored; index < upto; index += 1) {
         const line = parser.lines[index]
         if (line === undefined) continue
-        const lineUsage = withUsage && index === parser.lines.length - 1 ? parser.usage : undefined
+        const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
         appendClaudeTranscriptLine(childSession, turn, index + 1, line, lineUsage)
         mirrored = index + 1
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+      }
+      if (carrierMirrored && parser.usage !== undefined) {
+        appendClaudeUsageChunk(childSession, turn, parser.usage)
       }
       if (upto > 0) persist()
     }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -47,13 +47,59 @@ describe('session-mirror', () => {
     expect(assistant.map(event => event.data.message.content)).toEqual([
       [{ type: 'reasoning', text: 'Simple task.' }],
       [{ type: 'text', text: '我开始了。' }],
-      [{ type: 'text', text: '[工具 Write] → Wrote 10 bytes' }],
       [{ type: 'text', text: '任务完成。' }],
     ])
+    // Tool activity mirrors as a native tool/call + tool/result pair (the
+    // wire line carried no ids, so the callId is the position fallback).
+    const calls = events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.data).toMatchObject({ callId: 'kimi-tool-3', name: 'Write', arguments: '' })
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message.content[0]).toMatchObject({
+      type: 'tool-result',
+      toolCallId: 'kimi-tool-3',
+      content: [{ type: 'text', text: 'Wrote 10 bytes' }],
+      isError: false,
+    })
+    expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
     // assistant events attribute the kimi route
     expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'k3' })
     // the mirrored batch reaches persistence
     expect(append).toHaveBeenCalledWith(child.id, events)
+  })
+
+  it('backfills a tool result that lands after its call was mirrored', async () => {
+    const pendingWire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'Write', args: { path: '/tmp/a.txt' } }, toolCallId: 'tc1' } },
+    ]
+    const { home, dir } = wireHome('s1', pendingWire)
+    const child = Session.create(SessionId('child-late'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+
+    let total = await mirrorKimiSession(ctx, child, home, 's1')
+    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(0)
+
+    // The result lands in the wire later; the next delta pass pairs it with
+    // the already-mirrored call instead of dropping or duplicating it.
+    appendFileSync(
+      join(dir, 'agents', 'main', 'wire.jsonl'),
+      '\n' + JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'Wrote 10 bytes' } } }),
+    )
+    total = await mirrorKimiSession(ctx, child, home, 's1', total)
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message.content[0]).toMatchObject({
+      type: 'tool-result',
+      toolCallId: 'tc1',
+      content: [{ type: 'text', text: 'Wrote 10 bytes' }],
+    })
+    // A third pass is a no-op (no duplicate result).
+    await mirrorKimiSession(ctx, child, home, 's1', total)
+    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(1)
   })
 
   it('attaches the wire usage record to the final assistant message', async () => {

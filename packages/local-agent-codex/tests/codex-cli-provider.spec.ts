@@ -212,8 +212,18 @@ describe('codex-cli-provider run settlement', () => {
       { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 6, output_tokens: 4 } },
     )
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(3)
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
+    // The command_execution item mirrors as a native tool/call + tool/result
+    // pair, paired by the stream item id.
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect((calls[0]!.data as { callId: string; name: string; arguments: string }))
+      .toMatchObject({ callId: 'item_1', name: 'Bash', arguments: 'ls' })
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect((results[0]!.data as { message: { content: { toolCallId: string; content: unknown }[] } }).message.content[0])
+      .toMatchObject({ toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
 
     // Settle: the live mirror already covered the stream — no duplicates.
     finish({ exitCode: 0, signal: null })
@@ -225,7 +235,8 @@ describe('codex-cli-provider run settlement', () => {
     const texts = assistant.map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
     expect(new Set(texts).size).toBe(texts.length)
     expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
-    expect((assistant[2]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     await done
   })
 
@@ -698,11 +709,16 @@ describe('codex-cli-provider abort path', () => {
 
     // The partial stream (reply text + command) is mirrored after the kill.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      // The killed stream's trailing command mirrors as a native tool/call
+      // (no result — the kill landed first).
+      expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
     })
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '我先创建一个文件。' }])
-    expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi > hi.txt' }])
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect((calls[0]!.data as { name: string; arguments: string }))
+      .toMatchObject({ name: 'Bash', arguments: 'echo hi > hi.txt' })
     await hanging.done
   })
 
@@ -737,11 +753,16 @@ describe('codex-cli-provider abort path', () => {
 
     // The abort mirror preserves the partial stream AND recovers the usage
     // codex wrote to the rollout file's last token_count (input 100 − cached
-    // 40 = 60 uncached), hanging it on the final mirrored assistant message.
+    // 40 = 60 uncached). The killed stream ends with the command, so the
+    // carrier assistant message went out through the live mirror before the
+    // usage was knowable — the recovery books it as a usage chunk pinned to
+    // the carrier's step (the token projection counts it identically).
     await vi.waitFor(() => {
       const assistant = child.events.filter(event => event.type === 'assistant/message')
-      expect(assistant).toHaveLength(2)
-      expect(assistant[1]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+      expect(assistant).toHaveLength(1)
+      const usageChunk = child.events.find(event =>
+        event.type === 'assistant/chunk' && event.data.chunk.type === 'usage')
+      expect(usageChunk?.data.chunk.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })
     await hanging.done
   })

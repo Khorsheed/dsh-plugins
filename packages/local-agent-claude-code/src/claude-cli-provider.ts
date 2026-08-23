@@ -16,7 +16,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import {
@@ -442,11 +442,19 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 export type ClaudeTranscriptLine =
   | { kind: 'think'; text: string }
   | { kind: 'text'; text: string }
-  | { kind: 'tool'; name: string; detail?: string; result?: string }
+  /**
+   * Tool activity: one `tool_use` with its (possibly still pending)
+   * `tool_result`. `id` is the stream's tool_use id when present, else a
+   * synthesized position-based id — stable within a run either way, so the
+   * child session's `tool/call`/`tool/result` events pair by it.
+   */
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface ClaudeStreamFoldState {
   readonly lines: ClaudeTranscriptLine[]
+  /** tool_use id → transcript line index, so a result pairs with its own call. */
+  readonly callsById: Map<string, number>
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
@@ -571,18 +579,36 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
         state.todoSkew = true
       }
       const detail = inputDetail(record['input'])
+      const id = typeof record['id'] === 'string' ? record['id'] : undefined
+      if (id !== undefined) state.callsById.set(id, state.lines.length)
       state.lines.push({
         kind: 'tool',
+        id: id ?? `claude-tool-${state.lines.length}`,
         name,
-        ...detail === undefined ? {} : { detail },
+        ...detail === undefined ? {} : { args: detail },
       })
     } else if (kind === 'tool_result') {
       const content = record['content']
       const resultText = toolResultText(content)
       if (resultText !== undefined && resultText.trim() !== '') {
-        const last = state.lines[state.lines.length - 1]
-        if (last !== undefined && last.kind === 'tool') {
-          state.lines[state.lines.length - 1] = { ...last, result: resultText }
+        // Pair by tool_use_id when the stream carries it; fall back to the
+        // most recent tool line so an id-less stream still lands the result
+        // on its call.
+        const useId = typeof record['tool_use_id'] === 'string' ? record['tool_use_id'] : undefined
+        let target = useId === undefined ? undefined : state.callsById.get(useId)
+        if (target === undefined) {
+          for (let index = state.lines.length - 1; index >= 0; index -= 1) {
+            if (state.lines[index]?.kind === 'tool') {
+              target = index
+              break
+            }
+          }
+        }
+        if (target !== undefined) {
+          const last = state.lines[target]
+          if (last !== undefined && last.kind === 'tool') {
+            state.lines[target] = { ...last, result: resultText }
+          }
         }
       }
     }
@@ -599,6 +625,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
 export class ClaudeStreamParser implements ClaudeStreamFoldState {
   private buffer = ''
   readonly lines: ClaudeTranscriptLine[] = []
+  readonly callsById: Map<string, number> = new Map()
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
@@ -642,6 +669,7 @@ export function parseClaudeStreamJson(output: string): {
 } {
   const state: ClaudeStreamFoldState = {
     lines: [],
+    callsById: new Map(),
     text: undefined,
     usage: undefined,
     sessionId: undefined,
@@ -950,14 +978,33 @@ export function appendClaudeTranscriptLine(
   line: ClaudeTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
+  if (line.kind === 'tool') {
+    // Native tool card: the call event now, the result event when the stream
+    // already carries it. Tool lines never carry the round's usage — the
+    // callers attach usage to the round's last non-tool line.
+    const call = childSession.append('tool/call', {
+      turn,
+      step,
+      callId: CallId(line.id),
+      name: line.name,
+      arguments: line.args ?? '',
+    })
+    if (line.result !== undefined) {
+      childSession.append('tool/result', {
+        turn,
+        step,
+        message: createToolResultMessage({
+          callId: CallId(line.id),
+          content: [{ type: 'text', text: line.result }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    }
+    return
+  }
   const blocks = line.kind === 'think'
     ? [{ type: 'reasoning' as const, text: line.text }]
-    : line.kind === 'tool'
-      ? [{
-        type: 'text' as const,
-        text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
-      }]
-      : [{ type: 'text' as const, text: line.text }]
+    : [{ type: 'text' as const, text: line.text }]
   childSession.append('assistant/message', {
     turn,
     step,
@@ -967,6 +1014,34 @@ export function appendClaudeTranscriptLine(
     }),
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
+}
+
+/**
+ * Book a round's usage when its carrier line (the last non-tool transcript
+ * line) was already mirrored WITHOUT it — a killed run's usage is only
+ * knowable at settle, and the carrier may have gone out through the live
+ * mirror by then. Appends a usage chunk pinned to the carrier's turn/step:
+ * the token projection treats a repeated step sample as a replacement, never
+ * a double count. No-op when the round has no mirrored assistant message.
+ * @param childSession - the run's child session.
+ * @param turn - the round's turn number.
+ * @param usage - the usage to book.
+ * @returns whether the chunk was appended.
+ */
+export function appendClaudeUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'assistant/message') continue
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn !== turn || typeof data.step !== 'number') return false
+    childSession.append('assistant/chunk', {
+      turn,
+      step: data.step,
+      chunk: { type: 'usage', usage },
+    })
+    return true
+  }
+  return false
 }
 
 /** Fold one transcript line into the run's child session as one assistant step. */
@@ -984,7 +1059,7 @@ function appendClaudeLine(
 /** The delta-progress text for one transcript line. */
 export function claudeLineText(line: ClaudeTranscriptLine): string {
   return line.kind === 'tool'
-    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
+    ? `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
     : line.text
 }
 
@@ -1056,13 +1131,28 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
             }), { surfaceOp: 'append' })
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
           }
+          // The usage rides the last NON-tool line (tool events carry no
+          // usage slot); a stream ending on a tool line would otherwise drop
+          // the round's accounting. When that carrier was mirrored in an
+          // earlier flush (before the usage was knowable), book it as a usage
+          // chunk pinned to the carrier's step instead.
+          let carrier = -1
+          if (parser.completed && parser.usage !== undefined) {
+            for (let scan = 0; scan < parser.lines.length; scan += 1) {
+              if (parser.lines[scan]?.kind !== 'tool') carrier = scan
+            }
+          }
+          const carrierMirrored = carrier !== -1 && carrier < mirrored
           for (let index = mirrored; index < upto; index += 1) {
             const line = parser.lines[index]
             if (line === undefined) continue
-            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            const usage = index === carrier ? parser.usage : undefined
             appendClaudeLine(spec, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+          }
+          if (carrierMirrored && parser.usage !== undefined) {
+            appendClaudeUsageChunk(childSession, turn, parser.usage)
           }
           await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
@@ -1108,11 +1198,23 @@ async function appendClaudeResponse(
     }), { surfaceOp: 'append' })
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  // The round's usage rides the last NON-tool line: tool activity folds to
+  // `tool/call`/`tool/result` events (which carry no usage slot), and a kill
+  // mid-tool ends the transcript with a tool line.
+  let usageIndex = -1
+  for (let index = 0; index < parsed.lines.length; index += 1) {
+    if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+  }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendClaudeLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    appendClaudeLine(spec, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
     step += 1
+  }
+  if (parsed.usage !== undefined && usageIndex !== -1 && usageIndex < fromLines) {
+    // The carrier line went out through the live mirror before the usage was
+    // knowable: book it as a usage chunk pinned to the carrier's step.
+    appendClaudeUsageChunk(childSession, turn, parsed.usage)
   }
   await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })

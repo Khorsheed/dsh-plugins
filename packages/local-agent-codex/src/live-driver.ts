@@ -22,6 +22,7 @@
  * @module @khorsheed/dsh-local-agent-codex/live-driver
  */
 
+import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
@@ -40,6 +41,7 @@ import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendCodexTranscriptLine,
+  appendCodexUsageChunk,
   codexLineText,
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
@@ -141,6 +143,9 @@ function delay(ms: number): Promise<void> {
  * child transcripts cannot drift.
  */
 export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine | undefined {
+  // The app-server ThreadItem carries its own id; the fold falls back to a
+  // synthetic one when it is absent (pairing only needs per-run uniqueness).
+  const itemId = typeof item['id'] === 'string' ? item['id'] : undefined
   switch (item['type']) {
     case 'reasoning': {
       const parts = [item['summary'], item['content']]
@@ -153,23 +158,28 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
       return typeof item['text'] === 'string' ? { kind: 'text', text: item['text'] } : undefined
     case 'commandExecution': {
       const command = typeof item['command'] === 'string' ? item.command : undefined
-      const output = typeof item['aggregatedOutput'] === 'string' ? item.aggregatedOutput : undefined
+      const output = typeof item['aggregatedOutput'] === 'string' && item['aggregatedOutput'].trim() !== ''
+        ? item['aggregatedOutput'] as string
+        : undefined
       if (command === undefined && output === undefined) return undefined
-      const detail = command !== undefined && output !== undefined && output.trim() !== ''
-        ? `${command}\n${output}`
-        : command ?? output
       return {
         kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
         name: 'Bash',
-        ...detail === undefined ? {} : { detail },
+        ...command === undefined ? {} : { args: command },
+        ...output === undefined ? {} : { result: output },
       }
     }
     case 'webSearch':
-      return { kind: 'tool', name: 'WebSearch' }
+      return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: 'WebSearch' }
     case 'mcpToolCall': {
       const server = typeof item['server'] === 'string' ? item.server : undefined
       const tool = typeof item['tool'] === 'string' ? item.tool : undefined
-      return { kind: 'tool', name: server !== undefined && tool !== undefined ? `${server}/${tool}` : tool ?? 'mcp' }
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: server !== undefined && tool !== undefined ? `${server}/${tool}` : tool ?? 'mcp',
+      }
     }
     case 'plan':
       return typeof item['text'] === 'string' && item['text'].trim() !== ''
@@ -701,14 +711,26 @@ export class CodexLiveDriver {
 
     /** Mirror folded lines [mirrored, upto); the last line is held back until completion. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
+      // The usage rides the last NON-tool line (tool events carry no usage
+      // slot, and a kill mid-command ends the transcript with a tool line).
+      let usageIndex = -1
+      if (withUsage) {
+        for (let index = 0; index < lines.length; index += 1) {
+          if (lines[index]?.kind !== 'tool') usageIndex = index
+        }
+      }
+      // A carrier mirrored in an earlier flush (before the usage was
+      // knowable) gets the accounting as a usage chunk pinned to its step.
+      const carrierMirrored = withUsage && usageIndex !== -1 && usageIndex < mirrored
       for (let index = mirrored; index < upto; index += 1) {
         const line = lines[index]
         if (line === undefined) continue
-        const lineUsage = withUsage && index === lines.length - 1 ? usage : undefined
+        const lineUsage = withUsage && index === usageIndex ? usage : undefined
         appendCodexTranscriptLine(childSession, turn, index + 1, line, lineUsage)
         mirrored = index + 1
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
       }
+      if (carrierMirrored && usage !== undefined) appendCodexUsageChunk(childSession, turn, usage)
       if (upto > 0) persist()
     }
 

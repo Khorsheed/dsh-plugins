@@ -15,7 +15,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   NO_START_CAPABILITIES,
@@ -433,7 +433,13 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 export type CodexTranscriptLine =
   | { kind: 'think'; text: string }
   | { kind: 'text'; text: string }
-  | { kind: 'tool'; name: string; detail?: string }
+  /**
+   * Tool activity: one call with its (possibly absent) result. `id` is the
+   * stream item's id when present, else a synthesized position-based id —
+   * stable within a run either way, so the child session's
+   * `tool/call`/`tool/result` events pair by it.
+   */
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
@@ -456,7 +462,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   if (line === '') return
   let event: {
     type?: string
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -483,17 +489,24 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     state.text = item.text
   } else if (item.type === 'command_execution') {
     const command = typeof item.command === 'string' ? item.command : undefined
-    const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
+    const output = typeof item.aggregated_output === 'string' && item.aggregated_output.trim() !== ''
+      ? item.aggregated_output
+      : undefined
     if (command !== undefined || output !== undefined) {
       state.lines.push({
         kind: 'tool',
+        id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
         name: 'Bash',
-        ...command === undefined ? {} : { detail: command },
-        ...command !== undefined && output !== undefined && output.trim() !== '' ? { detail: `${command}\n${output}` } : {},
+        ...command === undefined ? {} : { args: command },
+        ...output === undefined ? {} : { result: output },
       })
     }
   } else if (item.type === 'web_search_call') {
-    state.lines.push({ kind: 'tool', name: 'WebSearch' })
+    state.lines.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+      name: 'WebSearch',
+    })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one
     // is pending (web search or command output).
@@ -503,7 +516,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       if (last !== undefined && last.kind === 'tool') {
         state.lines[state.lines.length - 1] = {
           ...last,
-          detail: last.detail === undefined ? output : `${last.detail}\n${output}`,
+          result: last.result === undefined ? output : `${last.result}\n${output}`,
         }
       }
     }
@@ -782,11 +795,34 @@ export function appendCodexTranscriptLine(
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
+  if (line.kind === 'tool') {
+    // Native tool card: the call event now, the result event when the stream
+    // already carries it. Tool lines never carry the round's usage — the
+    // callers attach usage to the round's final line, which is an agent
+    // message on every well-formed stream.
+    const call = childSession.append('tool/call', {
+      turn,
+      step,
+      callId: CallId(line.id),
+      name: line.name,
+      arguments: line.args ?? '',
+    })
+    if (line.result !== undefined) {
+      childSession.append('tool/result', {
+        turn,
+        step,
+        message: createToolResultMessage({
+          callId: CallId(line.id),
+          content: [{ type: 'text', text: line.result }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    }
+    return
+  }
   const blocks = line.kind === 'think'
     ? [{ type: 'reasoning' as const, text: line.text }]
-    : line.kind === 'tool'
-      ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
-      : [{ type: 'text' as const, text: line.text }]
+    : [{ type: 'text' as const, text: line.text }]
   childSession.append('assistant/message', {
     turn,
     step,
@@ -810,10 +846,38 @@ function appendCodexLine(
   appendCodexTranscriptLine(spec.childSession, turn, step, line, usage)
 }
 
+/**
+ * Book a round's usage when its carrier line (the last non-tool transcript
+ * line) was already mirrored WITHOUT it — a killed run's usage is only
+ * knowable at settle, and the carrier may have gone out through the live
+ * mirror by then. Appends a usage chunk pinned to the carrier's turn/step:
+ * the token projection treats a repeated step sample as a replacement, never
+ * a double count. No-op when the round has no mirrored assistant message.
+ * @param childSession - the run's child session.
+ * @param turn - the round's turn number.
+ * @param usage - the usage to book.
+ * @returns whether the chunk was appended.
+ */
+export function appendCodexUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'assistant/message') continue
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn !== turn || typeof data.step !== 'number') return false
+    childSession.append('assistant/chunk', {
+      turn,
+      step: data.step,
+      chunk: { type: 'usage', usage },
+    })
+    return true
+  }
+  return false
+}
+
 /** The delta-progress text for one transcript line. */
 export function codexLineText(line: CodexTranscriptLine): string {
   return line.kind === 'tool'
-    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}`
+    ? `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}${line.result !== undefined ? `\n${line.result}` : ''}`
     : line.text
 }
 
@@ -870,13 +934,28 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             }), { surfaceOp: 'append' })
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
           }
+          // The usage rides the last NON-tool line (tool events carry no
+          // usage slot); a stream ending on a tool line would otherwise drop
+          // the round's accounting. When that carrier was mirrored in an
+          // earlier flush (before the usage was knowable), book it as a usage
+          // chunk pinned to the carrier's step instead.
+          let carrier = -1
+          if (parser.completed && parser.usage !== undefined) {
+            for (let scan = 0; scan < parser.lines.length; scan += 1) {
+              if (parser.lines[scan]?.kind !== 'tool') carrier = scan
+            }
+          }
+          const carrierMirrored = carrier !== -1 && carrier < mirrored
           for (let index = mirrored; index < upto; index += 1) {
             const line = parser.lines[index]
             if (line === undefined) continue
-            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            const usage = index === carrier ? parser.usage : undefined
             appendCodexLine(spec, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+          }
+          if (carrierMirrored && parser.usage !== undefined) {
+            appendCodexUsageChunk(childSession, turn, parser.usage)
           }
           await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
@@ -923,11 +1002,25 @@ async function appendCodexResponse(
     }), { surfaceOp: 'append' })
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  // The round's usage rides the last NON-tool line: tool activity folds to
+  // `tool/call`/`tool/result` events (which carry no usage slot), and a kill
+  // mid-command ends the transcript with a tool line — exactly the case the
+  // rollout-usage recovery exists for.
+  let usageIndex = -1
+  for (let index = 0; index < parsed.lines.length; index += 1) {
+    if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+  }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendCodexLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    appendCodexLine(spec, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     step += 1
+  }
+  if (parsed.usage !== undefined && usageIndex !== -1 && usageIndex < fromLines) {
+    // The carrier line went out through the live mirror before the usage was
+    // knowable (a killed run recovers it from the rollout at settle): book it
+    // as a usage chunk pinned to the carrier's step.
+    appendCodexUsageChunk(childSession, turn, parsed.usage)
   }
   await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })

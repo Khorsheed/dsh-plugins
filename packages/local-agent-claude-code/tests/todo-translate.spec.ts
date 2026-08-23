@@ -79,7 +79,7 @@ describe('TodoWrite interception in the fold', () => {
     ])
     // The tool text fold carries Bash only; TodoWrite left no line.
     expect(parsed.lines).toEqual([
-      { kind: 'tool', name: 'Bash', detail: 'pnpm test', result: 'ok' },
+      { kind: 'tool', id: 'tu2', name: 'Bash', args: 'pnpm test', result: 'ok' },
       { kind: 'text', text: 'done' },
     ])
     expect(parsed.todoSkew).toBeUndefined()
@@ -96,7 +96,7 @@ describe('TodoWrite interception in the fold', () => {
     const parsed = parseClaudeStreamJson(skewed)
     expect(parsed.todos).toBeUndefined()
     expect(parsed.todoSkew).toBe(true)
-    expect(parsed.lines).toEqual([{ kind: 'tool', name: 'TodoWrite' }])
+    expect(parsed.lines).toEqual([{ kind: 'tool', id: 'tu1', name: 'TodoWrite' }])
   })
 })
 
@@ -189,8 +189,12 @@ describe('todo/write mirroring into the member child session', () => {
         { content: '跑测试', status: 'pending' },
       ],
     })
-    // The transcript still carries the task, the Bash fold, and the reply.
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    // The transcript still carries the task, the Bash fold (as a native
+    // tool/call + tool/result pair), and the reply.
+    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'pnpm test' })
     expect(JSON.stringify(child.events)).not.toContain('TodoWrite')
   })
 
@@ -225,7 +229,8 @@ describe('todo/write mirroring into the member child session', () => {
     await runRound(child, ctx, `${skewed}\n${roundStream(undefined)}`, 1)
 
     expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(0)
-    expect(JSON.stringify(child.events)).toContain('[工具 TodoWrite]')
+    const skewedCalls = child.events.filter(event => event.type === 'tool/call')
+    expect(skewedCalls.some(event => (event.data as { name: string }).name === 'TodoWrite')).toBe(true)
     expect(warns.some(text => text.includes('TodoWrite'))).toBe(true)
   })
 })

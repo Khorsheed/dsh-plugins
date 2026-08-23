@@ -33,7 +33,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -133,6 +133,55 @@ function mirroredEventText(event: SessionEvent): string {
     .join('')
 }
 
+/** The delta-progress text for one mirrored tool event. */
+function mirroredToolText(event: SessionEvent): string {
+  if (event.type === 'tool/call') {
+    return `[工具 ${(event.data as { name?: string }).name ?? 'tool'}]`
+  }
+  const data = event.data as { message?: { content?: readonly { content?: readonly { text?: string }[] }[] } }
+  const result = data.message?.content?.[0]?.content?.map(block => block.text ?? '').join('') ?? ''
+  return result === '' ? '[工具结果]' : `[工具结果] ${result}`
+}
+
+/**
+ * Find the child-session seq of the mirrored `tool/call` carrying `callId`,
+ * so a mirrored `tool/result`'s `sourceEventSeqs` points at the CHILD's call
+ * event — the source event's own seqs reference the sub-dsh session's
+ * numbering and are meaningless here.
+ */
+function findMirroredCallSeq(childSession: Session, callId: string): number | undefined {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'tool/call') continue
+    if ((event.data as { callId?: string }).callId === callId) return event.seq
+  }
+  return undefined
+}
+
+/**
+ * Append one mirrored `tool/call` or `tool/result` event — the native tool
+ * card pair, so the child session renders the sub-dsh's tool activity with
+ * the standard conversation's tool rows instead of not at all. Shared by the
+ * file mirror's span loop and the live driver's per-event mirror.
+ */
+function appendMirroredToolEvent(childSession: Session, event: SessionEvent): string {
+  if (event.type === 'tool/call') {
+    childSession.append('tool/call', event.data as SessionEventMap['tool/call'])
+  } else if (event.type === 'tool/result') {
+    const data = event.data as { message: { source: { callId: string } } }
+    const callSeq = findMirroredCallSeq(childSession, String(data.message.source.callId))
+    childSession.append(
+      'tool/result',
+      event.data as SessionEventMap['tool/result'],
+      {
+        surfaceOp: 'append',
+        ...callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
+      },
+    )
+  }
+  return mirroredToolText(event)
+}
+
 /**
  * Append one appendable message event verbatim and report its delta text —
  * the single append path shared by the file mirror's span loop and the live
@@ -176,6 +225,9 @@ export function mirrorDshLiveEvent(
   }
   if (event.type === 'assistant/message') {
     return appendMirroredMessageEvent(childSession, event)
+  }
+  if (event.type === 'tool/call' || event.type === 'tool/result') {
+    return appendMirroredToolEvent(childSession, event)
   }
   if (event.type === 'assistant/chunk' && options?.granularity === 'token') {
     childSession.append('assistant/chunk', event.data)
@@ -241,16 +293,24 @@ export async function mirrorDshSession(
       if (childSession.events[index]?.type === 'turn/start') lastTurnStart = index
     }
     const mirrored = childSession.events.slice(lastTurnStart + 1)
-      .filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+      .filter(event =>
+        event.type === 'user/message' || event.type === 'assistant/message'
+        || event.type === 'tool/call' || event.type === 'tool/result')
       .length
     const span = events.slice(start, end)
       .filter(event =>
         (event.type === 'user/message' && event.data.source.kind === 'user')
-        || event.type === 'assistant/message')
+        || event.type === 'assistant/message'
+        || event.type === 'tool/call'
+        || event.type === 'tool/result')
       .slice(mirrored)
     const texts: string[] = []
     for (const event of span) {
-      texts.push(appendMirroredMessageEvent(childSession, event))
+      texts.push(
+        event.type === 'tool/call' || event.type === 'tool/result'
+          ? appendMirroredToolEvent(childSession, event)
+          : appendMirroredMessageEvent(childSession, event),
+      )
     }
     // todo/write passthrough, counted independently of the message prefix
     // skip: the snapshot is a standing whole list (last-wins), so a pass

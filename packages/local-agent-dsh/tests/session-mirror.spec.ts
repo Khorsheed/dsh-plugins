@@ -143,6 +143,50 @@ describe('mirrorDshSession', () => {
     expect(JSON.stringify(child.events)).not.toContain('第一轮回答')
   })
 
+  it('mirrors tool/call + tool/result as native events with the sourceEventSeqs remapped', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-tools', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+      userLine('干活', 'user'),
+      {
+        type: 'tool/call',
+        seq: 3,
+        time: 2,
+        data: { turn: 1, step: 1, callId: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' },
+      },
+      {
+        type: 'tool/result',
+        seq: 4,
+        time: 3,
+        sourceEventSeqs: [3],
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            role: 'user',
+            source: { kind: 'tool', callId: 'call_1' },
+            content: [{ type: 'tool-result', toolCallId: 'call_1', content: [{ type: 'text', text: 'a.txt' }], isError: false }],
+          },
+        },
+      },
+      assistantLine(1, '做完了'),
+      { type: 'turn/end', seq: 6, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const child = childWithRounds('child-tools', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-tools')
+
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.data).toMatchObject({ callId: 'call_1', name: 'Bash' })
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    // The result's pairing reference points at the CHILD's call event seq
+    // (the source event's own sourceEventSeqs referenced the sub-dsh log's
+    // numbering, which the remap drops).
+    expect(results[0]?.sourceEventSeqs).toEqual([calls[0]!.seq])
+  })
+
   it('is a no-op when the sub-dsh session never materialized', async () => {
     const child = childWithRounds('child-3', 1)
     await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toEqual({ texts: [], total: 0 })

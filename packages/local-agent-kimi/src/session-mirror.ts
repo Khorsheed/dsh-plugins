@@ -10,7 +10,7 @@
 import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
@@ -29,21 +29,26 @@ function assistantEvent(blocks: readonly ContentBlock[]) {
 }
 
 /**
- * Fold one transcript line into message blocks. Thinking maps to the native
- * `reasoning` block so the standard conversation renders it as thinking
- * rather than a `[思考]` text prefix; tool activity (call with arguments and
- * result) and reply text stay text (content is never filtered — kimi's own
- * injections remain visible).
+ * Fold one non-tool transcript line into message blocks. Thinking maps to
+ * the native `reasoning` block so the standard conversation renders it as
+ * thinking rather than a `[思考]` text prefix; reply text stays text (content
+ * is never filtered — kimi's own injections remain visible). Tool lines are
+ * NOT folded here: they become native `tool/call`/`tool/result` event pairs
+ * (see the mirror loop), so the standard conversation renders them as tool
+ * cards instead of `[工具 X]` text.
  */
-function lineBlocks(line: KimiTranscriptLine): ContentBlock[] {
+function lineBlocks(line: KimiTranscriptLine & { kind: 'assistant' | 'think' }): ContentBlock[] {
   if (line.kind === 'think') {
     return [{ type: 'reasoning', text: line.text }]
   }
-  if (line.kind === 'tool') {
-    const call = `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}`
-    return [{ type: 'text', text: `${call}${line.result !== undefined ? ` → ${line.result}` : ''}` }]
-  }
   return [{ type: 'text', text: line.text }]
+}
+
+/** The run-progress delta text for one transcript line (any kind). */
+export function kimiLineProgressText(line: KimiTranscriptLine): string {
+  if (line.kind !== 'tool') return line.text
+  const call = `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}`
+  return `${call}${line.result !== undefined ? ` → ${line.result}` : ''}`
 }
 
 /** The result of one mirror pass: the new offset plus what was newly mirrored. */
@@ -149,7 +154,9 @@ export async function mirrorKimiSessionDelta(
 
   const newTotal = transcript.lines.length
   const delta = transcript.lines.slice(fromLines)
-  if (delta.length === 0) return { total: newTotal, texts: [] }
+  // No early return on an empty delta: a result that merged into an
+  // already-mirrored tool line does not change the line count, and the
+  // backfill below still owes that call its `tool/result` event.
   // The pass attaches the usage records that trail ITS lines: positions in
   // (fromLines, newTotal]. Each record is one LLM request's accounting (kimi
   // does not accumulate within a turn).
@@ -163,18 +170,64 @@ export async function mirrorKimiSessionDelta(
     const line = delta[index]
     if (line !== undefined && line.kind !== 'user' && line.kind !== 'tool') lastAssistant = index
   }
-  // Continue step numbering from the assistant steps already mirrored, so a
-  // round mirrored across several live polls keeps 1, 2, 3… instead of
-  // restarting per poll.
+  // Continue step numbering from the steps already mirrored (assistant
+  // messages AND tool events both consume steps), so a round mirrored across
+  // several live polls keeps 1, 2, 3… instead of restarting per poll.
   const steps = new Map<number, number>()
+  // The child session's own events are the ledger of mirrored tool calls:
+  // callId → its event (for pairing late results) and the already-settled
+  // call ids (so a backfill never duplicates a result).
+  const openCalls = new Map<string, { turn: number; step: number; seq: number }>()
+  const settledCalls = new Set<string>()
   for (const event of childSession.events) {
-    if (event.type !== 'assistant/message') continue
     const data = event.data as { turn?: number; step?: number }
     if (typeof data.turn === 'number' && typeof data.step === 'number') {
       steps.set(data.turn, Math.max(steps.get(data.turn) ?? 0, data.step + 1))
     }
+    if (event.type === 'tool/call') {
+      const call = event.data as { turn: number; step: number; callId: string }
+      openCalls.set(call.callId, { turn: call.turn, step: call.step, seq: event.seq })
+    } else if (event.type === 'tool/result') {
+      const message = (event.data as { message?: { content?: readonly { type: string; toolCallId?: string }[] } }).message
+      const id = message?.content?.[0]?.toolCallId
+      if (id !== undefined) {
+        openCalls.delete(id)
+        settledCalls.add(id)
+      }
+    }
   }
   const texts: string[] = []
+  // Backfill results that landed after their call was mirrored in an earlier
+  // pass: the delta window never revisits those lines, so a result that
+  // arrives late (parallel calls settle out of order) pairs here. The result
+  // reuses its call's turn/step — no new step is consumed.
+  for (let index = 0; index < fromLines && index < transcript.lines.length; index += 1) {
+    const line = transcript.lines[index]
+    if (line === undefined || line.kind !== 'tool' || line.result === undefined) continue
+    const call = openCalls.get(line.id)
+    if (call === undefined) continue
+    openCalls.delete(line.id)
+    settledCalls.add(line.id)
+    childSession.append('tool/result', {
+      turn: call.turn,
+      step: call.step,
+      message: createToolResultMessage({
+        callId: CallId(line.id),
+        content: [{ type: 'text', text: line.result }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    texts.push(kimiLineProgressText(line))
+  }
+  if (delta.length === 0) {
+    // No new lines this pass: only the late-result backfill above could have
+    // produced events. Persist those and skip the empty delta loop.
+    if (texts.length > 0) {
+      const persistence = ctx.get('sessionPersistence')
+      await persistence?.append(childSession.id, childSession.events)
+    }
+    return { total: newTotal, texts }
+  }
   for (let index = 0; index < delta.length; index += 1) {
     const line = delta[index]
     if (line === undefined) continue
@@ -186,6 +239,30 @@ export async function mirrorKimiSessionDelta(
       steps.set(turn, 1)
       childSession.append('user/message', userEvent(line.text), { surfaceOp: 'append' })
       texts.push(line.text)
+    } else if (line.kind === 'tool') {
+      // Native tool card: the call event now, the result event when the wire
+      // already carries it (else the backfill above pairs it in a later pass).
+      const step = steps.get(turn) ?? 1
+      steps.set(turn, step + 1)
+      const call = childSession.append('tool/call', {
+        turn,
+        step,
+        callId: CallId(line.id),
+        name: line.name,
+        arguments: line.args ?? '',
+      })
+      texts.push(kimiLineProgressText(line))
+      if (line.result !== undefined) {
+        childSession.append('tool/result', {
+          turn,
+          step,
+          message: createToolResultMessage({
+            callId: CallId(line.id),
+            content: [{ type: 'text', text: line.result }],
+        isError: false,
+          }),
+        }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+      }
     } else {
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
@@ -195,7 +272,7 @@ export async function mirrorKimiSessionDelta(
         message: assistantEvent(lineBlocks(line)),
         ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
       }, { surfaceOp: 'append' })
-      texts.push(lineBlocks(line).map(block => block.type === 'text' || block.type === 'reasoning' ? block.text : '').join(''))
+      texts.push(kimiLineProgressText(line))
     }
   }
   const persistence = ctx.get('sessionPersistence')

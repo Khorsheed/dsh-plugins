@@ -25,7 +25,13 @@ export type KimiTranscriptLine =
   | { kind: 'user'; text: string; turn: number }
   | { kind: 'assistant'; text: string; turn: number }
   | { kind: 'think'; text: string; turn: number }
-  | { kind: 'tool'; name: string; args?: string; result?: string; turn: number }
+  /**
+   * Tool activity: one call with its (possibly still pending) result. `id`
+   * is the wire's toolCallId/uuid when present, else a synthesized
+   * position-based id — stable across mirror passes either way, so the
+   * child session's `tool/call`/`tool/result` events pair by it.
+   */
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number }
 
 /** A parsed transcript of one kimi session. */
 export interface KimiSessionTranscript {
@@ -201,6 +207,9 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         const lineIndex = lines.length
         lines.push({
           kind: 'tool',
+          id: typeof call.toolCallId === 'string'
+            ? call.toolCallId
+            : typeof call.uuid === 'string' ? call.uuid : `kimi-tool-${lineIndex}`,
           name,
           ...args === undefined ? {} : { args },
           turn: lineTurn,

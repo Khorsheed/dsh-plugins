@@ -267,12 +267,14 @@ describe('claude live driver rounds', () => {
     ])
     // The auth discipline: exactly the scoped config dir, nothing else.
     expect(spawn.spec.env).toEqual({ CLAUDE_CONFIG_DIR: m.homeDir })
-    // Mirroring: prompt + folded lines, usage on the final line.
+    // Mirroring: prompt + folded lines, usage on the final line; the
+    // tool_use folds to a native tool/call (+ tool/result) pair.
     expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
     const assistant = child.events.filter(e => e.type === 'assistant/message')
-    expect(assistant).toHaveLength(3)
+    expect(assistant).toHaveLength(2)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
-    expect(assistant[2]?.data).toMatchObject({ message: { content: [{ type: 'text', text: '第一条回复' }] } })
+    expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'text', text: '第一条回复' }] } })
+    expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1)
     expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })

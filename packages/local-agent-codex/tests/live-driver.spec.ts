@@ -325,10 +325,10 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
     expect(codexAppServerItemToLine({ type: 'agentMessage', text: '答案', phase: 'final_answer' }))
       .toEqual({ kind: 'text', text: '答案' })
     expect(codexAppServerItemToLine({ type: 'commandExecution', command: 'ls', aggregatedOutput: 'a.txt' }))
-      .toEqual({ kind: 'tool', name: 'Bash', detail: 'ls\na.txt' })
-    expect(codexAppServerItemToLine({ type: 'webSearch' })).toEqual({ kind: 'tool', name: 'WebSearch' })
+      .toMatchObject({ kind: 'tool', name: 'Bash', args: 'ls', result: 'a.txt' })
+    expect(codexAppServerItemToLine({ type: 'webSearch' })).toMatchObject({ kind: 'tool', name: 'WebSearch' })
     expect(codexAppServerItemToLine({ type: 'mcpToolCall', server: 'dsh-member', tool: 'member_message' }))
-      .toEqual({ kind: 'tool', name: 'dsh-member/member_message' })
+      .toMatchObject({ kind: 'tool', name: 'dsh-member/member_message' })
     expect(codexAppServerItemToLine({ type: 'plan', text: '计划' })).toEqual({ kind: 'think', text: '计划' })
     expect(codexAppServerItemToLine({ type: 'userMessage' })).toBeUndefined()
     expect(codexAppServerItemToLine({ type: 'reasoning', summary: [], content: [] })).toBeUndefined()
@@ -357,13 +357,20 @@ describe('codex live driver rounds', () => {
     expect(spawn.fake!.requests[1]?.params).toMatchObject({
       cwd: '/tmp', ephemeral: false, approvalPolicy: 'never', sandbox: 'workspace-write',
     })
-    // Mirroring: the prompt plus one line per item, with the round's usage on
-    // the final line (the hold-back rule).
+    // Mirroring: the prompt plus the items, with the round's usage on the
+    // final assistant line (the hold-back rule); the commandExecution item
+    // mirrors as a native tool/call + tool/result pair.
     expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
     const assistant = child.events.filter(e => e.type === 'assistant/message')
-    expect(assistant).toHaveLength(3)
+    expect(assistant).toHaveLength(2)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
-    expect(assistant[2]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
+    expect(assistant[1]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
+    const calls = child.events.filter(e => e.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'ls' })
+    const toolResults = child.events.filter(e => e.type === 'tool/result')
+    expect(toolResults).toHaveLength(1)
+    expect(toolResults[0]?.data.message.content[0]).toMatchObject({ content: [{ type: 'text', text: 'a.txt' }] })
     expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
