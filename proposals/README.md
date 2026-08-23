@@ -108,6 +108,7 @@ idea → planned → in-progress → verified → done（移入 closed/）
 |---|---|---|---|---|---|---|
 | plugin | [通用版本化数据集存储（datasets）](active/2026-08-19-datasets-store.md) | in-progress | 纯插件 | — | M1 已交付；独立可用，与 mission 可选兼容 | 2026-08-19 |
 | plugin | [通用任务管理（mission）](active/2026-08-19-mission-tasks.md) | in-progress | 纯插件 | bench 仓库模板（评测用法） | M1 已交付；独立可用，与 datasets 可选兼容 | 2026-08-19 |
+| plugin | [数据集作者协议与 skill](active/2026-08-23-dataset-authoring-protocol-skill.md) | idea | 纯插件 | 协议 v1 待评审 | 协议 + skill + 绑定确认流；skill 公开发行供其他 agent 复用 | 2026-08-23 |
 | plugin | [受控实验单元（lab）](active/2026-08-19-lab-experiment-units.md) | idea | 纯插件 | datasets（`worktree_path`）· mission（`is-releasable`） | 填补 mission/datasets 有意留白的资源生命周期；provider 第一版仅 docker | 2026-08-19 |
 | plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1–M4 代码已落地（未推送），待真实 profile 验收 | 2026-08-19 |
 | plugin | [local-agent 成员双向通道（可写 composer + promptMember + 成员互通知）](active/2026-08-19-local-agent-member-channel.md) | planned | 纯插件 | local-agent-delegation-api（底座 M1–M4） | room 二轮评审立项；替代不可行的 prepareContinuable 路线（§0 存档）；M3 = CLI→CLI 成员互通知（room 高频场景） | 2026-08-19 |
@@ -117,4 +118,5 @@ idea → planned → in-progress → verified → done（移入 closed/）
 | plugin | [撤回可选回滚文件状态（withdraw-file-rollback）](active/2026-08-21-withdraw-file-rollback.md) | planned | 需契约扩展（upstream 候选） | 官方 rc 能力评估（当前 rc.8 无） | 社区 v1 纯插件子集（fs 日志后端 + git 基线 + 覆盖判定护栏）可先行；bash 捕获需上游原语 | 2026-08-21 |
 | plugin | [文件视图 HTML 渲染能力增强（file-view-html-rendering）](active/2026-08-21-file-view-html-rendering.md) | planned | 纯插件 | 无（调研报告见 scratch 2026-08-21） | 文件视图/抽屉/产物行共用通道；Tier0/Tier1 分层 + 大文件分级；M0 3D 测试页已交付并过 playwright | 2026-08-21 |
 | plugin | [包管理：分类、整合包形态与发布流程（package-management）](active/2026-08-21-package-management.md) | planned | 形态 A/B 纯插件 + 形态 C 需契约扩展（upstream 候选） | 包盘点（进行中） | 仅 ankh-guard 已发布（0.1.0-rc.8.9）；dsh-eval 首发整合包（形态 B 先行）；dsh-novel 等小说领域插件；薄元包需上游 seam | 2026-08-21 |
+| plugin | [worktree 治理与可视化（worktree-governance）](active/2026-08-23-worktree-governance.md) | idea | 纯插件 | 无（datasets 的 git.ts 作复用模式参考） | 多 worktree 协作治理层：会话 badge（右上 utilities 空槽）+ 改动抽屉（树+DiffBlock）+ 全局板 + 违规检测；业界参考 Claude Code --worktree / Codex 桌面 App | 2026-08-23 |
 | seam | [薄元包一键装全家（upstream-meta-pack-reconcile）](active/2026-08-21-upstream-meta-pack-reconcile.md) | planned | 需契约扩展（upstream 候选） | package-management（形态 C 依赖） | reconcilePlugins 只扫直接依赖（实测）；设计 1 展开式 / 设计 2 闭包+排除表；被拒则登记 seam registry | 2026-08-21 |
