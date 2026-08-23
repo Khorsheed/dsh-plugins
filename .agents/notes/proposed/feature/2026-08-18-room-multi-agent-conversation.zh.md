@@ -67,7 +67,7 @@ Status: proposed
   - *操作行*：用 CSS Modules 复刻 `MessageIconActions` 的 chrome，图标用 `dsh-client-ui-primitives` 里同一批 16px 图标——**复制**、**会话跳转**（进成员子会话）、诚实的**耗时**（派发→settle）、hover 淡入的**时间戳**。刻意缺席：**分支/fork**（`forkAt` fork 的是 *room* 会话——对名册与 resume 锁的语义未定义）和 **TPS/TTFT**（CLI 进程一轮没有令牌流，假造数字不如没有）。核实的 harness 版本里官方集合是 复制/分支/runMs/TTFT/TPS/hover 时间戳——没有点赞/点踩。
 - **运行中状态** = 与 ToolRow 同构的 24px disclosure 行（StateDot + `ada 正在工作… · 12s` + 扫光动画，带 `prefers-reduced-motion` 兜底；家族的实时 transcript 镜像给行尾跟截断摘要）。**整行是跳转子会话的链接**，行尾停止按钮接 `localAgent.cancel`。
 - **边界事件**（成员加入/离开、转派记录）= compaction 标记式 dim 单行。message-tools 的 `WithdrawnDividerView` 是验证过的社区模板。
-- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。官方坑位是被 composer 接管隐藏的 dock slot 的面（双胶囊、统计行），一律由 RoomComposer 自己渲染，不再注册进 `conversation.input.dock` / `conversation.composer.dock`。
+- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。官方坑位是被 composer 接管隐藏的 dock slot 的面（双胶囊、统计行），一律由 RoomComposer 自己渲染，不再注册进 `conversation.input.dock` / `conversation.composer.dock`。**接管 = 继承全部环境职责**（member-channel note 的 Consequences 更正，2026-08-23）：pending 交互（审批/提问弹窗是 chain 上 priority 1 的条目，选举升序，-10 会遮蔽它）必须让出——selector 在 `owner.interactions` 非空时返回 null；主 agent 回合的 Stop 自持（运行中 send 圆钮换 Stop，走 runtime session face 的 `cancel()`，与成员 CLI 运行的停止互不干扰）；官方 todo 条与排队消息条（`conversation.input.dock` 的官方住户）随 fallback 一起消失，由 RoomComposer 自绘——todo 条读 `todos` 投影（官方 TodoPanel 同款视觉），queue 条读会话快照的 `queue`（忙时发送本就经官方 input 机排队，条只是让它重新可见，只读；逐条 edit/remove/steer 留在被隐藏的官方 dock，未回迁）。
 
 ### 成员管理：成员 tab 与邀请
 

@@ -55,7 +55,9 @@ export interface RoomTasksInjected {
  * Injected face of the composer takeover entry: the dispatch submit plus the
  * task-board actions (sessionId binds at inject time), because the takeover
  * renders the task board itself — the `conversation.input.dock` seat rides
- * the hidden official fallback.
+ * the hidden official fallback. The takeover also inherits the official bar's
+ * Stop duty: the fallback's Stop button hides with it, so `stop` re-homes the
+ * main agent's turn cancel (the runtime session face's `cancel()`).
  */
 export interface RoomComposerInjected extends RoomTasksInjected {
   /**
@@ -64,6 +66,8 @@ export interface RoomComposerInjected extends RoomTasksInjected {
    * official submit path (useInput/inputActions) itself.
    */
   readonly submit: (sessionId: SessionId, text: string) => Promise<RoomMutationOutcome>
+  /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
+  readonly stop: () => void
 }
 
 /** The composer takeover match: the session is a cached room. */

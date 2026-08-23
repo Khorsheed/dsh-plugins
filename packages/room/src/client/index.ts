@@ -23,7 +23,7 @@ import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { en, zh } from './locales.ts'
 import { NewRoomAction } from './NewRoomAction.tsx'
 import { MembersView } from './MembersView.tsx'
-import { RoomComposer } from './RoomComposer.tsx'
+import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
@@ -252,25 +252,34 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     NewRoomAction,
   ))
   // The composer takeover: claim exactly the cached-room sessions, at the
-  // ui-subagent precedence (-10), below pending-interaction takeovers (the
-  // approval panel's priority 1 wins while a question/approval waits). A
-  // cache miss declines — the freshly opened room shows the official bar for
-  // the first pull's duration (accepted, see room-store.ts). The injected
-  // face also carries the capsule actions: the takeover renders the dock
-  // itself, because its `conversation.input.dock` seat hides with the
+  // ui-subagent precedence (-10). Pending interactions (the approval panel's
+  // priority-1 entry) are yielded by the selector itself — election runs
+  // ascending, so without the decline this entry would shadow them (the
+  // member-channel rule, local-agent 84a2ed0). A cache miss declines — the
+  // freshly opened room shows the official bar for the first pull's duration
+  // (accepted, see room-store.ts). The injected face carries the capsule
+  // actions AND the main-agent turn Stop: the takeover renders the dock
+  // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
     {
       name: 'conversation.composer',
       priority: -10,
       locale: NS,
-      select: (owner): RoomComposerMatch | null => {
-        const sessionId = owner.session?.sessionId
-        return sessionId !== undefined && roomStore.isRoomCached(sessionId) === true
-          ? { room: true }
-          : null
-      },
-      inject: (sessionId: SessionId): RoomComposerInjected => ({ ...tasksFace(sessionId), submit }),
+      select: (owner): RoomComposerMatch | null =>
+        selectRoomComposer(owner, id => roomStore.isRoomCached(id) === true),
+      inject: (sessionId: SessionId): RoomComposerInjected => ({
+        ...tasksFace(sessionId),
+        submit,
+        // The hidden official bar's Stop: the runtime session face's cancel
+        // (the same verb ui-conversation's own Stop injects). A torn-down
+        // binding degrades to a no-op.
+        stop: () => {
+          void ctx.sessions.binding(sessionId)?.session.cancel().catch(() => {
+            // Stop failure surfaces via snapshot.promptError; nothing to restore.
+          })
+        },
+      }),
     },
     RoomComposer,
   ))

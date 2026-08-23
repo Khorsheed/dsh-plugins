@@ -10,24 +10,32 @@
  * path — the takeover writes the text into the session's official input
  * machine (`inputActions.setDraft` + `inputActions.submit()`, the same entry
  * the InputBar's Enter key drives), so it becomes an ordinary main-agent
- * turn. A structured rejection (unknown targets) shows as an inline error
- * line.
+ * turn; sent while that turn runs, the machine's busy admission enqueues it
+ * exactly as the official bar's does. A structured rejection (unknown
+ * targets) shows as an inline error line.
  *
- * Because the takeover hides the official fallback tree, the two surfaces
- * that normally live there are re-homed INTO this component: the dock
- * capsules (RoomDockCapsules above the card — the `conversation.input.dock`
- * seat is display:none under a takeover) and the session stats row
- * (RoomStatsLine below the card — the official StatsLine rides the fallback's
- * composer dock).
+ * Taking over the chain inherits the official bar's environment duties (the
+ * member-channel rule, local-agent 84a2ed0): pending interactions yield (the
+ * selector declines while `owner.interactions` is non-empty, so the priority-1
+ * ApprovalPanel elects), and everything the hidden fallback tree carried is
+ * re-homed INTO this component — the main agent's turn Stop (the send circle
+ * swaps while `running`), the dock capsules (RoomDockCapsules), the main
+ * agent's todo strip (RoomTodoStrip, the `todos` projection), the queued-
+ * messages strip (RoomQueueStrip, the session snapshot's queue), and the
+ * session stats row (RoomStatsLine below the card).
  */
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { parseMentions } from '../journal.ts'
-import type { RoomComposerProps } from './slots.ts'
+import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomDockCapsules } from './RoomDockCapsules.tsx'
+import { RoomTodoStrip } from './RoomTodoStrip.tsx'
+import { RoomQueueStrip } from './RoomQueueStrip.tsx'
 import css from './RoomComposer.module.css'
 
 interface ActiveMention {
@@ -49,9 +57,31 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
   return { query: match[1]!, start: caret - match[1]!.length - 1 }
 }
 
+/**
+ * Pure composer-chain selector: elect exactly the cached-room sessions.
+ * Pending interactions (questions/approvals) belong to the official
+ * ApprovalPanel — a chain entry at priority 1. Election runs ascending, so
+ * this -10 entry would shadow it: decline and let the interaction render
+ * (the member-channel rule, local-agent 84a2ed0). A cache miss declines too —
+ * the freshly opened room shows the official bar for the first pull's
+ * duration (accepted, see room-store.ts).
+ * @param owner - the composer chain currency dispatched by ConversationRoot.
+ * @param isRoomCached - the room store's cache probe (injected: the selector
+ *   must stay a pure function of the owner props plus stable state reads).
+ * @returns the room match, or null to pass the election down the chain.
+ */
+export function selectRoomComposer(
+  owner: ComposerChainProps,
+  isRoomCached: (sessionId: SessionId) => boolean,
+): RoomComposerMatch | null {
+  if (owner.interactions.length > 0) return null
+  const sessionId = owner.session?.sessionId
+  return sessionId !== undefined && isRoomCached(sessionId) ? { room: true } : null
+}
+
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, inputActions, roomStore, submit, addTask, closeTask, setGoal, useProjection, t,
+  sessionId, inputActions, roomStore, submit, stop, addTask, closeTask, setGoal, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -63,6 +93,12 @@ export function RoomComposer({
   const candidates = mention === null
     ? []
     : members.filter(member => member.name.startsWith(mention.query))
+  // The inherited environment state: the room's own main-agent turn flag
+  // (drives the Send/Stop swap) and the still-queued inbox rows (the official
+  // queue dock's data, re-homed as a read-only strip).
+  const running = useSession(snapshot => snapshot.running) ?? false
+  const queued = (useSession(snapshot => snapshot.queue) ?? [])
+    .filter(row => row.placement === 'queued')
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -148,15 +184,22 @@ export function RoomComposer({
   return (
     <div className={css.root}>
       {/* The dock's slot seat is hidden with the official fallback, so the
-          takeover renders the goal/task capsules itself, on the same
-          card-width column axis. */}
+          takeover renders the dock's surfaces itself, on the same card-width
+          column axis: the main agent's todo strip (the official TodoPanel's
+          seat), the goal/task capsules, and the queued-messages strip (the
+          official QueueDock, read-only). */}
       <div className={css.dock}>
+        {useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
         <RoomDockCapsules
           sessionId={sessionId}
           roomStore={roomStore}
           addTask={addTask}
           closeTask={closeTask}
           setGoal={setGoal}
+          t={t}
+        />
+        <RoomQueueStrip
+          items={queued.map(row => ({ id: String(row.id), preview: row.preview }))}
           t={t}
         />
       </div>
@@ -196,21 +239,38 @@ export function RoomComposer({
           onKeyDown={onKeyDown}
         />
         <div className={css.row}>
-          {/* The official send circle (InputBar .primary): same up-arrow
-              glyph, info-fill blue, 0.4 opacity while empty. mousedown is
-              suppressed so the click never steals focus from the draft. */}
-          <button
-            type="button"
-            className={css.primary}
-            aria-label={t('composer.send')}
-            disabled={busy || draft.trim() === ''}
-            onMouseDown={(event) => { event.preventDefault() }}
-            onClick={() => { void send() }}
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-              <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
-            </svg>
-          </button>
+          {/* Send/Stop swap, the official InputBar's ordinary-session
+              posture: while the room's own main-agent turn runs, the primary
+              circle is Stop (the fallback bar's Stop hides with it), and a
+              bare-message Enter still submits — the input machine's busy
+              admission enqueues it. mousedown is suppressed so the click
+              never steals focus from the draft. */}
+          {running ? (
+            <button
+              type="button"
+              className={css.primary}
+              aria-label={t('composer.stop')}
+              onMouseDown={(event) => { event.preventDefault() }}
+              onClick={stop}
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={css.primary}
+              aria-label={t('composer.send')}
+              disabled={busy || draft.trim() === ''}
+              onMouseDown={(event) => { event.preventDefault() }}
+              onClick={() => { void send() }}
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       {/* The stats row's home (the official composer dock) is hidden with the

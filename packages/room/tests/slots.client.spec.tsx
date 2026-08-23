@@ -110,7 +110,7 @@ describe('room client apply', () => {
     // The chain selector declines while nothing is cached (no session here).
     const select = (composer[0] as { select?: (owner: object) => unknown }).select
     expect(select).toBeTypeOf('function')
-    expect(select!({})).toBeNull()
+    expect(select!({ interactions: [] })).toBeNull()
 
     const views = slots.entries('conversation.view')
     expect(views).toHaveLength(1)

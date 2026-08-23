@@ -24,10 +24,12 @@
     "src/client/RoomComposer.tsx",
     "src/client/RoomDockCapsules.tsx",
     "src/client/RoomEventView.tsx",
+    "src/client/RoomQueueStrip.tsx",
     "src/client/RoomRelayView.tsx",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
     "src/client/RoomStatsLine.tsx",
-    "src/client/RoomTaskLineView.tsx"
+    "src/client/RoomTaskLineView.tsx",
+    "src/client/RoomTodoStrip.tsx"
   ]
 }
