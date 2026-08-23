@@ -44,6 +44,13 @@ export interface Config {
    */
   baseUrl?: string
   /**
+   * HTTP proxy for the child CLI's own traffic (model calls AND OAuth
+   * refresh), provisioned into the scoped `settings.json` env block. Needed
+   * when the host process environment carries no proxy (a supervisor-spawned
+   * instance does not inherit the user's shell exports).
+   */
+  proxyUrl?: string
+  /**
    * Live driver: keep one resident stream-json process per member and drive
    * turns over stdin messages (runtime-level graceful interrupt, same-shape
    * push stream) instead of one `claude -p` process per round. Default off;
@@ -67,6 +74,7 @@ export const Config: z<Config> = z.object({
     z.const('normal'),
   ]),
   baseUrl: z.string(),
+  proxyUrl: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
@@ -87,7 +95,7 @@ export function apply(ctx: Context, config: Config): void {
     const homeDir = ctx.localAgent.homeDir('claude-code')
     // Claude creates the scoped home lazily; create it eagerly so the
     // harness's homeDir contract is uniform with the other harnesses.
-    void provisionClaudeHome(homeDir).catch((error: unknown) => {
+    void provisionClaudeHome(homeDir, config.proxyUrl).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-claude-code: scoped home provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
     // The live driver owns every resident runtime of this generation; its

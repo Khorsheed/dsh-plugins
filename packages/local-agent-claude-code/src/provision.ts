@@ -12,20 +12,43 @@
  * @module @khorsheed/dsh-local-agent-claude-code/provision
  */
 
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** The scoped config file holding the oauthAccount auth marker. */
 const SCOPED_CONFIG = '.claude.json'
 
+/** The scoped settings file carrying the CLI's env block. */
+const SCOPED_SETTINGS = 'settings.json'
+
 /**
  * Provision the scoped home directory. Claude creates it lazily on first
  * use, but creating it eagerly keeps the harness's homeDir contract uniform
- * with the other harnesses.
+ * with the other harnesses. When `proxyUrl` is configured, the scoped
+ * `settings.json` gains an env block pointing the CLI's own traffic at it —
+ * claude reads proxy settings from this file, so the child works even when
+ * the host process environment carries no proxy (a supervisor-spawned
+ * instance's env is not the user's shell env). An existing settings file is
+ * merged, not overwritten; only the two proxy keys are managed.
  * @param homeDir - the `claude-code` harness's scoped home.
+ * @param proxyUrl - optional HTTP proxy URL for the child CLI's traffic.
  */
-export async function provisionClaudeHome(homeDir: string): Promise<void> {
+export async function provisionClaudeHome(homeDir: string, proxyUrl?: string): Promise<void> {
   await mkdir(homeDir, { recursive: true })
+  if (proxyUrl === undefined) return
+  const path = join(homeDir, SCOPED_SETTINGS)
+  let settings: Record<string, unknown> = {}
+  try {
+    settings = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+  } catch {
+    // Absent or malformed: start fresh (a malformed file is replaced, not merged).
+  }
+  const env = (settings.env ?? {}) as Record<string, string>
+  if (env.https_proxy === proxyUrl && env.http_proxy === proxyUrl) return
+  env.https_proxy = proxyUrl
+  env.http_proxy = proxyUrl
+  settings.env = env
+  await writeFile(path, JSON.stringify(settings, undefined, 2) + '\n')
 }
 
 /**
