@@ -39,6 +39,7 @@ import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
 import { stateFile } from './state-files.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
+  isParkedOnUserInput,
   writeInstanceLaunch, writeSkillRegistration,
   pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
   type RestartRecord,
@@ -350,6 +351,34 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     let disposed = false
     ctx.effect(() => () => { disposed = true })
 
+    // A turn parked on user input (an open ask_user_question call, or an
+    // undecided approval) is not interrupted WORK — the card persists in the
+    // log and the user answers whenever. Auto-continuing it replays the
+    // question and burns a turn for nothing (observed on prod 3080: sessions
+    // parked on question cards were woken on every restart of an upgrade
+    // day). The probe reads the session's repaired log tail; memoized per
+    // boot; a probe failure fails open to the pre-existing behavior.
+    const parkedMemo = new Map<string, Promise<boolean>>()
+    const checkParked = (id: string): Promise<boolean> => {
+      let probe = parkedMemo.get(id)
+      if (probe === undefined) {
+        probe = (async () => {
+          try {
+            const persistence = ctx.get('sessionPersistence') as
+              | { inspect(sessionId: string): Promise<{ events: readonly { type: string; seq?: number; data: Record<string, unknown> }[] }> }
+              | undefined
+            if (persistence === undefined) return false
+            const { events } = await persistence.inspect(id)
+            return isParkedOnUserInput(events)
+          } catch {
+            return false
+          }
+        })()
+        parkedMemo.set(id, probe)
+      }
+      return probe
+    }
+
     const claim = (agent: FollowupAgent, record: RestartRecord): void => {
       const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
       const text = restartContextText(record, canaryPending)
@@ -363,33 +392,55 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
 
     // The single delivery path for every resume trigger (this plugin's pass,
     // the UI, the schedule system): an interrupted session gets exactly one
-    // "continue" injection; the restart's initiator gets the report — merged
-    // into one message when it is both. The map makes repeat calls no-ops.
+    // "continue" injection — unless its interrupted turn was parked on user
+    // input, in which case the card in the log is the continuation and no
+    // injection fires; the restart's initiator gets the report — merged into
+    // one message when it is both. The map makes repeat calls no-ops.
     const deliver = (agent: FollowupAgent & { id: unknown }): void => {
       const id = agent.id as string
       const exitAt = pendingContinue.get(id)
       const record = followupReport ? pendingRestartRecord(stateDir) : null
-      if (exitAt !== undefined && record !== null
-        && (record.initiator === undefined || id === record.initiator)) {
-        // The initiator was itself interrupted by its own restart: one
-        // combined turn continues the work AND reports the outcome — two
-        // separate injections would run two near-duplicate turns.
-        const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
-        const text = continueAndReportText(record, canaryPending)
-        if (text !== '') {
-          agent.followup(pluginMessage(text))
-          pendingContinue.delete(id)
-          acknowledgeRestartRecord(stateDir, record, Date.now())
-          return
-        }
-        // A record with nothing to report yet (no exitAt/error) must not
-        // swallow the continue — fall through to the continue-only path.
-      }
+      const owesReport = record !== null && (record.initiator === undefined || id === record.initiator)
       if (exitAt !== undefined) {
-        agent.followup(pluginMessage(continueInterruptedText(exitAt)))
-        // Delete only after a successful injection: a throwing followup keeps
-        // the session eligible at its next creation (same rule as claim()).
-        pendingContinue.delete(id)
+        void (async () => {
+          const parked = await checkParked(id)
+          if (disposed || pendingContinue.get(id) !== exitAt) return
+          // Delete before injecting: two resume triggers racing the memoized
+          // probe must not double-inject; a throwing followup re-arms the
+          // session for its next creation (same rule as claim()).
+          pendingContinue.delete(id)
+          if (parked) {
+            // Parked on user input: the card IS the continuation. An owed
+            // report still lands (report-only text, not the merged one).
+            if (owesReport && record !== null) claim(agent, record)
+            return
+          }
+          if (owesReport && record !== null) {
+            // The initiator was itself interrupted by its own restart: one
+            // combined turn continues the work AND reports the outcome — two
+            // separate injections would run two near-duplicate turns.
+            const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
+            const text = continueAndReportText(record, canaryPending)
+            if (text !== '') {
+              try {
+                agent.followup(pluginMessage(text))
+                acknowledgeRestartRecord(stateDir, record, Date.now())
+                return
+              } catch {
+                pendingContinue.set(id, exitAt)
+                return
+              }
+            }
+            // A record with nothing to report yet (no exitAt/error) must not
+            // swallow the continue — fall through to the continue-only path.
+          }
+          try {
+            agent.followup(pluginMessage(continueInterruptedText(exitAt)))
+          } catch {
+            pendingContinue.set(id, exitAt)
+          }
+        })()
+        return
       }
       if (record === null) return
       // The report waits for its owner; other sessions are never woken.
@@ -491,6 +542,13 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       if (Date.now() - snapshot.exitAt <= resumeMaxSnapshotAgeMs) {
         for (const id of [...new Set([...snapshot.resume, ...snapshot.interrupted])]) {
           if (disposed) return
+          // Parked on user input: the card in the log is the continuation —
+          // do not recreate the agent at all (its creation would fire the
+          // delivery path; deliver() also filters, belt and suspenders).
+          if (await checkParked(id)) {
+            pendingContinue.delete(id)
+            continue
+          }
           const live = ctx.agents.list().find(agent => (agent.id as string) === id)
           if (live !== undefined) {
             // Already live: its `agent/created` may have predated this plugin's

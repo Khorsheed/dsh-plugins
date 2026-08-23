@@ -350,3 +350,53 @@ export function readSkillRegistration(stateDir: string): SkillRegistrationRecord
     return null
   }
 }
+
+/** The tool whose open call means the turn is parked waiting for the human. */
+const USER_INPUT_TOOL = 'ask_user_question'
+
+/** Minimal log-event view this helper reads (the session-persistence event shape). */
+interface ParkedProbeEvent {
+  type: string
+  seq?: number
+  data: Record<string, unknown>
+}
+
+/**
+ * Whether the session's last turn ended PARKED on user input: interrupted
+ * while waiting on an open `ask_user_question` call, or on an approval
+ * (`approval/asked` with no `approval/decided` in the same turn / after the
+ * turn's start). A parked turn has no interrupted WORK — the card persists in
+ * the log and the user answers whenever — so the restart resume must leave
+ * such sessions alone (no resume, no continue injection, no replayed card).
+ * @param events - the session's durable events (crash-repair already applied).
+ * @returns whether the last interrupted turn was parked on user input.
+ */
+export function isParkedOnUserInput(events: readonly ParkedProbeEvent[]): boolean {
+  let parkedTurn: number | undefined
+  let parkedTurnStartSeq = -1
+  for (const event of events) {
+    const reason = event.data['reason'] as { kind?: string } | undefined
+    if (event.type === 'turn/end' && reason?.kind === 'interrupted') {
+      parkedTurn = event.data['turn'] as number
+    }
+  }
+  if (parkedTurn === undefined) return false
+  for (const event of events) {
+    if (event.type === 'turn/start' && event.data['turn'] === parkedTurn) {
+      parkedTurnStartSeq = event.seq ?? -1
+    }
+  }
+  let lastToolName: string | undefined
+  let pendingApproval = false
+  for (const event of events) {
+    // Approval events are not guaranteed to carry a turn — fall back to the
+    // turn's start sequence boundary.
+    const inTurn = event.data['turn'] === parkedTurn
+      || (parkedTurnStartSeq >= 0 && (event.seq ?? -1) >= parkedTurnStartSeq)
+    if (!inTurn) continue
+    if (event.type === 'tool/call') lastToolName = event.data['name'] as string
+    if (event.type === 'approval/asked') pendingApproval = true
+    if (event.type === 'approval/decided') pendingApproval = false
+  }
+  return lastToolName === USER_INPUT_TOOL || pendingApproval
+}

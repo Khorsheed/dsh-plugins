@@ -20,7 +20,7 @@ import * as selfRestartGuard from '../src/index.ts'
 import { currentHead } from '../src/git.ts'
 import { install as installInvariant } from '../src/invariant.ts'
 import {
-  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, pendingRestartRecord,
+  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isParkedOnUserInput, pendingRestartRecord,
   readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
   writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeSkillRegistration,
 } from '../src/restart-context.ts'
@@ -2401,6 +2401,98 @@ describe('restart context injection', () => {
     // The snapshot is consumed: a later boot does not replay it.
     expect(existsSync(join(stateDir, 'interrupted-sessions.json'))).toBe(false)
     await fiber.dispose()
+  })
+
+  it('a session parked on user input is NOT resumed: the card in the log is the continuation', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    writeFileSync(join(stateDir, 'interrupted-sessions.json'),
+      JSON.stringify({ exitAt: Date.now(), resume: [], interrupted: ['session-parked', 'session-working'] }))
+    const parkedEvents = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'tool/call', seq: 2, data: { turn: 1, step: 1, callId: 'c1', name: 'ask_user_question', arguments: '{}' } },
+      { type: 'tool/result', seq: 3, data: { turn: 1, step: 1, callId: 'c1', message: { content: 'interrupted' } } },
+      { type: 'turn/end', seq: 4, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ]
+    const workingEvents = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'tool/call', seq: 2, data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{}' } },
+      { type: 'turn/end', seq: 3, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ]
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    const resumed: string[] = []
+    const followups = new Map<string, ReturnType<typeof vi.fn>>()
+    const liveAgents: Array<{ id: string; status: string; followup: ReturnType<typeof vi.fn> }> = []
+    ctx.provide('agents', {
+      roots: () => liveAgents,
+      list: () => liveAgents,
+      resume: async (options: { resumeSessionId: string }) => {
+        resumed.push(options.resumeSessionId)
+        const agent = { id: options.resumeSessionId, status: 'idle', followup: vi.fn() }
+        followups.set(agent.id, agent.followup)
+        liveAgents.push(agent)
+        ctx.emit('agent/created', { agent } as never)
+        return agent
+      },
+    } as never)
+    ctx.provide('sessionPersistence', {
+      inspect: async (id: string) => ({
+        meta: {},
+        events: id === 'session-parked' ? parkedEvents : workingEvents,
+      }),
+    } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5, resumeDelayMs: 1 })
+    await fiber.await()
+    const deadline = Date.now() + 5000
+    while (!resumed.includes('session-working') && Date.now() < deadline) {
+      await new Promise((resolve) => { setTimeout(resolve, 20) })
+    }
+    expect(resumed).toEqual(['session-working'])
+    // The working session got its continue; the parked one got nothing — the
+    // question card in its log is still the live continuation surface.
+    expect(followups.get('session-working')).toHaveBeenCalledTimes(1)
+    expect(followups.has('session-parked')).toBe(false)
+    await fiber.dispose()
+  })
+
+  it('isParkedOnUserInput: parked iff the interrupted turn blocked on a question or an approval', () => {
+    const interrupt = (turn: number) => ({ type: 'turn/end', seq: 99, data: { turn, reason: { kind: 'interrupted' } } })
+    const start = (turn: number) => ({ type: 'turn/start', seq: 1, data: { turn } })
+    // Parked on an open ask_user_question at the tail.
+    expect(isParkedOnUserInput([
+      start(1),
+      { type: 'tool/call', seq: 2, data: { turn: 1, name: 'bash' } },
+      { type: 'tool/result', seq: 3, data: { turn: 1 } },
+      { type: 'tool/call', seq: 4, data: { turn: 1, name: 'ask_user_question' } },
+      interrupt(1),
+    ])).toBe(true)
+    // Parked on an undecided approval (asked without decided within the turn).
+    expect(isParkedOnUserInput([
+      start(1),
+      { type: 'approval/asked', seq: 2, data: { turn: 1 } },
+      interrupt(1),
+    ])).toBe(true)
+    // Approval asked AND decided, then real work interrupted: not parked.
+    expect(isParkedOnUserInput([
+      start(1),
+      { type: 'approval/asked', seq: 2, data: { turn: 1 } },
+      { type: 'approval/decided', seq: 3, data: { turn: 1 } },
+      { type: 'tool/call', seq: 4, data: { turn: 1, name: 'bash' } },
+      interrupt(1),
+    ])).toBe(false)
+    // Mid-work interruption (no user-input call at the tail): not parked.
+    expect(isParkedOnUserInput([start(1), { type: 'tool/call', seq: 2, data: { turn: 1, name: 'bash' } }, interrupt(1)])).toBe(false)
+    // A question earlier in the turn, answered, then real work: not parked.
+    expect(isParkedOnUserInput([
+      start(1),
+      { type: 'tool/call', seq: 2, data: { turn: 1, name: 'ask_user_question' } },
+      { type: 'tool/result', seq: 3, data: { turn: 1 } },
+      { type: 'tool/call', seq: 4, data: { turn: 1, name: 'bash' } },
+      interrupt(1),
+    ])).toBe(false)
+    // No interrupted turn at all: not parked.
+    expect(isParkedOnUserInput([start(1), { type: 'turn/end', seq: 2, data: { turn: 1, reason: { kind: 'completed' } } }])).toBe(false)
   })
 
   it('merges continue and report into ONE message when the initiator was itself interrupted', async () => {
