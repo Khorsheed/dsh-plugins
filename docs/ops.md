@@ -65,6 +65,8 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
 
+**门禁时效**:preflight 的 PASS 只对"那一刻的组合"负责。preflight 与真实 boot 之间任何对 profile 的改动(`dsh plugin add/remove`、手改 bundles 列表或 cordis.patch.yml、pnpm install 刷新链接)都会使门禁失效——**改动后必须重新过 preflight 再重启**。(2026-08-23 事故:preflight PASS 后 boot 撞 `duplicate loader entry id: code-runtime`,查证是 preflight 与 boot 之间 profile 被改动;已实验证明 preflight 对跨层重复行无盲区——同样的组合在 preflight 里一样炸。)
+
 ## 放行 npm 的标准
 
 3080 上**连续 3 天无相关事故**(崩溃、功能回退、与之相关的 preflight 失败)即可放行。放行时按 [publishing.md](publishing.md) 的自查清单执行;发完必做消费者验证(一次性目录 `npm install` + import 冒烟)。
