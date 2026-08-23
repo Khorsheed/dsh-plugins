@@ -382,6 +382,8 @@ export class ClaudeLiveDriver {
       // dir, plus the configured base URL override only.
       env: {
         CLAUDE_CONFIG_DIR: spec.homeDir,
+        // Same tombstone as the exec path: USER presence breaks 2.1.236 auth.
+        USER: undefined as unknown as string,
         ...this.config.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.config.baseUrl },
       },
     }

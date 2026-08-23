@@ -227,6 +227,10 @@ export class ClaudeCliProvider implements SubagentProvider {
         cwd: parentCwd,
         env: {
           CLAUDE_CONFIG_DIR: homeDir,
+          // claude 2.1.236's credential resolution breaks when USER is present
+          // (bisected on the 3080 host: full env minus USER works, USER alone
+          // reintroduces 'OAuth session expired'). Tombstone it.
+          USER: undefined as unknown as string,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
         },
         endpointLabel: effectiveBaseUrl,
@@ -319,6 +323,9 @@ export class ClaudeCliProvider implements SubagentProvider {
           cwd: parentCwd,
           env: {
             CLAUDE_CONFIG_DIR: homeDir,
+            // See the fresh path: USER presence breaks 2.1.236 credential
+            // resolution; tombstone it here too.
+            USER: undefined as unknown as string,
             ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
           },
           endpointLabel: effectiveBaseUrl,
