@@ -66,6 +66,14 @@
 - **退役条件**：官方 SDK wire 增加 turn 级 interrupt 方法（且保持调用方指定 session id 的懒创建语义）。届时 serve 模式整体退役，provider 的 live driver 改挂官方 server。
 - **状态**：绕行中（@khorsheed/dsh-local-agent-dsh live driver + headless serve 模式）。
 
+### S9. runtime skill 注册的 `source` 只在加载期校验
+
+- **需求**：`ctx.skills.register()` 在注册期就要求（或默认）`source`——官方 `register()` 默认了 `provider`/`invocation` 但不默认 `source`，而加载路径 `validateDefinition` 强制 `source` 为 string：于是注册成功、catalog 正常列出、调用才炸（8.9 的 `dsh-self-restart-guard` 就是这个炸法）。
+- **现状绕行**：调用方显式传 `source: 'runtime'`（ankh-guard hotfix f38a616）；并用真实 `SkillRegistry` 的 list + get 往返测试守住契约（记录桩测不出加载期校验）。
+- **退役条件**：官方 `register()` 默认 `source: 'runtime'`，或 `validateRuntimeSkill` 在注册期就强制 `source`。落地后调用方的显式字段保留无害，往返测试可保留为行为回归。
+- **状态**：绕行中（@khorsheed/dsh-ankh-guard 的 skill 注册）。
+
+
 ## 维护约定
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
