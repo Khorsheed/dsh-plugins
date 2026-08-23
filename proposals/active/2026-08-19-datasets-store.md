@@ -2,11 +2,11 @@
 
 - **分类**：plugin
 - **状态**：in-progress（M1 已交付，见实现记录）
-- **最后更新**：2026-08-19
+- **最后更新**：2026-08-23
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived），无重复；本提案由 `datasets-mission` 合并提案拆出（姊妹提案：[通用任务管理 mission](2026-08-19-mission-tasks.md)；首个消费方：[受控实验单元 lab](2026-08-19-lab-experiment-units.md)）
 - **官方依赖**：纯插件（所需契约均已实测存在：`ctx.commands`、`ctx.tools`、session log-only 自定义事件；内容即 git 仓库，无额外持久化依赖）
 
-设计输入：`~/.dsh/scratch/dataseek-eval/README.md`（总纲）与 `~/.dsh/scratch/dataseek-eval/docs/tooling-brief.md`。已经过两轮设计评审；`worktree_path` 接口经 lab 提案的依赖分析后补入（2026-08-19）。
+设计输入：`~/.dsh/scratch/dataseek-eval/README.md`（总纲）与 `~/.dsh/scratch/dataseek-eval/docs/tooling-brief.md`。已经过两轮设计评审；`worktree_path` 接口经 lab 提案的依赖分析后补入（2026-08-19）。**评审中变更（2026-08-23，评估 agent 提出，待评审通过后实施）**：`modelFacing: false` 参与读取控制——绑定未显式列层时敏感层默认不可读，见「会话绑定」节 ⚠ 标记处（已交付代码当前为「缺省全部」）。
 
 ## 目标
 
@@ -46,7 +46,7 @@
 ```
 
 - 版本 = git commit；item 内容哈希 = 各层文件哈希（去重、追溯）。
-- **层可见性类别是数据声明**：`dataset.yml` 的 layers 清单里每层可标 `modelFacing: false`（缺省 true）。语义仅一条：**收录该层的导出必须过人工确认闸**（确认闸由导出方实现，见姊妹提案 mission §7）。它与会话绑定的 layers 白名单是**两层独立机制**——白名单管「会话里 agent 能看什么」，导出闸管「什么能离开本机」。
+- **层可见性类别是数据声明**：`dataset.yml` 的 layers 清单里每层可标 `modelFacing: false`（缺省 true）。语义两条：**①收录该层的导出必须过人工确认闸**（确认闸由导出方实现，见姊妹提案 mission §7）；**②（评审中）绑定未显式列层时，敏感层对该会话默认不可读**——见「会话绑定」节。与会话绑定白名单的关系：白名单是显式收窄，modelFacing 是缺省底线；导出闸管「什么能离开本机」。
 - **数据进入方式 = 关联目录，不导入不复制**：datasets 只认「一个 git 仓库路径」（会话绑定的 `repoPath` 或 config 默认），内容 versioning 与哈希都来自 git 本身。已有内容进入数据集就两条路：人把文件按布局放进仓库并 commit（正常 git 流程）；或 agent 用 `put_item` 写工作树、人评审后 commit。插件没有、也不会有 import 动词。
 - 读接口：`list` / `show`（元数据与文件清单）/ `describe`（descriptor 透传）/ `read`（**直接读 git 对象**——`git show <commit>:<path>`，单文件适用，不落拷贝）/ `snapshot`（固化 `{repoPath, commit, datasetId}`）/ `worktree_path`（整层只读视图，见下节）。
 - 写接口：`put_item`（在工作树创建/更新 item 的元数据与层文件）。**git commit 留给人**——插件写工作树，提交与评审走正常 git 流程；这是「题库/内容包可持续产出」的支撑面。
@@ -56,7 +56,7 @@
 
 lab 等消费方需要一次物化整个层（容器只读挂载的场景），逐文件 `read` 不可接受。由 datasets 创建并管理 worktree——仓库布局、commit↔层映射、worktree 注册都是 datasets 的内部知识，让消费方自己跑 `git` 等于把这套知识复制出去，两边一改就漂移。
 
-- **签名**：`worktree_path({ snapshot, layers? }) → { path }`。layers 缺省 = 该数据集的全部层。
+- **签名**：`worktree_path({ snapshot, layers? }) → { path }`。⚠（评审中）layers 缺省语义收紧：**缺省 = 该数据集的全部 modelFacing:true 层**（敏感层需显式列出）；已交付代码当前缺省为全部层。
 - **机制**：`git worktree add --detach <commit>` 到托管根 `$DSH_HOME/state/datasets/worktrees/<repoHash>/<commit>-<layersHash>/`，配 **sparse-checkout 限定到指定层目录**——白名单过滤是机制（worktree 里物理上只有允许的层），不是「返回根路径 + 口头约定」。**层白名单在此路径同等生效**：工具调用时 `layers` 与会话绑定白名单求交，交集为空即报错；CLI 调用（人/脚本，本就有等价 git 权限）取显式 `--layers`。
 - **去重**：缓存键 = (repo, commit, 排序后 layers)。同 commit 同层组合全机共享一个 worktree。
 - **生命周期归 datasets**：注册表即 `git worktree list`（git 自管，datasets 保持无状态）；worktree 一律 `git worktree lock` 防误 prune；清理走 CLI `datasets worktree prune`（解除 lock 并移除）。**消费方只读使用、只卸载不删除**——worktree 是跨消费方共享缓存（评测场景：同 commit 的所有格子共用），任何消费方的释放动作都不得删它。
@@ -70,11 +70,12 @@ lab 等消费方需要一次物化整个层（容器只读挂载的场景），�
 Binding = {                         // 存为 session log-only 事件（goal/change 先例），随会话持久化
   repoPath: string,
   datasets?: string[],              // 缺省 = 仓库内全部
-  layers?: string[],                // layers 白名单；缺省 = 全部层
+  layers?: string[],                // layers 白名单；⚠（评审中）缺省 = 排除 modelFacing:false 层
 }
 ```
 
 - 工具解析：agent 调 `datasets_*` 工具时，handler 经 `exec.agent.session` 解析本会话绑定，**白名单外的层对工具不可见**（list/show/read/worktree_path 同受约束）——可见性分层从「操作约定」升级为「机制约束」，约束强度由绑定人决定。
+- ⚠ **（评审中）机制级默认安全**：绑定未写 `layers` 时，读取范围回退为「全部 modelFacing:true 层」——敏感层要读必须显式列出（主动、清醒的动作）；忘了列的时候机制拦你。已声明敏感层的数据集才受影响；无敏感声明的通用数据集行为不变（全部可见）。已交付代码当前为「缺省全部」，实施时与绑定表单的默认勾选（默认只勾可见层）对齐。
 - 绑定写入是人的操作（tab 按钮 / slash `/datasets bind` / CLI）；agent 工具只读解析，不能自改绑定——**agent 能用哪些数据由人决定**。
 - 显式参数优先：工具调用带显式 `repo`/`dataset` 参数时不依赖绑定；无绑定时工具报错提示先绑定（fail loud，不静默猜）。
 
@@ -152,7 +153,7 @@ suites/harness-comparison/
 ## 验收标准（done 判定）
 
 1. `dsh plugin add` 可装、`remove` 可卸，零官方改动；不装 mission / lab 时全部能力可用。
-2. **agent 工具实测**：会话中 agent 仅用模型工具完成「bind → list/show → snapshot → read → worktree_path → put_item」回路；**层白名单实测**（绑定只含 `visible` 等价层的会话，工具取其他层被拒；**worktree 内物理不含白名单外层目录**——sparse-checkout 生效）；`datasets_read` 不产生仓库外拷贝；工具卸载随 fiber 回收。
+2. **agent 工具实测**：会话中 agent 仅用模型工具完成「bind → list/show → snapshot → read → worktree_path → put_item」回路；**层白名单实测**（绑定只含 `visible` 等价层的会话，工具取其他层被拒；**worktree 内物理不含白名单外层目录**——sparse-checkout 生效）；⚠（评审中）**默认拒绝实测**（绑定未列层时取 `modelFacing:false` 层被拒，显式列出后放行）；`datasets_read` 不产生仓库外拷贝；工具卸载随 fiber 回收。
 3. **worktree 实测**：同 (commit, layers) 两次调用返回同一路径（去重）；pin commit 后仓库继续演进，worktree 内容仍是 pin 版本；`prune` 只清理解锁后的 worktree；并发同键创建不产生两个目录。
 4. 绑定持久化实测：binding 随 session 重启后仍在（session 事件）；无绑定时工具 fail loud。
 5. **通用性 grep**：源码不硬编码任何层名、无逐文件 spawn git 的拼装式物化、不出现评测词汇。
@@ -161,6 +162,7 @@ suites/harness-comparison/
 ## 风险 / 放弃的东西
 
 - **绑定白名单是会话级约束，不是安全边界**：同机人可改绑定、有 Bash 的 agent 可读原仓库目录；白名单与 sparse-checkout 防的是 agent 误取/流程串味，不防恶意操作者。
+- **（评审中变更的行为面）**：「缺省排除敏感层」是机制级收紧——已声明 `modelFacing:false` 的数据集上，缺省绑定的可见范围变小（这是目的）；无敏感声明的数据集完全不变。已交付代码与旧行为的迁移注意点：绑定表单「改白名单」的呈现要区分「缺省（机制底线）」与「显式收窄」。
 - **worktree 是共享只读缓存**：消费方写入会污染其他消费方的视图——契约只读（容器场景由消费方以 `:ro` 挂载强制）；发现被写脏的 worktree 由 `prune` 重建。消费方释放时只卸载不删除。
 - **写工具的风险面**：`put_item` 依赖 harness 标准审批管线约束；只写工作树不做 git commit，提交评审留在人的 git 流程里。
 - **数据集仓库不发布**：发布的只是通用插件；题库/内容包数据保持私有。
