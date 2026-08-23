@@ -5,7 +5,11 @@
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
     "jsx": "react-jsx",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "files": [
     "src/binding.ts",
@@ -21,6 +25,7 @@
     "src/client/store.ts",
     "src/client/locales.ts",
     "src/client/preview.tsx",
-    "src/client/DatasetsView.tsx"
+    "src/client/DatasetsView.tsx",
+    "src/client/BindForm.tsx"
   ]
 }

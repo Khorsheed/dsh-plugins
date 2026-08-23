@@ -140,6 +140,25 @@ export interface ListRequest {
   commit?: string
 }
 
+/** `datasets/previewRepo` request: one candidate repository path (normalized host-side). */
+export interface PreviewRepoRequest {
+  path: string
+}
+
+/**
+ * `datasets/previewRepo` result: the canonical repository path plus its
+ * dataset summaries (with declared layers, visibility classes, and warnings).
+ * A non-repository path fails loud (NOT_A_REPO); a valid repository with no
+ * `datasets/` content answers an empty list — the bind form tells those apart.
+ * The preview ignores any session binding: the binder is choosing the
+ * whitelist, so it must see everything.
+ */
+export interface PreviewRepoResult {
+  /** The resolved repository toplevel (what a bind should record). */
+  repo: string
+  datasets: DatasetSummary[]
+}
+
 /** `datasets/show` Remote request (same optional-fields-in-object rule as ListRequest). */
 export interface ShowRequest {
   dataset: string
@@ -178,8 +197,8 @@ export interface DatasetsService {
   snapshot(scope: DatasetScope, datasetId: string, commit?: string): Promise<DatasetSnapshot>
   worktreePath(scope: DatasetScope, datasetId: string, options?: WorktreeOptions): Promise<ManagedWorktree>
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>
-  /** Fail loud unless `repo` is inside a git work tree (the tab's bind-time check). */
-  assertRepository(repo: string): Promise<void>
+  /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
+  assertRepository(repo: string): Promise<string>
   /** Record a binding for a live session (slash/tab path). */
   bind(session: BindingSession, binding: DatasetBinding): DatasetBinding
   /** Clear a live session's binding. */
@@ -428,7 +447,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async assertRepository(repo) {
-      await toplevelOf(repo)
+      return await toplevelOf(repo)
     },
 
     bind(session, binding) {

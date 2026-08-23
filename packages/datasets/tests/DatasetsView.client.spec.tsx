@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DatasetBinding, ListDatasetsResult, ListItemsResult, ReadResult } from '../src/types.ts'
+import type { DatasetBinding, ListDatasetsResult, ListItemsResult, PreviewRepoResult, ReadResult } from '../src/types.ts'
 import type { DatasetsViewProps } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
@@ -35,6 +35,7 @@ interface Harness {
   listDatasets: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
   pickDirectory: ReturnType<typeof vi.fn>
+  previewRepo: ReturnType<typeof vi.fn>
 }
 
 const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
@@ -45,6 +46,14 @@ const DATASETS: ListDatasetsResult = {
     id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1,
     warnings: [{ code: 'MODELFACING_UNDECLARED', layer: 'visible', message: 'visible undeclared' }],
   }],
+}
+
+const PREVIEW: PreviewRepoResult = {
+  repo: '/repo',
+  datasets: [
+    { id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1, warnings: [] },
+    { id: 'beta', layers: ['visible', 'grading'], nonModelFacingLayers: ['grading'], itemCount: 3, warnings: [] },
+  ],
 }
 
 const ITEMS: ListItemsResult = {
@@ -71,6 +80,7 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
     )),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
     pickDirectory: vi.fn(async () => '/picked-repo'),
+    previewRepo: vi.fn(async (): Promise<Result<PreviewRepoResult>> => ({ ok: true, value: PREVIEW })),
   }
 }
 
@@ -97,6 +107,7 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     isLoopback: canPick,
     useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
     pickDirectory: h.pickDirectory,
+    previewRepo: h.previewRepo,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -166,21 +177,62 @@ describe('DatasetsView', () => {
     expect(await screen.findByText(/list\.error/)).toBeTruthy()
   })
 
-  it('bind form submits the parsed binding and refreshes', async () => {
+  it('bind form: the live preview drives the chips; confirm submits the picked subsets', async () => {
     const h = makeHarness(null)
     renderView(h)
     fireEvent.click(await screen.findByText('binding.bind'))
-    const repo = screen.getByLabelText('binding.form.repo')
-    const layers = screen.getByLabelText('binding.form.layers')
-    fireEvent.change(repo, { target: { value: '/new-repo' } })
-    fireEvent.change(layers, { target: { value: 'visible, shared' } })
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo/' } })
+    // Live validation verdict (debounced) — and nothing submits on typing.
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    expect(h.bindSession).not.toHaveBeenCalled()
+    // The fold feeds its chips from the preview: nobody types ids or layer names.
+    fireEvent.click(screen.getByText('binding.form.restrict'))
+    expect(await screen.findByText('beta · 3')).toBeTruthy()
+    expect(screen.getByText('grading · binding.form.sensitive')).toBeTruthy()
+    // The task-facing shortcut keeps only the model-facing layers.
+    fireEvent.click(screen.getByText('binding.form.taskFacingOnly'))
     fireEvent.click(screen.getByText('binding.form.submit'))
-
     await waitFor(() => {
-      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/new-repo', layers: ['visible', 'shared'] })
+      // The stored repoPath is the preview's canonical toplevel (trailing slash gone).
+      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/repo', layers: ['visible'] })
     })
+    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
+  })
+
+  it('bind form: an unchecked-everything group disables confirm with a hint', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo' } })
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    fireEvent.click(screen.getByText('binding.form.restrict'))
+    fireEvent.click(await screen.findByText('visible'))
+    fireEvent.click(screen.getByText('grading · binding.form.sensitive'))
+    expect(await screen.findByText('binding.form.keepOne')).toBeTruthy()
+    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('bind form: a bad path shows the preview error inline and blocks confirm', async () => {
+    const h = makeHarness(null)
+    h.previewRepo.mockResolvedValue({ ok: false, error: { code: 'NOT_A_REPO', message: 'not-a-repo is not a git repository' } })
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: 'not-a-repo' } })
+    expect(await screen.findByText('not-a-repo is not a git repository')).toBeTruthy()
+    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
+    expect(h.bindSession).not.toHaveBeenCalled()
+  })
+
+  it('edit mode backfills the current whitelists into the fold', async () => {
+    const h = makeHarness({ repoPath: '/repo', layers: ['visible'] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.edit'))
+    // The fold opens on its own; after the preview the current whitelist holds.
+    expect(await screen.findByText('binding.form.titleEdit')).toBeTruthy()
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    fireEvent.click(screen.getByText('binding.form.submit'))
     await waitFor(() => {
-      expect(h.instance.getSnapshot().refreshRev).toBe(1)
+      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/repo', layers: ['visible'] })
     })
   })
 

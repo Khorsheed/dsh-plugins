@@ -14,11 +14,19 @@ export type DatasetsKey =
   | 'binding.edit'
   | 'binding.unbind'
   | 'binding.form.title'
+  | 'binding.form.titleEdit'
   | 'binding.form.repo'
-  | 'binding.form.datasets'
-  | 'binding.form.layers'
   | 'binding.form.useWorkspace'
   | 'binding.form.browse'
+  | 'binding.form.restrict'
+  | 'binding.form.restrictDatasets'
+  | 'binding.form.restrictLayers'
+  | 'binding.form.sensitive'
+  | 'binding.form.taskFacingOnly'
+  | 'binding.form.preview.loading'
+  | 'binding.form.preview.ok'
+  | 'binding.form.preview.empty'
+  | 'binding.form.keepOne'
   | 'binding.form.submit'
   | 'binding.form.cancel'
   | 'list.loading'
@@ -62,11 +70,19 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.edit': '改白名单',
   'binding.unbind': '解绑',
   'binding.form.title': '绑定数据集仓库',
+  'binding.form.titleEdit': '修改绑定与白名单',
   'binding.form.repo': '仓库路径（git 仓库）',
-  'binding.form.datasets': '数据集白名单，逗号分隔（留空为全部）',
-  'binding.form.layers': 'layers 白名单，逗号分隔（留空为全部）',
   'binding.form.useWorkspace': '使用当前工作区',
   'binding.form.browse': '浏览…',
+  'binding.form.restrict': '限制可见范围',
+  'binding.form.restrictDatasets': '数据集',
+  'binding.form.restrictLayers': '层',
+  'binding.form.sensitive': '敏感',
+  'binding.form.taskFacingOnly': '仅题面',
+  'binding.form.preview.loading': '检查仓库…',
+  'binding.form.preview.ok': '✓ 有效仓库 · {count} 个数据集',
+  'binding.form.preview.empty': 'git 仓库有效，但没有数据集（datasets/ 为空）',
+  'binding.form.keepOne': '每组至少保留一项；要全部可见请折叠此区',
   'binding.form.submit': '确认',
   'binding.form.cancel': '取消',
   'list.loading': '加载中…',
@@ -104,11 +120,19 @@ export const en: Record<DatasetsKey, string> = {
   'binding.edit': 'Edit whitelist',
   'binding.unbind': 'Unbind',
   'binding.form.title': 'Bind a dataset repository',
+  'binding.form.titleEdit': 'Edit binding & whitelist',
   'binding.form.repo': 'Repository path (a git repository)',
-  'binding.form.datasets': 'Dataset whitelist, comma-separated (empty = all)',
-  'binding.form.layers': 'Layer whitelist, comma-separated (empty = all)',
   'binding.form.useWorkspace': 'Use current workspace',
   'binding.form.browse': 'Browse…',
+  'binding.form.restrict': 'Restrict visibility',
+  'binding.form.restrictDatasets': 'Datasets',
+  'binding.form.restrictLayers': 'Layers',
+  'binding.form.sensitive': 'sensitive',
+  'binding.form.taskFacingOnly': 'Model-facing only',
+  'binding.form.preview.loading': 'Checking the repository…',
+  'binding.form.preview.ok': '✓ valid repository · {count} datasets',
+  'binding.form.preview.empty': 'Valid git repository, but no datasets (empty datasets/)',
+  'binding.form.keepOne': 'Keep at least one per group; collapse the section to keep everything visible',
   'binding.form.submit': 'Confirm',
   'binding.form.cancel': 'Cancel',
   'list.loading': 'Loading…',

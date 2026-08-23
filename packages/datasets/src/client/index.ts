@@ -71,6 +71,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       fetchBinding: (sid: SessionId) => remote.binding(sid),
       bindSession: (sid: SessionId, binding: DatasetBinding) => remote.bind(sid, binding),
       unbindSession: (sid: SessionId) => remote.unbind(sid),
+      previewRepo: (sid: SessionId, path: string) => remote.previewRepo(sid, { path }),
       listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
       readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
       isLoopback: connection.isLoopback,

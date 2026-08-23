@@ -15,6 +15,7 @@ import { validateBinding, type DatasetBinding } from './binding.ts'
 import {
   resolveScope, type DatasetScope, type DatasetsService,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
+  type PreviewRepoRequest, type PreviewRepoResult,
   type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
 } from './service.ts'
 
@@ -98,6 +99,28 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   unbind(agent: Agent): DatasetBinding | null {
     this.datasets.unbind(agent.session)
     return null
+  }
+
+  /**
+   * Preview a candidate repository BEFORE binding: the canonical path plus
+   * its dataset summaries (declared layers, visibility classes, warnings).
+   * Deliberately ignores the session binding — the binder is choosing the
+   * whitelist, so the preview must show everything. A non-repository path
+   * fails loud (NOT_A_REPO); a repository with no datasets/ answers an
+   * empty list.
+   * @param agent - owning live agent (lookup convention; the session binding is not consulted).
+   * @param request - the candidate path (whitespace/trailing-slash normalized).
+   * @returns the canonical repo path and its dataset summaries.
+   */
+  @Remote('previewRepo')
+  async previewRepo(agent: Agent, request: PreviewRepoRequest): Promise<PreviewRepoResult> {
+    void agent
+    // The binder sees the canonical toplevel (a trailing slash or a nested
+    // path binds what was previewed).
+    const repo = await this.datasets.assertRepository(request.path.trim().replace(/\/+$/, ''))
+    const result = await this.datasets.list({ repo })
+    if (result.kind !== 'datasets') throw new Error('previewRepo: list without a dataset selector must list datasets')
+    return { repo, datasets: result.datasets }
   }
 
   /**

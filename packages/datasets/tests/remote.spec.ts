@@ -4,7 +4,7 @@
  * core as the tools), and bind/unbind writes landing in the plugin-owned
  * binding store.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -63,6 +63,22 @@ describe('DatasetsRemoteService', () => {
 
     expect(remote.unbind(agent)).toBeNull()
     expect(remote.binding(agent)).toBeNull()
+    await fiber.dispose()
+  })
+
+  it('previewRepo resolves the canonical toplevel and ignores the session binding', async () => {
+    repo = makeFixtureRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    // A bound session must not narrow the preview (the binder is choosing the whitelist).
+    await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    const result = await remote.previewRepo(agent, { path: `${repo.dir}/` })
+    expect(result.repo).toBe(realpathSync(repo.dir))
+    expect(result.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
+    // Declared layers arrive unfiltered by the binding's whitelist.
+    expect(result.datasets[0]?.layers).toEqual(['visible', 'hidden'])
+    await expect(remote.previewRepo(agent, { path: join(repo.dir, 'no-such-dir') }))
+      .rejects.toMatchObject({ code: 'NOT_A_REPO' })
     await fiber.dispose()
   })
 

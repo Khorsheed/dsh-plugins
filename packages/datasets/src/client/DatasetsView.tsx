@@ -23,19 +23,14 @@
 import { useEffect, useState } from 'react'
 import {
   Button, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconFolderClose16, IconFolderOpen16, Input, Pill,
+  IconFolderClose16, IconFolderOpen16, Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { BindForm } from './BindForm.tsx'
 import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
 import css from './DatasetsView.module.css'
-
-/** Parse a comma-separated whitelist field; blank means "everything" (absent). */
-function parseList(raw: string): string[] | undefined {
-  const list = raw.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
-  return list.length === 0 ? undefined : list
-}
 
 /** At most this many metadata chips show in the preview header; the rest collapse into +N. */
 const MAX_META_PILLS = 3
@@ -82,91 +77,6 @@ function Chevron(props: { open: boolean }) {
     : <IconChevronRightOutline14 className={css.chevron} />
 }
 
-/**
- * The bind/edit form: repo path plus optional dataset and layer whitelists.
- * Local state only — the submitted binding lands in the store through the
- * Remote round-trip, never directly.
- */
-function BindingForm(props: {
-  initial: DatasetBinding | null
-  onSubmit: (binding: DatasetBinding) => void
-  onCancel: () => void
-  /** The session workspace's directory, when one exists (the one-tap option). */
-  currentCwd: string | undefined
-  /** Whether the host can show its native directory chooser. */
-  canPick: boolean
-  pickDirectory: () => Promise<string | null>
-  /** A bind failure to surface inside the form. */
-  notice: string | null
-  t: DatasetsViewProps['t']
-}) {
-  const { initial, onSubmit, onCancel, currentCwd, canPick, pickDirectory, notice, t } = props
-  const [repo, setRepo] = useState(initial?.repoPath ?? '')
-  const [datasets, setDatasets] = useState(initial?.datasets?.join(', ') ?? '')
-  const [layers, setLayers] = useState(initial?.layers?.join(', ') ?? '')
-  return (
-    <form
-      className={css.bindForm}
-      onSubmit={(event) => {
-        event.preventDefault()
-        const path = repo.trim()
-        if (path === '') return
-        const datasetList = parseList(datasets)
-        const layerList = parseList(layers)
-        onSubmit({
-          repoPath: path,
-          ...(datasetList !== undefined ? { datasets: datasetList } : {}),
-          ...(layerList !== undefined ? { layers: layerList } : {}),
-        })
-      }}
-    >
-      <div className={css.bindFormTitle}>{t('binding.form.title')}</div>
-      <Input
-        value={repo}
-        onChange={event => { setRepo(event.target.value) }}
-        placeholder={t('binding.form.repo')}
-        aria-label={t('binding.form.repo')}
-      />
-      <div className={css.bindShortcuts}>
-        {currentCwd !== undefined && (
-          <Button type="button" size="sm" onClick={() => { setRepo(currentCwd) }}>
-            {t('binding.form.useWorkspace')}
-          </Button>
-        )}
-        {canPick && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              void pickDirectory().then((picked) => {
-                if (picked !== null) setRepo(picked)
-              })
-            }}
-          >
-            {t('binding.form.browse')}
-          </Button>
-        )}
-      </div>
-      <Input
-        value={datasets}
-        onChange={event => { setDatasets(event.target.value) }}
-        placeholder={t('binding.form.datasets')}
-        aria-label={t('binding.form.datasets')}
-      />
-      <Input
-        value={layers}
-        onChange={event => { setLayers(event.target.value) }}
-        placeholder={t('binding.form.layers')}
-        aria-label={t('binding.form.layers')}
-      />
-      <div className={css.bindFormActions}>
-        <Button type="submit" variant="primary" size="sm">{t('binding.form.submit')}</Button>
-        <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
-      </div>
-      {notice !== null && <div className={css.notice}>{notice}</div>}
-    </form>
-  )
-}
 
 /** One layer group: a collapsible folder row, then its file leaves under a guide. */
 function LayerNode(props: {
@@ -257,7 +167,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const {
     sessionId, useSessions, useStore, actions, t,
     fetchBinding, bindSession, unbindSession, listDatasets, readFile,
-    isLoopback, pickDirectory,
+    isLoopback, pickDirectory, previewRepo,
   } = props
   const { useHostDescription } = props
   const binding = useStore(s => s.binding)
@@ -411,13 +321,14 @@ export function DatasetsView(props: DatasetsViewProps) {
           )}
         {notice !== null && !formOpen && <div className={css.notice}>{notice}</div>}
         {formOpen && (
-          <BindingForm
+          <BindForm
             initial={binding}
             onSubmit={submitBinding}
             onCancel={() => { setFormOpen(false) }}
             currentCwd={currentCwd}
             canPick={canPick}
             pickDirectory={pickDirectory}
+            previewRepo={(path) => previewRepo(sessionId, path)}
             notice={notice}
             t={t}
           />
