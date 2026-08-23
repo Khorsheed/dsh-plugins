@@ -156,6 +156,36 @@ export class DockerProvider implements UnitProvider {
     }
   }
 
+  async activity(resource: string, workspace: string): Promise<{ mtime?: number; cpuUsageUsec?: number }> {
+    const facts: { mtime?: number; cpuUsageUsec?: number } = {}
+    // Primary signal: newest workspace file. Work inside the unit writes
+    // files; lab is not invoked meanwhile, so verb-call timestamps would be
+    // a fake metric. GNU `stat -c` first, `date -r` (busybox) as fallback —
+    // both absent means no reading, which is not an error.
+    const mtime = await this.execInUnit(resource, [
+      'sh', '-c',
+      'find "$1" -type f -exec stat -c %Y {} + 2>/dev/null || find "$1" -type f -exec date -r {} +%s 2>/dev/null',
+      'activity', workspace,
+    ])
+    if (mtime.exitCode === 0) {
+      const newest = mtime.stdout.split('\n').map((line) => Number(line.trim())).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => b - a)[0]
+      if (newest !== undefined) facts.mtime = newest * 1000
+    }
+    // Secondary: cumulative container CPU (cgroup v2 cpu.stat, v1 cpuacct).
+    const cpu = await this.execInUnit(resource, ['cat', '/sys/fs/cgroup/cpu.stat'])
+    if (cpu.exitCode === 0) {
+      const usage = /^usage_usec (\d+)$/m.exec(cpu.stdout)?.[1]
+      if (usage !== undefined) facts.cpuUsageUsec = Number(usage)
+    } else {
+      const v1 = await this.execInUnit(resource, ['cat', '/sys/fs/cgroup/cpuacct/cpuacct.usage'])
+      if (v1.exitCode === 0) {
+        const nanos = Number(v1.stdout.trim())
+        if (Number.isFinite(nanos) && nanos > 0) facts.cpuUsageUsec = Math.floor(nanos / 1000)
+      }
+    }
+    return facts
+  }
+
   async listManaged(): Promise<ManagedResource[]> {
     const ps = await this.docker(['ps', '-a', '--filter', `label=${MANAGED_LABEL}=true`, '--format', '{{.Names}}'])
     if (ps.exitCode !== 0) throw new Error(`lab: docker ps failed (exit ${ps.exitCode}): ${ps.stderr.trim()}`)

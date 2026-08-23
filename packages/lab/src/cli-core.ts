@@ -11,7 +11,7 @@
 import { spawn } from 'node:child_process'
 import { DockerProvider } from './docker.ts'
 import { LabService } from './service.ts'
-import type { Exec, ExecResult, MissionFace, MountSpec } from './types.ts'
+import type { Exec, ExecResult, MissionFace, MissionSnapshot, MountSpec, UnitStatus } from './types.ts'
 
 /** Injected output channels. */
 export interface CliIo {
@@ -24,13 +24,13 @@ export interface CliIo {
 const USAGE = `dsh-lab <verb> [options]
 
   acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
-  populate UNIT --source DIR [--target DIR]
+  populate UNIT --source DIR [--target DIR] [--manifest FILE]
   collect UNIT --source DIR --target DIR [--kind K]
   checkpoint UNIT --name NAME
   verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
   archive UNIT --target DIR [--kind K]
   release UNIT [--force]
-  status [UNIT]
+  status [UNIT] [--json]
 
 Global: --max-concurrent N (acquire ceiling, default 4)
 Exit codes: 0 ok, 1 failure/refused, 2 usage.
@@ -51,7 +51,7 @@ interface Parsed {
   rest?: string[]
 }
 
-const BOOLEAN_FLAGS = new Set(['force', 'help'])
+const BOOLEAN_FLAGS = new Set(['force', 'help', 'json'])
 
 /** Parse `--flag`, `--key value` / `--key=value`, positionals, and the `--` tail. */
 function parseArgs(args: string[]): Parsed {
@@ -194,6 +194,13 @@ function cliMissionFace(exec: Exec): MissionFace {
       if (result.exitCode === 1) return false
       throw new Error(`dsh-mission is-releasable failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
     },
+    async get(missionId, runId) {
+      const argv = ['dsh-mission', 'get', missionId]
+      if (runId !== undefined) argv.push('--run', runId)
+      const result = await exec(argv)
+      if (result.exitCode !== 0) throw new Error(`dsh-mission get failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
+      return JSON.parse(result.stdout) as { mission: MissionSnapshot }
+    },
   }
 }
 
@@ -265,7 +272,13 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       }
       case 'populate': {
         const target = one(parsed, 'target')
-        await service.populate(requiredPositional(parsed), { source: required(parsed, 'source'), ...(target !== undefined ? { target } : {}) })
+        const manifestPath = one(parsed, 'manifest')
+        const manifest = await service.populate(requiredPositional(parsed), {
+          source: required(parsed, 'source'),
+          ...(target !== undefined ? { target } : {}),
+          ...(manifestPath !== undefined ? { manifestPath } : {}),
+        })
+        io.stdout(`${JSON.stringify({ sha: manifest.sha, count: manifest.count }, null, 2)}\n`)
         return 0
       }
       case 'collect': {
@@ -308,7 +321,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         return 0
       }
       case 'status': {
-        io.stdout(`${JSON.stringify(await service.status(parsed.positional[0]), null, 2)}\n`)
+        const rows = await service.status(parsed.positional[0])
+        if (parsed.bools.has('json')) {
+          io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+        } else {
+          io.stdout(renderStatusTable(rows))
+        }
         return 0
       }
       default:
@@ -328,4 +346,38 @@ function requiredPositional(parsed: Parsed): string {
   const value = parsed.positional[0]
   if (value === undefined) throw new UsageError('missing UNIT argument')
   return value
+}
+
+/** Milliseconds → compact age (`3m`, `2h14m`, `1d2h`). */
+function ageCompact(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return minutes % 60 === 0 ? `${hours}h` : `${hours}h${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  return hours % 24 === 0 ? `${days}d` : `${days}d${hours % 24}h`
+}
+
+/**
+ * The progress view: one row per unit joining container facts (running, age),
+ * in-container activity, the mission state and coordinate labels (via the
+ * mission face, absent-tolerant), and the materialization hash — identical
+ * hashes across rows are the fairness proof, visible at a glance.
+ */
+function renderStatusTable(rows: UnitStatus[], now = Date.now()): string {
+  if (rows.length === 0) return 'no units\n'
+  const cells = rows.map((row) => [
+    row.id,
+    row.missionState !== undefined ? `${row.missionId ?? '?'}:${row.missionState}` : (row.missionId ?? '-'),
+    row.running ? `up ${ageCompact(now - row.createdAt)}` : 'exited',
+    row.lastActivityAt !== undefined ? `${ageCompact(now - row.lastActivityAt)} ago` : '-',
+    row.taskHash ?? '-',
+    row.missionLabels !== undefined ? Object.entries(row.missionLabels).map(([k, v]) => `${k}=${v}`).join(',') : '',
+  ])
+  const header = ['UNIT', 'MISSION', 'CONTAINER', 'LAST-ACTIVITY', 'TASK', 'LABELS']
+  const widths = header.map((h, i) => Math.max(h.length, ...cells.map((row) => (row[i] ?? '').length)))
+  const render = (row: string[]): string => row.map((cell, i) => (cell ?? '').padEnd(widths[i] as number)).join('  ').trimEnd()
+  return `${render(header)}\n${cells.map(render).join('\n')}\n`
 }

@@ -62,6 +62,12 @@ class FakeProvider implements UnitProvider {
     return Promise.resolve(this.checkpointRef)
   }
 
+  activityFacts: { mtime?: number; cpuUsageUsec?: number } = {}
+
+  activity(_resource: string, _workspace: string): Promise<{ mtime?: number; cpuUsageUsec?: number }> {
+    return Promise.resolve(this.activityFacts)
+  }
+
   verify(_resource: string, _workspace: string, options: VerifyOptions): Promise<VerifyResult> {
     this.verifies.push(options)
     return Promise.resolve(this.verifyResult)
@@ -84,36 +90,47 @@ function fakeMission(releasable: boolean): MissionFace & {
   artifacts: { missionId: string; path: string; kind: string }[]
   checkpoints: { missionId: string; name: string; ref?: string }[]
   annotations: { missionId: string; ns: string; payload: unknown }[]
+  snapshot: { labels: Record<string, string>; currentAttempt: number; attempts: { attempt: number; state: string; artifacts: { path: string; kind: string }[] }[] }
 } {
   const refs: { missionId: string; refs: { resource?: string; fingerprint?: string } }[] = []
   const artifacts: { missionId: string; path: string; kind: string }[] = []
   const checkpoints: { missionId: string; name: string; ref?: string }[] = []
   const annotations: { missionId: string; ns: string; payload: unknown }[] = []
-  return {
+  const face = {
     refs,
     artifacts,
     checkpoints,
     annotations,
-    setRefs(missionId, r) {
+    snapshot: {
+      labels: { task: 't1', subject: 'demo' },
+      currentAttempt: 1,
+      attempts: [{ attempt: 1, state: 'working', artifacts: [] as { path: string; kind: string }[] }],
+    },
+    setRefs(missionId: string, r: { resource?: string; fingerprint?: string }) {
       refs.push({ missionId, refs: r })
       return Promise.resolve()
     },
-    addArtifact(missionId, artifact) {
+    addArtifact(missionId: string, artifact: { path: string; kind: string }) {
       artifacts.push({ missionId, path: artifact.path, kind: artifact.kind })
+      face.snapshot.attempts[0]?.artifacts.push(artifact)
       return Promise.resolve({ added: true })
     },
-    addCheckpoint(missionId, checkpoint) {
+    addCheckpoint(missionId: string, checkpoint: { name: string; ref?: string }) {
       const entry: { missionId: string; name: string; ref?: string } = { missionId, name: checkpoint.name }
       if (checkpoint.ref !== undefined) entry.ref = checkpoint.ref
       checkpoints.push(entry)
       return Promise.resolve({ added: true })
     },
-    annotate(missionId, ns, payload) {
+    annotate(missionId: string, ns: string, payload: unknown) {
       annotations.push({ missionId, ns, payload })
       return Promise.resolve({ added: true })
     },
     isReleasable: () => releasable,
+    get() {
+      return Promise.resolve({ mission: face.snapshot })
+    },
   }
+  return face
 }
 
 function makeService(overrides?: {
@@ -181,14 +198,57 @@ describe('acquire', () => {
   })
 })
 
-describe('populate / collect', () => {
-  it('populates with the default in-unit target', async () => {
+describe('populate', () => {
+  it('populates with the default in-unit target and returns the materialization manifest', async () => {
     const { service, provider } = makeService()
+    const source = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(source)
+    writeFileSync(join(source, 'task.md'), 'hello')
     const info = await service.acquire({ image: 'app:latest' })
-    await service.populate(info.id, { source: '/host/layer' })
-    expect(provider.populated).toEqual([{ source: '/host/layer', target: '/workspace' }])
+    const manifest = await service.populate(info.id, { source })
+    expect(provider.populated).toEqual([{ source, target: '/workspace' }])
+    expect(manifest.count).toBe(1)
+    expect(manifest.files[0]).toMatchObject({ path: 'task.md', sha: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824' })
+    expect(manifest.sha).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  it('identical sources produce identical manifest hashes (the fairness proof)', async () => {
+    const { service } = makeService()
+    const source = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(source)
+    writeFileSync(join(source, 'a.txt'), 'same')
+    const first = await service.acquire({ image: 'app:latest' })
+    const second = await service.acquire({ image: 'app:latest' })
+    const m1 = await service.populate(first.id, { source })
+    const m2 = await service.populate(second.id, { source })
+    expect(m1.sha).toBe(m2.sha)
+  })
+
+  it('writes the manifest file and registers it as a materialization artifact', async () => {
+    const mission = fakeMission(true)
+    const { service } = makeService({ mission })
+    const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(dir)
+    const source = join(dir, 'layer')
+    mkdirSync(source)
+    writeFileSync(join(source, 'task.md'), 'hello')
+    const manifestPath = join(dir, 'materialization.json')
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const manifest = await service.populate(info.id, { source, manifestPath })
+    const written = JSON.parse(readFileSync(manifestPath, 'utf8')) as { sha: string; count: number }
+    expect(written.sha).toBe(manifest.sha)
+    expect(mission.artifacts).toEqual([{ missionId: 'm-1', path: manifestPath, kind: 'materialization' }])
+  })
+
+  it('fails loud on a missing source before any provider call', async () => {
+    const { service, provider } = makeService()
+    const info = await service.acquire({ image: 'app:latest' })
+    await expect(service.populate(info.id, { source: '/no/such/dir' })).rejects.toThrow(/ENOENT/)
+    expect(provider.populated).toEqual([])
+  })
+})
+
+describe('collect', () => {
   it('collects and registers the artifact with mission', async () => {
     const mission = fakeMission(true)
     const { service, provider } = makeService({ mission })
@@ -206,7 +266,7 @@ describe('populate / collect', () => {
     tmpDirs.push(target)
     const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
     await service.collect(info.id, { source: '/workspace/out', target })
-    expect(warnings.some((w) => w.includes('no artifact was registered'))).toBe(true)
+    expect(warnings.some((w) => w.includes('it was not registered'))).toBe(true)
   })
 })
 
@@ -380,5 +440,42 @@ describe('archive', () => {
     expect(out?.sha256).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
     expect(out?.bytes).toBe(5)
     expect(mission.artifacts).toEqual([{ missionId: 'm-1', path: target, kind: 'archive' }])
+  })
+})
+
+describe('status enrichment', () => {
+  it('merges in-container activity facts for running units', async () => {
+    const provider = new FakeProvider()
+    provider.activityFacts = { mtime: 1_750_000_000_000, cpuUsageUsec: 12345 }
+    const { service } = makeService({ provider })
+    const info = await service.acquire({ image: 'app:latest' })
+    const [row] = await service.status(info.id)
+    expect(row).toMatchObject({ running: true, lastActivityAt: 1_750_000_000_000, cpuUsageUsec: 12345 })
+  })
+
+  it('joins mission state, labels, and the materialization task hash', async () => {
+    const mission = fakeMission(true)
+    const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(dir)
+    mkdirSync(join(dir, 'layer'))
+    writeFileSync(join(dir, 'layer', 'task.md'), 'hello')
+    const manifestPath = join(dir, 'materialization.json')
+    const { service } = makeService({ mission })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const manifest = await service.populate(info.id, { source: join(dir, 'layer'), manifestPath })
+    const [row] = await service.status(info.id)
+    expect(row?.missionState).toBe('working')
+    expect(row?.missionLabels).toEqual({ task: 't1', subject: 'demo' })
+    expect(row?.taskHash).toBe(manifest.sha.slice(0, 8))
+  })
+
+  it('degrades cleanly when the mission join fails', async () => {
+    const mission = fakeMission(true)
+    mission.get = () => Promise.reject(new Error('store gone'))
+    const { service, warnings } = makeService({ mission })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const [row] = await service.status(info.id)
+    expect(row?.missionState).toBeUndefined()
+    expect(warnings.some((w) => w.includes('status join'))).toBe(true)
   })
 })

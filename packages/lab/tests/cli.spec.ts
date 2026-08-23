@@ -166,12 +166,22 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
     expect(checkpoint.log).toContain('dsh-mission add-checkpoint m-1 --name iter-1 --ref')
   })
 
-  it('status prints the reconciled unit list', async () => {
+  it('status prints the reconciled unit list (--json)', async () => {
     const env = { STUB_PS: 'dsh-lab-t1', STUB_INSPECT: UNIT_INSPECT }
-    const run = await runLab(['status'], env, false)
+    const run = await runLab(['status', '--json'], env, false)
     expect(run.code).toBe(0)
     const units = JSON.parse(run.stdout) as { id: string; running: boolean; missionId?: string }[]
     expect(units).toHaveLength(1)
     expect(units[0]).toMatchObject({ id: 't1', running: true, missionId: 'm-1' })
+  })
+
+  it('status without --json renders the progress table', async () => {
+    const env = { STUB_PS: 'dsh-lab-t1', STUB_INSPECT: UNIT_INSPECT }
+    const run = await runLab(['status'], env, false)
+    expect(run.code).toBe(0)
+    expect(run.stdout).toContain('UNIT')
+    expect(run.stdout).toContain('MISSION')
+    expect(run.stdout).toContain('TASK')
+    expect(run.stdout).toContain('t1')
   })
 })

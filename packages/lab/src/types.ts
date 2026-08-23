@@ -69,6 +69,20 @@ export interface UnitInfo {
 export interface UnitStatus extends UnitInfo {
   /** The resource is currently running. */
   running: boolean
+  /**
+   * Epoch ms of the newest workspace file — in-container activity, NOT the
+   * last lab verb call (lab is not invoked while work runs inside the unit).
+   * Absent when unreadable (e.g. an image without GNU stat/date).
+   */
+  lastActivityAt?: number
+  /** Cumulative container CPU usage in microseconds (cgroup cpu.stat), when readable. */
+  cpuUsageUsec?: number
+  /** Current attempt's state, when the unit is mission-bound and the face answers. */
+  missionState?: string
+  /** The mission's coordinate labels, when joined. */
+  missionLabels?: Record<string, string>
+  /** Short prefix of the materialization manifest hash, read from the mission artifact. */
+  taskHash?: string
 }
 
 /** {@link Lab.populate} options: copy a host directory INTO a running unit. */
@@ -77,6 +91,24 @@ export interface PopulateOptions {
   source: string
   /** Absolute in-unit target directory (created when missing); defaults to the unit's workspace. */
   target?: string
+  /**
+   * Host file the materialization manifest is written to. Required for the
+   * manifest to be registered as a mission artifact (kind
+   * `materialization`) — lab owns no state directory of its own, so the
+   * caller names the location (the attempt's run-data directory in the
+   * evaluation flow).
+   */
+  manifestPath?: string
+}
+
+/** The materialization manifest {@link Lab.populate} returns — the fairness evidence. */
+export interface PopulateResult {
+  /** Overall content hash: sha256 over the sorted `path  sha` lines. Identical inputs hash identically. */
+  sha: string
+  /** Number of entries. */
+  count: number
+  /** One entry per file (content hash) or symlink (hash of `symlink:<target>`), sorted by path. */
+  files: { path: string; sha: string }[]
 }
 
 /** {@link Lab.collect} options: copy a path OUT of the unit onto the host. */
@@ -152,11 +184,16 @@ export interface Lab {
   /**
    * Materialize a host directory into a running unit (a copy into the unit's
    * writable layer — for zero-copy read-only inputs declare `mounts` at
-   * acquire time instead).
+   * acquire time instead). Returns the materialization manifest; when
+   * `manifestPath` is given and the unit carries a missionId, the manifest
+   * file is written and registered as a `materialization` artifact — the
+   * byte-level proof that parallel units received identical inputs, and the
+   * baseline a later `collect` diffs against.
    * @param unitId - unit to populate.
-   * @param options - source directory and in-unit target.
+   * @param options - source directory, in-unit target, optional manifest file.
+   * @returns the materialization manifest.
    */
-  populate(unitId: string, options: PopulateOptions): Promise<void>
+  populate(unitId: string, options: PopulateOptions): Promise<PopulateResult>
   /**
    * Collect a path out of the unit onto the host; registered as a mission
    * artifact when the unit carries a missionId and mission is present.
@@ -211,6 +248,20 @@ export interface Lab {
 }
 
 /**
+ * The structural slice of a mission's record that lab's status view joins
+ * against. The in-host `MissionService.get` and the `dsh-mission get` bin's
+ * JSON both satisfy it.
+ */
+export interface MissionSnapshot {
+  /** Coordinate labels of the mission. */
+  labels: Record<string, string>
+  /** Current attempt number. */
+  currentAttempt: number
+  /** Attempts; the current one carries the live state and artifact index. */
+  attempts: { attempt: number; state: string; artifacts: { path: string; kind: string }[] }[]
+}
+
+/**
  * The structural slice of `@khorsheed/dsh-mission`'s service that lab
  * consumes. Probed via `ctx.get('mission')` at call time; when absent, lab
  * degrades (registration warns and skips, release requires `force`) — there
@@ -239,6 +290,8 @@ export interface MissionFace {
   ): Promise<{ added: boolean }>
   /** Append a namespace-isolated, append-only annotation. */
   annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string }): Promise<{ added: boolean }>
+  /** Read one mission's record (the status view's join source). */
+  get(missionId: string, runId?: string): { mission: MissionSnapshot } | Promise<{ mission: MissionSnapshot }>
 }
 
 /** One finished subprocess invocation. */
@@ -328,6 +381,15 @@ export interface UnitProvider {
    * @returns the verbatim outcome.
    */
   verify(resource: string, workspace: string, options: VerifyOptions): Promise<VerifyResult>
+  /**
+   * Sample in-container activity: newest workspace file mtime (primary —
+   * work writes files) and cumulative container CPU (secondary, cgroup
+   * cpu.stat). Both best-effort; absence of either is not an error.
+   * @param resource - provider resource handle.
+   * @param workspace - in-unit working directory.
+   * @returns the activity facts that were readable.
+   */
+  activity(resource: string, workspace: string): Promise<{ mtime?: number; cpuUsageUsec?: number }>
   /**
    * List every resource this provider manages (label-selected), so the
    * service can rebuild its registry after a host restart.

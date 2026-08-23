@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-20-triad-integration-test.md
-.agents/notes/implemented/testing/2026-08-20-triad-integration-test.md: 60bc2db79247e002ec93a937afb57581c1a84bd3
-.agents/notes/implemented/testing/2026-08-20-triad-integration-test.zh.md: 921dda6c0cfdbd6bda4a3c63f6594aa48f91937d
+.agents/notes/implemented/testing/2026-08-20-triad-integration-test.md: 35edae5958f8dba6c73255cb7b6ad4638f5b9395
+.agents/notes/implemented/testing/2026-08-20-triad-integration-test.zh.md: e7234988284168f1ce4c236763e21bd2bdcb611c
