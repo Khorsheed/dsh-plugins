@@ -39,6 +39,7 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
    - 家族边(local-agent core/companion)在包未发布时需要 profile `pnpm-workspace.yaml` 的 `overrides` 把每个 `@khorsheed/*` 名字指到对应 `file:` tgz,否则 pnpm 去 registry 解析直接 404
    - 行为异常(装了还是软链/旧内容)时:**`rm -rf node_modules pnpm-lock.yaml` 后重装**——残留的 pnpm workspace 状态文件会把 link: 时代的解析行为还魂;同名同版本的 tgz 内容变了也可能吃到解包缓存
    - 打包前对刚改过源码的包做 **clean rebuild**(`rm -rf lib && build`)——tsc/tsdown 的增量残留会让产物引用不存在的文件(pack-dist 的 stale-types 检查只挡一类)
+   - **家族内部 bundle 绝不列为 profile 直接依赖**——reconcilePlugins 会把声明 `dsh.bundle` 的直接依赖自动挂进组合 layer 栈;`@khorsheed/dsh-local-agent-dsh-headless` 这类子 profile 专属 bundle 经其父包传递安装即可(2026-08-23 P0:直接依赖 → 自动挂载 → `code-runtime` 撞 web-app 同名行 → 全实例 boot 失败)
    - 多人并行 install 会把官方包解析出多个 peer 变体,模块增强(SlotMap/LocaleNamespaceMap)挂到不同实例上,报 `constraint 'never'` 类错误——`pnpm dedupe` 收敛即可
 
 ## 变更驱动模型:流程不是审批

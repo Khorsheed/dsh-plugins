@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-23-headless-bundle-web-mount-collision.md
+.agents/notes/implemented/bug-fix/2026-08-23-headless-bundle-web-mount-collision.md: 0f425296004aed080c66e81d8c57e5bad43e70ec
+.agents/notes/implemented/bug-fix/2026-08-23-headless-bundle-web-mount-collision.zh.md: 2f35e058aa5f75d25427f8382bf45cd6c9cc9e14

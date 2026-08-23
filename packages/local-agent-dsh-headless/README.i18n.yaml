@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/local-agent-dsh-headless/README.en.md
-packages/local-agent-dsh-headless/README.en.md: 562cc2602050de98f819577069bfe8f4c4863a05
-packages/local-agent-dsh-headless/README.md: b945c3375a50f953f02cdf3af210ed2c9b5c3fbb
+packages/local-agent-dsh-headless/README.en.md: c51fd68e92f7f0a150a12cd81b4a5b740c3ed24d
+packages/local-agent-dsh-headless/README.md: 248a44b471ab709c804e410f8a419ac01cf6966c

@@ -42,6 +42,7 @@ dsh --profile headless-local-agent-dsh --serve                              # �
 ## 已知限制
 
 - **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。
+- **也绝不要把它列为任何 profile 的直接依赖**——`dsh plugin add` / reconcilePlugins 会把声明 `dsh.bundle` 的直接依赖自动挂进组合的 layer 栈。2026-08-23 P0：它作为 prod web profile 的直接依赖被自动挂载，`code-runtime` 行与 web-app 的同名行撞成 duplicate entry id，全实例 boot 失败。经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可（reconcile 只看直接依赖）；包内不变量对挂进 web 组合（检出 `webStartup` 服务）fail loud。
 - 子 dsh 会话绝不会出现在父实例的会话列表里（独立的 scoped-home 存储）。
 - 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
 - patch 改动落地前必须做启动级验证（`dsh preflight` 或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败。
