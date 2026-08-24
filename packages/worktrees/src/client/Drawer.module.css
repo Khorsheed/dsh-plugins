@@ -154,6 +154,9 @@
   max-width: 60%;
   border-right: 1px solid var(--dsw-alias-border-l2);
   overflow: auto;
+  /* Same gutter reservation as the detail body — the tree's own scrollbar
+     must not shift the split width either. */
+  scrollbar-gutter: stable;
 }
 
 .treeHeader {

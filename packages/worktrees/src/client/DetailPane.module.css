@@ -62,6 +62,11 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* Reserve the themed scrollbar gutter so a loading placeholder (short) and
+     the loaded content (tall) do not reflow the content width when the
+     vertical scrollbar appears — the 8px bar would otherwise squeeze the
+     text the moment loading finishes. */
+  scrollbar-gutter: stable;
 }
 
 .code {
