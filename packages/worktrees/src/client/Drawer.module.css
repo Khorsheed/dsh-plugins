@@ -1,0 +1,209 @@
+/* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.28);
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  box-shadow: -12px 0 32px rgb(0 0 0 / 0.18);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.summaryBranch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.mainTag {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-strong);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.summaryMeta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.copied {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-strong);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.switcher {
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.switch {
+  flex: 1;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.switch:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+.switchActive {
+  background: var(--dsw-alias-bg-strong);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.treeColumn {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 46%;
+  min-width: 200px;
+  max-width: 60%;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  overflow: auto;
+}
+
+.treeHeader {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.collapseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.collapseButton:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+/* The collapsed icon rail. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 36px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.railIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.railIcon:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+.detailColumn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}

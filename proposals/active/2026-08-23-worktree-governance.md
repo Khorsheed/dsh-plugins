@@ -1,8 +1,8 @@
 # worktree 状态可视化与治理（worktree-governance）
 
 - **分类**:plugin
-- **状态**:idea
-- **最后更新**:2026-08-23
+- **状态**:in-progress
+- **最后更新**:2026-08-24
 - **查重结果**:已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`——"worktree"命中均为 datasets 数据面的 managed-worktree 视图（[datasets-store](2026-08-19-datasets-store.md) / [lab](2026-08-19-lab-experiment-units.md) / [mission](2026-08-19-mission-tasks.md)）或 local-agent 的 `isolation: worktree` 子代理隔离语义，**无"开发生命周期 worktree 治理"同意图提案**。关联:[docs/development.md](../../docs/development.md)（worktree 纪律，治理阶段的规则来源）、datasets 的 `git.ts`（git exec 封装可复用模式）。
 - **官方依赖**:纯插件。全部机制基于现有能力:`session.header.cwd`（每会话工作目录）、`conversation.session.header.utilities`（空槽，见 §现状）、typert Remote 数据面模式（datasets/mission 同款）、`ui-primitives` 的 `DiffBlock` / `DisclosureRow`。零 harness 改动。
 

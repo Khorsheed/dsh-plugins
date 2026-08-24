@@ -1,0 +1,34 @@
+# @khorsheed/dsh-worktrees
+
+[English](README.en.md) | 中文
+
+A git-status visibility plugin for multi-worktree collaboration: a per-session **repo/worktree badge** in the session header, and a **changes drawer** (uncommitted/committed file tree with diffs, IDE-style commit log, full repository browse) behind it. Read-only git facts — it never writes to the repository and does no governance judgment.
+
+## Features
+
+- **Session badge** (header `conversation.session.header.utilities`): the current session's repository, branch, and combined diff line count; hover shows the uncommitted/committed breakdown; green = clean, yellow = changes.
+- **Two click zones**: the repository segment opens the drawer in **Repository** mode (full browse); the branch segment opens **Changes** mode.
+- **Changes drawer** (frame-wide `shell.overlay`, collapsed by default):
+  - **Changes mode**: uncommitted + committed change segments in one file tree (VS Code Source Control style), leaves carry A/M/D/?? badges and line counts; selecting a file shows the right detail pane's `Diff | Content` toggle (colored diff / official CodeBlock); selecting collapses the left tree to an icon rail, click to restore.
+  - **Commits mode**: the branch's own log (`main..HEAD`; short sha + subject + relative time); selecting a commit expands its **commit file tree** inline; clicking a file shows that commit's diff.
+  - **Repository mode**: the full file list (`git ls-files -co`, tracked + untracked, ignored excluded) as a tree; clicking a file shows its content.
+- **Git action row**: refresh / copy branch name / open folder (shown when loopback with `canOpenPath`).
+- The tree defaults to the first level only, with expand-all / collapse-all — the whole tree is always reachable. All file lists are fetched once (client-side trie); only per-file diffs are fetched on demand.
+
+## Install
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-worktrees      # install
+dsh plugin --profile web remove @khorsheed/dsh-worktrees   # uninstall
+```
+
+## Config
+
+| Field | Default | Description |
+|---|---|---|
+| `baseRef` | `main` | Base branch for the committed segment (`base...HEAD`) and ahead/behind; `''` disables the committed segment entirely |
+
+## Compatibility
+
+- **npm release line (≥ 0.1.0-rc.6)**: fully functional. The badge mounts the `conversation.session.header.utilities` slot (currently empty — zero conflict); the drawer mounts the frame-wide `shell.overlay` (additive list, fresh id). The "open folder" gesture needs a loopback connection with the host declaring `canOpenPath`; it hides otherwise.
+- **deepseek-harness master**: same slots and service, identical behavior. Headless profiles have no browser consumer and this plugin contributes nothing there (model tools belong to the governance phase, not yet implemented).

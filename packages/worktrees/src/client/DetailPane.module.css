@@ -1,0 +1,78 @@
+/* The detail pane: path header with the diff|content toggle over the body. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+.viewButton {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.viewButton:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+.viewButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viewActive {
+  background: var(--dsw-alias-bg-strong);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.code {
+  margin: 0;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 120px;
+  padding: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}

@@ -1,0 +1,136 @@
+/* The file tree: IDE-explorer anatomy — compact rows, chevron disclosure,
+   indent guides, hover/selected backgrounds (datasets' DatasetsView is the
+   in-repo reference). */
+
+.tree {
+  font-size: 12px;
+}
+
+.treeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.treeTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.treeActions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.treeAction {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: var(--dsw-accent, var(--dsw-alias-label-secondary));
+  cursor: pointer;
+}
+
+.treeAction:hover {
+  text-decoration: underline;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.groupCount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.children {
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 24px;
+  padding-right: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
+.rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileGlyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.status {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.status_A {
+  color: var(--dsw-success, #2f9e44);
+}
+
+.status_M,
+.status_R {
+  color: var(--dsw-warning, #e8590c);
+}
+
+.status_D {
+  color: var(--dsw-danger, #e03131);
+}
+
+.status_untracked {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.counts {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.selected,
+.selected:hover {
+  background: var(--dsw-alias-bg-selected, var(--dsw-alias-bg-strong));
+}
+
+.empty {
+  padding: 16px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}

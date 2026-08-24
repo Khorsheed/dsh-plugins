@@ -1,0 +1,86 @@
+/** `worktrees` namespace dictionaries. */
+
+/** Simplified Chinese dictionary (the key-set source of truth). */
+export const zh = {
+  'mode.worktree': '改动',
+  'mode.commits': '提交记录',
+  'mode.repo': '仓库文件',
+  'badge.noRepo': '无 git 仓库',
+  'summary.dirty': '{count} 个未提交文件',
+  'summary.uncommitted': '未提交 +{add} −{del}',
+  'summary.committed': '已提交 +{add} −{del}',
+  'summary.detached': 'detached',
+  'group.uncommitted': '未提交',
+  'group.committed': '已提交',
+  'group.empty': '无改动',
+  'commits.empty': '与 {base} 同步，无提交',
+  'commits.range': '提交：{base}..HEAD · {count}',
+  'commits.files': '{count} 个文件',
+  'repo.empty': '仓库为空',
+  'detail.diff': '改动',
+  'detail.content': '内容',
+  'detail.noSelection': '选择一个文件查看详情',
+  'detail.untracked': '未跟踪文件（无改动视图）',
+  'detail.deleted': '文件已删除',
+  'detail.tooLarge': '文件过大，预览截断',
+  'tree.expandAll': '展开全部',
+  'tree.collapseAll': '收起全部',
+  'tree.expand': '展开文件树',
+  'action.refresh': '刷新',
+  'action.copyBranch': '复制分支名',
+  'action.openFolder': '打开目录',
+  'action.close': '关闭',
+  'state.loading': '加载中…',
+  'state.error': '加载失败：{message}',
+  'aria.badge': '当前会话的仓库与 worktree 状态',
+  'aria.openDrawer': '打开改动详情',
+} satisfies Record<string, string>
+
+/** The worktrees namespace key union. */
+export type WorktreesKey = keyof typeof zh
+
+/** The dictionary namespace owned by this plugin. */
+export const NS = 'worktrees'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** The worktree status badge and drawer copy. */
+    'worktrees': WorktreesKey
+  }
+}
+
+/** English dictionary, checked complete against the zh key set. */
+export const en = {
+  'mode.worktree': 'Changes',
+  'mode.commits': 'Commits',
+  'mode.repo': 'Repository',
+  'badge.noRepo': 'Not a git repo',
+  'summary.dirty': '{count} uncommitted file(s)',
+  'summary.uncommitted': 'Uncommitted +{add} −{del}',
+  'summary.committed': 'Committed +{add} −{del}',
+  'summary.detached': 'detached',
+  'group.uncommitted': 'Uncommitted',
+  'group.committed': 'Committed',
+  'group.empty': 'No changes',
+  'commits.empty': 'In sync with {base}, no commits',
+  'commits.range': 'Commits: {base}..HEAD · {count}',
+  'commits.files': '{count} file(s)',
+  'repo.empty': 'Repository is empty',
+  'detail.diff': 'Diff',
+  'detail.content': 'Content',
+  'detail.noSelection': 'Select a file to view details',
+  'detail.untracked': 'Untracked file (no diff view)',
+  'detail.deleted': 'File deleted',
+  'detail.tooLarge': 'File too large, preview truncated',
+  'tree.expandAll': 'Expand all',
+  'tree.collapseAll': 'Collapse all',
+  'tree.expand': 'Expand file tree',
+  'action.refresh': 'Refresh',
+  'action.copyBranch': 'Copy branch name',
+  'action.openFolder': 'Open folder',
+  'action.close': 'Close',
+  'state.loading': 'Loading…',
+  'state.error': 'Failed to load: {message}',
+  'aria.badge': 'Current session repository and worktree status',
+  'aria.openDrawer': 'Open changes drawer',
+} satisfies Record<string, string>

@@ -1,0 +1,57 @@
+/* The session-header badge chip: two click zones with a subtle state color. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.clean {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dirty {
+  border-color: color-mix(in srgb, var(--dsw-success, #2f9e44) 45%, var(--dsw-alias-border-l2));
+}
+
+.zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.zone:hover {
+  background: var(--dsw-alias-bg-hover, var(--dsw-alias-bg-base));
+}
+
+.zoneText {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.counts {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sep {
+  color: var(--dsw-alias-border-l3);
+}
