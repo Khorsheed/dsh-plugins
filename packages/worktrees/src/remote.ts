@@ -15,7 +15,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
-  ReadFileRequest, ReadFileResult, SessionSummary, WorktreesService,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreesService,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -92,5 +92,11 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   @Remote('readFile')
   readFile(agent: Agent, request: ReadFileRequest): Promise<ReadFileResult> {
     return this.worktrees.readFile(this.cwd(agent), request.path)
+  }
+
+  /** One file's content at one commit (the commits mode's content view). */
+  @Remote('readFileAtCommit')
+  readFileAtCommit(agent: Agent, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
+    return this.worktrees.readFileAtCommit(this.cwd(agent), request.path, request.commit)
   }
 }

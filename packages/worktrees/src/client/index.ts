@@ -22,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import worktreesRemote from '@khorsheed/dsh-worktrees/remote'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FileDiffRequest, ReadFileRequest,
+  FileDiffRequest, ReadFileAtCommitRequest, ReadFileRequest,
 } from '../types.ts'
 import { WorktreesBadge } from './Badge.tsx'
 import { WorktreesDrawer } from './Drawer.tsx'
@@ -99,6 +99,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         fetchCommitFiles: (sid: SessionId, sha: string) => remote.commitFiles(sid, { sha }),
         fetchFileDiff: (sid: SessionId, request: FileDiffRequest) => remote.fileDiff(sid, request),
         fetchReadFile: (sid: SessionId, request: ReadFileRequest) => remote.readFile(sid, request),
+        fetchReadFileAtCommit: (sid: SessionId, request: ReadFileAtCommitRequest) => remote.readFileAtCommit(sid, request),
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
         openExternal: (path) => { openOnHost(path) },

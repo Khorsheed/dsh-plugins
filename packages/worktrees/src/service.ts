@@ -91,6 +91,12 @@ export interface ReadFileRequest {
   path: string
 }
 
+/** Content read for one file at one commit (the commits mode's content view). */
+export interface ReadFileAtCommitRequest {
+  path: string
+  commit: string
+}
+
 /** The file's current working-tree content. */
 export interface ReadFileResult {
   content: string
@@ -318,6 +324,26 @@ export class WorktreesService {
     } catch {
       return { diff: null }
     }
+  }
+
+  /**
+   * A file's content at one commit (`git show <commit>:<path>`) — the commits
+   * mode's content view, so "内容" shows the file as it was at the selected
+   * commit rather than hanging on a skipped working-tree read.
+   * @param cwd - session working directory.
+   * @param path - repo-relative path.
+   * @param commit - the commit to read the blob from.
+   * @returns the content at that commit.
+   */
+  async readFileAtCommit(cwd: string, path: string, commit: string): Promise<ReadFileResult> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const safe = assertSafePath(path)
+    const content = await git(repo, ['show', `${commit}:${safe}`])
+    if (content.length > MAX_CONTENT_BYTES) {
+      throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
+    }
+    return { content }
   }
 
   /**

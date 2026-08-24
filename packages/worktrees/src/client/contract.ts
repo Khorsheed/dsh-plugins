@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
 import type {
   ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
-  ReadFileRequest, ReadFileResult, SessionSummary,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary,
 } from '../types.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
@@ -48,6 +48,7 @@ export interface WorktreesDrawerInjected {
   fetchCommitFiles: (sessionId: SessionId, sha: string) => Promise<RemoteResult<CommitFilesResult>>
   fetchFileDiff: (sessionId: SessionId, request: FileDiffRequest) => Promise<RemoteResult<FileDiffResult>>
   fetchReadFile: (sessionId: SessionId, request: ReadFileRequest) => Promise<RemoteResult<ReadFileResult>>
+  fetchReadFileAtCommit: (sessionId: SessionId, request: ReadFileAtCommitRequest) => Promise<RemoteResult<ReadFileResult>>
   /** Whether the browser itself is connected over loopback. */
   isLoopback: boolean
   hooks: {

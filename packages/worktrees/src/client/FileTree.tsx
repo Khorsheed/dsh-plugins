@@ -10,7 +10,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14,
-  IconCodeOutline16, IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16,
+  IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
@@ -116,6 +116,18 @@ export interface FileTreeProps {
   t: TranslateNS<'worktrees'>
 }
 
+/** A neutral document glyph: the official icon set has no file icon (the
+ * closest, IconCodeOutline16, reads as a '#'-like mark), so the tree draws its
+ * own folded-corner paper in the neutral tone via currentColor. */
+function FileGlyph(): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M9 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.5L9 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none" />
+      <path d="M9 1.5V5.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none" />
+    </svg>
+  )
+}
+
 /** Relative time for a commit (compact form). */
 export function relativeTime(seconds: number, now = Date.now()): string {
   if (seconds <= 0) return ''
@@ -197,7 +209,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
         className={`${css.row} ${css.fileRow} ${selected ? css.selected : ''}`}
         onClick={() => { onSelect(node.path) }}
       >
-        <span className={css.fileGlyph}><IconCodeOutline16 /></span>
+        <span className={css.fileGlyph}><FileGlyph /></span>
         <span className={css.rowName}>{node.name}</span>
         {node.item !== null && node.item.status !== undefined && node.item.status !== '' && (
           <span className={`${css.status} ${css[`status_${statusClass(node.item.status)}`] ?? ''}`}>{statusText(node.item.status)}</span>

@@ -136,6 +136,17 @@ describe('WorktreesService', () => {
     expect(none.diff).toBeNull()
   })
 
+  it('reads a file at one commit (commits-mode content view)', async () => {
+    const service = new WorktreesService('main')
+    // a.txt is 'one\n' at the base; capture the commit and its content.
+    const log = await service.commitLog(cwd)
+    expect(log.length).toBeGreaterThanOrEqual(2)
+    const baseCommit = await service.commitFiles(cwd, log[log.length - 1]?.sha ?? '')
+    // index.ts exists at the tip commit whose log row is the newest.
+    const tip = await service.readFileAtCommit(cwd, 'packages/room/src/index.ts', log[0]?.sha ?? '')
+    expect(tip.content).toBe('hello\n')
+  })
+
   it('reads file content and caps the size', async () => {
     const service = new WorktreesService('main')
     const read = await service.readFile(cwd, 'a.txt')

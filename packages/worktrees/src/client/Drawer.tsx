@@ -49,7 +49,7 @@ function clampWidth(width: number, viewport: number): number {
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
-  fetchFileDiff, fetchReadFile, isLoopback, useHostDescription, openExternal, copyBranch,
+  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, isLoopback, useHostDescription, openExternal, copyBranch,
 }: WorktreesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const mode = useStore(s => s.mode)
@@ -211,15 +211,20 @@ export function WorktreesDrawer({
         ? { path: selectedPath, segment: 'commit', commit: selectedCommit ?? '' }
         : { path: selectedPath, segment: selectedSegment }
       void fetchFileDiff(sessionId, request).then(result => { if (!cancelled && result.ok) actions.setDiff(result.value) })
-    } else if (detailView === 'content' && selectedSegment !== 'commit') {
-      void fetchReadFile(sessionId, { path: selectedPath }).then(result => {
+    } else if (detailView === 'content') {
+      // The commits mode's content view reads the file as it was at the
+      // selected commit; the other segments read the working-tree content.
+      const fetch = selectedSegment === 'commit'
+        ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
+        : fetchReadFile(sessionId, { path: selectedPath })
+      void fetch.then(result => {
         if (cancelled) return
         if (result.ok) actions.setContent(result.value)
         else actions.setError(result.error.message)
       })
     }
     return () => { cancelled = true }
-  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, actions])
+  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, actions])
 
   // Repository mode: default to previewing the first file so the detail
   // column never opens onto an empty surface.
