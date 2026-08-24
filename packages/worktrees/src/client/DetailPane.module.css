@@ -75,6 +75,13 @@
 
 .code {
   margin: 0;
+  /* Soft-wrap the content block's lines so a narrow drawer keeps every line
+     in view instead of forcing horizontal scroll. */
+}
+
+.code :global(pre) {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .placeholder {

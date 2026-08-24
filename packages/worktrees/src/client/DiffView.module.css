@@ -45,7 +45,10 @@
 
 .line {
   min-height: var(--dsl-diff-line-height);
-  white-space: pre;
+  /* Soft-wrap to the surface width so a narrow drawer never hides content
+     off to the right — the file-preview detail does the same for diffs. */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* The patch's file header (`diff --git …`) reads like the official path
