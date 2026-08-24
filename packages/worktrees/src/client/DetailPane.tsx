@@ -39,13 +39,18 @@ export interface DetailPaneProps {
   /** When given and a file is selected, renders a back button to leave the
    * file view (e.g. back to the commit's file list). */
   onBack?: (() => void) | undefined
+  /** When true, the pane is nested inside an already-padded container (e.g.
+   * a commit's file list) — the path header then relies on the parent's 24px
+   * inset instead of adding its own, so the path stays on the same 24px
+   * baseline as the surrounding text. */
+  embedded?: boolean
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
 
 /** The detail pane. */
 export function DetailPane({
-  path, hasDiff, untracked, deleted, detailView, diff, content, loading, error, onViewChange, onBack, t,
+  path, hasDiff, untracked, deleted, detailView, diff, content, loading, error, onViewChange, onBack, embedded = false, t,
 }: DetailPaneProps): ReactNode {
   if (path === '') {
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
@@ -74,7 +79,7 @@ export function DetailPane({
 
   return (
     <div className={css.root}>
-      <div className={css.header}>
+      <div className={`${css.header} ${embedded ? css.headerEmbedded : ''}`}>
         {onBack !== undefined && path !== '' && (
           <button type="button" className={css.back} title={t('detail.back')} onClick={onBack}>
             <IconChevronLeftOutline14 />

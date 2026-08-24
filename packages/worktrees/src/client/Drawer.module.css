@@ -58,25 +58,32 @@ body[data-ds-dark-theme] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 58px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .summary {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
 .summaryBranch {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 9px;
+  margin: 0;
   font-size: 13px;
   font-weight: 500;
+  line-height: 22px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The branch glyph sits ~2px lower than the 22px title line, matching the
+   icon's optical baseline against the following text. */
+.summaryBranch > svg {
+  transform: translateY(2px);
 }
 
 .mainTag {
@@ -88,7 +95,9 @@ body[data-ds-dark-theme] {
 }
 
 .summaryMeta {
+  margin: 0;
   font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -144,6 +153,7 @@ body[data-ds-dark-theme] {
   align-items: stretch;
   height: 40px;
   padding: 0 12px;
+  gap: 2px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -153,7 +163,7 @@ body[data-ds-dark-theme] {
   align-items: center;
   gap: 5px;
   flex: none;
-  padding: 0 10px;
+  padding: 0 4px;
   border: 0;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -175,8 +185,8 @@ body[data-ds-dark-theme] {
 .switchActive::after {
   content: '';
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 4px;
+  right: 4px;
   bottom: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;

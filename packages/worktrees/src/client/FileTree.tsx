@@ -14,6 +14,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
+import { formatCount } from './Overview.tsx'
 import css from './FileTree.module.css'
 
 /** One leaf entry: its path plus optional change metadata. */
@@ -214,14 +215,19 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
         {node.item !== null && node.item.status !== undefined && node.item.status !== '' && (
           <span className={`${css.status} ${css[`status_${statusClass(node.item.status)}`] ?? ''}`}>{statusText(node.item.status)}</span>
         )}
-        {(node.item as FileTreeItem).additions !== null && (node.item as FileTreeItem).additions !== undefined && (
-          <span className={css.counts}>
-            <span className={css.add}>+{(node.item as FileTreeItem).additions}</span>
-            {(node.item as FileTreeItem).deletions !== null && (node.item as FileTreeItem).deletions !== undefined && (
-              <span className={css.del}> −{(node.item as FileTreeItem).deletions}</span>
-            )}
-          </span>
-        )}
+        {(() => {
+          const add = (node.item as FileTreeItem).additions
+          const del = (node.item as FileTreeItem).deletions
+          const showAdd = add !== null && add !== undefined && add > 0
+          const showDel = del !== null && del !== undefined && del > 0
+          if (!showAdd && !showDel) return null
+          return (
+            <span className={css.counts}>
+              {showAdd && <span className={css.add}>+{formatCount(add ?? 0)}</span>}
+              {showDel && <span className={css.del}> −{formatCount(del ?? 0)}</span>}
+            </span>
+          )
+        })()}
       </button>
     )
   }
@@ -231,8 +237,13 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('mode.worktree')}</span>
         <span className={css.treeActions}>
-          <button type="button" className={css.treeAction} onClick={expandAll}>{t('tree.expandAll')}</button>
-          <button type="button" className={css.treeAction} onClick={collapseAll}>{t('tree.collapseAll')}</button>
+          <button
+            type="button"
+            className={css.treeAction}
+            onClick={expanded.size === 0 ? expandAll : collapseAll}
+          >
+            {expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+          </button>
           {onToggleCollapse !== undefined && (
             <button
               type="button"

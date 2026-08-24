@@ -19,7 +19,7 @@ import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
 import { DetailPane, isDeleted } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
-import { Overview } from './Overview.tsx'
+import { Overview, formatCount } from './Overview.tsx'
 import css from './Drawer.module.css'
 
 /** Default drawer width (px) — wider than the file-preview drawer because this
@@ -316,7 +316,7 @@ export function WorktreesDrawer({
             onSelect={onSelectFile}
             treeTitle={mode === 'repo'
               ? t('mode.repo')
-              : t('tree.changedFiles', { count: String(changes === null ? 0 : changes.uncommitted.length + changes.committed.length) })}
+              : t('tree.changedFilesTitle')}
             collapsed={treeCollapsed}
             onToggleCollapse={() => { actions.toggleTree() }}
             t={t}
@@ -401,7 +401,7 @@ export function WorktreesDrawer({
                 onClick={() => { actions.setMode(modeKey) }}
               >
                 {label}
-                {count !== null && <span className={css.switchCount}>{count}</span>}
+                {count !== null && <span className={css.switchCount}>{formatCount(count)}</span>}
               </button>
             )
           })}
@@ -456,7 +456,7 @@ export function WorktreesDrawer({
                 t={t}
               />
             ) : (
-              <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} t={t} />
+              <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} repoCount={repoFiles?.length ?? 0} t={t} />
             )}
           </div>
         </div>

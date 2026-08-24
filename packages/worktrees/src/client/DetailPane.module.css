@@ -18,7 +18,7 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -35,6 +35,12 @@
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+}
+
+/* Nested (embedded) in an already-24px-padded container: drop the header's
+   own horizontal padding so the path line stays on the parent's 24px inset. */
+.headerEmbedded {
+  padding: 0;
 }
 
 .back:hover {

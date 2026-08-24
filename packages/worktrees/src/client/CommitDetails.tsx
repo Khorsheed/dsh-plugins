@@ -13,6 +13,7 @@ import type { ChangedFile, CommitInfo, FileDiffResult, ReadFileResult } from '..
 import type { DetailView } from './store.ts'
 import { DetailPane, isDeleted } from './DetailPane.tsx'
 import { relativeTime } from './FileTree.tsx'
+import { formatCount } from './Overview.tsx'
 import css from './CommitDetails.module.css'
 
 /** Props of the commit details. */
@@ -58,7 +59,6 @@ export function CommitDetails({
   return (
     <div className={css.root}>
       <div className={css.toolbar}>
-        <span className={css.toolbarSha}>{commit.sha}</span>
         <span className={css.toolbarActions}>
           <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
             <IconCopyOutline16 />
@@ -71,9 +71,9 @@ export function CommitDetails({
       <div className={css.content}>
         <div className={css.subject}>{commit.subject}</div>
         <div className={css.author}>{t('commit.author', { author: commit.author, time: relativeTime(commit.time) })}</div>
-        <div className={css.summary}>{t('commit.summary', { count: String(files.length), add: String(added), del: String(removed) })}</div>
+        <div className={css.summary}>{t('commit.summary', { count: formatCount(files.length), add: formatCount(added), del: formatCount(removed) })}</div>
 
-        <div className={css.filesHeader}>{t('commit.changedFiles')} <span className={css.filesCount}>{files.length}</span></div>
+        <div className={css.filesHeader}>{t('commit.changedFiles')} <span className={css.filesCount}>{formatCount(files.length)}</span></div>
         <div className={css.fileTable}>
           <div className={css.fileHeader}>
             <span className={css.colPath}>{t('commit.file')}</span>
@@ -91,8 +91,8 @@ export function CommitDetails({
               <span className={`${css.colStatus} ${css[`status_${file.status === '??' ? 'untracked' : file.status}`] ?? ''}`}>{file.status}</span>
               {(file.additions !== null || file.deletions !== null) && (
                 <span className={css.colStats}>
-                  {file.additions !== null && <span className={css.add}>+{file.additions}</span>}
-                  {file.deletions !== null && <span className={css.del}>−{file.deletions}</span>}
+                  {(file.additions ?? 0) > 0 && <span className={css.add}>+{formatCount(file.additions ?? 0)}</span>}
+                  {(file.deletions ?? 0) > 0 && <span className={css.del}>−{formatCount(file.deletions ?? 0)}</span>}
                 </span>
               )}
             </button>
@@ -113,6 +113,7 @@ export function CommitDetails({
               error={null}
               onViewChange={onViewChange}
               onBack={onBack}
+              embedded
               t={t}
             />
           </div>
