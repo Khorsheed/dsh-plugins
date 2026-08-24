@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { apply } from '../src/index.ts'
@@ -109,9 +109,20 @@ describe('idempotent writes', () => {
 
   it('addArtifact dedups by path and rejects a conflicting kind', async () => {
     await service.create({ id: 'm' })
+    const file = join(service.store.attemptDataDir('default', 'm', 1), 'x')
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, 'content\n')
     expect((await service.addArtifact('m', { path: 'x', kind: 'collect' })).added).toBe(true)
     expect((await service.addArtifact('m', { path: 'x', kind: 'collect' })).added).toBe(false)
     await expect(service.addArtifact('m', { path: 'x', kind: 'archive' })).rejects.toThrow(/already indexed/)
+  })
+
+  it('addArtifact fails loud on a missing path (no ghost artifacts), accepts directories', async () => {
+    await service.create({ id: 'm' })
+    await expect(service.addArtifact('m', { path: 'ghost.txt', kind: 'collect' })).rejects.toThrow(/does not exist/)
+    const sub = join(service.store.attemptDataDir('default', 'm', 1), 'logs')
+    mkdirSync(sub, { recursive: true })
+    expect((await service.addArtifact('m', { path: 'logs', kind: 'archive' })).added).toBe(true)
   })
 })
 
@@ -136,6 +147,9 @@ describe('service face (ctx.mission)', () => {
     await mission.create({ id: 'cell', by: 'service' })
     await mission.setRefs('cell', { resource: 'box-1', fingerprint: 'sha256:abc', sessions: ['s-1'] })
     await mission.setRefs('cell', { sessions: ['s-1', 's-2'] }) // sessions union
+    const report = join(mission.store.attemptDataDir('default', 'cell', 1), 'report.json')
+    mkdirSync(dirname(report), { recursive: true })
+    writeFileSync(report, '{}\n')
     await mission.addArtifact('cell', { path: 'report.json', kind: 'collect' })
     await mission.addCheckpoint('cell', { name: 'verify', ref: 'tag-9', artifacts: ['report.json'] })
     await mission.annotate('cell', 'lab', { exitCode: 0 }, { by: 'service' })
