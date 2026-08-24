@@ -9,7 +9,7 @@
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconChevronDownOutline14, IconChevronRightOutline14,
   IconFolderClose16, IconFolderOpen16, IconTreeCorner8x10,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -177,23 +177,18 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileT
     return <div className={css.empty}>{t('group.empty')}</div>
   }
 
-  const renderNode = (node: FileNode, depth: number, groupKey: string): ReactNode => {
+  const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = node.children.length > 0
     const isOpen = expanded.has(node.path)
     if (isDir) {
       return (
         <div key={`${groupKey}/${node.path}`}>
-          <button
-            type="button"
-            className={css.row}
-            style={{ paddingLeft: 8 + depth * 14 }}
-            onClick={() => { toggle(node.path) }}
-          >
-            {isOpen ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
+          <button type="button" className={css.row} onClick={() => { toggle(node.path) }}>
+            <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}</span>
             {isOpen ? <IconFolderOpen16 /> : <IconFolderClose16 />}
             <span className={css.rowName}>{node.name}</span>
           </button>
-          {isOpen && <div className={css.children}>{node.children.map(child => renderNode(child, depth + 1, groupKey))}</div>}
+          {isOpen && <div className={css.children}>{node.children.map(child => renderNode(child, groupKey))}</div>}
         </div>
       )
     }
@@ -203,7 +198,6 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileT
         key={`${groupKey}/${node.path}`}
         type="button"
         className={`${css.row} ${css.fileRow} ${selected ? css.selected : ''}`}
-        style={{ paddingLeft: 8 + depth * 14 }}
         onClick={() => { onSelect(node.path) }}
       >
         <span className={css.fileGlyph}><IconTreeCorner8x10 /></span>
@@ -230,11 +224,10 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileT
       {roots.map(group => (
         <div key={group.key}>
           <div className={css.groupHeader}>
-            <IconBranchOutline16 />
             <span className={css.groupTitle}>{group.title}</span>
-            <span className={css.groupCount}>{group.count}</span>
+            {group.count > 0 && <span className={css.groupCount}>· {group.count}</span>}
           </div>
-          {group.nodes.map(node => renderNode(node, 0, group.key))}
+          {group.nodes.map(node => renderNode(node, group.key))}
         </div>
       ))}
     </div>

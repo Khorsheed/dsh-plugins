@@ -1,72 +1,86 @@
-/* The file tree: IDE-explorer anatomy — compact rows, chevron disclosure,
-   indent guides, hover/selected backgrounds (datasets' DatasetsView is the
-   in-repo reference; official alias tokens throughout). */
+/* The file tree, following the dsh explorer anatomy (datasets' DatasetsView
+   is the in-repo reference): compact 24px rows, a 14px chevron slot, folder
+   glyphs for groups, a hairline indent guide under every expanded group,
+   quiet group labels with an inline `· N` count, and subtle full-row state
+   backgrounds. */
 
 .tree {
   font-size: 13px;
+  padding-bottom: 8px;
 }
 
+/* A quiet strip: the mode title on the left, expand/collapse actions right. */
 .treeHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .treeTitle {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .treeActions {
   display: inline-flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .treeAction {
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: 12px;
-  color: var(--dsw-alias-brand-primary);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
 
 .treeAction:hover {
-  text-decoration: underline;
+  color: var(--dsw-alias-label-primary);
 }
 
+/* A group label (a change segment / the repo root): quiet, weight 500, with
+   the count inline right after the title — the explorer's `· N` suffix. */
 .groupHeader {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 4px;
   height: 26px;
-  padding: 0 8px;
-  color: var(--dsw-alias-label-tertiary);
+  padding: 0 12px;
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .groupCount {
-  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
+/* Every expanded group's children hang on a hairline indent guide set under
+   the parent's chevron center — the explorer's orientation cue. */
 .children {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  margin-left: 11px;
+  padding-left: 9px;
+  border-left: 1px solid var(--dsw-alias-border-l3);
 }
 
+/* One tree row: explorer-compact, flush with the column. */
 .row {
   display: flex;
   align-items: center;
   gap: 4px;
   width: 100%;
   height: 24px;
-  padding-right: 8px;
+  padding: 0 8px;
   border: 0;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -79,18 +93,42 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The disclosure slot holds a fixed width so glyphs align across depths. */
+.chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .rowName {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* File rows shift toward the primary tone on hover/selection. */
+.fileRow:hover,
+.fileRow:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.selected,
+.selected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
 .fileGlyph {
-  display: inline-flex;
   flex: none;
+  display: inline-flex;
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The trailing status + line-count cluster, quiet and tabular. */
 .status {
   flex: none;
   margin-left: auto;
@@ -120,14 +158,8 @@
   flex: none;
   margin-left: 8px;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-}
-
-.selected,
-.selected:hover {
-  background: var(--dsw-alias-interactive-bg-active);
-  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary);
 }
 
 .empty {
