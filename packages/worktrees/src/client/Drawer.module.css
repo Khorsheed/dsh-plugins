@@ -155,10 +155,9 @@
 .treeColumn {
   display: flex;
   flex-direction: column;
-  flex: none;
-  width: 46%;
+  flex: 0 1 300px;
   min-width: 200px;
-  max-width: 60%;
+  max-width: 45%;
   border-right: 1px solid var(--dsw-alias-border-l2);
   overflow: auto;
   /* Same gutter reservation as the detail body — the tree's own scrollbar

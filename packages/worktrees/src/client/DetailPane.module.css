@@ -3,6 +3,10 @@
 .root {
   display: flex;
   flex-direction: column;
+  /* Fill the detail column (a flex row) regardless of content — without this
+     the pane sizes to its content's natural width and leaves a gap when the
+     drawer is wider than the longest content line. */
+  flex: 1 1 0;
   min-width: 0;
   height: 100%;
 }
