@@ -93,6 +93,17 @@
   scrollbar-gutter: stable;
 }
 
+/* Thin, soft scrollbar — quieter than the 8px global. */
+.body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.body::-webkit-scrollbar-thumb {
+  background: #cfd3d8;
+  border-radius: 3px;
+}
+
 .code {
   margin: 0;
   /* Soft-wrap the content block's lines so a narrow drawer keeps every line

@@ -1,5 +1,33 @@
 /* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop,
-   following the FilePreviewDrawer geometry and the official alias tokens. */
+   following the FilePreviewDrawer geometry and the official alias tokens.
+
+   The emphasis color system is shared across the drawer's surfaces so the
+   mode tabs, the commit list and the file table read as ONE design system:
+   a single blue family (active / active-bg / hover) that flips for dark. */
+:root {
+  --wt-active: #315efb;
+  --wt-active-bg: #eaf0ff;
+  --wt-hover-bg: #f1f3f6;
+}
+
+body[data-ds-dark-theme] {
+  --wt-active: #5b8bff;
+  --wt-active-bg: #1c2635;
+  --wt-hover-bg: #1f2229;
+}
+
+/* The drawer's scroll regions use a thinner, softer bar than the 8px global. */
+.treeColumn::-webkit-scrollbar,
+.detailColumn::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.treeColumn::-webkit-scrollbar-thumb,
+.detailColumn::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l1, #cfd3d8);
+  border-radius: 3px;
+}
 
 .overlay {
   position: fixed;
@@ -134,6 +162,7 @@
 }
 
 .switch:hover {
+  background: var(--wt-hover-bg);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -151,7 +180,7 @@
   bottom: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--dsw-alias-brand-primary);
+  background: var(--wt-active);
 }
 
 .switchCount {

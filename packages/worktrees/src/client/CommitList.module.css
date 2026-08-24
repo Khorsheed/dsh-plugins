@@ -1,9 +1,22 @@
 /* The commit list: a fast-scan pane. 48px header with its text at 16px; 52px
-   rows (text also at 16px, aligned with the header), title ↔ meta 4px apart,
-   a 2px row gap and an 8px top break so the first row is never flush with the
-   header. The selected row is a theme-aware light/dark-blue surface with a 2px
-   left accent — never a black keyboard-focus border; a real focus ring appears
-   only on :focus-visible. */
+   rows (text also at 16px), the title ↔ meta 4px apart, a 2px row gap and an
+   8px top break so the first row is never flush with the header. The list has
+   an 8px inline inset so a selected row never touches the panel edge; the
+   selected row is the shared blue family with a short inner accent mark (not
+   a border that follows the rounded corner), and a real focus ring shows only
+   on :focus-visible. */
+
+:root {
+  --wt-active: #315efb;
+  --wt-active-bg: #eaf0ff;
+  --wt-hover-bg: #f1f3f6;
+}
+
+body[data-ds-dark-theme] {
+  --wt-active: #5b8bff;
+  --wt-active-bg: #1c2635;
+  --wt-hover-bg: #1f2229;
+}
 
 .list {
   display: flex;
@@ -26,12 +39,6 @@
   color: var(--dsw-alias-label-primary);
   font-size: 15px;
   font-weight: 500;
-}
-
-.count {
-  margin-left: 2px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 13px;
 }
 
 .headerRight {
@@ -59,7 +66,7 @@
 }
 
 .collapseButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--wt-hover-bg);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -70,18 +77,29 @@
   gap: 2px;
   min-height: 0;
   overflow: auto;
-  padding: 8px 6px 8px;
+  padding: 8px 8px 8px;
 }
 
-/* One commit row: 52px, text at 6px (list) + 10px (row) = 16px, aligned with
+/* Thin, soft scrollbar — never louder than the content. */
+.rows::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rows::-webkit-scrollbar-thumb {
+  background: #cfd3d8;
+  border-radius: 3px;
+}
+
+/* One commit row: 52px, text at 8px (list) + 8px (row) = 16px, aligned with
    the header. No divider — the 2px gap separates. */
 .row {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
   justify-content: center;
   min-height: 52px;
-  padding: 8px 10px 7px;
+  padding: 8px 8px 7px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -90,17 +108,17 @@
 }
 
 .row:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--wt-hover-bg);
 }
 
 /* Rows never paint a default focus ring on click — only a real keyboard
-   :focus-visible gets one, in the brand tone. */
+   :focus-visible gets one, in the blue accent. */
 .row:focus:not(:focus-visible) {
   outline: none;
 }
 
 .row:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: 2px solid var(--wt-active);
   outline-offset: -2px;
 }
 
@@ -145,21 +163,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Selected: a theme-aware light-blue surface + 2px left accent (never a black
-   border). Light mode uses the product's light blue; dark mode a deep navy. */
+/* Selected: a light-blue surface with a SHORT inner accent mark — not a
+   border that wraps the rounded corner. */
 .row[aria-selected='true'],
-.row[aria-selected='true']:hover,
-.row[aria-selected='true']:focus-visible {
-  background: #eaf0ff;
-  box-shadow: inset 2px 0 0 #315efb;
+.row[aria-selected='true']:hover {
+  background: var(--wt-active-bg);
   color: var(--dsw-alias-label-primary);
 }
 
-body[data-ds-dark-theme] .row[aria-selected='true'],
-body[data-ds-dark-theme] .row[aria-selected='true']:hover,
-body[data-ds-dark-theme] .row[aria-selected='true']:focus-visible {
-  background: #1c2635;
-  box-shadow: inset 2px 0 0 #5b8bff;
+.row[aria-selected='true']::before,
+.row[aria-selected='true']:hover::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--wt-active);
 }
 
 .empty {

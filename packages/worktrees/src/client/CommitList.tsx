@@ -19,8 +19,8 @@ export interface CommitListProps {
   commits: readonly CommitInfo[] | null
   /** The selected commit sha, or null. */
   selectedCommit: string | null
-  /** How many commits the branch leads its base (the header's `领先 main N`). */
-  ahead: number
+  /** The base branch the log is measured against (the header's `基于 main`). */
+  baseRef: string
   /** When given, renders a collapse-to-rail toggle at the right of the header. */
   collapsed?: boolean
   onToggleCollapse?: () => void
@@ -32,7 +32,7 @@ export interface CommitListProps {
 
 /** The commit list. */
 export function CommitList({
-  commits, selectedCommit, ahead, collapsed, onToggleCollapse, onSelectCommit, t,
+  commits, selectedCommit, baseRef, collapsed, onToggleCollapse, onSelectCommit, t,
 }: CommitListProps): ReactNode {
   if (commits === null || commits.length === 0) {
     return <div className={css.empty}>{t('commits.empty', { base: 'base' })}</div>
@@ -43,9 +43,9 @@ export function CommitList({
   return (
     <div className={css.list}>
       <div className={css.header}>
-        <span className={css.title}>{t('mode.commits')} <span className={css.count}>{commits.length}</span></span>
+        <span className={css.title}>{t('mode.commits')}</span>
         <span className={css.headerRight}>
-          {ahead > 0 && <span className={css.leading}>{t('commits.leading', { base: 'main', count: String(ahead) })}</span>}
+          <span className={css.leading}>{t('commits.base', { base: baseRef || 'main' })}</span>
           {onToggleCollapse !== undefined && (
             <button
               type="button"

@@ -89,10 +89,12 @@ export function CommitDetails({
             >
               <span className={css.colPath} title={file.path}>{file.path}</span>
               <span className={`${css.colStatus} ${css[`status_${file.status === '??' ? 'untracked' : file.status}`] ?? ''}`}>{file.status}</span>
-              <span className={css.colStats}>
-                <span className={css.add}>+{file.additions ?? 0}</span>
-                <span className={css.del}>−{file.deletions ?? 0}</span>
-              </span>
+              {(file.additions !== null || file.deletions !== null) && (
+                <span className={css.colStats}>
+                  {file.additions !== null && <span className={css.add}>+{file.additions}</span>}
+                  {file.deletions !== null && <span className={css.del}>−{file.deletions}</span>}
+                </span>
+              )}
             </button>
           ))}
         </div>

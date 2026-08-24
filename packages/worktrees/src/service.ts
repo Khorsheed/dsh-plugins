@@ -293,8 +293,13 @@ export class WorktreesService {
   async commitFiles(cwd: string, sha: string): Promise<CommitFilesResult> {
     const repo = await this.repoOf(cwd)
     if (repo === null) return { sha, files: [] }
-    const out = await git(repo, ['show', '--format=', '--name-status', sha])
-    return { sha, files: parseNameStatus(out) }
+    // Merge the status letters with real numstat counts, so the commit's file
+    // list can show meaningful add/del instead of a blank or +0 −0.
+    const [statusOut, numstatOut] = await Promise.all([
+      git(repo, ['show', '--format=', '--name-status', sha]),
+      git(repo, ['show', '--format=', '--numstat', sha]),
+    ])
+    return { sha, files: mergeCounts(parseNameStatus(statusOut), numstatOut) }
   }
 
   /**
