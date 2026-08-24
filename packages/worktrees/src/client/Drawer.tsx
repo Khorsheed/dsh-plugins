@@ -163,15 +163,17 @@ export function WorktreesDrawer({
     }
     actions.select(path, segment)
     // In a changes context lead with the diff; only untracked/repo-browse
-    // files have no diff and fall back to the content view. The tree stays
-    // put — collapsing it on every selection was jarring (manual toggle only).
+    // files have no diff and fall back to the content view. Selecting a file
+    // folds the tree to the icon rail (focus mode); the rail button expands
+    // it back.
     actions.setDetailView(segment !== null && !untracked ? 'diff' : 'content')
+    actions.setTreeCollapsed(true)
   }
 
   const worktreePath = summary?.repo ?? ''
 
   const leftColumn = ((): ReactNode => {
-    if (treeCollapsed && mode !== 'commits') {
+    if (treeCollapsed) {
       return (
         <div className={css.rail} title={t('tree.expand')}>
           <button

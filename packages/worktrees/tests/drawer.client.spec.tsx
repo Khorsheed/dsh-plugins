@@ -122,6 +122,8 @@ describe('WorktreesDrawer', () => {
     }
     const row = await dialog().findByRole('button', { name: /index\.ts/ })
     fireEvent.click(row)
+    // Selecting a file folds the tree to the rail (focus mode).
+    expect(instance.getSnapshot().treeCollapsed).toBe(true)
     // In a changes context the detail defaults to the diff → fileDiff drives
     // with the committed segment immediately.
     await waitFor(() => expect(fetchFileDiff).toHaveBeenCalledWith(

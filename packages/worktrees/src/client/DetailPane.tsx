@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile, FileDiffResult, ReadFileResult } from '../types.ts'
+import { languageFor } from './language.ts'
 import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
 import css from './DetailPane.module.css'
@@ -54,17 +55,18 @@ export function DetailPane({
     if (loading) return <div className={css.placeholder}>{t('state.loading')}</div>
     if (error !== null) return <div className={css.placeholder}>{t('state.error', { message: error })}</div>
     if (deleted) return <div className={css.placeholder}>{t('detail.deleted')}</div>
+    const lang = languageFor(path)
     if (untracked) {
       return content === null
         ? <div className={css.placeholder}>{t('detail.untracked')}</div>
-        : <CodeBlock className={css.code} code={content.content} />
+        : <CodeBlock className={css.code} code={content.content} lang={lang} />
     }
     if (detailView === 'diff') {
       return diff === null ? <div className={css.placeholder}>{t('detail.noSelection')}</div> : <DiffView diff={diff.diff} t={t} />
     }
     return content === null
       ? <div className={css.placeholder}>{t('state.loading')}</div>
-      : <CodeBlock className={css.code} code={content.content} />
+      : <CodeBlock className={css.code} code={content.content} lang={lang} />
   })()
 
   return (
