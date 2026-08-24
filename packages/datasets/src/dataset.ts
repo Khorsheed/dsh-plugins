@@ -425,6 +425,9 @@ export interface DatasetRegistry {
   entries: Map<string, RegisteredFile[]>
   /** Item ids that carry content ONLY through register (no items/<id>/ directory). */
   registerOnlyItems: string[]
+  /** Every register-claimed git object path — a claimed file must not ALSO
+   * surface under its physical directory as a pseudo-layer. */
+  claimed: Set<string>
 }
 
 function registryKey(item: string, layer: string): string {
@@ -450,7 +453,7 @@ export async function buildRegistry(
   descriptor: DatasetDescriptor,
 ): Promise<DatasetRegistry> {
   const entries = new Map<string, RegisteredFile[]>()
-  if (descriptor.register.length === 0) return { entries, registerOnlyItems: [] }
+  if (descriptor.register.length === 0) return { entries, registerOnlyItems: [], claimed: new Set() }
   const prefix = `${datasetDir(datasetId)}/items/`
   const all = await listFiles(repo, commit, `${datasetDir(datasetId)}/items`)
   const registerOnly = new Set<string>()
@@ -505,7 +508,11 @@ export async function buildRegistry(
       'SHAPE_INVALID',
     )
   }
-  return { entries, registerOnlyItems: [...registerOnly].sort() }
+  const claimed = new Set<string>()
+  for (const bucket of entries.values()) {
+    for (const file of bucket) claimed.add(file.object)
+  }
+  return { entries, registerOnlyItems: [...registerOnly].sort(), claimed }
 }
 
 /** One role's registered files, or undefined when none. */
@@ -655,6 +662,7 @@ export async function loadItem(
   const layers: Record<string, string[]> = {}
   for (const rel of owned) {
     if (rel === ITEM_METADATA) continue
+    if (registry?.claimed.has(`${dir}/${rel}`)) continue // register-claimed: shows under its role, not its physical directory
     const slash = rel.indexOf('/')
     if (slash < 0) continue // stray file at the item root: not a layer, ignored by convention
     const layer = rel.slice(0, slash)

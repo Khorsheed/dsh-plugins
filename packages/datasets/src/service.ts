@@ -547,7 +547,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
           continue
         }
         warnings.push(...descriptorWarnings(descriptor))
-        let registry: DatasetRegistry = { entries: new Map(), registerOnlyItems: [] }
+        let registry: DatasetRegistry = { entries: new Map(), registerOnlyItems: [], claimed: new Set() }
         try {
           registry = await buildRegistry(repo, sha, id, descriptor)
         } catch (error) {

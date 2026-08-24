@@ -95,6 +95,12 @@ describe('register read model', () => {
     expect(p0?.layers['grading']).toEqual(['answers/rubric.yml'])
     const c1 = result.items.find(item => item.id === 'c1')
     expect(c1?.layers['visible']).toEqual(['task.md'])
+    // A register-claimed file must not ALSO surface under its physical
+    // directory as a pseudo-layer (P0's answers/ is fully claimed). The
+    // partially-claimed docs/ keeps only its unclaimed leftover
+    // (docs/deep/spec.md — the single-level glob never reaches it).
+    expect(Object.keys(p0?.layers ?? {}).sort()).toEqual(['docs', 'grading', 'visible'])
+    expect(p0?.layers['docs']).toEqual(['deep/spec.md'])
     // The dataset-level shared layer rides along; the too-deep glob leftover is passthrough.
     expect(result.datasetLayers['verify']).toEqual(['helpers/lib.sh'])
     expect(result.passthrough).toEqual(['items/p0/docs/deep/spec.md'])

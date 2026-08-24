@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-datasets-store-m1.md
-.agents/notes/implemented/feature/2026-08-19-datasets-store-m1.md: eac4fc624f523ea34ce3d0e95d995fe8fa50710a
-.agents/notes/implemented/feature/2026-08-19-datasets-store-m1.zh.md: 686e6ddb0f2feaf774a4ff0eb27458dbefcab77b
+.agents/notes/implemented/feature/2026-08-19-datasets-store-m1.md: 47d518b056426426025d6f7a8c7491af8946c921
+.agents/notes/implemented/feature/2026-08-19-datasets-store-m1.zh.md: 2eba721f2304e751a562c68268226a3fa2781df8
