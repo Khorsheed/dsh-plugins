@@ -109,36 +109,52 @@
   white-space: nowrap;
 }
 
+/* A compact, left-aligned tab bar: each tab hugs its content (label + count)
+   instead of stretching across the drawer, so switching never travels far. */
 .switcher {
   display: flex;
-  gap: 4px;
-  padding: 6px 12px;
+  align-items: stretch;
+  height: 40px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .switch {
-  flex: 1;
-  height: 28px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
   background: transparent;
-  font-size: 13px;
   color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
   cursor: pointer;
 }
 
 .switch:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .switchActive {
-  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
 }
 
+/* The active tab's bottom indicator bar, in the brand tone. */
+.switchActive::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--dsw-alias-brand-primary);
+}
+
 .switchCount {
-  margin-left: 5px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary);
