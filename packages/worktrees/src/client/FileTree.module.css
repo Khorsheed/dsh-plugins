@@ -92,7 +92,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 16px;
+  width: 20px;
   color: var(--dsw-alias-label-tertiary);
 }
 

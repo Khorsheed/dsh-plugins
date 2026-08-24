@@ -193,7 +193,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       return (
         <div key={`${groupKey}/${node.path}`}>
           <button type="button" className={css.row} onClick={() => { toggle(node.path) }}>
-            <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}</span>
+            <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 size={18} /> : <IconChevronRightOutline14 size={18} />}</span>
             {isOpen ? <IconFolderOpen16 /> : <IconFolderClose16 />}
             <span className={css.dirName}>{node.name}</span>
           </button>

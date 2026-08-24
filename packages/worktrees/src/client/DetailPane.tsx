@@ -74,14 +74,18 @@ export function DetailPane({
       <div className={css.header}>
         <span className={css.path} title={path}>{path}</span>
         <span className={css.toggle}>
-          <button
-            type="button"
-            className={`${css.viewButton} ${detailView === 'diff' ? css.viewActive : ''}`}
-            disabled={diffDisabled}
-            onClick={() => { onViewChange('diff') }}
-          >
-            {t('detail.diff')}
-          </button>
+          {/* The diff toggle only shows when the file actually has a change
+              record — a pristine repository file (repo browse) has no diff,
+              so the toggle is hidden rather than permanently grayed. */}
+          {!diffDisabled && (
+            <button
+              type="button"
+              className={`${css.viewButton} ${detailView === 'diff' ? css.viewActive : ''}`}
+              onClick={() => { onViewChange('diff') }}
+            >
+              {t('detail.diff')}
+            </button>
+          )}
           <button
             type="button"
             className={`${css.viewButton} ${detailView === 'content' ? css.viewActive : ''}`}
