@@ -13,7 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, join, sep } from 'node:path'
 import {
-  entryAt, git, mergeCounts, parseLog, parseNameStatus, parsePorcelain, parseWorktreeList,
+  entryAt, git, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
   repoToplevel, type ChangedFile, type LogRow,
 } from './git.ts'
 
@@ -63,7 +63,10 @@ export interface ChangesResult {
 }
 
 /** One commit in the branch's own log (`base..HEAD`). */
-export interface CommitInfo extends LogRow {}
+export interface CommitInfo extends LogRow {
+  /** The commit's changed-file count (commits-list row metadata). */
+  files: number
+}
 
 /** Files of one commit. */
 export interface CommitFilesResult {
@@ -274,8 +277,10 @@ export class WorktreesService {
     if (repo === null) return []
     const hasBase = await this.hasBase(repo)
     if (!hasBase) return []
-    const out = await git(repo, ['log', '--format=%h%x09%s%x09%an%x09%at', `${this.baseRef}..HEAD`])
-    return parseLog(out)
+    // One NUL-separated record per commit — the short format on the first
+    // line, then the commit's file names to count for the list row.
+    const out = await git(repo, ['log', '--format=%x00%h%x1f%s%x1f%an%x1f%at', '--name-only', `${this.baseRef}..HEAD`])
+    return parseLogWithFiles(out)
   }
 
   /**

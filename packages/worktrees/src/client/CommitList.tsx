@@ -1,14 +1,16 @@
 /**
- * The commit log (commits mode): an IDE-style list of the branch's own
- * commits (`base..HEAD`), each row showing short sha, subject, and relative
- * time. Selecting a commit expands its changed-file tree inline (VS Code
- * Source Control anatomy) and hands file clicks to the detail pane.
+ * The commit log (commits mode): a fast-scan list of the branch's own
+ * commits (`base..HEAD`). The header shows the count and how far the branch
+ * leads its base; each 50px row carries the title (weight 500) and a second
+ * line of short sha · file count with the time right-aligned. Commits are not
+ * tree nodes — no expand arrows, no per-row dividers; rows separate by a 2px
+ * gap and the selected row gets a light-blue surface with a 2px left accent.
  */
-import { useMemo, type ReactNode } from 'react'
-import { IconChevronDownOutline14, IconChevronRightOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReactNode } from 'react'
+import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ChangedFile, CommitInfo } from '../types.ts'
-import { FileTree, relativeTime, type FileTreeItem } from './FileTree.tsx'
+import type { CommitInfo } from '../types.ts'
+import { relativeTime } from './FileTree.tsx'
 import css from './CommitList.module.css'
 
 /** Props of the commit list. */
@@ -17,66 +19,65 @@ export interface CommitListProps {
   commits: readonly CommitInfo[] | null
   /** The selected commit sha, or null. */
   selectedCommit: string | null
-  /** The selected commit's files (null until loaded). */
-  commitFiles: readonly ChangedFile[] | null
-  /** The base branch the log is measured against (for the empty state). */
-  baseRef: string
-  /** Called when a commit row is clicked (null collapses). */
-  onSelectCommit: (sha: string | null) => void
-  /** Called when a file inside the selected commit is clicked. */
-  onSelectFile: (path: string) => void
+  /** How many commits the branch leads its base (the header's `领先 main N`). */
+  ahead: number
+  /** When given, renders a collapse-to-rail toggle at the right of the header. */
+  collapsed?: boolean
+  onToggleCollapse?: () => void
+  /** Called when a commit row is clicked. */
+  onSelectCommit: (sha: string) => void
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
 
 /** The commit list. */
 export function CommitList({
-  commits, selectedCommit, commitFiles, onSelectCommit, onSelectFile, baseRef, t,
+  commits, selectedCommit, ahead, collapsed, onToggleCollapse, onSelectCommit, t,
 }: CommitListProps): ReactNode {
-  const fileGroups = useMemo(() => {
-    if (commitFiles === null || commitFiles.length === 0) return []
-    const items: FileTreeItem[] = commitFiles.map(file => ({
-      path: file.path,
-      status: file.status,
-      additions: file.additions,
-      deletions: file.deletions,
-    }))
-    return [{ key: 'commit', title: t('commits.files', { count: items.length }), count: items.length, items }]
-  }, [commitFiles, t])
-
   if (commits === null || commits.length === 0) {
-    return <div className={css.empty}>{t('commits.empty', { base: baseRef || 'base' })}</div>
+    return <div className={css.empty}>{t('commits.empty', { base: 'base' })}</div>
   }
+
+  const fileLabel = (count: number): string => t('commits.files', { count: String(count) })
 
   return (
     <div className={css.list}>
-      {commits.map(commit => {
-        const open = selectedCommit === commit.sha
-        return (
-          <div key={commit.sha} className={css.commit}>
+      <div className={css.header}>
+        <span className={css.title}>{t('mode.commits')} <span className={css.count}>{commits.length}</span></span>
+        <span className={css.headerRight}>
+          {ahead > 0 && <span className={css.leading}>{t('commits.leading', { base: 'main', count: String(ahead) })}</span>}
+          {onToggleCollapse !== undefined && (
             <button
               type="button"
-              className={`${css.row} ${open ? css.rowOpen : ''}`}
-              onClick={() => { onSelectCommit(open ? null : commit.sha) }}
+              className={css.collapseButton}
+              title={collapsed ? t('tree.expand') : t('tree.collapse')}
+              onClick={onToggleCollapse}
             >
-              {open ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
-              <span className={css.sha}>{commit.sha}</span>
-              <span className={css.subject}>{commit.subject}</span>
-              <span className={css.time}>{relativeTime(commit.time)}</span>
+              <IconPanelLeftOutline16 />
             </button>
-            {open && (
-              <div className={css.files}>
-                <FileTree
-                  groups={fileGroups}
-                  selectedPath={null}
-                  onSelect={onSelectFile}
-                  t={t}
-                />
-              </div>
-            )}
-          </div>
-        )
-      })}
+          )}
+        </span>
+      </div>
+      <div className={css.rows}>
+        {commits.map(commit => {
+          const selected = selectedCommit === commit.sha
+          return (
+            <button
+              key={commit.sha}
+              type="button"
+              className={`${css.row} ${selected ? css.selected : ''}`}
+              onClick={() => { onSelectCommit(commit.sha) }}
+            >
+              <span className={css.subject}>{commit.subject}</span>
+              <span className={css.rowMeta}>
+                <span className={css.sha}>{commit.sha}</span>
+                <span className={css.fileCount}>· {fileLabel(commit.files)}</span>
+                <span className={css.time}>{relativeTime(commit.time)}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

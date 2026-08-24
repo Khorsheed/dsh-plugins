@@ -31,8 +31,8 @@ const MIN_WIDTH = 420
 const WIDTH_KEY = 'dsh-worktrees-drawer-w'
 /** Tree column width: the developer-tool default of 320px, draggable 280–380. */
 const TREE_DEFAULT_WIDTH = 320
-const TREE_MIN_WIDTH = 280
-const TREE_MAX_WIDTH = 380
+const TREE_MIN_WIDTH = 300
+const TREE_MAX_WIDTH = 440
 const TREE_WIDTH_KEY = 'dsh-worktrees-tree-w'
 
 /** Clamp a requested tree width into the 280–380 band. */
@@ -243,6 +243,14 @@ export function WorktreesDrawer({
     repo: repoFiles === null ? null : repoFiles.length,
   }), [changes, commits, repoFiles])
 
+  // In the commits mode default to the newest commit so the right pane opens
+  // onto a detail view rather than an empty surface.
+  useEffect(() => {
+    if (!open || mode !== 'commits' || selectedCommit !== null) return
+    const latest = commits?.[0]
+    if (latest !== undefined) actions.selectCommit(latest.sha)
+  }, [open, mode, commits, selectedCommit, actions])
+
   // Escape closes the drawer (the layer outside the drawer is click-through,
   // matching file-preview — no dim mask, the ✕ / Esc own the close).
   useEffect(() => {
@@ -293,30 +301,15 @@ export function WorktreesDrawer({
     return (
       <div className={css.treeColumn} style={{ width: treeWidth }}>
         {mode === 'commits'
-          ? (
-            <>
-              <div className={css.commitsHeader}>
-                <span className={css.treeTitle}>{t('mode.commits')}</span>
-                <button
-                  type="button"
-                  className={css.collapseButton}
-                  title={treeCollapsed ? t('tree.expand') : t('tree.collapse')}
-                  onClick={() => { actions.toggleTree() }}
-                >
-                  <IconPanelLeftOutline16 />
-                </button>
-              </div>
-              <CommitList
-                commits={commits}
-                selectedCommit={selectedCommit}
-                commitFiles={commitFiles}
-                onSelectCommit={actions.selectCommit}
-                onSelectFile={onSelectFile}
-                baseRef={summary?.baseRef ?? 'main'}
-                t={t}
-              />
-            </>
-          )
+          ? <CommitList
+            commits={commits}
+            selectedCommit={selectedCommit}
+            ahead={summary?.ahead ?? 0}
+            collapsed={treeCollapsed}
+            onToggleCollapse={() => { actions.toggleTree() }}
+            onSelectCommit={actions.selectCommit}
+            t={t}
+          />
           : <FileTree
             groups={groups}
             selectedPath={selectedPath}
@@ -445,7 +438,20 @@ export function WorktreesDrawer({
                 const commit = commits?.find(candidate => candidate.sha === selectedCommit)
                 return commit === undefined
                   ? <Overview summary={summary} changes={changes} repoMode={false} t={t} />
-                  : <CommitDetails commit={commit} files={commitFiles} onSelectFile={onSelectFile} t={t} />
+                  : <CommitDetails
+                    commit={commit}
+                    files={commitFiles ?? []}
+                    selectedPath={selectedPath}
+                    diff={diff}
+                    content={content}
+                    detailView={detailView}
+                    hasDiff={selectedSegment === 'commit'}
+                    onSelectFile={onSelectFile}
+                    onViewChange={actions.setDetailView}
+                    copySha={(sha) => copyBranch(sha)}
+                    openFolder={() => { openExternal(worktreePath) }}
+                    t={t}
+                  />
               })()
               : <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} t={t} />}
           </div>

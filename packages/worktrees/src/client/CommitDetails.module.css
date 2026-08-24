@@ -1,105 +1,154 @@
-/* The commit details surface: header, sha, subject, author, and the file
-   list as compact clickable rows. */
+/* The commit details surface: a 48px toolbar (sha + actions) over a padded
+   content column: subject, author/time, one-line summary, the file list,
+   then the selected file's diff. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
-.header {
+.toolbar {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  justify-content: space-between;
+  gap: 8px;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.sha {
+.toolbarSha {
   font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
-  font-size: 13px;
-  color: var(--dsw-alias-brand-primary);
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolbarActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
 }
 
 .subject {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
   word-break: break-word;
 }
 
-.meta {
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+.author {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
 }
 
-.count {
-  margin-top: 10px;
-  font-size: 12px;
+.summary {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.filesHeader {
+  margin-top: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.filesCount {
+  margin-left: 4px;
   color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
 }
 
 .files {
   display: flex;
   flex-direction: column;
-  margin-top: 4px;
+  margin-top: 6px;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 .fileRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
-  min-height: 28px;
-  padding: 0 4px;
+  height: 38px;
+  padding: 0 8px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 
 .fileRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
-.status {
-  flex: none;
-  width: 22px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.status_A {
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.status_M,
-.status_R {
-  color: var(--dsw-alias-state-warn-primary);
-}
-
-.status_D {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.status_untracked {
-  color: var(--dsw-alias-label-tertiary);
+.fileRowSelected,
+.fileRowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
 }
 
 .filePath {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.empty {
-  margin-top: 4px;
+.fileStats {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.add {
+  color: var(--dsw-alias-state-success-secondary);
+}
+
+.del {
+  color: var(--dsw-alias-state-error-secondary);
+}
+
+.diff {
+  margin-top: 16px;
 }

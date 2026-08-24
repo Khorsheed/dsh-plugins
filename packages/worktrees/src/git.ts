@@ -211,6 +211,36 @@ export interface LogRow {
   time: number
 }
 
+/** A short-format log row with its file count (for the commits list). */
+export interface LogRowWithFiles extends LogRow {
+  files: number
+}
+
+/**
+ * Parse `git log --format=%x00<h>%x1f<s>%x1f<a>%x1f<t> --name-only <range>`
+ * output: one NUL-separated record per commit — the format fields on the
+ * first line, then the commit's file paths (one per line) to count.
+ * @param output - raw log output.
+ * @returns the rows with their file counts (commit order, newest first).
+ */
+export function parseLogWithFiles(output: string): LogRowWithFiles[] {
+  const rows: LogRowWithFiles[] = []
+  for (const record of output.split('\x00')) {
+    const lines = record.split('\n')
+    const header = lines[0]?.split('\x1f')
+    if (header === undefined || header.length < 4) continue
+    const files = lines.slice(1).filter(line => line.trim() !== '').length
+    rows.push({
+      sha: header[0] ?? '',
+      subject: header[1] ?? '',
+      author: header[2] ?? '',
+      time: Number(header[3]) || 0,
+      files,
+    })
+  }
+  return rows
+}
+
 /**
  * Parse `git log --format=%h%x09%s%x09%an%x09%at <range>` output into rows.
  * @param output - raw log output.
