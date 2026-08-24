@@ -8,7 +8,7 @@
  * file collapses the left tree to a narrow icon rail; clicking the rail
  * restores it.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   IconBranchOutline16, IconCloseOutline16, IconCopyOutline16, IconFolderOpenOutline16,
   IconPanelLeftOutline16, IconRefreshOutline16,
@@ -22,8 +22,18 @@ import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { Overview } from './Overview.tsx'
 import css from './Drawer.module.css'
 
-/** Drawer width cap relative to the viewport. */
-const WIDTH_RATIO = 0.85
+/** Default drawer width (px) — wider than the file-preview drawer because this
+ * drawer shows a tree and a detail pane side by side. */
+const DEFAULT_WIDTH = 720
+/** Narrowest the drag handle allows — below this the two panes are unusable. */
+const MIN_WIDTH = 420
+/** localStorage key for the user's drawer width preference. */
+const WIDTH_KEY = 'dsh-worktrees-drawer-w'
+
+/** Clamp a requested width between the minimum and 92% of the viewport. */
+function clampWidth(width: number, viewport: number): number {
+  return Math.max(MIN_WIDTH, Math.min(width, Math.round(viewport * 0.92)))
+}
 
 /** The drawer. */
 export function WorktreesDrawer({
@@ -52,6 +62,29 @@ export function WorktreesDrawer({
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   const [copied, setCopied] = useState(false)
+  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_KEY))
+      return Number.isFinite(saved) && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH
+    } catch {
+      return DEFAULT_WIDTH
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(WIDTH_KEY, String(drawerWidth)) } catch { /* quota/private-mode: non-fatal */ }
+  }, [drawerWidth])
+  const onResizePointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: drawerWidth }
+    // Capture so fast drags keep delivering moves even off the 8px handle.
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onResizePointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    // Left edge: dragging left grows the drawer.
+    setDrawerWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
+  }
+  const onResizePointerUp = (): void => { drag.current = null }
 
   // Resolve the selected file's metadata for the detail pane.
   const selectedFile: ChangedFile | undefined = useMemo(() => {
@@ -261,10 +294,20 @@ export function WorktreesDrawer({
       <div className={css.backdrop} onClick={() => { actions.close() }} aria-hidden="true" />
       <aside
         className={css.drawer}
-        style={{ width: `min(${WIDTH_RATIO * 100}vw, 680px)` }}
+        style={{ width: drawerWidth }}
         role="dialog"
         aria-label={modeLabel}
       >
+        <div
+          className={css.resizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('drawer.resize')}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+          onPointerCancel={onResizePointerUp}
+        />
         <div className={css.header}>
           <div className={css.summary}>
             <span className={css.summaryBranch}>
