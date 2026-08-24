@@ -44,6 +44,59 @@ describe('resolveScope', () => {
   })
 })
 
+describe('modelFacing default floor (no explicit binding whitelist)', () => {
+  const bare = (): DatasetScope => ({ repo: repo?.dir ?? '' })
+  const operatorScope = (): DatasetScope => ({ repo: repo?.dir ?? '', operator: true })
+
+  it('a mixed dataset reads only its modelFacing:true layers by default; the operator sees all', async () => {
+    repo = makeFixtureRepo()
+    const floored = await service().list(bare(), 'alpha')
+    if (floored.kind !== 'items') throw new Error('expected items result')
+    expect(Object.keys(floored.items.find(item => item.id === 'i1')?.layers ?? {})).toEqual(['visible'])
+    expect(floored.datasetLayers).toEqual({ visible: ['guide.md'] })
+    await expect(service().read(bare(), {
+      dataset: 'alpha', item: 'i1', layer: 'hidden', path: 'notes.md',
+    })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    // An explicit layers ask intersects the floor silently (M1 semantics:
+    // an empty intersection is the only error), so the worktree holds
+    // 'visible' only — 'hidden' never materializes.
+    const wt = await service().worktreePath(bare(), 'alpha', { layers: ['visible', 'hidden'] })
+    expect(wt.layers).toEqual(['visible'])
+    // The operator (the human's tab/CLI read) is never narrowed.
+    const everything = await service().list(operatorScope(), 'alpha')
+    if (everything.kind !== 'items') throw new Error('expected items result')
+    expect(Object.keys(everything.items.find(item => item.id === 'i1')?.layers ?? {}).sort()).toEqual(['hidden', 'visible'])
+  })
+
+  it('an explicit whitelist may include sensitive layers (a deliberate act)', async () => {
+    repo = makeFixtureRepo()
+    const wide: DatasetScope = { repo: repo.dir, layers: ['visible', 'hidden'] }
+    const ok = await service().read(wide, { dataset: 'alpha', item: 'i1', layer: 'hidden', path: 'notes.md' })
+    expect(ok.content).toBe('hidden notes v1\n')
+  })
+
+  it('a dataset with no sensitive declaration behaves exactly as before (all layers, undeclared included)', async () => {
+    repo = makeFixtureRepo()
+    // beta declares a single visible layer — nothing is sensitive.
+    const result = await service().list(bare(), 'beta')
+    if (result.kind !== 'items') throw new Error('expected items result')
+    expect(Object.keys(result.items[0]?.layers ?? {})).toEqual(['visible'])
+    const wt = await service().worktreePath(bare(), 'beta')
+    expect(wt.layers).toEqual(['visible'])
+  })
+
+  it('the write path follows the same floor', async () => {
+    repo = makeFixtureRepo()
+    await expect(service().putItem(bare(), {
+      dataset: 'alpha', item: 'i3', files: [{ layer: 'hidden', path: 'x.md', content: 'x' }],
+    })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    const ok = await service().putItem(bare(), {
+      dataset: 'alpha', item: 'i3', files: [{ layer: 'visible', path: 'x.md', content: 'x' }],
+    })
+    expect(ok.written).toEqual(['datasets/alpha/items/i3/visible/x.md'])
+  })
+})
+
 describe('whitelist enforcement', () => {
   it('list filters item layers to the whitelist', async () => {
     repo = makeFixtureRepo()
@@ -66,7 +119,7 @@ describe('whitelist enforcement', () => {
     // The hidden dataset-level layer is whitelisted out; `drafts/` is not a
     // declared layer, so it stays descriptor passthrough and never lists.
     expect(bound.datasetLayers).toEqual({ visible: ['guide.md'] })
-    const everything = await service().list({ repo: repo.dir }, 'alpha')
+    const everything = await service().list({ repo: repo.dir, operator: true }, 'alpha')
     if (everything.kind !== 'items') throw new Error('expected items result')
     expect(everything.datasetLayers).toEqual({ visible: ['guide.md'], hidden: ['answers.md'] })
   })
@@ -84,7 +137,8 @@ describe('whitelist enforcement', () => {
       dataset: 'alpha', layer: 'hidden', path: 'answers.md',
     })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
     // The passthrough directory is not a declared layer: no read path reaches it.
-    await expect(service().read({ repo: repo.dir }, {
+    // (Operator scope, so the floor does not fire first and mask the guard.)
+    await expect(service().read({ repo: repo.dir, operator: true }, {
       dataset: 'alpha', layer: 'drafts', path: 'notes.md',
     })).rejects.toMatchObject({ code: 'LAYER_UNDECLARED' })
   })
@@ -161,7 +215,7 @@ describe('put_item', () => {
     await expect(service().putItem(boundScope(), {
       dataset: 'alpha', item: 'i3', files: [{ layer: 'hidden', path: 'x.md', content: 'x' }],
     })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
-    await expect(service().putItem({ repo: repo.dir }, {
+    await expect(service().putItem({ repo: repo.dir, operator: true }, {
       dataset: 'alpha', item: 'i3', files: [{ layer: 'undeclared', path: 'x.md', content: 'x' }],
     })).rejects.toMatchObject({ code: 'LAYER_UNDECLARED' })
     expect(existsSync(join(repo.dir, 'datasets/alpha/items/i3'))).toBe(false)

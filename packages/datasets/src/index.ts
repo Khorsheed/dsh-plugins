@@ -319,6 +319,31 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     },
   }))
 
+  ctx.tools.register(defineTool({
+    name: 'datasets_validate',
+    description:
+      'Validate a dataset repository (or one dataset of it) for authoring hygiene: descriptor shape errors '
+      + 'fail loud; warnings never block. Warnings cover undeclared modelFacing on layers of a '
+      + 'mixed-sensitivity dataset, sensitive-looking item.json field names (note/hint/answer/rubric/'
+      + 'grading — item.json is always visible), and files covered by no layer directory or register '
+      + 'entry (they sit in the always-visible passthrough zone).',
+    parameters: {
+      repo: COMMON_REPO_PARAM,
+      dataset: { type: 'string', description: 'When given, validate just this dataset.' },
+      commit: COMMIT_PARAM,
+    },
+    output: jsonOutput(),
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      try {
+        const scope = scopeFor(exec, args)
+        return (await service.validate(scope, args.dataset)) as unknown as JsonValue
+      } catch (error) {
+        throw toToolError(error)
+      }
+    },
+  }))
+
   ctx.commands.register({
     name: 'datasets',
     description:

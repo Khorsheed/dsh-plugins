@@ -111,9 +111,11 @@ export function BindForm(props: BindFormProps) {
       setPickedDatasets(new Set(initial?.datasets ?? datasetUniverse))
     }
     if (pickedLayers === null) {
-      setPickedLayers(new Set(initial?.layers ?? layerUniverse))
+      // The default checks follow the mechanism floor: only modelFacing:true
+      // layers (sensitive layers are added deliberately, by hand).
+      setPickedLayers(new Set(initial?.layers ?? layerUniverse.filter(name => !sensitiveLayers.has(name))))
     }
-  }, [restrictOpen, ok, pickedDatasets, pickedLayers, initial, datasetUniverse, layerUniverse])
+  }, [restrictOpen, ok, pickedDatasets, pickedLayers, initial, datasetUniverse, layerUniverse, sensitiveLayers])
 
   // A path change under an open fold prunes picks to the new universe.
   useEffect(() => {

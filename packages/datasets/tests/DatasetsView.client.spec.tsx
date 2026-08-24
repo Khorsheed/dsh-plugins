@@ -48,6 +48,14 @@ const DATASETS: ListDatasetsResult = {
   }],
 }
 
+const SENSITIVE_DATASETS: ListDatasetsResult = {
+  kind: 'datasets',
+  datasets: [{
+    id: 'alpha', name: 'Alpha', layers: ['visible', 'grading'], nonModelFacingLayers: ['grading'],
+    itemCount: 1, warnings: [],
+  }],
+}
+
 const PREVIEW: PreviewRepoResult = {
   repo: '/repo',
   datasets: [
@@ -60,6 +68,7 @@ const ITEMS: ListItemsResult = {
   kind: 'items',
   dataset: DATASETS.datasets[0]!,
   datasetLayers: { visible: ['guide.md'] },
+  passthrough: ['manifest.yml'],
   items: [{
     id: 'i1',
     metadata: { difficulty: 'hard' },
@@ -118,6 +127,26 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
 afterEach(() => { cleanup() })
 
 describe('DatasetsView', () => {
+  it('sensitive layers stay visible to the human with a quiet marker (operator view)', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
+      ok: true as const,
+      value: dataset === undefined ? SENSITIVE_DATASETS : {
+        kind: 'items' as const,
+        dataset: SENSITIVE_DATASETS.datasets[0]!,
+        datasetLayers: {},
+        passthrough: [],
+        items: [{ id: 'i1', layers: { visible: ['task.md'], grading: ['rubric.yml'] } }],
+      },
+    }))
+    renderView(h)
+    fireEvent.click(await screen.findByText('alpha'))
+    fireEvent.click(await screen.findByText('i1'))
+    // The sensitive layer lists with its marker — the operator view never hides it.
+    const grading = await screen.findByText(/grading/)
+    expect(grading.parentElement?.textContent).toContain('tree.sensitive')
+  })
+
   it('unbound: shows the empty binding state and never lists', async () => {
     const h = makeHarness(null)
     renderView(h)
@@ -167,6 +196,10 @@ describe('DatasetsView', () => {
     expect(h.readFile).toHaveBeenCalledWith('s1', {
       dataset: 'alpha', layer: 'visible', path: 'guide.md',
     })
+    // The passthrough zone is a visible group row (its files list but never open).
+    fireEvent.click(screen.getByText(/tree\.passthrough/))
+    expect(await screen.findByText('manifest.yml')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'manifest.yml' })).toBeNull()
   })
 
   it('a failed binding fetch settles the bar instead of loading forever', async () => {
@@ -199,15 +232,18 @@ describe('DatasetsView', () => {
     await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
   })
 
-  it('bind form: an unchecked-everything group disables confirm with a hint', async () => {
+  it('bind form: the fold opens on the modelFacing floor; unchecking everything disables confirm', async () => {
     const h = makeHarness(null)
     renderView(h)
     fireEvent.click(await screen.findByText('binding.bind'))
     fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo' } })
     expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
     fireEvent.click(screen.getByText('binding.form.restrict'))
-    fireEvent.click(await screen.findByText('visible'))
-    fireEvent.click(screen.getByText('grading · binding.form.sensitive'))
+    // The floor: only modelFacing:true layers start checked ('grading' is sensitive).
+    expect((await screen.findByText('visible')).className).toContain('_active_')
+    expect(screen.getByText('grading · binding.form.sensitive').className).not.toContain('_active_')
+    // Unchecking the last picked layer forbids the submit ([] would mean "nothing").
+    fireEvent.click(screen.getByText('visible'))
     expect(await screen.findByText('binding.form.keepOne')).toBeTruthy()
     expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
   })
@@ -256,6 +292,7 @@ describe('DatasetsView', () => {
         kind: 'items' as const,
         dataset: DATASETS.datasets[0]!,
         datasetLayers: {},
+        passthrough: [],
         items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
       },
     }))

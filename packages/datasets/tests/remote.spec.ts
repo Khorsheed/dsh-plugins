@@ -12,7 +12,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BindingSession } from '../src/binding.ts'
 import { DatasetsRemoteService } from '../src/remote.ts'
-import { createDatasetsService } from '../src/service.ts'
+import { createDatasetsService, resolveScope, type DatasetsService } from '../src/service.ts'
 import { cleanup, makeFixtureRepo, type FixtureRepo } from './helpers.ts'
 
 let repo: FixtureRepo | undefined
@@ -47,7 +47,7 @@ async function bench(defaultRepo = '') {
   const fiber = ctx.plugin(DatasetsRemoteService, { defaultRepo })
   await fiber.await()
   const remote = ctx.get('datasetsRemote') as DatasetsRemoteService
-  return { fiber, remote }
+  return { ctx, fiber, remote }
 }
 
 describe('DatasetsRemoteService', () => {
@@ -75,7 +75,8 @@ describe('DatasetsRemoteService', () => {
     const result = await remote.previewRepo(agent, { path: `${repo.dir}/` })
     expect(result.repo).toBe(realpathSync(repo.dir))
     expect(result.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
-    // Declared layers arrive unfiltered by the binding's whitelist.
+    // Declared layers arrive unfiltered — neither the binding's whitelist nor
+    // the modelFacing floor narrows what the binder previews.
     expect(result.datasets[0]?.layers).toEqual(['visible', 'hidden'])
     await expect(remote.previewRepo(agent, { path: join(repo.dir, 'no-such-dir') }))
       .rejects.toMatchObject({ code: 'NOT_A_REPO' })
@@ -92,7 +93,7 @@ describe('DatasetsRemoteService', () => {
     await fiber.dispose()
   })
 
-  it('list resolves the session binding and filters to its layer whitelist', async () => {
+  it('list is the operator view: neither the binding whitelist nor the floor narrows it', async () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
@@ -101,24 +102,27 @@ describe('DatasetsRemoteService', () => {
     const datasets = await remote.list(agent, {})
     if (datasets.kind !== 'datasets') throw new Error('expected datasets result')
     expect(datasets.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
-    expect(datasets.datasets[0]?.layers).toEqual(['visible'])
+    // The binding whitelists ['visible'], yet the human sees every layer.
+    expect([...datasets.datasets[0]?.layers ?? []].sort()).toEqual(['hidden', 'visible'])
 
     const items = await remote.list(agent, { dataset: 'alpha' })
     if (items.kind !== 'items') throw new Error('expected items result')
     const i1 = items.items.find(item => item.id === 'i1')
-    expect(Object.keys(i1?.layers ?? {})).toEqual(['visible'])
+    expect(Object.keys(i1?.layers ?? {}).sort()).toEqual(['hidden', 'visible'])
     await fiber.dispose()
   })
 
-  it('read enforces the binding whitelist on the Remote path and reads inside it from the git object', async () => {
+  it('read is the operator view: a whitelisted-out (sensitive) layer still reads for the human', async () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
     await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
 
-    await expect(remote.read(agent, {
+    // The binding's whitelist constrains the agent's tools, never the tab.
+    const sensitive = await remote.read(agent, {
       dataset: 'alpha', item: 'i1', layer: 'hidden', path: 'notes.md',
-    })).rejects.toMatchObject({ code: 'LAYER_NOT_ALLOWED' })
+    })
+    expect(sensitive.content).toBe('hidden notes v1\n')
 
     const ok = await remote.read(agent, {
       dataset: 'alpha', item: 'i1', layer: 'visible', path: 'task.md',
@@ -128,7 +132,7 @@ describe('DatasetsRemoteService', () => {
     await fiber.dispose()
   })
 
-  it('show returns the descriptor passthrough and whitelist-filtered layers', async () => {
+  it('show returns the descriptor passthrough and every layer (operator view)', async () => {
     repo = makeFixtureRepo()
     const { fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
@@ -136,12 +140,12 @@ describe('DatasetsRemoteService', () => {
 
     const result = await remote.show(agent, { dataset: 'alpha', item: 'i1' })
     expect(result.commit).toBe(repo.commit)
-    expect(result.dataset.layers).toEqual(['visible'])
+    expect([...result.dataset.layers].sort()).toEqual(['hidden', 'visible'])
     expect(result.dataset.warnings.map(warning => warning.layer)).toEqual(['visible'])
-    expect(result.datasetLayers).toEqual({ visible: ['guide.md'] })
+    expect(result.datasetLayers).toEqual({ visible: ['guide.md'], hidden: ['answers.md'] })
     expect((result.descriptor['extra'] as Record<string, unknown>)['passthrough']).toBe(true)
     expect(result.items).toHaveLength(1)
-    expect(Object.keys(result.items[0]?.layers ?? {})).toEqual(['visible'])
+    expect(Object.keys(result.items[0]?.layers ?? {}).sort()).toEqual(['hidden', 'visible'])
     await fiber.dispose()
   })
 
@@ -158,16 +162,25 @@ describe('DatasetsRemoteService', () => {
     await withDefault.fiber.dispose()
   })
 
-  it('a dataset whitelist hides datasets outside it', async () => {
+  it('the datasets whitelist narrows the agent boundary but never the operator view', async () => {
     repo = makeFixtureRepo()
-    const { fiber, remote } = await bench()
+    const { ctx, fiber, remote } = await bench()
     const agent = agentOf(fakeSession())
     await remote.bind(agent, { repoPath: repo.dir, datasets: ['beta'] })
 
+    // The tab (operator) still lists every dataset in the repo…
     const result = await remote.list(agent, {})
     if (result.kind !== 'datasets') throw new Error('expected datasets result')
-    expect(result.datasets.map(summary => summary.id)).toEqual(['beta'])
-    await expect(remote.show(agent, { dataset: 'alpha' })).rejects.toMatchObject({ code: 'DATASET_NOT_FOUND' })
+    expect(result.datasets.map(summary => summary.id)).toEqual(['alpha', 'beta'])
+    const shown = await remote.show(agent, { dataset: 'alpha' })
+    expect(shown.dataset.id).toBe('alpha')
+    // …while the same session through the TOOL boundary keeps the whitelist.
+    const service = ctx.get('datasets') as DatasetsService
+    const binding = service.binding({ id: 's1' })
+    const scope = resolveScope({}, binding, '')
+    const toolView = await service.list(scope)
+    if (toolView.kind !== 'datasets') throw new Error('expected datasets result')
+    expect(toolView.datasets.map(summary => summary.id)).toEqual(['beta'])
     await fiber.dispose()
   })
 })

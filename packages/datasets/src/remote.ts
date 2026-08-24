@@ -57,12 +57,17 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   }
 
   /**
-   * The effective scope of one call: the session binding's whitelists plus the
-   * configured default repo. No binding and no default fails loud inside the
-   * service core (the tab renders the error and offers the bind form).
+   * The effective scope of one call: the OPERATOR view. The binding supplies
+   * the repository path only — the layer/dataset whitelists constrain the
+   * agent (tools + worktree materialization), never the human reading their
+   * own repository through the tab. No binding and no default fails loud
+   * inside the service core (the tab renders the error and offers the bind
+   * form).
    */
   private scope(agent: Agent): DatasetScope {
-    return resolveScope({}, this.datasets.binding(agent.session), this.defaultRepo)
+    const binding = this.datasets.binding(agent.session)
+    const base = resolveScope({}, binding === undefined ? undefined : { repoPath: binding.repoPath }, this.defaultRepo)
+    return { repo: base.repo, operator: true }
   }
 
   /**
@@ -118,7 +123,7 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
     // The binder sees the canonical toplevel (a trailing slash or a nested
     // path binds what was previewed).
     const repo = await this.datasets.assertRepository(request.path.trim().replace(/\/+$/, ''))
-    const result = await this.datasets.list({ repo })
+    const result = await this.datasets.list({ repo, operator: true })
     if (result.kind !== 'datasets') throw new Error('previewRepo: list without a dataset selector must list datasets')
     return { repo, datasets: result.datasets }
   }

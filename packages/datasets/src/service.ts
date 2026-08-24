@@ -15,11 +15,13 @@ import {
   readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
-  assertSafeRelativePath, assertValidName, datasetDir, DatasetsError, itemDir, ITEM_METADATA,
-  listDatasetIds, listDatasetLayers, listItems, loadDescriptor, loadItem, summarizeDataset,
-  validateDescriptor, type DatasetSummary, type ItemRecord, type JsonObject,
+  assertSafeRelativePath, assertValidName, buildRegistry, computePassthrough, datasetDir, DatasetsError,
+  descriptorWarnings, fieldNameWarnings, itemDir, ITEM_METADATA,
+  listDatasetIds, listDatasetLayers, listItems, loadDescriptor, loadItem, registeredFiles, summarizeDataset,
+  validateDescriptor, type DatasetDescriptor, type DatasetRegistry, type DatasetSummary, type DescriptorWarning,
+  type ItemRecord, type JsonObject,
 } from './dataset.ts'
-import { repoToplevel, resolveCommit, showFile } from './git.ts'
+import { listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
 
 /**
@@ -32,8 +34,32 @@ export interface DatasetScope {
   repo: string
   /** Dataset-id whitelist from the binding; absent = all. */
   datasets?: readonly string[]
-  /** Layer whitelist from the binding; absent = all. Enforced everywhere. */
+  /** Layer whitelist from the binding; absent = the modelFacing floor (see effectiveLayers). */
   layers?: readonly string[]
+  /**
+   * The human/operator view (the web tab, CLI read verbs): bypasses BOTH the
+   * binding whitelists and the modelFacing default floor. The whitelist
+   * constrains the agent (tools + worktree materialization), never the human
+   * looking at their own machine.
+   */
+  operator?: true
+}
+
+/**
+ * The effective layer ceiling of one call against one dataset:
+ * - operator scope: unfiltered (undefined);
+ * - an explicit binding whitelist: exactly it (sensitive layers listed on
+ *   purpose are deliberately included);
+ * - no whitelist: the modelFacing floor — when the dataset declares any
+ *   sensitive layer, only its modelFacing:true layers; when it declares none,
+ *   behavior is unchanged (undefined = unfiltered, undeclared item-level
+ *   directories included).
+ */
+export function effectiveLayers(scope: DatasetScope, descriptor: DatasetDescriptor): readonly string[] | undefined {
+  if (scope.operator === true) return undefined
+  if (scope.layers !== undefined) return scope.layers
+  if (!descriptor.layers.some(layer => !layer.modelFacing)) return undefined
+  return descriptor.layers.filter(layer => layer.modelFacing).map(layer => layer.name)
 }
 
 /** Explicit-selector input shared by the tool/CLI/slash adapters. */
@@ -78,9 +104,16 @@ export function resolveScope(
 export interface ListItemsResult {
   kind: 'items'
   dataset: DatasetSummary
-  /** Dataset-level (shared) layer content, layer name → layer-relative paths, whitelist-filtered. */
+  /** Dataset-level (shared) layer content, layer name → layer-relative paths, filtered to the call's ceiling. */
   datasetLayers: Record<string, string[]>
   items: ItemRecord[]
+  /**
+   * The passthrough zone: dataset-relative paths of files covered by NO
+   * declared layer directory and NO register entry (plus item.json's stray
+   * siblings). Never filtered — it is the one unprotected area and must be
+   * visible exactly because it is unprotected.
+   */
+  passthrough: string[]
 }
 
 /** `datasets_list` result without a dataset selector: dataset summaries. */
@@ -159,6 +192,24 @@ export interface PreviewRepoResult {
   datasets: DatasetSummary[]
 }
 
+/** One structural error found by `datasets_validate` (the DatasetsError code is preserved). */
+export interface ValidateError {
+  code: string
+  message: string
+}
+
+/** One dataset's validation outcome. */
+export interface ValidateDatasetResult {
+  id: string
+  errors: ValidateError[]
+  warnings: DescriptorWarning[]
+}
+
+/** `datasets_validate` result. */
+export interface ValidateResult {
+  datasets: ValidateDatasetResult[]
+}
+
 /** `datasets/show` Remote request (same optional-fields-in-object rule as ListRequest). */
 export interface ShowRequest {
   dataset: string
@@ -199,6 +250,12 @@ export interface DatasetsService {
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
+  /**
+   * Validate one dataset (or all) of a repository: shape errors fail loud per
+   * dataset, warnings never block. Author-facing — sees everything
+   * (operator semantics), including the passthrough zone it reports on.
+   */
+  validate(scope: DatasetScope, datasetId?: string): Promise<ValidateResult>
   /** Record a binding for a live session (slash/tab path). */
   bind(session: BindingSession, binding: DatasetBinding): DatasetBinding
   /** Clear a live session's binding. */
@@ -226,6 +283,7 @@ async function toplevelOf(repo: string): Promise<string> {
 
 function assertDatasetAllowed(scope: DatasetScope, datasetId: string): void {
   assertValidName('dataset id', datasetId)
+  if (scope.operator === true) return
   if (scope.datasets !== undefined && !scope.datasets.includes(datasetId)) {
     throw new DatasetsError(
       `dataset ${JSON.stringify(datasetId)} is outside this session's bound datasets [${scope.datasets.join(', ')}]`,
@@ -234,46 +292,43 @@ function assertDatasetAllowed(scope: DatasetScope, datasetId: string): void {
   }
 }
 
-/** Throw when a single layer is outside the scope whitelist. */
-function assertLayerAllowed(scope: DatasetScope, layer: string): void {
-  if (scope.layers !== undefined && !scope.layers.includes(layer)) {
+/** Throw when a single layer is outside the call's effective ceiling. */
+function assertLayerAllowed(ceiling: readonly string[] | undefined, layer: string): void {
+  if (ceiling !== undefined && !ceiling.includes(layer)) {
     throw new DatasetsError(
-      `layer ${JSON.stringify(layer)} is outside this session's layers whitelist [${scope.layers.join(', ')}]`,
+      `layer ${JSON.stringify(layer)} is outside the allowed layers [${ceiling.join(', ')}]`,
       'LAYER_NOT_ALLOWED',
     )
   }
 }
 
-/** Filter one item's layer map to the scope whitelist. */
-function filterItemLayers(scope: DatasetScope, item: ItemRecord): ItemRecord {
-  const whitelist = scope.layers
-  if (whitelist === undefined) return item
+/** Filter one item's layer map to the call's effective ceiling. */
+function filterItemLayers(ceiling: readonly string[] | undefined, item: ItemRecord): ItemRecord {
+  if (ceiling === undefined) return item
   const layers: Record<string, string[]> = {}
   for (const [layer, files] of Object.entries(item.layers)) {
-    if (whitelist.includes(layer)) layers[layer] = files
+    if (ceiling.includes(layer)) layers[layer] = files
   }
   return { ...item, layers }
 }
 
-/** Filter a layer → files map (dataset-level shared content) to the scope whitelist. */
-function filterLayerMap(scope: DatasetScope, map: Record<string, string[]>): Record<string, string[]> {
-  const whitelist = scope.layers
-  if (whitelist === undefined) return map
+/** Filter a layer → files map (dataset-level shared content) to the call's effective ceiling. */
+function filterLayerMap(ceiling: readonly string[] | undefined, map: Record<string, string[]>): Record<string, string[]> {
+  if (ceiling === undefined) return map
   const filtered: Record<string, string[]> = {}
   for (const [layer, files] of Object.entries(map)) {
-    if (whitelist.includes(layer)) filtered[layer] = files
+    if (ceiling.includes(layer)) filtered[layer] = files
   }
   return filtered
 }
 
-/** Filter a summary's declared layer lists to the scope whitelist. */
-function filterSummaryLayers(scope: DatasetScope, summary: DatasetSummary): DatasetSummary {
-  const whitelist = scope.layers
-  if (whitelist === undefined) return summary
+/** Filter a summary's declared layer lists to the call's effective ceiling. */
+function filterSummaryLayers(ceiling: readonly string[] | undefined, summary: DatasetSummary): DatasetSummary {
+  if (ceiling === undefined) return summary
   return {
     ...summary,
-    layers: summary.layers.filter(layer => whitelist.includes(layer)),
-    nonModelFacingLayers: summary.nonModelFacingLayers.filter(layer => whitelist.includes(layer)),
+    layers: summary.layers.filter(layer => ceiling.includes(layer)),
+    nonModelFacingLayers: summary.nonModelFacingLayers.filter(layer => ceiling.includes(layer)),
   }
 }
 
@@ -300,15 +355,21 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       if (datasetId !== undefined) {
         assertDatasetAllowed(scope, datasetId)
         const descriptor = await loadDescriptor(repo, sha, datasetId)
-        const summary = filterSummaryLayers(scope, await summarizeDataset(repo, sha, datasetId))
+        const ceiling = effectiveLayers(scope, descriptor)
+        const registry = await buildRegistry(repo, sha, datasetId, descriptor)
+        const summary = filterSummaryLayers(ceiling, await summarizeDataset(repo, sha, datasetId))
         const shared = await listDatasetLayers(repo, sha, datasetId, descriptor.layers.map(layer => layer.name))
-        const items = (await listItems(repo, sha, datasetId)).map(item => filterItemLayers(scope, item))
-        return { kind: 'items', dataset: summary, datasetLayers: filterLayerMap(scope, shared), items }
+        const items = (await listItems(repo, sha, datasetId, registry)).map(item => filterItemLayers(ceiling, item))
+        const passthrough = await computePassthrough(repo, sha, datasetId, descriptor, registry)
+        return { kind: 'items', dataset: summary, datasetLayers: filterLayerMap(ceiling, shared), items, passthrough }
       }
       const ids = (await listDatasetIds(repo, sha))
-        .filter(id => scope.datasets === undefined || scope.datasets.includes(id))
+        .filter(id => scope.operator === true || scope.datasets === undefined || scope.datasets.includes(id))
       const datasets: DatasetSummary[] = []
-      for (const id of ids) datasets.push(filterSummaryLayers(scope, await summarizeDataset(repo, sha, id)))
+      for (const id of ids) {
+        const descriptor = await loadDescriptor(repo, sha, id)
+        datasets.push(filterSummaryLayers(effectiveLayers(scope, descriptor), await summarizeDataset(repo, sha, id)))
+      }
       return { kind: 'datasets', datasets }
     },
 
@@ -316,16 +377,18 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       assertDatasetAllowed(scope, datasetId)
       const { repo, sha } = await resolveCommitAt(scope, commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
-      const summary = filterSummaryLayers(scope, await summarizeDataset(repo, sha, datasetId))
+      const ceiling = effectiveLayers(scope, descriptor)
+      const registry = await buildRegistry(repo, sha, datasetId, descriptor)
+      const summary = filterSummaryLayers(ceiling, await summarizeDataset(repo, sha, datasetId))
       const shared = await listDatasetLayers(repo, sha, datasetId, descriptor.layers.map(layer => layer.name))
       const items = itemId !== undefined
-        ? [await loadItem(repo, sha, datasetId, itemId)]
-        : await listItems(repo, sha, datasetId)
+        ? [await loadItem(repo, sha, datasetId, itemId, registry)]
+        : await listItems(repo, sha, datasetId, registry)
       return {
         dataset: summary,
         descriptor: descriptor.raw,
-        datasetLayers: filterLayerMap(scope, shared),
-        items: items.map(item => filterItemLayers(scope, item)),
+        datasetLayers: filterLayerMap(ceiling, shared),
+        items: items.map(item => filterItemLayers(ceiling, item)),
         commit: sha,
       }
     },
@@ -341,26 +404,32 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       assertDatasetAllowed(scope, query.dataset)
       if (query.item !== undefined) assertValidName('item id', query.item)
       assertValidName('layer name', query.layer)
-      assertLayerAllowed(scope, query.layer)
       const rel = assertSafeRelativePath(query.path)
       const { repo, sha } = await resolveCommitAt(scope, query.commit)
-      // Item omitted: the layer directory at the DATASET level (shared
-      // content). That path can address ANY top-level directory, so the
-      // dataset level additionally requires the layer to be DECLARED —
-      // undeclared top-level directories are descriptor passthrough and stay
-      // unreachable here exactly as before.
+      // The descriptor loads on EVERY read now: the modelFacing floor needs
+      // it, and item-level reads need the register to re-home role paths.
+      const descriptor = await loadDescriptor(repo, sha, query.dataset)
+      assertLayerAllowed(effectiveLayers(scope, descriptor), query.layer)
+      let objectPath: string
       if (query.item === undefined) {
-        const descriptor = await loadDescriptor(repo, sha, query.dataset)
+        // The DATASET level (shared content). That path can address ANY
+        // top-level directory, so the layer must be DECLARED — undeclared
+        // top-level directories are descriptor passthrough and stay
+        // unreachable here exactly as before.
         if (!descriptor.layers.some(layer => layer.name === query.layer)) {
           throw new DatasetsError(
             `layer ${JSON.stringify(query.layer)} is not declared by dataset ${JSON.stringify(query.dataset)}`,
             'LAYER_UNDECLARED',
           )
         }
+        objectPath = `${datasetDir(query.dataset)}/${query.layer}/${rel}`
+      } else {
+        // Role first: a registered display path wins; the convention path is
+        // the fallback (the registry build already rejected collisions).
+        const registry = await buildRegistry(repo, sha, query.dataset, descriptor)
+        const registered = registeredFiles(registry, query.item, query.layer)?.find(file => file.display === rel)
+        objectPath = registered?.object ?? `${itemDir(query.dataset, query.item)}/${query.layer}/${rel}`
       }
-      const objectPath = query.item === undefined
-        ? `${datasetDir(query.dataset)}/${query.layer}/${rel}`
-        : `${itemDir(query.dataset, query.item)}/${query.layer}/${rel}`
       const content = await showFile(repo, sha, objectPath)
       if (content === undefined) {
         throw new DatasetsError(`no file ${objectPath} at ${sha.slice(0, 12)}`, 'FILE_NOT_FOUND')
@@ -380,7 +449,10 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       const { repo, sha } = await resolveCommitAt(scope, worktreeOptions?.commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
       const declared = descriptor.layers.map(layer => layer.name)
-      const requested = worktreeOptions?.layers ?? declared
+      const ceiling = effectiveLayers(scope, descriptor)
+      // Default = the ceiling: with no explicit binding whitelist, a dataset
+      // declaring sensitive layers materializes only its modelFacing:true ones.
+      const requested = worktreeOptions?.layers ?? (ceiling ?? declared)
       for (const layer of requested) {
         if (!declared.includes(layer)) {
           throw new DatasetsError(
@@ -389,16 +461,24 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
           )
         }
       }
-      const effective = scope.layers === undefined
+      const effective = ceiling === undefined
         ? requested
-        : requested.filter(layer => scope.layers?.includes(layer))
+        : requested.filter(layer => ceiling.includes(layer))
       if (effective.length === 0) {
         throw new DatasetsError(
-          `no requested layer survives this session's layers whitelist [${(scope.layers ?? []).join(', ')}]`,
+          `no requested layer survives the allowed layers [${(ceiling ?? []).join(', ')}]`,
           'LAYER_NOT_ALLOWED',
         )
       }
-      return await ensureWorktree(repo, sha, datasetId, effective, options.worktreeRoot)
+      // Registered paths of the effective layers join the sparse pattern set.
+      const registry = await buildRegistry(repo, sha, datasetId, descriptor)
+      const registerPatterns = descriptor.register
+        .filter(entry => effective.includes(entry.layer))
+        .flatMap(entry => {
+          const bucket = registeredFiles(registry, entry.item, entry.layer) ?? []
+          return bucket.map(file => `/${file.object}`)
+        })
+      return await ensureWorktree(repo, sha, datasetId, effective, options.worktreeRoot, registerPatterns)
     },
 
     async putItem(scope, input) {
@@ -433,7 +513,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       }
       for (const file of input.files ?? []) {
         assertValidName('layer name', file.layer)
-        assertLayerAllowed(scope, file.layer)
+        assertLayerAllowed(effectiveLayers(scope, descriptor), file.layer)
         if (!declared.includes(file.layer)) {
           throw new DatasetsError(
             `layer ${JSON.stringify(file.layer)} is not declared by dataset ${JSON.stringify(input.dataset)} (declared: ${declared.join(', ')})`,
@@ -444,6 +524,70 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
         await writeOne(`${itemDir(input.dataset, input.item)}/${file.layer}/${rel}`, file.content)
       }
       return { written }
+    },
+
+    async validate(scope, datasetId) {
+      const { repo, sha } = await resolveCommitAt(scope, undefined)
+      const ids = datasetId !== undefined ? [datasetId] : await listDatasetIds(repo, sha)
+      const datasets: ValidateDatasetResult[] = []
+      for (const id of ids) {
+        const errors: ValidateError[] = []
+        const warnings: DescriptorWarning[] = []
+        const fail = (error: unknown): void => {
+          errors.push(error instanceof DatasetsError
+            ? { code: error.code, message: error.message }
+            : { code: 'GIT_ERROR', message: String(error) })
+        }
+        let descriptor: DatasetDescriptor
+        try {
+          descriptor = await loadDescriptor(repo, sha, id)
+        } catch (error) {
+          fail(error)
+          datasets.push({ id, errors, warnings })
+          continue
+        }
+        warnings.push(...descriptorWarnings(descriptor))
+        let registry: DatasetRegistry = { entries: new Map(), registerOnlyItems: [] }
+        try {
+          registry = await buildRegistry(repo, sha, id, descriptor)
+        } catch (error) {
+          fail(error)
+        }
+        // Field-name heuristic over every item's metadata (invalid item.json
+        // joins the errors).
+        const itemFiles = await listFiles(repo, sha, `${datasetDir(id)}/items`)
+        const prefix = `${datasetDir(id)}/items/`
+        const itemIds = new Set<string>(registry.registerOnlyItems)
+        for (const file of itemFiles) {
+          const rest = file.slice(prefix.length)
+          const slash = rest.indexOf('/')
+          if (slash > 0) itemIds.add(rest.slice(0, slash))
+        }
+        for (const itemId of [...itemIds].sort()) {
+          let item: ItemRecord
+          try {
+            item = await loadItem(repo, sha, id, itemId, registry)
+          } catch (error) {
+            fail(error)
+            continue
+          }
+          if (item.metadata !== undefined) warnings.push(...fieldNameWarnings(itemId, item.metadata))
+        }
+        // Files covered by no layer directory and no register entry fall into
+        // the always-visible passthrough zone — the author must see that.
+        const passthrough = await computePassthrough(repo, sha, id, descriptor, registry)
+        for (const file of passthrough) {
+          warnings.push({
+            code: 'UNREGISTERED_FILES',
+            file,
+            message: `${file} is covered by no layer directory or register entry; `
+              + 'it sits in the passthrough zone, visible to every bound session '
+              + '(a single-level glob never covers subdirectories — register those explicitly)',
+          })
+        }
+        datasets.push({ id, errors, warnings })
+      }
+      return { datasets }
     },
 
     async assertRepository(repo) {

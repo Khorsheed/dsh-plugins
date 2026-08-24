@@ -4,7 +4,7 @@
  * same text.
  */
 import type { DescriptorWarning, ItemRecord } from './dataset.ts'
-import type { ListDatasetsResult, ListItemsResult, ShowResult } from './service.ts'
+import type { ListDatasetsResult, ListItemsResult, ShowResult, ValidateResult } from './service.ts'
 
 function formatItem(item: ItemRecord): string {
   const layerBits = Object.entries(item.layers)
@@ -68,6 +68,23 @@ export function formatShow(result: ShowResult): string {
     for (const [layer, files] of Object.entries(item.layers)) {
       for (const file of files) lines.push(`  ${layer}/${file}`)
     }
+  }
+  return lines.join('\n')
+}
+
+/** Render `datasets_validate` output: one line per dataset, then its issues. */
+export function formatValidate(result: ValidateResult): string {
+  if (result.datasets.length === 0) return 'no datasets'
+  const lines: string[] = []
+  for (const dataset of result.datasets) {
+    const verdict = dataset.errors.length > 0
+      ? `${dataset.errors.length} error(s)`
+      : dataset.warnings.length > 0
+        ? `${dataset.warnings.length} warning(s)`
+        : 'ok'
+    lines.push(`${dataset.id}: ${verdict}`)
+    for (const error of dataset.errors) lines.push(`  error [${error.code}]: ${error.message}`)
+    for (const warning of dataset.warnings) lines.push(`  warn [${warning.code}]: ${warning.message}`)
   }
   return lines.join('\n')
 }

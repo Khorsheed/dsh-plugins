@@ -78,6 +78,27 @@ function Chevron(props: { open: boolean }) {
 }
 
 
+/** The passthrough zone as a visible group: file names listed, never clickable content. */
+function PassthroughNode(props: { files: readonly string[]; t: DatasetsViewProps['t'] }) {
+  const { files, t } = props
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={css.layer}>
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        <span className={css.rowTitle}>{t('tree.passthrough', { count: files.length })}</span>
+      </button>
+      {open && (
+        <div className={css.children}>
+          {files.map(file => (
+            <div key={file} className={css.passthroughFile} title={file}>{file}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** One layer group: a collapsible folder row, then its file leaves under a guide. */
 function LayerNode(props: {
   dataset: string
@@ -87,9 +108,11 @@ function LayerNode(props: {
   paths: readonly string[]
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  /** The dataset's declared sensitive layers (the marker is a human cue only). */
+  sensitiveLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, layer, paths, selection, onSelect, t } = props
+  const { dataset, item, layer, paths, selection, onSelect, sensitiveLayers, t } = props
   const [open, setOpen] = useState(true)
   return (
     <div className={css.layer}>
@@ -98,6 +121,7 @@ function LayerNode(props: {
         {open ? <IconFolderOpen16 className={css.folderIcon} /> : <IconFolderClose16 className={css.folderIcon} />}
         <span className={css.rowTitle}>{layer}</span>
         <span className={css.rowCount}>· {t('tree.fileCount', { count: paths.length })}</span>
+        {sensitiveLayers.has(layer) && <span className={css.sensitiveMark}>· {t('tree.sensitive')}</span>}
       </button>
       {open && (
         <div className={css.children}>
@@ -129,9 +153,10 @@ function ItemNode(props: {
   item: ItemRecord
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  sensitiveLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, selection, onSelect, t } = props
+  const { dataset, item, selection, onSelect, sensitiveLayers, t } = props
   const [open, setOpen] = useState(false)
   return (
     <div className={css.item}>
@@ -150,6 +175,7 @@ function ItemNode(props: {
               paths={paths}
               selection={selection}
               onSelect={onSelect}
+              sensitiveLayers={sensitiveLayers}
               t={t}
             />
           ))}
@@ -180,6 +206,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const expandedDataset = useStore(s => s.expandedDataset)
   const items = useStore(s => s.items)
   const sharedLayers = useStore(s => s.sharedLayers)
+  const passthrough = useStore(s => s.passthrough)
   const selection = useStore(s => s.selection)
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
@@ -232,10 +259,7 @@ export function DatasetsView(props: DatasetsViewProps) {
     const dataset = expandedDataset
     void listDatasets(sessionId, dataset).then((result) => {
       if (cancelled || !result.ok) return
-      if (result.value.kind === 'items') {
-        const detail = result.value as ListItemsResult
-        actions.setItems(dataset, detail.items, detail.datasetLayers)
-      }
+      if (result.value.kind === 'items') actions.setDetails(dataset, result.value as ListItemsResult)
     })
     return () => { cancelled = true }
   }, [sessionId, expandedDataset, items, actions, listDatasets])
@@ -370,6 +394,9 @@ export function DatasetsView(props: DatasetsViewProps) {
                 ))}
                 {expanded && (
                   <div className={css.children}>
+                    {(passthrough[dataset.id] ?? []).length > 0 && (
+                      <PassthroughNode files={passthrough[dataset.id] ?? []} t={t} />
+                    )}
                     {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (
                       <div className={css.sharedGroup}>
                         <div className={css.sharedLabel}>{t('tree.shared')}</div>
@@ -382,6 +409,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                             paths={paths}
                             selection={selection}
                             onSelect={(next) => { actions.select(next) }}
+                            sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
                             t={t}
                           />
                         ))}
@@ -394,6 +422,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                         item={item}
                         selection={selection}
                         onSelect={(next) => { actions.select(next) }}
+                        sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
                         t={t}
                       />
                     ))}
