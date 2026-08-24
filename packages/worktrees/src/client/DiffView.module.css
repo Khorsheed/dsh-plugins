@@ -1,5 +1,6 @@
-/* The unified-diff renderer: monospace rows with per-kind tinting, using the
-   official state tokens (the DiffBlock vocabulary). */
+/* The unified-diff renderer: monospace rows with line-number columns and
+   per-kind tinting, using the official state tokens (the DiffBlock
+   vocabulary). */
 
 .root {
   min-width: 0;
@@ -18,14 +19,24 @@
 .line {
   display: flex;
   min-width: max-content;
-  padding: 0 12px;
+  padding: 0 4px 0 8px;
+}
+
+.num {
+  flex: none;
+  width: 4ch;
+  padding-right: 6px;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+  font-size: 11px;
+  line-height: 18px;
 }
 
 .gutter {
   flex: none;
-  width: 16px;
-  text-align: right;
-  padding-right: 8px;
+  width: 12px;
+  text-align: center;
   color: var(--dsw-alias-label-tertiary);
   user-select: none;
 }

@@ -1,7 +1,7 @@
 /* The commit log: IDE-style rows with inline file-tree expansion. */
 
 .list {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .commit {
@@ -33,7 +33,7 @@
 .sha {
   flex: none;
   font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dsw-alias-brand-primary);
 }
 
@@ -47,7 +47,7 @@
   flex: none;
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .files {
@@ -57,5 +57,5 @@
 .empty {
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
+  font-size: 13px;
 }

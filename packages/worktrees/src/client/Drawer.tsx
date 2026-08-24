@@ -152,6 +152,7 @@ export function WorktreesDrawer({
 
   const onSelectFile = (path: string): void => {
     let segment: 'uncommitted' | 'committed' | 'commit' | null = null
+    const untracked = (changes?.uncommitted ?? []).find(file => file.path === path)?.status === '??'
     if (mode === 'worktree') {
       if ((changes?.uncommitted ?? []).some(file => file.path === path)) segment = 'uncommitted'
       else if ((changes?.committed ?? []).some(file => file.path === path)) segment = 'committed'
@@ -161,7 +162,10 @@ export function WorktreesDrawer({
       segment = 'uncommitted'
     }
     actions.select(path, segment)
-    if (mode !== 'commits') actions.setTreeCollapsed(true)
+    // In a changes context lead with the diff; only untracked/repo-browse
+    // files have no diff and fall back to the content view. The tree stays
+    // put — collapsing it on every selection was jarring (manual toggle only).
+    actions.setDetailView(segment !== null && !untracked ? 'diff' : 'content')
   }
 
   const worktreePath = summary?.repo ?? ''

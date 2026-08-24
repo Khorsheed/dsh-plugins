@@ -1,10 +1,11 @@
 /**
  * Unified-diff renderer: colors a raw `git diff` output line-wise (meta
  * headers dim, `-` deletions error-tinted, `+` additions success-tinted,
- * hunk headers muted) with a hard height cap and a reveal affordance. There
- * is no official git-diff primitive — DiffBlock renders whole-file old/new
- * sides, which misrepresents a patch — so this component draws the patch
- * with the same token vocabulary.
+ * hunk headers muted) and tracks the old/new line numbers from each `@@`
+ * hunk header, so the gutter reads like a real diff viewer. There is no
+ * official git-diff primitive — DiffBlock renders whole-file old/new sides,
+ * which misrepresents a patch — so this component draws the patch with the
+ * same token vocabulary.
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -13,10 +14,14 @@ import css from './DiffView.module.css'
 /** Body lines shown before the middle collapses. */
 const MAX_LINES = 200
 
-/** One classified diff line. */
+/** One classified diff line with its tracked line numbers. */
 interface DiffLine {
   kind: 'meta' | 'hunk' | 'add' | 'del' | 'ctx'
   text: string
+  /** Old-side line number (null for pure additions / meta rows). */
+  old: number | null
+  /** New-side line number (null for pure deletions / meta rows). */
+  next: number | null
 }
 
 /** Classify a unified-diff line. */
@@ -39,6 +44,39 @@ function classify(line: string): DiffLine['kind'] {
   return 'ctx'
 }
 
+/** Parse `@@ -a[,b] +c[,d] @@` into the old/new start line numbers. */
+const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
+
+/** Classify the full diff into numbered rows. */
+function parseDiff(diff: string): DiffLine[] {
+  const rows: DiffLine[] = []
+  let oldCursor = 0
+  let newCursor = 0
+  for (const raw of diff.split('\n')) {
+    const kind = classify(raw)
+    let old: number | null = null
+    let next: number | null = null
+    if (kind === 'hunk') {
+      const match = HUNK.exec(raw)
+      oldCursor = match === null ? 0 : Number(match[1])
+      newCursor = match === null ? 0 : Number(match[2])
+    } else if (kind === 'ctx') {
+      old = oldCursor
+      next = newCursor
+      oldCursor += 1
+      newCursor += 1
+    } else if (kind === 'del') {
+      old = oldCursor
+      oldCursor += 1
+    } else if (kind === 'add') {
+      next = newCursor
+      newCursor += 1
+    }
+    rows.push({ kind, text: raw, old, next })
+  }
+  return rows
+}
+
 /** Props of the diff view. */
 export interface DiffViewProps {
   /** Unified diff text, or null (no diff). */
@@ -53,7 +91,7 @@ export function DiffView({ diff, t }: DiffViewProps): ReactNode {
 
   const lines = useMemo<DiffLine[]>(() => {
     if (diff === null || diff === '') return []
-    return diff.split('\n').map(line => ({ kind: classify(line), text: line }))
+    return parseDiff(diff)
   }, [diff])
 
   if (lines.length === 0) return <div className={css.empty}>{t('detail.noSelection')}</div>
@@ -66,6 +104,8 @@ export function DiffView({ diff, t }: DiffViewProps): ReactNode {
       <pre className={css.pre}>
         {shown.map((line, index) => (
           <div key={index} className={`${css.line} ${css[`kind_${line.kind}`]}`}>
+            <span className={css.num}>{line.old === null ? '' : line.old}</span>
+            <span className={css.num}>{line.next === null ? '' : line.next}</span>
             <span className={css.gutter}>{line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}</span>
             <span className={css.text}>{line.text === '' ? ' ' : line.text}</span>
           </div>

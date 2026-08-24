@@ -122,15 +122,16 @@ describe('WorktreesDrawer', () => {
     }
     const row = await dialog().findByRole('button', { name: /index\.ts/ })
     fireEvent.click(row)
-    // Default detail view is content → readFile drives.
-    await waitFor(() => expect(fetchReadFile).toHaveBeenCalledWith(SESSION, { path: 'packages/room/src/index.ts' }))
-
-    // Switch to the diff view → fileDiff drives with the committed segment.
-    const diffButton = await screen.findByText('detail.diff')
-    fireEvent.click(diffButton)
+    // In a changes context the detail defaults to the diff → fileDiff drives
+    // with the committed segment immediately.
     await waitFor(() => expect(fetchFileDiff).toHaveBeenCalledWith(
       SESSION,
       { path: 'packages/room/src/index.ts', segment: 'committed' },
     ))
+
+    // Switching to the content view drives readFile.
+    const contentButton = await screen.findByText('detail.content')
+    fireEvent.click(contentButton)
+    await waitFor(() => expect(fetchReadFile).toHaveBeenCalledWith(SESSION, { path: 'packages/room/src/index.ts' }))
   })
 })
