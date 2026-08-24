@@ -113,6 +113,8 @@ export interface FileTreeProps {
   selectedPath: string | null
   /** Called when a file row is clicked. */
   onSelect: (path: string) => void
+  /** The tree header title (defaults to the changes-mode label). */
+  treeTitle?: string
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -129,7 +131,7 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 
   const roots = useMemo(
@@ -219,7 +221,7 @@ export function FileTree({ groups, selectedPath, onSelect, t }: FileTreeProps): 
   return (
     <div className={css.tree}>
       <div className={css.treeHeader}>
-        <span className={css.treeTitle}>{t('mode.worktree')}</span>
+        <span className={css.treeTitle}>{treeTitle ?? t('mode.worktree')}</span>
         <span className={css.treeActions}>
           <button type="button" className={css.treeAction} onClick={expandAll}>{t('tree.expandAll')}</button>
           <button type="button" className={css.treeAction} onClick={collapseAll}>{t('tree.collapseAll')}</button>

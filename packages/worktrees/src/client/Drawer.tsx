@@ -223,6 +223,7 @@ export function WorktreesDrawer({
             groups={groups}
             selectedPath={selectedPath}
             onSelect={onSelectFile}
+            treeTitle={mode === 'repo' ? t('mode.repo') : t('mode.worktree')}
             t={t}
           />}
       </div>
