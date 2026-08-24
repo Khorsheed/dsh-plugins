@@ -19,6 +19,8 @@ export interface CommitListProps {
   selectedCommit: string | null
   /** The selected commit's files (null until loaded). */
   commitFiles: readonly ChangedFile[] | null
+  /** The base branch the log is measured against (for the empty state). */
+  baseRef: string
   /** Called when a commit row is clicked (null collapses). */
   onSelectCommit: (sha: string | null) => void
   /** Called when a file inside the selected commit is clicked. */
@@ -29,7 +31,7 @@ export interface CommitListProps {
 
 /** The commit list. */
 export function CommitList({
-  commits, selectedCommit, commitFiles, onSelectCommit, onSelectFile, t,
+  commits, selectedCommit, commitFiles, onSelectCommit, onSelectFile, baseRef, t,
 }: CommitListProps): ReactNode {
   const fileGroups = useMemo(() => {
     if (commitFiles === null || commitFiles.length === 0) return []
@@ -43,7 +45,7 @@ export function CommitList({
   }, [commitFiles, t])
 
   if (commits === null || commits.length === 0) {
-    return <div className={css.empty}>{t('commits.empty', { base: 'base' })}</div>
+    return <div className={css.empty}>{t('commits.empty', { base: baseRef || 'base' })}</div>
   }
 
   return (

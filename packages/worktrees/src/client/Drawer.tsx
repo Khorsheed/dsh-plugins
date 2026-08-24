@@ -216,6 +216,7 @@ export function WorktreesDrawer({
             commitFiles={commitFiles}
             onSelectCommit={actions.selectCommit}
             onSelectFile={onSelectFile}
+            baseRef={summary?.baseRef ?? 'main'}
             t={t}
           />
           : <FileTree
@@ -244,7 +245,7 @@ export function WorktreesDrawer({
             <span className={css.summaryBranch}>
               <IconBranchOutline16 />
               {summary?.branch ?? t('summary.detached')}
-              {summary !== null && summary.isMain && <span className={css.mainTag}>main</span>}
+              {summary !== null && summary.isMain && summary.branch !== 'main' && <span className={css.mainTag}>main</span>}
             </span>
             <span className={css.summaryMeta}>
               {summary?.repoName ?? ''} · @{summary?.head ?? ''}
