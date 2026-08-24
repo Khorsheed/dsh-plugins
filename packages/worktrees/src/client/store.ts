@@ -64,6 +64,7 @@ export type WorktreesActions = {
   select: (draft: WorktreesState, path: string, segment: 'uncommitted' | 'committed' | 'commit' | null) => void
   setDetailView: (draft: WorktreesState, view: DetailView) => void
   selectCommit: (draft: WorktreesState, sha: string | null) => void
+  clearSelection: (draft: WorktreesState) => void
   refresh: (draft: WorktreesState) => void
   setLoading: (draft: WorktreesState, loading: boolean) => void
   setError: (draft: WorktreesState, error: string | null) => void
@@ -146,6 +147,12 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       selectCommit: (d, sha: string | null) => {
         d.selectedCommit = sha
         d.commitFiles = null
+        d.selectedPath = null
+        d.selectedSegment = null
+        d.diff = null
+        d.content = null
+      },
+      clearSelection: (d) => {
         d.selectedPath = null
         d.selectedSegment = null
         d.diff = null

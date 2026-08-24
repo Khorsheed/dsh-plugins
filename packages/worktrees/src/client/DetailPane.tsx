@@ -6,7 +6,7 @@
  * content view.
  */
 import type { ReactNode } from 'react'
-import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, IconChevronLeftOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile, FileDiffResult, ReadFileResult } from '../types.ts'
 import { languageFor } from './language.ts'
@@ -36,13 +36,16 @@ export interface DetailPaneProps {
   error: string | null
   /** Called when the view toggle changes. */
   onViewChange: (view: DetailView) => void
+  /** When given and a file is selected, renders a back button to leave the
+   * file view (e.g. back to the commit's file list). */
+  onBack?: (() => void) | undefined
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
 
 /** The detail pane. */
 export function DetailPane({
-  path, hasDiff, untracked, deleted, detailView, diff, content, loading, error, onViewChange, t,
+  path, hasDiff, untracked, deleted, detailView, diff, content, loading, error, onViewChange, onBack, t,
 }: DetailPaneProps): ReactNode {
   if (path === '') {
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
@@ -72,6 +75,11 @@ export function DetailPane({
   return (
     <div className={css.root}>
       <div className={css.header}>
+        {onBack !== undefined && path !== '' && (
+          <button type="button" className={css.back} title={t('detail.back')} onClick={onBack}>
+            <IconChevronLeftOutline14 />
+          </button>
+        )}
         <span className={css.path} title={path}>{path}</span>
         <span className={css.toggle}>
           {/* The diff toggle only shows when the file actually has a change

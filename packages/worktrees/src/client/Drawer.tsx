@@ -419,7 +419,29 @@ export function WorktreesDrawer({
             onPointerCancel={onTreeUp}
           />
           <div className={css.detailColumn}>
-            {selectedPath !== null ? (
+            {mode === 'commits' && selectedCommit !== null ? (
+              (() => {
+                const commit = commits?.find(candidate => candidate.sha === selectedCommit)
+                if (commit === undefined) return <Overview summary={summary} changes={changes} repoMode={false} t={t} />
+                return (
+                  <CommitDetails
+                    commit={commit}
+                    files={commitFiles ?? []}
+                    selectedPath={selectedPath}
+                    diff={diff}
+                    content={content}
+                    detailView={detailView}
+                    hasDiff={selectedSegment === 'commit'}
+                    onSelectFile={onSelectFile}
+                    onViewChange={actions.setDetailView}
+                    onBack={() => { actions.clearSelection() }}
+                    copySha={(sha) => copyBranch(sha)}
+                    openFolder={() => { openExternal(worktreePath) }}
+                    t={t}
+                  />
+                )
+              })()
+            ) : selectedPath !== null ? (
               <DetailPane
                 path={selectedPath}
                 hasDiff={hasDiff}
@@ -433,27 +455,9 @@ export function WorktreesDrawer({
                 onViewChange={actions.setDetailView}
                 t={t}
               />
-            ) : mode === 'commits' && selectedCommit !== null
-              ? (() => {
-                const commit = commits?.find(candidate => candidate.sha === selectedCommit)
-                return commit === undefined
-                  ? <Overview summary={summary} changes={changes} repoMode={false} t={t} />
-                  : <CommitDetails
-                    commit={commit}
-                    files={commitFiles ?? []}
-                    selectedPath={selectedPath}
-                    diff={diff}
-                    content={content}
-                    detailView={detailView}
-                    hasDiff={selectedSegment === 'commit'}
-                    onSelectFile={onSelectFile}
-                    onViewChange={actions.setDetailView}
-                    copySha={(sha) => copyBranch(sha)}
-                    openFolder={() => { openExternal(worktreePath) }}
-                    t={t}
-                  />
-              })()
-              : <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} t={t} />}
+            ) : (
+              <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} t={t} />
+            )}
           </div>
         </div>
       </aside>

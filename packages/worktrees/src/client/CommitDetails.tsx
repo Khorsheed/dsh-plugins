@@ -33,6 +33,8 @@ export interface CommitDetailsProps {
   /** Called when a file row is clicked. */
   onSelectFile: (path: string) => void
   onViewChange: (view: DetailView) => void
+  /** Back to the file list (clears the selected file). */
+  onBack: () => void
   /** Copy the commit sha; resolves true only on acceptance. */
   copySha: (sha: string) => Promise<boolean>
   /** Open the repository folder with the host application. */
@@ -44,7 +46,7 @@ export interface CommitDetailsProps {
 /** The commit details. */
 export function CommitDetails({
   commit, files, selectedPath, diff, content, detailView, hasDiff,
-  onSelectFile, onViewChange, copySha, openFolder, t,
+  onSelectFile, onViewChange, onBack, copySha, openFolder, t,
 }: CommitDetailsProps): ReactNode {
   const { added, removed } = useMemo(() => ({
     added: sum(files, 'additions'),
@@ -72,7 +74,12 @@ export function CommitDetails({
         <div className={css.summary}>{t('commit.summary', { count: String(files.length), add: String(added), del: String(removed) })}</div>
 
         <div className={css.filesHeader}>{t('commit.changedFiles')} <span className={css.filesCount}>{files.length}</span></div>
-        <div className={css.files}>
+        <div className={css.fileTable}>
+          <div className={css.fileHeader}>
+            <span className={css.colPath}>{t('commit.file')}</span>
+            <span className={css.colStatus}>{t('commit.status')}</span>
+            <span className={css.colStats}>{t('commit.delta')}</span>
+          </div>
           {files.map(file => (
             <button
               key={file.path}
@@ -80,8 +87,9 @@ export function CommitDetails({
               className={`${css.fileRow} ${selectedPath === file.path ? css.fileRowSelected : ''}`}
               onClick={() => { onSelectFile(file.path) }}
             >
-              <span className={css.filePath} title={file.path}>{file.path}</span>
-              <span className={css.fileStats}>
+              <span className={css.colPath} title={file.path}>{file.path}</span>
+              <span className={`${css.colStatus} ${css[`status_${file.status === '??' ? 'untracked' : file.status}`] ?? ''}`}>{file.status}</span>
+              <span className={css.colStats}>
                 <span className={css.add}>+{file.additions ?? 0}</span>
                 <span className={css.del}>−{file.deletions ?? 0}</span>
               </span>
@@ -102,6 +110,7 @@ export function CommitDetails({
               loading={false}
               error={null}
               onViewChange={onViewChange}
+              onBack={onBack}
               t={t}
             />
           </div>

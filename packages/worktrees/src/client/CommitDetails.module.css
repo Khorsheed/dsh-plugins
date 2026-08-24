@@ -91,11 +91,26 @@
   font-weight: 400;
 }
 
-.files {
+.fileTable {
   display: flex;
   flex-direction: column;
   margin-top: 6px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .fileRow {
@@ -104,14 +119,18 @@
   gap: 12px;
   width: 100%;
   height: 38px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.fileRow:first-of-type {
+  border-top: 0;
 }
 
 .fileRow:hover {
@@ -125,7 +144,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.filePath {
+.colPath {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -133,7 +152,32 @@
   white-space: nowrap;
 }
 
-.fileStats {
+.colStatus {
+  flex: none;
+  width: 30px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status_A {
+  color: var(--dsw-alias-state-warn-secondary);
+}
+
+.status_M,
+.status_R {
+  color: var(--dsw-alias-state-warn-secondary);
+}
+
+.status_D {
+  color: var(--dsw-alias-state-error-secondary);
+}
+
+.status_untracked {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.colStats {
   flex: none;
   display: inline-flex;
   gap: 6px;
