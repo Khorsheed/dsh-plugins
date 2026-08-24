@@ -223,6 +223,20 @@
   opacity: 1;
 }
 
+/* The commits-mode header: the mode title on the left, the collapse toggle
+   right — mirrors the file tree's own header so both modes read the same. */
+.commitsHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
 /* The collapsed icon rail: a slim column holding only the expand toggle. */
 .rail {
   display: flex;

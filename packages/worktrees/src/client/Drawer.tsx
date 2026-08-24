@@ -230,11 +230,8 @@ export function WorktreesDrawer({
     }
     actions.select(path, segment)
     // In a changes context lead with the diff; only untracked/repo-browse
-    // files have no diff and fall back to the content view. Selecting a file
-    // folds the tree to the icon rail (focus mode); the rail button expands
-    // it back.
+    // files have no diff and fall back to the content view.
     actions.setDetailView(segment !== null && !untracked ? 'diff' : 'content')
-    actions.setTreeCollapsed(true)
   }
 
   const worktreePath = summary?.repo ?? ''
@@ -256,31 +253,38 @@ export function WorktreesDrawer({
     }
     return (
       <div className={css.treeColumn}>
-        <div className={css.treeHeader}>
-          <button
-            type="button"
-            className={css.collapseButton}
-            title={treeCollapsed ? t('tree.expand') : t('tree.collapse')}
-            onClick={() => { actions.toggleTree() }}
-          >
-            <IconPanelLeftOutline16 />
-          </button>
-        </div>
         {mode === 'commits'
-          ? <CommitList
-            commits={commits}
-            selectedCommit={selectedCommit}
-            commitFiles={commitFiles}
-            onSelectCommit={actions.selectCommit}
-            onSelectFile={onSelectFile}
-            baseRef={summary?.baseRef ?? 'main'}
-            t={t}
-          />
+          ? (
+            <>
+              <div className={css.commitsHeader}>
+                <span className={css.treeTitle}>{t('mode.commits')}</span>
+                <button
+                  type="button"
+                  className={css.collapseButton}
+                  title={treeCollapsed ? t('tree.expand') : t('tree.collapse')}
+                  onClick={() => { actions.toggleTree() }}
+                >
+                  <IconPanelLeftOutline16 />
+                </button>
+              </div>
+              <CommitList
+                commits={commits}
+                selectedCommit={selectedCommit}
+                commitFiles={commitFiles}
+                onSelectCommit={actions.selectCommit}
+                onSelectFile={onSelectFile}
+                baseRef={summary?.baseRef ?? 'main'}
+                t={t}
+              />
+            </>
+          )
           : <FileTree
             groups={groups}
             selectedPath={selectedPath}
             onSelect={onSelectFile}
             treeTitle={mode === 'repo' ? t('mode.repo') : t('mode.worktree')}
+            collapsed={treeCollapsed}
+            onToggleCollapse={() => { actions.toggleTree() }}
             t={t}
           />}
       </div>

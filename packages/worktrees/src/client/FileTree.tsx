@@ -10,7 +10,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14,
-  IconFolderClose16, IconFolderOpen16, IconTreeCorner8x10,
+  IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16, IconTreeCorner8x10,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
@@ -115,6 +115,9 @@ export interface FileTreeProps {
   onSelect: (path: string) => void
   /** The tree header title (defaults to the changes-mode label). */
   treeTitle?: string
+  /** When given, renders a collapse-to-rail toggle at the right of the header. */
+  collapsed?: boolean
+  onToggleCollapse?: () => void
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -131,7 +134,7 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 
   const roots = useMemo(
@@ -219,6 +222,16 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, t }: FileT
         <span className={css.treeActions}>
           <button type="button" className={css.treeAction} onClick={expandAll}>{t('tree.expandAll')}</button>
           <button type="button" className={css.treeAction} onClick={collapseAll}>{t('tree.collapseAll')}</button>
+          {onToggleCollapse !== undefined && (
+            <button
+              type="button"
+              className={css.collapseButton}
+              title={collapsed ? t('tree.expand') : t('tree.collapse')}
+              onClick={onToggleCollapse}
+            >
+              <IconPanelLeftOutline16 />
+            </button>
+          )}
         </span>
       </div>
       {roots.map(group => (
