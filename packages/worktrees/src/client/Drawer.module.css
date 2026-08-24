@@ -5,12 +5,9 @@
   position: fixed;
   inset: 0;
   z-index: 40;
-}
-
-.backdrop {
-  position: absolute;
-  inset: 0;
-  background: var(--dsw-alias-bg-mask-drop);
+  /* The layer itself is click-through, like file-preview: no dim mask, the
+     drawer's own content owns pointer events and closes via ✕ / Escape. */
+  pointer-events: none;
 }
 
 .drawer {
@@ -24,6 +21,7 @@
   border-left: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+  pointer-events: auto;
 }
 
 .header {
@@ -155,14 +153,45 @@
 .treeColumn {
   display: flex;
   flex-direction: column;
-  flex: 0 1 300px;
-  min-width: 200px;
-  max-width: 45%;
+  flex: none;
   border-right: 1px solid var(--dsw-alias-border-l2);
   overflow: auto;
   /* Same gutter reservation as the detail body — the tree's own scrollbar
      must not shift the split width either. */
   scrollbar-gutter: stable;
+}
+
+/* Drag handle on the tree/detail boundary: the tree width is draggable in
+   the 280–380 band set by the component. */
+.treeResize {
+  position: relative;
+  flex: none;
+  width: 5px;
+  margin-left: -2px;
+  margin-right: -2px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.treeResize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.treeResize:hover::after,
+.treeResize:active::after {
+  opacity: 1;
 }
 
 .treeHeader {

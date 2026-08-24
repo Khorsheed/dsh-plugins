@@ -29,6 +29,16 @@ const DEFAULT_WIDTH = 720
 const MIN_WIDTH = 420
 /** localStorage key for the user's drawer width preference. */
 const WIDTH_KEY = 'dsh-worktrees-drawer-w'
+/** Tree column width: the developer-tool default of 320px, draggable 280–380. */
+const TREE_DEFAULT_WIDTH = 320
+const TREE_MIN_WIDTH = 280
+const TREE_MAX_WIDTH = 380
+const TREE_WIDTH_KEY = 'dsh-worktrees-tree-w'
+
+/** Clamp a requested tree width into the 280–380 band. */
+function clampTreeWidth(width: number): number {
+  return Math.max(TREE_MIN_WIDTH, Math.min(width, TREE_MAX_WIDTH))
+}
 
 /** Clamp a requested width between the minimum and 92% of the viewport. */
 function clampWidth(width: number, viewport: number): number {
@@ -62,6 +72,28 @@ export function WorktreesDrawer({
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   const [copied, setCopied] = useState(false)
+  const [treeWidth, setTreeWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
+      return Number.isFinite(saved) && saved >= TREE_MIN_WIDTH ? saved : TREE_DEFAULT_WIDTH
+    } catch {
+      return TREE_DEFAULT_WIDTH
+    }
+  })
+  const treeDrag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(TREE_WIDTH_KEY, String(treeWidth)) } catch { /* non-fatal */ }
+  }, [treeWidth])
+  const onTreeDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    treeDrag.current = { startX: event.clientX, startW: treeWidth }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onTreeMove = (event: { clientX: number }): void => {
+    if (treeDrag.current === null) return
+    // Right edge of the tree column: dragging right widens it.
+    setTreeWidth(clampTreeWidth(treeDrag.current.startW + (event.clientX - treeDrag.current.startX)))
+  }
+  const onTreeUp = (): void => { treeDrag.current = null }
   const [drawerWidth, setDrawerWidth] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(WIDTH_KEY))
@@ -104,20 +136,11 @@ export function WorktreesDrawer({
 
   const groups = useMemo<FileTreeGroup[]>(() => {
     if (mode === 'worktree') {
-      const groupsList: FileTreeGroup[] = []
-      const uncommitted: FileTreeItem[] = (changes?.uncommitted ?? []).map(file => ({
-        path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
-      }))
-      const committed: FileTreeItem[] = (changes?.committed ?? []).map(file => ({
-        path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
-      }))
-      if (uncommitted.length > 0) {
-        groupsList.push({ key: 'uncommitted', title: t('group.uncommitted'), count: uncommitted.length, items: uncommitted })
-      }
-      if (committed.length > 0) {
-        groupsList.push({ key: 'committed', title: t('group.committed'), count: committed.length, items: committed })
-      }
-      return groupsList
+      const items: FileTreeItem[] = [
+        ...(changes?.uncommitted ?? []),
+        ...(changes?.committed ?? []),
+      ].map(file => ({ path: file.path, status: file.status, additions: file.additions, deletions: file.deletions }))
+      return [{ key: 'all-changes', title: '', count: items.length, items }]
     }
     if (mode === 'repo') {
       const items: FileTreeItem[] = (repoFiles ?? []).map(path => ({ path, status: '' }))
@@ -215,6 +238,17 @@ export function WorktreesDrawer({
     repo: repoFiles === null ? null : repoFiles.length,
   }), [changes, commits, repoFiles])
 
+  // Escape closes the drawer (the layer outside the drawer is click-through,
+  // matching file-preview — no dim mask, the ✕ / Esc own the close).
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') actions.close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [open, actions])
+
   if (!open) return null
 
   const onSelectFile = (path: string): void => {
@@ -252,7 +286,7 @@ export function WorktreesDrawer({
       )
     }
     return (
-      <div className={css.treeColumn}>
+      <div className={css.treeColumn} style={{ width: treeWidth }}>
         {mode === 'commits'
           ? (
             <>
@@ -282,7 +316,9 @@ export function WorktreesDrawer({
             groups={groups}
             selectedPath={selectedPath}
             onSelect={onSelectFile}
-            treeTitle={mode === 'repo' ? t('mode.repo') : t('mode.worktree')}
+            treeTitle={mode === 'repo'
+              ? t('mode.repo')
+              : t('tree.changedFiles', { count: String(changes === null ? 0 : changes.uncommitted.length + changes.committed.length) })}
             collapsed={treeCollapsed}
             onToggleCollapse={() => { actions.toggleTree() }}
             t={t}
@@ -295,7 +331,6 @@ export function WorktreesDrawer({
 
   return (
     <div className={css.overlay}>
-      <div className={css.backdrop} onClick={() => { actions.close() }} aria-hidden="true" />
       <aside
         className={css.drawer}
         style={{ width: drawerWidth }}
@@ -375,6 +410,16 @@ export function WorktreesDrawer({
         </div>
         <div className={css.body}>
           {leftColumn}
+          <div
+            className={css.treeResize}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('tree.resize')}
+            onPointerDown={onTreeDown}
+            onPointerMove={onTreeMove}
+            onPointerUp={onTreeUp}
+            onPointerCancel={onTreeUp}
+          />
           <div className={css.detailColumn}>
             {selectedPath !== null ? (
               <DetailPane

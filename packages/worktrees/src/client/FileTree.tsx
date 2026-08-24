@@ -10,7 +10,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14,
-  IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16, IconTreeCorner8x10,
+  IconCodeOutline16, IconFolderClose16, IconFolderOpen16, IconPanelLeftOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
@@ -98,12 +98,6 @@ function statusClass(status: FileTreeItem['status']): string {
   return status === '??' ? 'untracked' : (status ?? '')
 }
 
-/** Render one row's line counts `+N −M` (nothing when counts are absent). */
-function countsText(item: FileTreeItem): string | null {
-  if (item.additions === null || item.additions === undefined) return null
-  if (item.deletions === null || item.deletions === undefined) return `+${item.additions}`
-  return `+${item.additions} −${item.deletions}`
-}
 
 /** Props of the file tree. */
 export interface FileTreeProps {
@@ -189,7 +183,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
           <button type="button" className={css.row} onClick={() => { toggle(node.path) }}>
             <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}</span>
             {isOpen ? <IconFolderOpen16 /> : <IconFolderClose16 />}
-            <span className={css.rowName}>{node.name}</span>
+            <span className={css.dirName}>{node.name}</span>
           </button>
           {isOpen && <div className={css.children}>{node.children.map(child => renderNode(child, groupKey))}</div>}
         </div>
@@ -203,13 +197,18 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
         className={`${css.row} ${css.fileRow} ${selected ? css.selected : ''}`}
         onClick={() => { onSelect(node.path) }}
       >
-        <span className={css.fileGlyph}><IconTreeCorner8x10 /></span>
+        <span className={css.fileGlyph}><IconCodeOutline16 /></span>
         <span className={css.rowName}>{node.name}</span>
         {node.item !== null && node.item.status !== undefined && node.item.status !== '' && (
           <span className={`${css.status} ${css[`status_${statusClass(node.item.status)}`] ?? ''}`}>{statusText(node.item.status)}</span>
         )}
-        {countsText(node.item ?? { path: node.path }) !== null && (
-          <span className={css.counts}>{countsText(node.item as FileTreeItem)}</span>
+        {(node.item as FileTreeItem).additions !== null && (node.item as FileTreeItem).additions !== undefined && (
+          <span className={css.counts}>
+            <span className={css.add}>+{(node.item as FileTreeItem).additions}</span>
+            {(node.item as FileTreeItem).deletions !== null && (node.item as FileTreeItem).deletions !== undefined && (
+              <span className={css.del}> −{(node.item as FileTreeItem).deletions}</span>
+            )}
+          </span>
         )}
       </button>
     )
@@ -236,10 +235,6 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       </div>
       {roots.map(group => (
         <div key={group.key}>
-          <div className={css.groupHeader}>
-            <span className={css.groupTitle}>{group.title}</span>
-            {group.count > 0 && <span className={css.groupCount}>· {group.count}</span>}
-          </div>
           {group.nodes.map(node => renderNode(node, group.key))}
         </div>
       ))}
