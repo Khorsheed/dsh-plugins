@@ -139,6 +139,13 @@
   font-weight: 500;
 }
 
+.switchCount {
+  margin-left: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .body {
   display: flex;
   flex: 1;

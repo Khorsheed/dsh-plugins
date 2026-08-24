@@ -15,9 +15,11 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChangedFile, FileDiffRequest } from '../types.ts'
 import type { WorktreesDrawerProps } from './contract.ts'
+import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
 import { DetailPane, isDeleted } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { Overview } from './Overview.tsx'
 import css from './Drawer.module.css'
 
 /** Drawer width cap relative to the viewport. */
@@ -103,6 +105,21 @@ export function WorktreesDrawer({
     return () => { cancelled = true }
   }, [open, rev, sessionId, fetchSummary, actions])
 
+  // Eager count data: the commit log and repo file list are fetched on open /
+  // refresh (cheap git reads) so every switcher tab shows its count up front,
+  // not only after that mode was entered.
+  useEffect(() => {
+    if (!open || sessionId === undefined) return
+    let cancelled = false
+    void fetchCommitLog(sessionId).then(result => {
+      if (!cancelled && result.ok) actions.setCommits(result.value)
+    })
+    void fetchRepoFiles(sessionId).then(result => {
+      if (!cancelled && result.ok) actions.setRepoFiles(result.value)
+    })
+    return () => { cancelled = true }
+  }, [open, rev, sessionId, fetchCommitLog, fetchRepoFiles, actions])
+
   // Mode data on open / mode switch / refresh.
   useEffect(() => {
     if (!open || sessionId === undefined) return
@@ -147,6 +164,23 @@ export function WorktreesDrawer({
     }
     return () => { cancelled = true }
   }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, actions])
+
+  // Repository mode: default to previewing the first file so the detail
+  // column never opens onto an empty surface.
+  useEffect(() => {
+    if (!open || mode !== 'repo' || selectedPath !== null) return
+    const files = repoFiles
+    if (files === null || files.length === 0) return
+    actions.select(files[0] ?? '', null)
+    actions.setDetailView('content')
+  }, [open, mode, repoFiles, selectedPath, actions])
+
+  // Per-mode counts for the compact switcher labels.
+  const counts = useMemo(() => ({
+    worktree: changes === null ? null : changes.uncommitted.length + changes.committed.length,
+    commits: commits === null ? null : commits.length,
+    repo: repoFiles === null ? null : repoFiles.length,
+  }), [changes, commits, repoFiles])
 
   if (!open) return null
 
@@ -276,33 +310,47 @@ export function WorktreesDrawer({
           </div>
         </div>
         <div className={css.switcher}>
-          {(['worktree', 'commits', 'repo'] as const).map(modeKey => (
-            <button
-              key={modeKey}
-              type="button"
-              className={`${css.switch} ${mode === modeKey ? css.switchActive : ''}`}
-              onClick={() => { actions.setMode(modeKey) }}
-            >
-              {modeKey === 'worktree' ? t('mode.worktree') : modeKey === 'commits' ? t('mode.commits') : t('mode.repo')}
-            </button>
-          ))}
+          {(['worktree', 'commits', 'repo'] as const).map(modeKey => {
+            const label = modeKey === 'worktree' ? t('mode.worktree') : modeKey === 'commits' ? t('mode.commits') : t('mode.repo')
+            const count = counts[modeKey]
+            return (
+              <button
+                key={modeKey}
+                type="button"
+                className={`${css.switch} ${mode === modeKey ? css.switchActive : ''}`}
+                onClick={() => { actions.setMode(modeKey) }}
+              >
+                {label}
+                {count !== null && <span className={css.switchCount}>{count}</span>}
+              </button>
+            )
+          })}
         </div>
         <div className={css.body}>
           {leftColumn}
           <div className={css.detailColumn}>
-            <DetailPane
-              path={selectedPath ?? ''}
-              hasDiff={hasDiff}
-              untracked={untracked}
-              deleted={isDeleted(selectedFile)}
-              detailView={detailView}
-              diff={diff}
-              content={content}
-              loading={loading}
-              error={error}
-              onViewChange={actions.setDetailView}
-              t={t}
-            />
+            {selectedPath !== null ? (
+              <DetailPane
+                path={selectedPath}
+                hasDiff={hasDiff}
+                untracked={untracked}
+                deleted={isDeleted(selectedFile)}
+                detailView={detailView}
+                diff={diff}
+                content={content}
+                loading={loading}
+                error={error}
+                onViewChange={actions.setDetailView}
+                t={t}
+              />
+            ) : mode === 'commits' && selectedCommit !== null
+              ? (() => {
+                const commit = commits?.find(candidate => candidate.sha === selectedCommit)
+                return commit === undefined
+                  ? <Overview summary={summary} changes={changes} repoMode={false} t={t} />
+                  : <CommitDetails commit={commit} files={commitFiles} onSelectFile={onSelectFile} t={t} />
+              })()
+              : <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} t={t} />}
           </div>
         </div>
       </aside>

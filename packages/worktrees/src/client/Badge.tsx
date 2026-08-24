@@ -1,13 +1,12 @@
 /**
- * The session-header badge (`conversation.session.header.utilities`): a
- * compact chip showing the current session's repository and worktree as two
- * icon buttons plus the combined diff line count. The names live in hover
- * titles (the repo's absolute path; the branch with the uncommitted/committed
- * breakdown) so the chip stays small. Two click zones — the repository icon
- * opens the drawer in repository-browse mode, the branch icon in changes
- * mode ("click what you mean"). Colors express git facts only: green = clean,
- * yellow = uncommitted or unmerged changes. Non-repository sessions render
- * nothing.
+ * The session-header badge (`conversation.session.header.utilities`): an
+ * informative worktree status capsule — repository name, branch, and the
+ * combined diff line count, with hover titles carrying the full path and the
+ * uncommitted/committed breakdown. Two click zones — the repository segment
+ * opens the drawer in repository-browse mode, the branch segment in changes
+ * mode ("click what you mean"). Status is expressed by the counts color
+ * (warn tint when there are uncommitted or unmerged changes) rather than a
+ * jarring outline. Non-repository sessions render nothing.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { IconBranchOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -42,7 +41,11 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
   })}`
 
   return (
-    <span className={`${css.badge} ${hasChanges ? css.dirty : css.clean}`} role="status" aria-label={t('aria.badge')}>
+    <span
+      className={`${css.badge} ${hasChanges ? css.dirty : css.clean}`}
+      role="status"
+      aria-label={t('aria.badge')}
+    >
       <button
         type="button"
         className={`${css.zone} ${css.repoZone}`}
@@ -51,6 +54,7 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
         onClick={() => { open('repo') }}
       >
         <IconFolderOpenOutline16 />
+        <span className={css.zoneText}>{data.repoName}</span>
       </button>
       <span className={css.sep} aria-hidden="true" />
       <button
@@ -61,7 +65,8 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
         onClick={() => { open('worktree') }}
       >
         <IconBranchOutline16 />
-        <span className={css.counts}>+{totalAdd} −{totalDel}</span>
+        <span className={css.zoneText}>{branchLabel}</span>
+        <span className={`${css.counts} ${hasChanges ? css.countsDirty : ''}`}>+{totalAdd} −{totalDel}</span>
       </button>
     </span>
   )

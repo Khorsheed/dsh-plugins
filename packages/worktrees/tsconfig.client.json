@@ -18,6 +18,7 @@
     "src/types.ts",
     "src/client/Badge.tsx",
     "src/client/CommitList.tsx",
+    "src/client/CommitDetails.tsx",
     "src/client/contract.ts",
     "src/client/DetailPane.tsx",
     "src/client/DiffView.tsx",
@@ -26,6 +27,7 @@
     "src/client/index.ts",
     "src/client/language.ts",
     "src/client/locales.ts",
+    "src/client/Overview.tsx",
     "src/client/panel-service.ts",
     "src/client/store.ts"
   ]

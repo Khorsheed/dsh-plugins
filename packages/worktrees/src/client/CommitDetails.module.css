@@ -1,0 +1,105 @@
+/* The commit details surface: header, sha, subject, author, and the file
+   list as compact clickable rows. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sha {
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  font-size: 13px;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.subject {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.count {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.status {
+  flex: none;
+  width: 22px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status_A {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.status_M,
+.status_R {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.status_D {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.status_untracked {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.filePath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}

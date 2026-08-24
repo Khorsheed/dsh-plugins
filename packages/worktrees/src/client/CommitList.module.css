@@ -28,6 +28,7 @@
 
 .rowOpen {
   background: var(--dsw-alias-bg-layer-2);
+  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary);
 }
 
 .sha {
