@@ -1,6 +1,10 @@
-/* The unified-diff card, styled to the official DiffBlock anatomy (code-block
-   surface, 12px radius, markdown code font, path header in the primary tone,
-   `- `/`+ ` prefixes in the state tokens, floating copy, footer counts). */
+/* The unified-diff card, matching the official DiffBlock anatomy exactly
+   (ui-primitives): markdown code-block surface, 12px radius, the markdown
+   code-block font token, a primary/600 path header, whole lines tinted with
+   the state tokens (`- `/`+ ` prefixes drawn as content), a floating copy
+   control, and the `└ +A -R · N file(s)` footer. DiffBlock itself takes
+   whole-file old/new sides (misrepresents a patch), so this component draws
+   the actual unified diff in the same vocabulary. */
 
 .block {
   --dsl-diff-radius: 12px;
@@ -37,8 +41,6 @@
   font: var(--dsw-font-markdown-code-block);
   overflow-x: auto;
   overflow-y: hidden;
-  font-size: 12px;
-  line-height: var(--dsl-diff-line-height);
 }
 
 .line {
@@ -46,17 +48,27 @@
   white-space: pre;
 }
 
-.kind_meta {
+/* The patch's file header (`diff --git …`) reads like the official path
+   header: the primary tone, set apart by weight. */
+.kind_path {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  padding-right: 56px;
+}
+
+/* Structural chrome (index lines, `--- `/`+++ `, hunk headers) in the dim
+   tone — the official card keeps only the path and the change lines. */
+.kind_meta,
+.kind_hunk {
   color: var(--dsw-alias-label-tertiary);
 }
 
-.kind_hunk {
-  color: var(--dsw-alias-brand-primary);
-  font-weight: 600;
-}
-
+/* The diff's meaning-carrying colors: whole removed lines on the error
+   token, whole added lines on the success token — the official DiffBlock
+   vocabulary. The `- `/`+ ` prefix is drawn so a copied line and the shown
+   line agree, and the sign reads without relying on color alone. */
 .kind_del {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .kind_del::before {
@@ -65,7 +77,7 @@
 }
 
 .kind_add {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .kind_add::before {
@@ -74,10 +86,9 @@
 }
 
 .footer {
-  padding: 0 14px 10px;
+  padding: 0 14px 12px;
+  font: var(--dsw-font-markdown-code-block);
   color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xs-13);
-  font-size: 11px;
 }
 
 .empty {
@@ -88,12 +99,16 @@
 
 .more {
   display: block;
-  margin: 4px 0;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-layer-2);
-  font-size: 11px;
-  color: var(--dsw-alias-label-secondary);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.more:hover {
+  color: var(--dsw-alias-label-secondary);
 }

@@ -18,15 +18,15 @@ const MAX_LINES = 200
 
 /** One classified diff line. */
 interface DiffLine {
-  kind: 'meta' | 'hunk' | 'add' | 'del' | 'ctx'
+  kind: 'path' | 'meta' | 'hunk' | 'add' | 'del' | 'ctx'
   text: string
 }
 
 /** Classify a unified-diff line. */
 function classify(line: string): DiffLine['kind'] {
+  if (line.startsWith('diff --git ')) return 'path'
   if (
-    line.startsWith('diff --git ')
-    || line.startsWith('index ')
+    line.startsWith('index ')
     || line.startsWith('--- ')
     || line.startsWith('+++ ')
     || line.startsWith('new file mode ')
