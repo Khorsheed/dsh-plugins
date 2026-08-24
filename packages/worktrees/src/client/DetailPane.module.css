@@ -9,10 +9,12 @@
 
 .header {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -21,7 +23,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -43,7 +45,7 @@
 }
 
 .viewButton:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .viewButton:disabled {
@@ -52,7 +54,7 @@
 }
 
 .viewActive {
-  background: var(--dsw-alias-bg-strong);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
 }
 

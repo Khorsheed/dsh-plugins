@@ -1,6 +1,6 @@
 /* The file tree: IDE-explorer anatomy — compact rows, chevron disclosure,
    indent guides, hover/selected backgrounds (datasets' DatasetsView is the
-   in-repo reference). */
+   in-repo reference; official alias tokens throughout). */
 
 .tree {
   font-size: 12px;
@@ -30,7 +30,7 @@
   background: transparent;
   padding: 0;
   font-size: 11px;
-  color: var(--dsw-accent, var(--dsw-alias-label-secondary));
+  color: var(--dsw-alias-brand-primary);
   cursor: pointer;
 }
 
@@ -76,7 +76,7 @@
 }
 
 .row:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .rowName {
@@ -100,16 +100,16 @@
 }
 
 .status_A {
-  color: var(--dsw-success, #2f9e44);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .status_M,
 .status_R {
-  color: var(--dsw-warning, #e8590c);
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 .status_D {
-  color: var(--dsw-danger, #e03131);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .status_untracked {
@@ -126,7 +126,7 @@
 
 .selected,
 .selected:hover {
-  background: var(--dsw-alias-bg-selected, var(--dsw-alias-bg-strong));
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 .empty {

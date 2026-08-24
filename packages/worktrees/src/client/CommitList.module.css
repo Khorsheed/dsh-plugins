@@ -23,18 +23,18 @@
 }
 
 .row:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .rowOpen {
-  background: var(--dsw-alias-bg-strong);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .sha {
   flex: none;
-  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
   font-size: 11px;
-  color: var(--dsw-accent, var(--dsw-alias-label-secondary));
+  color: var(--dsw-alias-brand-primary);
 }
 
 .subject {

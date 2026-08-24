@@ -23,16 +23,6 @@ import css from './Drawer.module.css'
 /** Drawer width cap relative to the viewport. */
 const WIDTH_RATIO = 0.85
 
-/** Top-level segments of a path list (for the collapsed rail). */
-function topLevelSegments(paths: readonly string[]): string[] {
-  const seen = new Set<string>()
-  for (const path of paths) {
-    const first = path.split('/')[0]
-    if (first !== undefined && first !== '') seen.add(first)
-  }
-  return [...seen].sort()
-}
-
 /** The drawer. */
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
@@ -100,17 +90,6 @@ export function WorktreesDrawer({
     }
     return []
   }, [mode, changes, repoFiles, t])
-
-  const railSegments = useMemo(() => {
-    if (mode === 'worktree') {
-      return topLevelSegments([
-        ...(changes?.uncommitted ?? []).map(file => file.path),
-        ...(changes?.committed ?? []).map(file => file.path),
-      ])
-    }
-    if (mode === 'repo') return topLevelSegments(repoFiles ?? [])
-    return []
-  }, [mode, changes, repoFiles])
 
   // Summary on open / refresh.
   useEffect(() => {
@@ -190,10 +169,15 @@ export function WorktreesDrawer({
   const leftColumn = ((): ReactNode => {
     if (treeCollapsed && mode !== 'commits') {
       return (
-        <div className={css.rail} title={t('tree.expand')} onClick={() => { actions.setTreeCollapsed(false) }}>
-          {railSegments.map(segment => (
-            <span key={segment} className={css.railIcon} title={segment}>{segment.slice(0, 1).toUpperCase()}</span>
-          ))}
+        <div className={css.rail} title={t('tree.expand')}>
+          <button
+            type="button"
+            className={css.collapseButton}
+            title={t('tree.expand')}
+            onClick={() => { actions.toggleTree() }}
+          >
+            <IconPanelLeftOutline16 />
+          </button>
         </div>
       )
     }
@@ -203,8 +187,8 @@ export function WorktreesDrawer({
           <button
             type="button"
             className={css.collapseButton}
-            title={t('tree.expand')}
-            onClick={() => { actions.setTreeCollapsed(true) }}
+            title={treeCollapsed ? t('tree.expand') : t('tree.collapse')}
+            onClick={() => { actions.toggleTree() }}
           >
             <IconPanelLeftOutline16 />
           </button>

@@ -1,4 +1,5 @@
-/* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop. */
+/* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop,
+   following the FilePreviewDrawer geometry and the official alias tokens. */
 
 .overlay {
   position: fixed;
@@ -9,7 +10,7 @@
 .backdrop {
   position: absolute;
   inset: 0;
-  background: rgb(0 0 0 / 0.28);
+  background: var(--dsw-alias-bg-mask-drop);
 }
 
 .drawer {
@@ -22,22 +23,24 @@
   min-width: 320px;
   border-left: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
-  box-shadow: -12px 0 32px rgb(0 0 0 / 0.18);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
 }
 
 .header {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .summary {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -53,7 +56,7 @@
 .mainTag {
   padding: 0 6px;
   border-radius: 4px;
-  background: var(--dsw-alias-bg-strong);
+  background: var(--dsw-alias-bg-layer-2);
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -70,7 +73,7 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .action {
@@ -88,7 +91,7 @@
 }
 
 .action:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .action:disabled {
@@ -103,14 +106,14 @@
   z-index: 2;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--dsw-alias-bg-strong);
+  background: var(--dsw-alias-bg-layer-2);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .switcher {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
@@ -127,11 +130,11 @@
 }
 
 .switch:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .switchActive {
-  background: var(--dsw-alias-bg-strong);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
 }
@@ -155,8 +158,9 @@
 
 .treeHeader {
   display: flex;
+  flex: none;
   align-items: center;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -174,32 +178,20 @@
 }
 
 .collapseButton:hover {
-  background: var(--dsw-alias-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
 }
 
-/* The collapsed icon rail. */
+/* The collapsed icon rail: a slim column holding only the expand toggle. */
 .rail {
   display: flex;
-  flex-direction: column;
   flex: none;
+  align-items: center;
+  flex-direction: column;
+  padding-top: 4px;
   width: 36px;
   border-right: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
-  cursor: pointer;
-}
-
-.railIcon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 32px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.railIcon:hover {
-  background: var(--dsw-alias-bg-hover);
 }
 
 .detailColumn {

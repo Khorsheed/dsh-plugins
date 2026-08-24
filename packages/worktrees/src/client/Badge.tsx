@@ -42,7 +42,7 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
     <span className={`${css.badge} ${hasChanges ? css.dirty : css.clean}`} role="status" aria-label={t('aria.badge')}>
       <button
         type="button"
-        className={css.zone}
+        className={`${css.zone} ${css.repoZone}`}
         title={data.repo}
         aria-label={t('mode.repo')}
         onClick={() => { open('repo') }}
@@ -50,7 +50,7 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
         <IconFolderOpenOutline16 />
         <span className={css.zoneText}>{data.repoName}</span>
       </button>
-      <span className={css.sep} aria-hidden="true">·</span>
+      <span className={css.sep} aria-hidden="true" />
       <button
         type="button"
         className={css.zone}
