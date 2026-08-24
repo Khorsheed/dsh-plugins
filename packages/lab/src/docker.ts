@@ -107,6 +107,12 @@ export class DockerProvider implements UnitProvider {
     const mkdir = await this.execInUnit(resource, ['mkdir', '-p', options.target])
     if (mkdir.exitCode !== 0) throw new Error(`lab: cannot create ${options.target} in ${resource}: ${mkdir.stderr.trim()}`)
     await this.run(['cp', `${options.source}/.`, `${resource}:${options.target}`])
+    // docker cp preserves source mtimes, so without a stamp a freshly
+    // populated unit would look idle for the source's whole age — a fake
+    // reading in exactly the spot the stuck-detector must trust. The marker
+    // file's mtime is the activity baseline (and lands in later archives as
+    // the populate timestamp).
+    await this.execInUnit(resource, ['touch', `${options.target}/.lab-materialized`])
   }
 
   async collect(resource: string, options: CollectOptions): Promise<void> {

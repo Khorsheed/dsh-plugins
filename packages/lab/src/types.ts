@@ -99,6 +99,8 @@ export interface PopulateOptions {
    * evaluation flow).
    */
   manifestPath?: string
+  /** Path registered with mission (relative to the attempt's run-data directory); defaults to `manifestPath`. */
+  artifactPath?: string
 }
 
 /** The materialization manifest {@link Lab.populate} returns — the fairness evidence. */
@@ -119,6 +121,8 @@ export interface CollectOptions {
   target: string
   /** Artifact kind registered with mission; defaults to `'collection'`. */
   kind?: string
+  /** Path registered with mission (relative to the attempt's run-data directory); defaults to `target`. */
+  artifactPath?: string
 }
 
 /** {@link Lab.release} options. */
@@ -168,6 +172,8 @@ export interface ArchiveOptions {
   target: string
   /** Artifact kind registered with mission; defaults to `'archive'`. */
   kind?: string
+  /** Path registered with mission (relative to the attempt's run-data directory); defaults to `target`. */
+  artifactPath?: string
 }
 
 /** The lab service face (`ctx.lab`). Records, never judges; never fires work. */

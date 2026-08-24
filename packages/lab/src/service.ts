@@ -97,7 +97,7 @@ export class LabService implements Lab {
     if (options.manifestPath !== undefined) {
       const manifest = { source: options.source, target, sha, count: files.length, files, populatedAt: this.now() }
       writeFileSync(options.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-      await this.registerArtifact(unit, options.manifestPath, 'materialization')
+      await this.registerArtifact(unit, options.artifactPath ?? options.manifestPath, 'materialization')
     }
     return result
   }
@@ -106,7 +106,7 @@ export class LabService implements Lab {
     const { unit, provider } = await this.locate(unitId)
     mkdirSync(options.target, { recursive: true })
     await provider.collect(unit.resource, options)
-    await this.registerArtifact(unit, options.target, options.kind ?? 'collection')
+    await this.registerArtifact(unit, options.artifactPath ?? options.target, options.kind ?? 'collection')
   }
 
   async release(unitId: string, options?: ReleaseOptions): Promise<void> {
@@ -183,7 +183,7 @@ export class LabService implements Lab {
       files: hashTree(workspaceOut),
     }
     writeFileSync(join(options.target, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-    await this.registerArtifact(unit, options.target, options.kind ?? 'archive')
+    await this.registerArtifact(unit, options.artifactPath ?? options.target, options.kind ?? 'archive')
   }
 
   /** Artifact registration (collect / populate-manifest / archive): warns and skips, never blocks. */
@@ -252,10 +252,20 @@ export class LabService implements Lab {
           if (attempt !== undefined) {
             row.missionState = attempt.state
             row.missionLabels = snapshot.labels
-            const materialization = attempt.artifacts.find((a) => a.kind === 'materialization')
-            if (materialization !== undefined) {
-              const parsed = JSON.parse(readFileSync(materialization.path, 'utf8')) as { sha?: string }
-              if (typeof parsed.sha === 'string') row.taskHash = parsed.sha.slice(0, TASK_HASH_PREFIX)
+            // Newest materialization first: retry re-materializes, and a stale
+            // or ghost record (unreadable file) must skip with a warning, not
+            // blank the whole column.
+            for (const artifact of attempt.artifacts.filter((a) => a.kind === 'materialization').reverse()) {
+              try {
+                const parsed = JSON.parse(readFileSync(artifact.path, 'utf8')) as { sha?: string }
+                if (typeof parsed.sha === 'string') {
+                  row.taskHash = parsed.sha.slice(0, TASK_HASH_PREFIX)
+                  break
+                }
+                this.options.warn(`lab: materialization artifact ${artifact.path} has no sha — skipped`)
+              } catch (error) {
+                this.options.warn(`lab: materialization artifact ${artifact.path} unreadable — skipped: ${String(error)}`)
+              }
             }
           }
         } catch (error) {

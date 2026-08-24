@@ -81,14 +81,16 @@ describe('DockerProvider.acquire', () => {
 })
 
 describe('DockerProvider.populate / collect', () => {
-  it('populates through the pidfile-wrapped exec, then docker cp into the unit', async () => {
+  it('populates through the pidfile-wrapped exec, then docker cp into the unit, then stamps the activity baseline', async () => {
     const { exec, calls } = fakeExec(() => undefined)
     await makeProvider(exec).populate('dsh-lab-x', { source: '/host/layer', target: '/workspace' })
-    const [wrap, cp] = calls
+    const [wrap, cp, stamp] = calls
     expect(wrap?.slice(0, 4)).toEqual(['exec', 'dsh-lab-x', 'sh', '-c'])
     expect(wrap?.[4]).toContain('echo $$ > /run/dsh-lab/pids/$$.pid')
     expect(wrap?.slice(-3)).toEqual(['mkdir', '-p', '/workspace'])
     expect(cp).toEqual(['cp', '/host/layer/.', 'dsh-lab-x:/workspace'])
+    // docker cp preserves source mtimes; the marker is the lastActivityAt baseline.
+    expect(stamp?.slice(-2)).toEqual(['touch', '/workspace/.lab-materialized'])
   })
 
   it('collects out of the unit with docker cp', async () => {

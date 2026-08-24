@@ -24,11 +24,11 @@ export interface CliIo {
 const USAGE = `dsh-lab <verb> [options]
 
   acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
-  populate UNIT --source DIR [--target DIR] [--manifest FILE]
-  collect UNIT --source DIR --target DIR [--kind K]
+  populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
+  collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
   checkpoint UNIT --name NAME
   verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
-  archive UNIT --target DIR [--kind K]
+  archive UNIT --target DIR [--kind K] [--artifact-path P]
   release UNIT [--force]
   status [UNIT] [--json]
 
@@ -72,7 +72,12 @@ function parseArgs(args: string[]): Parsed {
         parsed.bools.add(key)
       } else {
         i += 1
-        if (i >= args.length) throw new UsageError(`missing value for --${key}`)
+        if (i >= args.length) {
+          // Value-less at the end: let validation classify it (missing value
+          // for a known flag vs unknown flag).
+          parsed.bools.add(key)
+          break
+        }
         appendFlag(parsed, key, args[i] as string)
       }
     } else {
@@ -90,6 +95,32 @@ function appendFlag(parsed: Parsed, key: string, value: string): void {
 }
 
 class UsageError extends Error {}
+
+/** Flags each verb accepts. Unknown flags are a usage error — with or without a value (a misspelled `--manifest-path` must never exit 0). */
+const VERB_FLAGS: Record<string, { values: string[]; booleans: string[] }> = {
+  acquire: { values: ['image', 'mission', 'run', 'mount', 'env', 'workdir', 'command', 'max-concurrent'], booleans: ['help'] },
+  populate: { values: ['source', 'target', 'manifest', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
+  collect: { values: ['source', 'target', 'kind', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
+  checkpoint: { values: ['name', 'max-concurrent'], booleans: ['help'] },
+  verify: { values: ['source', 'timeout-ms', 'max-concurrent'], booleans: ['help'] },
+  archive: { values: ['target', 'kind', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
+  release: { values: ['max-concurrent'], booleans: ['force', 'help'] },
+  status: { values: ['max-concurrent'], booleans: ['help', 'json'] },
+}
+
+/** Reject any flag the verb does not know (parse-time consumption already recorded it). */
+function validateFlags(parsed: Parsed, verb: string): void {
+  const known = VERB_FLAGS[verb]
+  if (known === undefined) throw new UsageError(`unknown verb ${JSON.stringify(verb)}`)
+  for (const key of parsed.flags.keys()) {
+    if (!known.values.includes(key)) throw new UsageError(`unknown flag --${key} for ${verb}`)
+  }
+  for (const key of parsed.bools) {
+    if (known.booleans.includes(key)) continue
+    if (known.values.includes(key)) throw new UsageError(`missing value for --${key}`)
+    throw new UsageError(`unknown flag --${key} for ${verb}`)
+  }
+}
 
 /** The one value of a flag, or undefined. */
 function one(parsed: Parsed, key: string): string | undefined {
@@ -239,6 +270,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       io.stdout(USAGE)
       return 0
     }
+    validateFlags(parsed, command)
     const mission = await probeMission(exec)
     const service = new LabService({
       providers: { docker: new DockerProvider(exec) },
@@ -273,20 +305,24 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'populate': {
         const target = one(parsed, 'target')
         const manifestPath = one(parsed, 'manifest')
+        const artifactPath = one(parsed, 'artifact-path')
         const manifest = await service.populate(requiredPositional(parsed), {
           source: required(parsed, 'source'),
           ...(target !== undefined ? { target } : {}),
           ...(manifestPath !== undefined ? { manifestPath } : {}),
+          ...(artifactPath !== undefined ? { artifactPath } : {}),
         })
         io.stdout(`${JSON.stringify({ sha: manifest.sha, count: manifest.count }, null, 2)}\n`)
         return 0
       }
       case 'collect': {
         const kind = one(parsed, 'kind')
+        const artifactPath = one(parsed, 'artifact-path')
         await service.collect(requiredPositional(parsed), {
           source: required(parsed, 'source'),
           target: required(parsed, 'target'),
           ...(kind !== undefined ? { kind } : {}),
+          ...(artifactPath !== undefined ? { artifactPath } : {}),
         })
         return 0
       }
@@ -310,9 +346,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       }
       case 'archive': {
         const kind = one(parsed, 'kind')
+        const artifactPath = one(parsed, 'artifact-path')
         await service.archive(requiredPositional(parsed), {
           target: required(parsed, 'target'),
           ...(kind !== undefined ? { kind } : {}),
+          ...(artifactPath !== undefined ? { artifactPath } : {}),
         })
         return 0
       }

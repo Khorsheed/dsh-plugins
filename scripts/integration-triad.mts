@@ -295,9 +295,10 @@ export async function runTriad(image: string): Promise<TriadResult> {
     log(`acquired ${unit.resource} (fingerprint ${unit.fingerprint}); mission refs: ${JSON.stringify(refsAfterAcquire)}`)
 
     await mission.transition(TRIAD_MISSION_ID, 'ws-ready', { runId: TRIAD_RUN_ID, by: 'driver' })
-    const manifestPath = join(tempRoot, 'mission', 'runs', TRIAD_RUN_ID, 'data', TRIAD_MISSION_ID, 'attempt-1', 'materialization.json')
+    const attemptDataDir = join(tempRoot, 'mission', 'runs', TRIAD_RUN_ID, 'data', TRIAD_MISSION_ID, 'attempt-1')
+    const manifestPath = join(attemptDataDir, 'materialization.json')
     mkdirSync(dirname(manifestPath), { recursive: true })
-    const materialization = await lab.populate(unit.id, { source: worktree.path, manifestPath })
+    const materialization = await lab.populate(unit.id, { source: worktree.path, manifestPath, artifactPath: 'materialization.json' })
     log(`populated ${materialization.count} file(s), manifest sha ${materialization.sha.slice(0, 12)}…`)
     await mission.transition(TRIAD_MISSION_ID, 'working', { runId: TRIAD_RUN_ID, by: 'driver' })
 
@@ -315,8 +316,8 @@ export async function runTriad(image: string): Promise<TriadResult> {
       command: ['sh', '-c', 'mkdir -p /workspace/out && printf "triad output\\n" > /workspace/out/output.txt && cat /workspace/out/output.txt'],
     })
 
-    const collectTarget = join(tempRoot, 'collected', TRIAD_MISSION_ID)
-    await lab.collect(unit.id, { source: '/workspace/out', target: collectTarget })
+    const collectTarget = join(attemptDataDir, 'collected')
+    await lab.collect(unit.id, { source: '/workspace/out', target: collectTarget, artifactPath: 'collected' })
     const collectedContent = readFileSync(join(collectTarget, 'output.txt'), 'utf8')
     const artifactsAfterCollect = mission.get(TRIAD_MISSION_ID, TRIAD_RUN_ID).mission.attempts[0]?.artifacts ?? []
     await mission.transition(TRIAD_MISSION_ID, 'collected', { runId: TRIAD_RUN_ID, by: 'driver' })

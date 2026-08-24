@@ -18,7 +18,7 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 - **环境指纹**——`acquire` 解析镜像的 repo digest（缺省回退镜像 id，本地没有则先 pull），连同资源标识写进 mission 的 refs。环境变了结果就不可比——这是机制，不是约定。
 - **输入**——两条路：acquire 时声明 `mounts` 获得零拷贝只读绑定挂载（容器创建后无法追加挂载）；或 `populate` 把宿主机目录拷入运行中的单元（进入单元可写层的一份拷贝）。目录路径就是全部接口——datasets `worktree_path` 的产出或调用方自供路径皆可；lab 对 datasets 无代码级依赖，层白名单由产出路径的那一侧强制。
 - **物化清单**——`populate` 返回 `{ sha, count, files }`（逐文件内容哈希 + 排序后的整体哈希），给了 `manifestPath` 会写出清单文件并登记为 kind `materialization` 的 mission 产物。输入相同则哈希相同——并行单元拿到字节级相同题面的公平性证据——同时它还是 collect 的反向基线（哪些是给进去的、哪些是产出的）。
-- **活动事实，不是动词时间戳**——`status` 的 `lastActivityAt` 取自单元内 workspace 文件的最新 mtime（干活就会写文件；那段时间 lab 根本不被调用，动词时间戳是假指标），辅以 cgroup `cpu.stat` 的容器累计 CPU。
+- **活动事实，不是动词时间戳**——`status` 的 `lastActivityAt` 取自单元内 workspace 文件的最新 mtime（干活就会写文件；那段时间 lab 根本不被调用，动词时间戳是假指标），辅以 cgroup `cpu.stat` 的容器累计 CPU。由于 `docker cp` 保留源文件 mtime，`populate` 会在目标目录打入 `.lab-materialized` 标记作为活动基线——否则刚 populate 完的单元会显得已闲置了源文件的整个年龄。
 - **孤儿进程补偿**——lab 自己 spawn 的每条容器内命令都经过一层 wrapper，把自身 pid 记到 `/run/dsh-lab/pids/`；`release` 先进容器按 pid SIGTERM 清扫，再移除容器。覆盖范围是 provider 自己的 exec 路径——他人 exec 进容器的进程不在 lab 的视野内。
 - **`maxConcurrentUnits`**——一个纯数字上限（config，默认 4）：达到上限 `acquire` 拒绝并报错明确。lab 不理解"哪些阶段可并发"（那是调用方的语义），一个数字足以挡住误并发——而误并发会悄悄毁掉对耗时敏感的测量。
 - **检查点**——提交工作区（首次 checkpoint 时自动 `git init`）并打 tag；commit sha 写入 mission 检查点的 `ref`。只读挂载的工作区会在此处报错——它无法被提交，这正是正确的信号。
@@ -69,11 +69,11 @@ mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addC
 
 ```sh
 dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
-dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE]
-dsh-lab collect UNIT --source DIR --target DIR [--kind K]
+dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
+dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
 dsh-lab checkpoint UNIT --name NAME
 dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
-dsh-lab archive UNIT --target DIR [--kind K]
+dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
 dsh-lab release UNIT [--force]
 dsh-lab status [UNIT] [--json]
 ```

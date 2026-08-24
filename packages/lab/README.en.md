@@ -18,7 +18,7 @@ Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over 
 - **Environment fingerprint** — `acquire` resolves the image's repo digest (falling back to the image id, pulling when absent locally) and writes it into the mission's refs together with the resource id. Environments differ → results aren't comparable; this is a mechanism, not a convention.
 - **Inputs** — two paths: declare `mounts` at acquire for a zero-copy read-only bind mount (container mounts cannot be added after creation), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
 - **Materialization manifest** — `populate` returns `{ sha, count, files }` (per-file content hashes plus an overall hash over the sorted list), and with `manifestPath` writes the manifest file and registers it as a mission artifact of kind `materialization`. Identical inputs hash identically — the byte-level fairness proof across parallel units — and the manifest doubles as the baseline a later `collect` diffs against (what was given vs what was produced).
-- **Activity facts, not verb timestamps** — `status` reports `lastActivityAt` from the newest workspace file mtime inside the unit (work writes files; lab is not invoked meanwhile, so a verb-call timestamp would be a fake metric), plus cumulative container CPU from cgroup `cpu.stat` as the secondary fact.
+- **Activity facts, not verb timestamps** — `status` reports `lastActivityAt` from the newest workspace file mtime inside the unit (work writes files; lab is not invoked meanwhile, so a verb-call timestamp would be a fake metric), plus cumulative container CPU from cgroup `cpu.stat` as the secondary fact. Because `docker cp` preserves source mtimes, `populate` stamps a `.lab-materialized` marker into the target as the activity baseline — otherwise a freshly populated unit would look idle for the source's whole age.
 - **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach.
 - **`maxConcurrentUnits`** — a plain ceiling (config, default 4): `acquire` refuses at the limit with an explicit error. lab doesn't know which phases may overlap (that's the caller's semantics); one number blocks accidental concurrency, which silently corrupts timing-sensitive measurements.
 - **Checkpoint** — commit the workspace (auto-initialized as a git repo on first checkpoint) and tag it; the commit sha goes into the mission's checkpoint `ref`. A read-only mounted workspace fails loud — it cannot be committed, which is the correct signal.
@@ -69,11 +69,11 @@ The mission integration is a probed structural face (`setRefs` / `addArtifact` /
 
 ```sh
 dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
-dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE]
-dsh-lab collect UNIT --source DIR --target DIR [--kind K]
+dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
+dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
 dsh-lab checkpoint UNIT --name NAME
 dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
-dsh-lab archive UNIT --target DIR [--kind K]
+dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
 dsh-lab release UNIT [--force]
 dsh-lab status [UNIT] [--json]
 ```

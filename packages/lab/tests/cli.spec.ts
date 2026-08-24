@@ -185,3 +185,17 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
     expect(run.stdout).toContain('t1')
   })
 })
+
+describe('dsh-lab CLI flag validation', () => {
+  it('an unknown flag WITH a value exits 2, not silent success', async () => {
+    const run = await runLab(['populate', 't1', '--source', '/tmp', '--manifest-path', '/tmp/m.json'], {}, false)
+    expect(run.code).toBe(2)
+    expect(run.stderr).toContain('unknown flag --manifest-path')
+  })
+
+  it('an unknown value-less flag exits 2', async () => {
+    const run = await runLab(['release', 't1', '--froce'], {}, false)
+    expect(run.code).toBe(2)
+    expect(run.stderr).toContain('unknown flag --froce')
+  })
+})

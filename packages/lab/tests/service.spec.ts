@@ -479,3 +479,38 @@ describe('status enrichment', () => {
     expect(warnings.some((w) => w.includes('status join'))).toBe(true)
   })
 })
+
+describe('status materialization tolerance', () => {
+  it('takes the NEWEST materialization; an older ghost record is never consulted', async () => {
+    const mission = fakeMission(true)
+    const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(dir)
+    mkdirSync(join(dir, 'layer'))
+    writeFileSync(join(dir, 'layer', 'task.md'), 'hello')
+    const manifestPath = join(dir, 'materialization.json')
+    const { service } = makeService({ mission })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const manifest = await service.populate(info.id, { source: join(dir, 'layer'), manifestPath })
+    // A ghost record lands FIRST in registration order (the oldest); the
+    // newest-first read finds the real one and never reaches it.
+    mission.snapshot.attempts[0]?.artifacts.unshift({ path: join(dir, 'ghost.json'), kind: 'materialization' })
+    const [row] = await service.status(info.id)
+    expect(row?.taskHash).toBe(manifest.sha.slice(0, 8))
+  })
+
+  it('an unreadable newest record is skipped with a warning, falling back to the older readable one', async () => {
+    const mission = fakeMission(true)
+    const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
+    tmpDirs.push(dir)
+    mkdirSync(join(dir, 'layer'))
+    writeFileSync(join(dir, 'layer', 'task.md'), 'hello')
+    const manifestPath = join(dir, 'materialization.json')
+    const { service, warnings } = makeService({ mission })
+    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
+    const manifest = await service.populate(info.id, { source: join(dir, 'layer'), manifestPath })
+    mission.snapshot.attempts[0]?.artifacts.push({ path: join(dir, 'gone.json'), kind: 'materialization' })
+    const [row] = await service.status(info.id)
+    expect(row?.taskHash).toBe(manifest.sha.slice(0, 8))
+    expect(warnings.some((w) => w.includes('gone.json') && w.includes('skipped'))).toBe(true)
+  })
+})
