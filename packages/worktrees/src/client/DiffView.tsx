@@ -1,27 +1,25 @@
 /**
- * Unified-diff renderer: colors a raw `git diff` output line-wise (meta
- * headers dim, `-` deletions error-tinted, `+` additions success-tinted,
- * hunk headers muted) and tracks the old/new line numbers from each `@@`
- * hunk header, so the gutter reads like a real diff viewer. There is no
- * official git-diff primitive — DiffBlock renders whole-file old/new sides,
- * which misrepresents a patch — so this component draws the patch with the
- * same token vocabulary.
+ * Unified-diff renderer styled to the official DiffBlock card anatomy
+ * (ui-primitives): the markdown code-block surface, 12px radius, the code
+ * font, a bold path header, `- `/`+ ` prefixes in the error/success state
+ * tokens, a floating copy control, and a `└ +A -R · N file(s)` footer.
+ * The official DiffBlock itself draws whole-file old/new sides, which
+ * misrepresents a patch, so this component renders the actual unified diff
+ * in the same visual vocabulary. The body keeps `white-space: pre` and
+ * scrolls horizontally — a diff is read by its indentation.
  */
 import { useMemo, useState, type ReactNode } from 'react'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './DiffView.module.css'
 
 /** Body lines shown before the middle collapses. */
 const MAX_LINES = 200
 
-/** One classified diff line with its tracked line numbers. */
+/** One classified diff line. */
 interface DiffLine {
   kind: 'meta' | 'hunk' | 'add' | 'del' | 'ctx'
   text: string
-  /** Old-side line number (null for pure additions / meta rows). */
-  old: number | null
-  /** New-side line number (null for pure deletions / meta rows). */
-  next: number | null
 }
 
 /** Classify a unified-diff line. */
@@ -44,37 +42,18 @@ function classify(line: string): DiffLine['kind'] {
   return 'ctx'
 }
 
-/** Parse `@@ -a[,b] +c[,d] @@` into the old/new start line numbers. */
-const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
-
-/** Classify the full diff into numbered rows. */
-function parseDiff(diff: string): DiffLine[] {
+/** Split a patch into rows plus the +/- totals. */
+function parseDiff(diff: string): { rows: DiffLine[]; added: number; removed: number } {
   const rows: DiffLine[] = []
-  let oldCursor = 0
-  let newCursor = 0
+  let added = 0
+  let removed = 0
   for (const raw of diff.split('\n')) {
     const kind = classify(raw)
-    let old: number | null = null
-    let next: number | null = null
-    if (kind === 'hunk') {
-      const match = HUNK.exec(raw)
-      oldCursor = match === null ? 0 : Number(match[1])
-      newCursor = match === null ? 0 : Number(match[2])
-    } else if (kind === 'ctx') {
-      old = oldCursor
-      next = newCursor
-      oldCursor += 1
-      newCursor += 1
-    } else if (kind === 'del') {
-      old = oldCursor
-      oldCursor += 1
-    } else if (kind === 'add') {
-      next = newCursor
-      newCursor += 1
-    }
-    rows.push({ kind, text: raw, old, next })
+    if (kind === 'add') added += 1
+    else if (kind === 'del') removed += 1
+    rows.push({ kind, text: raw })
   }
-  return rows
+  return { rows, added, removed }
 }
 
 /** Props of the diff view. */
@@ -88,34 +67,49 @@ export interface DiffViewProps {
 /** The diff view. */
 export function DiffView({ diff, t }: DiffViewProps): ReactNode {
   const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  const lines = useMemo<DiffLine[]>(() => {
-    if (diff === null || diff === '') return []
+  const parsed = useMemo(() => {
+    if (diff === null || diff === '') return null
     return parseDiff(diff)
   }, [diff])
 
-  if (lines.length === 0) return <div className={css.empty}>{t('detail.noSelection')}</div>
+  if (parsed === null) return <div className={css.empty}>{t('detail.noSelection')}</div>
 
-  const shown = expanded ? lines : lines.slice(0, MAX_LINES)
-  const collapsed = !expanded && lines.length > MAX_LINES
+  const shown = expanded ? parsed.rows : parsed.rows.slice(0, MAX_LINES)
+  const collapsed = !expanded && parsed.rows.length > MAX_LINES
+  const fileCount = diff === null ? 0 : 1
+
+  const onCopy = (): void => {
+    if (diff === null) return
+    void writeClipboard(diff).then(ok => {
+      if (ok) {
+        setCopied(true)
+        window.setTimeout(() => { setCopied(false) }, 1200)
+      }
+    })
+  }
 
   return (
-    <div className={css.root}>
-      <pre className={css.pre}>
+    <div className={css.block}>
+      <button type="button" className={css.copyButton} onClick={onCopy} aria-label={copied ? t('action.copied') : t('action.copy')}>
+        {copied ? t('action.copied') : t('action.copy')}
+      </button>
+      <pre className={css.body}>
         {shown.map((line, index) => (
           <div key={index} className={`${css.line} ${css[`kind_${line.kind}`]}`}>
-            <span className={css.num}>{line.old === null ? '' : line.old}</span>
-            <span className={css.num}>{line.next === null ? '' : line.next}</span>
-            <span className={css.gutter}>{line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}</span>
-            <span className={css.text}>{line.text === '' ? ' ' : line.text}</span>
+            {line.text === '' ? ' ' : line.text}
           </div>
         ))}
         {collapsed && (
           <button type="button" className={css.more} onClick={() => { setExpanded(true) }}>
-            {t('detail.diff')} · {lines.length - MAX_LINES} …
+            {t('detail.diff')} · {parsed.rows.length - MAX_LINES} …
           </button>
         )}
       </pre>
+      <div className={css.footer}>
+        └ +{parsed.added} −{parsed.removed} · {fileCount} {t('commits.files', { count: fileCount })}
+      </div>
     </div>
   )
 }

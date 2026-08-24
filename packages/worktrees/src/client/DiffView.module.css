@@ -1,47 +1,48 @@
-/* The unified-diff renderer: monospace rows with line-number columns and
-   per-kind tinting, using the official state tokens (the DiffBlock
-   vocabulary). */
+/* The unified-diff card, styled to the official DiffBlock anatomy (code-block
+   surface, 12px radius, markdown code font, path header in the primary tone,
+   `- `/`+ ` prefixes in the state tokens, floating copy, footer counts). */
 
-.root {
-  min-width: 0;
+.block {
+  --dsl-diff-radius: 12px;
+  --dsl-diff-line-height: 22px;
+
+  position: relative;
+  margin: 8px 0;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-markdown-code-block);
+  border-radius: var(--dsl-diff-radius);
 }
 
-.pre {
+.copyButton {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  background-color: transparent;
+  border: none;
+  padding: 0;
   margin: 0;
-  padding: 8px 0;
-  overflow-x: auto;
-  font-family: var(--dsw-font-markdown-code-block, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: var(--dsw-font-xs-13);
+}
+
+.copyButton:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  padding: 12px 14px;
+  margin: 0;
+  font: var(--dsw-font-markdown-code-block);
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: 12px;
+  line-height: var(--dsl-diff-line-height);
 }
 
 .line {
-  display: flex;
-  min-width: max-content;
-  padding: 0 4px 0 8px;
-}
-
-.num {
-  flex: none;
-  width: 4ch;
-  padding-right: 6px;
-  text-align: right;
-  color: var(--dsw-alias-label-tertiary);
-  user-select: none;
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.gutter {
-  flex: none;
-  width: 12px;
-  text-align: center;
-  color: var(--dsw-alias-label-tertiary);
-  user-select: none;
-}
-
-.text {
+  min-height: var(--dsl-diff-line-height);
   white-space: pre;
 }
 
@@ -51,15 +52,32 @@
 
 .kind_hunk {
   color: var(--dsw-alias-brand-primary);
-  background: var(--dsw-alias-interactive-bg-hover-accent);
-}
-
-.kind_add {
-  background: var(--dsw-alias-state-success-tertiary);
+  font-weight: 600;
 }
 
 .kind_del {
-  background: var(--dsw-alias-state-error-secondary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.kind_del::before {
+  content: '- ';
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.kind_add {
+  color: var(--dsw-alias-label-primary);
+}
+
+.kind_add::before {
+  content: '+ ';
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.footer {
+  padding: 0 14px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xs-13);
+  font-size: 11px;
 }
 
 .empty {
@@ -70,7 +88,7 @@
 
 .more {
   display: block;
-  margin: 4px 12px;
+  margin: 4px 0;
   padding: 2px 8px;
   border: 0;
   border-radius: 4px;
