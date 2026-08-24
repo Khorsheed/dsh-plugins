@@ -14,7 +14,7 @@ A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's le
 - **Ambient rest state** — only dimmed ticks show until you hover the strip or focus the list.
 - **Reading position tracking** — the current position's tick stays lit blue, anchoring to the user message a long answer is replying to.
 - **Click to jump** — a row scrolls the transcript to that message; the list follows the reading position.
-- **Long-history friendly** — a short list centers vertically; a long one scrolls and pages older history at its top.
+- **Long-history friendly** — a short list rests on the message area’s bottom edge (flush with the chat input box); a long one scrolls and pages older history at its top.
 
 ## Install
 

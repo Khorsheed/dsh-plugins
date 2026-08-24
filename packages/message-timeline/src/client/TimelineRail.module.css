@@ -1,8 +1,10 @@
-/* The flat timeline: no frame, no visible scrollbar. The auto-margin spacers
-   split the free space, so a short list centers vertically while an
-   overflowing one starts at the top and scrolls invisibly. The panel itself
-   takes no pointer events: at rest only the narrow tick strip of each row is
-   sensitive, so crossing the list on the way to the sidebar never lights it. */
+/* The flat timeline: no frame, no visible scrollbar. A short list rests on
+   the panel's bottom edge — flush with the chat input box, next to the
+   conversation's newest messages — while an overflowing one starts at the
+   top and scrolls invisibly (its bottom still ends at the composer). The
+   panel itself takes no pointer events: at rest only the narrow tick strip
+   of each row is sensitive, so crossing the list on the way to the sidebar
+   never lights it. */
 .panel {
   position: fixed;
   display: flex;
@@ -14,10 +16,16 @@
   pointer-events: none;
 }
 
-.panel::before,
+.panel::before {
+  content: '';
+  /* The auto top margin absorbs every pixel of free space above the list,
+     so a short list sits on the bottom edge instead of floating centered. */
+  margin: auto 0 0;
+}
+
 .panel::after {
   content: '';
-  margin: auto;
+  margin: 0;
 }
 
 .panel::-webkit-scrollbar {

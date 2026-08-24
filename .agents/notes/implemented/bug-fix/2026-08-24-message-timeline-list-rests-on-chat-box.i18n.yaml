@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-message-timeline-list-rests-on-chat-box.md
+.agents/notes/implemented/bug-fix/2026-08-24-message-timeline-list-rests-on-chat-box.md: 768445183a4a62a7bbdabe76750c9f3119643ed1
+.agents/notes/implemented/bug-fix/2026-08-24-message-timeline-list-rests-on-chat-box.zh.md: f3079fa4f33a53d9d2032770b1e3cff4892f6684

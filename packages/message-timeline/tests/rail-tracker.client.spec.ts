@@ -25,15 +25,43 @@ afterEach(() => {
 })
 
 describe('measureGeometry', () => {
-  it('insets the scrollport rect and clears the composer seat', () => {
+  it('ends the box at the chat input card, ignoring dock cards above it', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
-    const composer = document.createElement('div')
-    composer.setAttribute('data-composer-seat', '')
-    rect(composer, { top: 260, left: 0, width: 400, height: 40 })
-    scrollport.appendChild(composer)
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    rect(seat, { top: 240, left: 0, width: 400, height: 60 })
+    // A goal/todo dock card sits above the input inside the seat.
+    const dock = document.createElement('div')
+    rect(dock, { top: 240, left: 0, width: 400, height: 20 })
+    seat.appendChild(dock)
+    const input = document.createElement('div')
+    input.setAttribute('data-composer-card', '')
+    rect(input, { top: 260, left: 0, width: 400, height: 40 })
+    seat.appendChild(input)
+    scrollport.appendChild(seat)
 
-    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 244, width: 400 })
+    // The panel ends 8px above the input card (260), NOT above the dock card
+    // (240): dock cards must not push the timeline up off the chat box.
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 224, width: 400 })
+  })
+
+  it('falls back to the composer seat top when the input card marker is absent', () => {
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    rect(seat, { top: 240, left: 0, width: 400, height: 60 })
+    scrollport.appendChild(seat)
+
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 204, width: 400 })
+  })
+
+  it('falls back to the column bottom when no composer marker exists', () => {
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
+
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 284, width: 400 })
   })
 
   it('returns null while the scrollport has no laid-out size', () => {
