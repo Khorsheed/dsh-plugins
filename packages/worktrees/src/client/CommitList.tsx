@@ -65,7 +65,8 @@ export function CommitList({
             <button
               key={commit.sha}
               type="button"
-              className={`${css.row} ${selected ? css.selected : ''}`}
+              className={css.row}
+              aria-selected={selected}
               onClick={() => { onSelectCommit(commit.sha) }}
             >
               <span className={css.subject}>{commit.subject}</span>

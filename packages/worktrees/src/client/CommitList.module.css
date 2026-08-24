@@ -1,7 +1,9 @@
-/* The commit list: a fast-scan pane — 48px header (count + leading + the
-   collapse toggle on the right), 50px rows separated by a 2px gap, a weight
-   500 title on the first line and `sha · files · time` on the second. The
-   selected row is a light-blue surface with a 2px left accent. */
+/* The commit list: a fast-scan pane. 48px header with its text at 16px; 52px
+   rows (text also at 16px, aligned with the header), title ↔ meta 4px apart,
+   a 2px row gap and an 8px top break so the first row is never flush with the
+   header. The selected row is a theme-aware light/dark-blue surface with a 2px
+   left accent — never a black keyboard-focus border; a real focus ring appears
+   only on :focus-visible. */
 
 .list {
   display: flex;
@@ -17,7 +19,7 @@
   justify-content: space-between;
   gap: 8px;
   height: 48px;
-  padding: 0 10px;
+  padding: 0 16px;
 }
 
 .title {
@@ -63,24 +65,25 @@
 
 .rows {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
   overflow: auto;
-  padding: 0 6px 8px;
+  padding: 8px 6px 8px;
 }
 
-/* One commit row: 50px, no divider — the 2px gap separates. */
+/* One commit row: 52px, text at 6px (list) + 10px (row) = 16px, aligned with
+   the header. No divider — the 2px gap separates. */
 .row {
   display: flex;
+  flex: none;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
-  width: 100%;
-  height: 50px;
-  padding: 0 10px;
+  min-height: 52px;
+  padding: 8px 10px 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -88,6 +91,17 @@
 
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Rows never paint a default focus ring on click — only a real keyboard
+   :focus-visible gets one, in the brand tone. */
+.row:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
 }
 
 .subject {
@@ -100,6 +114,7 @@
 }
 
 .rowMeta {
+  margin-top: 4px;
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -130,11 +145,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Selected: a light-blue surface with a 2px left accent, per the spec. */
-.selected,
-.selected:hover {
-  background: var(--dsw-alias-interactive-bg-active);
-  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary);
+/* Selected: a theme-aware light-blue surface + 2px left accent (never a black
+   border). Light mode uses the product's light blue; dark mode a deep navy. */
+.row[aria-selected='true'],
+.row[aria-selected='true']:hover,
+.row[aria-selected='true']:focus-visible {
+  background: #eaf0ff;
+  box-shadow: inset 2px 0 0 #315efb;
+  color: var(--dsw-alias-label-primary);
+}
+
+body[data-ds-dark-theme] .row[aria-selected='true'],
+body[data-ds-dark-theme] .row[aria-selected='true']:hover,
+body[data-ds-dark-theme] .row[aria-selected='true']:focus-visible {
+  background: #1c2635;
+  box-shadow: inset 2px 0 0 #5b8bff;
 }
 
 .empty {
