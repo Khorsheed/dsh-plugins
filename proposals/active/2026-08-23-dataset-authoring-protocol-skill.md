@@ -1,7 +1,7 @@
 # 数据集作者协议与 skill（dataset-authoring）
 
 - **分类**：plugin
-- **状态**：idea（协议 v1 经评估 agent 一轮参谋已修订，见附录；待方向确认后升 planned）
+- **状态**：planned（协议 v1-rev1 已经评估 agent 评审修订并获方向确认）
 - **最后更新**：2026-08-23
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）；skill 作生成侧告知有先例（`2026-08-21-file-view-html-rendering` 的 `3d-artifact` skill），无同意图提案
 - **官方依赖**：纯插件（skill 发行走 `dsh-skill-filesystem` 的 `customSkillDirs`/`bundledSkillDir` config，可经 cordis.patch.yml 注入；若发现更干净的声明式 seam 缺席，记 upstream 候选）
