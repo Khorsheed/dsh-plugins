@@ -1,0 +1,340 @@
+/* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop,
+   following the FilePreviewDrawer geometry and the official alias tokens.
+
+   The emphasis color system is shared across the drawer's surfaces so the
+   mode tabs, the commit list and the file table read as ONE design system:
+   a single blue family (active / active-bg / hover) that flips for dark. */
+:root {
+  --wt-active: #315efb;
+  --wt-active-bg: #eaf0ff;
+  --wt-hover-bg: #f1f3f6;
+}
+
+body[data-ds-dark-theme] {
+  --wt-active: #5b8bff;
+  --wt-active-bg: #1c2635;
+  --wt-hover-bg: #1f2229;
+}
+
+/* The drawer's scroll regions use a thinner, softer bar than the 8px global. */
+.treeColumn::-webkit-scrollbar,
+.detailColumn::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.treeColumn::-webkit-scrollbar-thumb,
+.detailColumn::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l1, #cfd3d8);
+  border-radius: 3px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  /* The layer itself is click-through, like file-preview: no dim mask, the
+     drawer's own content owns pointer events and closes via ✕ / Escape. */
+  pointer-events: none;
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+  pointer-events: auto;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 58px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.summary {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.summaryBranch {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The branch glyph sits ~2px lower than the 22px title line, matching the
+   icon's optical baseline against the following text. */
+.summaryBranch > svg {
+  transform: translateY(2px);
+}
+
+.mainTag {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.summaryMeta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.copied {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* A compact, left-aligned tab bar: each tab hugs its content (label + count)
+   instead of stretching across the drawer, so switching never travels far. */
+.switcher {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.switch:hover {
+  background: var(--wt-hover-bg);
+  color: var(--dsw-alias-label-primary);
+}
+
+.switchActive {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+/* The active tab's bottom indicator bar, in the brand tone. */
+.switchActive::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--wt-active);
+}
+
+.switchCount {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.treeColumn {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  overflow: auto;
+  /* Same gutter reservation as the detail body — the tree's own scrollbar
+     must not shift the split width either. */
+  scrollbar-gutter: stable;
+}
+
+/* Drag handle on the tree/detail boundary: the tree width is draggable in
+   the 280–380 band set by the component. */
+.treeResize {
+  position: relative;
+  flex: none;
+  width: 5px;
+  margin-left: -2px;
+  margin-right: -2px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.treeResize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.treeResize:hover::after,
+.treeResize:active::after {
+  opacity: 1;
+}
+
+.treeHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.collapseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.collapseButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Drag handle on the left edge: adjust the drawer width without fullscreen. */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  z-index: 5;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:active::after {
+  opacity: 1;
+}
+
+/* The commits-mode header: the mode title on the left, the collapse toggle
+   right — mirrors the file tree's own header so both modes read the same. */
+.commitsHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* The collapsed icon rail: a slim column holding only the expand toggle. */
+.rail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  flex-direction: column;
+  padding-top: 4px;
+  width: 36px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.detailColumn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,117 @@
+/* The unified-diff card, matching the official DiffBlock anatomy exactly
+   (ui-primitives): markdown code-block surface, 12px radius, the markdown
+   code-block font token, a primary/600 path header, whole lines tinted with
+   the state tokens (`- `/`+ ` prefixes drawn as content), a floating copy
+   control, and the `└ +A -R · N file(s)` footer. DiffBlock itself takes
+   whole-file old/new sides (misrepresents a patch), so this component draws
+   the actual unified diff in the same vocabulary. */
+
+.block {
+  --dsl-diff-radius: 12px;
+  --dsl-diff-line-height: 22px;
+
+  position: relative;
+  margin: 8px 0;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-markdown-code-block);
+  border-radius: var(--dsl-diff-radius);
+}
+
+.copyButton {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: var(--dsw-font-xs-13);
+}
+
+.copyButton:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  padding: 12px 14px;
+  margin: 0;
+  font: var(--dsw-font-markdown-code-block);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.line {
+  min-height: var(--dsl-diff-line-height);
+  /* Soft-wrap to the surface width so a narrow drawer never hides content
+     off to the right — the file-preview detail does the same for diffs. */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The patch's file header (`diff --git …`) reads like the official path
+   header: the primary tone, set apart by weight. */
+.kind_path {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  padding-right: 56px;
+}
+
+/* Structural chrome (index lines, `--- `/`+++ `, hunk headers) in the dim
+   tone — the official card keeps only the path and the change lines. */
+.kind_meta,
+.kind_hunk {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The diff's meaning-carrying colors: whole removed lines on the error
+   token, whole added lines on the success token — the official DiffBlock
+   vocabulary. The `- `/`+ ` prefix is drawn so a copied line and the shown
+   line agree, and the sign reads without relying on color alone. */
+.kind_del {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.kind_del::before {
+  content: '- ';
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.kind_add {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.kind_add::before {
+  content: '+ ';
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.footer {
+  padding: 0 14px 12px;
+  font: var(--dsw-font-markdown-code-block);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.empty {
+  padding: 16px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.more {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.more:hover {
+  color: var(--dsw-alias-label-secondary);
+}
