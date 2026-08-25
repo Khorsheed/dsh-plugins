@@ -18,7 +18,7 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import datasetsRemote from '@khorsheed/dsh-datasets/remote'
-import type { DatasetBinding, ReadQuery } from '../types.ts'
+import type { DatasetBinding, ReadPassthroughRequest, ReadQuery } from '../types.ts'
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { createDatasetsViewStore } from './store.ts'
@@ -74,6 +74,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       previewRepo: (sid: SessionId, path: string) => remote.previewRepo(sid, { path }),
       listDatasets: (sid: SessionId, dataset?: string) => remote.list(sid, dataset === undefined ? {} : { dataset }),
       readFile: (sid: SessionId, query: ReadQuery) => remote.read(sid, query),
+      readPassthroughFile: (sid: SessionId, query: ReadPassthroughRequest) => remote.readPassthrough(sid, query),
       isLoopback: connection.isLoopback,
       hooks: { hostDescription: connection.hostDescription },
       pickDirectory: () => ctx.workspaces.pickDirectory(),

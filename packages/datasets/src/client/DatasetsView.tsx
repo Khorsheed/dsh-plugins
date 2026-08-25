@@ -78,9 +78,16 @@ function Chevron(props: { open: boolean }) {
 }
 
 
-/** The passthrough zone as a visible group: file names listed, never clickable content. */
-function PassthroughNode(props: { files: readonly string[]; t: DatasetsViewProps['t'] }) {
-  const { files, t } = props
+/** The passthrough zone as a visible group: files are readable like layer
+ * files (the operator view blocks no human) and keep the unprotected marker. */
+function PassthroughNode(props: {
+  dataset: string
+  files: readonly string[]
+  selection: DatasetSelection | null
+  onSelect: (selection: DatasetSelection) => void
+  t: DatasetsViewProps['t']
+}) {
+  const { dataset, files, selection, onSelect, t } = props
   const [open, setOpen] = useState(false)
   return (
     <div className={css.layer}>
@@ -90,9 +97,22 @@ function PassthroughNode(props: { files: readonly string[]; t: DatasetsViewProps
       </button>
       {open && (
         <div className={css.children}>
-          {files.map(file => (
-            <div key={file} className={css.passthroughFile} title={file}>{file}</div>
-          ))}
+          {files.map((file) => {
+            const selected = selection?.kind === 'passthrough'
+              && selection.dataset === dataset && selection.path === file
+            return (
+              <button
+                key={file}
+                type="button"
+                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
+                title={`${file} · ${t('tree.unprotected')}`}
+                onClick={() => { onSelect({ kind: 'passthrough', dataset, item: null, path: file }) }}
+              >
+                <FileIcon />
+                <span className={css.fileName}>{file}</span>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -129,7 +149,7 @@ function LayerNode(props: {
       {open && (
         <div className={css.children}>
           {paths.map((path) => {
-            const selected = selection !== null
+            const selected = selection?.kind === 'layer'
               && selection.dataset === dataset && selection.item === item
               && selection.layer === layer && selection.path === path
             return (
@@ -137,7 +157,7 @@ function LayerNode(props: {
                 key={path}
                 type="button"
                 className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
-                onClick={() => { onSelect({ dataset, item, layer, path }) }}
+                onClick={() => { onSelect({ kind: 'layer', dataset, item, layer, path }) }}
               >
                 <FileIcon />
                 <span className={css.fileName}>{path}</span>
@@ -170,13 +190,25 @@ function ItemNode(props: {
       </button>
       {open && (
         <div className={css.children}>
-          {item.metadata !== undefined && (
+          {item.metadata !== undefined && (() => {
             // item.json sits at the passthrough zone's footing: always
-            // readable by every bound session — the author must see that.
-            <div className={css.passthroughFile} title={t('tree.unprotected')}>
-              item.json · {t('tree.unprotected')}
-            </div>
-          )}
+            // readable by every bound session — and readable HERE, like any
+            // layer file; the marker says it is unprotected, not unreadable.
+            const selected = selection?.kind === 'passthrough'
+              && selection.dataset === dataset && selection.item === item.id
+              && selection.path === `items/${item.id}/item.json`
+            return (
+              <button
+                type="button"
+                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
+                title={t('tree.unprotected')}
+                onClick={() => { onSelect({ kind: 'passthrough', dataset, item: item.id, path: `items/${item.id}/item.json` }) }}
+              >
+                <FileIcon />
+                <span className={css.fileName}>item.json · {t('tree.unprotected')}</span>
+              </button>
+            )
+          })()}
           {Object.entries(item.layers).map(([layer, paths]) => (
             <LayerNode
               key={layer}
@@ -204,7 +236,7 @@ function ItemNode(props: {
 export function DatasetsView(props: DatasetsViewProps) {
   const {
     sessionId, useSessions, useStore, actions, t,
-    fetchBinding, bindSession, unbindSession, listDatasets, readFile,
+    fetchBinding, bindSession, unbindSession, listDatasets, readFile, readPassthroughFile,
     isLoopback, pickDirectory, previewRepo,
   } = props
   const { useHostDescription } = props
@@ -284,18 +316,21 @@ export function DatasetsView(props: DatasetsViewProps) {
     const target = selection
     actions.setPreviewLoading(true)
     actions.setPreviewError(null)
-    void readFile(sessionId, {
-      dataset: target.dataset,
-      ...(target.item !== null ? { item: target.item } : {}),
-      layer: target.layer, path: target.path,
-    }).then((result) => {
+    const request = target.kind === 'passthrough'
+      ? readPassthroughFile(sessionId, { dataset: target.dataset, path: target.path })
+      : readFile(sessionId, {
+        dataset: target.dataset,
+        ...(target.item !== null ? { item: target.item } : {}),
+        layer: target.layer, path: target.path,
+      })
+    void request.then((result) => {
       if (cancelled) return
       actions.setPreviewLoading(false)
       if (result.ok) actions.setPreview(result.value)
       else actions.setPreviewError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, selection, actions, readFile])
+  }, [sessionId, selection, actions, readFile, readPassthroughFile])
 
   const submitBinding = (next: DatasetBinding): void => {
     void bindSession(sessionId, next).then((result) => {
@@ -418,7 +453,13 @@ export function DatasetsView(props: DatasetsViewProps) {
                 {expanded && (
                   <div className={css.children}>
                     {(passthrough[dataset.id] ?? []).length > 0 && (
-                      <PassthroughNode files={passthrough[dataset.id] ?? []} t={t} />
+                      <PassthroughNode
+                        dataset={dataset.id}
+                        files={passthrough[dataset.id] ?? []}
+                        selection={selection}
+                        onSelect={(next) => { actions.select(next) }}
+                        t={t}
+                      />
                     )}
                     {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (
                       <div className={css.sharedGroup}>
@@ -462,7 +503,9 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.previewHeader}>
               <FileIcon />
               <span className={css.previewPath}>
-                {selection.item ?? t('tree.shared')} / {selection.layer}/{selection.path}
+                {selection.kind === 'passthrough'
+                  ? `${selection.item ?? t('tree.passthroughShort')} / ${selection.path}`
+                  : `${selection.item ?? t('tree.shared')} / ${selection.layer}/${selection.path}`}
               </span>
               {selectedItem?.metadata !== undefined && (
                 <MetaPills metadata={selectedItem.metadata} t={t} />
@@ -481,7 +524,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.previewScroll}>
               <div className={css.previewContent}>
                 <DatasetPreview
-                  key={`${selection.item}/${selection.layer}/${selection.path}`}
+                  key={`${selection.kind}/${selection.item}/${selection.kind === 'layer' ? selection.layer : ''}/${selection.path}`}
                   path={selection.path}
                   content={preview.content}
                   t={t}

@@ -21,6 +21,10 @@ Status: implemented
 
 线面增量（全走对象，exact-arity 教训不涉及）：`ListItemsResult.passthrough`；`ReadQuery` 不变；`DatasetScope.operator` 是 host 内部。产物已重新生成。
 
+## 上线后修正：人可点读透传文件
+
+后续冒烟发现透传行（题集级透传区与 item.json 行）只列不读——与消费者拆分自相矛盾（「不受白名单保护」是警告标注，不是读取拦截；operator 视图不拦人）。修复：新增 `datasets/readPassthrough` Remote 方法（请求对象查询 `{dataset, path, commit?}`，遵循 exact-arity 教训）从 git 对象直读任意数据集相对路径文件——明确定位为 operator 专用通道：无层上限、刻意不暴露为模型工具。tab 的 selection 改为 kind 标记的联合类型（layer | passthrough）；透传行与 item.json 行成为可点读的文件行，走与层文件同一预览管线（item.json 经 JsonTree 渲染）。「不受白名单保护」标注保留——它警告，不再拦截。agent 面不变：item 元数据按协议经 list/show 对 agent 可读，agent 工具没有新增透传内容通道。
+
 ## Alternatives considered
 
 - **无敏感声明时也只放声明过的 modelFacing:true 层**——否决：会 newly 隐藏普通数据集里未声明的 item 级目录；底线只在声明了敏感性时才介入。

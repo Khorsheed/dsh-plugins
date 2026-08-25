@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { BindingSession } from '../src/binding.ts'
+import { DatasetsError } from '../src/dataset.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from '../src/service.ts'
 import { cleanup, commitAll, git, makeFixtureRepo, writeFiles, type FixtureRepo } from './helpers.ts'
 
@@ -187,6 +188,21 @@ describe('whitelist enforcement', () => {
     await expect(service().read({ repo: repo.dir }, {
       dataset: 'alpha', item: 'i1', layer: 'visible', path: '../../secret',
     })).rejects.toMatchObject({ code: 'INVALID_NAME' })
+  })
+})
+
+describe('readPassthrough (operator channel)', () => {
+  it('reads passthrough-zone files and item.json straight from the git object', async () => {
+    repo = makeFixtureRepo()
+    const scope = { repo: repo.dir, operator: true as const }
+    const handbook = await service().readPassthrough(scope, 'alpha', 'handbook.md')
+    expect(handbook.content).toBe('# handbook passthrough\n')
+    const meta = await service().readPassthrough(scope, 'alpha', 'items/i1/item.json')
+    expect(meta.content).toBe('{"difficulty":"hard"}\n')
+    await expect(service().readPassthrough(scope, 'alpha', 'missing.md'))
+      .rejects.toMatchObject({ code: 'FILE_NOT_FOUND' })
+    await expect(service().readPassthrough(scope, 'alpha', '../beta/dataset.json'))
+      .rejects.toThrowError(DatasetsError)
   })
 })
 

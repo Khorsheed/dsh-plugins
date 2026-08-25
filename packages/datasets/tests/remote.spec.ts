@@ -149,6 +149,21 @@ describe('DatasetsRemoteService', () => {
     await fiber.dispose()
   })
 
+  it('readPassthrough serves the passthrough zone to the operator (and stays off the agent tool surface)', async () => {
+    repo = makeFixtureRepo()
+    const { fiber, remote } = await bench()
+    const agent = agentOf(fakeSession())
+    await remote.bind(agent, { repoPath: repo.dir, layers: ['visible'] })
+    // The human reads passthrough content regardless of the agent whitelist.
+    const handbook = await remote.readPassthrough(agent, { dataset: 'alpha', path: 'handbook.md' })
+    expect(handbook.content).toBe('# handbook passthrough\n')
+    const meta = await remote.readPassthrough(agent, { dataset: 'alpha', path: 'items/i1/item.json' })
+    expect(meta.content).toBe('{"difficulty":"hard"}\n')
+    await expect(remote.readPassthrough(agent, { dataset: 'alpha', path: 'missing.md' }))
+      .rejects.toMatchObject({ code: 'FILE_NOT_FOUND' })
+    await fiber.dispose()
+  })
+
   it('fails loud with no binding and no default, and falls back to the configured default repo', async () => {
     repo = makeFixtureRepo()
     const unbound = await bench()

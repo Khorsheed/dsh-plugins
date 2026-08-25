@@ -21,6 +21,10 @@ All four landed in `@khorsheed/dsh-datasets` over one service core:
 
 Wire additions (all object-carried, the exact-arity lesson untouched): `ListItemsResult.passthrough`, `ReadQuery` unchanged, `DatasetScope.operator` is host-internal. Artifacts regenerated.
 
+## Post-release correction: passthrough reads for humans
+
+A follow-up smoke found the passthrough rows (dataset-level passthrough zone and the item.json line) listed but not clickable — a self-contradiction with the consumer split ("unprotected" is a warning, not a read gate; the human's operator view blocks nothing). Fixed: a new `datasets/readPassthrough` Remote method (request-object query `{dataset, path, commit?}`, per the exact-arity lesson) reads any dataset-relative file from the git object — explicitly an OPERATOR channel, with no layer ceiling and deliberately NOT exposed as a model tool. The tab's selection became a kind-tagged union (layer | passthrough); passthrough rows and the item.json line are clickable file rows through the same preview pipeline (JsonTree for item.json). The `不受白名单保护` annotations stay — they warn, they no longer block. The agent surface is unchanged: item metadata stays agent-readable through list/show by protocol design, and no agent tool gained a passthrough content path.
+
 ## Alternatives considered
 
 - **Floor = only declared modelFacing:true layers even when nothing is sensitive** — rejected: it would newly hide undeclared item-level directories in plain datasets; the floor engages only when sensitivity is declared at all.

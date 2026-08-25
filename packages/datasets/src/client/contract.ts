@@ -11,7 +11,8 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  DatasetBinding, ListDatasetsResult, ListItemsResult, PreviewRepoResult, ReadQuery, ReadResult,
+  DatasetBinding, ListDatasetsResult, ListItemsResult, PreviewRepoResult, ReadPassthroughRequest,
+  ReadQuery, ReadResult,
 } from '../types.ts'
 import type { createDatasetsViewStore } from './store.ts'
 
@@ -32,6 +33,8 @@ export interface DatasetsViewInjected {
   listDatasets: (sessionId: SessionId, dataset?: string) => Promise<RemoteResult<ListDatasetsResult | ListItemsResult>>
   /** Read one file of one item layer, from the git object (one RPC). */
   readFile: (sessionId: SessionId, query: ReadQuery) => Promise<RemoteResult<ReadResult>>
+  /** Read one dataset-relative passthrough-zone file (operator channel, one RPC). */
+  readPassthroughFile: (sessionId: SessionId, query: ReadPassthroughRequest) => Promise<RemoteResult<ReadResult>>
   /** Whether the browser itself is connected over loopback (native gestures gate). */
   isLoopback: boolean
   hooks: {

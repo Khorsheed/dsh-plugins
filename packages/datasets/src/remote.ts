@@ -16,7 +16,7 @@ import {
   resolveScope, type DatasetScope, type DatasetsService,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
   type PreviewRepoRequest, type PreviewRepoResult,
-  type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
+  type ReadPassthroughRequest, type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -126,6 +126,20 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
     const result = await this.datasets.list({ repo, operator: true })
     if (result.kind !== 'datasets') throw new Error('previewRepo: list without a dataset selector must list datasets')
     return { repo, datasets: result.datasets }
+  }
+
+  /**
+   * Read one dataset-relative file from the git object — the operator channel
+   * into the passthrough zone (manifest/docs/item.json). Deliberately NOT a
+   * model tool: agent access to dataset content stays layer-gated through the
+   * datasets_* tools.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param request - dataset id, dataset-relative path, optional commit pin.
+   * @returns the file content and the commit it was read from.
+   */
+  @Remote('readPassthrough')
+  async readPassthrough(agent: Agent, request: ReadPassthroughRequest): Promise<ReadResult> {
+    return await this.datasets.readPassthrough(this.scope(agent), request.dataset, request.path, request.commit)
   }
 
   /**

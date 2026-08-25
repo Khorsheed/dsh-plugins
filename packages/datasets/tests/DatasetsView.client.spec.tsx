@@ -34,6 +34,7 @@ interface Harness {
   unbindSession: ReturnType<typeof vi.fn>
   listDatasets: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
+  readPassthroughFile: ReturnType<typeof vi.fn>
   pickDirectory: ReturnType<typeof vi.fn>
   previewRepo: ReturnType<typeof vi.fn>
 }
@@ -88,6 +89,7 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
       { ok: true, value: dataset === undefined ? DATASETS : ITEMS }
     )),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
+    readPassthroughFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Passthrough content\n', commit: 'a4f9c2e0000' } })),
     pickDirectory: vi.fn(async () => '/picked-repo'),
     previewRepo: vi.fn(async (): Promise<Result<PreviewRepoResult>> => ({ ok: true, value: PREVIEW })),
   }
@@ -113,6 +115,7 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     unbindSession: h.unbindSession,
     listDatasets: h.listDatasets,
     readFile: h.readFile,
+    readPassthroughFile: h.readPassthroughFile,
     isLoopback: canPick,
     useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
     pickDirectory: h.pickDirectory,
@@ -177,8 +180,10 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
-    // item.json is flagged as unprotected at the passthrough zone's footing.
-    expect(await screen.findByText(/item\.json · tree\.unprotected/)).toBeTruthy()
+    // item.json is flagged as unprotected at the passthrough zone's footing —
+    // and it reads like any other file (marker = warning, not a gate).
+    fireEvent.click(await screen.findByText(/item\.json · tree\.unprotected/))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'items/i1/item.json' })
     // The agent-readable marker follows the binding's layers whitelist (the
     // shared layer and the item's own visible layer both carry it).
     expect((await screen.findAllByText(/tree\.agentReadable/)).length).toBeGreaterThan(0)
@@ -204,10 +209,17 @@ describe('DatasetsView', () => {
     expect(h.readFile).toHaveBeenCalledWith('s1', {
       dataset: 'alpha', layer: 'visible', path: 'guide.md',
     })
-    // The passthrough zone is a visible group row (its files list but never open).
+    // The passthrough zone's files list AND read (the operator view blocks no
+    // human) — the unprotected marker is a warning, not a gate.
     fireEvent.click(screen.getByText(/tree\.passthrough/))
-    expect(await screen.findByText('manifest.yml')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'manifest.yml' })).toBeNull()
+    fireEvent.click(await screen.findByText('manifest.yml'))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'manifest.yml' })
+    // The preview renders through the same pipeline as layer files (the header
+    // names the passthrough selection; content highlighting splits tokens, so
+    // assert on the aggregated text instead of one node).
+    await waitFor(() => {
+      expect(document.querySelector('[class*="preview"]')?.textContent).toContain('Passthrough content')
+    })
   })
 
   it('a failed binding fetch settles the bar instead of loading forever', async () => {

@@ -9,5 +9,5 @@ export type { DatasetBinding } from './binding.ts'
 export type { DatasetSummary, ItemRecord, JsonObject } from './dataset.ts'
 export type {
   ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest, PreviewRepoResult,
-  ReadQuery, ReadResult, ShowRequest, ShowResult,
+  ReadPassthroughRequest, ReadQuery, ReadResult, ShowRequest, ShowResult,
 } from './service.ts'

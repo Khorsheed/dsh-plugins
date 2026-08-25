@@ -10,15 +10,25 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { DatasetBinding, DatasetSummary, ItemRecord, ListItemsResult, ReadResult } from '../types.ts'
 
-/** One selected file: its coordinates down to the layer-relative path. */
-export interface DatasetSelection {
-  readonly dataset: string
-  /** Item id, or null for a DATASET-LEVEL (shared) layer file. */
-  readonly item: string | null
-  readonly layer: string
-  /** Layer-relative file path (as the layer's file list reports it). */
-  readonly path: string
-}
+/** One selected file: a layer file, or a passthrough-zone file (either readable). */
+export type DatasetSelection =
+  | {
+    readonly kind: 'layer'
+    readonly dataset: string
+    /** Item id, or null for a DATASET-LEVEL (shared) layer file. */
+    readonly item: string | null
+    readonly layer: string
+    /** Layer-relative file path (as the layer's file list reports it). */
+    readonly path: string
+  }
+  | {
+    readonly kind: 'passthrough'
+    readonly dataset: string
+    /** Item id for item.json, or null for a dataset-level passthrough file. */
+    readonly item: string | null
+    /** Dataset-relative file path (manifest.yml, docs/x.md, items/<item>/item.json). */
+    readonly path: string
+  }
 
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface DatasetsViewState {

@@ -43,6 +43,7 @@ export type DatasetsKey =
   | 'tree.unprotected'
   | 'tree.agentReadable'
   | 'tree.passthrough'
+  | 'tree.passthroughShort'
   | 'tree.sensitive'
   | 'tree.warnModelFacing'
   | 'tree.moreMeta'
@@ -104,6 +105,7 @@ export const zh: Record<DatasetsKey, string> = {
   'tree.unprotected': '不受白名单保护',
   'tree.agentReadable': 'agent 可读',
   'tree.passthrough': '透传 · {count} 个文件 · 不受白名单保护',
+  'tree.passthroughShort': '透传',
   'tree.sensitive': '敏感',
   'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度数据集建议逐层表态',
   'tree.moreMeta': '+{count}',
@@ -159,6 +161,7 @@ export const en: Record<DatasetsKey, string> = {
   'tree.unprotected': 'not whitelist-protected',
   'tree.agentReadable': 'agent-readable',
   'tree.passthrough': 'Passthrough · {count} files · not whitelist-protected',
+  'tree.passthroughShort': 'Passthrough',
   'tree.sensitive': 'sensitive',
   'tree.warnModelFacing': 'Layer {layer} does not declare modelFacing and defaults to true; declare it explicitly in a mixed-sensitivity dataset',
   'tree.moreMeta': '+{count}',

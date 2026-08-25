@@ -153,6 +153,15 @@ export interface ReadQuery {
   commit?: string
 }
 
+/** `datasets/readPassthrough` query — the OPERATOR channel into the passthrough zone. */
+export interface ReadPassthroughRequest {
+  dataset: string
+  /** Dataset-relative file path (manifest.yml, docs/x.md, items/<item>/item.json, …). */
+  path: string
+  /** Pinned commit (default HEAD). */
+  commit?: string
+}
+
 /** `datasets_read` result: the file content and the commit it was read from. */
 export interface ReadResult {
   content: string
@@ -245,6 +254,13 @@ export interface DatasetsService {
   show(scope: DatasetScope, datasetId: string, itemId?: string, commit?: string): Promise<ShowResult>
   describe(scope: DatasetScope, datasetId: string, commit?: string): Promise<JsonObject>
   read(scope: DatasetScope, query: ReadQuery): Promise<ReadResult>
+  /**
+   * Read one dataset-relative file from the git object — the OPERATOR channel
+   * into the passthrough zone (dataset-root files, docs, item.json, item-root
+   * strays). No layer ceiling and no declaration guard: it exists for the
+   * human's tab, and is deliberately NOT exposed as a model tool.
+   */
+  readPassthrough(scope: DatasetScope, datasetId: string, path: string, commit?: string): Promise<ReadResult>
   snapshot(scope: DatasetScope, datasetId: string, commit?: string): Promise<DatasetSnapshot>
   worktreePath(scope: DatasetScope, datasetId: string, options?: WorktreeOptions): Promise<ManagedWorktree>
   putItem(scope: DatasetScope, input: PutItemInput): Promise<PutItemResult>
@@ -430,6 +446,18 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
         const registered = registeredFiles(registry, query.item, query.layer)?.find(file => file.display === rel)
         objectPath = registered?.object ?? `${itemDir(query.dataset, query.item)}/${query.layer}/${rel}`
       }
+      const content = await showFile(repo, sha, objectPath)
+      if (content === undefined) {
+        throw new DatasetsError(`no file ${objectPath} at ${sha.slice(0, 12)}`, 'FILE_NOT_FOUND')
+      }
+      return { content, commit: sha }
+    },
+
+    async readPassthrough(scope, datasetId, path, commit) {
+      assertDatasetAllowed(scope, datasetId)
+      const rel = assertSafeRelativePath(path)
+      const { repo, sha } = await resolveCommitAt(scope, commit)
+      const objectPath = `${datasetDir(datasetId)}/${rel}`
       const content = await showFile(repo, sha, objectPath)
       if (content === undefined) {
         throw new DatasetsError(`no file ${objectPath} at ${sha.slice(0, 12)}`, 'FILE_NOT_FOUND')
