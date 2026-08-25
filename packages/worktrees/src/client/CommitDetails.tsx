@@ -6,7 +6,7 @@
  * repeated (the drawer header already carries them). File rows are 38px with
  * adaptive-path truncation and right-aligned counts.
  */
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconCopyOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile, CommitInfo, FileDiffResult, ReadFileResult } from '../types.ts'
@@ -56,6 +56,11 @@ export function CommitDetails({
     removed: sum(files, 'deletions'),
   }), [files])
 
+  // The body is collapsed by default so prose does not flood the pane; reset it
+  // when a different commit is selected.
+  const [bodyOpen, setBodyOpen] = useState(false)
+  useEffect(() => { setBodyOpen(false) }, [commit.sha])
+
   const selectedFile = selectedPath === null ? undefined : files.find(file => file.path === selectedPath)
 
   return (
@@ -65,7 +70,19 @@ export function CommitDetails({
           <div className={css.titleText}>
             <div className={css.subject}>{commit.subject}</div>
             <div className={css.meta}>{t('commit.meta', { sha: commit.sha, author: commit.author, time: relativeTime(commit.time) })}</div>
-            {body !== null && body !== '' && <div className={css.body}>{body}</div>}
+            {body !== null && body !== '' && (
+              <div className={css.bodySection}>
+                <button
+                  type="button"
+                  className={css.bodyToggle}
+                  aria-expanded={bodyOpen}
+                  onClick={() => { setBodyOpen(open => !open) }}
+                >
+                  {bodyOpen ? t('commit.hideBody') : t('commit.showBody')}
+                </button>
+                {bodyOpen && <div className={css.body}>{body}</div>}
+              </div>
+            )}
           </div>
           <span className={css.titleActions}>
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>

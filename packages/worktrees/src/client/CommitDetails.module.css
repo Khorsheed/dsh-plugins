@@ -79,9 +79,29 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The commit message body (after the subject) — a wrapped prose block. */
-.body {
+/* The commit message body (after the subject) — a wrapped prose block, kept
+   behind a collapsed disclosure so long bodies do not flood the pane. */
+.bodySection {
   margin-top: 10px;
+}
+
+.bodyToggle {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bodyToggle:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.body {
+  margin-top: 6px;
   font-size: 13px;
   line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
