@@ -107,7 +107,7 @@
   white-space: nowrap;
 }
 
-/* The task capsule: checklist icon + open count + running members. */
+/* The task capsule: checklist icon + done/total count + running members. */
 .checklistIcon {
   flex: none;
   color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));

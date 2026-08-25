@@ -85,15 +85,16 @@ describe('RoomDockCapsules', () => {
     expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
   })
 
-  it('collapsed row: the goal capsule carries ring percent + text, the task capsule the open count and runners', async () => {
+  it('collapsed row: the goal capsule carries ring percent + text, the task capsule done/total and runners', async () => {
     await bench()
     const goal = screen.getByRole('button', { name: '目标' })
     expect(goal.textContent).toContain('插件 API v2 上线')
     // Progress: 1 done over 3 countable (the cancelled task leaves the denominator).
     expect(goal.textContent).toContain('33%')
-    const tasks = screen.getByRole('button', { name: '任务' })
-    // Labeled open count (pending + in_progress; cancelled excluded) and the runner.
-    expect(tasks.textContent).toMatch(/任务\s*2/)
+    const tasks = screen.getByRole('button', { name: '当前进度' })
+    // Done/total over the countable tasks (the same taskProgress fraction the
+    // goal ring reads) and the runner.
+    expect(tasks.textContent).toMatch(/当前进度\s*1\/3/)
     expect(tasks.textContent).toContain('ada')
     expect(tasks.textContent).toContain('在做')
     // Collapsed: no task rows yet.
@@ -118,7 +119,7 @@ describe('RoomDockCapsules', () => {
     expect(screen.getAllByText('插件 API v2 上线')).toHaveLength(2)
     expect(screen.getByRole('progressbar')).toBeDefined()
     // The card's progress bar carries the done/total fraction.
-    expect(screen.getByText('1/3')).toBeDefined()
+    expect(document.querySelector('[class*="_progressMeta"]')?.textContent).toBe('1/3')
     // The done task is the advance record (3 minutes ago).
     expect(screen.getByText(/✓ ada 完成了「出方案」/)).toBeDefined()
     expect(screen.getByText(/3 分钟前/)).toBeDefined()
@@ -131,7 +132,7 @@ describe('RoomDockCapsules', () => {
 
   it('the task panel groups by member under 全部 and closes an open task', async () => {
     const { closeTask } = await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     const groups = document.querySelectorAll('[class*="_groups"] [class*="_group"]')
     expect(groups).toHaveLength(2)
     expect(groups[0]!.textContent).toContain('ada')
@@ -146,7 +147,7 @@ describe('RoomDockCapsules', () => {
 
   it('a single-member filter flattens the list and repeats the member name', async () => {
     await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     fireEvent.click(screen.getByRole('button', { name: 'ada' }))
     expect(document.querySelectorAll('[class*="_groups"] [class*="_group"]')).toHaveLength(0)
     expect(document.querySelectorAll('[class*="_glyph"] svg')).toHaveLength(2)
@@ -156,7 +157,7 @@ describe('RoomDockCapsules', () => {
 
   it('a blocked task greys out with the 等 ada tag until the blocker has no open task', async () => {
     await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     const blocked = screen.getByText('搭页面').closest('li')!
     expect(blocked.getAttribute('data-blocked')).toBe('true')
     expect(screen.getByText('等 ada')).toBeDefined()
@@ -168,7 +169,7 @@ describe('RoomDockCapsules', () => {
         tasks: STATE.tasks.map(task => task.id === 't2' ? { ...task, status: 'done' as const } : task),
       },
     })
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     expect(screen.getByText('搭页面').closest('li')!.getAttribute('data-blocked')).toBeNull()
     expect(screen.queryByText('等 ada')).toBeNull()
   })
@@ -182,7 +183,7 @@ describe('RoomDockCapsules', () => {
         ],
       },
     })
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     expect(screen.getByText('写文档').closest('li')!.getAttribute('data-blocked')).toBeNull()
     expect(screen.queryByText('等 main')).toBeNull()
   })
@@ -199,7 +200,7 @@ describe('RoomDockCapsules', () => {
 
   it('the add form collapses to the ＋ expander inside the panel', async () => {
     await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     expect(screen.queryByPlaceholderText('新任务…')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /＋ 添加任务/ }))
     expect(screen.getByPlaceholderText('新任务…')).toBeDefined()
@@ -207,9 +208,9 @@ describe('RoomDockCapsules', () => {
 
   it('the expanded panel renders above the capsule row, which stays anchored to the input card', async () => {
     await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     const card = screen.getByText('出方案').closest('[class*="_card"]')!
-    const capsule = screen.getByRole('button', { name: '任务' })
+    const capsule = screen.getByRole('button', { name: '当前进度' })
     // The panel precedes the capsule row in tree order (top-to-bottom: panel
     // → capsules → input card), so the composer-anchored row never moves
     // when the panel grows above it.
@@ -226,11 +227,12 @@ describe('RoomDockCapsules', () => {
         ],
       },
     })
-    // The capsule: open count pending+in_progress only, runners in_progress
-    // only — a failed task drives neither (no sweeping glare, no 在做).
-    const capsule = screen.getByRole('button', { name: '任务' })
+    // The capsule: the failed task leaves the done/total denominator (0/1,
+    // not 0/2), and the runners count in_progress only — a failed task
+    // drives neither (no sweeping glare, no 在做).
+    const capsule = screen.getByRole('button', { name: '当前进度' })
     expect(capsule.getAttribute('data-running')).toBe('true')
-    expect(capsule.textContent).toMatch(/任务\s*1/)
+    expect(capsule.textContent).toMatch(/当前进度\s*0\/1/)
     expect(capsule.textContent).toContain('ada')
     expect(capsule.textContent).not.toContain('bill')
     fireEvent.click(capsule)
@@ -249,7 +251,7 @@ describe('RoomDockCapsules', () => {
 
   it('a click outside collapses the expanded card', async () => {
     await bench()
-    fireEvent.click(screen.getByRole('button', { name: '任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '当前进度' }))
     expect(screen.getByText('搭页面')).toBeDefined()
     fireEvent.mouseDown(document.body)
     await waitFor(() => { expect(screen.queryByText('搭页面')).toBeNull() })
@@ -259,20 +261,22 @@ describe('RoomDockCapsules', () => {
     await bench({ state: { ...STATE, goal: undefined, tasks: [] } })
     expect(screen.getByRole('button', { name: '＋ 邀请成员' })).toBeDefined()
     expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '任务' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '当前进度' })).toBeNull()
   })
 
   it('tasks without a goal (or a goal without tasks) bring the pair back', async () => {
     // Tasks but no goal: the pair renders (the goal capsule in guide state).
     await bench({ state: { ...STATE, goal: undefined } })
     expect(screen.getByRole('button', { name: '目标' })).toBeDefined()
-    expect(screen.getByRole('button', { name: '任务' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '当前进度' })).toBeDefined()
     expect(screen.queryByRole('button', { name: '＋ 邀请成员' })).toBeNull()
     cleanup()
-    // A goal but no tasks: the pair renders too.
+    // A goal but no tasks: the pair renders too, and the task capsule carries
+    // the bare label — no 0/0 count.
     await bench({ state: { ...STATE, tasks: [] } })
     expect(screen.getByRole('button', { name: '目标' })).toBeDefined()
-    expect(screen.getByRole('button', { name: '任务' })).toBeDefined()
+    const tasksCapsule = screen.getByRole('button', { name: '当前进度' })
+    expect(tasksCapsule.textContent).toBe('当前进度')
     expect(screen.queryByRole('button', { name: '＋ 邀请成员' })).toBeNull()
   })
 

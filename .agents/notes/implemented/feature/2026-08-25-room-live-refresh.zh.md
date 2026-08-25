@@ -12,7 +12,7 @@ Status: implemented
 
 RoomStore 订阅当前会话的实时会话流（`ctx.sessions.binding(sessionId).session`，一个 `ObservableSnapshot`），把每次快照通知当作缓存 room 状态的刷新触发，300ms 去抖（`ROOM_LIVE_REFRESH_DEBOUNCE_MS`），让一波事件只花一次 `getState` 拉取。它能成立是因为 host apiproxy 把每个会话事件——包括 `room/*` journal 追加——都以 `session/event` 帧推给 client，client runtime 再把它折叠进会话的 conversation 快照；store 因此能在一拍之内看到 host 侧的 journal 写入，且不新增任何 wire 面。触发仅在已知为 room 的会话上生效（非 room 的快照抖动不上 wire）；每次完成的拉取都会重试 attach（runtime 惰性 mint 会话 binding，可能晚于列表的 current 翻转）；dispose 时退订并丢弃挂起的去抖刷新。自有 mutation 刷新和成员运行中轮询原样保留——实时流取代的是延迟，不是其他触发源。
 
-任务胶囊始终带标签：有未结任务时显示 `任务 3`（有 runner 时为 `任务 3 · ●ada 在做`）；零未结时照旧是裸 `任务`。标签复用既有 `tasks.capsule` 词条，两个 locale 无需新增键即同步。
+任务胶囊始终带标签：`当前进度 1/3`——完成数/总数，与目标环读的是同一个 `taskProgress` 口径（cancelled 与 failed 不进分母）；有成员在跑时追加 `· ●ada 在做`；无可计数任务时只显示裸 `当前进度`（不显示 0/0）。标签复用既有 `tasks.capsule` 词条，两个 locale 无需新增键即同步。
 
 ## Alternatives considered
 

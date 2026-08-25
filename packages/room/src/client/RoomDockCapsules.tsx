@@ -6,7 +6,7 @@
  * quick-add button:
  *
  * ```
- * [◔33% 插件API v2上线]  [☑ 任务 2 · ●ada 在做]  ＋
+ * [◔33% 插件API v2上线]  [☑ 当前进度 1/3 · ●ada 在做]  ＋
  * ```
  *
  * The row is ANCHORED just above the input card: an expanded panel renders
@@ -335,7 +335,6 @@ export function RoomDockCapsules({
 
   const now = Date.now()
   const progress = taskProgress(state.tasks)
-  const openCount = state.tasks.filter(task => task.status === 'pending' || task.status === 'in_progress').length
   const runners = [...new Set(
     state.tasks.filter(task => task.status === 'in_progress').map(task => task.member),
   )]
@@ -623,12 +622,12 @@ export function RoomDockCapsules({
           onClick={() => { toggle('tasks') }}
         >
           <IconChecklistOutline14 size={14} className={css.checklistIcon} />
-          {openCount === 0 ? (
+          {progress.total === 0 ? (
             <span className={css.capsuleText}>{t('tasks.capsule')}</span>
           ) : (
             <>
               <span className={css.capsuleText}>{t('tasks.capsule')}</span>
-              <span className={css.capsuleCount}>{openCount}</span>
+              <span className={css.capsuleCount}>{progress.done}/{progress.total}</span>
               {runners.length > 0 && (
                 <span className={css.runners}>
                   {runners.map(name => (
