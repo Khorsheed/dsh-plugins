@@ -7,6 +7,9 @@ coverage/
 packages/taskpilot/tsconfig.paths.json
 .harness-diff/
 
+# Stray repo-root scratch note (kept out of git; not a project file).
+dsh-plugins-intro.md
+
 # harness / dev tooling state
 .playwright-mcp/
 scratch-*
