@@ -132,8 +132,8 @@
 .children {
   display: flex;
   flex-direction: column;
-  margin-left: 11px;
-  padding-left: 9px;
+  margin-left: 10px;
+  padding-left: 8px;
   border-left: 1px solid var(--dsw-alias-border-l3);
 }
 
@@ -240,8 +240,8 @@
 
 .sharedLabel {
   overflow: hidden;
-  height: 18px;
-  padding: 0 8px 0 2px;
+  height: 20px;
+  padding: 2px 8px 0 2px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
@@ -337,7 +337,8 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -366,7 +367,7 @@
 .previewScroll {
   flex: 1;
   min-height: 0;
-  padding: 0 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
+  padding: 6px 12px calc(12px + var(--dsh-datasets-bottom-clearance, 0px));
   overflow: auto;
 }
 

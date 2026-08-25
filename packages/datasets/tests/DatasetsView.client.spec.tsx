@@ -145,6 +145,9 @@ describe('DatasetsView', () => {
     // The sensitive layer lists with its marker — the operator view never hides it.
     const grading = await screen.findByText(/grading/)
     expect(grading.parentElement?.textContent).toContain('tree.sensitive')
+    expect(grading.parentElement?.textContent).not.toContain('tree.agentReadable')
+    // …while the whitelisted visible layer carries the readable marker.
+    expect(screen.getByText(/tree\.agentReadable/)).toBeTruthy()
   })
 
   it('unbound: shows the empty binding state and never lists', async () => {
@@ -174,6 +177,11 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
+    // item.json is flagged as unprotected at the passthrough zone's footing.
+    expect(await screen.findByText(/item\.json · tree\.unprotected/)).toBeTruthy()
+    // The agent-readable marker follows the binding's layers whitelist (the
+    // shared layer and the item's own visible layer both carry it).
+    expect((await screen.findAllByText(/tree\.agentReadable/)).length).toBeGreaterThan(0)
     // The layer header is one quiet phrase: name, middot, count — never a right-floated count
     // (it appears once per layer group: the shared group and the item's own).
     expect((await screen.findAllByText(/· tree\.fileCount/)).length).toBeGreaterThan(0)

@@ -9,7 +9,8 @@ export type DatasetsKey =
   | 'binding.none'
   | 'binding.repo'
   | 'binding.allDatasets'
-  | 'binding.allLayers'
+  | 'binding.agentVisible'
+  | 'binding.agentVisibleFloor'
   | 'binding.bind'
   | 'binding.edit'
   | 'binding.unbind'
@@ -39,6 +40,8 @@ export type DatasetsKey =
   | 'preview.error'
   | 'tree.fileCount'
   | 'tree.shared'
+  | 'tree.unprotected'
+  | 'tree.agentReadable'
   | 'tree.passthrough'
   | 'tree.sensitive'
   | 'tree.warnModelFacing'
@@ -67,7 +70,8 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.none': '本会话未绑定数据集仓库',
   'binding.repo': '本会话绑定: {repo}',
   'binding.allDatasets': '全部数据集',
-  'binding.allLayers': '全部 layers',
+  'binding.agentVisible': 'agent 可见：{layers}',
+  'binding.agentVisibleFloor': 'agent 可见：可见层（敏感层默认拦截）',
   'binding.bind': '绑定',
   'binding.edit': '改白名单',
   'binding.unbind': '解绑',
@@ -76,9 +80,9 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.form.repo': '仓库路径（git 仓库）',
   'binding.form.useWorkspace': '使用当前工作区',
   'binding.form.browse': '浏览…',
-  'binding.form.restrict': '限制可见范围',
-  'binding.form.restrictDatasets': '数据集',
-  'binding.form.restrictLayers': '层',
+  'binding.form.restrict': 'agent 可见范围',
+  'binding.form.restrictDatasets': 'agent 可见的数据集',
+  'binding.form.restrictLayers': 'agent 可见的层',
   'binding.form.sensitive': '敏感',
   'binding.form.taskFacingOnly': '仅题面',
   'binding.form.preview.loading': '检查仓库…',
@@ -96,7 +100,9 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
   'tree.fileCount': '{count} 个文件',
-  'tree.shared': '共享',
+  'tree.shared': '题集级共享',
+  'tree.unprotected': '不受白名单保护',
+  'tree.agentReadable': 'agent 可读',
   'tree.passthrough': '透传 · {count} 个文件 · 不受白名单保护',
   'tree.sensitive': '敏感',
   'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度数据集建议逐层表态',
@@ -119,7 +125,8 @@ export const en: Record<DatasetsKey, string> = {
   'binding.none': 'No dataset repository bound to this session',
   'binding.repo': 'Bound: {repo}',
   'binding.allDatasets': 'all datasets',
-  'binding.allLayers': 'all layers',
+  'binding.agentVisible': 'agent-visible: {layers}',
+  'binding.agentVisibleFloor': 'agent-visible: model-facing layers (sensitive blocked by default)',
   'binding.bind': 'Bind',
   'binding.edit': 'Edit whitelist',
   'binding.unbind': 'Unbind',
@@ -128,9 +135,9 @@ export const en: Record<DatasetsKey, string> = {
   'binding.form.repo': 'Repository path (a git repository)',
   'binding.form.useWorkspace': 'Use current workspace',
   'binding.form.browse': 'Browse…',
-  'binding.form.restrict': 'Restrict visibility',
-  'binding.form.restrictDatasets': 'Datasets',
-  'binding.form.restrictLayers': 'Layers',
+  'binding.form.restrict': 'Agent-visible scope',
+  'binding.form.restrictDatasets': 'Agent-visible datasets',
+  'binding.form.restrictLayers': 'Agent-visible layers',
   'binding.form.sensitive': 'sensitive',
   'binding.form.taskFacingOnly': 'Model-facing only',
   'binding.form.preview.loading': 'Checking the repository…',
@@ -148,7 +155,9 @@ export const en: Record<DatasetsKey, string> = {
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
   'tree.fileCount': '{count} files',
-  'tree.shared': 'Shared',
+  'tree.shared': 'Dataset-level shared',
+  'tree.unprotected': 'not whitelist-protected',
+  'tree.agentReadable': 'agent-readable',
   'tree.passthrough': 'Passthrough · {count} files · not whitelist-protected',
   'tree.sensitive': 'sensitive',
   'tree.warnModelFacing': 'Layer {layer} does not declare modelFacing and defaults to true; declare it explicitly in a mixed-sensitivity dataset',

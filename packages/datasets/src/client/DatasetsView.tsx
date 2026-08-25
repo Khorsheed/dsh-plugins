@@ -26,7 +26,7 @@ import {
   IconFolderClose16, IconFolderOpen16, Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BindForm } from './BindForm.tsx'
-import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
+import type { DatasetBinding, DatasetSummary, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
@@ -110,9 +110,11 @@ function LayerNode(props: {
   onSelect: (selection: DatasetSelection) => void
   /** The dataset's declared sensitive layers (the marker is a human cue only). */
   sensitiveLayers: ReadonlySet<string>
+  /** Layers the session's agent may read (the binding whitelist, or the modelFacing floor). */
+  agentLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, layer, paths, selection, onSelect, sensitiveLayers, t } = props
+  const { dataset, item, layer, paths, selection, onSelect, sensitiveLayers, agentLayers, t } = props
   const [open, setOpen] = useState(true)
   return (
     <div className={css.layer}>
@@ -122,6 +124,7 @@ function LayerNode(props: {
         <span className={css.rowTitle}>{layer}</span>
         <span className={css.rowCount}>· {t('tree.fileCount', { count: paths.length })}</span>
         {sensitiveLayers.has(layer) && <span className={css.sensitiveMark}>· {t('tree.sensitive')}</span>}
+        {agentLayers.has(layer) && <span className={css.agentMark}>· {t('tree.agentReadable')}</span>}
       </button>
       {open && (
         <div className={css.children}>
@@ -154,9 +157,10 @@ function ItemNode(props: {
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
   sensitiveLayers: ReadonlySet<string>
+  agentLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, selection, onSelect, sensitiveLayers, t } = props
+  const { dataset, item, selection, onSelect, sensitiveLayers, agentLayers, t } = props
   const [open, setOpen] = useState(false)
   return (
     <div className={css.item}>
@@ -166,6 +170,13 @@ function ItemNode(props: {
       </button>
       {open && (
         <div className={css.children}>
+          {item.metadata !== undefined && (
+            // item.json sits at the passthrough zone's footing: always
+            // readable by every bound session — the author must see that.
+            <div className={css.passthroughFile} title={t('tree.unprotected')}>
+              item.json · {t('tree.unprotected')}
+            </div>
+          )}
           {Object.entries(item.layers).map(([layer, paths]) => (
             <LayerNode
               key={layer}
@@ -176,6 +187,7 @@ function ItemNode(props: {
               selection={selection}
               onSelect={onSelect}
               sensitiveLayers={sensitiveLayers}
+              agentLayers={agentLayers}
               t={t}
             />
           ))}
@@ -310,6 +322,15 @@ export function DatasetsView(props: DatasetsViewProps) {
   const selectedItem = selection === null || selection.item === null
     ? undefined
     : items[selection.dataset]?.find(item => item.id === selection.item)
+  // The session's agent-readable layer set per expanded dataset: the binding's
+  // explicit whitelist when written, else the modelFacing floor (sensitive
+  // layers are agent-blocked by default; datasets without any sensitive
+  // declaration read fully). The tree re-renders live when the binding moves.
+  const agentLayersFor = (dataset: DatasetSummary): ReadonlySet<string> => {
+    if (binding?.layers !== undefined) return new Set(binding.layers)
+    if (dataset.nonModelFacingLayers.length === 0) return new Set(dataset.layers)
+    return new Set(dataset.layers.filter(layer => !dataset.nonModelFacingLayers.includes(layer)))
+  }
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
@@ -323,7 +344,9 @@ export function DatasetsView(props: DatasetsViewProps) {
               <span className={css.bindingScope}>
                 {binding.datasets !== undefined ? binding.datasets.join(', ') : t('binding.allDatasets')}
                 {' · '}
-                {binding.layers !== undefined ? binding.layers.join(', ') : t('binding.allLayers')}
+                {binding.layers !== undefined
+                  ? t('binding.agentVisible', { layers: binding.layers.join(', ') })
+                  : t('binding.agentVisibleFloor')}
               </span>
               <Button size="sm" onClick={() => { setFormOpen(true) }}>
                 {t('binding.edit')}
@@ -410,6 +433,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                             selection={selection}
                             onSelect={(next) => { actions.select(next) }}
                             sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
+                            agentLayers={agentLayersFor(dataset)}
                             t={t}
                           />
                         ))}
@@ -423,6 +447,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                         selection={selection}
                         onSelect={(next) => { actions.select(next) }}
                         sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
+                        agentLayers={agentLayersFor(dataset)}
                         t={t}
                       />
                     ))}
