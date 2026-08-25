@@ -32,7 +32,7 @@ import { RoomStore } from './room-store.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomMembersInjected, RoomMutationOutcome,
+  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomMutationOutcome,
   RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
@@ -193,12 +193,37 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       default: return t('invite.error.generic')
     }
   }
-  const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
-    roomStore,
+  /**
+   * The invite dialog's share (sessionId binds per entry inject), consumed by
+   * both dialog hosts — the members tab and the fresh-room dock's invite
+   * capsule. `browseDirectory` is the official wire primitive the native
+   * directory-picker flow drives (`workspaces.pickDirectory`): the picker UI
+   * itself is bound to ui-workspace's adopt-as-workspace flow holes and cannot
+   * serve a pure path pick, so the dialog consumes the primitive directly.
+   */
+  const inviteFace = (sessionId: SessionId): RoomInviteInjected => ({
     // The room session's own cwd: the invite dialog's cwd field placeholder
     // (empty = inherit). Read at inject time; a later cwd change refreshes
     // with the next view mount.
     roomCwd: ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd,
+    invite: async (values) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.invite({ sessionId, ...values })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true, pendingFirstTask: carried.value.value.pendingFirstTask }
+    },
+    listProviders: async () => {
+      if (remote === undefined) return undefined
+      const carried = await remote.listProviders({})
+      return carried.ok ? carried.value : undefined
+    },
+    browseDirectory: () => ctx.workspaces.pickDirectory(),
+  })
+  const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
+    roomStore,
+    ...inviteFace(sessionId),
     openSession,
     removeMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
@@ -215,19 +240,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
       void roomStore.refresh(sessionId)
       return { ok: true }
-    },
-    invite: async (values) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.invite({ sessionId, ...values })
-      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
-      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
-      void roomStore.refresh(sessionId)
-      return { ok: true, pendingFirstTask: carried.value.value.pendingFirstTask }
-    },
-    listProviders: async () => {
-      if (remote === undefined) return undefined
-      const carried = await remote.listProviders({})
-      return carried.ok ? carried.value : undefined
     },
   })
 
@@ -258,7 +270,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // member-channel rule, local-agent 84a2ed0). A cache miss declines — the
   // freshly opened room shows the official bar for the first pull's duration
   // (accepted, see room-store.ts). The injected face carries the capsule
-  // actions AND the main-agent turn Stop: the takeover renders the dock
+  // actions, the invite share (the fresh-room dock's invite capsule), AND the
+  // main-agent turn Stop: the takeover renders the dock
   // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
@@ -270,6 +283,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         selectRoomComposer(owner, id => roomStore.isRoomCached(id) === true),
       inject: (sessionId: SessionId): RoomComposerInjected => ({
         ...tasksFace(sessionId),
+        ...inviteFace(sessionId),
         submit,
         // The hidden official bar's Stop: the runtime session face's cancel
         // (the same verb ui-conversation's own Stop injects). A torn-down

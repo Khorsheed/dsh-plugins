@@ -44,6 +44,9 @@ interface Bench {
   addTask: ReturnType<typeof vi.fn>
   closeTask: ReturnType<typeof vi.fn>
   setGoal: ReturnType<typeof vi.fn>
+  invite: ReturnType<typeof vi.fn>
+  listProviders: ReturnType<typeof vi.fn>
+  browseDirectory: ReturnType<typeof vi.fn>
 }
 
 /** Render the capsules against a store primed with the fixture. */
@@ -62,11 +65,18 @@ async function bench(options: { room?: boolean; state?: RoomState } = {}): Promi
   const addTask = vi.fn(async () => ({ ok: true as const }))
   const closeTask = vi.fn(async () => ({ ok: true as const }))
   const setGoal = vi.fn(async () => ({ ok: true as const }))
+  const invite = vi.fn(async () => ({ ok: true as const, pendingFirstTask: false }))
+  const listProviders = vi.fn(async () => ({
+    localAgentAvailable: true,
+    providers: [{ provider: 'kimi', displayName: 'Kimi Code', authenticated: true }],
+  }))
+  const browseDirectory = vi.fn(async () => '/home/user/picked')
   const props = {
-    sessionId: SESSION, roomStore, addTask, closeTask, setGoal, t,
+    sessionId: SESSION, roomStore, addTask, closeTask, setGoal,
+    roomCwd: '/home/user/room', invite, listProviders, browseDirectory, t,
   } as unknown as RoomDockCapsulesProps
   render(<RoomDockCapsules {...props} />)
-  return { addTask, closeTask, setGoal }
+  return { addTask, closeTask, setGoal, invite, listProviders, browseDirectory }
 }
 
 describe('RoomDockCapsules', () => {
@@ -243,5 +253,42 @@ describe('RoomDockCapsules', () => {
     expect(screen.getByText('搭页面')).toBeDefined()
     fireEvent.mouseDown(document.body)
     await waitFor(() => { expect(screen.queryByText('搭页面')).toBeNull() })
+  })
+
+  it('fresh room (no goal, no tasks): a single ＋ 邀请成员 capsule replaces the pair', async () => {
+    await bench({ state: { ...STATE, goal: undefined, tasks: [] } })
+    expect(screen.getByRole('button', { name: '＋ 邀请成员' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '目标' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '任务' })).toBeNull()
+  })
+
+  it('tasks without a goal (or a goal without tasks) bring the pair back', async () => {
+    // Tasks but no goal: the pair renders (the goal capsule in guide state).
+    await bench({ state: { ...STATE, goal: undefined } })
+    expect(screen.getByRole('button', { name: '目标' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '任务' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '＋ 邀请成员' })).toBeNull()
+    cleanup()
+    // A goal but no tasks: the pair renders too.
+    await bench({ state: { ...STATE, tasks: [] } })
+    expect(screen.getByRole('button', { name: '目标' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '任务' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '＋ 邀请成员' })).toBeNull()
+  })
+
+  it('the fresh-room invite capsule opens the invite dialog straight from the dock', async () => {
+    const { invite, listProviders } = await bench({ state: { ...STATE, goal: undefined, tasks: [] } })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => { expect(listProviders).toHaveBeenCalled() })
+    await screen.findByText('Kimi Code')
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    // No instructions, no first task: both are optional now.
+    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    await waitFor(() => {
+      expect(invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+    })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    expect(dialog).toBeDefined()
   })
 })

@@ -84,6 +84,10 @@ async function bench(
     addTask: vi.fn(async () => ({ ok: true as const })),
     closeTask: vi.fn(async () => ({ ok: true as const })),
     setGoal: vi.fn(async () => ({ ok: true as const })),
+    roomCwd: '/home/user/room',
+    invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
+    listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
+    browseDirectory: vi.fn(async () => null),
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined

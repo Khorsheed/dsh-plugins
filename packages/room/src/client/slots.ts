@@ -52,14 +52,37 @@ export interface RoomTasksInjected {
 }
 
 /**
+ * The invite dialog's injected share (sessionId binds at inject time). Both
+ * dialog hosts — the members tab and the fresh-room dock's invite capsule —
+ * take exactly this face; neither inherits the other's surface actions.
+ */
+export interface RoomInviteInjected {
+  /** The room session's own cwd (the invite dialog's empty-cwd placeholder). */
+  readonly roomCwd?: string | undefined
+  /** Invite a CLI member. */
+  readonly invite: (values: RoomInviteValues) => Promise<RoomInviteOutcome>
+  /** List the invitable providers (undefined on transport failure). */
+  readonly listProviders: () => Promise<RoomProviderList | undefined>
+  /**
+   * Pick a member-level working directory through the official wire primitive
+   * (`workspaces.pickDirectory`, the same host call ui-directory-picker-native's
+   * flow drives — the picker UI itself is not reusable: ui-workspace's flow
+   * holes adopt the pick as a workspace). Resolves null on cancel; throws when
+   * the host serves no `native` directory-picking capability.
+   */
+  readonly browseDirectory: () => Promise<string | null>
+}
+
+/**
  * Injected face of the composer takeover entry: the dispatch submit plus the
  * task-board actions (sessionId binds at inject time), because the takeover
  * renders the task board itself — the `conversation.input.dock` seat rides
  * the hidden official fallback. The takeover also inherits the official bar's
  * Stop duty: the fallback's Stop button hides with it, so `stop` re-homes the
- * main agent's turn cancel (the runtime session face's `cancel()`).
+ * main agent's turn cancel (the runtime session face's `cancel()`). The
+ * invite share rides along for the fresh-room dock's invite capsule.
  */
-export interface RoomComposerInjected extends RoomTasksInjected {
+export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
   /**
    * Dispatch an @-message into the room and refresh the store on success.
    * Bare messages never reach here — the composer releases them to the
@@ -104,21 +127,15 @@ export type RoomInviteOutcome =
   | { readonly ok: false; readonly message: string }
 
 /** Injected face of the members tab. */
-export interface RoomMembersInjected {
+export interface RoomMembersInjected extends RoomInviteInjected {
   /** The client-side room state store (roster + runs). */
   readonly roomStore: RoomStore
-  /** The room session's own cwd (the invite dialog's cwd placeholder). */
-  readonly roomCwd?: string | undefined
   /** Open a session (the member's child-session trajectory jump). */
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
   /** Rewrite the named member's role instructions. */
   readonly updateMember: (member: string, instructions: string) => Promise<RoomMutationOutcome>
-  /** Invite a CLI member. */
-  readonly invite: (values: RoomInviteValues) => Promise<RoomInviteOutcome>
-  /** List the invitable providers (undefined on transport failure). */
-  readonly listProviders: () => Promise<RoomProviderList | undefined>
 }
 
 /** Injected face of the member-speech chat node. */
@@ -188,9 +205,13 @@ export type RoomTaskLineViewProps =
  * Props of the dock capsules (goal capsule + task capsule), rendered by the
  * RoomComposer itself above the input card — NOT a slot entry:
  * `conversation.input.dock` lives inside the official composer fallback,
- * which the takeover hides.
+ * which the takeover hides. The invite share serves the fresh-room state:
+ * a room with neither a goal nor any task renders a single 「＋ 邀请成员」
+ * capsule instead of the pair, opening the invite dialog straight from the
+ * dock.
  */
 export type RoomDockCapsulesProps =
   { readonly sessionId: SessionId }
   & RoomTasksInjected
+  & RoomInviteInjected
   & PropsLocale<'room'>

@@ -126,7 +126,7 @@ function MemberCard({
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, t,
+  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -167,7 +167,9 @@ export function MembersView({
     const outcome = await invite({
       provider: values.provider,
       name: values.name,
-      instructions: values.instructions,
+      // Blank instructions are omitted, not sent: the host rejects a
+      // present-but-blank role, and an absent one simply carries no preset.
+      ...values.instructions === '' ? {} : { instructions: values.instructions },
       ...values.cwd === '' ? {} : { cwd: values.cwd },
       ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
     })
@@ -217,6 +219,7 @@ export function MembersView({
           providers={providers?.providers}
           localAgentAvailable={providers?.localAgentAvailable ?? true}
           inheritedCwd={roomCwd}
+          browseDirectory={browseDirectory}
           onSubmit={submitDialog}
           onClose={() => { setDialog(null) }}
           t={t}

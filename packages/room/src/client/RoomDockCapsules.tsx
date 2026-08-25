@@ -49,6 +49,13 @@
  * shadow-lv3); the task capsule sweeps a restrained glare band while tasks
  * run (the ToolRow pattern, reduced-motion safe). Every token reference
  * carries the light-theme literal as fallback; no divider lines anywhere.
+ *
+ * FRESH-ROOM STATE: a room with neither a goal nor any task (membership does
+ * not count — the main agent is always there) has no use for the guide/task
+ * pair, which would be pure noise. The collapsed row then renders a single
+ * 「＋ 邀请成员」 capsule (same chip family) that opens the invite dialog
+ * straight from the dock. The moment a goal is set or a task exists the pair
+ * returns, and the invite entry retires — the members tab already carries it.
  */
 import {
   useEffect, useRef, useState, useSyncExternalStore,
@@ -56,9 +63,10 @@ import {
 } from 'react'
 import { IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { taskProgress } from '../journal.ts'
-import type { RoomTask } from '../types.ts'
+import type { RoomProviderList, RoomTask } from '../types.ts'
 import { formatRelativeTime } from './format.ts'
 import { memberColor } from './member-color.ts'
+import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { RoomDockCapsulesProps } from './slots.ts'
 import css from './RoomDockCapsules.module.css'
 
@@ -241,7 +249,8 @@ function TaskRow({ task, tasks, now, closeTask, t }: {
 
 /** The dock capsules (goal + tasks) with their expanded cards. */
 export function RoomDockCapsules({
-  sessionId, roomStore, addTask, closeTask, setGoal, t,
+  sessionId, roomStore, addTask, closeTask, setGoal,
+  roomCwd, invite, listProviders, browseDirectory, t,
 }: RoomDockCapsulesProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [open, setOpen] = useState<'goal' | 'tasks' | null>(null)
@@ -253,6 +262,8 @@ export function RoomDockCapsules({
   const [draftMember, setDraftMember] = useState('')
   const [draftBlockedBy, setDraftBlockedBy] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
   const rootRef = useRef<HTMLElement | null>(null)
 
   // Collapse on any press outside the dock (no overlay; a second click on the
@@ -273,6 +284,54 @@ export function RoomDockCapsules({
 
   // A cache miss (first pull in flight) or a non-room: the dock vanishes.
   if (state === undefined || roomStore.isRoomCached(sessionId) !== true) return null
+
+  // Fresh room (no goal, no tasks — membership does not count, the main
+  // agent is always there): the guide/task pair would be noise, so the row
+  // carries a single 「＋ 邀请成员」 capsule that opens the invite dialog
+  // straight from the dock. The pair returns the moment a goal or a task
+  // exists; the invite entry then retires (the members tab carries it).
+  const fresh = state.goal === undefined && state.tasks.length === 0
+  if (fresh) {
+    const openInvite = (): void => {
+      setProviders(undefined)
+      setInviteOpen(true)
+      void listProviders().then(setProviders)
+    }
+    const submitInvite = (values: InviteDialogSubmit) => invite({
+      provider: values.provider,
+      name: values.name,
+      // Blank instructions are omitted, not sent: the host rejects a
+      // present-but-blank role, and an absent one simply carries no preset.
+      ...values.instructions === '' ? {} : { instructions: values.instructions },
+      ...values.cwd === '' ? {} : { cwd: values.cwd },
+      ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
+    })
+    return (
+      <section ref={rootRef} className={css.root} aria-label={t('goal.label')}>
+        <div className={css.capsules}>
+          <button
+            type="button"
+            className={css.capsule}
+            onClick={openInvite}
+          >
+            <span className={css.capsuleGuide}>{t('members.invite')}</span>
+          </button>
+        </div>
+        {inviteOpen && (
+          <InviteDialog
+            mode="invite"
+            providers={providers?.providers}
+            localAgentAvailable={providers?.localAgentAvailable ?? true}
+            inheritedCwd={roomCwd}
+            browseDirectory={browseDirectory}
+            onSubmit={submitInvite}
+            onClose={() => { setInviteOpen(false) }}
+            t={t}
+          />
+        )}
+      </section>
+    )
+  }
 
   const now = Date.now()
   const progress = taskProgress(state.tasks)

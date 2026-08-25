@@ -4,7 +4,12 @@
  * local-agent roster; logged-out providers greyed with login guidance, an
  * absent facade degrades the whole section to a hint), display name (client
  * precheck plus the host's structured duplicate/invalid errors), role
- * instructions, a member-level cwd (empty = inherit the room session's cwd,
+ * instructions (optional — they ride the front of the member's FIRST task
+ * message, never a system-prompt channel; the hint says so honestly), a
+ * member-level cwd (a read-only display filled by the 浏览… button — the
+ * official `workspaces.pickDirectory` wire primitive, since the official
+ * picker UI is bound to ui-workspace's adopt-as-workspace flow holes and
+ * cannot serve a pure path pick; empty = inherit the room session's cwd,
  * shown as the placeholder), and an optional first task. Edit mode reuses
  * the card with only the instructions field.
  */
@@ -34,6 +39,13 @@ export interface InviteDialogProps {
   readonly localAgentAvailable: boolean
   /** The room session's cwd (the empty-cwd placeholder, invite mode). */
   readonly inheritedCwd?: string | undefined
+  /**
+   * The 浏览… button's pick call (the official `workspaces.pickDirectory`
+   * wire primitive): resolves the picked absolute path, null on cancel, and
+   * throws when the host serves no native picking capability (the button's
+   * failure shows as an inline hint, the field stays as it was).
+   */
+  readonly browseDirectory: () => Promise<string | null>
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -46,7 +58,7 @@ function validName(name: string): boolean {
 
 /** The invite/edit modal card. */
 export function InviteDialog({
-  mode, member, providers, localAgentAvailable, inheritedCwd, onSubmit, onClose, t,
+  mode, member, providers, localAgentAvailable, inheritedCwd, browseDirectory, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState('')
@@ -55,6 +67,7 @@ export function InviteDialog({
   const [firstTask, setFirstTask] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent): void => {
@@ -69,7 +82,23 @@ export function InviteDialog({
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
   const canSubmit = mode === 'edit'
     ? instructions.trim() !== ''
-    : localAgentAvailable && chosen !== '' && validName(name) && instructions.trim() !== ''
+    : localAgentAvailable && chosen !== '' && validName(name)
+
+  const browse = async (): Promise<void> => {
+    if (browsing) return
+    setBrowsing(true)
+    setError(null)
+    try {
+      const picked = await browseDirectory()
+      if (picked !== null) setCwd(picked)
+    } catch {
+      // No native picking capability on this host (or a transport failure):
+      // the field keeps its value and the hint explains the miss.
+      setError(t('invite.browseFailed'))
+    } finally {
+      setBrowsing(false)
+    }
+  }
 
   const submit = async (): Promise<void> => {
     if (!canSubmit || busy) return
@@ -142,12 +171,36 @@ export function InviteDialog({
             </label>
             <label className={css.field}>
               <span className={css.label}>{t('invite.cwd')}</span>
-              <input
-                className={css.input}
-                value={cwd}
-                placeholder={inheritedCwd ?? ''}
-                onChange={event => { setCwd(event.target.value) }}
-              />
+              <span className={css.cwdRow}>
+                {/* Read-only display: a picked path only (manual typing went
+                    away with the 浏览… button; empty = inherit the room cwd,
+                    shown as the placeholder). */}
+                <input
+                  className={css.input}
+                  value={cwd}
+                  placeholder={inheritedCwd ?? ''}
+                  readOnly
+                  aria-label={t('invite.cwd')}
+                />
+                <button
+                  type="button"
+                  className={css.browse}
+                  disabled={browsing}
+                  onClick={() => { void browse() }}
+                >
+                  {t('invite.browse')}
+                </button>
+                {cwd !== '' && (
+                  <button
+                    type="button"
+                    className={css.browse}
+                    aria-label={t('invite.cwdReset')}
+                    onClick={() => { setCwd('') }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
               <span className={css.hint}>{t('invite.cwdHint')}</span>
             </label>
           </>
@@ -158,6 +211,7 @@ export function InviteDialog({
             className={css.textarea}
             rows={3}
             value={instructions}
+            placeholder={t('invite.instructionsPlaceholder')}
             onChange={event => { setInstructions(event.target.value) }}
           />
           <span className={css.hint}>{t('invite.instructionsHint')}</span>

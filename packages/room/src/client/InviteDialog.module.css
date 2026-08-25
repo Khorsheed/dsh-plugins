@@ -74,6 +74,46 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
+/* The cwd row: the read-only picked-path display plus the 浏览… trigger (and
+   the reset ✕ once a path is picked). The display keeps the field skin but
+   never takes a caret. */
+.cwdRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cwdRow .input {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: default;
+}
+
+.browse {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  cursor: pointer;
+}
+
+.browse:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.browse:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.browse:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .error {
   font-size: 12px;
   line-height: 18px;

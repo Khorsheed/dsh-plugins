@@ -46,6 +46,7 @@ interface Bench {
     updateMember: ReturnType<typeof vi.fn>
     invite: ReturnType<typeof vi.fn>
     listProviders: ReturnType<typeof vi.fn>
+    browseDirectory: ReturnType<typeof vi.fn>
   }
 }
 
@@ -74,6 +75,7 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
     updateMember: vi.fn(async () => ({ ok: true as const })),
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
+    browseDirectory: vi.fn(async () => '/home/user/web' as string | null),
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -180,12 +182,15 @@ describe('MembersView', () => {
     expect(dialog.textContent).toContain('置灰的 provider 未登录')
 
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
-    // The cwd field: empty = inherit the room cwd (the placeholder); a value
-    // rides the invite as the member's own working directory.
+    // The cwd field: empty = inherit the room cwd (the placeholder); the
+    // read-only display fills through the 浏览… button (the official
+    // pickDirectory wire primitive).
     const cwdInput = screen.getByText('工作目录（可选）')
       .closest('label')!.querySelector('input')!
     expect((cwdInput as HTMLInputElement).placeholder).toBe('/home/user/room')
-    fireEvent.change(cwdInput, { target: { value: '/home/user/web' } })
+    expect((cwdInput as HTMLInputElement).readOnly).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
+    await waitFor(() => { expect((cwdInput as HTMLInputElement).value).toBe('/home/user/web') })
     const textareas = dialog.querySelectorAll('textarea')
     fireEvent.change(textareas[0]!, { target: { value: '前端' } })
     fireEvent.change(textareas[1]!, { target: { value: '搭页面' } })
@@ -230,5 +235,36 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByText(/委派门面未挂载/)
     expect((screen.getByRole('button', { name: '邀请' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the instructions field carries the first-task-message copy and an example placeholder', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('角色指令')
+    expect(dialog.textContent).toContain('第一条任务消息最前面')
+    expect(screen.getByPlaceholderText(/你是这个 room 的后端工程师/)).toBeDefined()
+  })
+
+  it('instructions are optional: a blank role is omitted from the invite, not sent', async () => {
+    const { face } = await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code')
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+    })
+  })
+
+  it('a failed browse keeps the field and explains the miss inline', async () => {
+    const { face } = await bench()
+    face.browseDirectory.mockRejectedValue(new Error('no native capability'))
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code')
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
+    await screen.findByText(/目录选择器不可用/)
   })
 })

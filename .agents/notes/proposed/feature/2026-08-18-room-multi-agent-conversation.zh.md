@@ -16,7 +16,7 @@ Status: proposed
 
 ### 会话与成员模型
 
-- 创建 room（`sidebar.footer.action` 里的 `+ 新 room` 入口）就是创建一个普通会话并 append 一条 `room/created` 自定义事件——它是 room 的身份标记，也是其日志的根。名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。
+- 创建 room（`sidebar.footer.action` 里的 `+ 新 room` 入口——按钮穿官方「新会话」的壳：SidebarRoot `.newSession` 那套 elevated 底色 + l2 细边 + r12 + floating hover，图标位放多 agent 三环glyph IconAgentPresetOutline16，56px 栏收起为纯图标 36px 透明钮，2026-08-25）就是创建一个普通会话并 append 一条 `room/created` 自定义事件——它是 room 的身份标记，也是其日志的根。名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。
 - 会话自己的主 agent 是无特权成员。**不带 @ 的消息就是跟主 agent 的正常对话**（composer 放行给官方提交路径）；**@ 是派发触发器**。主 agent 因此天然感知人的全部消息——裸消息与 @ 派发文本都是普通 `user/message` 事件（@ 派发由 host 侧 append，不唤醒主 agent，但进它的模型可见历史，主 agent 能据此推测名册与任务），对成员回复零感知。
 - 外部成员（如 `@ada`）是 local-agent 家族 CLI provider 的委派：一个 dsh 子会话（`parentSession = room 会话`），通过家族 resume 注册表跨轮延续。每个成员保持自己私有的 CLI 上下文；子会话里的镜像 transcript 是完整轨迹。
 - **成员级 `cwd`**：成员合法地可能与 room 会话在不同工作目录干活（主 agent 在仓库 A，CLI 成员在仓库 B）。邀请弹窗带 cwd 字段（缺省继承 room 会话的 cwd）；投递需要门面层的覆盖参数（下方需求 R2）。
@@ -43,6 +43,7 @@ Status: proposed
 - **人的管理面是输入卡片上方的一行双胶囊**（RoomDockCapsules，由 RoomComposer 自己渲染——官方 `conversation.input.dock` 坑位被 composer 接管隐藏，会话统计行 RoomStatsLine 同理内嵌在卡片下方）：
   - *goal 胶囊*：折叠态 `◐ 目标文本（截断） · 完成/总数`（进度 = done/(总数-cancelled)，cancelled 不计入分母）；点击展开 goal 卡：目标全文（[编辑] 行内编辑）、进度条、最近几条推进记录（谁完成了什么 · 相对时间，按 updatedAt 倒序）。无 goal 时胶囊是「＋ 设定目标」引导态，点开直接进编辑。
   - *任务胶囊*：折叠态 `▦ 任务 n待办·m进行中`；点击展开任务面板：成员筛选 chips（[全部] [●ada] [●bill]…，全部=按成员分组、单人=平铺）、任务行（三态字形 ○待办/◔进行中/●完成 + 标题 + 成员名 + 状态/相对时间 + 行尾[完成]）、行内添加（＋ 展开：成员选择 + 标题 + 可选"等谁"下拉）。胶囊行尾还有一个 ＋ 快捷钮，直接展开任务面板并打开添加表单。展开面板无遮罩：再点胶囊或点外部收起。
+  - *新 room 初始态*（2026-08-25）：无 goal 且无任务（不看成员——主 agent 永远在）时双胶囊是噪音，胶囊行改渲染单个「＋ 邀请成员」胶囊（同族 chip 样式），点击直接打开邀请弹窗——邀请能力因此接到 dock（与成员 tab 共用同一个 RoomInviteInjected 注入面和 InviteDialog 组件，composer 与成员 tab 的注入面互不污染）。一旦设定 goal 或出现任务，恢复双胶囊，邀请入口退场（成员 tab 与弹窗已可达）。
 - **blockedBy（纯展示）**：`blockedBy` 是成员名（与人话"等 ada"一致）。被阻塞任务灰色显示「等 ada」；阻塞者名下没有未完成任务后变亮。不产生任何自动派发。
 - **推进线**：任务闭环（done）时在聊天流落一条 dim 推进线：`✓ ada 完成了「API 定稿」── 目标进度 2/5`（room-task-line 节点从 task-added/task-updated 事件折叠，隐藏至 done 才显形，锚在完成事件的位置；进度后缀由渲染器从 room store 实时推导，取消的任务不进分母）。
 - **不用 `todo/write`**：官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板不能寄生这个语义。任务进板来自派发（@ 派发开任务；成员的完成发言闭任务）和人的显式编辑。
@@ -72,7 +73,9 @@ Status: proposed
 ### 成员管理：成员 tab 与邀请
 
 - room 会话的视图导航（对话/轨迹那一排）上用 `conversation.view` slot 增加**成员 tab**。它是纯成员管理：**成员卡网格**（宽时两列、窄时一列）加一张虚线「＋ 邀请成员」卡。每张卡：色点 + 名字头部、成员色块头像区（大写名字，color-mix 加深的纯色，无渐变）、provider/kind、角色指令（多行截断 + 行内展开/收起；未设置显示「未设置角色」占位）、状态 chip（运行中 = 品牌蓝，带克制的呼吸动画、reduced-motion 兜底；失败 = 错误色；空闲 = 灰），以及操作 `[轨迹→]`（无子会话时置灰）`[编辑]` `[移除]`。**运行中 chip 本身就是"去看看它在干什么"的跳转**，点了进成员子会话。**中断刻意不在这里**——中断属于运行现场（聊天流运行中行的停止钮、成员会话自己的 Stop）。主 agent 卡不显示角色指令行、无操作——它就是 room 本身。任务不在这里——任务在输入卡片上方的 dock 双胶囊。
-- **邀请弹窗**：provider 选择（候选来自 `ctx.localAgent.roster()`，未登录的置灰并给登录引导）、显示名、角色指令、**cwd**（缺省继承 room 会话的）、可选的首个任务。确认即写名册事件——填了首个任务则立即发 fresh 委派（角色指令拼在 prompt 前）；留空则成员入列待命。
+- **邀请弹窗**：provider 选择（候选来自 `ctx.localAgent.roster()`，未登录的置灰并给登录引导）、显示名、角色指令（可选）、**cwd**（缺省继承 room 会话的）、可选的首个任务。确认即写名册事件——填了首个任务则立即发 fresh 委派（角色指令拼在 prompt 前）；留空则成员入列待命。
+  - *cwd 字段*（2026-08-25）：只读展示框 + 「浏览…」按钮，按钮走官方 `workspaces.pickDirectory` 线原语（与 ui-directory-picker-native 的 flow 驱动的是同一个 host 调用；官方选择器 UI 本身不可复用——ui-workspace 的两个 directory-flow 坑位把选中路径领养为工作区，服务不了"纯选路径"）。主机无 native 选择能力时按钮报行内提示，字段保持原值；选中后可 ✕ 清除回继承态。
+  - *角色指令文案*（2026-08-25）：标签仍叫「角色指令」（不是系统提示词——机制如实写明：拼在给它的第一条任务消息最前面，之后可编辑；留空则不带预设，成员入列后可随时 @ 它安排任务），带示例 placeholder。留空时客户端直接省略该字段（host 拒绝"存在但空白"的角色指令），所以角色指令从必填降为可选。
 - **角色指令机制，实话实说**：家族 CLI provider 是 `cli -p` 一次性进程，没有 system prompt 通道。room 把角色指令拼进首轮派发的 prompt 最前面——经 resume 链留在成员自己的 CLI 会话里，效果等价——后续编辑则作为一条上下文更新随下一次派发带入（`你的角色指令更新为：…`）。主 agent 成员不配角色指令，它保持会话自己的设定。
 - **主 agent 邀请**：room 在 room 会话里注册模型工具 `room_invite({ provider, name, instructions, firstTask?, cwd? })`。人用自然语言交代（"请个后端工程师进来负责 API"），主 agent 自己定 provider、自己写角色指令、自己起名字（ada/bill/cathy 风格）；调用落到与弹窗相同的 room 服务 invite 函数，产出完全一样的成员记录。命名规则：room 内唯一、不含空白和 `@`（composer 的 @ 解析必须可工作）、显示名与 provider 解耦（`ada (kimi-cli)`），同一个 provider 的两个实例可以共存。
 
@@ -114,7 +117,7 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 
 ### Why not 通过 composer 的 @ 菜单邀请？
 
-邀请需要填名字、角色指令和 cwd——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在成员 tab 的弹窗和主 agent 的 `room_invite` 工具里。
+邀请需要填名字，角色指令和 cwd 可选——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在成员 tab 的弹窗、新 room 初始态 dock 的邀请胶囊和主 agent 的 `room_invite` 工具里。
 
 ### Why not 把成员产出写成 room 会话里模型可见的事件？
 
