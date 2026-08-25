@@ -57,5 +57,6 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 
 - **发布源只认仓库**:不从 /tmp、scratch 或任何一次性目录发;所有改动先入库再发。
 - **纯 semver，不跟官方宿主版本号**:rc 后缀时代的"版本线跟官方家族走"自第一波起退役——宿主兼容性由 `dsh.compat`（minHost/verifiedHost）与 README 兼容性段表达，版本号只表达插件自己的演进;`package.json` 里的版本是下一条发布线,发版时才 bump,不按提交 bump。
+- **worktree 不动版本号**:分支/工作区里的 `package.json` 版本保持与 main 一致,版本治理只在 mainline 发版时发生。3080 的日常部署不需要新文件名激励——deploy-3080 的 profile 副本文件名自带构建时间戳(`<名>-<版本>+<yymmddhhmm>.tgz`),同版本反复部署也会被实例吃到。改动不值得发版(测试/内部重构/仓库文档)就攒着随下次;改动值得发版(动 lib/ 或行为)就叫 mainline 发,版本号没有稀缺性。
 - 一次发布只做一次:pack → 验包 → publish → `npm view` 确认 → 完事;不重复发同一版本。
 - 有 `dsh.bundle` 声明的插件,发完顺手验证一次 `dsh plugin --profile web add <包>@<新版本>` 能 reconcile 进 bundles 层。
