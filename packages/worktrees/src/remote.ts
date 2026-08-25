@@ -47,9 +47,11 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
     return this.ctx.worktrees
   }
 
-  /** The calling session's workspace; '' when the session has none. */
+  /** The calling session's workspace; '' when the session has none. Prefers
+   * the session's active-worktree override (set by the model-facing tool) and
+   * falls back to the session's static `header.cwd`. */
   private cwd(agent: Agent): string {
-    return agent.session.header.cwd ?? ''
+    return this.worktrees.activeWorktreeOf(agent.id) ?? (agent.session.header.cwd ?? '')
   }
 
   /** The badge + drawer summary for the calling session's worktree. */

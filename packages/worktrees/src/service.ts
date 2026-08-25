@@ -10,8 +10,8 @@
  *
  * @module @khorsheed/dsh-worktrees
  */
-import { readFile } from 'node:fs/promises'
-import { isAbsolute, join, sep } from 'node:path'
+import { readFile, realpath } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import {
   entryAt, git, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
   repoToplevel, type ChangedFile, type LogRow,
@@ -52,6 +52,20 @@ export interface SessionSummary {
   committed: LineCounts
   /** The resolved base ref ('' when the configured base does not exist locally). */
   baseRef: string
+}
+
+/** One worktree of the repository, as shown to the model by the tool. */
+export interface WorktreeInfo {
+  /** Absolute worktree path. */
+  path: string
+  /** Bare branch name (null when detached). */
+  branch: string | null
+  /** Whether this is the primary (main) checkout. */
+  isMain: boolean
+  /** Uncommitted changed-file count (0 when clean). */
+  dirty: number
+  /** Clean AND its branch is merged into the base (a cleanup candidate). */
+  stale: boolean
 }
 
 /** Both change segments for the drawer's file tree. */
@@ -139,6 +153,29 @@ export class WorktreesService {
    *   (defaults to `main` at the plugin config).
    */
   constructor(private readonly baseRef: string) {}
+
+  /**
+   * Per-session active worktree override: session id → worktree path. When a
+   * session has an override the Remote data face points the badge/drawer at
+   * that worktree instead of the session's static `header.cwd`. In-memory only
+   * for v1 (a session must re-switch after a host restart).
+   */
+  private readonly activeWorktrees = new Map<string, string>()
+
+  /** The session's active worktree override, or undefined when unset. */
+  activeWorktreeOf(sessionId: string): string | undefined {
+    return this.activeWorktrees.get(sessionId)
+  }
+
+  /** Set the session's active worktree override. */
+  setActiveWorktree(sessionId: string, path: string): void {
+    this.activeWorktrees.set(sessionId, path)
+  }
+
+  /** Clear the session's active worktree override (falls back to header.cwd). */
+  clearActiveWorktree(sessionId: string): void {
+    this.activeWorktrees.delete(sessionId)
+  }
 
   /** Resolve the repository toplevel, or null when not a repo. */
   private async repoOf(cwd: string): Promise<string | null> {
@@ -371,5 +408,163 @@ export class WorktreesService {
       throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
     }
     return { content: buffer.toString('utf8') }
+  }
+
+  /** Uncommitted changed-file count in one worktree (0 when clean/transient). */
+  private async dirtyOf(path: string): Promise<number> {
+    try {
+      const out = await git(path, ['status', '--porcelain'])
+      return out.split('\n').filter(line => line.trim() !== '').length
+    } catch {
+      return 0
+    }
+  }
+
+  /** Whether a (bare) branch is fully merged into the base ref. */
+  private async branchMerged(repo: string, branchName: string): Promise<boolean> {
+    if (this.baseRef === '') return false
+    try {
+      await git(repo, ['merge-base', '--is-ancestor', branchName, this.baseRef])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Normalize a worktree path for comparison (drop trailing slashes). */
+  private static normPath(path: string): string {
+    return path.replace(/\/+$/, '')
+  }
+
+  /**
+   * The canonical (symlink-resolved) path of a worktree. `git worktree list`
+   * emits real paths (e.g. `/private/var/...` on macOS where `/var` is a
+   * symlink), so a user-supplied path must be canonicalized before matching or
+   * it will not line up with the parsed entries. Falls back to resolving the
+   * parent + basename when `path` does not exist yet (a brand-new worktree).
+   */
+  private async canonicalPath(path: string): Promise<string> {
+    try {
+      return await realpath(path)
+    } catch {
+      const parent = dirname(path)
+      const base = basename(path)
+      try {
+        return join(await realpath(parent), base)
+      } catch {
+        return path
+      }
+    }
+  }
+
+  /** Enumerate a repository's worktrees with dirty + stale computed. */
+  private async worktreeInfos(repo: string): Promise<WorktreeInfo[]> {
+    const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const infos: WorktreeInfo[] = []
+    for (const entry of entries) {
+      const branchName = entry.branch === null || entry.branch === undefined
+        ? null
+        : entry.branch.replace(/^refs\/heads\//, '')
+      const dirty = await this.dirtyOf(entry.path)
+      const stale = dirty === 0
+        && branchName !== null
+        && branchName !== this.baseRef
+        && (await this.branchMerged(repo, branchName))
+      infos.push({ path: entry.path, branch: branchName, isMain: entry.isMain, dirty, stale })
+    }
+    return infos
+  }
+
+  /**
+   * All worktrees of the session's repository, with dirty/stale hints — the
+   * `list` action of the model-facing tool.
+   * @param cwd - session working directory.
+   * @returns the worktrees (main first, then linked).
+   */
+  async listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) return []
+    return await this.worktreeInfos(repo)
+  }
+
+  /**
+   * Point the session's badge/drawer at another worktree — the `switch` action.
+   * @param sessionId - the calling session.
+   * @param cwd - session working directory (the base repo).
+   * @param path - the target worktree path.
+   * @returns the target worktree's info.
+   * @throws when `path` is not a worktree of the repository.
+   */
+  async switchWorktree(sessionId: string, cwd: string, path: string): Promise<WorktreeInfo> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const entry = entryAt(entries, await this.canonicalPath(path))
+    if (entry === undefined) throw new Error(`worktrees: no worktree at ${path}`)
+    this.setActiveWorktree(sessionId, entry.path)
+    const infos = await this.worktreeInfos(repo)
+    const info = infos.find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(entry.path))
+    if (info === undefined) throw new Error(`worktrees: no worktree at ${path}`)
+    return info
+  }
+
+  /**
+   * Create a git worktree (or adopt an existing one at `path`) and switch the
+   * session to it — the `create` action.
+   * @param sessionId - the calling session.
+   * @param cwd - session working directory (the base repo).
+   * @param path - directory for the new worktree.
+   * @param branch - optional branch to create (`git worktree add -b <branch>`).
+   * @returns the new worktree's info.
+   */
+  async createWorktree(sessionId: string, cwd: string, path: string, branch: string | undefined): Promise<WorktreeInfo> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const existing = entryAt(entries, await this.canonicalPath(path))
+    if (existing === undefined) {
+      const args = branch === undefined || branch === ''
+        ? ['worktree', 'add', path]
+        : ['worktree', 'add', '-b', branch, path]
+      await git(repo, args)
+    }
+    // After the add the directory exists, so canonicalPath resolves it fully.
+    const created = await this.canonicalPath(path)
+    this.setActiveWorktree(sessionId, created)
+    const infos = await this.worktreeInfos(repo)
+    const info = infos.find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(created))
+    if (info === undefined) throw new Error(`worktrees: could not resolve worktree at ${path}`)
+    return info
+  }
+
+  /**
+   * Removes a linked worktree — the `remove` action. Gated: the caller must
+   * confirm (`confirm === true`), the main worktree is never removed, and a
+   * worktree with uncommitted changes is refused (the model cleans it first).
+   * @param sessionId - the calling session.
+   * @param cwd - session working directory (the base repo).
+   * @param path - the worktree to remove.
+   * @param confirm - explicit human/caller confirmation.
+   * @returns the main worktree path to switch back to.
+   * @throws on any guard failure.
+   */
+  async removeWorktree(sessionId: string, cwd: string, path: string, confirm: boolean): Promise<{ switchedTo: string }> {
+    if (confirm !== true) throw new Error('worktrees: confirm must be true to remove a worktree')
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const canonical = await this.canonicalPath(path)
+    const entry = entryAt(entries, canonical)
+    if (entry === undefined) throw new Error(`worktrees: no worktree at ${path}`)
+    if (entry.isMain || WorktreesService.normPath(entry.path) === WorktreesService.normPath(repo)) {
+      throw new Error('worktrees: cannot remove the main worktree')
+    }
+    const dirty = await this.dirtyOf(entry.path)
+    if (dirty > 0) throw new Error(`worktrees: worktree at ${path} has ${dirty} uncommitted change(s)`)
+    await git(repo, ['worktree', 'remove', entry.path])
+    if (WorktreesService.normPath(this.activeWorktrees.get(sessionId) ?? '') === WorktreesService.normPath(entry.path)) {
+      this.clearActiveWorktree(sessionId)
+    }
+    return { switchedTo: repo }
   }
 }

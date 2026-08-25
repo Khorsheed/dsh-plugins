@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { WorktreesRemoteService } from './remote.ts'
 import { WorktreesService } from './service.ts'
+import { registerWorktreesTool } from './tool.ts'
 
 /** Plugin configuration. */
 export interface WorktreesPluginConfig {
@@ -44,4 +45,7 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
   const service = new WorktreesService(config.baseRef ?? 'main')
   ctx.provide('worktrees', service)
   ctx.plugin(WorktreesRemoteService, {})
+  // The model-facing tool needs the tools plugin; `registerWorktreesTool`
+  // probes it and degrades to badge/drawer-only when a composition omits it.
+  registerWorktreesTool(ctx)
 }

@@ -11,6 +11,7 @@
     "src/invariant.ts",
     "src/remote.ts",
     "src/service.ts",
+    "src/tool.ts",
     "src/types.ts"
   ]
 }
