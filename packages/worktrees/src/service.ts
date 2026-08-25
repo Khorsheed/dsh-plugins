@@ -13,7 +13,7 @@
 import { readFile, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import {
-  entryAt, git, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
+  entryAt, git, gitAllowFailure, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
   repoToplevel, type ChangedFile, type LogRow,
 } from './git.ts'
 
@@ -289,6 +289,21 @@ export class WorktreesService {
     ])
     const uncommitted = mergeCounts(parsePorcelain(uncommittedStatus), uncommittedNumstat)
     const committed = mergeCounts(parseNameStatus(committedStatus), committedNumstat)
+    // Untracked files never appear in `git diff HEAD` numstat, so they carry
+    // null counts. A new file's whole content is "added", so additions = its
+    // line count and deletions = 0 — `git diff --no-index` vs /dev/null reports
+    // that. Bound the work to a sane number of untracked files.
+    const untracked = uncommitted.filter(file => file.status === '??')
+    await Promise.all(untracked.slice(0, 200).map(async file => {
+      try {
+        const num = await gitAllowFailure(repo, ['diff', '--no-index', '--numstat', '/dev/null', file.path])
+        const m = num.match(/^(\d+)\t(\d+)/)
+        if (m !== null) {
+          file.additions = Number(m[1])
+          file.deletions = Number(m[2])
+        }
+      } catch { /* binary/unreadable — leave null */ }
+    }))
     return { uncommitted, committed }
   }
 
@@ -312,11 +327,12 @@ export class WorktreesService {
   async commitLog(cwd: string): Promise<CommitInfo[]> {
     const repo = await this.repoOf(cwd)
     if (repo === null) return []
-    const hasBase = await this.hasBase(repo)
-    if (!hasBase) return []
-    // One NUL-separated record per commit — the short format on the first
-    // line, then the commit's file names to count for the list row.
-    const out = await git(repo, ['log', '--format=%x00%h%x1f%s%x1f%an%x1f%at', '--name-only', `${this.baseRef}..HEAD`])
+    // The repository commit log for THIS checkout — its whole history (HEAD),
+    // not just the commits ahead of base, so it stays useful after the branch
+    // is merged/caught up. One NUL-separated record per commit: the short
+    // format + `%D` decorations (branches/tags) on the first line, then the
+    // commit's file names to count for the list row.
+    const out = await git(repo, ['log', '--format=%x00%h%x1f%s%x1f%an%x1f%at%x1f%D', '--name-only', '-n', '200', 'HEAD'])
     return parseLogWithFiles(out)
   }
 

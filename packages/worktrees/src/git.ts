@@ -48,6 +48,23 @@ export async function git(cwd: string, args: readonly string[]): Promise<string>
 }
 
 /**
+ * Run one git command, returning stdout even on a non-zero exit (e.g.
+ * `git diff --no-index` exits 1 when the files differ — which is the success
+ * case for computing a new file's line count). `git()` rejects on non-zero;
+ * this one only tolerates it.
+ * @param cwd - working directory.
+ * @param args - git arguments.
+ * @returns stdout (utf8), regardless of exit code.
+ */
+export async function gitAllowFailure(cwd: string, args: readonly string[]): Promise<string> {
+  return await new Promise((resolvePromise) => {
+    execFile('git', ['-c', 'core.quotePath=false', ...args], { cwd, maxBuffer: 64 * 1024 * 1024 }, (_error, stdout) => {
+      resolvePromise(stdout as string)
+    })
+  })
+}
+
+/**
  * Resolve the repository toplevel of `cwd` (symlinks resolved by git), or
  * `null` when `cwd` is not inside a git work tree.
  * @param cwd - candidate directory.
@@ -214,6 +231,8 @@ export interface LogRow {
   subject: string
   author: string
   time: number
+  /** Branch/tag decorations (`%D`), e.g. `HEAD -> main, origin/main`. */
+  branches: string
 }
 
 /** A short-format log row with its file count (for the commits list). */
@@ -222,7 +241,7 @@ export interface LogRowWithFiles extends LogRow {
 }
 
 /**
- * Parse `git log --format=%x00<h>%x1f<s>%x1f<a>%x1f<t> --name-only <range>`
+ * Parse `git log --format=%x00<h>%x1f<s>%x1f<a>%x1f<t>%x1f<D> --name-only <range>`
  * output: one NUL-separated record per commit — the format fields on the
  * first line, then the commit's file paths (one per line) to count.
  * @param output - raw log output.
@@ -240,6 +259,7 @@ export function parseLogWithFiles(output: string): LogRowWithFiles[] {
       subject: header[1] ?? '',
       author: header[2] ?? '',
       time: Number(header[3]) || 0,
+      branches: header[4] ?? '',
       files,
     })
   }
@@ -262,6 +282,7 @@ export function parseLog(output: string): LogRow[] {
       subject: parts[1] ?? '',
       author: parts[2] ?? '',
       time: Number(parts[3]) || 0,
+      branches: '',
     })
   }
   return rows

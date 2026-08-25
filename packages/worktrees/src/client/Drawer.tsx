@@ -312,7 +312,6 @@ export function WorktreesDrawer({
           ? <CommitList
             commits={commits}
             selectedCommit={selectedCommit}
-            baseRef={summary?.baseRef ?? 'main'}
             collapsed={treeCollapsed}
             onToggleCollapse={() => { actions.toggleTree() }}
             onSelectCommit={actions.selectCommit}

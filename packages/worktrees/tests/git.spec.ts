@@ -109,8 +109,8 @@ describe('parseLog', () => {
     const output = ['a1b2c3d\tfeat: something\tAlice\t1787567598', 'e5f6a7b\tfix: other\tBob\t1787567000'].join('\n')
     const rows = parseLog(output)
     expect(rows).toEqual([
-      { sha: 'a1b2c3d', subject: 'feat: something', author: 'Alice', time: 1787567598 },
-      { sha: 'e5f6a7b', subject: 'fix: other', author: 'Bob', time: 1787567000 },
+      { sha: 'a1b2c3d', subject: 'feat: something', author: 'Alice', time: 1787567598, branches: '' },
+      { sha: 'e5f6a7b', subject: 'fix: other', author: 'Bob', time: 1787567000, branches: '' },
     ])
   })
 

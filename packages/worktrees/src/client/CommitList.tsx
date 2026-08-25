@@ -15,12 +15,10 @@ import css from './CommitList.module.css'
 
 /** Props of the commit list. */
 export interface CommitListProps {
-  /** The branch's commits, newest first. */
+  /** The commit log rows, newest first. */
   commits: readonly CommitInfo[] | null
   /** The selected commit sha, or null. */
   selectedCommit: string | null
-  /** The base branch the log is measured against (the header's `基于 main`). */
-  baseRef: string
   /** When given, renders a collapse-to-rail toggle at the right of the header. */
   collapsed?: boolean
   onToggleCollapse?: () => void
@@ -30,9 +28,21 @@ export interface CommitListProps {
   t: TranslateNS<'worktrees'>
 }
 
+/** Extract a short branch label from a `%D` decoration, e.g.
+ * `HEAD -> main, origin/main` → `main`; empty when the commit has no ref. */
+function branchLabel(decorations: string): string {
+  if (decorations === '') return ''
+  const cleaned = decorations
+    .replace(/HEAD -> /g, '')
+    .split(',')
+    .map(part => part.trim().replace(/^origin\//, ''))
+    .filter(Boolean)
+  return cleaned[0] ?? ''
+}
+
 /** The commit list. */
 export function CommitList({
-  commits, selectedCommit, baseRef, collapsed, onToggleCollapse, onSelectCommit, t,
+  commits, selectedCommit, collapsed, onToggleCollapse, onSelectCommit, t,
 }: CommitListProps): ReactNode {
   if (commits === null || commits.length === 0) {
     return <div className={css.empty}>{t('commits.empty', { base: 'base' })}</div>
@@ -45,7 +55,7 @@ export function CommitList({
       <div className={css.header}>
         <span className={css.title}>{t('mode.commits')}</span>
         <span className={css.headerRight}>
-          <span className={css.leading}>{t('commits.base', { base: baseRef || 'main' })}</span>
+          <span className={css.leading}>{t('commits.recent', { count: String(200) })}</span>
           {onToggleCollapse !== undefined && (
             <button
               type="button"
@@ -61,6 +71,7 @@ export function CommitList({
       <div className={css.rows}>
         {commits.map(commit => {
           const selected = selectedCommit === commit.sha
+          const branch = branchLabel(commit.branches)
           return (
             <button
               key={commit.sha}
@@ -71,6 +82,7 @@ export function CommitList({
             >
               <span className={css.subject}>{commit.subject}</span>
               <span className={css.rowMeta}>
+                {branch !== '' && <span className={css.rowBranch}>{branch}</span>}
                 <span className={css.sha}>{commit.sha}</span>
                 <span className={css.fileCount}>· {fileLabel(commit.files)}</span>
                 <span className={css.time}>{relativeTime(commit.time)}</span>

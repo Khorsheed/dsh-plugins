@@ -139,6 +139,15 @@ body[data-ds-dark-theme] {
   min-width: 0;
 }
 
+.rowBranch {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
 .sha {
   flex: none;
   font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);

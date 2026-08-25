@@ -123,12 +123,16 @@ describe('WorktreesService', () => {
     expect(files).not.toContain('ignored.log')
   })
 
-  it('returns the commit log and per-commit files', async () => {
+  it('returns the repository commit log and per-commit files', async () => {
     const service = new WorktreesService('main')
     const log = await service.commitLog(cwd)
-    expect(log).toHaveLength(2)
+    // The commit log is the whole HEAD history now, not just commits ahead of
+    // base — so it stays populated after a branch catches up / merges.
+    expect(log).toHaveLength(4)
     expect(log[0]?.subject).toBe('feat: room util')
     expect(log[1]?.subject).toBe('feat: room index')
+    expect(log[2]?.subject).toBe('feat: base b')
+    expect(log[3]?.subject).toBe('feat: base a')
     const files = await service.commitFiles(cwd, log[0]?.sha ?? '')
     expect(files.files.map(f => f.path)).toContain('packages/room/src/util.ts')
   })
