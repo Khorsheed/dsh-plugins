@@ -27,6 +27,25 @@
   gap: 8px;
 }
 
+/* A group label above a segment's rows (未提交 / 已提交) — a quiet secondary
+   caption, not a row, so the change segment is obvious at a glance. */
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.groupCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
 .treeAction {
   border: 0;
   background: transparent;

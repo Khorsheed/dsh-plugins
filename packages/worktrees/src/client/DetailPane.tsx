@@ -65,9 +65,13 @@ export function DetailPane({
     if (deleted) return <div className={css.placeholder}>{t('detail.deleted')}</div>
     const lang = languageFor(path)
     if (untracked) {
-      return content === null
-        ? <div className={css.placeholder}>{t('detail.untracked')}</div>
-        : <CodeBlock className={css.code} code={content.content} lang={lang} />
+      if (content === null) return <div className={css.placeholder}>{t('detail.untracked')}</div>
+      return (
+        <div className={css.untrackedView}>
+          <div className={css.untrackedNote}>{t('detail.untrackedNote')}</div>
+          <CodeBlock className={css.code} code={content.content} lang={lang} />
+        </div>
+      )
     }
     if (detailView === 'diff') {
       return diff === null ? <div className={css.placeholder}>{t('detail.noSelection')}</div> : <DiffView diff={diff.diff} t={t} />

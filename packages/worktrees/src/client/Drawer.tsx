@@ -136,11 +136,19 @@ export function WorktreesDrawer({
 
   const groups = useMemo<FileTreeGroup[]>(() => {
     if (mode === 'worktree') {
-      const items: FileTreeItem[] = [
-        ...(changes?.uncommitted ?? []),
-        ...(changes?.committed ?? []),
-      ].map(file => ({ path: file.path, status: file.status, additions: file.additions, deletions: file.deletions }))
-      return [{ key: 'all-changes', title: '', count: items.length, items }]
+      const uncommitted = (changes?.uncommitted ?? []).map(file => ({
+        path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
+      }))
+      const committed = (changes?.committed ?? []).map(file => ({
+        path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
+      }))
+      // Two groups (未提交 / 已提交) instead of one merged list, so it is clear
+      // which changes are uncommitted (vs HEAD) and which are the branch's own
+      // commits on top of base.
+      return [
+        { key: 'uncommitted', title: t('group.uncommitted'), count: uncommitted.length, items: uncommitted },
+        { key: 'committed', title: t('group.committed'), count: committed.length, items: committed },
+      ]
     }
     if (mode === 'repo') {
       const items: FileTreeItem[] = (repoFiles ?? []).map(path => ({ path, status: '' }))

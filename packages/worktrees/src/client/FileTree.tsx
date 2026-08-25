@@ -258,6 +258,12 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       </div>
       {roots.map(group => (
         <div key={group.key}>
+          {group.title !== '' && (
+            <div className={css.groupHeader}>
+              <span className={css.groupTitle}>{group.title}</span>
+              <span className={css.groupCount}>{group.count}</span>
+            </div>
+          )}
           {group.nodes.map(node => renderNode(node, group.key))}
         </div>
       ))}

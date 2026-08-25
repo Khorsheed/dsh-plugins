@@ -131,3 +131,20 @@
   font-size: 13px;
   text-align: center;
 }
+
+/* A new (untracked) file has no diff — its content IS the change. Show a quiet
+   caption above the content so the "no change view" reads as intentional, not
+   broken. */
+.untrackedView {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.untrackedNote {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
