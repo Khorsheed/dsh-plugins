@@ -13,6 +13,7 @@ The commit log tab showed only `base..HEAD` (the branch's commits ahead of main)
 - **Commit log = repository log**: `commitLog` now runs `git log --format=<...>%D --name-only -n 200 HEAD` — the checkout's whole history (kept populated after merge), capped at 200, with `%D` decorations parsed into a per-row `branches` label.
 - **Untracked line counts**: in `changes`, untracked (`??`) files get `additions`/`deletions` from `git diff --no-index --numstat /dev/null <path>` (a new file's content is all additions; deletions 0). A failure-tolerant `gitAllowFailure` helper tolerates the exit-1 that `--no-index` returns on a difference. Bounded to 200 untracked files.
 - The 已提交 (committed) segment is retained; it is the branch's file-level diff vs main, distinct from the commit log.
+- **Commit body**: the commit detail fetches the message body (`git show --format=%b`) with the selected commit's files and renders it below the subject.
 
 ## Verification
 

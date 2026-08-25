@@ -82,10 +82,12 @@ export interface CommitInfo extends LogRow {
   files: number
 }
 
-/** Files of one commit. */
+/** Files of one commit, plus its message body. */
 export interface CommitFilesResult {
   sha: string
   files: readonly ChangedFile[]
+  /** The commit message body (everything after the subject line). */
+  body: string
 }
 
 /** Diff request for one file of one segment. */
@@ -345,14 +347,17 @@ export class WorktreesService {
    */
   async commitFiles(cwd: string, sha: string): Promise<CommitFilesResult> {
     const repo = await this.repoOf(cwd)
-    if (repo === null) return { sha, files: [] }
+    if (repo === null) return { sha, files: [], body: '' }
     // Merge the status letters with real numstat counts, so the commit's file
-    // list can show meaningful add/del instead of a blank or +0 −0.
-    const [statusOut, numstatOut] = await Promise.all([
+    // list can show meaningful add/del instead of a blank or +0 −0; fetch the
+    // message body separately (it is multi-line, so the list format keeps only
+    // the subject).
+    const [statusOut, numstatOut, bodyOut] = await Promise.all([
       git(repo, ['show', '--format=', '--name-status', sha]),
       git(repo, ['show', '--format=', '--numstat', sha]),
+      git(repo, ['show', '--format=%b', '--no-patch', sha]),
     ])
-    return { sha, files: mergeCounts(parseNameStatus(statusOut), numstatOut) }
+    return { sha, files: mergeCounts(parseNameStatus(statusOut), numstatOut), body: bodyOut.trim() }
   }
 
   /**

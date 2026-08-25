@@ -13,6 +13,7 @@ English | [中文](2026-08-25-worktrees-commit-log-scope.zh.md)
 - **提交记录 = 仓库日志**:`commitLog` 现在执行 `git log --format=<...>%D --name-only -n 200 HEAD` —— 该 checkout 的全部历史(合并后也保留),上限 200,并把 `%D` 装饰解析成每行的 `branches` 标注。
 - **未跟踪文件行数**:在 `changes` 里,未跟踪(`??`)文件的 `additions`/`deletions` 来自 `git diff --no-index --numstat /dev/null <path>`(新文件内容全是新增,删除=0)。新增容错的 `gitAllowFailure` 辅助函数容忍 `--no-index` 在存在差异时返回的 exit-1。有 200 个未跟踪文件的上限。
 - **已提交段保留**:它是分支相对 main 的文件级 diff,与提交日志不同。
+- **提交正文**:提交详情在拉取所选提交文件的同时也抓正文(`git show --format=%b`),并渲染在标题下方。
 
 ## Verification
 

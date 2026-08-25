@@ -42,6 +42,8 @@ export interface WorktreesState {
   commits: readonly CommitInfo[] | null
   /** The selected commit's files (commits mode). */
   commitFiles: readonly ChangedFile[] | null
+  /** The selected commit's message body (commits mode). */
+  commitBody: string | null
   /** The selected file's diff (diff view), or null. */
   diff: FileDiffResult | null
   /** The selected file's content (content view), or null. */
@@ -73,6 +75,7 @@ export type WorktreesActions = {
   setRepoFiles: (draft: WorktreesState, files: readonly string[]) => void
   setCommits: (draft: WorktreesState, commits: readonly CommitInfo[]) => void
   setCommitFiles: (draft: WorktreesState, files: readonly ChangedFile[]) => void
+  setCommitBody: (draft: WorktreesState, body: string) => void
   setDiff: (draft: WorktreesState, diff: FileDiffResult) => void
   setContent: (draft: WorktreesState, content: ReadFileResult) => void
 }
@@ -90,6 +93,7 @@ const INITIAL: WorktreesState = {
   repoFiles: null,
   commits: null,
   commitFiles: null,
+  commitBody: null,
   diff: null,
   content: null,
   loading: false,
@@ -166,6 +170,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       setRepoFiles: (d, files: readonly string[]) => { d.repoFiles = files },
       setCommits: (d, commits: readonly CommitInfo[]) => { d.commits = commits },
       setCommitFiles: (d, files: readonly ChangedFile[]) => { d.commitFiles = files },
+      setCommitBody: (d, body: string) => { d.commitBody = body },
       setDiff: (d, diff: FileDiffResult) => { d.diff = diff },
       setContent: (d, content: ReadFileResult) => { d.content = content },
     },

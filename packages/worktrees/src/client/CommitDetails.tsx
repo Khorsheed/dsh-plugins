@@ -22,6 +22,8 @@ export interface CommitDetailsProps {
   commit: CommitInfo
   /** The commit's changed files. */
   files: readonly ChangedFile[]
+  /** The commit's message body (after the subject), or null until fetched. */
+  body: string | null
   /** The currently selected file (drives the inline diff), or null. */
   selectedPath: string | null
   /** The fetched diff for the selected file. */
@@ -46,7 +48,7 @@ export interface CommitDetailsProps {
 
 /** The commit details. */
 export function CommitDetails({
-  commit, files, selectedPath, diff, content, detailView, hasDiff,
+  commit, files, body, selectedPath, diff, content, detailView, hasDiff,
   onSelectFile, onViewChange, onBack, copySha, openFolder, t,
 }: CommitDetailsProps): ReactNode {
   const { added, removed } = useMemo(() => ({
@@ -63,6 +65,7 @@ export function CommitDetails({
           <div className={css.titleText}>
             <div className={css.subject}>{commit.subject}</div>
             <div className={css.meta}>{t('commit.meta', { sha: commit.sha, author: commit.author, time: relativeTime(commit.time) })}</div>
+            {body !== null && body !== '' && <div className={css.body}>{body}</div>}
           </div>
           <span className={css.titleActions}>
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>

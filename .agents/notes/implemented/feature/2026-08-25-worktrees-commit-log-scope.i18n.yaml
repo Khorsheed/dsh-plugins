@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-worktrees-commit-log-scope.md
-.agents/notes/implemented/feature/2026-08-25-worktrees-commit-log-scope.md: c29e05b9b952c021ae29ac94f40e3a460ccbd1e7
-.agents/notes/implemented/feature/2026-08-25-worktrees-commit-log-scope.zh.md: 4d50d90fb1c5c01215c754a3f2b46508ad675532
+.agents/notes/implemented/feature/2026-08-25-worktrees-commit-log-scope.md: ed0d092b145a17c36620ef7c8eca968588d1585a
+.agents/notes/implemented/feature/2026-08-25-worktrees-commit-log-scope.zh.md: b31465c733a0dec554da45fa8a6900c2619df09a

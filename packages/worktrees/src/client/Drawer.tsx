@@ -63,6 +63,7 @@ export function WorktreesDrawer({
   const repoFiles = useStore(s => s.repoFiles)
   const commits = useStore(s => s.commits)
   const commitFiles = useStore(s => s.commitFiles)
+  const commitBody = useStore(s => s.commitBody)
   const diff = useStore(s => s.diff)
   const content = useStore(s => s.content)
   const loading = useStore(s => s.loading)
@@ -205,7 +206,10 @@ export function WorktreesDrawer({
     if (!open || sessionId === undefined || mode !== 'commits' || selectedCommit === null) return
     let cancelled = false
     void fetchCommitFiles(sessionId, selectedCommit).then(result => {
-      if (!cancelled && result.ok) actions.setCommitFiles(result.value.files)
+      if (!cancelled && result.ok) {
+        actions.setCommitFiles(result.value.files)
+        actions.setCommitBody(result.value.body)
+      }
     })
     return () => { cancelled = true }
   }, [open, mode, selectedCommit, sessionId, fetchCommitFiles, actions])
@@ -434,6 +438,7 @@ export function WorktreesDrawer({
                   <CommitDetails
                     commit={commit}
                     files={commitFiles ?? []}
+                    body={commitBody}
                     selectedPath={selectedPath}
                     diff={diff}
                     content={content}
