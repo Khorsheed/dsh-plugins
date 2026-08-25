@@ -42,13 +42,22 @@
 }
 
 .meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 6px;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metaText {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 .titleActions {
@@ -81,10 +90,6 @@
 
 /* The commit message body (after the subject) — a wrapped prose block, kept
    behind a collapsed disclosure so long bodies do not flood the pane. */
-.bodySection {
-  margin-top: 10px;
-}
-
 .bodyToggle {
   padding: 1px 6px;
   border: 0;

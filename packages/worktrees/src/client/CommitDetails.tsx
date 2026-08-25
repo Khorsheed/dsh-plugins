@@ -69,9 +69,9 @@ export function CommitDetails({
         <div className={css.titleBlock}>
           <div className={css.titleText}>
             <div className={css.subject}>{commit.subject}</div>
-            <div className={css.meta}>{t('commit.meta', { sha: commit.sha, author: commit.author, time: relativeTime(commit.time) })}</div>
-            {body !== null && body !== '' && (
-              <div className={css.bodySection}>
+            <div className={css.meta}>
+              <span className={css.metaText}>{t('commit.meta', { sha: commit.sha, author: commit.author, time: relativeTime(commit.time) })}</span>
+              {body !== null && body !== '' && (
                 <button
                   type="button"
                   className={css.bodyToggle}
@@ -80,9 +80,9 @@ export function CommitDetails({
                 >
                   {bodyOpen ? t('commit.hideBody') : t('commit.showBody')}
                 </button>
-                {bodyOpen && <div className={css.body}>{body}</div>}
-              </div>
-            )}
+              )}
+            </div>
+            {bodyOpen && body !== null && body !== '' && <div className={css.body}>{body}</div>}
           </div>
           <span className={css.titleActions}>
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
