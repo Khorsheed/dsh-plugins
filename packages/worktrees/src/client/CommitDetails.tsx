@@ -59,10 +59,12 @@ export function CommitDetails({
   return (
     <div className={css.root}>
       <div className={css.content}>
-        <div className={css.subject}>{commit.subject}</div>
-        <div className={css.meta}>
-          <span className={css.author}>{t('commit.author', { author: commit.author, time: relativeTime(commit.time) })}</span>
-          <span className={css.metaActions}>
+        <div className={css.titleBlock}>
+          <div className={css.titleText}>
+            <div className={css.subject}>{commit.subject}</div>
+            <div className={css.meta}>{t('commit.meta', { sha: commit.sha, author: commit.author, time: relativeTime(commit.time) })}</div>
+          </div>
+          <span className={css.titleActions}>
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
               <IconCopyOutline16 />
             </button>

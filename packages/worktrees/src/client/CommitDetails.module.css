@@ -1,6 +1,9 @@
-/* The commit details surface: a padded content column — subject, author/time
-   with the copy + open actions folded onto that same line (no empty toolbar
-   row), the one-line summary, the file list, then the selected file's diff. */
+/* The commit details surface: a padded content column with a two-column
+   header — subject + meta on the left, the copy/open actions top-aligned with
+   the title on the right — then the one-line summary, the file list, and the
+   selected file's diff. Vertical rhythm is deliberate: the title group is
+   compact (6px), the functional blocks get 16px / 22px / 8px so the pane reads
+   as one structured detail view rather than scattered fragments. */
 
 .root {
   display: flex;
@@ -14,7 +17,21 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px;
+  padding: 20px 22px;
+}
+
+/* Two columns: title text (left) and actions (right), both top-aligned so the
+   buttons line up with the title rather than floating mid-content. */
+.titleBlock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.titleText {
+  flex: 1;
+  min-width: 0;
 }
 
 .subject {
@@ -25,36 +42,31 @@
 }
 
 .meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   margin-top: 6px;
-}
-
-.author {
-  flex: 1;
-  min-width: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
-.metaActions {
+.titleActions {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 2px;
+  /* Keep a half-line of breathing above the 30px buttons so their top edge
+     sits on the title's cap height, not lower. */
+  margin-top: -3px;
 }
 
 .action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -68,14 +80,14 @@
 }
 
 .summary {
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 13px;
   color: var(--dsw-alias-label-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .filesHeader {
-  margin-top: 20px;
+  margin-top: 22px;
   font-size: 13px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
@@ -90,9 +102,9 @@
 .fileTable {
   display: flex;
   flex-direction: column;
-  margin-top: 6px;
+  margin-top: 8px;
   /* Not a SaaS card — no outer rounded border; only the top/bottom separator
-     lines of a developer-tool list. */
+     lines of a flat developer-tool list. */
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -102,10 +114,16 @@
   gap: 12px;
   height: 28px;
   padding: 0 8px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* The header's own labels stay secondary even though the row paths below are
+   primary. */
+.fileHeader .colPath {
+  color: var(--dsw-alias-label-secondary);
 }
 
 .fileRow {
@@ -118,7 +136,7 @@
   border: 0;
   border-top: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -126,13 +144,11 @@
 
 .fileRow:hover {
   background: var(--wt-hover-bg, #f1f3f6);
-  color: var(--dsw-alias-label-primary);
 }
 
 .fileRowSelected,
 .fileRowSelected:hover {
   background: var(--wt-active-bg, #eaf0ff);
-  color: var(--dsw-alias-label-primary);
 }
 
 .colPath {
@@ -141,30 +157,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* File paths use the primary text tone — they are the content, not the
+     header. */
+  color: var(--dsw-alias-label-primary);
 }
 
 .colStatus {
   flex: none;
-  width: 30px;
-  text-align: center;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 11px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.status_A {
-  color: var(--dsw-alias-state-warn-secondary);
-}
-
+/* Change letters read as low-saturation amber badges — no green/red for
+   status, only the actual add/del numbers carry those. */
+.status_A,
 .status_M,
-.status_R {
-  color: var(--dsw-alias-state-warn-secondary);
-}
-
+.status_R,
 .status_D {
-  color: var(--dsw-alias-state-error-secondary);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-secondary) 18%, transparent);
+  color: var(--dsw-alias-state-warn-secondary);
 }
 
 .status_untracked {
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-tertiary);
 }
 

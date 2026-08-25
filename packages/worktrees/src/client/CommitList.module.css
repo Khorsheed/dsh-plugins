@@ -119,7 +119,7 @@ body[data-ds-dark-theme] {
 
 .row:focus-visible {
   outline: 2px solid var(--wt-active);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
 .subject {
@@ -164,11 +164,14 @@ body[data-ds-dark-theme] {
 }
 
 /* Selected: a light-blue surface with a SHORT inner accent mark — not a
-   border that wraps the rounded corner. */
+   border that wraps the rounded corner, and no focus ring on the selected
+   row (its selection state is shown by the surface + mark; keyboard focus is
+   handled separately by :focus-visible for the rows that are not selected). */
 .row[aria-selected='true'],
 .row[aria-selected='true']:hover {
   background: var(--wt-active-bg);
   color: var(--dsw-alias-label-primary);
+  outline: 0;
 }
 
 .row[aria-selected='true']::before,
