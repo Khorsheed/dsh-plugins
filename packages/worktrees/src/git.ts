@@ -30,11 +30,16 @@ export class GitError extends Error {
  * @returns stdout (utf8).
  */
 export async function git(cwd: string, args: readonly string[]): Promise<string> {
+  // `core.quotePath=false` makes git emit raw (UTF-8) paths instead of
+  // C-quoted + octal-escaped ones. Without it any non-ASCII or space-containing
+  // path comes back as `"dir/\346\225\207..."` and the path parsers then split
+  // the leading `"` onto the first path segment. The paths parsed here are
+  // returned verbatim to the UI, so keep them human-readable.
   return await new Promise((resolvePromise, reject) => {
-    execFile('git', [...args], { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('git', ['-c', 'core.quotePath=false', ...args], { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error !== null) {
         const exitCode = typeof error.code === 'number' ? error.code : null
-        reject(new GitError(args, cwd, String(stderr), exitCode))
+        reject(new GitError(['-c', 'core.quotePath=false', ...args], cwd, String(stderr), exitCode))
         return
       }
       resolvePromise(stdout as string)

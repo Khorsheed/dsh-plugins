@@ -90,6 +90,16 @@ describe('WorktreesService', () => {
     expect(changes.committed.map(f => f.path)).toContain('packages/room/src/index.ts')
   })
 
+  it('returns non-ASCII paths raw (the git() helper runs core.quotePath=false)', async () => {
+    await writeCommit('笔记/第一章.md', 'content\n', 'feat: chinese path')
+    const service = new WorktreesService('main')
+    const files = await service.repoFiles(cwd)
+    expect(files).toContain('笔记/第一章.md')
+    // Without quotePath=false git would emit "笔记/..." C-quoted with octal
+    // escapes; assert no path arrives with a stray leading quote.
+    expect(files.every(file => !file.startsWith('"'))).toBe(true)
+  })
+
   it('returns isRepo false outside a repository', async () => {
     const outside = join(repo, '..', `not-a-repo-${Date.now()}`)
     const service = new WorktreesService('main')
