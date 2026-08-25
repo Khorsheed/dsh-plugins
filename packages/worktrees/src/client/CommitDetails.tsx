@@ -58,19 +58,19 @@ export function CommitDetails({
 
   return (
     <div className={css.root}>
-      <div className={css.toolbar}>
-        <span className={css.toolbarActions}>
-          <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
-            <IconCopyOutline16 />
-          </button>
-          <button type="button" className={css.action} title={t('action.openFolder')} onClick={openFolder}>
-            <IconFolderOpenOutline16 />
-          </button>
-        </span>
-      </div>
       <div className={css.content}>
         <div className={css.subject}>{commit.subject}</div>
-        <div className={css.author}>{t('commit.author', { author: commit.author, time: relativeTime(commit.time) })}</div>
+        <div className={css.meta}>
+          <span className={css.author}>{t('commit.author', { author: commit.author, time: relativeTime(commit.time) })}</span>
+          <span className={css.metaActions}>
+            <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
+              <IconCopyOutline16 />
+            </button>
+            <button type="button" className={css.action} title={t('action.openFolder')} onClick={openFolder}>
+              <IconFolderOpenOutline16 />
+            </button>
+          </span>
+        </div>
         <div className={css.summary}>{t('commit.summary', { count: formatCount(files.length), add: formatCount(added), del: formatCount(removed) })}</div>
 
         <div className={css.filesHeader}>{t('commit.changedFiles')} <span className={css.filesCount}>{formatCount(files.length)}</span></div>
