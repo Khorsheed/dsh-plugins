@@ -44,7 +44,6 @@
 .meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 6px;
   font-size: 12px;
@@ -53,7 +52,7 @@
 }
 
 .metaText {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
