@@ -153,7 +153,7 @@ body[data-ds-dark-theme] {
   align-items: stretch;
   height: 40px;
   padding: 0 12px;
-  gap: 2px;
+  gap: 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
