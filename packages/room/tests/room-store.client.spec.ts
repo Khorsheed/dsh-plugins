@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { ROOM_POLL_INTERVAL_MS, RoomStore, type RoomGateway } from '../src/client/room-store.ts'
+import { ROOM_LIVE_REFRESH_DEBOUNCE_MS, ROOM_POLL_INTERVAL_MS, RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import type { RoomState } from '../src/types.ts'
 
 const IDLE_ROOM: RoomState = { members: [], relays: [], tasks: [], runs: [] }
@@ -16,13 +16,24 @@ const RUNNING_ROOM: RoomState = {
 
 interface Bench {
   list: ReturnType<typeof createSnapshotStore<{ current: SessionId | undefined }>>
+  /** sessionId → the client session's live conversation feed (undefined = unbound). */
+  live: Map<SessionId, ReturnType<typeof createSnapshotStore<{ tick: number }>>>
   gateway: RoomGateway & { isRoom: ReturnType<typeof vi.fn>; getState: ReturnType<typeof vi.fn> }
   store: RoomStore
 }
 
 function bench(): Bench {
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
-  const ctx = { sessions: { list } } as unknown as ClientContext
+  const live = new Map<SessionId, ReturnType<typeof createSnapshotStore<{ tick: number }>>>()
+  const ctx = {
+    sessions: {
+      list,
+      binding: (id: SessionId) => {
+        const feed = live.get(id)
+        return feed === undefined ? undefined : { sessionId: id, session: feed }
+      },
+    },
+  } as unknown as ClientContext
   const gateway = {
     // The stub verdict: sessions whose id starts with 'room' are rooms.
     isRoom: vi.fn(async ({ sessionId }: { sessionId: SessionId }) => ({
@@ -30,7 +41,17 @@ function bench(): Bench {
     })),
     getState: vi.fn(async () => ({ ok: true as const, value: { ok: true as const, value: IDLE_ROOM } })),
   }
-  return { list, gateway, store: new RoomStore(ctx, gateway) }
+  return { list, live, gateway, store: new RoomStore(ctx, gateway) }
+}
+
+/** Register a live conversation feed for a session and poke it once. */
+function poke(b: Bench, sessionId: SessionId): void {
+  let feed = b.live.get(sessionId)
+  if (feed === undefined) {
+    feed = createSnapshotStore({ tick: 0 })
+    b.live.set(sessionId, feed)
+  }
+  feed.update((draft) => { draft.tick += 1 })
 }
 
 describe('RoomStore', () => {
@@ -127,5 +148,63 @@ describe('RoomStore', () => {
     const count = gateway.getState.mock.calls.length
     await vi.advanceTimersByTimeAsync(ROOM_POLL_INTERVAL_MS * 2)
     expect(gateway.getState.mock.calls.length).toBe(count)
+  })
+
+  it('a live-feed nudge on the current room refreshes, debounced', async () => {
+    vi.useFakeTimers()
+    const b = bench()
+    const { list, store, gateway } = b
+    const dispose = store.start()
+    poke(b, 'room-1' as SessionId)
+    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    await vi.advanceTimersByTimeAsync(0)
+    const baseline = gateway.getState.mock.calls.length
+    expect(baseline).toBeGreaterThan(0)
+
+    // A burst of host-side journal appends coalesces into ONE pull.
+    poke(b, 'room-1' as SessionId)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS / 2)
+    poke(b, 'room-1' as SessionId)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS / 2)
+    expect(gateway.getState.mock.calls.length).toBe(baseline)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS)
+    expect(gateway.getState.mock.calls.length).toBe(baseline + 1)
+    dispose()
+  })
+
+  it('ignores the live feed of a non-room current session', async () => {
+    vi.useFakeTimers()
+    const b = bench()
+    const { list, store, gateway } = b
+    const dispose = store.start()
+    poke(b, 'plain-1' as SessionId)
+    list.update((draft) => { draft.current = 'plain-1' as SessionId })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.isRoomCached('plain-1' as SessionId)).toBe(false)
+    const baseline = gateway.getState.mock.calls.length
+
+    poke(b, 'plain-1' as SessionId)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 4)
+    expect(gateway.getState.mock.calls.length).toBe(baseline)
+    dispose()
+  })
+
+  it('dispose unsubscribes the live feed and drops a pending nudge', async () => {
+    vi.useFakeTimers()
+    const b = bench()
+    const { list, store, gateway } = b
+    const dispose = store.start()
+    poke(b, 'room-1' as SessionId)
+    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    await vi.advanceTimersByTimeAsync(0)
+    const baseline = gateway.getState.mock.calls.length
+
+    poke(b, 'room-1' as SessionId)
+    dispose()
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 4)
+    expect(gateway.getState.mock.calls.length).toBe(baseline)
+    poke(b, 'room-1' as SessionId)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 4)
+    expect(gateway.getState.mock.calls.length).toBe(baseline)
   })
 })

@@ -92,8 +92,8 @@ describe('RoomDockCapsules', () => {
     // Progress: 1 done over 3 countable (the cancelled task leaves the denominator).
     expect(goal.textContent).toContain('33%')
     const tasks = screen.getByRole('button', { name: '任务' })
-    // Open count (pending + in_progress; cancelled excluded) and the runner.
-    expect(tasks.textContent).toContain('2')
+    // Labeled open count (pending + in_progress; cancelled excluded) and the runner.
+    expect(tasks.textContent).toMatch(/任务\s*2/)
     expect(tasks.textContent).toContain('ada')
     expect(tasks.textContent).toContain('在做')
     // Collapsed: no task rows yet.
@@ -230,7 +230,7 @@ describe('RoomDockCapsules', () => {
     // only — a failed task drives neither (no sweeping glare, no 在做).
     const capsule = screen.getByRole('button', { name: '任务' })
     expect(capsule.getAttribute('data-running')).toBe('true')
-    expect(capsule.textContent).toContain('1')
+    expect(capsule.textContent).toMatch(/任务\s*1/)
     expect(capsule.textContent).toContain('ada')
     expect(capsule.textContent).not.toContain('bill')
     fireEvent.click(capsule)

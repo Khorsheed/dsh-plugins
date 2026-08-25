@@ -6,7 +6,7 @@
  * quick-add button:
  *
  * ```
- * [◔33% 插件API v2上线]  [☑ 2 · ●ada 在做]  ＋
+ * [◔33% 插件API v2上线]  [☑ 任务 2 · ●ada 在做]  ＋
  * ```
  *
  * The row is ANCHORED just above the input card: an expanded panel renders
@@ -627,6 +627,7 @@ export function RoomDockCapsules({
             <span className={css.capsuleText}>{t('tasks.capsule')}</span>
           ) : (
             <>
+              <span className={css.capsuleText}>{t('tasks.capsule')}</span>
               <span className={css.capsuleCount}>{openCount}</span>
               {runners.length > 0 && (
                 <span className={css.runners}>
