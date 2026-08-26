@@ -1,0 +1,8 @@
+# inline-html-render bundle patch: inserts the plugin row into the composing
+# profile. The client half is discovered through the package.json dsh.client
+# block; this row activates the host half (the inline-html-card skill
+# registration). The `name` value must stay quoted — `@` is a YAML-reserved
+# indicator and an unquoted scalar fails the parse at boot.
+- insert:
+    - id: inline-html-render
+      name: '@khorsheed/dsh-inline-html-render'
