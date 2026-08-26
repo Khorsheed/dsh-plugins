@@ -133,8 +133,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     inject: (actions): LocalFilesDrawerInjected => {
       controller.attachLocalFiles(actions)
       return {
-        listLocalDirectory: (request: ListLocalDirectoryRequest) => remote.listLocalDirectory('' as SessionId, request),
-        readLocalFile: (request: ReadLocalFileRequest) => remote.readLocalFile('' as SessionId, request),
+        listLocalDirectory: (request: ListLocalDirectoryRequest) => remote.listLocalDirectory(request),
+        readLocalFile: (request: ReadLocalFileRequest) => remote.readLocalFile(request),
         workspacesList,
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },

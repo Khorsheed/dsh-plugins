@@ -145,18 +145,19 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   }
 
   /** List one local directory — the git-agnostic browser's directory plane.
-   * The path is absolute and independent of the session workspace. */
+   * The path is absolute and independent of the session workspace, so the
+   * method takes NO caller lookup parameter (pure JSON args): any session or
+   * the global frame may call it. */
   @Remote('listLocalDirectory')
-  listLocalDirectory(agent: Agent, request: ListLocalDirectoryRequest): Promise<ListLocalDirectoryResult> {
-    void agent // typert requires the caller as the first named parameter
+  listLocalDirectory(request: ListLocalDirectoryRequest): Promise<ListLocalDirectoryResult> {
     return this.worktrees.listLocalDirectory(request.path)
   }
 
   /** Read one local file for preview — the git-agnostic browser's content
-   * plane. The path is absolute and independent of the session workspace. */
+   * plane. The path is absolute and independent of the session workspace, so
+   * the method takes NO caller lookup parameter (pure JSON args). */
   @Remote('readLocalFile')
-  readLocalFile(agent: Agent, request: ReadLocalFileRequest): Promise<ReadLocalFileResult> {
-    void agent // typert requires the caller as the first named parameter
+  readLocalFile(request: ReadLocalFileRequest): Promise<ReadLocalFileResult> {
     return this.worktrees.readLocalFile(request.path)
   }
 }
