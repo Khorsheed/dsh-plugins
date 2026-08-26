@@ -54,6 +54,9 @@ describe('inline-html-card skill registration', () => {
     expect(reg?.content).toContain('addEventListener')
     expect(reg?.content).toContain('The content IS the card')
     expect(reg?.content).toContain('no fixed narrow width')
+    // Distinguish "no fake window" from "no content padding": a panel's own
+    // inset is part of the content and must be kept, not stripped.
+    expect(reg?.content).toContain("Keep the content's own breathing room")
     expect(reg?.content).toContain('Show it inline first')
     expect(reg?.content).toContain('Only write a file when asked')
     // No machine-specific path from the dev environment it was written on.

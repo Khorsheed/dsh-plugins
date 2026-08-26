@@ -38,6 +38,7 @@ The user should see **the content itself**, not the content sitting inside anoth
 
 - **Render the content, not a container.** Put your UI/text/visual directly in the body. Don't wrap it in an extra "window" (a title bar, ─ ✕ buttons, or a header row you added just to frame it) unless the user explicitly asked for a card/app window.
 - **Width follows the content.** Let it be as wide as it needs to be (`width:100%` or a modest `max-width`, `margin:0`). Don't fix a narrow width and center it with large side margins — that leaves empty boxes around it.
+- **Keep the content's own breathing room.** The padding/margins that are part of the content (e.g. a setting panel's `padding: 0 24px 24px`) are the content itself — preserve them. Only remove padding you added just to frame the content. "No fake window" means don't add a border/box around it, not "cram it to the very edge with zero padding."
 - **No extra background box.** Don't give the top-level element a big solid background that spans the whole frame just for contrast; if you want contrast, color the content region itself, not a wrapper around it.
 - **Height follows content, not a placeholder.** Don't set a large `min-height` just to fill space; let the layout be as tall as its real content.
 - **Colors, theme, and fonts are yours to choose** — design them for the content and the user's intent, not for any assumed page background. Pick whatever palette/typography the thing itself calls for.
@@ -88,6 +89,6 @@ The renderer injects its own CSP if you omit it, but embedding the same one is h
 - [ ] Fence info string is exactly `dsh-card`.
 - [ ] Defaulted to an inline preview to confirm the look; only wrote an HTML file if the user asked for one or the details were settled and they wanted a complete artifact.
 - [ ] For a local detail, rendered just that part, not a whole deliverable.
-- [ ] The content IS the card — no fixed narrow width centered in a big panel, no extra solid-background "window" wrapper, no large empty `min-height`. You chose colors/theme/fonts for the content, not for the surrounding chat.
+- [ ] The content IS the card — no fixed narrow width centered in a big panel, no extra solid-background "window" wrapper, no large empty `min-height`. You chose colors/theme/fonts for the content, not for the surrounding chat. Kept the padding/margins that are genuinely part of the content (a panel's own inset is not a fake window).
 - [ ] If the card is meant to respond to the user, each interactive element has an inline `<script>` handler (`addEventListener`) wired to it — don't rely on CSS alone for click/state behavior.
 - [ ] Without the plugin, the block degrades to a normal code block (never a crash).
