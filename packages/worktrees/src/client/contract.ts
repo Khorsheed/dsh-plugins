@@ -21,8 +21,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
 import type {
   ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreeInfo,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadLocalFileRequest, ReadLocalFileResult,
+  SessionSummary, WorktreeInfo,
 } from '../types.ts'
+import type { createLocalFilesStore } from './store-local.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
 /** Business face injected into the session-header badge entry. */
@@ -31,6 +34,8 @@ export interface WorktreesBadgeInjected {
   summary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
   /** Open the drawer in one mode (routes to the root drawer store). */
   open: (mode: DrawerMode) => void
+  /** Open the local-files browser from a starting directory. */
+  openLocalFiles: (start: string) => void
 }
 
 /** Full props of the session-header badge entry. */
@@ -72,6 +77,31 @@ export type WorktreesDrawerProps =
   PropsRuntime<'shell.overlay'>
   & PropsStore<ReturnType<typeof createWorktreesStore>>
   & InjectFace<WorktreesDrawerInjected>
+  & PropsLocale<'worktrees'>
+
+/** Business face injected into the root overlay local-files browser entry. */
+export interface LocalFilesDrawerInjected {
+  /** List one local directory (git-agnostic browser plane). */
+  listLocalDirectory: (request: ListLocalDirectoryRequest) => Promise<RemoteResult<ListLocalDirectoryResult>>
+  /** Read one local file for preview (git-agnostic content plane). */
+  readLocalFile: (request: ReadLocalFileRequest) => Promise<RemoteResult<ReadLocalFileResult>>
+  /** The registered workspaces feed (the browser's workspace switcher). */
+  workspacesList: () => readonly { id: string; title: string; path: string }[]
+  /** Whether the browser itself is connected over loopback. */
+  isLoopback: boolean
+  hooks: {
+    /** Current generation's Host description, bound by the slot renderer. */
+    hostDescription: HostDescriptionSource
+  }
+  /** Open a path with the host default application (folder/IDE). */
+  openExternal: (path: string) => void
+}
+
+/** Full props of the root overlay local-files browser entry. */
+export type LocalFilesDrawerProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsStore<ReturnType<typeof createLocalFilesStore>>
+  & InjectFace<LocalFilesDrawerInjected>
   & PropsLocale<'worktrees'>
 
 /** The worktrees Remote namespace (as mounted by this plugin). */

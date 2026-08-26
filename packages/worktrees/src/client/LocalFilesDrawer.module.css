@@ -1,0 +1,449 @@
+/* The local-files browser: a frame-wide right-side panel over the same
+   geometry as the worktrees drawer (overlay → aside, left border, shadow)
+   but as an INDEPENDENT surface — its own state, its own interaction model
+   (path bar + directory listing, not a git change tree). Every token is the
+   drawer's own: alias colors, the wt emphasis family, compact rows, the
+   folder/file glyph language. */
+
+/* The browser's scroll regions use the drawer's thinner scrollbar. */
+.treeList::-webkit-scrollbar,
+.codeWrap::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.treeList::-webkit-scrollbar-thumb,
+.codeWrap::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l1, #cfd3d8);
+  border-radius: 3px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  max-width: 92vw;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+  pointer-events: auto;
+}
+
+.header {
+  flex: none;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 7px 12px;
+}
+
+/* ---- workspace switcher ---- */
+.wsWrap {
+  position: relative;
+  flex: none;
+}
+
+.wsButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.wsButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.wsButton > svg {
+  width: 13px;
+  height: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.wsCaret {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.wsLabel {
+  white-space: nowrap;
+}
+
+.wsPopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 6;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.wsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wsRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.wsRowTitle {
+  flex: none;
+  font-weight: 500;
+}
+
+.wsRowPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.wsEmpty {
+  padding: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---- path bar ---- */
+.pathBar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  font-family: var(--dsw-font-family-code, 'SF Mono', monospace);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crumbWrap {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.crumb {
+  border: 0;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.crumb:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.crumbSep {
+  color: var(--dsw-alias-label-caption);
+  flex: none;
+}
+
+.pathInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pathEdit {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.pathEdit:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ---- actions ---- */
+.actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---- body: tree + preview ---- */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.treeColumn {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 300px;
+  min-width: 0;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.treeHead {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dsw-font-family-code, 'SF Mono', monospace);
+}
+
+.treeList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowSelected {
+  background: var(--wt-active-bg);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowSelected:hover {
+  background: var(--wt-active-bg);
+}
+
+.rowIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowSelected .rowIcon {
+  color: var(--wt-active);
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.treeEmpty {
+  padding: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---- preview ---- */
+.previewColumn {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+}
+
+.previewHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.previewHead > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.previewTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family-code, 'SF Mono', monospace);
+  font-size: 11px;
+}
+
+.openButton {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.openButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.previewBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.codeWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.code {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.truncated {
+  flex: none;
+  padding: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-tertiary));
+}
+
+.previewPlaceholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  padding: 24px;
+}
+
+.placeholderIcon {
+  color: var(--dsw-alias-label-caption);
+}
+
+.placeholderMeta {
+  color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-tertiary));
+}

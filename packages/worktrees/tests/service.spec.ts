@@ -6,7 +6,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { git, repoToplevel } from '../src/git.ts'
 import { assertSafePath, WorktreesService } from '../src/service.ts'
@@ -190,6 +190,60 @@ describe('assertSafePath', () => {
   it('accepts plain repo-relative paths', () => {
     expect(assertSafePath('src/a.ts')).toBe('src/a.ts')
     expect(assertSafePath('./src/a.ts')).toBe('src/a.ts')
+  })
+})
+
+describe('WorktreesService local file browser', () => {
+  const service = new WorktreesService('main')
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'dsh-worktrees-local-'))
+    writeFileSync(join(dir, 'b.txt'), 'two\n', 'utf8')
+    writeFileSync(join(dir, 'a.md'), '# one\n', 'utf8')
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'nested.txt'), 'nested\n', 'utf8')
+    writeFileSync(join(dir, 'binary.bin'), Buffer.from([0, 1, 2, 3, 255, 254, 253]))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('lists a local directory with directories first, then files', async () => {
+    const listing = await service.listLocalDirectory(dir)
+    // realpath canonicalizes (macOS /var → /private/var), so compare canonical.
+    expect(listing.path).toBe(await realpath(dir))
+    expect(listing.parent).toBe(dirname(await realpath(dir)))
+    expect(listing.entries.map(entry => entry.name)).toEqual(['sub', 'a.md', 'b.txt', 'binary.bin'])
+    const sub = listing.entries.find(entry => entry.name === 'sub')
+    expect(sub?.isDir).toBe(true)
+    const file = listing.entries.find(entry => entry.name === 'a.md')
+    expect(file?.isDir).toBe(false)
+    expect(file?.size).toBe(6)
+  })
+
+  it('rejects traversal and non-absolute local paths', async () => {
+    await expect(service.listLocalDirectory('../escape')).rejects.toThrow()
+    await expect(service.listLocalDirectory('relative/path')).rejects.toThrow()
+    await expect(service.listLocalDirectory(join(dir, 'missing'))).rejects.toThrow()
+  })
+
+  it('reads a local file as text', async () => {
+    const result = await service.readLocalFile(join(dir, 'a.md'))
+    expect(result.content).toBe('# one\n')
+    expect(result.complete).toBe(true)
+    expect(result.size).toBe(6)
+  })
+
+  it('flags binary local files as non-text', async () => {
+    const result = await service.readLocalFile(join(dir, 'binary.bin'))
+    expect(result.content).toBeNull()
+    expect(result.size).toBe(7)
+  })
+
+  it('rejects reading a directory as a file', async () => {
+    await expect(service.readLocalFile(join(dir, 'sub'))).rejects.toThrow()
   })
 })
 

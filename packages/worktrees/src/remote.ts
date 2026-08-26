@@ -16,7 +16,9 @@ import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreeInfo, WorktreesService,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadLocalFileRequest, ReadLocalFileResult,
+  SessionSummary, WorktreeInfo, WorktreesService,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -140,5 +142,21 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   @Remote('readFileAtCommit')
   readFileAtCommit(agent: Agent, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
     return this.worktrees.readFileAtCommit(this.cwd(agent), request.path, request.commit)
+  }
+
+  /** List one local directory — the git-agnostic browser's directory plane.
+   * The path is absolute and independent of the session workspace. */
+  @Remote('listLocalDirectory')
+  listLocalDirectory(agent: Agent, request: ListLocalDirectoryRequest): Promise<ListLocalDirectoryResult> {
+    void agent // typert requires the caller as the first named parameter
+    return this.worktrees.listLocalDirectory(request.path)
+  }
+
+  /** Read one local file for preview — the git-agnostic browser's content
+   * plane. The path is absolute and independent of the session workspace. */
+  @Remote('readLocalFile')
+  readLocalFile(agent: Agent, request: ReadLocalFileRequest): Promise<ReadLocalFileResult> {
+    void agent // typert requires the caller as the first named parameter
+    return this.worktrees.readLocalFile(request.path)
   }
 }

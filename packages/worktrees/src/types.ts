@@ -10,5 +10,7 @@
 export type { ChangedFile, LogRow } from './git.ts'
 export type {
   ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreeInfo, WorktreesService,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFileEntry,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadLocalFileRequest, ReadLocalFileResult,
+  SessionSummary, WorktreeInfo, WorktreesService,
 } from './service.ts'
