@@ -4,9 +4,14 @@
  * official bar is display:none underneath), so it owns the whole interaction:
  * a textarea (Enter sends, Shift+Enter newlines), a send button, and the
  * @-completion menu listing ONLY existing roster members (pure addressing —
- * invitation lives in the members tab). Mention parsing mirrors the host's
- * parseMentions: only leading `@name` tokens address. A bare message (no
- * leading @) is NOT room business: it is released to the official submit
+ * invitation lives in the members tab). Addressing is the union of two
+ * channels: leading `@name` tokens (the host's parseMentions grammar,
+ * stripped from the dispatched text) and the mention menu's picks (a pick
+ * records explicit addressing wherever the `@name` sits in the sentence —
+ * the text is dispatched verbatim, the picks ride the postMessage request's
+ * `targets`). Hand-typed mid-sentence mentions without a menu pick stay
+ * prose: they address nobody. A bare message (neither channel) is NOT room
+ * business: it is released to the official submit
  * path — the takeover writes the text into the session's official input
  * machine (`inputActions.setDraft` + `inputActions.submit()`, the same entry
  * the InputBar's Enter key drives), so it becomes an ordinary main-agent
@@ -46,13 +51,15 @@ interface ActiveMention {
 }
 
 /**
- * Detect an active mention being typed: the text before the caret is a run of
- * completed `@name ` tokens followed by a trailing `@partial` — the exact
- * leading-token grammar the host's parseMentions accepts.
+ * Detect an active mention being typed: the text before the caret ends with
+ * `@partial` whose `@` follows the line start or whitespace — a mid-sentence
+ * mention completes as happily as a leading one. `\S` covers CJK member
+ * names (K酱). A menu pick of one of these candidates is explicit addressing
+ * even though the host's parseMentions reads only leading tokens.
  */
 function detectMention(draft: string, caret: number): ActiveMention | null {
   const head = draft.slice(0, caret)
-  const match = /^(?:@\S+\s+)*@(\S*)$/.exec(head)
+  const match = /(?:^|\s)@(\S*)$/.exec(head)
   if (match === null) return null
   return { query: match[1]!, start: caret - match[1]!.length - 1 }
 }
@@ -89,6 +96,9 @@ export function RoomComposer({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
+  /** Menu-picked addressees: a pick is explicit addressing wherever the
+      `@name` sits (see the module header); cleared with the draft on send. */
+  const [picked, setPicked] = useState<readonly string[]>([])
   const areaRef = useRef<HTMLTextAreaElement | null>(null)
   const members = state?.members ?? []
   const candidates = mention === null
@@ -120,32 +130,40 @@ export function RoomComposer({
     const next = `${draft.slice(0, mention.start)}@${name} ${draft.slice(caret)}`
     setDraft(next)
     setMention(null)
+    setPicked(picked.includes(name) ? picked : [...picked, name])
   }
 
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (text === '' || busy) return
-    // Bare message: release to the official submit path — a normal turn of
-    // the room's own main agent. The takeover never journals it; the official
-    // pipeline (queue admission, adjudication, delivery) owns it from here.
-    if (parseMentions(text).targets.length === 0) {
+    // Bare message — no leading tokens AND no menu picks: release to the
+    // official submit path, a normal turn of the room's own main agent. The
+    // takeover never journals it; the official pipeline (queue admission,
+    // adjudication, delivery) owns it from here.
+    if (parseMentions(text).targets.length === 0 && picked.length === 0) {
       inputActions.setDraft(text)
       inputActions.submit()
       setDraft('')
       setMention(null)
+      setPicked([])
       setError(null)
       return
     }
     setBusy(true)
     setError(null)
     try {
-      const outcome = await submit(sessionId, text)
+      // Two-argument form while nothing was menu-picked: the injected face's
+      // third parameter is the pick channel only.
+      const outcome = picked.length > 0
+        ? await submit(sessionId, text, picked)
+        : await submit(sessionId, text)
       if (!outcome.ok) {
         setError(outcome.message)
         return
       }
       setDraft('')
       setMention(null)
+      setPicked([])
     } finally {
       setBusy(false)
     }

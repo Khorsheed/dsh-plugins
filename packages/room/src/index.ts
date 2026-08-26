@@ -16,6 +16,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -37,6 +38,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
+import { BlankRoomRegistry } from './registry.ts'
 import { roomInviteTool, roomTaskTool } from './tool.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
@@ -93,6 +95,21 @@ function taskTitle(text: string): string {
   return first.length > 60 ? `${first.slice(0, 60)}…` : first
 }
 
+/** Plugin config: where the blank-room registry persists. */
+export interface Config {
+  /**
+   * The blank-room registry's JSON backing file (the bundle patch resolves it
+   * with `dshHomePath`). Omitted = in-memory only: createRoom's reuse-or-create
+   * survives within one boot but not across a restart.
+   */
+  readonly registryFile?: string
+}
+
+/** The archived-session probe face of the workspace registry (soft — room never injects it). */
+interface ArchivedProbe {
+  readonly archivedSessionIds: readonly string[]
+}
+
 /**
  * room Remote service: room creation, roster management, the human @-message
  * intake, the notification gate, the task board, and run cancellation. A
@@ -101,16 +118,25 @@ function taskTitle(text: string): string {
 export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
+  /** Plugin config schema (every field optional: the registry degrades to in-memory). */
+  static Config: z<Config> = z.object({
+    registryFile: z.string(),
+  })
+
   /** The dispatch engine executing this service's dispatch records. */
   readonly engine: DispatchEngine
+
+  /** createRoom's reuse-or-create memory (see registry.ts). */
+  private readonly blankRooms: BlankRoomRegistry
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
   private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
 
   /**
    * @param ctx - host context carrying the session store.
+   * @param config - plugin config.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, public config: Config) {
     super(ctx, 'room')
     // Join the persistence catalog BEFORE any room event can be appended:
     // the read path refuses logs with out-of-catalog types, so a room written
@@ -118,6 +144,13 @@ export class RoomService extends TypertRemoteService {
     const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
     for (const type of ROOM_EVENT_TYPES) catalog.add(type)
     this.engine = new DispatchEngine(ctx)
+    this.blankRooms = new BlankRoomRegistry(config.registryFile)
+    // A room's first turn ends its blankness: the registry tracks blank rooms
+    // only, so the first turn/start drops the id (the session is visible in
+    // the list from then on and never needs reuse).
+    ctx.on('session/event', (session, event) => {
+      if (event.type === 'turn/start') this.blankRooms.drop(session.id)
+    })
     // The tools registry joins through DEFERRED injection, not a constructor
     // probe: an apply-time ctx.get races the registry's own mount order (the
     // probe loses on the real composition tree), while ctx.inject fires when
@@ -209,18 +242,26 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Create a room: publish the session through the agent factory (the
-   * official session.create shape — a live main agent under the default
-   * preset, its id recorded on the header), append the `room/created`
-   * identity marker, seat the main agent on the roster (an equal member,
-   * addressable like any other), and flush durable. The live agent is what
-   * CLI-member dispatch anchors to (the delegation facade resolves the
-   * parent through `ctx.agents.get`, live agents only).
+   * Create a room — or reuse one, mirroring the official startSession
+   * blank-reuse contract: a same-cwd room that is still blank (carries the
+   * `room/created` marker but no `turn/start`, i.e. invisible in the sidebar
+   * unless current) and not archived answers the request unchanged, roster
+   * and all; the registry (see registry.ts) holds exactly those blank rooms
+   * and sheds an id at its first turn or when the record proves stale.
+   * Otherwise publish the session through the agent factory (the official
+   * session.create shape — a live main agent under the default preset, its id
+   * recorded on the header), append the `room/created` identity marker, seat
+   * the main agent on the roster (an equal member, addressable like any
+   * other), flush durable, and register the fresh blank room. The live agent
+   * is what CLI-member dispatch anchors to (the delegation facade resolves
+   * the parent through `ctx.agents.get`, live agents only).
    * @param request - optional storage metadata (cwd).
-   * @returns the new room session's identity.
+   * @returns the new (or reused) room session's identity.
    */
   @Remote('createRoom')
   async createRoom(request: RoomCreateRequest): Promise<RoomCreateResult> {
+    const reused = await this.findReusableRoom(request.cwd)
+    if (reused !== undefined) return { sessionId: reused }
     const composition = await composeRoomAgent(this.ctx, undefined)
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(`session-${randomUUID()}`),
@@ -234,7 +275,37 @@ export class RoomService extends TypertRemoteService {
     session.append('room/created', { version: 1 })
     session.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
     await this.ctx.sessions.flush(session)
+    this.blankRooms.track(session.id, request.cwd ?? '')
     return { sessionId: session.id }
+  }
+
+  /**
+   * The reuse half of createRoom: the oldest registered blank room under the
+   * same cwd that still IS one (live or cold — `inspectCold` answers from the
+   * durable log without resuming anything). Stale records — the session is
+   * gone, its log is no longer a room's, or a turn started — drop out of the
+   * registry as they are met; an archived room stays registered but never
+   * reuses while archived (the workspace registry is probed soft: no
+   * workspace service, no archived set).
+   * @param cwd - the requested cwd (undefined matches cwd-less rooms).
+   * @returns the reusable room's id, or undefined to create fresh.
+   */
+  private async findReusableRoom(cwd: string | undefined): Promise<SessionId | undefined> {
+    const archived = new Set(
+      (this.ctx.get('workspaceRegistry') as ArchivedProbe | undefined)?.archivedSessionIds ?? [],
+    )
+    for (const id of this.blankRooms.ofCwd(cwd ?? '')) {
+      const sessionId = SessionId(id)
+      if (archived.has(id)) continue
+      const live = this.ctx.sessions.get(sessionId)
+      const events = live?.events ?? (await inspectCold(this.ctx, sessionId))?.events
+      if (events === undefined || !isRoomLog(events) || events.some(event => event.type === 'turn/start')) {
+        this.blankRooms.drop(id)
+        continue
+      }
+      return sessionId
+    }
+    return undefined
   }
 
   /**
@@ -401,8 +472,11 @@ export class RoomService extends TypertRemoteService {
 
   /**
    * Post a human @-message into the room: leading `@name` tokens address
-   * members (a `room/dispatch` journal record, executed by the engine, and
-   * one auto-opened in_progress task per target). The human's raw text is
+   * members, and so does the request's `targets` list (the composer's
+   * mention-menu picks — explicit addressing wherever the `@name` sits); the
+   * two union before the roster check (a `room/dispatch` journal record,
+   * executed by the engine, and one auto-opened in_progress task per target).
+   * The human's raw text is
    * FIRST appended as a standard `user/message` (source kind 'user' — the
    * human typed it; the official messageDefinition classifies any other kind
    * as a collapsed context-injection row, not the user bubble), so the words
@@ -414,8 +488,8 @@ export class RoomService extends TypertRemoteService {
    * any chat node. A BARE message is a structured `no-targets` rejection —
    * defense only: the room composer releases bare messages to the official
    * submit path (a normal main-agent turn) and never calls this Remote
-   * without an @-mention.
-   * @param request - room session and raw composer text.
+   * without addressing.
+   * @param request - room session, raw composer text, and the menu-picked addressees.
    * @returns the parse receipt, or a rejection.
    */
   @Remote('postMessage')
@@ -424,26 +498,32 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     const parsed = parseMentions(request.text)
-    if (parsed.targets.length === 0) return { ok: false, error: { code: 'no-targets' } }
-    if (parsed.text === '') return { ok: false, error: { code: 'empty-text' } }
+    // Menu-picked addressees union with the parsed leading tokens: a menu
+    // pick is explicit addressing wherever the `@name` sits in the sentence.
+    const targets = [...new Set([...parsed.targets, ...request.targets ?? []])]
+    if (targets.length === 0) return { ok: false, error: { code: 'no-targets' } }
+    // Leading tokens are stripped from the dispatched text; a picked mid-
+    // sentence mention stays — the sentence is dispatched verbatim.
+    const text = parsed.targets.length > 0 ? parsed.text : request.text.trim()
+    if (text === '') return { ok: false, error: { code: 'empty-text' } }
     const roster = new Set(loaded.state.members.map(member => member.name))
-    const unknown = parsed.targets.filter(target => !roster.has(target))
+    const unknown = targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
     loaded.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: request.text.trim() }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const dispatch = loaded.session.append('room/dispatch', { targets: parsed.targets, text: parsed.text })
-    for (const target of parsed.targets) {
+    const dispatch = loaded.session.append('room/dispatch', { targets, text })
+    for (const target of targets) {
       loaded.session.append('room/task-added', {
-        id: randomUUID(), member: target, title: taskTitle(parsed.text), status: 'in_progress',
+        id: randomUUID(), member: target, title: taskTitle(text), status: 'in_progress',
       })
     }
     await this.ctx.sessions.flush(loaded.session)
-    for (const target of parsed.targets) {
-      this.engine.dispatch(loaded.session, target, parsed.text, { dispatchSeq: dispatch.seq })
+    for (const target of targets) {
+      this.engine.dispatch(loaded.session, target, text, { dispatchSeq: dispatch.seq })
     }
-    return { ok: true, value: { parsed, seq: dispatch.seq } }
+    return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
   }
 
   /**

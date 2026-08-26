@@ -86,9 +86,11 @@ export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjec
   /**
    * Dispatch an @-message into the room and refresh the store on success.
    * Bare messages never reach here — the composer releases them to the
-   * official submit path (useInput/inputActions) itself.
+   * official submit path (useInput/inputActions) itself. `targets` carries
+   * the mention-menu picks (explicit addressing wherever the `@name` sits in
+   * the sentence); the host unions them with the parsed leading tokens.
    */
-  readonly submit: (sessionId: SessionId, text: string) => Promise<RoomMutationOutcome>
+  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>
   /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
   readonly stop: () => void
 }

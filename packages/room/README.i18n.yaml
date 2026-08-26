@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/room/README.md
-packages/room/README.md: 4766e9352c85cda9b5b60cdcb60e8aa1a0d06757
-packages/room/README.zh.md: 8bf7756acb9cfa952ca98a4bb6d591ad04b3216c
+packages/room/README.md: 1ffed1b6490a98324f0527a28fb82f7af880ddbf
+packages/room/README.zh.md: b04197e38b6baacb1f95f504ea2527b2455a56e7

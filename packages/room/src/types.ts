@@ -436,6 +436,13 @@ export interface RoomPostMessageRequest {
   readonly sessionId: SessionId
   /** Raw composer text: leading `@name` tokens address members. */
   readonly text: string
+  /**
+   * Menu-picked addressees (the room composer's mention menu records a pick
+   * as explicit addressing even when the `@name` sits mid-sentence). Unioned
+   * with the parsed leading tokens and validated against the roster the same
+   * way; the text itself is dispatched verbatim either way.
+   */
+  readonly targets?: readonly string[]
 }
 
 /** What the postMessage parser made of the raw text. */

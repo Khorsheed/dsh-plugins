@@ -4,3 +4,8 @@
 - insert:
     - id: room
       name: '@khorsheed/dsh-room'
+      config:
+        # The blank-room registry's backing file (createRoom's reuse-or-create
+        # memory), resolved at the harness home — the same seam the session
+        # backend's root uses; sessions are home-scoped, so the registry is too.
+        registryFile: !!js dshHomePath('room', 'blank-rooms.json')

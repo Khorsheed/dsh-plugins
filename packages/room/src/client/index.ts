@@ -114,9 +114,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     return { ok: true }
   }
 
-  const submit = async (sessionId: SessionId, text: string): Promise<RoomMutationOutcome> => {
+  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
-    const carried = await remote.postMessage({ sessionId, text })
+    const carried = await remote.postMessage({
+      sessionId, text, ...targets === undefined || targets.length === 0 ? {} : { targets },
+    })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
     const result = carried.value
     if (!result.ok) {

@@ -970,6 +970,9 @@ importers:
 
   packages/room:
     dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3

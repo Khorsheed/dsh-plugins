@@ -12,6 +12,7 @@
     "src/index.ts",
     "src/invariant.ts",
     "src/journal.ts",
+    "src/registry.ts",
     "src/tool.ts",
     "src/types.ts"
   ]

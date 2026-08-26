@@ -32,11 +32,11 @@ const STATE: RoomState = {
 }
 
 /** A store pre-primed with the STATE fixture. */
-async function primedStore(): Promise<RoomStore> {
+async function primedStore(state: RoomState = STATE): Promise<RoomStore> {
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
   const gateway: RoomGateway = {
     isRoom: async () => ({ ok: true, value: true }),
-    getState: async () => ({ ok: true, value: { ok: true, value: STATE } }),
+    getState: async () => ({ ok: true, value: { ok: true, value: state } }),
   }
   const store = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
   await store.ensure(SESSION)
@@ -62,14 +62,15 @@ interface Bench {
 
 /** Render the composer with the framework shares stubbed (inputActions/stop are spies). */
 async function bench(
-  submit: (sessionId: SessionId, text: string) => Promise<RoomMutationOutcome>,
+  submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>,
   options: {
     useProjection?: UseProjection | undefined
     t?: RoomComposerProps['t']
     session?: SessionSlice
+    state?: RoomState
   } = {},
 ): Promise<Bench> {
-  const roomStore = await primedStore()
+  const roomStore = await primedStore(options.state)
   const inputActions = { setDraft: vi.fn(), submit: vi.fn() }
   const stop = vi.fn()
   const slice = options.session ?? IDLE
@@ -162,6 +163,59 @@ describe('RoomComposer', () => {
     // the room Remote was never called.
     expect(inputActions.setDraft).toHaveBeenCalledWith('随便聊聊')
     expect(inputActions.submit).toHaveBeenCalledTimes(1)
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('triggers the menu on a whitespace-preceded @ anywhere (line start, mid-sentence, sentence end), never on a glued @', async () => {
+    const { area } = await bench(vi.fn())
+    // Mid-sentence, whitespace-preceded.
+    type(area, '让 @')
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    // Sentence end after CJK prose.
+    type(area, '你现在在哪个目录 @')
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    // A glued @ (an email-style token) never opens the menu.
+    type(area, '邮我 a@b')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('matches a CJK member prefix mid-sentence', async () => {
+    const state: RoomState = {
+      ...STATE,
+      members: [...STATE.members, { name: 'K酱', kind: 'cli', provider: 'kimi', invitedBy: 'human' }],
+    }
+    const { area } = await bench(vi.fn(), { state })
+    type(area, '你现在在哪个目录 @K')
+    const options = screen.getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]!.textContent).toContain('K酱')
+  })
+
+  it('a menu pick mid-sentence addresses the member and dispatches the text verbatim', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const { area, inputActions } = await bench(submit)
+    type(area, 'K酱 你在哪个目录 @')
+    // The mouse path: pick bill (third roster row) from the menu.
+    fireEvent.mouseDown(screen.getAllByRole('option')[2]!)
+    expect(area.value).toBe('K酱 你在哪个目录 @bill ')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await waitFor(() => {
+      expect(submit).toHaveBeenCalledWith(SESSION, 'K酱 你在哪个目录 @bill', ['bill'])
+    })
+    await waitFor(() => { expect(area.value).toBe('') })
+    expect(inputActions.submit).not.toHaveBeenCalled()
+  })
+
+  it('a hand-typed mid-sentence mention without a menu pick stays prose (released to the official path)', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const { area, inputActions } = await bench(submit)
+    // The caret sits after 吧: no active mention, Enter sends. The @ada inside
+    // the sentence is prose, not addressing.
+    type(area, '你去问 @ada 吧')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await waitFor(() => { expect(inputActions.submit).toHaveBeenCalledTimes(1) })
+    expect(inputActions.setDraft).toHaveBeenCalledWith('你去问 @ada 吧')
     expect(submit).not.toHaveBeenCalled()
   })
 

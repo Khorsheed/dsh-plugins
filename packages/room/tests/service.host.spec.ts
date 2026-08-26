@@ -263,6 +263,46 @@ describe('RoomService Remote surface (real composition)', () => {
     })
   })
 
+  it('postMessage unions menu-picked targets with the leading tokens, dispatches the text verbatim, and validates picks against the roster', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    await service.invite({ sessionId, provider: 'codex', name: 'bill' })
+
+    // A picked mid-sentence mention addresses without any leading token; the
+    // sentence stands whole as the dispatch text.
+    const picked = await service.postMessage({ sessionId, text: '接口找 @bill 对齐一下', targets: ['bill'] })
+    expect(picked).toMatchObject({ ok: true, value: { parsed: { targets: ['bill'], text: '接口找 @bill 对齐一下' } } })
+    // A leading token and a pick union (deduped).
+    const union = await service.postMessage({ sessionId, text: '@ada 顺带 @bill 看看', targets: ['bill', 'ada'] })
+    expect(union).toMatchObject({ ok: true, value: { parsed: { targets: ['ada', 'bill'], text: '顺带 @bill 看看' } } })
+    // A picked member that has left the roster rejects the same way a typed
+    // unknown target does.
+    expect(await service.postMessage({ sessionId, text: '找 @ghost', targets: ['ghost'] }))
+      .toEqual({ ok: false, error: { code: 'unknown-targets', names: ['ghost'] } })
+    // Picks alone never rescue an empty text.
+    expect(await service.postMessage({ sessionId, text: '  ', targets: ['ada'] }))
+      .toEqual({ ok: false, error: { code: 'empty-text' } })
+
+    const events = ctx.sessions.get(sessionId)!.events
+    const dispatches = events.filter(event => event.type === 'room/dispatch')
+    expect(dispatches.map(event => event.data)).toEqual([
+      { targets: ['bill'], text: '接口找 @bill 对齐一下' },
+      { targets: ['ada', 'bill'], text: '顺带 @bill 看看' },
+    ])
+    // One auto-opened task per target per dispatch.
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: {
+        tasks: [
+          { member: 'bill', title: '接口找 @bill 对齐一下', status: 'in_progress' },
+          { member: 'ada', title: '顺带 @bill 看看', status: 'in_progress' },
+          { member: 'bill', title: '顺带 @bill 看看', status: 'in_progress' },
+        ],
+      },
+    })
+  })
+
   it('receiveMemberMessage journals a pending relay and always receipts pending-confirm (phase-1 gate)', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
