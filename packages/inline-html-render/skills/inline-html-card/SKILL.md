@@ -34,22 +34,22 @@ Inside the fence, put a **fully self-contained HTML document** (fragment is fine
 
 ## The content IS the card — don't wrap it in a container
 
-The user should see **the content itself**, not a card sitting inside another box. Render the thing you're showing directly, at the width it needs, and let it sit naturally in the message — not centered on a fixed-width white panel with big empty margins.
+The user should see **the content itself**, not the content sitting inside another box you invented. Render the thing you're showing directly, at the width it needs, and let it sit naturally in the message.
 
-- **Render the content, not a container.** Put your UI/text/visual directly in the body. Don't wrap it in a "window" (a white panel with a title bar, ─ ✕ buttons, or a header row) unless the user explicitly asked for a card/app window.
-- **Width follows the content.** Let it fill the available width (`width:100%` / `max-width` modest, `margin:0`), or be as wide as it needs to be — don't fix a narrow width (e.g. 340px) and center it with large side margins. That's what leaves the empty boxes around it.
-- **Transparent surroundings, not a background box.** Don't give the top-level element a big solid background that spans the whole frame. If you want contrast, color the content region itself, not a wrapper around it. The area around your content should show the page background, so it looks native — not like a floating panel.
-- **Height follows content, not a placeholder.** Don't set a large `min-height` on the body just to fill space; let the layout be as tall as its real content.
-- **Respect the page's dark theme.** The chat is dark; a card that paints a broad white background will jump out harshly. If you need light-on-dark, theme the content itself.
+- **Render the content, not a container.** Put your UI/text/visual directly in the body. Don't wrap it in an extra "window" (a title bar, ─ ✕ buttons, or a header row you added just to frame it) unless the user explicitly asked for a card/app window.
+- **Width follows the content.** Let it be as wide as it needs to be (`width:100%` or a modest `max-width`, `margin:0`). Don't fix a narrow width and center it with large side margins — that leaves empty boxes around it.
+- **No extra background box.** Don't give the top-level element a big solid background that spans the whole frame just for contrast; if you want contrast, color the content region itself, not a wrapper around it.
+- **Height follows content, not a placeholder.** Don't set a large `min-height` just to fill space; let the layout be as tall as its real content.
+- **Colors, theme, and fonts are yours to choose** — design them for the content and the user's intent, not for any assumed page background. Pick whatever palette/typography the thing itself calls for.
 
-In short: what the block renders should be **exactly the content** — a mockup, a token reference, a mini dashboard — sized to itself and flush with the message, not a panel floating in a bigger box.
+In short: what the block renders should be **exactly the content** — a mockup, a token reference, a mini dashboard — sized to itself and flush with the message, not a panel floating in a bigger box you added around it.
 
 ## The hard rules — violations fail silently (the #1 cause of "looks blank")
 
 1. **Self-contained.** All CSS and JS inline. No external stylesheets, fonts, or scripts. Images as `data:` URIs.
 2. **Zero runtime network.** No `fetch` / XHR / WebSocket / EventSource. The sandbox CSP sets `connect-src 'none'` — any network call just fails.
 3. **No host access.** The frame is an opaque origin (`sandbox="allow-scripts"`, never `allow-same-origin`), so scripts cannot read parent DOM or cookies. The only way out is a tiny `window.dshBridge` (see below).
-4. **Constraint-compatible styling.** Prefer a clean, dark-theme-friendly result that echoes the developer-tool aesthetic: high density, strong alignment, weak decoration. Use a compact font stack and keep it visually contained so it feels like part of the message. **Don't fix a narrow width and center it, and don't wrap the content in a big solid-background container** — let the content be the card (see "The content IS the card" above).
+4. **No imposed look.** Style, colors, theme, and fonts are entirely up to you — design them for the content and the user's intent. What matters is that you render the content directly and don't add a meaningless container around it (no fixed narrow width centered with big margins, no extra solid-background wrapper). Leave the card's own design to the content, not to the surrounding chat.
 5. **Size sane.** Keep the HTML small (a few KB). Avoid huge inline assets.
 
 ## Interactions that work
@@ -88,6 +88,6 @@ The renderer injects its own CSP if you omit it, but embedding the same one is h
 - [ ] Fence info string is exactly `dsh-card`.
 - [ ] Defaulted to an inline preview to confirm the look; only wrote an HTML file if the user asked for one or the details were settled and they wanted a complete artifact.
 - [ ] For a local detail, rendered just that part, not a whole deliverable.
-- [ ] The content IS the card — no fixed narrow width centered in a big panel, no extra solid-background "window" wrapper, no large empty `min-height`. Its surroundings show the page background, not a painted box.
+- [ ] The content IS the card — no fixed narrow width centered in a big panel, no extra solid-background "window" wrapper, no large empty `min-height`. You chose colors/theme/fonts for the content, not for the surrounding chat.
 - [ ] If the card is meant to respond to the user, each interactive element has an inline `<script>` handler (`addEventListener`) wired to it — don't rely on CSS alone for click/state behavior.
 - [ ] Without the plugin, the block degrades to a normal code block (never a crash).

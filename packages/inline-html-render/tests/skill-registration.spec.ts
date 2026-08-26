@@ -53,12 +53,17 @@ describe('inline-html-card skill registration', () => {
     expect(reg?.content).toContain('self-contained')
     expect(reg?.content).toContain('addEventListener')
     expect(reg?.content).toContain('The content IS the card')
-    expect(reg?.content).toContain("don't fix a narrow width")
+    expect(reg?.content).toContain('no fixed narrow width')
     expect(reg?.content).toContain('Show it inline first')
     expect(reg?.content).toContain('Only write a file when asked')
     // No machine-specific path from the dev environment it was written on.
     expect(reg?.content).not.toContain('code/dsh-plugins')
     expect(reg?.content).not.toContain('/Users/')
+    // The skill must not impose the model's design choices: no assumption that
+    // the page is dark, no prescribed aesthetic/font stack. Colors/theme/fonts
+    // are the model's to choose for the content.
+    expect(reg?.content).not.toMatch(/dark[- ]theme|developer-tool aesthetic|compact font/i)
+    expect(reg?.content).toContain('Colors, theme, and fonts are yours to choose')
     // The registry validates `source` at LOAD time — pin it (the ankh-guard 8.9 bug).
     expect(reg?.source).toBe('runtime')
   })
