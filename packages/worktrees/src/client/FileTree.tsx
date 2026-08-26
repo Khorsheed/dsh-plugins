@@ -183,39 +183,24 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
     [groups],
   )
 
-  const allPaths = useMemo(() => {
-    const paths = new Set<string>()
-    for (const group of roots) {
-      const walk = (nodes: FileNode[]): void => {
-        for (const node of nodes) {
-          if (node.children.length > 0) {
-            paths.add(node.path)
-            walk(node.children)
-          }
-        }
-      }
-      walk(group.nodes)
-    }
-    return paths
-  }, [roots])
+  const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
 
-  const toggle = (path: string): void => {
-    setExpanded(previous => {
-      const next = new Set(previous)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
-  const expandAll = (): void => setExpanded(new Set(allPaths))
-  const collapseAll = (): void => setExpanded(new Set())
-
-  const childrenOf = (node: FileNode): readonly FileNode[] => {
+  const childrenOf = (node: FileNode): FileNode[] => {
     // Lazy mode: a directory's sub-items come from the fetched cache once
-    // loaded, superseding the (empty) static trie children.
+    // loaded, superseding the (empty) static trie children. The fetched items
+    // are siblings (single-segment paths), so prefix each with the parent's
+    // relative path — otherwise a nested dir loses its ancestor and its
+    // lazy dirPath resolves to the wrong absolute path.
     if (loadChildren !== undefined) {
       const dirPath = node.path === '' ? rootPath : `${rootPath}/${node.path}`
-      if (lazy[dirPath] !== undefined) return buildNodes(lazy[dirPath] ?? [])
+      const items = lazy[dirPath]
+      if (items !== undefined) {
+        const prefix = node.path === '' ? '' : `${node.path}/`
+        return buildNodes(items.map(item => ({
+          ...item,
+          path: `${prefix}${item.path}`,
+        })))
+      }
     }
     return node.children
   }
@@ -241,11 +226,45 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
     })
   }
 
+  // Current visible directory nodes (dir rows), following lazy children when
+  // they've loaded. Used by expand/collapse-all.
+  const collectDirNodes = (nodes: FileNode[]): FileNode[] => {
+    const out: FileNode[] = []
+    for (const node of nodes) {
+      if (isDirNode(node)) {
+        out.push(node)
+        out.push(...collectDirNodes(childrenOf(node)))
+      }
+    }
+    return out
+  }
+
+  const toggle = (path: string): void => {
+    setExpanded(previous => {
+      const next = new Set(previous)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+  const expandAll = (): void => {
+    // Lazy mode: expanding a directory needs its children fetched, so walk the
+    // visible dirs, trigger each one's lazy load, and expand every one of them
+    // (their children appear once the fetch resolves).
+    const toExpand = new Set<string>()
+    for (const group of roots) {
+      for (const node of collectDirNodes(group.nodes)) {
+        toExpand.add(node.path)
+        if (loadChildren !== undefined) lazyChildren(node)
+      }
+    }
+    setExpanded(toExpand)
+  }
+  const collapseAll = (): void => setExpanded(new Set())
+
   if (roots.length === 0 && loadChildren === undefined) {
     return <div className={css.empty}>{t('group.empty')}</div>
   }
-
-  const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = isDirNode(node)
