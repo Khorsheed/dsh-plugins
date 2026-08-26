@@ -245,7 +245,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
     return <div className={css.empty}>{t('group.empty')}</div>
   }
 
-  const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0 || loadChildren !== undefined
+  const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = isDirNode(node)
