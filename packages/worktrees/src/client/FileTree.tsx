@@ -49,6 +49,8 @@ interface FileNode {
   name: string
   /** Accumulated repo-relative path ('' for synthetic group roots). */
   path: string
+  /** The node's resolved absolute path ('' for the root of a static group). */
+  dirPath: string
   /** Directory children; empty for leaves. */
   children: FileNode[]
   /** Leaf metadata, present only for files. */
@@ -58,7 +60,7 @@ interface FileNode {
 }
 
 /** Build a trie from the group's leaf entries. */
-function buildNodes(items: readonly FileTreeItem[]): FileNode[] {
+function buildNodes(items: readonly FileTreeItem[], rootDirPath = ''): FileNode[] {
   const roots: FileNode[] = []
   for (const item of items) {
     const segments = item.path.split('/').filter(segment => segment !== '')
@@ -72,6 +74,7 @@ function buildNodes(items: readonly FileTreeItem[]): FileNode[] {
         node = {
           name: segment,
           path: accumulated,
+          dirPath: rootDirPath === '' ? accumulated : `${rootDirPath}/${accumulated}`,
           children: [],
           item: isLast ? item : null,
           dir: isLast ? item.isDir === true : true,
@@ -178,27 +181,30 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
         key: group.key,
         title: group.title,
         count: group.count,
-        nodes: buildNodes(group.items),
+        nodes: buildNodes(group.items, rootPath),
       })),
-    [groups],
+    [groups, rootPath],
   )
 
   const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
 
   const childrenOf = (node: FileNode): FileNode[] => {
     // Lazy mode: a directory's sub-items come from the fetched cache once
-    // loaded, superseding the (empty) static trie children. The fetched items
-    // are siblings (single-segment paths), so prefix each with the parent's
-    // relative path — otherwise a nested dir loses its ancestor and its
-    // lazy dirPath resolves to the wrong absolute path.
+    // loaded, superseding the (empty) static trie children. Each fetched item
+    // is a single-segment sibling; build its node with name = the segment and
+    // path = parent's path + name, dirPath = parent's dirPath + name — NOT by
+    // re-running buildNodes (which would re-introduce the parent segment and
+    // self-recurse).
     if (loadChildren !== undefined) {
-      const dirPath = node.path === '' ? rootPath : `${rootPath}/${node.path}`
-      const items = lazy[dirPath]
+      const items = lazy[node.dirPath]
       if (items !== undefined) {
-        const prefix = node.path === '' ? '' : `${node.path}/`
-        return buildNodes(items.map(item => ({
-          ...item,
-          path: `${prefix}${item.path}`,
+        return sortNodes(items.map(item => ({
+          name: item.path,
+          path: node.path === '' ? item.path : `${node.path}/${item.path}`,
+          dirPath: node.dirPath === '' ? item.path : `${node.dirPath}/${item.path}`,
+          children: [],
+          item,
+          dir: item.isDir === true,
         })))
       }
     }
@@ -207,7 +213,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
 
   const lazyChildren = (node: FileNode): void => {
     if (loadChildren === undefined) return
-    const dirPath = node.path === '' ? rootPath : `${rootPath}/${node.path}`
+    const dirPath = node.dirPath
     if (lazy[dirPath] !== undefined || lazyLoading.has(dirPath)) return
     setLazyLoading(previous => new Set(previous).add(dirPath))
     void loadChildren(dirPath).then(items => {
@@ -269,7 +275,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = isDirNode(node)
     const isOpen = expanded.has(node.path)
-    const dirPath = node.path === '' ? rootPath : `${rootPath}/${node.path}`
+    const dirPath = node.dirPath
     if (isDir) {
       const kids = childrenOf(node)
       return (
