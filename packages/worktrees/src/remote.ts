@@ -12,10 +12,11 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreesService,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreeInfo, WorktreesService,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -66,10 +67,49 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
     return this.worktrees.changes(this.cwd(agent))
   }
 
-  /** The repository's full tracked+untracked file list. */
+  /** The repository's committed (tracked) file list. */
   @Remote('repoFiles')
   repoFiles(agent: Agent): Promise<string[]> {
     return this.worktrees.repoFiles(this.cwd(agent))
+  }
+
+  /** All worktrees of the session's repository (the switcher dropdown). */
+  @Remote('listWorktrees')
+  listWorktrees(agent: Agent): Promise<WorktreeInfo[]> {
+    return this.worktrees.listWorktrees(this.cwd(agent))
+  }
+
+  /** Point the session's active worktree at another worktree. */
+  @Remote('switchWorktree')
+  switchWorktree(agent: Agent, request: { path: string }): Promise<WorktreeInfo> {
+    return this.worktrees.switchWorktree(agent.id, this.cwd(agent), request.path)
+  }
+
+  /**
+   * Direct the calling agent to work in a specific worktree by appending a
+   * context message to the session WITHOUT waking it. The message is appended
+   * as a durable `user/message` (`surfaceOp: 'append'`), which the transcript
+   * renders immediately as a 上下文注入 row (the renderer classifies by
+   * `source.kind`, and a `plugin` source is a non-user context, not a user
+   * bubble), and which `session.deriveMessages()` folds into the next model
+   * boundary — so the agent reads it on its next natural turn at no extra
+   * model call (no wake). Unlike `agent.inject` (inbox, `next-step`), an
+   * appended session message is visible even while the agent is idle, instead
+   * of sitting pending in the inbox until the agent is next woken.
+   */
+  @Remote('directAgent')
+  directAgent(agent: Agent, request: { path: string; branch: string | null }): Promise<{ ok: true }> {
+    const label = request.branch ?? request.path
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: `本会话已切换到 worktree「${label}」(${request.path})。后续文件/命令行工具请用 workdir=${request.path} 干活。` }],
+      source: {
+        kind: 'plugin',
+        plugin: '@khorsheed/dsh-worktrees',
+        form: 'notice',
+        summary: boundContextSummary(`已切换到 worktree「${label}」`),
+      },
+    }), { surfaceOp: 'append' })
+    return Promise.resolve({ ok: true })
   }
 
   /** The branch's own commit log (`base..HEAD`). */

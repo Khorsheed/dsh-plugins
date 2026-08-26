@@ -123,6 +123,15 @@ describe('WorktreesService', () => {
     expect(files).not.toContain('ignored.log')
   })
 
+  it('lists only committed (tracked) files, not untracked ones', async () => {
+    writeFileSync(join(repo, 'untracked.txt'), 'new\n', 'utf8')
+    const service = new WorktreesService('main')
+    const files = await service.repoFiles(cwd)
+    expect(files).toContain('a.txt')
+    expect(files).toContain('packages/room/src/index.ts')
+    expect(files).not.toContain('untracked.txt')
+  })
+
   it('returns the repository commit log and per-commit files', async () => {
     const service = new WorktreesService('main')
     const log = await service.commitLog(cwd)

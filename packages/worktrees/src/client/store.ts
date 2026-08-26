@@ -8,7 +8,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ChangedFile, ChangesResult, CommitInfo, FileDiffResult, ReadFileResult, SessionSummary,
+  ChangedFile, ChangesResult, CommitInfo, FileDiffResult, ReadFileResult, SessionSummary, WorktreeInfo,
 } from '../types.ts'
 
 /** The drawer's three modes. */
@@ -44,6 +44,10 @@ export interface WorktreesState {
   commitFiles: readonly ChangedFile[] | null
   /** The selected commit's message body (commits mode). */
   commitBody: string | null
+  /** The repository's worktrees (the switcher dropdown). */
+  worktrees: readonly WorktreeInfo[] | null
+  /** The session's active worktree path (the switcher highlight), or null. */
+  activeWorktreePath: string | null
   /** The selected file's diff (diff view), or null. */
   diff: FileDiffResult | null
   /** The selected file's content (content view), or null. */
@@ -76,6 +80,8 @@ export type WorktreesActions = {
   setCommits: (draft: WorktreesState, commits: readonly CommitInfo[]) => void
   setCommitFiles: (draft: WorktreesState, files: readonly ChangedFile[]) => void
   setCommitBody: (draft: WorktreesState, body: string) => void
+  setWorktrees: (draft: WorktreesState, worktrees: readonly WorktreeInfo[]) => void
+  setActiveWorktreePath: (draft: WorktreesState, path: string | null) => void
   setDiff: (draft: WorktreesState, diff: FileDiffResult) => void
   setContent: (draft: WorktreesState, content: ReadFileResult) => void
 }
@@ -94,6 +100,8 @@ const INITIAL: WorktreesState = {
   commits: null,
   commitFiles: null,
   commitBody: null,
+  worktrees: null,
+  activeWorktreePath: null,
   diff: null,
   content: null,
   loading: false,
@@ -171,6 +179,8 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       setCommits: (d, commits: readonly CommitInfo[]) => { d.commits = commits },
       setCommitFiles: (d, files: readonly ChangedFile[]) => { d.commitFiles = files },
       setCommitBody: (d, body: string) => { d.commitBody = body },
+      setWorktrees: (d, worktrees: readonly WorktreeInfo[]) => { d.worktrees = worktrees },
+      setActiveWorktreePath: (d, path: string | null) => { d.activeWorktreePath = path },
       setDiff: (d, diff: FileDiffResult) => { d.diff = diff },
       setContent: (d, content: ReadFileResult) => { d.content = content },
     },

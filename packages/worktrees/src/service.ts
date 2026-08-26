@@ -310,14 +310,15 @@ export class WorktreesService {
   }
 
   /**
-   * The repository's full file list (tracked + untracked, ignored excluded).
+   * The repository's committed (tracked) file list — files actually in git,
+   * not local untracked/ignored ones.
    * @param cwd - session working directory.
    * @returns repo-relative paths.
    */
   async repoFiles(cwd: string): Promise<string[]> {
     const repo = await this.repoOf(cwd)
     if (repo === null) return []
-    const out = await git(repo, ['ls-files', '-co', '--exclude-standard'])
+    const out = await git(repo, ['ls-files'])
     return out.split('\n').filter(line => line !== '')
   }
 

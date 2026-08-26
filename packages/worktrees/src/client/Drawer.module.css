@@ -69,21 +69,46 @@ body[data-ds-dark-theme] {
   min-width: 0;
 }
 
-.summaryBranch {
+.branchRow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.branchButton {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   font-size: 13px;
   font-weight: 500;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.branchButton:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.branchChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* The branch glyph sits ~2px lower than the 22px title line, matching the
    icon's optical baseline against the following text. */
-.summaryBranch > svg {
+.branchButton > svg {
   transform: translateY(2px);
+}
+
+.branchButton:focus-visible {
+  outline: 2px solid var(--wt-active);
+  outline-offset: 2px;
 }
 
 .mainTag {
@@ -92,6 +117,120 @@ body[data-ds-dark-theme] {
   background: var(--dsw-alias-bg-layer-2);
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The worktree switcher dropdown: an absolutely positioned listbox under the
+   branch button, sharing the drawer's surface tokens. */
+.worktreePopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 6;
+  min-width: 240px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.worktreePopover::-webkit-scrollbar {
+  width: 6px;
+}
+
+.worktreePopover::-webkit-scrollbar-thumb {
+  background: #cfd3d8;
+  border-radius: 3px;
+}
+
+.worktreeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.worktreeRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.worktreeRow:focus-visible {
+  outline: 2px solid var(--wt-active);
+  outline-offset: -2px;
+}
+
+.worktreeRowActive,
+.worktreeRowActive:hover {
+  background: var(--wt-active-bg);
+  color: var(--dsw-alias-label-primary);
+}
+
+.worktreePath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.worktreeMeta {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.worktreeEmpty {
+  padding: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* The "切换到此工作树" secondary pill beside the branch title: a low-emphasis
+   action — light gray border, muted text, 12px (below the 13px branch title so
+   it never outshines it), compact 24px height. It appears only after the user
+   switched the session's active worktree. Hover adds only a light gray
+   background (no fill, no color shift, no border change). */
+.directButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  margin: 0 0 0 12px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.directButton > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.directButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .summaryMeta {

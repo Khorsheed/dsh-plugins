@@ -10,10 +10,10 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconCloseOutline16, IconCopyOutline16, IconFolderOpenOutline16,
+  IconBranchOutline16, IconChevronDownOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderOpenOutline16,
   IconPanelLeftOutline16, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChangedFile, FileDiffRequest } from '../types.ts'
+import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesDrawerProps } from './contract.ts'
 import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
@@ -49,6 +49,7 @@ function clampWidth(width: number, viewport: number): number {
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
+  fetchWorktrees, switchWorktree, directAgent,
   fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, isLoopback, useHostDescription, openExternal, copyBranch,
 }: WorktreesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
@@ -64,6 +65,8 @@ export function WorktreesDrawer({
   const commits = useStore(s => s.commits)
   const commitFiles = useStore(s => s.commitFiles)
   const commitBody = useStore(s => s.commitBody)
+  const worktrees = useStore(s => s.worktrees)
+  const activeWorktreePath = useStore(s => s.activeWorktreePath)
   const diff = useStore(s => s.diff)
   const content = useStore(s => s.content)
   const loading = useStore(s => s.loading)
@@ -73,6 +76,8 @@ export function WorktreesDrawer({
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   const [copied, setCopied] = useState(false)
+  const [worktreeOpen, setWorktreeOpen] = useState(false)
+  const worktreeRef = useRef<HTMLDivElement | null>(null)
   const [treeWidth, setTreeWidth] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
@@ -268,11 +273,35 @@ export function WorktreesDrawer({
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') actions.close()
+      if (event.key === 'Escape') {
+        if (worktreeOpen) setWorktreeOpen(false)
+        else actions.close()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
-  }, [open, actions])
+  }, [open, worktreeOpen, actions])
+
+  // Close the worktree dropdown on an outside mousedown (mirrors the drawer's
+  // click-through layer — the dropdown owns its own dismissal).
+  useEffect(() => {
+    if (!worktreeOpen) return
+    const onDown = (event: MouseEvent): void => {
+      if (worktreeRef.current !== null && !worktreeRef.current.contains(event.target as Node)) setWorktreeOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => { document.removeEventListener('mousedown', onDown) }
+  }, [worktreeOpen])
+
+  // The worktree the "让 Agent 在此工作" footer targets: the currently
+  // highlighted one (the session's active worktree, or main when unset).
+  // Declared before the early return so the hook count is stable.
+  const directTarget = useMemo<WorktreeInfo | null>(() => {
+    const list = worktrees ?? []
+    if (list.length === 0) return null
+    return list.find(worktree => (activeWorktreePath === null ? worktree.isMain : worktree.path === activeWorktreePath))
+      ?? list[0] ?? null
+  }, [worktrees, activeWorktreePath])
 
   if (!open) return null
 
@@ -294,6 +323,30 @@ export function WorktreesDrawer({
   }
 
   const worktreePath = summary?.repo ?? ''
+
+  // Toggle the worktree dropdown, lazily fetching the repo's worktrees.
+  const onToggleWorktrees = (): void => {
+    if (worktreeOpen) { setWorktreeOpen(false); return }
+    setWorktreeOpen(true)
+    if (sessionId !== undefined) {
+      void fetchWorktrees(sessionId).then(result => {
+        if (result.ok) actions.setWorktrees(result.value)
+      })
+    }
+  }
+
+  // Switch the session's active worktree; the badge/drawer then follow it
+  // because remote.cwd(agent) prefers activeWorktreeOf(agent.id).
+  const onSwitchWorktree = (path: string): void => {
+    if (sessionId === undefined) return
+    void switchWorktree(sessionId, path).then(result => {
+      if (result.ok) {
+        actions.setActiveWorktreePath(result.value.path)
+        setWorktreeOpen(false)
+        actions.refresh()
+      }
+    })
+  }
 
   const leftColumn = ((): ReactNode => {
     if (treeCollapsed) {
@@ -358,11 +411,64 @@ export function WorktreesDrawer({
         />
         <div className={css.header}>
           <div className={css.summary}>
-            <span className={css.summaryBranch}>
-              <IconBranchOutline16 />
-              {summary?.branch ?? t('summary.detached')}
-              {summary !== null && summary.isMain && summary.branch !== 'main' && <span className={css.mainTag}>main</span>}
-            </span>
+            <div className={css.branchRow}>
+              <button
+                type="button"
+                className={css.branchButton}
+                aria-expanded={worktreeOpen}
+                aria-haspopup="listbox"
+                aria-label={t('wt.pickWorktree')}
+                title={t('wt.pickWorktree')}
+                onClick={onToggleWorktrees}
+              >
+                <IconBranchOutline16 />
+                <span className={css.branchText}>{summary?.branch ?? t('summary.detached')}</span>
+                {summary !== null && summary.isMain && summary.branch !== 'main' && <span className={css.mainTag}>main</span>}
+                <IconChevronDownOutline14 className={css.branchChevron} />
+              </button>
+              {activeWorktreePath !== null && directTarget !== null && (
+                <button
+                  type="button"
+                  className={css.directButton}
+                  title={t('wt.direct')}
+                  onClick={() => {
+                    if (sessionId === undefined) return
+                    void directAgent(sessionId, directTarget.path, directTarget.branch).catch(() => { /* degrade */ })
+                  }}
+                >
+                  <IconBranchOutline16 />
+                  {t('wt.direct')}
+                </button>
+              )}
+              {worktreeOpen && (
+                <div className={css.worktreePopover} ref={worktreeRef} role="listbox">
+                  {(worktrees ?? []).length === 0
+                    ? <div className={css.worktreeEmpty}>{t('wt.noWorktrees')}</div>
+                    : <>{ (worktrees ?? []).map(worktree => {
+                      const active = activeWorktreePath === null
+                        ? worktree.isMain
+                        : worktree.path === activeWorktreePath
+                      return (
+                        <button
+                          key={worktree.path}
+                          type="button"
+                          role="option"
+                          aria-selected={active}
+                          className={`${css.worktreeRow} ${active ? css.worktreeRowActive : ''}`}
+                          onClick={() => { onSwitchWorktree(worktree.path) }}
+                        >
+                          <span className={css.worktreePath}>{worktree.branch ?? worktree.path}</span>
+                          <span className={css.worktreeMeta}>
+                            {worktree.isMain ? 'main' : ''}
+                            {worktree.dirty > 0 ? ` · ${worktree.dirty}` : ''}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </>}
+                </div>
+              )}
+            </div>
             <span className={css.summaryMeta}>
               {summary?.repoName ?? ''} · @{summary?.head ?? ''}
               {summary !== null && ` · ↑${summary.ahead} ↓${summary.behind} · ${summary.dirty} dirty`}

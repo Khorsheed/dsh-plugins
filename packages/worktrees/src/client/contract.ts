@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
 import type {
   ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, SessionSummary, WorktreeInfo,
 } from '../types.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
@@ -46,6 +46,12 @@ export interface WorktreesDrawerInjected {
   fetchRepoFiles: (sessionId: SessionId) => Promise<RemoteResult<string[]>>
   fetchCommitLog: (sessionId: SessionId) => Promise<RemoteResult<CommitInfo[]>>
   fetchCommitFiles: (sessionId: SessionId, sha: string) => Promise<RemoteResult<CommitFilesResult>>
+  /** List the repository's worktrees (the switcher dropdown). */
+  fetchWorktrees: (sessionId: SessionId) => Promise<RemoteResult<WorktreeInfo[]>>
+  /** Point the session's active worktree at another worktree. */
+  switchWorktree: (sessionId: SessionId, path: string) => Promise<RemoteResult<WorktreeInfo>>
+  /** Direct the agent to work in the switched worktree (inject, no wake). */
+  directAgent: (sessionId: SessionId, path: string, branch: string | null) => Promise<RemoteResult<{ ok: true }>>
   fetchFileDiff: (sessionId: SessionId, request: FileDiffRequest) => Promise<RemoteResult<FileDiffResult>>
   fetchReadFile: (sessionId: SessionId, request: ReadFileRequest) => Promise<RemoteResult<ReadFileResult>>
   fetchReadFileAtCommit: (sessionId: SessionId, request: ReadFileAtCommitRequest) => Promise<RemoteResult<ReadFileResult>>
