@@ -24,21 +24,12 @@ interface SkillRegistrySlice {
 }
 
 /**
- * Register the `inline-html-card` skill — the generation-side contract for
- * authoring a self-contained HTML card that the browser renders in a
- * sandboxed iframe. Pull-based discovery: an agent whose task involves
- * drawing a rich inline card finds the contract in the skill catalog. Optional:
- * compositions without the skill capability skip the registration.
- * A missing/malformed shipped SKILL.md degrades to a warning — a discovery
- * aid must never take a boot down.
- * @param ctx - plugin context.
+ * Read and parse the shipped `inline-html-card` SKILL.md into a registration.
+ * @param ctx - plugin context (for logging).
+ * @returns the parsed skill, or undefined when the file is missing/malformed
+ *   (a discovery aid must never take a boot down, so each failure warns).
  */
-function registerCardSkill(ctx: Context): void {
-  const skills = ctx.get('skills') as SkillRegistrySlice | undefined
-  if (skills === undefined) {
-    ctx.logger.warn('inline-html-render: skills capability absent — the inline-html-card skill is not registered')
-    return
-  }
+function readCardSkill(ctx: Context): { name: string; description: string; content: string; source: string } | undefined {
   try {
     const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card', 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
@@ -48,23 +39,41 @@ function registerCardSkill(ctx: Context): void {
     const content = match?.[2]
     if (match === null || name === undefined || description === undefined || content === undefined) {
       ctx.logger.warn('inline-html-render: shipped SKILL.md is malformed — the inline-html-card skill is not registered')
-      return
+      return undefined
     }
-    ctx.effect(() => skills.register({ name, description, content, source: 'runtime' }))
+    return { name, description, content, source: 'runtime' as const }
   } catch (error) {
     ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the inline-html-card skill is not registered`)
+    return undefined
   }
 }
 
-/** The host half requires no service: `skills` is read optionally, never injected. */
+/** The host half requires no service; `skills` is awaited, never baked into inject. */
 export const inject: readonly string[] = []
 
 /**
- * Plugin body: register the card-authoring skill.
- * @param ctx - Cordis context carrying the optional `skills` service.
- * @returns a disposer unwinding the effect.
+ * Plugin body: register the card-authoring skill once the `skills` service is
+ * ready. `ctx.inject(['skills'], …)` waits for the service rather than probing
+ * it synchronously at apply time, so registration is not skipped when the host
+ * mounts this plugin before the skill registry is up. (The file-preview host is
+ * a service class instantiated at a later point; this plugin's `apply` runs
+ * earlier, so a plain synchronous `ctx.get('skills')` at apply time could see
+ * the registry absent and silently skip — which is why inline-html-card did not
+ * appear in the catalog while 3d-artifact did.)
+ * @param ctx - Cordis context carrying the `skills` service.
+ * @returns a disposer unwinding the registration effect.
  */
 export function apply(ctx: Context): () => void {
-  registerCardSkill(ctx)
-  return () => {}
+  const disposers: Array<() => void> = []
+  // Wait for the skill registry before registering. If it never appears, this
+  // fiber stays pending rather than throwing — a discovery aid must not take a
+  // boot down. The injected ctx is scope-addressed, so ctx.get('skills') is set.
+  ctx.inject(['skills'], (scoped) => {
+    const skill = readCardSkill(scoped)
+    if (skill === undefined) return
+    const registry = scoped.get('skills') as SkillRegistrySlice | undefined
+    if (registry === undefined) return
+    disposers.push(scoped.effect(() => registry.register(skill)))
+  })
+  return () => { for (const disposer of disposers.reverse()) disposer() }
 }
