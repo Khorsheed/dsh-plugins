@@ -85,6 +85,21 @@
   margin-left: 16px;
 }
 
+/* A thin loading bar inside a lazy-expanding directory while its children
+   fetch — the local-browser tree only. */
+.lazyLoading {
+  height: 18px;
+  margin: 2px 0 2px 16px;
+  border-radius: 3px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  animation: wt-lazy-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wt-lazy-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* One tree row: 32px, flush, full-row selection with a 7px radius. */
 .row {
   display: flex;
