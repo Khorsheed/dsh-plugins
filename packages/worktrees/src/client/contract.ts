@@ -86,7 +86,9 @@ export interface LocalFilesDrawerInjected {
   /** Read one local file for preview (git-agnostic content plane). */
   readLocalFile: (request: ReadLocalFileRequest) => Promise<RemoteResult<ReadLocalFileResult>>
   /** The registered workspaces feed (the browser's workspace switcher). */
-  workspacesList: () => readonly { id: string; title: string; path: string }[]
+  listWorkspaces: () => readonly { id: string; title: string; path: string }[]
+  /** Open the host's native directory picker; resolves the chosen path, or null when cancelled. */
+  pickWorkspace: () => Promise<string | null>
   /** Whether the browser itself is connected over loopback. */
   isLoopback: boolean
   hooks: {

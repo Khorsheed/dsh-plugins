@@ -75,7 +75,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
 
   /** The registered workspaces, projected for the browser's switcher. */
-  const workspacesList = (): { id: string; title: string; path: string }[] => {
+  const listWorkspaces = (): { id: string; title: string; path: string }[] => {
     const snapshot = ctx.workspaces.list.getSnapshot()
     return snapshot.items.map(workspace => ({
       id: workspace.workspaceId,
@@ -83,6 +83,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       path: workspace.path,
     }))
   }
+
+  /** Open the host's native directory picker (resolves the chosen path). */
+  const pickWorkspace = (): Promise<string | null> => ctx.workspaces.pickDirectory()
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
@@ -135,7 +138,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       return {
         listLocalDirectory: (request: ListLocalDirectoryRequest) => remote.listLocalDirectory(request),
         readLocalFile: (request: ReadLocalFileRequest) => remote.readLocalFile(request),
-        workspacesList,
+        listWorkspaces,
+        pickWorkspace,
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
         openExternal: (path) => { openOnHost(path) },
