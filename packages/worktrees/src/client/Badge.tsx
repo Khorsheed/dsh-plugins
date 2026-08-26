@@ -19,6 +19,7 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
   const [data, setData] = useState<SessionSummary | null>(null)
 
   useEffect(() => {
+    if (sessionId === undefined || sessionId === '') return
     let cancelled = false
     void summary(sessionId).then(result => {
       if (result.ok && !cancelled) setData(result.value)
@@ -26,7 +27,7 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
     return () => { cancelled = true }
   }, [summary, sessionId])
 
-  if (data === null) return null
+  if (data === null || sessionId === undefined || sessionId === '') return null
 
   const isRepo = data.isRepo
   const hasChanges = isRepo && (data.dirty > 0
