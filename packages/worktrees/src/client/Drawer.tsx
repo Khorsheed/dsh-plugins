@@ -45,6 +45,45 @@ function clampWidth(width: number, viewport: number): number {
   return Math.max(MIN_WIDTH, Math.min(width, Math.round(viewport * 0.92)))
 }
 
+/**
+ * Shared drawer-width state: a localStorage-persisted, left-edge draggable
+ * width for a right-side panel. Both the worktrees drawer and the local-files
+ * browser use it so they resize and remember identically.
+ * @param widthKey - localStorage key for the persisted width.
+ * @param defaultWidth - the default when nothing is saved.
+ * @param minWidth - the narrowest drag allows.
+ * @returns the current width and the pointer handlers for the left handle.
+ */
+export function useDrawerWidth(widthKey: string, defaultWidth: number, minWidth: number): {
+  width: number
+  onPointerDown: (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }) => void
+  onPointerMove: (event: { clientX: number }) => void
+  onPointerUp: () => void
+} {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(widthKey))
+      return Number.isFinite(saved) && saved >= minWidth ? saved : defaultWidth
+    } catch {
+      return defaultWidth
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(widthKey, String(width)) } catch { /* quota/private-mode: non-fatal */ }
+  }, [width, widthKey])
+  const onPointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: width }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onPointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    setWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
+  }
+  const onPointerUp = (): void => { drag.current = null }
+  return { width, onPointerDown, onPointerMove, onPointerUp }
+}
+
 /** The drawer. */
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
@@ -100,29 +139,12 @@ export function WorktreesDrawer({
     setTreeWidth(clampTreeWidth(treeDrag.current.startW + (event.clientX - treeDrag.current.startX)))
   }
   const onTreeUp = (): void => { treeDrag.current = null }
-  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(WIDTH_KEY))
-      return Number.isFinite(saved) && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH
-    } catch {
-      return DEFAULT_WIDTH
-    }
-  })
-  const drag = useRef<{ startX: number; startW: number } | null>(null)
-  useEffect(() => {
-    try { localStorage.setItem(WIDTH_KEY, String(drawerWidth)) } catch { /* quota/private-mode: non-fatal */ }
-  }, [drawerWidth])
-  const onResizePointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
-    drag.current = { startX: event.clientX, startW: drawerWidth }
-    // Capture so fast drags keep delivering moves even off the 8px handle.
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-  const onResizePointerMove = (event: { clientX: number }): void => {
-    if (drag.current === null) return
-    // Left edge: dragging left grows the drawer.
-    setDrawerWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
-  }
-  const onResizePointerUp = (): void => { drag.current = null }
+  const {
+    width: drawerWidth,
+    onPointerDown: onResizePointerDown,
+    onPointerMove: onResizePointerMove,
+    onPointerUp: onResizePointerUp,
+  } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
 
   // Resolve the selected file's metadata for the detail pane.
   const selectedFile: ChangedFile | undefined = useMemo(() => {

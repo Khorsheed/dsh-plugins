@@ -18,7 +18,15 @@ import type { ListLocalDirectoryResult } from '../types.ts'
 import type { LocalFilesDrawerProps } from './contract.ts'
 import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { useDrawerWidth } from './Drawer.tsx'
 import css from './Drawer.module.css'
+
+/** Default browser width (px) — matches the drawer. */
+const DEFAULT_WIDTH = 720
+/** Narrowest the drag handle allows. */
+const MIN_WIDTH = 420
+/** localStorage key for the browser's width preference (distinct from the drawer). */
+const WIDTH_KEY = 'dsh-worktrees-local-files-w'
 
 /** localStorage key for the remembered last directory. */
 const ROOT_KEY = 'dsh-worktrees-local-files-root'
@@ -54,6 +62,13 @@ export function LocalFilesDrawer({
   const preview = useStore(s => s.preview)
   const error = useStore(s => s.error)
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
+
+  const {
+    width: drawerWidth,
+    onPointerDown: onResizePointerDown,
+    onPointerMove: onResizePointerMove,
+    onPointerUp: onResizePointerUp,
+  } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
 
   const [wsOpen, setWsOpen] = useState(false)
   const wsRef = useRef<HTMLDivElement | null>(null)
@@ -130,7 +145,17 @@ export function LocalFilesDrawer({
 
   return (
     <div className={css.overlay}>
-      <aside className={css.drawer} role="dialog" aria-label={t('local.browse')}>
+      <aside className={css.drawer} style={{ width: drawerWidth }} role="dialog" aria-label={t('local.browse')}>
+        <div
+          className={css.resizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('drawer.resize')}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+          onPointerCancel={onResizePointerUp}
+        />
         {/* Top bar: workspace switcher + directory picker + current path. */}
         <div className={css.header}>
           <div className={css.summary}>
