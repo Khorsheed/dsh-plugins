@@ -138,13 +138,60 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       case 'room/member-updated': {
         const member = byName.get(event.data.name)
         if (member === undefined) break
-        const updated: RoomMember = {
-          ...member,
-          ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions },
+        // null CLEARS a field (rebuild without the key —
+        // exactOptionalPropertyTypes forbids writing undefined into it).
+        const withoutInstructions: RoomMember = event.data.instructions === null
+          ? (({ instructions: _cleared, ...rest }: RoomMember): RoomMember => rest)(member)
+          : { ...member, ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions } }
+        const withoutCwd: RoomMember = event.data.cwd === null
+          ? (({ cwd: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutInstructions)
+          : { ...withoutInstructions, ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd } }
+        const patched: RoomMember = {
+          ...withoutCwd,
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
-        byName.set(updated.name, updated)
-        members[members.indexOf(member)] = updated
+        // A rename migrates every name-keyed projection: the roster key, the
+        // tasks' member (and blockedBy), the relays' from/to, and the runs
+        // key. The child session id rides the member record and stays. A
+        // colliding rename (the new name is taken — a hand-edited log; the
+        // write path validates) drops the rename, keeps the rest.
+        const rename = event.data.rename
+        if (rename === undefined || rename === member.name || byName.has(rename)) {
+          byName.set(member.name, patched)
+          members[members.indexOf(member)] = patched
+          break
+        }
+        const renamed: RoomMember = { ...patched, name: rename }
+        byName.delete(member.name)
+        byName.set(rename, renamed)
+        members[members.indexOf(member)] = renamed
+        for (let index = 0; index < tasks.length; index++) {
+          const task = tasks[index]!
+          if (task.member !== member.name && task.blockedBy !== member.name) continue
+          const migrated: RoomTask = {
+            ...task,
+            ...task.member === member.name ? { member: rename } : {},
+            ...task.blockedBy === member.name ? { blockedBy: rename } : {},
+          }
+          taskById.set(migrated.id, migrated)
+          tasks[index] = migrated
+        }
+        for (let index = 0; index < relays.length; index++) {
+          const relay = relays[index]!
+          if (relay.from !== member.name && relay.to !== member.name) continue
+          const migrated: RoomRelay = {
+            ...relay,
+            from: relay.from === member.name ? rename : relay.from,
+            to: relay.to === member.name ? rename : relay.to,
+          }
+          relayById.set(migrated.id, migrated)
+          relays[index] = migrated
+        }
+        const run = runs.get(member.name)
+        if (run !== undefined) {
+          runs.delete(member.name)
+          runs.set(rename, { ...run, member: rename })
+        }
         break
       }
       case 'room/member-removed': {
@@ -298,10 +345,15 @@ export function pendingInstructions(
       && event.data.instructions !== undefined) {
       lastSeq = event.seq
       lastInstructions = event.data.instructions
-    } else if (event.type === 'room/member-updated' && event.data.name === member
-      && event.data.instructions !== undefined) {
-      lastSeq = event.seq
-      lastInstructions = event.data.instructions
+    } else if (event.type === 'room/member-updated' && event.data.name === member) {
+      // A null instructions CLEARS the preset: nothing rides the next dispatch.
+      if (event.data.instructions === null) {
+        lastSeq = undefined
+        lastInstructions = undefined
+      } else if (event.data.instructions !== undefined) {
+        lastSeq = event.seq
+        lastInstructions = event.data.instructions
+      }
     }
   }
   if (lastSeq === undefined || lastInstructions === undefined) return undefined

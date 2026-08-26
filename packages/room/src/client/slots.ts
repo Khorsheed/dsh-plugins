@@ -136,8 +136,22 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
   readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
-  /** Rewrite the named member's role instructions. */
-  readonly updateMember: (member: string, instructions: string) => Promise<RoomMutationOutcome>
+  /**
+   * Edit the named member: rename, cwd override (null clears back to
+   * inheriting the room cwd), role instructions (null clears them). Only the
+   * present fields change.
+   */
+  readonly updateMember: (member: string, patch: RoomMemberPatch) => Promise<RoomMutationOutcome>
+}
+
+/** One member edit (every field optional; null clears the field). */
+export interface RoomMemberPatch {
+  /** New @-addressing name (unique, no whitespace, no "@"). */
+  readonly rename?: string
+  /** New role instructions; null clears them. */
+  readonly instructions?: string | null
+  /** New cwd override; null clears back to inheriting the room cwd. */
+  readonly cwd?: string | null
 }
 
 /** Injected face of the member-speech chat node. */

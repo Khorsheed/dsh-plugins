@@ -235,9 +235,15 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       void roomStore.refresh(sessionId)
       return { ok: true }
     },
-    updateMember: async (member, instructions) => {
+    updateMember: async (member, patch) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.updateMember({ sessionId, name: member, instructions })
+      const carried = await remote.updateMember({
+        sessionId,
+        name: member,
+        ...patch.rename === undefined ? {} : { rename: patch.rename },
+        ...patch.instructions === undefined ? {} : { instructions: patch.instructions },
+        ...patch.cwd === undefined ? {} : { cwd: patch.cwd },
+      })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
       void roomStore.refresh(sessionId)

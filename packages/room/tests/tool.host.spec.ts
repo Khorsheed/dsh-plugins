@@ -29,11 +29,12 @@ async function boot() {
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
-  expect(tools.register).toHaveBeenCalledTimes(2)
+  expect(tools.register).toHaveBeenCalledTimes(3)
   const registered = tools.register.mock.calls.map(call => call[0] as ToolDefinition)
   const tool = registered.find(entry => entry.name === 'room_invite')!
   const taskTool = registered.find(entry => entry.name === 'room_task')!
-  return { ctx, service, tool, taskTool }
+  const messageTool = registered.find(entry => entry.name === 'room_message')!
+  return { ctx, service, tool, taskTool, messageTool }
 }
 
 /** A minimal exec context: the calling agent driving `session`. */
@@ -229,5 +230,49 @@ describe('room_task tool (real composition)', () => {
     await service.closeTask({ sessionId, taskId: added.value.id })
     const closed = await call(taskTool, { action: 'update', taskId: added.value.id, title: '再改' }, execFor(room))
     expect(closed).toContain('task-closed')
+  })
+})
+
+describe('room_message tool (real composition)', () => {
+  it('dispatches to the member like a human @-message, minus the user bubble', async () => {
+    const { ctx, service, messageTool } = await boot()
+    const { sessionId } = await service.createRoom({})
+    const room = ctx.sessions.get(sessionId)!
+    await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
+
+    const text = await call(messageTool, { member: 'ada', text: '看看接口定义' }, execFor(room))
+    expect(text).toContain('Dispatched to ada')
+    expect(text).toContain('asynchronously')
+
+    const events = room.events
+    // The dispatch record and the auto-opened task journal as usual; the
+    // caller is the main agent, so NO human user/message bubble is appended.
+    expect(events.filter(event => event.type === 'room/dispatch').map(event => event.data))
+      .toEqual([{ targets: ['ada'], text: '看看接口定义' }])
+    expect(events.some(event => event.type === 'user/message')).toBe(false)
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { tasks: [{ member: 'ada', title: '看看接口定义', status: 'in_progress' }] },
+    })
+  })
+
+  it('rejects an unknown member with the live roster, a blank text, a non-room session, and a non-agent caller', async () => {
+    const { ctx, service, messageTool } = await boot()
+    const { sessionId } = await service.createRoom({})
+    const room = ctx.sessions.get(sessionId)!
+
+    const unknown = await call(messageTool, { member: 'ghost', text: '在吗' }, execFor(room))
+    expect(unknown).toContain('unknown member')
+    // The live roster lets the model self-correct (main is always seated).
+    expect(unknown).toContain('main')
+    expect(unknown).toContain('Retry')
+
+    expect(await call(messageTool, { member: 'main', text: '  ' }, execFor(room))).toContain('non-blank')
+
+    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
+    expect(await call(messageTool, { member: 'main', text: 'x' }, execFor(plain))).toContain('not a room')
+    expect(await call(messageTool, { member: 'main', text: 'x' }, execFor(undefined)))
+      .toContain('requires a calling agent')
   })
 })

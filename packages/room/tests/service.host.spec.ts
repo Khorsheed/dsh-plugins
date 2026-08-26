@@ -188,8 +188,53 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
     expect(await service.updateMember({ sessionId, name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'nothing-to-update' } })
+
+    // A blank (or null) instructions CLEARS the preset — later dispatches
+    // inject none (the old empty-text rejection went away with clearing).
     expect(await service.updateMember({ sessionId, name: 'ada', instructions: ' ' }))
-      .toEqual({ ok: false, error: { code: 'empty-text' } })
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const cleared = await service.getState({ sessionId })
+    expect(cleared.ok && cleared.value.members[1]).toBeDefined()
+    if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('instructions')
+  })
+
+  it('updateMember renames a member — migrating the board, relays and runs — and sets/clears the cwd override', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada', instructions: '后端' })
+    await service.invite({ sessionId, provider: 'codex', name: 'bill' })
+    await service.addTask({ sessionId, member: 'ada', title: '出方案', blockedBy: 'bill' })
+    await service.receiveMemberMessage({
+      from: 'ada', to: 'bill', content: '接口定稿', parentSessionId: sessionId,
+    })
+    ctx.sessions.get(sessionId)!.append('room/run-state', { member: 'ada', state: 'running', startedAt: 1 })
+
+    expect(await service.updateMember({ sessionId, name: 'ada', rename: 'K酱', cwd: ' /tmp/work ' }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const renamed = await service.getState({ sessionId })
+    expect(renamed).toMatchObject({
+      ok: true,
+      value: {
+        members: [MAIN_MEMBER, { name: 'K酱', instructions: '后端', cwd: '/tmp/work' }, { name: 'bill' }],
+        tasks: [{ member: 'K酱', blockedBy: 'bill', title: '出方案' }],
+        relays: [{ from: 'K酱', to: 'bill' }],
+        runs: [{ member: 'K酱', state: 'running' }],
+      },
+    })
+
+    // null clears the cwd override (back to inheriting the room cwd).
+    expect(await service.updateMember({ sessionId, name: 'K酱', cwd: null }))
+      .toEqual({ ok: true, value: { name: 'K酱' } })
+    const cleared = await service.getState({ sessionId })
+    if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('cwd')
+
+    // Rename validation: uniqueness, the name grammar, and the main agent is
+    // the room itself — it cannot be renamed.
+    expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bill' }))
+      .toEqual({ ok: false, error: { code: 'duplicate-name' } })
+    expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bad name' }))
+      .toEqual({ ok: false, error: { code: 'invalid-name' } })
+    expect(await service.updateMember({ sessionId, name: 'main', rename: 'boss' }))
+      .toEqual({ ok: false, error: { code: 'main-member' } })
   })
 
   it('removeMember drops the member from the roster and validates its inputs', async () => {

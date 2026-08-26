@@ -11,7 +11,8 @@
  * picker UI is bound to ui-workspace's adopt-as-workspace flow holes and
  * cannot serve a pure path pick; empty = inherit the room session's cwd,
  * shown as the placeholder), and an optional first task. Edit mode reuses
- * the card with only the instructions field.
+ * the card with the name (rename), cwd (clear = inherit again), and
+ * instructions (clear = no preset injected) fields.
  */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
@@ -20,7 +21,7 @@ import type {
 import type { RoomMember, RoomProviderInfo } from '../types.ts'
 import css from './InviteDialog.module.css'
 
-/** The dialog's submit values (edit mode carries instructions only). */
+/** The dialog's submit values (edit mode carries name/cwd/instructions only). */
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
@@ -61,9 +62,9 @@ export function InviteDialog({
   mode, member, providers, localAgentAvailable, inheritedCwd, browseDirectory, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
-  const [name, setName] = useState('')
+  const [name, setName] = useState(member?.name ?? '')
   const [instructions, setInstructions] = useState(member?.instructions ?? '')
-  const [cwd, setCwd] = useState('')
+  const [cwd, setCwd] = useState(member?.cwd ?? '')
   const [firstTask, setFirstTask] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -80,8 +81,10 @@ export function InviteDialog({
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
   const chosen = provider === '' ? (authenticated[0]?.provider ?? '') : provider
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
+  // Edit mode: instructions may clear (empty = no preset injected); the name
+  // is the only hard requirement.
   const canSubmit = mode === 'edit'
-    ? instructions.trim() !== ''
+    ? validName(name)
     : localAgentAvailable && chosen !== '' && validName(name)
 
   const browse = async (): Promise<void> => {
@@ -102,7 +105,7 @@ export function InviteDialog({
 
   const submit = async (): Promise<void> => {
     if (!canSubmit || busy) return
-    if (mode === 'invite' && !validName(name)) {
+    if (!validName(name)) {
       setError(t('invite.error.invalid'))
       return
     }
@@ -139,72 +142,70 @@ export function InviteDialog({
           {mode === 'invite' ? t('invite.title') : t('invite.title.edit', { member: member?.name ?? '' })}
         </div>
         {mode === 'invite' && (
-          <>
-            {!localAgentAvailable ? (
-              <div className={css.hint} role="status">{t('invite.facadeMissing')}</div>
-            ) : (
-              <label className={css.field}>
-                <span className={css.label}>{t('invite.provider')}</span>
-                <select
-                  className={css.select}
-                  value={chosen}
-                  onChange={event => { setProvider(event.target.value) }}
-                >
-                  {(providers ?? []).map(entry => (
-                    <option key={entry.provider} value={entry.provider} disabled={!entry.authenticated}>
-                      {entry.displayName}{entry.authenticated ? '' : t('invite.loggedOut')}
-                    </option>
-                  ))}
-                </select>
-                {someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
-              </label>
-            )}
+          !localAgentAvailable ? (
+            <div className={css.hint} role="status">{t('invite.facadeMissing')}</div>
+          ) : (
             <label className={css.field}>
-              <span className={css.label}>{t('invite.name')}</span>
-              <input
-                className={css.input}
-                value={name}
-                placeholder="ada"
-                onChange={event => { setName(event.target.value) }}
-              />
-              <span className={css.hint}>{t('invite.nameHint')}</span>
+              <span className={css.label}>{t('invite.provider')}</span>
+              <select
+                className={css.select}
+                value={chosen}
+                onChange={event => { setProvider(event.target.value) }}
+              >
+                {(providers ?? []).map(entry => (
+                  <option key={entry.provider} value={entry.provider} disabled={!entry.authenticated}>
+                    {entry.displayName}{entry.authenticated ? '' : t('invite.loggedOut')}
+                  </option>
+                ))}
+              </select>
+              {someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
             </label>
-            <label className={css.field}>
-              <span className={css.label}>{t('invite.cwd')}</span>
-              <span className={css.cwdRow}>
-                {/* Read-only display: a picked path only (manual typing went
-                    away with the 浏览… button; empty = inherit the room cwd,
-                    shown as the placeholder). */}
-                <input
-                  className={css.input}
-                  value={cwd}
-                  placeholder={inheritedCwd ?? ''}
-                  readOnly
-                  aria-label={t('invite.cwd')}
-                />
-                <button
-                  type="button"
-                  className={css.browse}
-                  disabled={browsing}
-                  onClick={() => { void browse() }}
-                >
-                  {t('invite.browse')}
-                </button>
-                {cwd !== '' && (
-                  <button
-                    type="button"
-                    className={css.browse}
-                    aria-label={t('invite.cwdReset')}
-                    onClick={() => { setCwd('') }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </span>
-              <span className={css.hint}>{t('invite.cwdHint')}</span>
-            </label>
-          </>
+          )
         )}
+        <label className={css.field}>
+          <span className={css.label}>{t('invite.name')}</span>
+          <input
+            className={css.input}
+            value={name}
+            placeholder="ada"
+            onChange={event => { setName(event.target.value) }}
+          />
+          <span className={css.hint}>{t('invite.nameHint')}</span>
+        </label>
+        <label className={css.field}>
+          <span className={css.label}>{t('invite.cwd')}</span>
+          <span className={css.cwdRow}>
+            {/* Read-only display: a picked path only (manual typing went
+                away with the 浏览… button; empty = inherit the room cwd,
+                shown as the placeholder). */}
+            <input
+              className={css.input}
+              value={cwd}
+              placeholder={inheritedCwd ?? ''}
+              readOnly
+              aria-label={t('invite.cwd')}
+            />
+            <button
+              type="button"
+              className={css.browse}
+              disabled={browsing}
+              onClick={() => { void browse() }}
+            >
+              {t('invite.browse')}
+            </button>
+            {cwd !== '' && (
+              <button
+                type="button"
+                className={css.browse}
+                aria-label={t('invite.cwdReset')}
+                onClick={() => { setCwd('') }}
+              >
+                ✕
+              </button>
+            )}
+          </span>
+          <span className={css.hint}>{t('invite.cwdHint')}</span>
+        </label>
         <label className={css.field}>
           <span className={css.label}>{t('invite.instructions')}</span>
           <textarea
@@ -214,7 +215,9 @@ export function InviteDialog({
             placeholder={t('invite.instructionsPlaceholder')}
             onChange={event => { setInstructions(event.target.value) }}
           />
-          <span className={css.hint}>{t('invite.instructionsHint')}</span>
+          <span className={css.hint}>
+            {mode === 'edit' ? t('invite.instructionsHintEdit') : t('invite.instructionsHint')}
+          </span>
         </label>
         {mode === 'invite' && (
           <label className={css.field}>

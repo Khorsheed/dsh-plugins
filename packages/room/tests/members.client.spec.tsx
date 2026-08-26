@@ -166,8 +166,25 @@ describe('MembersView', () => {
     expect((area as HTMLTextAreaElement).value).toBe('后端')
     fireEvent.change(area, { target: { value: '后端 + 评审' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', '后端 + 评审') })
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', { instructions: '后端 + 评审' }) })
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('the edit dialog renames and re-cwds a member (clears ride as null)', async () => {
+    const { face } = await bench()
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const dialog = await screen.findByRole('dialog')
+    // Name and cwd are prefilled from the member record.
+    const nameInput = dialog.querySelector('input[class*="_input"]') as HTMLInputElement
+    expect(nameInput.value).toBe('ada')
+    fireEvent.change(nameInput, { target: { value: 'K酱' } })
+    // Empty the instructions: a clear, not a rejection.
+    fireEvent.change(dialog.querySelector('textarea')!, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => {
+      expect(face.updateMember).toHaveBeenCalledWith('ada', { rename: 'K酱', instructions: null })
+    })
   })
 
   it('the invite dialog greys logged-out providers and submits the invite', async () => {

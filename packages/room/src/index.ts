@@ -39,7 +39,7 @@ import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
 import { BlankRoomRegistry } from './registry.ts'
-import { roomInviteTool, roomTaskTool } from './tool.ts'
+import { roomInviteTool, roomMessageTool, roomTaskTool } from './tool.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -50,6 +50,7 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomMemberMessage, RoomMemberMessageReceipt,
+  RoomMessageRequest, RoomMessageResult,
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
@@ -159,6 +160,7 @@ export class RoomService extends TypertRemoteService {
     this.ctx.inject(['tools'], (toolsCtx) => {
       toolsCtx.effect(() => toolsCtx.tools.register(roomInviteTool(this)), 'room: room_invite tool')
       toolsCtx.effect(() => toolsCtx.tools.register(roomTaskTool(this)), 'room: room_task tool')
+      toolsCtx.effect(() => toolsCtx.tools.register(roomMessageTool(this)), 'room: room_message tool')
     })
   }
 
@@ -433,21 +435,51 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Update a member's role instructions. The edit rides the member's next
-   * dispatch as a context update (the CLI session itself is never rewritten).
-   * @param request - room session, member name, new instructions.
-   * @returns the update receipt, or a rejection.
+   * Update a member's editable fields: rename (validated like an invite name —
+   * unique, parseable; the main agent is the room itself and cannot be
+   * renamed), role instructions (null or a blank text CLEARS them — later
+   * dispatches inject none), and the member-level cwd override (null or a
+   * blank text clears back to inheriting the room cwd; still roster-recorded
+   * only — the delegation facade's per-call cwd override is the family's open
+   * R2). An instructions edit rides the member's next dispatch as a context
+   * update (the CLI session itself is never rewritten); a rename migrates
+   * every name-keyed projection at replay (the journal fold moves the roster
+   * key, tasks' member/blockedBy, relays' from/to, and the runs key).
+   * @param request - room session, member name, and the fields to change.
+   * @returns the update receipt (the CURRENT name), or a rejection.
    */
   @Remote('updateMember')
   async updateMember(request: RoomUpdateMemberRequest): Promise<RoomUpdateMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    if (!loaded.state.members.some(member => member.name === request.name)) {
+    const member = loaded.state.members.find(entry => entry.name === request.name)
+    if (member === undefined) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
-    if (request.instructions === undefined) return { ok: false, error: { code: 'nothing-to-update' } }
-    if (request.instructions.trim() === '') return { ok: false, error: { code: 'empty-text' } }
-    loaded.session.append('room/member-updated', { name: request.name, instructions: request.instructions })
+    if (request.rename === undefined && request.instructions === undefined && request.cwd === undefined) {
+      return { ok: false, error: { code: 'nothing-to-update' } }
+    }
+    if (request.rename !== undefined && request.rename !== request.name) {
+      if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
+      if (!validName(request.rename)) return { ok: false, error: { code: 'invalid-name' } }
+      if (loaded.state.members.some(entry => entry.name === request.rename)) {
+        return { ok: false, error: { code: 'duplicate-name' } }
+      }
+    }
+    // A blank string is a clear, never a stored value (the wire keeps null
+    // and blank distinct, the journal stores one form: null).
+    const instructions = typeof request.instructions === 'string' && request.instructions.trim() === ''
+      ? null
+      : request.instructions
+    const cwd = typeof request.cwd === 'string'
+      ? (request.cwd.trim() === '' ? null : request.cwd.trim())
+      : request.cwd
+    loaded.session.append('room/member-updated', {
+      name: request.name,
+      ...request.rename === undefined ? {} : { rename: request.rename },
+      ...instructions === undefined ? {} : { instructions },
+      ...cwd === undefined ? {} : { cwd },
+    })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }
   }
@@ -524,6 +556,33 @@ export class RoomService extends TypertRemoteService {
       this.engine.dispatch(loaded.session, target, text, { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
+  }
+
+  /**
+   * Dispatch one message to one member (host-only — the `room_message` tool's
+   * path; the model-facing equivalent of the human's `@member text`). Same
+   * dispatch internals as postMessage minus the user/message bubble: the
+   * caller is the room's own main agent, so the text must NOT wear the human
+   * bubble (source kind 'user' would misattribute it). The dispatch record
+   * and the auto-opened in_progress task journal as usual.
+   * @param request - room session, addressee, text.
+   * @returns the dispatch receipt, or a rejection.
+   */
+  async messageMember(request: RoomMessageRequest): Promise<RoomMessageResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (!loaded.state.members.some(member => member.name === request.member)) {
+      return { ok: false, error: { code: 'member-not-found' } }
+    }
+    const text = request.text.trim()
+    if (text === '') return { ok: false, error: { code: 'empty-text' } }
+    const dispatch = loaded.session.append('room/dispatch', { targets: [request.member], text })
+    loaded.session.append('room/task-added', {
+      id: randomUUID(), member: request.member, title: taskTitle(text), status: 'in_progress',
+    })
+    await this.ctx.sessions.flush(loaded.session)
+    this.engine.dispatch(loaded.session, request.member, text, { dispatchSeq: dispatch.seq })
+    return { ok: true, value: { member: request.member } }
   }
 
   /**

@@ -51,8 +51,22 @@ export interface RoomMemberAddedEvent {
 
 /** A roster member's editable fields changed. */
 export interface RoomMemberUpdatedEvent {
+  /**
+   * The member this update addresses, by its CURRENT name (a rename carries
+   * the new name in `rename`; keeping `name` as the addressing key keeps
+   * every pre-rename journal replayable).
+   */
   readonly name: string
-  readonly instructions?: string
+  /** Rename: the member's new @-addressing name (validated at write: unique, no whitespace, no "@"). */
+  readonly rename?: string
+  /** New role instructions; null CLEARS them (later dispatches inject none). */
+  readonly instructions?: string | null
+  /**
+   * New member-level cwd (roster-recorded; the delegation facade's per-call
+   * override is the family's open R2). null CLEARS the override — the member
+   * inherits the room session's cwd again.
+   */
+  readonly cwd?: string | null
   /**
    * The CLI member's delegation handle, journaled when the member's first
    * run starts (invite predates the handle; the dispatch engine appends this
@@ -316,6 +330,8 @@ export type RoomFailure =
   | { readonly code: 'relay-not-found' }
   /** The relay exists but already left the pending state. */
   | { readonly code: 'relay-not-pending' }
+  /** The main agent is the room itself: it cannot be renamed. */
+  | { readonly code: 'main-member' }
   | { readonly code: 'task-not-found' }
   /** The task exists but is already closed (done/cancelled). */
   | { readonly code: 'task-closed' }
@@ -402,14 +418,18 @@ export type RoomInviteResult =
   | { readonly ok: true; readonly value: RoomInvitation }
   | { readonly ok: false; readonly error: RoomFailure }
 
-/** updateMember request: edit a member's role instructions. */
+/** updateMember request: edit a member's name, role instructions, or cwd. */
 export interface RoomUpdateMemberRequest {
   /** Room session. */
   readonly sessionId: SessionId
-  /** Member to update. */
+  /** Member to update (its CURRENT name). */
   readonly name: string
-  /** New role instructions (non-blank when present). */
-  readonly instructions?: string
+  /** Rename: the new @-addressing name (unique, no whitespace, no "@"). */
+  readonly rename?: string
+  /** New role instructions; null (or a blank string) CLEARS them. */
+  readonly instructions?: string | null
+  /** New member-level cwd; null (or a blank string) CLEARS the override back to inheriting the room cwd. */
+  readonly cwd?: string | null
 }
 
 /** updateMember outcome. */
@@ -459,6 +479,26 @@ export interface RoomPostReceipt {
   /** Seq of the appended journal event. */
   readonly seq: number
 }
+
+/**
+ * messageMember request (host-only — the `room_message` tool's path; NOT a
+ * Remote): dispatch one message to one member. Identical dispatch semantics
+ * to a human's `@member text` minus the user/message bubble (the caller is
+ * the main agent, not the human).
+ */
+export interface RoomMessageRequest {
+  /** Room session. */
+  readonly sessionId: SessionId
+  /** The addressee's roster name. */
+  readonly member: string
+  /** The message text. */
+  readonly text: string
+}
+
+/** messageMember outcome. */
+export type RoomMessageResult =
+  | { readonly ok: true; readonly value: { readonly member: string } }
+  | { readonly ok: false; readonly error: RoomFailure }
 
 /** postMessage outcome. */
 export type RoomPostMessageResult =

@@ -162,7 +162,20 @@ export function MembersView({
   const submitDialog = async (values: InviteDialogSubmit) => {
     if (dialog === null) return { ok: false as const, message: '' }
     if (dialog.mode === 'edit') {
-      return updateMember(dialog.member.name, values.instructions)
+      // Diff against the member record: only changed fields ride the patch;
+      // an emptied cwd/instructions CLEARS (null) back to the inherit/no-
+      // preset state.
+      const member = dialog.member
+      const name = values.name.trim()
+      const cwd = values.cwd.trim()
+      const instructions = values.instructions.trim()
+      return updateMember(member.name, {
+        ...name !== member.name ? { rename: name } : {},
+        ...cwd !== (member.cwd ?? '') ? { cwd: cwd === '' ? null : cwd } : {},
+        ...instructions !== (member.instructions ?? '')
+          ? { instructions: instructions === '' ? null : instructions }
+          : {},
+      })
     }
     const outcome = await invite({
       provider: values.provider,

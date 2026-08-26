@@ -1,5 +1,6 @@
 /**
- * The room's model-facing tools, `room_invite` and `room_task`: the main
+ * The room's model-facing tools, `room_invite`, `room_task`, and
+ * `room_message`: the main
  * agent's paths into the room it belongs to. Both are gated at execute time —
  * the calling agent's session must be a room (the journal carries
  * `room/created`); anywhere else the tool answers with readable error text
@@ -8,7 +9,9 @@
  * (`invitedBy: 'agent'`), producing an identical member record; `room_task`
  * writes the SHARED task board through the very host functions the capsule UI
  * uses (addTask/closeTask, plus the tool-only updateTask), so an agent-written
- * task is indistinguishable from a human-added one.
+ * task is indistinguishable from a human-added one; `room_message` dispatches
+ * a message to a member through the same engine path as the human's
+ * `@member text`, minus the user bubble (the caller is the room's own agent).
  * @module @khorsheed/dsh-room/tool
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -18,6 +21,7 @@ import type {
   RoomCloseTaskRequest, RoomCloseTaskResult,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
+  RoomMessageRequest, RoomMessageResult,
   RoomUpdateTaskRequest, RoomUpdateTaskResult,
 } from './types.ts'
 
@@ -276,6 +280,86 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
           if (!result.ok) return { text: `Could not update the task: ${result.error.code}. ${await failureText(result.error.code)}` }
           return { text: `Task ${result.value.id} updated on the shared room board.` }
         }
+      }
+    },
+  })
+}
+
+/** The slice of RoomService the room_message tool drives. */
+export interface RoomMessageToolBackend {
+  /** Dispatch one message to one member (see RoomService.messageMember). */
+  messageMember(request: RoomMessageRequest): Promise<RoomMessageResult>
+  /** Replay the room state (the error text reads the live roster from it). */
+  getState(request: RoomGetStateRequest): Promise<RoomGetStateResult>
+}
+
+/**
+ * Build the room_message tool definition bound to the room service: the main
+ * agent's way to hand a member a message/task — the model-facing equivalent
+ * of the human's `@member text`, minus the user bubble (the caller is the
+ * room's own agent, not the human).
+ * @param backend - the room service.
+ * @returns a registry-ready tool definition.
+ */
+export function roomMessageTool(backend: RoomMessageToolBackend) {
+  return defineTool({
+    name: 'room_message',
+    description:
+      'Dispatch a message to a member of the current room (only usable inside a room session). '
+      + 'A member is an independent CLI session: the message runs asynchronously, and the member\'s '
+      + 'reply appears in the room as member speech (the human sees it; you read it through the '
+      + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
+      + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
+      + '(yourself is "main"); an unknown name is rejected with the live roster, so retry with one '
+      + 'of those.',
+    parameters: {
+      member: {
+        type: 'string',
+        required: true,
+        description: 'The addressee\'s roster name (e.g. "main" for yourself, or a CLI member like "ada").',
+      },
+      text: {
+        type: 'string',
+        required: true,
+        description: 'The message text the member receives as its task.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    // A dispatch mutates only the room journal; two messages never conflict
+    // beyond the roster validation the result text reports back.
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const agent = exec.agent
+      if (agent === undefined) return { text: 'room_message requires a calling agent (exec.agent was undefined).' }
+      if (!isRoomLog(agent.session.events)) {
+        return { text: 'The current session is not a room; room_message is only usable inside a room session.' }
+      }
+      const sessionId = agent.session.id
+      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text })
+      if (!result.ok) {
+        if (result.error.code === 'member-not-found') {
+          const state = await backend.getState({ sessionId })
+          const names = state.ok ? state.value.members.map(member => member.name) : []
+          const hint = names.length === 0 ? '' : ` The room roster is: ${names.join(', ')}. Retry with one of these names.`
+          return { text: `Could not message "${args.member}": unknown member.${hint}` }
+        }
+        if (result.error.code === 'empty-text') {
+          return { text: 'The message text must be non-blank; retry with real content.' }
+        }
+        return { text: `Could not message "${args.member}": ${result.error.code}.` }
+      }
+      return {
+        text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
+          + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
       }
     },
   })
