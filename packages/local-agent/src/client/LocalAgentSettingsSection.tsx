@@ -1,41 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
-import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import type { LocalAgentRosterRow, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import { useEffect, useState } from 'react'
+import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { LocalAgentRosterRow } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from './locales.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
+import {
+  KNOWN_HARNESSES, ProviderAuthBlock, type ProviderAuthInjected,
+} from './ProviderAuthBlock.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from './slot-contract.ts'
 import css from './LocalAgentSettingsSection.module.css'
 
-/** Known harnesses the family plans to support; unregistered ones render as pending. */
-const KNOWN_HARNESSES: readonly LocalAgentHarnessView[] = [
-  { id: 'kimi', label: 'Kimi Code' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'claude-code', label: 'Claude Code' },
-]
-
-/** How often a pending login's status is re-probed after the prompt surfaces. */
-export const LOGIN_POLL_MS = 4_000
-
-/** How long a pending login keeps being polled before the section gives up. */
-export const LOGIN_POLL_LIMIT_MS = 5 * 60_000
+// The auth block owns the constants/helpers; the section re-exports them so
+// existing imports (tests included) keep working.
+export { LOGIN_POLL_LIMIT_MS, LOGIN_POLL_MS, parseLoginUrl } from './ProviderAuthBlock.tsx'
 
 /** Injected business face of the settings section. */
-export interface LocalAgentSettingsInjected {
+export interface LocalAgentSettingsInjected extends ProviderAuthInjected {
   /** Registered harnesses, in registration order. */
   roster: () => Promise<readonly LocalAgentRosterRow[] | undefined>
-  /** One harness's auth status. */
-  status: (name: string) => Promise<LocalAgentStatus | undefined>
-  /**
-   * Run one user-initiated slash-command line (login/logout) against the
-   * session's agent and return the command result text, or undefined when
-   * unavailable.
-   * @param sessionId - the target session.
-   * @param line - the full command line.
-   */
-  runCommand: (sessionId: SessionId, line: string) => Promise<string | undefined>
 }
 
 /** Full props for the settings section. */
@@ -44,97 +27,23 @@ export type LocalAgentSettingsProps =
   & PropsRenderSlots<'local-agent.settings.row' | 'local-agent.settings.row-action'>
   & LocalAgentSettingsInjected
 
-/** Per-harness view state: the last status, its capability flags, and the login prompt. */
-interface HarnessView {
-  status: 'checking' | 'authenticated' | 'anonymous' | 'unavailable'
-  /** Whether the harness declares a login flow; absent keeps the current behavior. */
-  loginable?: boolean
-  /** Whether the harness declares a logout path; absent keeps the current behavior. */
-  logoutable?: boolean
-  loginText?: string
-  loginUrl?: string
-  /** A pty login waits for the user to paste the OAuth code. */
-  loginAwaitingCode?: boolean
-}
-
-/** The first http(s) URL in a login prompt, if any. */
-export function parseLoginUrl(text: string): string | undefined {
-  return /https?:\/\/\S+/.exec(text)?.[0]
-}
-
-/** Resolve a harness id to its display label for toast text. */
-function harnessLabel(id: string): string {
-  return KNOWN_HARNESSES.find(harness => harness.id === id)?.label ?? id
-}
-
 /**
- * Settings section managing the registered local-agent harnesses: per-harness
- * auth status through the read-only Remote channel and a web-login action
- * that runs `/<harness> login`, surfaces the device-code prompt, and offers a
- * link to the authorization page. The login command returns at prompt time
- * while the CLI polls in the background, so a pending login's status keeps
- * being re-probed until credentials land or the poll window expires. Status
- * polls ride the Remote channel and emit no session events; only the
- * user-initiated login/logout commands leave command nodes in the log.
+ * Settings section managing the registered local-agent harnesses: one
+ * ProviderAuthBlock per registered harness (auth status, web login,
+ * device-code prompt, OAuth code paste — the same block the per-provider
+ * settings cards embed) plus placeholder rows for known-but-unregistered
+ * harnesses. Roster and status ride the read-only Remote channel (no session
+ * events); only the user-initiated login/logout commands leave command nodes
+ * in the log.
  * @param props - runtime slot currency plus the injected query and command faces.
  * @returns the section content.
  */
 export function LocalAgentSettingsSection({ useSessions, runCommand, roster, status, t, renderSlot }: LocalAgentSettingsProps) {
   const sessionId = useSessions((state: SessionListState) => state.current)
   const [registered, setRegistered] = useState<readonly LocalAgentHarnessView[]>([])
-  const [views, setViews] = useState<Readonly<Record<string, HarnessView>>>({})
-  /** Harness ids whose device-code login is still pending, keyed by start time. */
-  const [pendingLogins, setPendingLogins] = useState<Readonly<Record<string, number>>>({})
-  /** A login-completion toast awaiting mount; seq forces a re-show for repeats. */
-  const [loginToast, setLoginToast] = useState<{ seq: number; harness: string } | null>(null)
-  const toastSeq = useRef(0)
-  /** OAuth code drafts for pty logins awaiting a paste, keyed by harness id. */
-  const [codeDrafts, setCodeDrafts] = useState<Readonly<Record<string, string>>>({})
   /** Whether the last roster fetch failed; the retry button bumps the tick. */
   const [rosterFailed, setRosterFailed] = useState(false)
   const [retryTick, setRetryTick] = useState(0)
-
-  const refresh = (id: string): void => {
-    setViews((prev) => {
-      const current = prev[id]
-      return { ...prev, [id]: { ...current, status: 'checking' } }
-    })
-    void status(id).then((probe) => {
-      const statusKind = probe === undefined ? 'unavailable'
-        : probe.authenticated ? 'authenticated' : 'anonymous'
-      const capabilities = probe === undefined
-        ? {}
-        : {
-          loginable: probe.loginable ?? true,
-          logoutable: probe.logoutable ?? true,
-          ...probe.loginAwaitingCode === true ? { loginAwaitingCode: true } : {},
-        }
-      setViews((prev) => {
-        const current = prev[id]
-        // A completed login drops the stale device prompt.
-        return { ...prev, [id]: statusKind === 'authenticated'
-          ? { status: statusKind, ...capabilities }
-          : { ...current, status: statusKind, ...capabilities } }
-      })
-      if (statusKind === 'authenticated') {
-        setPendingLogins((prev) => {
-          // A pending→authenticated transition (the id was tracked) is the
-          // authorization-complete moment; surface it as a success toast.
-          if (prev[id] !== undefined) {
-            toastSeq.current += 1
-            setLoginToast({ seq: toastSeq.current, harness: id })
-          }
-          if (prev[id] === undefined) return prev
-          return Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id))
-        })
-      }
-    }).catch(() => {
-      setViews((prev) => {
-        const current = prev[id]
-        return { ...prev, [id]: { ...current, status: 'unavailable' } }
-      })
-    })
-  }
 
   useEffect(() => {
     if (sessionId === undefined) return
@@ -148,7 +57,6 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
       setRosterFailed(false)
       const harnesses = rows.map(row => ({ id: row.name, label: row.displayName }))
       setRegistered(harnesses)
-      for (const harness of harnesses) refresh(harness.id)
     }).catch(() => {
       // A failed roster fetch leaves the section empty; surface it as an
       // explicit error with a retry instead of silently greying every row.
@@ -156,56 +64,6 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
     })
     return () => { cancelled = true }
   }, [roster, retryTick, sessionId])
-
-  useEffect(() => {
-    if (sessionId === undefined) return
-    const pending = Object.entries(pendingLogins)
-    if (pending.length === 0) return
-    const timers = pending.map(([id, startedAt]) =>
-      window.setInterval(() => {
-        if (Date.now() - startedAt > LOGIN_POLL_LIMIT_MS) {
-          setPendingLogins((prev) => {
-            if (prev[id] === undefined) return prev
-            return Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id))
-          })
-          return
-        }
-        refresh(id)
-      }, LOGIN_POLL_MS))
-    return () => { for (const timer of timers) window.clearInterval(timer) }
-  }, [pendingLogins, status])
-
-  const startLogin = (id: string): void => {
-    if (sessionId === undefined) return
-    void runCommand(sessionId, `/${id} login`).then((text) => {
-      const text2 = text ?? ''
-      const loginUrl = parseLoginUrl(text2)
-      setViews(prev => ({ ...prev, [id]: {
-        status: 'checking',
-        loginText: text2,
-        ...loginUrl !== undefined && { loginUrl },
-      } }))
-      setPendingLogins(prev => ({ ...prev, [id]: Date.now() }))
-    }).catch(() => {
-      setViews(prev => ({ ...prev, [id]: { status: 'unavailable' } }))
-    })
-  }
-
-  const signOut = (id: string): void => {
-    if (sessionId === undefined) return
-    void runCommand(sessionId, `/${id} logout`).then((text) => {
-      // Show the sign-out reply where the device prompt renders (a missing
-      // logout path is visible as its error text), then re-probe so the row
-      // flips to not authenticated.
-      setViews(prev => ({ ...prev, [id]: {
-        status: 'checking',
-        loginText: text !== undefined && text.trim() !== '' ? text : t('settings.loggedOut'),
-      } }))
-      refresh(id)
-    }).catch(() => {
-      setViews(prev => ({ ...prev, [id]: { status: 'unavailable' } }))
-    })
-  }
 
   if (sessionId === undefined) {
     return (
@@ -236,106 +94,42 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
       )}
       <ul className={css.rows}>
         {harnesses.map((harness) => {
-          const view = views[harness.id]
-          const status = view?.status ?? 'checking'
-          const authenticated = status === 'authenticated'
           const pending = !registeredIds.has(harness.id)
-          const loginPending = pendingLogins[harness.id] !== undefined
-          // A harness without a login/logout flow (dsh authenticates through
-          // the host credentials) must not offer the actions its command
-          // family would answer with an error.
-          const loginable = view?.loginable ?? true
-          const logoutable = view?.logoutable ?? true
           return (
             <li key={harness.id} className={pending ? `${css.rowCard} ${css.rowPending}` : css.rowCard}>
-              <div className={css.rowHead}>
-                <span className={css.rowIdentity}>
-                  <span className={css.rowName}>{harness.label}</span>
-                  <span
-                    className={`${css.credentialDot} ${pending ? css.dotPending : (authenticated ? css.dotOn : css.dotOff)}`}
-                    role="img"
-                    aria-label={pending ? t('settings.unsupported') : t(authenticated ? 'settings.authenticated' : 'settings.notAuthenticated')}
+              {pending
+                ? (
+                  <div className={css.rowHead}>
+                    <span className={css.rowIdentity}>
+                      <span className={css.rowName}>{harness.label}</span>
+                      <span
+                        className={`${css.credentialDot} ${css.dotPending}`}
+                        role="img"
+                        aria-label={t('settings.unsupported')}
+                      />
+                      <span className={css.rowTag}>{harness.id}</span>
+                    </span>
+                    <span className={css.status}>{t('settings.unsupported')}</span>
+                    <span className={css.rowActions}>
+                      <button type="button" className={css.loginButton} disabled>
+                        {t('settings.unsupported')}
+                      </button>
+                      {/* Harness-owned per-row actions (e.g. the dsh
+                          enable/disable toggle), keyed to this harness id. */}
+                      {renderSlot('local-agent.settings.row-action', {}, { only: harness.id })}
+                    </span>
+                  </div>
+                )
+                : (
+                  <ProviderAuthBlock
+                    harness={harness}
+                    useSessions={useSessions}
+                    status={status}
+                    runCommand={runCommand}
+                    t={t}
+                    actions={renderSlot('local-agent.settings.row-action', {}, { only: harness.id })}
                   />
-                  <span className={css.rowTag}>{harness.id}</span>
-                </span>
-                <span className={css.status}>
-                  {pending && t('settings.unsupported')}
-                  {!pending && status === 'checking' && t('loading')}
-                  {!pending && status === 'authenticated' && t('settings.authenticated')}
-                  {!pending && status === 'anonymous' && t('settings.notAuthenticated')}
-                  {!pending && status === 'unavailable' && t('error')}
-                </span>
-                <span className={css.rowActions}>
-                  {authenticated && logoutable && (
-                    <button
-                      type="button"
-                      className={css.logoutButton}
-                      onClick={() => { signOut(harness.id) }}
-                    >
-                      {t('settings.logout')}
-                    </button>
-                  )}
-                  {loginable && (
-                    <button
-                      type="button"
-                      className={css.loginButton}
-                      disabled={pending || loginPending}
-                      onClick={() => { startLogin(harness.id) }}
-                    >
-                      {pending
-                        ? t('settings.unsupported')
-                        : authenticated ? t('settings.reauthorize') : t('settings.login')}
-                    </button>
-                  )}
-                  {/* Harness-owned per-row actions (e.g. the dsh enable/disable
-                      toggle), keyed to this harness id; the section never knows
-                      what a contributed action does. */}
-                  {renderSlot('local-agent.settings.row-action', {}, { only: harness.id })}
-                </span>
-              </div>
-              {view?.loginText !== undefined && (
-                <div className={css.loginPrompt}>
-                  <span className={css.promptText}>{view.loginText}</span>
-                  {view.loginUrl !== undefined && (
-                    <a className={css.openPage} href={view.loginUrl} target="_blank" rel="noreferrer">
-                      {t('settings.openPage')}
-                    </a>
-                  )}
-                </div>
-              )}
-              {view?.loginAwaitingCode === true && (
-                <div className={css.loginPrompt}>
-                  <input
-                    className={css.codeInput}
-                    value={codeDrafts[harness.id] ?? ''}
-                    placeholder={t('settings.pasteCode')}
-                    onChange={(event) => {
-                      const value = event.currentTarget.value
-                      setCodeDrafts(prev => ({ ...prev, [harness.id]: value }))
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={css.loginButton}
-                    disabled={(codeDrafts[harness.id] ?? '').trim() === ''}
-                    onClick={() => {
-                      const code = (codeDrafts[harness.id] ?? '').trim()
-                      if (code === '' || sessionId === undefined) return
-                      void runCommand(sessionId, `/${harness.id} code ${code}`).then((text) => {
-                        setViews(prev => {
-                          const current = prev[harness.id] ?? { status: 'checking' as const }
-                          // Drop the awaiting flag; the command reply becomes the prompt text.
-                          const { loginAwaitingCode: _cleared, ...rest } = current
-                          return { ...prev, [harness.id]: { ...rest, loginText: text ?? '' } }
-                        })
-                        setCodeDrafts(prev => ({ ...prev, [harness.id]: '' }))
-                      })
-                    }}
-                  >
-                    {t('settings.submitCode')}
-                  </button>
-                </div>
-              )}
+                )}
             </li>
           )
         })}
@@ -344,14 +138,6 @@ export function LocalAgentSettingsSection({ useSessions, runCommand, roster, sta
           below the harness list; the section never knows which harness they
           belong to. */}
       {renderSlot('local-agent.settings.row', {})}
-      {loginToast !== null && (
-        <Toast
-          key={loginToast.seq}
-          text={t('settings.loginSuccess', { harness: harnessLabel(loginToast.harness) })}
-          icon={<IconCheckOutline16 />}
-          onDone={() => { setLoginToast(null) }}
-        />
-      )}
     </div>
   )
 }

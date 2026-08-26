@@ -25,6 +25,8 @@ import { en, NS, zh, type LocalAgentKey } from './locales.ts'
 
 export type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 export type { LocalAgentSettingsInjected, LocalAgentSettingsProps } from './LocalAgentSettingsSection.tsx'
+export { ProviderAuthBlock } from './ProviderAuthBlock.tsx'
+export type { ProviderAuthBlockProps, ProviderAuthInjected } from './ProviderAuthBlock.tsx'
 export type { LocalAgentSettingsRowOwnerProps } from './slot-contract.ts'
 export type { MemberComposerInjected, MemberComposerMatch, MemberComposerProps } from './MemberComposer.tsx'
 export { selectCliMember } from './MemberComposer.tsx'

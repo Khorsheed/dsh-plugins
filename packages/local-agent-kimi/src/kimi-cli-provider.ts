@@ -62,7 +62,23 @@ export class KimiCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
-  constructor(private readonly ctx: Context, private readonly live?: KimiAcpLiveDriver) {}
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
+  ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): KimiAcpLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /**
    * Register one run with the member channel and declare the bridge MCP server
@@ -174,9 +190,10 @@ export class KimiCliProvider implements SubagentProvider {
     // Live driver: the round goes to the member's resident `kimi acp` process.
     // A channel that fails at spawn/handshake falls through to the exec
     // one-shot below — and stays there until the breaker cools down.
-    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
-        return await this.live.startRound(request, {
+        return await live.startRound(request, {
           cwd: parentCwd,
           homeDir,
           childSession,
@@ -264,9 +281,10 @@ export class KimiCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident ACP session. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      if (this.live !== undefined && !this.live.disabled) {
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
         try {
-          const liveRun = await this.live.startRound(request, {
+          const liveRun = await live.startRound(request, {
             cwd: parentCwd,
             homeDir,
             childSession,

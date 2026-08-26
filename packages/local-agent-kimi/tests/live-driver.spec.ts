@@ -592,3 +592,100 @@ describe('kimi live driver review fixes', () => {
     await m.driver.disposeAll()
   })
 })
+
+describe('kimi live driver drain (settings handoff)', () => {
+  it('refuses new rounds immediately once draining (no queueing behind in-flight work)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-drain1'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['done'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.hasRuntime('child-kimi-drain1')).toBe(true)
+    const drained = m.driver.drain()
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('draining')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(m.driver.hasRuntime('child-kimi-drain1')).toBe(false)
+  })
+
+  it('lets the in-flight round finish undisturbed, then reclaims the runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-drain2'))
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    let drainedFlag = false
+    const drained = m.driver.drain().then(() => { drainedFlag = true })
+    // The hung round is still in flight: drain waits, the process lives.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(drainedFlag).toBe(false)
+    expect(fake.stdinEnded).toBe(false)
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    // The in-flight turn settles normally (its chunks accumulated).
+    expect((await run.result).stopReason === 'error' || (await run.result).stopReason === 'completed').toBe(true)
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(fake.stdinEnded).toBe(true)
+  })
+
+  it('a round queued before the drain dequeues into the refusal (provider falls back to exec)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-drain3'))
+    const fake = new FakeAcpServer({
+      turn: params => (params['prompt'] as { text: string }[])[0]!.text === '第二轮' ? { chunks: ['不该发生'] } : { hang: true },
+    })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Chain round 2 BEFORE draining, then drain while round 1 hangs.
+    const second = m.driver.startRound(request({ prompt: '第二轮' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    const drained = m.driver.drain()
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    await first.result.catch(() => {})
+    await expect(second).rejects.toThrow('draining')
+    await drained
+    // Round 2 never reached the wire.
+    expect(fake.requests.filter(r => r.method === 'session/prompt')).toHaveLength(1)
+    expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-drain4'))
+    child.append('turn/start', { turn: 1 })
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['一', '二'] }) }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await first.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    m.driver.setLiveMirrorGranularity('token')
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    await second.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Same runtime, same process: granularity rides the existing generation.
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('kimi provider live resolver', () => {
+  it('a resolver returning undefined routes the round to exec (retiring-generation gate)', async () => {
+    const m = mount()
+    // No ACP child queued: the exec fallback spawn answers.
+    const provider = new KimiCliProvider(m.ctx, () => undefined)
+    const run = await provider.start(request() as never)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: 'exec 答案' }])
+    expect(m.spawns[0]!.spec.argv).toEqual(['kimi', '-p', '建个文件'])
+    await run.dispose()
+  })
+
+  it('a resolver returning the driver per member routes to live (backward compatible)', async () => {
+    const m = mount()
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['完成'] }) }))
+    const provider = new KimiCliProvider(m.ctx, () => m.driver)
+    const run = await provider.start(request() as never)
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns[0]!.spec.argv).toEqual(['kimi', 'acp'])
+    await m.driver.disposeAll()
+  })
+})
