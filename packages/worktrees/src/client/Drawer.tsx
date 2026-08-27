@@ -85,6 +85,44 @@ export function useDrawerWidth(widthKey: string, defaultWidth: number, minWidth:
   return { width, onPointerDown, onPointerMove, onPointerUp }
 }
 
+/**
+ * Shared left-column (tree) width: a localStorage-persisted divider width for
+ * a two-pane right panel (tree | detail). Both the worktrees drawer and the
+ * local-files browser use it so the divider drags and remembers identically.
+ * @param widthKey - localStorage key for the persisted width.
+ * @returns the current width and the pointer handlers for the divider handle.
+ */
+export function useTreeWidth(widthKey: string): {
+  width: number
+  onPointerDown: (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }) => void
+  onPointerMove: (event: { clientX: number }) => void
+  onPointerUp: () => void
+} {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(widthKey))
+      return Number.isFinite(saved) && saved >= TREE_MIN_WIDTH ? saved : TREE_DEFAULT_WIDTH
+    } catch {
+      return TREE_DEFAULT_WIDTH
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(widthKey, String(width)) } catch { /* non-fatal */ }
+  }, [width, widthKey])
+  const onPointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: width }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onPointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    // Right edge of the tree column: dragging right widens it.
+    setWidth(clampTreeWidth(drag.current.startW + (event.clientX - drag.current.startX)))
+  }
+  const onPointerUp = (): void => { drag.current = null }
+  return { width, onPointerDown, onPointerMove, onPointerUp }
+}
+
 /** The drawer. */
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
@@ -119,28 +157,12 @@ export function WorktreesDrawer({
   const [copied, setCopied] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const worktreeRef = useRef<HTMLDivElement | null>(null)
-  const [treeWidth, setTreeWidth] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
-      return Number.isFinite(saved) && saved >= TREE_MIN_WIDTH ? saved : TREE_DEFAULT_WIDTH
-    } catch {
-      return TREE_DEFAULT_WIDTH
-    }
-  })
-  const treeDrag = useRef<{ startX: number; startW: number } | null>(null)
-  useEffect(() => {
-    try { localStorage.setItem(TREE_WIDTH_KEY, String(treeWidth)) } catch { /* non-fatal */ }
-  }, [treeWidth])
-  const onTreeDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
-    treeDrag.current = { startX: event.clientX, startW: treeWidth }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-  const onTreeMove = (event: { clientX: number }): void => {
-    if (treeDrag.current === null) return
-    // Right edge of the tree column: dragging right widens it.
-    setTreeWidth(clampTreeWidth(treeDrag.current.startW + (event.clientX - treeDrag.current.startX)))
-  }
-  const onTreeUp = (): void => { treeDrag.current = null }
+  const {
+    width: treeWidth,
+    onPointerDown: onTreeDown,
+    onPointerMove: onTreeMove,
+    onPointerUp: onTreeUp,
+  } = useTreeWidth(TREE_WIDTH_KEY)
   const {
     width: drawerWidth,
     onPointerDown: onResizePointerDown,

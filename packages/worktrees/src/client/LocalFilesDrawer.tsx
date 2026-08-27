@@ -20,7 +20,7 @@ import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { ImagePreview, isImageFile } from './ImagePreview.tsx'
 import { basenameOf } from './language.ts'
-import { useDrawerWidth } from './Drawer.tsx'
+import { useDrawerWidth, useTreeWidth } from './Drawer.tsx'
 import css from './Drawer.module.css'
 
 /** Default browser width (px) — matches the drawer. */
@@ -29,6 +29,8 @@ const DEFAULT_WIDTH = 720
 const MIN_WIDTH = 420
 /** localStorage key for the browser's width preference (distinct from the drawer). */
 const WIDTH_KEY = 'dsh-worktrees-local-files-w'
+/** localStorage key for the browser's tree-column width. */
+const TREE_WIDTH_KEY = 'dsh-worktrees-local-files-tree-w'
 
 /** localStorage key for the remembered last directory. */
 const ROOT_KEY = 'dsh-worktrees-local-files-root'
@@ -76,6 +78,13 @@ export function LocalFilesDrawer({
     onPointerMove: onResizePointerMove,
     onPointerUp: onResizePointerUp,
   } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
+
+  const {
+    width: treeWidth,
+    onPointerDown: onTreeDown,
+    onPointerMove: onTreeMove,
+    onPointerUp: onTreeUp,
+  } = useTreeWidth(TREE_WIDTH_KEY)
 
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
@@ -204,7 +213,7 @@ export function LocalFilesDrawer({
         </div>
 
         <div className={css.body}>
-          <div className={css.treeColumn}>
+          <div className={css.treeColumn} style={{ width: treeWidth }}>
             {listing === null && error === null ? (
               <div className={css.treeEmpty}>{t('state.loading')}</div>
             ) : error !== null ? (
@@ -227,6 +236,16 @@ export function LocalFilesDrawer({
               />
             )}
           </div>
+          <div
+            className={css.treeResize}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('tree.resize')}
+            onPointerDown={onTreeDown}
+            onPointerMove={onTreeMove}
+            onPointerUp={onTreeUp}
+            onPointerCancel={onTreeUp}
+          />
           <div className={css.detailColumn}>
             {image !== null && selectedPath !== null
               ? <ImagePreview path={selectedPath} src={image.dataUrl} />

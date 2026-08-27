@@ -45,16 +45,20 @@ export function isMarkdown(path: string): boolean {
   return MARKDOWN_EXTENSIONS.has(path.slice(dot).toLowerCase())
 }
 
-/** The file's basename (after the last path separator). */
+/** The file's basename (after the last path separator). A trailing separator
+ * (e.g. '/a/b/') is ignored so the last real segment is returned; the bare
+ * root ('/') yields ''. */
 export function basenameOf(path: string): string {
-  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return slash < 0 ? path : path.slice(slash + 1)
+  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
+  const slash = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return slash < 0 ? trimmed : trimmed.slice(slash + 1)
 }
 
 /** The file's dirname (everything before the basename). */
 export function dirnameOf(path: string): string {
-  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return slash < 0 ? '' : path.slice(0, slash)
+  const trimmed = path.length > 1 ? path.replace(/\/+$/, '') : path
+  const slash = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return slash < 0 ? '' : trimmed.slice(0, slash)
 }
 
 const HTML_EXTENSIONS = new Set(['.html', '.htm', '.xhtml'])
