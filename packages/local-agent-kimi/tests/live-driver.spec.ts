@@ -641,8 +641,11 @@ describe('kimi live driver review fixes', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     // A mid-run update triggers a throttled pass over the prompt-only wire.
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
+    // The round-start user/message is already there (the driver appends it at
+    // turn start); the wire's copy folds to a dedupe skip, so the offset has
+    // nothing new to advance yet.
     await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1) })
-    expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBe(1)
+    expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBeUndefined()
     // The full wire lands by turn end — in the real kimi order, where the
     // request's usage.record sits BEFORE the content parts it accounts for
     // (record.line == the pass's fromLines boundary).
@@ -662,6 +665,12 @@ describe('kimi live driver review fixes', () => {
       usage: { inputTokens: 10, outputTokens: 4 },
     })
     expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBe(2)
+    // The question precedes everything else in the turn (round-start append),
+    // so streamed chunks can never render above it.
+    const userSeq = child.events.find(e => e.type === 'user/message')!.seq
+    const turnStartSeq = child.events.find(e => e.type === 'turn/start')!.seq
+    expect(userSeq).toBeGreaterThan(turnStartSeq)
+    expect(userSeq).toBeLessThan(child.events.filter(e => e.type === 'assistant/message')[0]!.seq)
     await m.driver.disposeAll()
   })
 

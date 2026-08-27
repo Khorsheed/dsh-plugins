@@ -18,6 +18,8 @@ Real-instance acceptance of the live settings card (demo 3291) surfaced three ki
 
 **3b. The usage attach window excluded boundary records.** kimi writes a request's `usage.record` BEFORE the content parts it accounts for, so with an advanced offset the record sits exactly at `fromLines` and the old `> fromLines` filter dropped it — incremental folds lost the round's entire accounting. Fix: `>= fromLines` (accepted trade-off: a record exactly on a pass boundary may attach to both passes; losing usage entirely was worse).
 
+**4. Streamed think/text rendered ABOVE the question (token granularity).** The user/message only arrived via the wire flush + mirror pass, so live-streamed chunks (step 1) rendered before it. Fix (codex/claude live parity): the kimi live driver appends the round's `user/message` itself at turn start, and the fold skips the wire's copy of the same prompt (`userAlreadyAppended` — turn-scoped, text-matched, so identical prompts in different rounds still fold independently). The question is now visible immediately and always first.
+
 ## Alternatives considered
 
 - **Storing ACP-native ids in the delegation record** — rejected: exec records are bare uuids, and mixed forms force every consumer to guess; one canonical form with tolerant consumers is simpler.

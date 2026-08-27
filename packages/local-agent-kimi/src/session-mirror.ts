@@ -240,6 +240,11 @@ export async function mirrorKimiSessionDelta(
     // same rounds.
     const turn = line.turn
     if (line.kind === 'user') {
+      // The live driver appends the round's user/message at turn start (so the
+      // question renders before the streamed think/text instead of after it).
+      // Skip the wire's copy of the same prompt — scoped to THIS turn so two
+      // rounds with identical prompts still fold independently.
+      if (userAlreadyAppended(childSession, turn, line.text)) continue
       steps.set(turn, 1)
       childSession.append('user/message', userEvent(line.text), { surfaceOp: 'append' })
       texts.push(line.text)
@@ -297,6 +302,28 @@ async function persistIfStandalone(ctx: Context, childSession: Session): Promise
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
   await persistence?.append(childSession.id, childSession.events)
+}
+
+/**
+ * Whether the turn already carries a user/message with this exact text (the
+ * live driver's round-start append). Scoped to the events at or after this
+ * turn's turn/start so identical prompts across rounds stay independent.
+ */
+function userAlreadyAppended(childSession: Session, turn: number, text: string): boolean {
+  let turnStartSeq = -1
+  for (const event of childSession.events) {
+    if (event.type === 'turn/start' && (event.data as { turn?: number }).turn === turn) {
+      turnStartSeq = event.seq
+    }
+  }
+  if (turnStartSeq < 0) return false
+  for (const event of childSession.events) {
+    if (event.seq < turnStartSeq || event.type !== 'user/message') continue
+    const data = event.data as { content?: readonly { type: string; text?: string }[] }
+    const existing = (data.content ?? []).map(block => block.text ?? '').join('')
+    if (existing === text) return true
+  }
+  return false
 }
 
 /**

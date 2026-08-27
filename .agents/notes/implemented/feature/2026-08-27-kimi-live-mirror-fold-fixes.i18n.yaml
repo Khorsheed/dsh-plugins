@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-kimi-live-mirror-fold-fixes.md
-.agents/notes/implemented/feature/2026-08-27-kimi-live-mirror-fold-fixes.md: e858c9214597d8c0518c9134b753c5e44a87939e
-.agents/notes/implemented/feature/2026-08-27-kimi-live-mirror-fold-fixes.zh.md: 642a2eb787e4f510c4c530eb3faeed136c4f3d40
+.agents/notes/implemented/feature/2026-08-27-kimi-live-mirror-fold-fixes.md: 49351738b97686901f81c6a5cd1d19d08a40e60b
+.agents/notes/implemented/feature/2026-08-27-kimi-live-mirror-fold-fixes.zh.md: 18369e4338545927792786b0c6d35b9ef41d54b6

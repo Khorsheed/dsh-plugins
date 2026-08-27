@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorKimiSession } from '../src/session-mirror.ts'
@@ -156,6 +157,29 @@ describe('session-mirror', () => {
 
     const user = child.events.find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
+  })
+
+  it('skips a wire user line the turn already carries (round-start append), but folds a different prompt text', async () => {
+    const { home } = wireHome('dedupe', fullWire)
+    const child = Session.create(SessionId('child-dedupe'))
+    // The live driver's round-start append: same turn, same text.
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '建个文件' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await mirrorKimiSession(new Context(), child, home, 'dedupe')
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+
+    // A pre-existing message with DIFFERENT text does not suppress the fold.
+    const child2 = Session.create(SessionId('child-dedupe2'))
+    child2.append('turn/start', { turn: 1 })
+    child2.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '别的问题' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await mirrorKimiSession(new Context(), child2, home, 'dedupe')
+    expect(child2.events.filter(event => event.type === 'user/message')).toHaveLength(2)
   })
 
   it('keeps looking for a named session past earlier empty workspaces', async () => {
