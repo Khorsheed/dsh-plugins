@@ -4,13 +4,13 @@ English | [中文](README.md)
 
 Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — from the dsh web GUI. Each CLI gets an isolated home, slash commands for login/sessions/status/logout, and an auth section in Settings.
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="Settings → 本地 Agent section with per-harness auth status">
+<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="The Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
 
 ## Features
 
 - **Scoped homes per CLI** — isolated credential/session home under a shared root, created 0700; your native CLI installation is never touched.
 - **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
-- **Settings section** — per-harness auth status, web-login code, and sign-out under Settings → 本地 Agent; harness bundles can add their own rows and actions.
+- **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
 - **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
 
 ## Install
@@ -61,7 +61,7 @@ Each harness registers into `ctx.localAgent`: a scoped home, an optional login d
 
 **Program queries ride a read-only Remote channel.** A `LocalAgentGateway` (service key `localAgentGateway`, generated `./remote`) exposes roster, per-harness status, and scoped sessions to the browser. It emits no session events, so UI polls leave no command nodes in the session log; login and logout stay on the slash-command channel, where a visible command node is the expected feedback.
 
-**Browser half ships in this package.** The `./client` export is the roster-driven settings section, mounted automatically via the `dsh.client` manifest — no separate UI package, since the UI is provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway). It declares contribution seats (`local-agent.settings.row` below the harness list, `local-agent.settings.row-action` inside each row's action area) so harness bundles can add their own settings rows and per-harness actions (e.g. the dsh enable/disable toggle).
+**Browser half ships in this package.** The `./client` export mounts automatically via the `dsh.client` manifest: the member composer (delegated child sessions stay writable) plus the shared settings-card building blocks (`ProviderAuthBlock`, the auth-status bus, `AuthStatusDot`) — each provider package's `settings.plugin.item` card composes them, keeping the UI provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway).
 
 ### Adding a harness
 

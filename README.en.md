@@ -147,9 +147,9 @@ A 「产物」 tab in the conversation view ring (beside chat and trajectory) li
 
 Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
 
-**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family and ships the roster-driven browser settings section (Settings → 本地 Agent). Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants.
+**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family. Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants. Every provider ships its own settings card (Settings → Plugins → 可配置插件): auth status at a glance (header dot), login/logout, and a hot-swappable resident-mode (live) toggle — YAML stays the deployment default, card overrides take effect immediately.
 
-**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex` (`codex exec`), `subagent_claude_code` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context.
+**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex` (`codex exec`), `subagent_claude_code` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context. In resident (live) mode the member process stays up: output streams into the member session, cancel never kills the process, and a crash re-attaches the same session; off, every round is an independent process.
 
 **Continuation (resume).** The family tool (`dsh-local-agent-tool-subagent`) extends the official `subagent_*` schema with an optional `resume` parameter — the dsh child session id returned by the first delegation. A resumed call continues the **same** CLI conversation in the **same** dsh child session, accounting per round. The handle never travels inside the prompt: it is read from the parameter and validated against the registry per (parent, provider), so a forged handle is rejected before any CLI process starts.
 
@@ -162,11 +162,11 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code
 ```
 
-Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and run `/<name> login` once.
+Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and log in from the provider's settings card.
 
-**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its UI rows. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
+**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its settings card. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
 
-**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row and the settings section; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
+**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
 
 **`dsh-local-agent-tool-subagent`** has no bundle row of its own — it is mounted once per harness with a distinct tool name by the harness patches. Uninstalling the harnesses unmounts its rows and pnpm prunes the package as an unused dependency.
 
