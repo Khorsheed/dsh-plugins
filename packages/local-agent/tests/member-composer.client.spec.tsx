@@ -116,6 +116,22 @@ describe('MemberComposer', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('re-probes on the running flip and swaps the read-only panel for the member box when the record lands', async () => {
+    // First round in flight: no delegation record yet, running=true.
+    const memberOf = vi.fn().mockResolvedValue(null)
+    const { rerender } = render(<MemberComposer {...props({ memberOf }, true)} />)
+    expect(await screen.findByText(zh['member.readonly.title'])).toBeTruthy()
+    expect(memberOf).toHaveBeenCalledTimes(1)
+
+    // The round settles: the record lands and running flips false — the open
+    // panel must pick membership up without a session re-enter.
+    memberOf.mockResolvedValue(MEMBER)
+    rerender(<MemberComposer {...props({ memberOf }, false)} />)
+    expect(await screen.findByText(zh['member.title'].replace('{harness}', 'Fake Agent'))).toBeTruthy()
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(memberOf).toHaveBeenCalledTimes(2)
+  })
+
   it('renders the writable composer for a recorded member', async () => {
     render(<MemberComposer {...props()} />)
 

@@ -11,7 +11,7 @@
  * `promptMember` Remote (the facade resume), never to the official input
  * machine; Stop goes to `stopMember`.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -90,6 +90,11 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   /** The last structured promptMember failure, rendered inline. */
   const [error, setError] = useState<string | null>(null)
   const running = useSession(snapshot => snapshot.running) ?? false
+  /** The child the current membership answer belongs to (re-probes on switch). */
+  const membershipFor = useRef<string | null>(null)
+  /** Mirror of `membership` for the probe effect (kept out of its deps: a null answer must not self-trigger). */
+  const membershipRef = useRef<Membership>(undefined)
+  membershipRef.current = membership
   // The member dock self-renders ambient state from the projection seat: the
   // official panels (StatsLine on 'conversation.composer.dock', TodoPanel on
   // 'conversation.input.dock') live INSIDE the fallback InputBar that
@@ -101,13 +106,25 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   }
 
   useEffect(() => {
+    const childId = matched.childSessionId
+    if (membershipFor.current !== childId) {
+      // A different child: reset to checking and probe.
+      membershipFor.current = childId
+      setMembership(undefined)
+    } else if (membershipRef.current !== null && membershipRef.current !== undefined) {
+      return // already resolved for this child
+    }
+    // A null answer (not yet a member) re-probes on every running flip: the
+    // delegation record lands with the first round's settle (exec) or the
+    // live handshake, exactly when running changes — so an open panel flips
+    // from the one-shot read-only fallback to the writable member box on its
+    // own, without a session re-enter.
     let cancelled = false
-    setMembership(undefined)
-    void memberOf(matched.childSessionId).then((view) => {
+    void memberOf(childId).then((view) => {
       if (!cancelled) setMembership(view ?? null)
     })
     return () => { cancelled = true }
-  }, [memberOf, matched.childSessionId])
+  }, [memberOf, matched.childSessionId, running])
 
   if (membership === undefined) {
     return <div className={css.frame} role="status"><span>{t('member.checking')}</span></div>
