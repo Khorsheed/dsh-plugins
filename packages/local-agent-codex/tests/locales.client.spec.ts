@@ -1,0 +1,16 @@
+/**
+ * local-agent-codex dictionaries: zh is the key-set source of truth and en
+ * must mirror it exactly.
+ */
+import { describe, expect, it } from 'vitest'
+import { en, NS, zh } from '../src/client/locales.ts'
+
+describe('local-agent-codex locales', () => {
+  it('owns the settings namespace it binds', () => {
+    expect(NS).toBe('local-agent-codex')
+  })
+
+  it('keeps the English dictionary key-identical to the Chinese source of truth', () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort())
+  })
+})

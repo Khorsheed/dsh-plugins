@@ -119,11 +119,24 @@ export class DshCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
   constructor(
     private readonly ctx: Context,
     private readonly config: LocalAgentDshConfig,
-    private readonly live?: DshLiveDriver,
+    private readonly live?: DshLiveDriver | ((childSessionId: string) => DshLiveDriver | undefined),
   ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): DshLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /** Per-round member-channel registration for the exec path (see {@link registerMemberRun}). */
   private memberRun(
@@ -199,10 +212,12 @@ export class DshCliProvider implements SubagentProvider {
     // Live driver: the round goes to the resident serve process (one per
     // member). A channel that fails at spawn/handshake marks itself broken and
     // falls through to the exec one-shot below — and stays there
-    // (driver.disabled) for later rounds.
-    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+    // (driver.disabled) for later rounds. The resolver may gate this member to
+    // exec while a retiring generation still hosts its runtime.
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
-        return await this.live.startRound(request, {
+        return await live.startRound(request, {
           cwd: parentCwd,
           homeDir,
           childSession,
@@ -267,9 +282,10 @@ export class DshCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident serve process. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      if (this.live !== undefined && !this.live.disabled) {
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
         try {
-          const liveRun = await this.live.startRound(request, {
+          const liveRun = await live.startRound(request, {
             cwd: parentCwd,
             homeDir,
             childSession,

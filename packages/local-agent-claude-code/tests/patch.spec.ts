@@ -5,15 +5,19 @@ import { describe, expect, it } from 'vitest'
 const patch = readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8')
 
 describe('local-agent-claude-code bundle patch', () => {
-  it('mounts the family-owned tool at the profile root', () => {
+  it('mounts the family-owned tool at the profile root under the model-facing name', () => {
     // The tool row sits at the profile root (top-level insert), so every
     // agent preset — including minimal — delegates without per-preset
-    // variants. The family tool replaces the official tool-subagent row with
-    // the same model-facing toolName, adding the optional resume parameter.
+    // variants. The family takes the official toolName: the official row
+    // ships disabled in the presets, and this patch disables it too.
     expect(patch).toContain('- id: tool-subagent-claude-code-local')
     expect(patch).toContain("name: '@khorsheed/dsh-local-agent-tool-subagent'")
     expect(patch).toContain('provider: claude-local')
-    expect(patch).toContain('toolName: subagent_claude_code_local')
+    expect(patch).toContain('toolName: subagent_claude_code\n')
+  })
+
+  it('disables the official tool row so a community install never collides', () => {
+    expect(patch).toContain('- id: tool-subagent-claude-code\n  disabled: true')
   })
 
   it('no longer references the official tool-subagent row or its config keys', () => {

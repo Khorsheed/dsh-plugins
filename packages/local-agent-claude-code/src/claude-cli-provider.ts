@@ -8,9 +8,10 @@
  * The provider name `claude-local` avoids colliding with the official
  * `subagent-claude-code` package's provider name `claude-code` — a
  * composition that mounts both would fail loud with DUPLICATE_PROVIDER. The
- * tool row in this bundle's patch uses `subagent_claude_code_local` for the
- * same reason (the official presets carry a disabled
- * `subagent_claude_code` row).
+ * tool row in this bundle's patch takes the official model-facing name
+ * `subagent_claude_code` instead: the official preset row ships disabled,
+ * and the patch disables it too (a deliberate user re-enable conflicts
+ * loud, by design).
  * @module @khorsheed/dsh-local-agent-claude-code/claude-cli-provider
  */
 
@@ -125,12 +126,25 @@ export class ClaudeCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
   constructor(
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
-    private readonly live?: ClaudeLiveDriver,
+    private readonly live?: ClaudeLiveDriver | ((childSessionId: string) => ClaudeLiveDriver | undefined),
   ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): ClaudeLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /** Per-round member-channel registration for the exec path (see {@link registerClaudeMemberRun}). */
   private memberRun(
@@ -196,9 +210,10 @@ export class ClaudeCliProvider implements SubagentProvider {
     // Live driver: the round goes to the member's resident stream-json
     // process. A channel that fails at spawn falls through to the exec
     // one-shot below — and stays there until the breaker cools down.
-    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
-        return await this.live.startRound(request, {
+        return await live.startRound(request, {
           cwd: parentCwd,
           homeDir,
           childSession,
@@ -289,9 +304,10 @@ export class ClaudeCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident stream-json session.
       // Channel failure falls through to the exec one-shot below.
-      if (this.live !== undefined && !this.live.disabled) {
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
         try {
-          const liveRun = await this.live.startRound(request, {
+          const liveRun = await live.startRound(request, {
             cwd: parentCwd,
             homeDir,
             childSession,
@@ -1154,7 +1170,7 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
           if (carrierMirrored && parser.usage !== undefined) {
             appendClaudeUsageChunk(childSession, turn, parser.usage)
           }
-          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          await persistIfStandalone(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         } catch (error: unknown) {
           ctx.logger.warn(`subagent-claude: live mirror failed: ${thrown(error).message}`)
@@ -1216,8 +1232,25 @@ async function appendClaudeResponse(
     // knowable: book it as a usage chunk pinned to the carrier's step.
     appendClaudeUsageChunk(childSession, turn, parsed.usage)
   }
-  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  await persistIfStandalone(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record). Root cause and fix identical to kimi's
+ * session-mirror.ts persistIfStandalone.
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
 }
 
 /**

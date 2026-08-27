@@ -217,6 +217,12 @@ function mount(options: {
   config?: ConstructorParameters<typeof DshLiveDriver>[1]
   timeouts?: ConstructorParameters<typeof DshLiveDriver>[2]
   intent?: unknown
+  /**
+   * Emulate the production wiring: every session reads as live (write-behind
+   * owns durability) and the redundant full-list persistence append throws
+   * like the real coordinator's contiguous-seq contract.
+   */
+  strictPersistence?: boolean
 } = {}): Mount {
   const homeDir = mkdtempSync(join(tmpdir(), 'dsh-live-driver-'))
   const reports: Mount['reports'] = []
@@ -246,8 +252,19 @@ function mount(options: {
   ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
   ctx.provide('sessions', {
     create: (id: string) => Session.create(SessionId(id)),
-    get: () => undefined,
+    // strictPersistence: any session reads as live (write-behind owns its
+    // durability), like the production wiring.
+    get: options.strictPersistence === true ? () => ({}) : () => undefined,
   })
+  if (options.strictPersistence === true) {
+    // The production coordinator's contiguous-seq contract: the mirror's
+    // redundant full-list append always fails. The mirror must never call it
+    // for a live session — and must not die when it does fire.
+    ctx.provide('sessionPersistence', {
+      append: () => Promise.reject(new Error('append seq mismatch (strict test double)')),
+      create: async () => {},
+    })
+  }
   ctx.provide('logger', { warn: () => {}, info: () => {} })
   const driver = new DshLiveDriver(ctx, options.config ?? {}, options.timeouts)
   return {
@@ -727,5 +744,137 @@ describe('follow-up hardening (S1–S6)', () => {
     // An accept failure is a round failure, not a broken channel.
     expect(driver.disabled).toBe(false)
     await driver.disposeAll()
+  })
+})
+
+describe('dsh live driver persistence (write-behind owns durability)', () => {
+  it('a live-backed child folds each event once even when the coordinator rejects the redundant persistence append', async () => {
+    const m = mount({ strictPersistence: true })
+    const child = Session.create(SessionId('child-dsh-livepersist'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '文件建好了') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    // The strict double's rejection would have killed the settle pass BEFORE
+    // the mirror report; with the live session's write-behind owning
+    // durability, the redundant full-list append never fires and the
+    // authoritative report lands.
+    await vi.waitFor(() => {
+      expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true)
+    })
+    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('dsh live driver drain (settings handoff)', () => {
+  it('refuses new rounds immediately once draining (no queueing behind in-flight work)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-drain1'))
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, 't', 'done') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.hasRuntime('child-dsh-drain1')).toBe(true)
+    const drained = m.driver.drain()
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('draining')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(m.driver.hasRuntime('child-dsh-drain1')).toBe(false)
+  })
+
+  it('lets the in-flight round finish undisturbed, then reclaims the runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-drain2'))
+    // The turn never closes on its own; the test closes it by hand.
+    const fake = new FakeServeChild({ turn: () => ({ events: answerEvents(1, 't', '慢慢做'), reason: null }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    let drainedFlag = false
+    const drained = m.driver.drain().then(() => { drainedFlag = true })
+    // The hung round is still in flight: drain waits, the process lives.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(drainedFlag).toBe(false)
+    expect(fake.requests.map(r => r.method)).not.toContain('shutdown')
+    fake.pushIdle('child-dsh-drain2', 1, { kind: 'completed' })
+    // The in-flight turn settles normally (its events already mirrored).
+    expect((await run.result).stopReason).toBe('completed')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(fake.requests.map(r => r.method)).toContain('shutdown')
+  })
+
+  it('a round queued before the drain dequeues into the refusal (provider falls back to exec)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-drain3'))
+    const fake = new FakeServeChild({ turn: () => ({ events: [], reason: null }) })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Chain round 2 BEFORE draining, then drain while round 1 hangs.
+    const second = m.driver.startRound(request({ prompt: '第二轮' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
+    const drained = m.driver.drain()
+    fake.pushIdle('child-dsh-drain3', 1, { kind: 'completed' })
+    await first.result.catch(() => {})
+    await expect(second).rejects.toThrow('draining')
+    await drained
+    // Round 2 never reached the wire.
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(1)
+    expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-drain4'))
+    m.queueChild(new FakeServeChild({
+      turn: params => params['resume'] === true
+        ? {
+          events: [
+            { type: 'assistant/chunk', data: { turn: 2, step: 1, chunk: { type: 'text-delta', index: 0, text: '逐' } } },
+            { type: 'assistant/chunk', data: { turn: 2, step: 1, chunk: { type: 'text-delta', index: 0, text: '字' } } },
+            ...answerEvents(2, '继续', '第二条'),
+          ],
+        }
+        : {
+          events: [
+            { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: '不' } } },
+            ...answerEvents(1, 't', '第一条'),
+          ],
+        },
+    }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await first.result
+    // Event granularity: the pushed chunk stayed behind.
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    m.driver.setLiveMirrorGranularity('token')
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
+    await second.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Same runtime, same process: granularity rides the existing generation.
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('dsh-cli-provider live resolver', () => {
+  it('a resolver returning undefined routes the round to exec (retiring-generation gate)', async () => {
+    const m = mount()
+    // No serve child queued: the exec fallback spawn answers.
+    const provider = new DshCliProvider(m.ctx, {}, () => undefined)
+    const run = await provider.start(request() as never)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: 'exec 答案' }])
+    expect(m.spawns[0]!.spec.argv).toContain('--session-id')
+    await run.dispose()
+  })
+
+  it('a resolver returning the driver per member routes to live (backward compatible)', async () => {
+    const m = mount()
+    m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '完成') }) }))
+    const provider = new DshCliProvider(m.ctx, {}, () => m.driver)
+    const run = await provider.start(request() as never)
+    expect((await run.result).stopReason).toBe('completed')
+    const argv = m.spawns[0]!.spec.argv
+    expect(argv[argv.length - 1]).toBe('--serve')
+    await m.driver.disposeAll()
   })
 })

@@ -63,6 +63,7 @@ import {
   claudeLineText,
   ClaudeStreamParser,
   DEFAULT_DISPOSE_GRACE_MS,
+  persistIfStandalone,
   registerClaudeMemberRun,
   textTask,
 } from './claude-cli-provider.ts'
@@ -270,6 +271,13 @@ export class ClaudeLiveDriver {
   private readonly roundChains = new Map<string, Promise<unknown>>()
   private channelBrokenAt: number | undefined
   private disposed = false
+  /**
+   * Set by drain() (a settings-driven generation handoff): new rounds are
+   * refused so the provider falls back to exec, while in-flight rounds finish
+   * on their runtime undisturbed. Unlike `disposed`, the driver still serves
+   * what it already accepted.
+   */
+  private draining = false
   private readonly disposeController = new AbortController()
 
   constructor(
@@ -290,6 +298,41 @@ export class ClaudeLiveDriver {
   /** Count of resident runtimes currently registered (zombie accounting in tests). */
   get liveCount(): number {
     return this.runtimes.size
+  }
+
+  /**
+   * True while the member's runtime exists or is being spawned. The settings
+   * controller gates a new generation on this: a fresh driver must not serve
+   * a member whose retiring generation still hosts the (same) claude session.
+   */
+  hasRuntime(key: string): boolean {
+    return this.runtimes.has(key) || this.ensuring.has(key)
+  }
+
+  /**
+   * Live-update the mirror granularity for subsequent rounds. Granularity is
+   * read per round, so a settings change needs no runtime recycle.
+   */
+  setLiveMirrorGranularity(granularity: ClaudeLiveMirrorGranularity): void {
+    this.config.liveMirrorGranularity = granularity
+  }
+
+  /**
+   * Drain for a settings-driven generation handoff: refuse new rounds (the
+   * provider's catch falls back to exec), let every in-flight round finish on
+   * its runtime, then reclaim. Resolves when no runtime or spawn remains.
+   * Unlike disposeAll, in-flight work is never interrupted.
+   */
+  async drain(): Promise<void> {
+    this.draining = true
+    // Snapshot: rounds chain synchronously at startRound, so every accepted
+    // round is already in roundChains; anything later is refused.
+    const keys = new Set([...this.runtimes.keys(), ...this.ensuring.keys(), ...this.roundChains.keys()])
+    await Promise.all([...keys].map(async (key) => {
+      await (this.roundChains.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await (this.ensuring.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await this.reclaim(key)
+    }))
   }
 
   private clearIdleTimer(key: string): void {
@@ -424,6 +467,11 @@ export class ClaudeLiveDriver {
    * process survives.
    */
   async startRound(request: SubagentStartRequest, spec: ClaudeLiveRoundSpec): Promise<SubagentRun> {
+    // A draining generation refuses new rounds BEFORE chaining so the
+    // provider's exec fallback does not queue behind an in-flight round.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
     const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
@@ -439,6 +487,12 @@ export class ClaudeLiveDriver {
     const task = textTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-claude: request was aborted before the run started')
+    }
+    // The drain race: the round chained before drain() but dequeued after it.
+    // Refuse so the provider falls back to exec instead of reusing a runtime
+    // the handoff is about to reclaim.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
     }
     if (this.disposed) {
       throw new Error('subagent-claude: the live driver is disposed')
@@ -463,8 +517,10 @@ export class ClaudeLiveDriver {
     let mirrored = 0
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() =>
-        this.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events))
+      // Standalone sessions only: a live session's own write-behind already
+      // stores every appended event; a full-list append here violates the
+      // store's contiguous-seq contract (the kimi session-mirror root cause).
+      persistQueue = persistQueue.then(() => persistIfStandalone(this.ctx, childSession))
     }
 
     const requestCancel = (): void => {

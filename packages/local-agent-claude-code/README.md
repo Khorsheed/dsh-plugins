@@ -64,7 +64,7 @@ src/provision.ts            作用域目录 provisioning 与基于文件的 logo
 src/records.ts              认证探测与作用域目录的会话记录列表
 ```
 
-bundle patch 把 `claude-code` harness 注册进家族 core(`@khorsheed/dsh-local-agent`,声明为依赖——claude 包刻意不重复插入 core 行,重复会挂载两次),并挂载 `claude-local` provider,后者在 harness 作用域目录下 spawn `claude -p --verbose --output-format stream-json`。`subagent_claude_code_local` 工具是家族自有工具(`@khorsheed/dsh-local-agent-tool-subagent`):官方子集(`description`/`prompt`)加一个可选 `resume` 参数。
+bundle patch 把 `claude-code` harness 注册进家族 core(`@khorsheed/dsh-local-agent`,声明为依赖——claude 包刻意不重复插入 core 行,重复会挂载两次),并挂载 `claude-local` provider,后者在 harness 作用域目录下 spawn `claude -p --verbose --output-format stream-json`。`subagent_claude_code` 工具是家族自有工具(`@khorsheed/dsh-local-agent-tool-subagent`):官方子集(`description`/`prompt`)加一个可选 `resume` 参数。
 
 **作用域隔离。** macOS 上真实凭据在系统 keychain 的哈希条目里(`Claude Code-credentials-<sha256(configDir)[:8]>`,以作用域目录路径为键)——基于文件的 logout 够不到它,但下次登录会重写同一个槽位。Linux 上受上游 bug #47661 影响,`CLAUDE_CONFIG_DIR` 不隔离凭据文件(见已知限制)。认证探测只做轻量文件检查——看作用域 `.claude.json` 的 `oauthAccount`,绝不为了探测而 spawn CLI。
 

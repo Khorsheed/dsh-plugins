@@ -14,9 +14,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from './codex-cli-provider.ts'
-import { DEFAULT_LIVE_IDLE_MS, CodexLiveDriver } from './live-driver.ts'
+import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
+import { LiveDriverSwitch } from './live-switch.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
 import { codexCredentialStamp, codexLogout, provisionCodexConfig } from './provision.ts'
 
@@ -24,7 +26,7 @@ import { codexCredentialStamp, codexLogout, provisionCodexConfig } from './provi
 export const name = 'local-agent-codex'
 
 /** Services required before the harness can register. */
-export const inject = ['localAgent', 'subagents', 'subprocess']
+export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
 /** Plugin config: the sandbox mode fresh delegations default to, plus the live driver. */
 export interface Config {
@@ -63,6 +65,19 @@ export const Config: z<Config> = z.object({
 export const DEFAULT_SANDBOX: NonNullable<Config['sandbox']> = 'workspace-write'
 
 /**
+ * Settings namespace for the settings-page card. The Cordis config feeds the
+ * composition `base` layer, so a field absent from the user layer inherits the
+ * YAML value — the card only ever stores deliberate overrides.
+ */
+export const CODEX_SETTINGS_NAMESPACE = settingsNamespace('local-agent-codex')
+
+/** The card's schema; field defaults are the innermost layer below `base`. */
+const CODEX_SETTINGS_SCHEMA = z.object({
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+})
+
+/**
  * Register the Codex harness into the local-agent registry.
  * @param ctx - plugin context carrying the registry.
  * @param config - plugin config; `sandbox` selects the `codex exec` policy.
@@ -76,17 +91,23 @@ export function apply(ctx: Context, config: Config): void {
     void provisionCodexConfig(homeDir).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-codex: config.toml provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    // The live driver owns every resident runtime of this generation; its
-    // disposal runs with the effect teardown, so no process survives an
-    // unload.
-    const liveDriver = config.live === true
-      ? new CodexLiveDriver(ctx, {
-        sandbox,
-        ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+    // The live driver is settings-driven: the settings card's toggle (user
+    // layer over the YAML composition base) swaps driver generations without
+    // a reload. Toggling OFF drains the retiring generation — new rounds fall
+    // back to exec, in-flight rounds finish on their runtime, idle runtimes
+    // are reclaimed at once. A granularity change needs no new generation:
+    // the driver reads it per round.
+    const scope = ctx.settings.register(CODEX_SETTINGS_NAMESPACE, CODEX_SETTINGS_SCHEMA, {
+      base: {
+        ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
-      })
-      : undefined
-    const disposeProvider = ctx.subagents.registerProvider(new CodexCliProvider(ctx, sandbox, liveDriver))
+      },
+    })
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, {
+      sandbox,
+      ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+    })
+    const disposeProvider = ctx.subagents.registerProvider(new CodexCliProvider(ctx, sandbox, liveSwitch.resolve))
     const disposeHarness = ctx.localAgent.register({
       name: 'codex',
       displayName: 'Codex',
@@ -118,7 +139,7 @@ export function apply(ctx: Context, config: Config): void {
     return () => {
       disposeProvider()
       disposeHarness()
-      void liveDriver?.disposeAll()
+      liveSwitch.dispose()
     }
   }, 'local-agent-codex: harness')
 }
