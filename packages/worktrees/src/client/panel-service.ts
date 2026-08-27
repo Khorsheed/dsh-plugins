@@ -19,8 +19,8 @@ export type LocalFilesActions = BoundActions<ReturnType<typeof createLocalFilesS
 export interface IWorktreesPanel {
   /** Open the drawer in one mode (no-op when already open). */
   open(mode: DrawerMode): void
-  /** Open the local-files browser from a starting directory (no-op when not mounted). */
-  openLocalFiles(start: string): void
+  /** Open the local-files browser from a starting directory for one session. */
+  openLocalFiles(sessionId: string, start: string): void
 }
 
 /** Cross-plugin panel-action face (ctx.worktreesPanel). */
@@ -52,8 +52,8 @@ export class WorktreesController implements IWorktreesPanel {
     this.#drawer?.open(mode)
   }
 
-  /** Open the local-files browser from a starting directory. */
-  openLocalFiles(start: string): void {
-    this.#localFiles?.open(start)
+  /** Open the local-files browser from a starting directory for one session. */
+  openLocalFiles(sessionId: string, start: string): void {
+    this.#localFiles?.open(sessionId, start)
   }
 }

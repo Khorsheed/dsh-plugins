@@ -19,6 +19,7 @@ import type { LocalFilesDrawerProps } from './contract.ts'
 import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { ImagePreview, isImageFile } from './ImagePreview.tsx'
+import { localRootOf, rememberLocalRoot } from './local-root.ts'
 import { basenameOf } from './language.ts'
 import { useDrawerWidth, useTreeWidth } from './Drawer.tsx'
 import css from './Drawer.module.css'
@@ -31,19 +32,6 @@ const MIN_WIDTH = 420
 const WIDTH_KEY = 'dsh-worktrees-local-files-w'
 /** localStorage key for the browser's tree-column width. */
 const TREE_WIDTH_KEY = 'dsh-worktrees-local-files-tree-w'
-
-/** localStorage key for the remembered last directory. */
-const ROOT_KEY = 'dsh-worktrees-local-files-root'
-
-/** Read the remembered last directory ('' when unset/unreadable). */
-function rememberedRoot(): string {
-  try { return localStorage.getItem(ROOT_KEY) ?? '' } catch { return '' }
-}
-
-/** Persist the last directory (best-effort). */
-function rememberRoot(path: string): void {
-  try { localStorage.setItem(ROOT_KEY, path) } catch { /* non-fatal */ }
-}
 
 /** Map a directory listing to FileTree leaves (an entry's name is a one-segment
  * path; a dir keeps `isDir` so the tree renders it expandable while its
@@ -63,6 +51,7 @@ export function LocalFilesDrawer({
   listLocalDirectory, readLocalFile, readLocalImage, pickWorkspace, isLoopback, useHostDescription, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
+  const sessionId = useStore(s => s.sessionId)
   const root = useStore(s => s.root)
   const listing = useStore(s => s.listing)
   const selectedPath = useStore(s => s.selectedPath)
@@ -89,15 +78,15 @@ export function LocalFilesDrawer({
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
 
-  // Restore the last browsed directory on open: the badge passes the session's
-  // repo as a default, but the user may have navigated to another workspace
-  // last time. Prefer the remembered root so reopening stays where they left
-  // off; fall back to the badge default when nothing was remembered.
+  // Restore this session's last browsed directory on open: the badge passes
+  // the session repo as a default, but the session may have navigated to
+  // another workspace last time. Prefer that session's remembered root;
+  // fall back to the badge default when nothing was remembered.
   useEffect(() => {
-    if (!open) return
-    const remembered = rememberedRoot()
+    if (!open || sessionId === '') return
+    const remembered = localRootOf(sessionId)
     if (remembered !== '' && remembered !== root) actions.setRoot(remembered)
-  }, [open])
+  }, [open, sessionId])
 
   // Load the root directory's first level whenever the root changes.
   useEffect(() => {
@@ -152,7 +141,7 @@ export function LocalFilesDrawer({
 
   if (!open) return null
 
-  const current = root ?? rememberedRoot() ?? ''
+  const current = root ?? ''
 
   // Breadcrumb: split the current path into clickable segments. The first
   // segment is the repository/workspace root (basename), the rest are the
@@ -169,7 +158,7 @@ export function LocalFilesDrawer({
 
   const navigate = (path: string): void => {
     actions.setRoot(path)
-    rememberRoot(path)
+    rememberLocalRoot(sessionId, path)
   }
 
   const groups: FileTreeGroup[] = [{

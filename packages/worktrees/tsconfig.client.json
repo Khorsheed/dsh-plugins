@@ -30,6 +30,7 @@
     "src/client/index.ts",
     "src/client/LocalFilesDrawer.tsx",
     "src/client/language.ts",
+    "src/client/local-root.ts",
     "src/client/locales.ts",
     "src/client/Overview.tsx",
     "src/client/panel-service.ts",
