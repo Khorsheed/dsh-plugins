@@ -19,6 +19,7 @@ import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
 import { HtmlPreview } from './HtmlPreview.tsx'
 import { ImagePreview } from './ImagePreview.tsx'
+import { hasStructuredPreview, structuredPreview } from './structured.tsx'
 import css from './DetailPane.module.css'
 
 /** Props of the detail pane. */
@@ -77,9 +78,11 @@ export function DetailPane({
   const contentDisabled = deleted
   const markdown = isMarkdown(path)
   const html = isHtmlFile(path)
+  const structured = hasStructuredPreview(path)
   const lang = languageFor(path)
-  // A null showPreview means "default": Markdown/HTML → preview, else source.
-  const defaultPreview = markdown || html
+  // A null showPreview means "default": any file with a preview form
+  // (markdown / html / json / csv) defaults to it; everything else to source.
+  const defaultPreview = markdown || html || structured
   const sourceMode = defaultPreview ? showPreview === false : showPreview !== true
   const previewMode = !sourceMode
 
@@ -100,7 +103,7 @@ export function DetailPane({
             ? <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
             : markdown
               ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
-              : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
+              : structuredPreview(path, raw, t) ?? <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
         </div>
       )
     }
@@ -112,6 +115,8 @@ export function DetailPane({
     if (previewMode) {
       if (html) return <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
       if (markdown) return <div className={css.mdRender}><MarkdownText text={raw} /></div>
+      const structuredBody = structuredPreview(path, raw, t)
+      if (structuredBody !== null) return structuredBody
     }
     return <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />
   })()
@@ -162,7 +167,7 @@ export function DetailPane({
                   {t('detail.content')}
                 </button>
               </span>
-            ) : (
+            ) : defaultPreview ? (
               <span className={css.seg}>
                 <button
                   type="button"
@@ -179,7 +184,7 @@ export function DetailPane({
                   {t('detail.source')}
                 </button>
               </span>
-            )}
+            ) : null}
             {onCopy !== undefined && content !== null && (
               <button type="button" className={css.copy} title={copied ? t('action.copied') : t('action.copy')} onClick={doCopy}>
                 <IconCopyOutline16 />
