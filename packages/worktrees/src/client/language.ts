@@ -51,8 +51,18 @@ export function basenameOf(path: string): string {
   return slash < 0 ? path : path.slice(slash + 1)
 }
 
-/** The file's directory path (everything before the basename). */
+/** The file's dirname (everything before the basename). */
 export function dirnameOf(path: string): string {
   const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return slash < 0 ? '' : path.slice(0, slash)
+}
+
+const HTML_EXTENSIONS = new Set(['.html', '.htm', '.xhtml'])
+
+/** Whether a path is an HTML file, which the detail pane renders in a
+ * sandboxed iframe (source ⇄ render) rather than a raw code block. */
+export function isHtmlFile(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  return HTML_EXTENSIONS.has(path.slice(dot).toLowerCase())
 }
