@@ -127,8 +127,7 @@ export interface FileTreeProps {
   /** When given, renders a collapse-to-rail toggle at the right of the header. */
   collapsed?: boolean
   onToggleCollapse?: () => void
-  /**
-   * Optional lazy-children loader for directory rows: when a directory is
+  /** Optional lazy-children loader for directory rows: when a directory is
    * expanded and this is given, the dir's children are fetched once (and
    * cached) instead of coming from the static group trie. Renders the dir as
    * an expandable row even when the static trie has no children yet. Used by
@@ -139,6 +138,13 @@ export interface FileTreeProps {
   loadChildren?: (dirPath: string) => Promise<FileTreeItem[]>
   /** Prefix for resolving a directory's absolute path (local browser root). */
   rootPath?: string
+  /** When given, renders a show-hidden toggle (eye) in the tree header; the
+   * parent owns the visibility state and filtering. */
+  showHidden?: boolean
+  onToggleHidden?: () => void
+  /** When true, the header's expand/collapse-all is an icon button (the
+   * local-files browser header, which keeps the title short). */
+  iconActions?: boolean
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -155,6 +161,40 @@ function FileGlyph(): ReactNode {
   )
 }
 
+/** The show-hidden eye toggle: a filled eye when open (hidden shown), a
+ * single line when closed (hidden hidden). */
+function EyeGlyph({ open }: { open: boolean }): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {open ? (
+        <>
+          <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          <circle cx="8" cy="8" r="2.2" fill="currentColor" />
+        </>
+      ) : (
+        <path d="M2 8s2.5-4.5 6-4.5S14 8 14 8M5 10.7c.9.6 1.9 1.2 3 1.3 3 .3 6-4 6-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
+  )
+}
+
+/** Expand/collapse-all glyph: chevrons pointing apart (open) or together. */
+function ExpandGlyph({ open }: { open: boolean }): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {open ? (
+        <>
+          <path d="M6 5L3 8l3 3M10 5l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      ) : (
+        <>
+          <path d="M5 7l3-3 3 3M5 9l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 /** Relative time for a commit (compact form). */
 export function relativeTime(seconds: number, now = Date.now()): string {
   if (seconds <= 0) return ''
@@ -167,7 +207,7 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // Lazy sub-directory children, keyed by the directory's resolved path.
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
@@ -332,13 +372,36 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('mode.worktree')}</span>
         <span className={css.treeActions}>
-          <button
-            type="button"
-            className={css.treeAction}
-            onClick={expanded.size === 0 ? expandAll : collapseAll}
-          >
-            {expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
-          </button>
+          {iconActions ? (
+            <>
+              {onToggleHidden !== undefined && (
+                <button
+                  type="button"
+                  className={css.treeAction}
+                  title={showHidden ? t('tree.hideHidden') : t('tree.showHidden')}
+                  onClick={onToggleHidden}
+                >
+                  <EyeGlyph open={showHidden} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={css.treeAction}
+                title={expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+                onClick={expanded.size === 0 ? expandAll : collapseAll}
+              >
+                <ExpandGlyph open={expanded.size > 0} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className={css.treeAction}
+              onClick={expanded.size === 0 ? expandAll : collapseAll}
+            >
+              {expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+            </button>
+          )}
           {onToggleCollapse !== undefined && (
             <button
               type="button"
