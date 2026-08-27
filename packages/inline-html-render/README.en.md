@@ -37,7 +37,7 @@ dsh plugin --profile <p> remove @khorsheed/dsh-inline-html-render   # uninstall
 
 The host half registers the `inline-html-card` skill. Whenever the user wants a **visible result** ("show me", "preview", "make me a card", "compare these visual options", a clickable widget) rather than a paragraph of text, the agent picks up this protocol. Core constraints (see the skill):
 
-- Exactly one fenced block whose info string is exactly `dsh-card`.
+- Exactly one fenced block whose info string is exactly `dsh-card`; use **three** backticks ( ``` ), never four — four backticks or a nested fence make the parser read it as an outer block and the card never renders.
 - Self-contained content: inline CSS/JS, `data:` URIs for images, zero external network.
 - Never reach the host — use `window.dshBridge` for opening links / copying / downloading.
 
