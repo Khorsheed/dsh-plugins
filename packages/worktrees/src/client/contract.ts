@@ -21,8 +21,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
 import type {
   ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
-  ListLocalDirectoryRequest, ListLocalDirectoryResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadLocalFileRequest, ReadLocalFileResult,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
+  ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
   SessionSummary, WorktreeInfo,
 } from '../types.ts'
 import type { createLocalFilesStore } from './store-local.ts'
@@ -60,6 +61,8 @@ export interface WorktreesDrawerInjected {
   fetchFileDiff: (sessionId: SessionId, request: FileDiffRequest) => Promise<RemoteResult<FileDiffResult>>
   fetchReadFile: (sessionId: SessionId, request: ReadFileRequest) => Promise<RemoteResult<ReadFileResult>>
   fetchReadFileAtCommit: (sessionId: SessionId, request: ReadFileAtCommitRequest) => Promise<RemoteResult<ReadFileResult>>
+  /** Read a repo-relative file as an inline image (the repo browser's image data plane). */
+  fetchReadRepoImage: (sessionId: SessionId, request: ReadRepoImageRequest) => Promise<RemoteResult<LocalImageResult>>
   /** Whether the browser itself is connected over loopback. */
   isLoopback: boolean
   hooks: {
@@ -85,6 +88,8 @@ export interface LocalFilesDrawerInjected {
   listLocalDirectory: (request: ListLocalDirectoryRequest) => Promise<RemoteResult<ListLocalDirectoryResult>>
   /** Read one local file for preview (git-agnostic content plane). */
   readLocalFile: (request: ReadLocalFileRequest) => Promise<RemoteResult<ReadLocalFileResult>>
+  /** Read one local file as an inline image (git-agnostic image plane). */
+  readLocalImage: (request: ReadLocalImageRequest) => Promise<RemoteResult<LocalImageResult>>
   /** The registered workspaces feed (the browser's workspace switcher). */
   listWorkspaces: () => readonly { id: string; title: string; path: string }[]
   /** Open the host's native directory picker; resolves the chosen path, or null when cancelled. */

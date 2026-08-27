@@ -19,6 +19,7 @@ import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
 import { DetailPane, isDeleted } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { isImageFile } from './ImagePreview.tsx'
 import { Overview, formatCount } from './Overview.tsx'
 import css from './Drawer.module.css'
 
@@ -89,7 +90,7 @@ export function WorktreesDrawer({
   useStore, actions, useSessions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent,
-  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, isLoopback, useHostDescription, openExternal, copyBranch,
+  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, isLoopback, useHostDescription, openExternal, copyBranch,
 }: WorktreesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const mode = useStore(s => s.mode)
@@ -108,6 +109,7 @@ export function WorktreesDrawer({
   const activeWorktreePath = useStore(s => s.activeWorktreePath)
   const diff = useStore(s => s.diff)
   const content = useStore(s => s.content)
+  const repoImage = useStore(s => s.repoImage)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
@@ -253,17 +255,27 @@ export function WorktreesDrawer({
     } else if (detailView === 'content') {
       // The commits mode's content view reads the file as it was at the
       // selected commit; the other segments read the working-tree content.
-      const fetch = selectedSegment === 'commit'
-        ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
-        : fetchReadFile(sessionId, { path: selectedPath })
-      void fetch.then(result => {
-        if (cancelled) return
-        if (result.ok) actions.setContent(result.value)
-        else actions.setError(result.error.message)
-      })
+      // An image (non-commit segment) is read as an inline image instead of
+      // text, so it renders rather than showing garbage.
+      if (selectedSegment !== 'commit' && isImageFile(selectedPath)) {
+        void fetchReadRepoImage(sessionId, { path: selectedPath }).then(result => {
+          if (cancelled) return
+          if (result.ok) actions.setRepoImage(result.value)
+          else actions.setError(result.error.message)
+        })
+      } else {
+        const fetch = selectedSegment === 'commit'
+          ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
+          : fetchReadFile(sessionId, { path: selectedPath })
+        void fetch.then(result => {
+          if (cancelled) return
+          if (result.ok) actions.setContent(result.value)
+          else actions.setError(result.error.message)
+        })
+      }
     }
     return () => { cancelled = true }
-  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, actions])
+  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, actions])
 
   // Repository mode: default to previewing the first file so the detail
   // column never opens onto an empty surface.
@@ -590,6 +602,7 @@ export function WorktreesDrawer({
                 detailView={detailView}
                 diff={diff}
                 content={content}
+                image={repoImage}
                 loading={loading}
                 error={error}
                 onViewChange={actions.setDetailView}

@@ -7,7 +7,7 @@
  * identity discipline as the drawer store).
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ListLocalDirectoryResult, ReadLocalFileResult } from '../types.ts'
+import type { ListLocalDirectoryResult, LocalImageResult, ReadLocalFileResult } from '../types.ts'
 
 /** The local-files browser's state; fetched results are whole values. */
 export interface LocalFilesState {
@@ -19,8 +19,10 @@ export interface LocalFilesState {
   listing: ListLocalDirectoryResult | null
   /** The selected entry's absolute path, or null. */
   selectedPath: string | null
-  /** The selected entry's preview content (null until a file is selected). */
+  /** The selected entry's preview content (null until a text file is selected). */
   preview: ReadLocalFileResult | null
+  /** The selected entry's inline image (null until an image is selected). */
+  image: LocalImageResult | null
   /** Whether a fetch is in flight. */
   loading: boolean
   /** Human-readable fetch failure, or null. */
@@ -35,6 +37,7 @@ export type LocalFilesActions = {
   setListing: (draft: LocalFilesState, listing: ListLocalDirectoryResult) => void
   select: (draft: LocalFilesState, path: string | null) => void
   setPreview: (draft: LocalFilesState, preview: ReadLocalFileResult) => void
+  setImage: (draft: LocalFilesState, image: LocalImageResult) => void
   setLoading: (draft: LocalFilesState, loading: boolean) => void
   setError: (draft: LocalFilesState, error: string | null) => void
 }
@@ -45,6 +48,7 @@ const INITIAL: LocalFilesState = {
   listing: null,
   selectedPath: null,
   preview: null,
+  image: null,
   loading: false,
   error: null,
 }
@@ -63,6 +67,7 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
         d.listing = null
         d.selectedPath = null
         d.preview = null
+        d.image = null
         d.error = null
       },
       close: (d) => {
@@ -73,6 +78,7 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
         d.listing = null
         d.selectedPath = null
         d.preview = null
+        d.image = null
         d.error = null
       },
       setListing: (d, listing: ListLocalDirectoryResult) => {
@@ -83,9 +89,17 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
       select: (d, path: string | null) => {
         d.selectedPath = path
         d.preview = null
+        d.image = null
       },
       setPreview: (d, preview: ReadLocalFileResult) => {
         d.preview = preview
+        d.image = null
+        d.loading = false
+        d.error = null
+      },
+      setImage: (d, image: LocalImageResult) => {
+        d.image = image
+        d.preview = null
         d.loading = false
         d.error = null
       },

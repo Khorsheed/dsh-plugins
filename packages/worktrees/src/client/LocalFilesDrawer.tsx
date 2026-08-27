@@ -18,6 +18,7 @@ import type { ListLocalDirectoryResult } from '../types.ts'
 import type { LocalFilesDrawerProps } from './contract.ts'
 import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { ImagePreview, isImageFile } from './ImagePreview.tsx'
 import { useDrawerWidth } from './Drawer.tsx'
 import css from './Drawer.module.css'
 
@@ -53,13 +54,14 @@ function toItems(listing: ListLocalDirectoryResult | null): FileTreeItem[] {
 /** The local-files browser. */
 export function LocalFilesDrawer({
   useStore, actions, t,
-  listLocalDirectory, readLocalFile, listWorkspaces, pickWorkspace, isLoopback, useHostDescription, openExternal,
+  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, pickWorkspace, isLoopback, useHostDescription, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const root = useStore(s => s.root)
   const listing = useStore(s => s.listing)
   const selectedPath = useStore(s => s.selectedPath)
   const preview = useStore(s => s.preview)
+  const image = useStore(s => s.image)
   const error = useStore(s => s.error)
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
@@ -94,18 +96,26 @@ export function LocalFilesDrawer({
     })
   }
 
-  // Preview the selected file.
+  // Preview the selected file: images via readLocalImage, text via readLocalFile.
   useEffect(() => {
     if (!open || selectedPath === null) return
     let cancelled = false
     actions.setLoading(true)
-    void readLocalFile({ path: selectedPath }).then(result => {
-      if (cancelled) return
-      if (result.ok) actions.setPreview(result.value)
-      else actions.setError(result.error.message)
-    })
+    if (isImageFile(selectedPath)) {
+      void readLocalImage({ path: selectedPath }).then(result => {
+        if (cancelled) return
+        if (result.ok) actions.setImage(result.value)
+        else actions.setError(result.error.message)
+      })
+    } else {
+      void readLocalFile({ path: selectedPath }).then(result => {
+        if (cancelled) return
+        if (result.ok) actions.setPreview(result.value)
+        else actions.setError(result.error.message)
+      })
+    }
     return () => { cancelled = true }
-  }, [open, selectedPath, readLocalFile, actions])
+  }, [open, selectedPath, readLocalImage, readLocalFile, actions])
 
   // Escape closes the panel.
   useEffect(() => {
@@ -228,20 +238,24 @@ export function LocalFilesDrawer({
             )}
           </div>
           <div className={css.detailColumn}>
-            <DetailPane
-              path={selectedPath ?? ''}
-              hasDiff={false}
-              untracked={false}
-              deleted={false}
-              detailView="content"
-              diff={null}
-              content={preview === null ? null : { content: preview.content ?? '' }}
-              loading={false}
-              error={error}
-              onViewChange={() => { /* content-only */ }}
-              embedded={false}
-              t={t}
-            />
+            {image !== null && selectedPath !== null
+              ? <ImagePreview path={selectedPath} src={image.dataUrl} />
+              : (
+                <DetailPane
+                  path={selectedPath ?? ''}
+                  hasDiff={false}
+                  untracked={false}
+                  deleted={false}
+                  detailView="content"
+                  diff={null}
+                  content={preview === null ? null : { content: preview.content ?? '' }}
+                  loading={false}
+                  error={error}
+                  onViewChange={() => { /* content-only */ }}
+                  embedded={false}
+                  t={t}
+                />
+              )}
           </div>
         </div>
       </aside>

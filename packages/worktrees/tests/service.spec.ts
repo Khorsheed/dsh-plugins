@@ -177,6 +177,16 @@ describe('WorktreesService', () => {
     expect(read.content).toBe('one\n')
     await expect(service.readFile(cwd, '../outside.txt')).rejects.toThrow()
   })
+
+  it('reads a repo-relative image as a base64 data URL', async () => {
+    const service = new WorktreesService('main')
+    writeFileSync(join(repo, 'logo.png'), Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]))
+    const result = await service.readRepoImage(cwd, 'logo.png')
+    expect(result.mime).toBe('image/png')
+    expect(result.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+  })
 })
 
 describe('assertSafePath', () => {
@@ -204,6 +214,10 @@ describe('WorktreesService local file browser', () => {
     mkdirSync(join(dir, 'sub'))
     writeFileSync(join(dir, 'sub', 'nested.txt'), 'nested\n', 'utf8')
     writeFileSync(join(dir, 'binary.bin'), Buffer.from([0, 1, 2, 3, 255, 254, 253]))
+    // A minimal 1x1 PNG.
+    writeFileSync(join(dir, 'pic.png'), Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]))
   })
 
   afterEach(() => {
@@ -215,7 +229,7 @@ describe('WorktreesService local file browser', () => {
     // realpath canonicalizes (macOS /var → /private/var), so compare canonical.
     expect(listing.path).toBe(await realpath(dir))
     expect(listing.parent).toBe(dirname(await realpath(dir)))
-    expect(listing.entries.map(entry => entry.name)).toEqual(['sub', 'a.md', 'b.txt', 'binary.bin'])
+    expect(listing.entries.map(entry => entry.name)).toEqual(['sub', 'a.md', 'b.txt', 'binary.bin', 'pic.png'])
     const sub = listing.entries.find(entry => entry.name === 'sub')
     expect(sub?.isDir).toBe(true)
     const file = listing.entries.find(entry => entry.name === 'a.md')
@@ -244,6 +258,15 @@ describe('WorktreesService local file browser', () => {
 
   it('rejects reading a directory as a file', async () => {
     await expect(service.readLocalFile(join(dir, 'sub'))).rejects.toThrow()
+  })
+
+  it('reads a local image as a base64 data URL', async () => {
+    const result = await service.readLocalImage(join(dir, 'pic.png'))
+    expect(result.mime).toBe('image/png')
+    expect(result.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+    // Decoded bytes round-trip to the same PNG magic header.
+    const decoded = Buffer.from(result.dataUrl.split(',')[1] ?? '', 'base64')
+    expect([...decoded.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   })
 })
 

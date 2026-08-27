@@ -21,6 +21,7 @@
     "src/client/CommitDetails.tsx",
     "src/client/contract.ts",
     "src/client/DetailPane.tsx",
+    "src/client/ImagePreview.tsx",
     "src/client/DiffView.tsx",
     "src/client/Drawer.tsx",
     "src/client/FileTree.tsx",
