@@ -31,6 +31,7 @@ import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-age
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
+import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
@@ -227,7 +228,12 @@ export class KimiCliProvider implements SubagentProvider {
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
-        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('kimi', detail) },
+        onAuthFailure: (detail) => {
+          // The sentinel: an empty-shell wipe restored here makes the
+          // caller's retry (or the next round) succeed.
+          void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
+          this.ctx.localAgent.reportAuthFailure('kimi', detail)
+        },
         onSpawned: (pid) => { member?.bind(pid) },
         childSession,
         homeDir,
@@ -317,7 +323,12 @@ export class KimiCliProvider implements SubagentProvider {
           onError: (error: unknown, stopReason) => {
             this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
-          onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('kimi', detail) },
+          onAuthFailure: (detail) => {
+            // The sentinel: an empty-shell wipe restored here makes the
+            // caller's retry (or the next round) succeed.
+            void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
+            this.ctx.localAgent.reportAuthFailure('kimi', detail)
+          },
           onSpawned: (pid) => { member?.bind(pid) },
           childSession,
           homeDir,
