@@ -161,8 +161,8 @@ function FileGlyph(): ReactNode {
   )
 }
 
-/** The show-hidden eye toggle: a filled eye when open (hidden shown), a
- * single line when closed (hidden hidden). */
+/** The show-hidden eye toggle: an open (filled) eye when hidden files are
+ * shown; a closed lid with downward lashes when hidden files are hidden. */
 function EyeGlyph({ open }: { open: boolean }): ReactNode {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -172,27 +172,21 @@ function EyeGlyph({ open }: { open: boolean }): ReactNode {
           <circle cx="8" cy="8" r="2.2" fill="currentColor" />
         </>
       ) : (
-        <path d="M2 8s2.5-4.5 6-4.5S14 8 14 8M5 10.7c.9.6 1.9 1.2 3 1.3 3 .3 6-4 6-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        /* Closed lid: a horizontal lid line with downward lashes, meaning the
+           hidden files are not visible. */
+        <>
+          <path d="M2 6.5c1-1.5 3.2-2.5 6-2.5s5 1 6 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M3.5 8.5l-0.8 1.4M6 9l-0.4 1.7M8 9.2V11M10 9l0.4 1.7M12.5 8.5l0.8 1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </>
       )}
     </svg>
   )
 }
 
-/** Expand/collapse-all glyph: chevrons pointing apart (open) or together. */
+/** Expand/collapse-all glyph: a folder-open icon when collapsed (click to
+ * expand all), a folder-close icon when any level is expanded. */
 function ExpandGlyph({ open }: { open: boolean }): ReactNode {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      {open ? (
-        <>
-          <path d="M6 5L3 8l3 3M10 5l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      ) : (
-        <>
-          <path d="M5 7l3-3 3 3M5 9l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      )}
-    </svg>
-  )
+  return open ? <IconFolderOpen16 /> : <IconFolderClose16 />
 }
 
 /** Relative time for a commit (compact form). */
@@ -378,7 +372,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
                 <button
                   type="button"
                   className={css.treeAction}
-                  title={showHidden ? t('tree.hideHidden') : t('tree.showHidden')}
+                  title={showHidden ? t('tree.showHidden') : t('tree.hideHidden')}
                   onClick={onToggleHidden}
                 >
                   <EyeGlyph open={showHidden} />
