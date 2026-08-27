@@ -7,7 +7,7 @@
  * re-testing every state there.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
@@ -15,7 +15,6 @@ import {
   LOGIN_POLL_MS, ProviderAuthBlock, type ProviderAuthBlockProps,
 } from '../src/client/ProviderAuthBlock.tsx'
 import { readAuthStatus, resetAuthStatuses } from '../src/client/auth-status.ts'
-import { LocalAgentSettingsSection, type LocalAgentSettingsProps } from '../src/client/LocalAgentSettingsSection.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -54,18 +53,6 @@ function blockProps(over: Partial<ProviderAuthBlockProps> = {}): ProviderAuthBlo
     t,
     ...over,
   } as unknown as ProviderAuthBlockProps
-}
-
-function sectionProps(over: Partial<LocalAgentSettingsProps> = {}): LocalAgentSettingsProps {
-  return {
-    useSessions: useSessionsWith(SESSION),
-    roster: () => Promise.resolve([{ name: 'kimi', displayName: 'Kimi Code' }]),
-    status: () => Promise.resolve(kimiStatus(false)),
-    runCommand: () => Promise.resolve(''),
-    t,
-    renderSlot: () => null,
-    ...over,
-  } as unknown as LocalAgentSettingsProps
 }
 
 describe('ProviderAuthBlock', () => {
@@ -153,38 +140,5 @@ describe('ProviderAuthBlock', () => {
   it('renders the contributed actions seat verbatim', async () => {
     render(<ProviderAuthBlock {...blockProps({ actions: <button type="button">row-action-marker</button> })} />)
     expect(await screen.findByText('row-action-marker')).toBeTruthy()
-  })
-})
-
-describe('ProviderAuthBlock parity with the settings section', () => {
-  it('runs the identical login flow in the section row and the standalone block', async () => {
-    const prompt = 'Device login started.\nhttps://www.kimi.com/code/authorize_device?user_code=ABCD'
-    const status = vi.fn().mockResolvedValue(kimiStatus(false))
-    const runCommand = vi.fn().mockResolvedValue(prompt)
-    const section = render(<LocalAgentSettingsSection {...sectionProps({ status, runCommand })} />)
-    const block = render(<ProviderAuthBlock {...blockProps({ status, runCommand })} />)
-
-    // Both surfaces reach the same anonymous state (findAllBy resolves on the
-    // first match — flush, then count).
-    await act(async () => {})
-    expect(screen.getAllByText(zh['settings.notAuthenticated'])).toHaveLength(2)
-    // …and issue the same command line from their login buttons.
-    fireEvent.click(within(section.container).getByRole('button', { name: zh['settings.login'] }))
-    fireEvent.click(within(block.container).getByRole('button', { name: zh['settings.login'] }))
-    await act(async () => {})
-    expect(screen.getAllByText(zh['settings.openPage'])).toHaveLength(2)
-    expect(runCommand).toHaveBeenNthCalledWith(1, SESSION, '/kimi login')
-    expect(runCommand).toHaveBeenNthCalledWith(2, SESSION, '/kimi login')
-  })
-
-  it('renders the identical authenticated actions in both surfaces', async () => {
-    const status = vi.fn().mockResolvedValue(kimiStatus(true))
-    render(<LocalAgentSettingsSection {...sectionProps({ status })} />)
-    render(<ProviderAuthBlock {...blockProps({ status })} />)
-
-    await act(async () => {})
-    expect(screen.getAllByText(zh['settings.authenticated'])).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: zh['settings.logout'] })).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: zh['settings.reauthorize'] })).toHaveLength(2)
   })
 })

@@ -7,7 +7,7 @@ import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives
 import { NS } from './locales.ts'
 import { publishAuthStatus } from './auth-status.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
-import css from './LocalAgentSettingsSection.module.css'
+import css from './ProviderAuthBlock.module.css'
 
 /** Known harnesses the family plans to support; unregistered ones render as pending. */
 export const KNOWN_HARNESSES: readonly LocalAgentHarnessView[] = [

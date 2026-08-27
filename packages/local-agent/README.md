@@ -4,13 +4,13 @@
 
 从 dsh web GUI 使用本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code。每个 CLI 获得一个隔离的作用域目录、一组登录/会话/状态/退出的斜杠命令，以及设置里的认证分区。
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="设置 → 本地 Agent 分区，展示各 harness 的认证状态">
+<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="设置 → 插件配置里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
 
 ## 特性
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现。
-- **设置分区**——设置 → 本地 Agent 展示各 harness 的认证状态、网页登录设备码与退出登录；harness bundle 可以贡献自己的设置行与动作。
+- **每 provider 一张设置卡片**——设置 → 插件 → 插件配置：认证状态点（卡头可见）、网页登录/退出、常驻模式（live）热切开关与输出粒度；卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
 - **子 agent 委派**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上。
 
 ## 安装
@@ -61,7 +61,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
-**浏览器半身随本包提供。** `./client` 导出是 roster 驱动的设置分区，通过本包的 `dsh.client` manifest 自动挂载——不再需要独立 UI 包，因为 UI 是 provider 无关的（只消费 `/<harness>` 命令族和只读 gateway）。该分区声明了贡献槽（行列表下方的 `local-agent.settings.row` 与每个 harness 行动作区内的 `local-agent.settings.row-action`），harness bundle 可以贡献自己的设置行与按 harness 的动作（如 dsh 的启用/禁用开关）。
+**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的 `settings.plugin.item` 卡片直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 
 ### 新增一个 harness
 
