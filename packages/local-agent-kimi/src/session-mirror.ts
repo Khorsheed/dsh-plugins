@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
@@ -21,7 +21,7 @@ function userEvent(text: string) {
 }
 
 /** One assistant-role message event, attributed to the kimi route. */
-function assistantEvent(blocks: readonly ContentBlock[]) {
+export function assistantEvent(blocks: readonly ContentBlock[]) {
   return createAssistantMessage({
     content: blocks as ContentBlock[],
     source: { provider: 'kimi-cli', model: 'k3' },
@@ -62,6 +62,26 @@ export interface KimiMirrorDelta {
    * mirror is therefore a no-op).
    */
   texts: string[]
+  /**
+   * The usage this pass computed for its window. When assistant content is
+   * folded it is attached to the last folded message (and repeated here for
+   * convenience); with `skipAssistantContent` there is no folded message, so
+   * the caller (the token-granularity live driver) attaches it to the
+   * combined final message that completes the stream.
+   */
+  usage?: TokenUsage
+}
+
+/** Mirror behavior switches shared by the exec and live paths. */
+export interface KimiMirrorOptions {
+  /**
+   * Do not fold think/assistant lines into `assistant/message` events (the
+   * token-granularity live mode streams that content as `assistant/chunk`
+   * instead; the driver completes the stream with one combined final
+   * message). User and tool lines still fold, and the window's usage is
+   * returned on the delta instead of being attached.
+   */
+  skipAssistantContent?: boolean
 }
 
 /**
@@ -100,6 +120,7 @@ export async function mirrorKimiSessionDelta(
   homeDir: string,
   kimiSessionId?: string,
   fromLines = 0,
+  options?: KimiMirrorOptions,
 ): Promise<KimiMirrorDelta> {
   let workspaces: string[]
   try {
@@ -230,7 +251,7 @@ export async function mirrorKimiSessionDelta(
     if (texts.length > 0) {
       await persistIfStandalone(ctx, childSession)
     }
-    return { total: newTotal, texts }
+    return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
   }
   for (let index = 0; index < delta.length; index += 1) {
     const line = delta[index]
@@ -273,6 +294,10 @@ export async function mirrorKimiSessionDelta(
         }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
       }
     } else {
+      // Token-granularity live mode streams think/text as assistant/chunk;
+      // the driver completes the stream with one combined final message, so
+      // the fold leaves these lines out (their usage rides the delta).
+      if (options?.skipAssistantContent === true) continue
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
       childSession.append('assistant/message', {
@@ -285,7 +310,7 @@ export async function mirrorKimiSessionDelta(
     }
   }
   await persistIfStandalone(ctx, childSession)
-  return { total: newTotal, texts }
+  return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
 }
 
 /**

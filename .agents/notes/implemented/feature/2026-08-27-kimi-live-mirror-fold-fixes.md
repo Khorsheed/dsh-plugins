@@ -29,7 +29,7 @@ Real-instance acceptance of the live settings card (demo 3291) surfaced three ki
 ## Consequences
 
 - Live child sessions now show the member's prompt once, the folded answer with usage (tokens and cache hit render in the UI), and the delegation record carries the mirror offset again.
-- **Known remaining issue (not fixed here):** under `liveMirrorGranularity: 'token'`, streamed chunks and the settled fold both render (duplicated content), and the hardcoded `step: 1` chunk stream never closes — the UI shows a 已停止 badge on the dangling stream. The official projection merges stream+message only when they share a step; aligning the stream's steps with the fold's (or skipping folded text in token mode) is a follow-up. The default `event` granularity is unaffected.
+- **Token-granularity stream completion (fixed, same branch):** the kimi live driver now completes the step-1 stream at settle with ONE combined `assistant/message` at the SAME `(turn, step)` (content `[reasoning, text]`, usage from the fold's delta, `sourceEventSeqs` pointing at the chunk seqs) — the official projection replaces the stream with it, so no duplicated content and no dangling 已停止 badge. The fold gains `skipAssistantContent` (user/tool lines still fold; the window's usage rides the delta instead). A non-completed round's final carries `interrupted: true`, so a cancelled turn reads 已停止 legitimately. Streaming block layout matches the final: reasoning index 0, text index 1.
 - codex/claude-code live drivers append their own `user/message` at round start (they don't share this fold), but M2 should re-check their settle mirrors against root causes 2 and 3a.
 
 ## Testing

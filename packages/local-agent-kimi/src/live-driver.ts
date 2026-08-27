@@ -34,6 +34,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -51,6 +52,8 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
+import { assistantEvent } from './session-mirror.ts'
+import type { KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -161,6 +164,11 @@ export function bareKimiSessionId(acpSessionId: string): string {
 /** The ACP-native form of a recorded kimi session id (idempotent). */
 export function acpKimiSessionId(recordedId: string): string {
   return recordedId.startsWith('session_') ? recordedId : `session_${recordedId}`
+}
+
+/** The fold options for one granularity: token mode streams think/text as chunks, so the fold skips it. */
+function mirrorOptions(granularity: KimiLiveMirrorGranularity): KimiMirrorOptions | undefined {
+  return granularity === 'token' ? { skipAssistantContent: true } : undefined
 }
 
 function delay(ms: number): Promise<void> {
@@ -734,6 +742,12 @@ export class KimiAcpLiveDriver {
     let turnOpened = false
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
+    /** The round's accumulated thinking (token granularity; completes the stream's final message). */
+    let roundThink = ''
+    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
+    const chunkSeqs: number[] = []
+    /** The usage the settle fold computed for this round (rides the combined final in token mode). */
+    let settleUsage: TokenUsage | undefined
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
 
@@ -743,7 +757,7 @@ export class KimiAcpLiveDriver {
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
       mirrorQueue = mirrorQueue.then(() =>
-        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)).catch((error: unknown) => {
+        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId), mirrorOptions(granularity)).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: live mirror pass failed: ${thrown(error).message}`)
         }))
     }
@@ -778,11 +792,14 @@ export class KimiAcpLiveDriver {
         if (text !== '') {
           roundText += text
           if (granularity === 'token') {
-            childSession.append('assistant/chunk', {
+            // The stream's block layout matches the combined final message:
+            // reasoning at index 0, reply text at index 1.
+            const event = childSession.append('assistant/chunk', {
               turn,
               step: 1,
-              chunk: { type: 'text-delta', index: 0, text },
+              chunk: { type: 'text-delta', index: 1, text },
             })
+            chunkSeqs.push(event.seq)
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
           }
         }
@@ -790,11 +807,13 @@ export class KimiAcpLiveDriver {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
-          childSession.append('assistant/chunk', {
+          roundThink += text
+          const event = childSession.append('assistant/chunk', {
             turn,
             step: 1,
             chunk: { type: 'reasoning-delta', index: 0, text },
           })
+          chunkSeqs.push(event.seq)
         }
       }
       // Every update (chunks, tool calls, plans) triggers a throttled mirror
@@ -933,7 +952,7 @@ export class KimiAcpLiveDriver {
     // prompt response (prompt lines early, the answer by turn end), so the
     // final mirror folds until two consecutive reads see no growth — bounded,
     // so a stuck flush cannot pin the round. Then re-arm the reaper.
-    void result.then(async () => {
+    void result.then(async (settled) => {
       try {
         if (turnOpened) {
           await mirrorQueue.catch(() => {})
@@ -942,13 +961,33 @@ export class KimiAcpLiveDriver {
           let stableReads = 0
           const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
           for (;;) {
-            const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId)
+            const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(granularity))
+            if (delta.usage !== undefined) settleUsage = delta.usage
             localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
             stableReads = delta.total === lastTotal ? stableReads + 1 : 0
             lastTotal = delta.total
             if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
             if (Date.now() >= deadline) break
             await delay(SETTLE_MIRROR_POLL_MS)
+          }
+          // Token granularity: complete the step-1 stream with ONE combined
+          // final message at the SAME (turn, step) — the official projection
+          // replaces the stream with it (no duplicated content, no dangling
+          // '已停止' badge) and surfaces the usage. A non-completed round is
+          // marked interrupted, so a cancelled turn reads 已停止 legitimately.
+          if (granularity === 'token') {
+            const blocks: ContentBlock[] = []
+            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
+            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
+            if (blocks.length > 0) {
+              childSession.append('assistant/message', {
+                turn,
+                step: 1,
+                message: assistantEvent(blocks),
+                ...settleUsage !== undefined ? { usage: settleUsage } : {},
+                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+            }
           }
         }
       } catch (error) {
