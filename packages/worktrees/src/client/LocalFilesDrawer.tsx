@@ -89,6 +89,16 @@ export function LocalFilesDrawer({
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
 
+  // Restore the last browsed directory on open: the badge passes the session's
+  // repo as a default, but the user may have navigated to another workspace
+  // last time. Prefer the remembered root so reopening stays where they left
+  // off; fall back to the badge default when nothing was remembered.
+  useEffect(() => {
+    if (!open) return
+    const remembered = rememberedRoot()
+    if (remembered !== '' && remembered !== root) actions.setRoot(remembered)
+  }, [open])
+
   // Load the root directory's first level whenever the root changes.
   useEffect(() => {
     if (!open || root === null) return
