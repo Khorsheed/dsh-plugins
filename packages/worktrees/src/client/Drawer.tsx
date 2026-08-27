@@ -19,6 +19,7 @@ import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
 import { DetailPane, isDeleted } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { isImageFile } from './ImagePreview.tsx'
 import { Overview, formatCount } from './Overview.tsx'
 import css from './Drawer.module.css'
 
@@ -45,12 +46,89 @@ function clampWidth(width: number, viewport: number): number {
   return Math.max(MIN_WIDTH, Math.min(width, Math.round(viewport * 0.92)))
 }
 
+/**
+ * Shared drawer-width state: a localStorage-persisted, left-edge draggable
+ * width for a right-side panel. Both the worktrees drawer and the local-files
+ * browser use it so they resize and remember identically.
+ * @param widthKey - localStorage key for the persisted width.
+ * @param defaultWidth - the default when nothing is saved.
+ * @param minWidth - the narrowest drag allows.
+ * @returns the current width and the pointer handlers for the left handle.
+ */
+export function useDrawerWidth(widthKey: string, defaultWidth: number, minWidth: number): {
+  width: number
+  onPointerDown: (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }) => void
+  onPointerMove: (event: { clientX: number }) => void
+  onPointerUp: () => void
+} {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(widthKey))
+      return Number.isFinite(saved) && saved >= minWidth ? saved : defaultWidth
+    } catch {
+      return defaultWidth
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(widthKey, String(width)) } catch { /* quota/private-mode: non-fatal */ }
+  }, [width, widthKey])
+  const onPointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: width }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onPointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    setWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
+  }
+  const onPointerUp = (): void => { drag.current = null }
+  return { width, onPointerDown, onPointerMove, onPointerUp }
+}
+
+/**
+ * Shared left-column (tree) width: a localStorage-persisted divider width for
+ * a two-pane right panel (tree | detail). Both the worktrees drawer and the
+ * local-files browser use it so the divider drags and remembers identically.
+ * @param widthKey - localStorage key for the persisted width.
+ * @returns the current width and the pointer handlers for the divider handle.
+ */
+export function useTreeWidth(widthKey: string): {
+  width: number
+  onPointerDown: (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }) => void
+  onPointerMove: (event: { clientX: number }) => void
+  onPointerUp: () => void
+} {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(widthKey))
+      return Number.isFinite(saved) && saved >= TREE_MIN_WIDTH ? saved : TREE_DEFAULT_WIDTH
+    } catch {
+      return TREE_DEFAULT_WIDTH
+    }
+  })
+  const drag = useRef<{ startX: number; startW: number } | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(widthKey, String(width)) } catch { /* non-fatal */ }
+  }, [width, widthKey])
+  const onPointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
+    drag.current = { startX: event.clientX, startW: width }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onPointerMove = (event: { clientX: number }): void => {
+    if (drag.current === null) return
+    // Right edge of the tree column: dragging right widens it.
+    setWidth(clampTreeWidth(drag.current.startW + (event.clientX - drag.current.startX)))
+  }
+  const onPointerUp = (): void => { drag.current = null }
+  return { width, onPointerDown, onPointerMove, onPointerUp }
+}
+
 /** The drawer. */
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent,
-  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, isLoopback, useHostDescription, openExternal, copyBranch,
+  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, isLoopback, useHostDescription, openExternal, copyBranch,
 }: WorktreesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const mode = useStore(s => s.mode)
@@ -69,6 +147,7 @@ export function WorktreesDrawer({
   const activeWorktreePath = useStore(s => s.activeWorktreePath)
   const diff = useStore(s => s.diff)
   const content = useStore(s => s.content)
+  const repoImage = useStore(s => s.repoImage)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
@@ -78,51 +157,18 @@ export function WorktreesDrawer({
   const [copied, setCopied] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const worktreeRef = useRef<HTMLDivElement | null>(null)
-  const [treeWidth, setTreeWidth] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
-      return Number.isFinite(saved) && saved >= TREE_MIN_WIDTH ? saved : TREE_DEFAULT_WIDTH
-    } catch {
-      return TREE_DEFAULT_WIDTH
-    }
-  })
-  const treeDrag = useRef<{ startX: number; startW: number } | null>(null)
-  useEffect(() => {
-    try { localStorage.setItem(TREE_WIDTH_KEY, String(treeWidth)) } catch { /* non-fatal */ }
-  }, [treeWidth])
-  const onTreeDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
-    treeDrag.current = { startX: event.clientX, startW: treeWidth }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-  const onTreeMove = (event: { clientX: number }): void => {
-    if (treeDrag.current === null) return
-    // Right edge of the tree column: dragging right widens it.
-    setTreeWidth(clampTreeWidth(treeDrag.current.startW + (event.clientX - treeDrag.current.startX)))
-  }
-  const onTreeUp = (): void => { treeDrag.current = null }
-  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
-    try {
-      const saved = Number(localStorage.getItem(WIDTH_KEY))
-      return Number.isFinite(saved) && saved >= MIN_WIDTH ? saved : DEFAULT_WIDTH
-    } catch {
-      return DEFAULT_WIDTH
-    }
-  })
-  const drag = useRef<{ startX: number; startW: number } | null>(null)
-  useEffect(() => {
-    try { localStorage.setItem(WIDTH_KEY, String(drawerWidth)) } catch { /* quota/private-mode: non-fatal */ }
-  }, [drawerWidth])
-  const onResizePointerDown = (event: { clientX: number; pointerId: number; currentTarget: HTMLElement }): void => {
-    drag.current = { startX: event.clientX, startW: drawerWidth }
-    // Capture so fast drags keep delivering moves even off the 8px handle.
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-  const onResizePointerMove = (event: { clientX: number }): void => {
-    if (drag.current === null) return
-    // Left edge: dragging left grows the drawer.
-    setDrawerWidth(clampWidth(drag.current.startW + (drag.current.startX - event.clientX), window.innerWidth))
-  }
-  const onResizePointerUp = (): void => { drag.current = null }
+  const {
+    width: treeWidth,
+    onPointerDown: onTreeDown,
+    onPointerMove: onTreeMove,
+    onPointerUp: onTreeUp,
+  } = useTreeWidth(TREE_WIDTH_KEY)
+  const {
+    width: drawerWidth,
+    onPointerDown: onResizePointerDown,
+    onPointerMove: onResizePointerMove,
+    onPointerUp: onResizePointerUp,
+  } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
 
   // Resolve the selected file's metadata for the detail pane.
   const selectedFile: ChangedFile | undefined = useMemo(() => {
@@ -231,17 +277,27 @@ export function WorktreesDrawer({
     } else if (detailView === 'content') {
       // The commits mode's content view reads the file as it was at the
       // selected commit; the other segments read the working-tree content.
-      const fetch = selectedSegment === 'commit'
-        ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
-        : fetchReadFile(sessionId, { path: selectedPath })
-      void fetch.then(result => {
-        if (cancelled) return
-        if (result.ok) actions.setContent(result.value)
-        else actions.setError(result.error.message)
-      })
+      // An image (non-commit segment) is read as an inline image instead of
+      // text, so it renders rather than showing garbage.
+      if (selectedSegment !== 'commit' && isImageFile(selectedPath)) {
+        void fetchReadRepoImage(sessionId, { path: selectedPath }).then(result => {
+          if (cancelled) return
+          if (result.ok) actions.setRepoImage(result.value)
+          else actions.setError(result.error.message)
+        })
+      } else {
+        const fetch = selectedSegment === 'commit'
+          ? fetchReadFileAtCommit(sessionId, { path: selectedPath, commit: selectedCommit ?? '' })
+          : fetchReadFile(sessionId, { path: selectedPath })
+        void fetch.then(result => {
+          if (cancelled) return
+          if (result.ok) actions.setContent(result.value)
+          else actions.setError(result.error.message)
+        })
+      }
     }
     return () => { cancelled = true }
-  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, actions])
+  }, [open, selectedPath, selectedSegment, detailView, selectedCommit, sessionId, fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, actions])
 
   // Repository mode: default to previewing the first file so the detail
   // column never opens onto an empty surface.
@@ -568,9 +624,11 @@ export function WorktreesDrawer({
                 detailView={detailView}
                 diff={diff}
                 content={content}
+                image={repoImage}
                 loading={loading}
                 error={error}
                 onViewChange={actions.setDetailView}
+                onCopy={(text) => copyBranch(text)}
                 t={t}
               />
             ) : (

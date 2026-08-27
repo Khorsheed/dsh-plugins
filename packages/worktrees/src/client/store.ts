@@ -8,7 +8,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ChangedFile, ChangesResult, CommitInfo, FileDiffResult, ReadFileResult, SessionSummary, WorktreeInfo,
+  ChangedFile, ChangesResult, CommitInfo, FileDiffResult, LocalImageResult, ReadFileResult, SessionSummary, WorktreeInfo,
 } from '../types.ts'
 
 /** The drawer's three modes. */
@@ -52,6 +52,8 @@ export interface WorktreesState {
   diff: FileDiffResult | null
   /** The selected file's content (content view), or null. */
   content: ReadFileResult | null
+  /** The selected file's inline image (repo browser), or null. */
+  repoImage: LocalImageResult | null
   /** Whether a fetch is in flight. */
   loading: boolean
   /** Human-readable fetch failure, or null. */
@@ -84,6 +86,7 @@ export type WorktreesActions = {
   setActiveWorktreePath: (draft: WorktreesState, path: string | null) => void
   setDiff: (draft: WorktreesState, diff: FileDiffResult) => void
   setContent: (draft: WorktreesState, content: ReadFileResult) => void
+  setRepoImage: (draft: WorktreesState, image: LocalImageResult) => void
 }
 
 const INITIAL: WorktreesState = {
@@ -104,6 +107,7 @@ const INITIAL: WorktreesState = {
   activeWorktreePath: null,
   diff: null,
   content: null,
+  repoImage: null,
   loading: false,
   error: null,
   rev: 0,
@@ -130,6 +134,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.selectedCommit = null
         d.diff = null
         d.content = null
+        d.repoImage = null
       },
       setMode: (d, mode: DrawerMode) => {
         d.mode = mode
@@ -138,6 +143,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.selectedCommit = null
         d.diff = null
         d.content = null
+        d.repoImage = null
         d.error = null
         d.rev += 1
       },
@@ -148,12 +154,14 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.selectedSegment = segment
         d.diff = null
         d.content = null
+        d.repoImage = null
         d.error = null
       },
       setDetailView: (d, view: DetailView) => {
         d.detailView = view
         d.diff = null
         d.content = null
+        d.repoImage = null
         d.error = null
       },
       selectCommit: (d, sha: string | null) => {
@@ -163,12 +171,14 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
         d.selectedSegment = null
         d.diff = null
         d.content = null
+        d.repoImage = null
       },
       clearSelection: (d) => {
         d.selectedPath = null
         d.selectedSegment = null
         d.diff = null
         d.content = null
+        d.repoImage = null
       },
       refresh: (d) => { d.rev += 1 },
       setLoading: (d, loading: boolean) => { d.loading = loading },
@@ -183,6 +193,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       setActiveWorktreePath: (d, path: string | null) => { d.activeWorktreePath = path },
       setDiff: (d, diff: FileDiffResult) => { d.diff = diff },
       setContent: (d, content: ReadFileResult) => { d.content = content },
+      setRepoImage: (d, image: LocalImageResult) => { d.repoImage = image },
     },
   })
 }

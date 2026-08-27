@@ -26,6 +26,9 @@ export interface FileTreeItem {
   /** Diff line counts (null = unknown/untracked). */
   additions?: number | null
   deletions?: number | null
+  /** Whether this entry is a directory (the local-browser trie needs this to
+   *  render an expandable dir even when its children are lazily loaded). */
+  isDir?: boolean
 }
 
 /** One top-level group of the tree (a change segment, a commit, or the whole repo). */
@@ -46,14 +49,18 @@ interface FileNode {
   name: string
   /** Accumulated repo-relative path ('' for synthetic group roots). */
   path: string
+  /** The node's resolved absolute path ('' for the root of a static group). */
+  dirPath: string
   /** Directory children; empty for leaves. */
   children: FileNode[]
   /** Leaf metadata, present only for files. */
   item: FileTreeItem | null
+  /** Whether this node is a directory even without static children (lazy). */
+  dir: boolean
 }
 
 /** Build a trie from the group's leaf entries. */
-function buildNodes(items: readonly FileTreeItem[]): FileNode[] {
+function buildNodes(items: readonly FileTreeItem[], rootDirPath = ''): FileNode[] {
   const roots: FileNode[] = []
   for (const item of items) {
     const segments = item.path.split('/').filter(segment => segment !== '')
@@ -61,15 +68,22 @@ function buildNodes(items: readonly FileTreeItem[]): FileNode[] {
     let accumulated = ''
     segments.forEach((segment, index) => {
       accumulated = accumulated === '' ? segment : `${accumulated}/${segment}`
+      const isLast = index === segments.length - 1
       let node = level.find(candidate => candidate.name === segment)
       if (node === undefined) {
         node = {
           name: segment,
           path: accumulated,
+          dirPath: rootDirPath === '' ? accumulated : `${rootDirPath}/${accumulated}`,
           children: [],
-          item: index === segments.length - 1 ? item : null,
+          item: isLast ? item : null,
+          dir: isLast ? item.isDir === true : true,
         }
         level.push(node)
+      } else if (isLast) {
+        // A later item identifies this path as a leaf (file); keep any dir flag.
+        node.item = item
+        node.dir = item.isDir === true
       }
       level = node.children
     })
@@ -80,8 +94,8 @@ function buildNodes(items: readonly FileTreeItem[]): FileNode[] {
 /** Directories before files, then name order — the explorer convention. */
 function sortNodes(nodes: FileNode[]): FileNode[] {
   return [...nodes].sort((a, b) => {
-    const aDir = a.children.length > 0 ? 0 : 1
-    const bDir = b.children.length > 0 ? 0 : 1
+    const aDir = a.dir || a.children.length > 0 ? 0 : 1
+    const bDir = b.dir || b.children.length > 0 ? 0 : 1
     if (aDir !== bDir) return aDir - bDir
     return a.name.localeCompare(b.name)
   })
@@ -113,6 +127,24 @@ export interface FileTreeProps {
   /** When given, renders a collapse-to-rail toggle at the right of the header. */
   collapsed?: boolean
   onToggleCollapse?: () => void
+  /** Optional lazy-children loader for directory rows: when a directory is
+   * expanded and this is given, the dir's children are fetched once (and
+   * cached) instead of coming from the static group trie. Renders the dir as
+   * an expandable row even when the static trie has no children yet. Used by
+   * the local-files browser (per-level browsing); the git modes omit it and
+   * keep the fully-built trie.
+   * @param dirPath - the directory's resolved path (rootPath + relative path).
+   */
+  loadChildren?: (dirPath: string) => Promise<FileTreeItem[]>
+  /** Prefix for resolving a directory's absolute path (local browser root). */
+  rootPath?: string
+  /** When given, renders a show-hidden toggle (eye) in the tree header; the
+   * parent owns the visibility state and filtering. */
+  showHidden?: boolean
+  onToggleHidden?: () => void
+  /** When true, the header's expand/collapse-all is an icon button (the
+   * local-files browser header, which keeps the title short). */
+  iconActions?: boolean
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -129,6 +161,34 @@ function FileGlyph(): ReactNode {
   )
 }
 
+/** The show-hidden eye toggle: an open (filled) eye when hidden files are
+ * shown; a closed lid with downward lashes when hidden files are hidden. */
+function EyeGlyph({ open }: { open: boolean }): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {open ? (
+        <>
+          <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          <circle cx="8" cy="8" r="2.2" fill="currentColor" />
+        </>
+      ) : (
+        /* Closed lid: a horizontal lid line with downward lashes, meaning the
+           hidden files are not visible. */
+        <>
+          <path d="M2 6.5c1-1.5 3.2-2.5 6-2.5s5 1 6 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M3.5 8.5l-0.8 1.4M6 9l-0.4 1.7M8 9.2V11M10 9l0.4 1.7M12.5 8.5l0.8 1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </>
+      )}
+    </svg>
+  )
+}
+
+/** Expand/collapse-all glyph: a folder-open icon when collapsed (click to
+ * expand all), a folder-close icon when any level is expanded. */
+function ExpandGlyph({ open }: { open: boolean }): ReactNode {
+  return open ? <IconFolderOpen16 /> : <IconFolderClose16 />
+}
+
 /** Relative time for a commit (compact form). */
 export function relativeTime(seconds: number, now = Date.now()): string {
   if (seconds <= 0) return ''
@@ -141,8 +201,12 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  // Lazy sub-directory children, keyed by the directory's resolved path.
+  const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
+  // Directories whose children were requested but are still loading.
+  const [lazyLoading, setLazyLoading] = useState<ReadonlySet<string>>(() => new Set())
 
   const roots = useMemo(
     () => groups
@@ -151,26 +215,69 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
         key: group.key,
         title: group.title,
         count: group.count,
-        nodes: buildNodes(group.items),
+        nodes: buildNodes(group.items, rootPath),
       })),
-    [groups],
+    [groups, rootPath],
   )
 
-  const allPaths = useMemo(() => {
-    const paths = new Set<string>()
-    for (const group of roots) {
-      const walk = (nodes: FileNode[]): void => {
-        for (const node of nodes) {
-          if (node.children.length > 0) {
-            paths.add(node.path)
-            walk(node.children)
-          }
-        }
+  const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
+
+  const childrenOf = (node: FileNode): FileNode[] => {
+    // Lazy mode: a directory's sub-items come from the fetched cache once
+    // loaded, superseding the (empty) static trie children. Each fetched item
+    // is a single-segment sibling; build its node with name = the segment and
+    // path = parent's path + name, dirPath = parent's dirPath + name — NOT by
+    // re-running buildNodes (which would re-introduce the parent segment and
+    // self-recurse).
+    if (loadChildren !== undefined) {
+      const items = lazy[node.dirPath]
+      if (items !== undefined) {
+        return sortNodes(items.map(item => ({
+          name: item.path,
+          path: node.path === '' ? item.path : `${node.path}/${item.path}`,
+          dirPath: node.dirPath === '' ? item.path : `${node.dirPath}/${item.path}`,
+          children: [],
+          item,
+          dir: item.isDir === true,
+        })))
       }
-      walk(group.nodes)
     }
-    return paths
-  }, [roots])
+    return node.children
+  }
+
+  const lazyChildren = (node: FileNode): void => {
+    if (loadChildren === undefined) return
+    const dirPath = node.dirPath
+    if (lazy[dirPath] !== undefined || lazyLoading.has(dirPath)) return
+    setLazyLoading(previous => new Set(previous).add(dirPath))
+    void loadChildren(dirPath).then(items => {
+      setLazy(previous => ({ ...previous, [dirPath]: items }))
+      setLazyLoading(previous => {
+        const next = new Set(previous)
+        next.delete(dirPath)
+        return next
+      })
+    }).catch(() => {
+      setLazyLoading(previous => {
+        const next = new Set(previous)
+        next.delete(dirPath)
+        return next
+      })
+    })
+  }
+
+  // Current visible directory nodes (dir rows), following lazy children when
+  // they've loaded. Used by expand/collapse-all.
+  const collectDirNodes = (nodes: FileNode[]): FileNode[] => {
+    const out: FileNode[] = []
+    for (const node of nodes) {
+      if (isDirNode(node)) {
+        out.push(node)
+        out.push(...collectDirNodes(childrenOf(node)))
+      }
+    }
+    return out
+  }
 
   const toggle = (path: string): void => {
     setExpanded(previous => {
@@ -180,25 +287,47 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       return next
     })
   }
-  const expandAll = (): void => setExpanded(new Set(allPaths))
+  const expandAll = (): void => {
+    // Lazy mode: expanding a directory needs its children fetched, so walk the
+    // visible dirs, trigger each one's lazy load, and expand every one of them
+    // (their children appear once the fetch resolves).
+    const toExpand = new Set<string>()
+    for (const group of roots) {
+      for (const node of collectDirNodes(group.nodes)) {
+        toExpand.add(node.path)
+        if (loadChildren !== undefined) lazyChildren(node)
+      }
+    }
+    setExpanded(toExpand)
+  }
   const collapseAll = (): void => setExpanded(new Set())
 
-  if (roots.length === 0) {
+  if (roots.length === 0 && loadChildren === undefined) {
     return <div className={css.empty}>{t('group.empty')}</div>
   }
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
-    const isDir = node.children.length > 0
+    const isDir = isDirNode(node)
     const isOpen = expanded.has(node.path)
+    const dirPath = node.dirPath
     if (isDir) {
+      const kids = childrenOf(node)
       return (
         <div key={`${groupKey}/${node.path}`}>
-          <button type="button" className={css.row} onClick={() => { toggle(node.path) }}>
+          <button type="button" className={css.row} onClick={() => {
+            if (!isOpen && loadChildren !== undefined) lazyChildren(node)
+            toggle(node.path)
+          }}>
             <span className={css.chevron}>{isOpen ? <IconChevronDownOutline14 size={18} /> : <IconChevronRightOutline14 size={18} />}</span>
             {isOpen ? <IconFolderOpen16 /> : <IconFolderClose16 />}
             <span className={css.dirName}>{node.name}</span>
           </button>
-          {isOpen && <div className={css.children}>{node.children.map(child => renderNode(child, groupKey))}</div>}
+          {isOpen && (
+            <div className={css.children}>
+              {lazyLoading.has(dirPath) && <div className={css.lazyLoading} />}
+              {kids.map(child => renderNode(child, groupKey))}
+            </div>
+          )}
         </div>
       )
     }
@@ -237,13 +366,36 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
       <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('mode.worktree')}</span>
         <span className={css.treeActions}>
-          <button
-            type="button"
-            className={css.treeAction}
-            onClick={expanded.size === 0 ? expandAll : collapseAll}
-          >
-            {expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
-          </button>
+          {iconActions ? (
+            <>
+              {onToggleHidden !== undefined && (
+                <button
+                  type="button"
+                  className={css.treeAction}
+                  title={showHidden ? t('tree.showHidden') : t('tree.hideHidden')}
+                  onClick={onToggleHidden}
+                >
+                  <EyeGlyph open={showHidden} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={css.treeAction}
+                title={expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+                onClick={expanded.size === 0 ? expandAll : collapseAll}
+              >
+                <ExpandGlyph open={expanded.size > 0} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className={css.treeAction}
+              onClick={expanded.size === 0 ? expandAll : collapseAll}
+            >
+              {expanded.size === 0 ? t('tree.expandAll') : t('tree.collapseAll')}
+            </button>
+          )}
           {onToggleCollapse !== undefined && (
             <button
               type="button"

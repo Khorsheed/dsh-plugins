@@ -1,0 +1,32 @@
+/* Inline image preview: the raw image fit to the pane, click-to-zoom into a
+   dimmed backdrop with the full-size image centered. */
+
+.img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 240px);
+  object-fit: contain;
+  border-radius: 6px;
+  cursor: zoom-in;
+  margin: 0 auto;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgb(0 0 0 / 0.72);
+  cursor: zoom-out;
+}
+
+.zoomImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: zoom-out;
+}
