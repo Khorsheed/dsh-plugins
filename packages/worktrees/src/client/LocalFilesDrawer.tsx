@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconFolderOpen16, IconFolderOpenOutline16,
-  IconRefreshOutline16, IconCloseOutline16,
+  IconRefreshOutline16, IconCloseOutline16, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import type { LocalFilesDrawerProps } from './contract.ts'
@@ -54,7 +54,7 @@ function toItems(listing: ListLocalDirectoryResult | null): FileTreeItem[] {
 /** The local-files browser. */
 export function LocalFilesDrawer({
   useStore, actions, t,
-  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, pickWorkspace, isLoopback, useHostDescription, openExternal,
+  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, isLoopback, useHostDescription, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const root = useStore(s => s.root)
@@ -141,6 +141,19 @@ export function LocalFilesDrawer({
 
   const current = root ?? rememberedRoot() ?? ''
 
+  // Breadcrumb: split the current path into clickable segments. The first
+  // segment is the repository/workspace root (basename), the rest are the
+  // intermediate dirs; the last one is the current dir (highlighted).
+  const currentParts = current.split('/').filter(part => part !== '')
+  const crumbs: { label: string; path: string }[] = current === ''
+    ? []
+    : currentParts.map((part, index) => ({
+      label: index === 0 && current.startsWith('/') ? part : part,
+      path: current.startsWith('/')
+        ? `/${currentParts.slice(0, index + 1).join('/')}`
+        : currentParts.slice(0, index + 1).join('/'),
+    }))
+
   const navigate = (path: string): void => {
     actions.setRoot(path)
     rememberRoot(path)
@@ -166,7 +179,7 @@ export function LocalFilesDrawer({
           onPointerUp={onResizePointerUp}
           onPointerCancel={onResizePointerUp}
         />
-        {/* Top bar: workspace switcher + directory picker + current path. */}
+        {/* Top bar: workspace switcher + breadcrumb path + [open][refresh][close]. */}
         <div className={css.header}>
           <div className={css.summary}>
             <div className={css.branchRow}>
@@ -195,22 +208,28 @@ export function LocalFilesDrawer({
                   </div>
                 )}
               </div>
-              <button type="button" className={css.directButton} title={t('local.pickFolder')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
-                {t('local.pickFolder')}
-              </button>
-              <span className={css.summaryMeta} title={current}>{current || t('local.noRoot')}</span>
+              <div className={css.browserCrumbs} title={current}>
+                {crumbs.map((crumb, index) => (
+                  <span key={`${crumb}/${index}`} className={css.crumbWrap}>
+                    {index > 0 && <span className={css.crumbSep}>/</span>}
+                    <button type="button" className={`${css.crumb} ${index === crumbs.length - 1 ? css.crumbCur : ''}`} onClick={() => { navigate(crumb.path) }}>
+                      {crumb.label}
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
           <div className={css.actions}>
-            {canOpenHost && selectedPath !== null && (
-              <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openExternal(selectedPath) }}>
+            {canOpenHost && root !== null && (
+              <button type="button" className={css.browserAction} title={t('local.openFolder')} onClick={() => { openExternal(root) }}>
                 <IconFolderOpenOutline16 />
               </button>
             )}
-            <button type="button" className={css.action} title={t('action.refresh')} onClick={() => { if (root !== null) actions.setRoot(root) }}>
+            <button type="button" className={css.browserAction} title={t('action.refresh')} onClick={() => { if (root !== null) actions.setRoot(root) }}>
               <IconRefreshOutline16 />
             </button>
-            <button type="button" className={css.action} title={t('action.close')} onClick={() => { actions.close() }}>
+            <button type="button" className={`${css.browserAction} ${css.browserClose}`} title={t('action.close')} onClick={() => { actions.close() }}>
               <IconCloseOutline16 />
             </button>
           </div>
@@ -252,6 +271,7 @@ export function LocalFilesDrawer({
                   loading={false}
                   error={error}
                   onViewChange={() => { /* content-only */ }}
+                  onCopy={(text) => writeClipboard(text)}
                   embedded={false}
                   t={t}
                 />

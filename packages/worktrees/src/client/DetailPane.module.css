@@ -1,25 +1,31 @@
-/* The detail pane: path header with the diff|content toggle over the body. */
+/* The detail pane: a two-line title bar (filename + lang tag | preview/source
+   toggle | copy, then the relative path) over the content body. */
 
 .root {
   display: flex;
   flex-direction: column;
-  /* Fill the detail column (a flex row) regardless of content — without this
-     the pane sizes to its content's natural width and leaves a gap when the
-     drawer is wider than the longest content line. */
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
 }
 
-.header {
-  display: flex;
+.titleBar {
   flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 24px;
+  padding: 8px 24px 0;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Nested in an already-24px-padded container: drop the title bar's own
+   horizontal padding so the path line stays on the parent's inset. */
+.headerEmbedded {
+  padding: 8px 0 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
 }
 
 .back {
@@ -37,29 +43,76 @@
   cursor: pointer;
 }
 
-/* Nested (embedded) in an already-24px-padded container: drop the header's
-   own horizontal padding so the path line stays on the parent's 24px inset. */
-.headerEmbedded {
-  padding: 0;
-}
-
 .back:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.path {
+.title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
+.langTag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  text-transform: uppercase;
+}
+
+.titleActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* Preview/source segmented control for the content view. */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segButton {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.segButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.segActive {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+/* Diff/content toggle (the git-change view). */
 .toggle {
   display: inline-flex;
-  flex: none;
   gap: 2px;
 }
 
@@ -88,18 +141,62 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Copy button. */
+.copy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.copy:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.copy > svg {
+  width: 15px;
+  height: 15px;
+}
+
+.copied {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* The relative path line (second row of the title bar). */
+.pathLine {
+  margin: 3px 0 0;
+  padding-bottom: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* Reserve the themed scrollbar gutter so a loading placeholder (short) and
-     the loaded content (tall) do not reflow the content width when the
-     vertical scrollbar appears — the 8px bar would otherwise squeeze the
-     text the moment loading finishes. */
   scrollbar-gutter: stable;
 }
 
-/* Thin, soft scrollbar — quieter than the 8px global. */
 .body::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -112,13 +209,113 @@
 
 .code {
   margin: 0;
-  /* Soft-wrap the content block's lines so a narrow drawer keeps every line
-     in view instead of forcing horizontal scroll. */
 }
 
 .code :global(pre) {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Rendered Markdown preview: comfortable reading width and UI-font body with
+   nowrap long lines near the 800px bound (kept local so a wider panel still
+   reads as an article, not a wall). */
+.mdRender {
+  max-width: 800px;
+  padding: 22px 28px 44px;
+  font-family: var(--dsw-font-family);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+}
+
+.mdRender :global(.markdown) {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.mdRender :global(.markdown h1) {
+  font-size: 22px;
+  line-height: 1.3;
+  margin: 0 0 14px;
+}
+
+.mdRender :global(.markdown h2) {
+  font-size: 18px;
+  line-height: 1.35;
+  margin: 24px 0 10px;
+}
+
+.mdRender :global(.markdown h3) {
+  font-size: 15px;
+  line-height: 1.4;
+  margin: 18px 0 8px;
+}
+
+.mdRender :global(.markdown p) {
+  margin: 0 0 12px;
+}
+
+.mdRender :global(.markdown ul),
+.mdRender :global(.markdown ol) {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.mdRender :global(.markdown li) {
+  margin: 3px 0;
+}
+
+.mdRender :global(.markdown code) {
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  font-size: 13px;
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.mdRender :global(.markdown pre) {
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.mdRender :global(.markdown pre code) {
+  background: transparent;
+  padding: 0;
+}
+
+.mdRender :global(.markdown a) {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.mdRender :global(.markdown blockquote) {
+  margin: 12px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mdRender :global(.markdown table) {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.mdRender :global(.markdown th),
+.mdRender :global(.markdown td) {
+  border: 1px solid var(--dsw-alias-border-l2);
+  padding: 5px 10px;
+  text-align: left;
+}
+
+.mdRender :global(.markdown img) {
+  max-width: 100%;
+  border-radius: 6px;
 }
 
 .placeholder {
@@ -132,9 +329,7 @@
   text-align: center;
 }
 
-/* A new (untracked) file has no diff — its content IS the change. Show a quiet
-   caption above the content so the "no change view" reads as intentional, not
-   broken. */
+/* A new (untracked) file has no diff — its content IS the change. */
 .untrackedView {
   display: flex;
   flex-direction: column;

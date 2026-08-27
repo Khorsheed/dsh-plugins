@@ -30,3 +30,29 @@ export function languageFor(path: string): string | undefined {
   if (dot < 0) return undefined
   return LANGUAGE_BY_EXTENSION[path.slice(dot).toLowerCase()]
 }
+
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
+
+/**
+ * Whether a path is a Markdown file, which the detail pane renders as a
+ * rendered preview (MarkdownText) instead of a raw code block.
+ * @param path - repo-relative or absolute file path.
+ * @returns true for .md/.markdown/.mdx files.
+ */
+export function isMarkdown(path: string): boolean {
+  const dot = path.lastIndexOf('.')
+  if (dot < 0) return false
+  return MARKDOWN_EXTENSIONS.has(path.slice(dot).toLowerCase())
+}
+
+/** The file's basename (after the last path separator). */
+export function basenameOf(path: string): string {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return slash < 0 ? path : path.slice(slash + 1)
+}
+
+/** The file's directory path (everything before the basename). */
+export function dirnameOf(path: string): string {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return slash < 0 ? '' : path.slice(0, slash)
+}
