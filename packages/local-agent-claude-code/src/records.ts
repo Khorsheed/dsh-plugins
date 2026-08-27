@@ -60,16 +60,22 @@ function keychainService(homeDir: string): string {
  * The stored credential's expiry (epoch ms), read from the macOS keychain
  * entry for this scoped home; undefined when the entry is missing, unreadable,
  * or carries no expiry (presence alone then decides, as before). The blob
- * nests the token record under `claudeAiOauth`.
+ * nests the token record under `claudeAiOauth`. The READ side takes the LATER
+ * of the access-token and refresh-token expiries: the CLI refreshes on use,
+ * so a live refresh token means the credential still works.
  * @param homeDir - the `claude-code` harness's scoped home.
  * @returns the expiry, or undefined when unknown.
  */
 async function readCredentialExpiry(homeDir: string): Promise<number | undefined> {
   try {
     const { stdout } = await internals.exec('security', ['find-generic-password', '-s', keychainService(homeDir), '-w'])
-    const parsed = JSON.parse(stdout.trim()) as { claudeAiOauth?: { expiresAt?: unknown } }
-    const expiry = parsed.claudeAiOauth?.expiresAt
-    return typeof expiry === 'number' ? expiry : undefined
+    const parsed = JSON.parse(stdout.trim()) as { claudeAiOauth?: { expiresAt?: unknown; refreshTokenExpiresAt?: unknown } }
+    const access = parsed.claudeAiOauth?.expiresAt
+    const refresh = parsed.claudeAiOauth?.refreshTokenExpiresAt
+    const accessMs = typeof access === 'number' ? access : undefined
+    const refreshMs = typeof refresh === 'number' ? refresh : undefined
+    if (accessMs === undefined && refreshMs === undefined) return undefined
+    return Math.max(accessMs ?? 0, refreshMs ?? 0)
   } catch {
     // Not on macOS, no such entry, or an unreadable payload: no expiry info.
     return undefined
@@ -107,15 +113,22 @@ export async function syncClaudeCredentialFile(homeDir: string): Promise<boolean
 
 /**
  * The expiry (epoch ms) from a `.credentials.json` payload; the token record
- * nests under `claudeAiOauth`. Undefined when absent/unparseable.
+ * nests under `claudeAiOauth`. Returns the LATER of the access-token and
+ * refresh-token expiries — the CLI refreshes on use, so a live refresh token
+ * keeps the credential usable past the access expiry. Undefined when
+ * absent/unparseable.
  * @param text - the file contents.
  * @returns the expiry, or undefined.
  */
 function credentialFileExpiry(text: string): number | undefined {
   try {
-    const parsed = JSON.parse(text) as { claudeAiOauth?: { expiresAt?: unknown } }
-    const expiry = parsed.claudeAiOauth?.expiresAt
-    return typeof expiry === 'number' ? expiry : undefined
+    const parsed = JSON.parse(text) as { claudeAiOauth?: { expiresAt?: unknown; refreshTokenExpiresAt?: unknown } }
+    const access = parsed.claudeAiOauth?.expiresAt
+    const refresh = parsed.claudeAiOauth?.refreshTokenExpiresAt
+    const accessMs = typeof access === 'number' ? access : undefined
+    const refreshMs = typeof refresh === 'number' ? refresh : undefined
+    if (accessMs === undefined && refreshMs === undefined) return undefined
+    return Math.max(accessMs ?? 0, refreshMs ?? 0)
   } catch {
     return undefined
   }
@@ -140,7 +153,10 @@ function credentialFileExpiry(text: string): number | undefined {
  */
 export async function claudeAuthenticated(homeDir: string): Promise<boolean> {
   // The runtime reads `.credentials.json` first (claude 2.1.236 writes the
-  // keychain but reads the file — see syncClaudeCredentialFile).
+  // keychain but reads the file) — and a CLI run refreshes the KEYCHAIN copy
+  // without touching the file, so mirror keychain→file before judging, or a
+  // refreshed credential still reads expired.
+  await syncClaudeCredentialFile(homeDir)
   let fileExpiry: number | undefined
   let filePresent = false
   try {
