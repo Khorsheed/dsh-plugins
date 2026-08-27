@@ -63,6 +63,13 @@ body[data-ds-dark-theme] {
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+/* The local-files browser top bar is a single line (breadcrumb + icon row), so
+   it is shorter than the two-line drawer header and hugs its 32px icons. */
+.browserHeader {
+  min-height: 44px;
+  padding: 6px 12px;
+}
+
 .summary {
   display: grid;
   gap: 2px;
@@ -101,6 +108,13 @@ body[data-ds-dark-theme] {
 }
 
 /* ---- local-files browser top bar ---- */
+/* The workspace switcher icon button is a sibling of the other browser actions;
+   its popover anchors to this relative wrapper. */
+.wsWrap {
+  position: relative;
+  display: inline-flex;
+}
+
 /* Breadcrumb path: default shows the workspace root basename, full path on
    hover, clickable to jump back. */
 .browserCrumbs {
@@ -245,6 +259,23 @@ body[data-ds-dark-theme] {
 .worktreeRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The "new workspace" row at the bottom of the workspace switcher: left-aligned,
+   with a top divider separating it from the workspace list. */
+.worktreeNew {
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.worktreeNew > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .worktreeRow:focus-visible {

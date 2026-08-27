@@ -11,8 +11,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconFolderOpen16, IconFolderOpenOutline16,
-  IconRefreshOutline16, IconCloseOutline16, writeClipboard,
+  IconFolderOpen16, IconFolderOpenOutline16,
+  IconPlusOutline16, IconRefreshOutline16, IconCloseOutline16, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import type { LocalFilesDrawerProps } from './contract.ts'
@@ -54,7 +54,7 @@ function toItems(listing: ListLocalDirectoryResult | null): FileTreeItem[] {
 /** The local-files browser. */
 export function LocalFilesDrawer({
   useStore, actions, t,
-  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, isLoopback, useHostDescription, openExternal,
+  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, pickWorkspace, isLoopback, useHostDescription, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const root = useStore(s => s.root)
@@ -179,48 +179,51 @@ export function LocalFilesDrawer({
           onPointerUp={onResizePointerUp}
           onPointerCancel={onResizePointerUp}
         />
-        {/* Top bar: workspace switcher + breadcrumb path + [open][refresh][close]. */}
-        <div className={css.header}>
-          <div className={css.summary}>
-            <div className={css.branchRow}>
-              <div className={css.wsWrap} ref={wsRef}>
-                <button type="button" className={css.directButton} title={t('local.workspace')} onClick={() => { setWsOpen(v => !v) }}>
-                  <IconFolderOpen16 />
-                  <span>{t('local.workspace')}</span>
-                  <IconChevronDownOutline14 className={css.branchChevron} />
+        {/* Top bar: breadcrumb path (left) + workspace/open/refresh/close (right). */}
+        <div className={`${css.header} ${css.browserHeader}`}>
+          <div className={css.browserCrumbs} title={current}>
+            {crumbs.map((crumb, index) => (
+              <span key={`${crumb}/${index}`} className={css.crumbWrap}>
+                {index > 0 && <span className={css.crumbSep}>/</span>}
+                <button type="button" className={`${css.crumb} ${index === crumbs.length - 1 ? css.crumbCur : ''}`} onClick={() => { navigate(crumb.path) }}>
+                  {crumb.label}
                 </button>
-                {wsOpen && (
-                  <div className={css.worktreePopover} role="listbox">
-                    {workspaces.length === 0
-                      ? <div className={css.worktreeEmpty}>{t('local.noWorkspaces')}</div>
-                      : workspaces.map(workspace => (
-                        <button
-                          key={workspace.id}
-                          type="button"
-                          role="option"
-                          className={css.worktreeRow}
-                          onClick={() => { navigate(workspace.path); setWsOpen(false) }}
-                        >
-                          <span className={css.worktreePath}>{workspace.title}</span>
-                          <span className={css.worktreeMeta}>{workspace.path}</span>
-                        </button>
-                      ))}
-                  </div>
-                )}
-              </div>
-              <div className={css.browserCrumbs} title={current}>
-                {crumbs.map((crumb, index) => (
-                  <span key={`${crumb}/${index}`} className={css.crumbWrap}>
-                    {index > 0 && <span className={css.crumbSep}>/</span>}
-                    <button type="button" className={`${css.crumb} ${index === crumbs.length - 1 ? css.crumbCur : ''}`} onClick={() => { navigate(crumb.path) }}>
-                      {crumb.label}
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
+              </span>
+            ))}
           </div>
           <div className={css.actions}>
+            <div className={css.wsWrap} ref={wsRef}>
+              <button type="button" className={css.browserAction} title={t('local.workspace')} onClick={() => { setWsOpen(v => !v) }}>
+                <IconFolderOpen16 />
+              </button>
+              {wsOpen && (
+                <div className={css.worktreePopover} role="listbox">
+                  {workspaces.length === 0
+                    ? <div className={css.worktreeEmpty}>{t('local.noWorkspaces')}</div>
+                    : workspaces.map(workspace => (
+                      <button
+                        key={workspace.id}
+                        type="button"
+                        role="option"
+                        className={css.worktreeRow}
+                        onClick={() => { navigate(workspace.path); setWsOpen(false) }}
+                      >
+                        <span className={css.worktreePath}>{workspace.title}</span>
+                        <span className={css.worktreeMeta}>{workspace.path}</span>
+                      </button>
+                    ))}
+                  <button
+                    type="button"
+                    className={`${css.worktreeRow} ${css.worktreeNew}`}
+                    title={t('local.newWorkspace')}
+                    onClick={() => { setWsOpen(false); void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}
+                  >
+                    <IconPlusOutline16 />
+                    <span className={css.worktreePath}>{t('local.newWorkspace')}</span>
+                  </button>
+                </div>
+              )}
+            </div>
             {canOpenHost && root !== null && (
               <button type="button" className={css.browserAction} title={t('local.openFolder')} onClick={() => { openExternal(root) }}>
                 <IconFolderOpenOutline16 />

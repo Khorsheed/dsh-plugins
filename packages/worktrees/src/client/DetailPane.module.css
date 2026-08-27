@@ -278,9 +278,11 @@
   overflow: auto;
 }
 
-/* Sandboxed HTML render fills the preview body so it can scroll. */
+/* Sandboxed HTML render fills the preview body so the iframe scrolls
+   internally. The body is a block scroll container, so the render box uses
+   height:100% (not flex) to fill the visible area. */
 .htmlRender {
-  flex: 1;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
