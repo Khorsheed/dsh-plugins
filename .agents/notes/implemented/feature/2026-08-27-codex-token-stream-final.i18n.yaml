@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-codex-token-stream-final.md
+.agents/notes/implemented/feature/2026-08-27-codex-token-stream-final.md: a1d73695f4817c9a799dc5b8faa1198bbc2a220b
+.agents/notes/implemented/feature/2026-08-27-codex-token-stream-final.zh.md: 6196fa88cecf1e40d0dc58b4150973483f3af49a

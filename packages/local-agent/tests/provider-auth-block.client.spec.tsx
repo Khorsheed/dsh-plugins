@@ -14,6 +14,7 @@ import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import {
   LOGIN_POLL_MS, ProviderAuthBlock, type ProviderAuthBlockProps,
 } from '../src/client/ProviderAuthBlock.tsx'
+import { readAuthStatus, resetAuthStatuses } from '../src/client/auth-status.ts'
 import { LocalAgentSettingsSection, type LocalAgentSettingsProps } from '../src/client/LocalAgentSettingsSection.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -21,6 +22,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  resetAuthStatuses()
 })
 
 const SESSION = 'session' as SessionId
@@ -75,6 +77,13 @@ describe('ProviderAuthBlock', () => {
     expect(status).toHaveBeenCalledWith('kimi')
     expect(screen.getByRole('button', { name: zh['settings.logout'] })).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['settings.reauthorize'] })).toBeTruthy()
+  })
+
+  it('publishes every probe result to the auth-status bus (the card-header dot reads it)', async () => {
+    const status = vi.fn().mockResolvedValue(kimiStatus(true))
+    render(<ProviderAuthBlock {...blockProps({ status })} />)
+    await screen.findByText(zh['settings.authenticated'])
+    expect(readAuthStatus('kimi')).toBe('authenticated')
   })
 
   it('offers no login or logout actions for a harness without them (dsh-shaped)', async () => {

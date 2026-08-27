@@ -10,6 +10,8 @@ import { IconChevronDownOutline14, Tooltip } from '@deepseek-ai/dsh-client-ui-pr
 import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
+import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
+import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
@@ -101,6 +103,14 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, useSessions
   if (granularityOverridden) yamlParts.push(`liveMirrorGranularity=${base.liveMirrorGranularity ?? 'event'}`)
 
   const title = t('card.title')
+  // The at-a-glance credential dot in the collapsed header: the auth block's
+  // probes publish through the status bus, so login/logout flips it live.
+  const authStatus = useHarnessAuthStatus('codex', auth.status)
+  const dotLabel = authT(
+    authStatus === 'authenticated' ? 'settings.authenticated'
+      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
+        : authStatus === 'checking' ? 'loading' : 'error',
+  )
   return (
     <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
       <button
@@ -111,7 +121,10 @@ export function CodexSettingsCard({ useSettings, scope, auth, authT, useSessions
         onClick={() => { setOpen(!open) }}
       >
         <span className={css.headText}>
-          <span className={css.name}>{title}</span>
+          <span className={css.nameRow}>
+            <AuthStatusDot status={authStatus} label={dotLabel} />
+            <span className={css.name}>{title}</span>
+          </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>
         <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />

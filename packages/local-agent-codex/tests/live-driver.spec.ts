@@ -23,6 +23,8 @@ interface FakeTurn {
   items?: Record<string, unknown>[]
   /** [itemId, delta] pairs pushed as item/agentMessage/delta. */
   deltas?: [string, string][]
+  /** [itemId, delta] pairs pushed as item/reasoning/textDelta. */
+  reasoningDeltas?: [string, string][]
   usage?: { inputTokens: number; cachedInputTokens: number; outputTokens: number }
   status?: 'completed' | 'interrupted' | 'failed'
   errorMessage?: string
@@ -175,6 +177,9 @@ class FakeAppServer {
     this.notify('turn/started', { threadId, turn: { id: turnId, status: 'inProgress' } })
     if (this.script.askApproval === true) {
       this.notify('__never__', {}) // placeholder ordering marker (unused)
+    }
+    for (const [itemId, delta] of turn.reasoningDeltas ?? []) {
+      this.notify('item/reasoning/textDelta', { threadId, turnId, itemId, delta })
     }
     for (const [itemId, delta] of turn.deltas ?? []) {
       this.notify('item/agentMessage/delta', { threadId, turnId, itemId, delta })
@@ -517,6 +522,54 @@ describe('codex live driver rounds', () => {
     expect(chunks).toHaveLength(2)
     expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
     await on.driver.disposeAll()
+  })
+
+  it('token granularity: the settle completes the stream with ONE combined final message (no duplicate fold)', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-codex-token-final'))
+    m.queueChild(new FakeAppServer({
+      turn: () => ({
+        reasoningDeltas: [['item-r', '想一下']],
+        deltas: [['item-m', '文件'], ['item-m', '建好了']],
+        items: [
+          { type: 'reasoning', summary: ['想一下'], content: [] },
+          { type: 'agentMessage', text: '文件建好了', phase: 'final_answer' },
+        ],
+        usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 4 },
+      }),
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    // One final at the stream's own (turn, step): the projection replaces the
+    // stream with it — no duplicated content, no dangling interrupted badge.
+    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
+      { type: 'reasoning', text: '想一下' },
+      { type: 'text', text: '文件建好了' },
+    ])
+    expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-codex-token-abort'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    // Stream one partial chunk, then cancel.
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'item-m', delta: '写到一半' })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    await m.driver.disposeAll()
   })
 })
 

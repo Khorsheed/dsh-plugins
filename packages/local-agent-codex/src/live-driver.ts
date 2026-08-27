@@ -42,11 +42,13 @@ import type { Config } from './index.ts'
 import {
   appendCodexTranscriptLine,
   appendCodexUsageChunk,
+  codexAssistantEvent,
   codexLineText,
   DEFAULT_DISPOSE_GRACE_MS,
   persistIfStandalone,
   registerCodexMemberRun,
   textTask,
+  type CodexMirrorOptions,
   type CodexTranscriptLine,
 } from './codex-cli-provider.ts'
 
@@ -97,6 +99,11 @@ const DEFAULT_TIMEOUTS: CodexLiveDriverTimeouts = {
 
 /** How much of the live event stream crosses into the child session. */
 export type CodexLiveMirrorGranularity = 'event' | 'token'
+
+/** The fold options for one granularity: token mode streams think/text as chunks, so the fold skips it. */
+function mirrorOptions(granularity: CodexLiveMirrorGranularity): CodexMirrorOptions | undefined {
+  return granularity === 'token' ? { skipAssistantContent: true } : undefined
+}
 
 /** Fully resolved inputs for one live round. */
 export interface CodexLiveRoundSpec {
@@ -725,8 +732,12 @@ export class CodexLiveDriver {
     const lines: CodexTranscriptLine[] = []
     let mirrored = 0
     let usage: TokenUsage | undefined
-    /** Token-granularity block index per streaming item id. */
-    const blockIndexes = new Map<string, number>()
+    /** The round's accumulated reply-text deltas (token granularity; the final message's text block). */
+    let roundText = ''
+    /** The round's accumulated reasoning deltas (token granularity; the final message's reasoning block). */
+    let roundThink = ''
+    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
+    const chunkSeqs: number[] = []
     /** Items/completions that arrived before the turn id was known. */
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -764,24 +775,33 @@ export class CodexLiveDriver {
 
     /** Mirror folded lines [mirrored, upto); the last line is held back until completion. */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
+      const options = mirrorOptions(granularity)
+      // Token mode leaves think/text to the stream, and the round's usage
+      // rides the combined final message — never a folded line (no carrier,
+      // no after-the-fact usage chunk).
+      const attachUsage = withUsage && options?.skipAssistantContent !== true
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot, and a kill mid-command ends the transcript with a tool line).
       let usageIndex = -1
-      if (withUsage) {
+      if (attachUsage) {
         for (let index = 0; index < lines.length; index += 1) {
           if (lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
       // A carrier mirrored in an earlier flush (before the usage was
       // knowable) gets the accounting as a usage chunk pinned to its step.
-      const carrierMirrored = withUsage && usageIndex !== -1 && usageIndex < mirrored
+      const carrierMirrored = attachUsage && usageIndex !== -1 && usageIndex < mirrored
       for (let index = mirrored; index < upto; index += 1) {
         const line = lines[index]
         if (line === undefined) continue
-        const lineUsage = withUsage && index === usageIndex ? usage : undefined
-        appendCodexTranscriptLine(childSession, turn, index + 1, line, lineUsage)
+        const lineUsage = attachUsage && index === usageIndex ? usage : undefined
+        // Token mode: the stream owns (turn, step 1) — folded tool lines
+        // continue AFTER it, so the final message's merge key never collides
+        // with a tool card.
+        const step = index + 1 + (options?.skipAssistantContent === true ? 1 : 0)
+        const folded = appendCodexTranscriptLine(childSession, turn, step, line, lineUsage, options)
         mirrored = index + 1
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+        if (folded) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
       }
       if (carrierMirrored && usage !== undefined) appendCodexUsageChunk(childSession, turn, usage)
       if (upto > 0) persist()
@@ -826,18 +846,20 @@ export class CodexLiveDriver {
       }
       if (method === 'item/agentMessage/delta' || method === 'item/reasoning/textDelta') {
         if (granularity !== 'token' || typeof params['delta'] !== 'string') return
-        const itemId = String(params['itemId'] ?? '')
-        if (!blockIndexes.has(itemId)) blockIndexes.set(itemId, blockIndexes.size)
-        childSession.append('assistant/chunk', {
+        const text = params['delta']
+        if (text === '') return
+        // The stream's block layout matches the combined final message:
+        // reasoning at index 0, reply text at index 1.
+        const reasoning = method === 'item/reasoning/textDelta'
+        if (reasoning) roundThink += text
+        else roundText += text
+        const event = childSession.append('assistant/chunk', {
           turn,
-          step: mirrored + 1,
-          chunk: {
-            type: method === 'item/agentMessage/delta' ? 'text-delta' : 'reasoning-delta',
-            index: blockIndexes.get(itemId) ?? 0,
-            text: params['delta'],
-          },
+          step: 1,
+          chunk: { type: reasoning ? 'reasoning-delta' : 'text-delta', index: reasoning ? 0 : 1, text },
         })
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: params['delta'] })
+        chunkSeqs.push(event.seq)
+        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         return
       }
       if (method === 'thread/tokenUsage/updated') {
@@ -1024,10 +1046,39 @@ export class CodexLiveDriver {
 
     // Final mirror report + reaper re-arm, mirroring the exec settle pass's
     // progress contract. A round that never opened owns no span — skip it.
-    void result.then(async () => {
+    void result.then(async (settled) => {
       try {
         if (turnOpened) {
           await persistQueue.catch(() => {})
+          // Token granularity: complete the step-1 stream with ONE combined
+          // final message at the SAME (turn, step) — the official projection
+          // replaces the stream with it (no duplicated content, no dangling
+          // '已停止' badge) and surfaces the usage. A non-completed round is
+          // marked interrupted, so a cancelled turn reads 已停止 legitimately.
+          if (granularity === 'token') {
+            // Deltas are the stream's content; a server that completed items
+            // without streaming (no deltas observed) falls back to the folded
+            // lines, so the answer is never lost.
+            const think = roundThink.trim() !== ''
+              ? roundThink
+              : lines.filter(line => line.kind === 'think').map(line => line.text).join('\n')
+            const text = roundText.trim() !== ''
+              ? roundText
+              : lines.filter(line => line.kind === 'text').map(line => line.text).join('\n')
+            const blocks: ContentBlock[] = []
+            if (think.trim() !== '') blocks.push({ type: 'reasoning', text: think })
+            if (text.trim() !== '') blocks.push({ type: 'text', text })
+            if (blocks.length > 0) {
+              childSession.append('assistant/message', {
+                turn,
+                step: 1,
+                message: codexAssistantEvent(blocks),
+                ...usage !== undefined ? { usage } : {},
+                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+              persist()
+            }
+          }
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         }
       } finally {
