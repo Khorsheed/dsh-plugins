@@ -803,14 +803,42 @@ export function startCodexCliRun(
   }))
 }
 
-/** Fold one transcript line into the child session as one assistant step. */
+/** One assistant-role message event, attributed to the codex route. */
+export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
+  return createAssistantMessage({
+    content: blocks as ContentBlock[],
+    source: { provider: 'codex-local', model: 'codex' },
+  })
+}
+
+/** Mirror behavior switches shared by the exec and live paths. */
+export interface CodexMirrorOptions {
+  /**
+   * Do not fold think/text lines into `assistant/message` events (the
+   * token-granularity live mode streams that content as `assistant/chunk`
+   * instead; the driver completes the stream with one combined final
+   * message). Tool lines still fold, and the round's usage is left to the
+   * caller — it rides the combined final message, not a folded line.
+   */
+  skipAssistantContent?: boolean
+}
+
+/**
+ * Fold one transcript line into the child session as one assistant step.
+ * @returns whether the line folded (false when the options skipped it).
+ */
 export function appendCodexTranscriptLine(
   childSession: Session,
   turn: number,
   step: number,
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
-): void {
+  options?: CodexMirrorOptions,
+): boolean {
+  // Token-granularity live mode streams think/text as assistant/chunk; the
+  // driver completes the stream with one combined final message, so the fold
+  // leaves these lines out (their usage rides that final message).
+  if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
   if (line.kind === 'tool') {
     // Native tool card: the call event now, the result event when the stream
     // already carries it. Tool lines never carry the round's usage — the
@@ -834,7 +862,7 @@ export function appendCodexTranscriptLine(
         }),
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     }
-    return
+    return true
   }
   const blocks = line.kind === 'think'
     ? [{ type: 'reasoning' as const, text: line.text }]
@@ -842,12 +870,10 @@ export function appendCodexTranscriptLine(
   childSession.append('assistant/message', {
     turn,
     step,
-    message: createAssistantMessage({
-      content: blocks,
-      source: { provider: 'codex-local', model: 'codex' },
-    }),
+    message: codexAssistantEvent(blocks),
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
+  return true
 }
 
 /** Fold one transcript line into the run's child session as one assistant step. */

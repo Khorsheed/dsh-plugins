@@ -28,8 +28,10 @@ interface FakeTurn {
   usage?: { input_tokens: number; cache_read_input_tokens: number; output_tokens: number }
   /** Never emit the turn's result (cancel-path tests drive it by hand). */
   hang?: boolean
-  /** Partial-message stream_event deltas (token granularity). */
+  /** Partial-message stream_event text deltas (token granularity). */
   deltas?: string[]
+  /** Partial-message stream_event thinking deltas (token granularity). */
+  thinkingDeltas?: string[]
 }
 
 interface FakeClaudeScript {
@@ -114,6 +116,9 @@ class FakeClaude {
     const turn = this.script.turn?.({ text }) ?? {}
     queueMicrotask(() => {
       this.emit({ type: 'system', subtype: 'init', session_id: this.sessionId })
+      for (const delta of turn.thinkingDeltas ?? []) {
+        this.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: delta } } })
+      }
       for (const delta of turn.deltas ?? []) {
         this.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: delta } } })
       }
@@ -394,6 +399,55 @@ describe('claude live driver rounds', () => {
     expect(on.spawns[0]!.spec.argv).toContain('--include-partial-messages')
     expect(onChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     await on.driver.disposeAll()
+  })
+
+  it('token granularity: the settle completes the stream with ONE combined final message (no duplicate fold)', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-claude-token-final'))
+    m.queueChild(new FakeClaude({
+      turn: () => ({
+        thinkingDeltas: ['想一下'],
+        deltas: ['文件', '建好了'],
+        events: answerEvents('文件建好了'),
+        usage: { input_tokens: 10, cache_read_input_tokens: 6, output_tokens: 4 },
+      }),
+    }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    // One final at the stream's own (turn, step): the projection replaces the
+    // stream with it — no duplicated content, no dangling interrupted badge.
+    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
+      { type: 'reasoning', text: '想一下' },
+      { type: 'text', text: '文件建好了' },
+    ])
+    expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
+    // The fold skipped the think/text lines but the tool activity still folds.
+    expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-claude-token-abort'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    // Stream one partial chunk, then cancel.
+    fake.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '写到一半' } } })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    // The interrupt unwinds the hung turn; its result lands so the chain converges.
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1' })
+    await m.driver.disposeAll()
   })
 
   it('respects the configured base URL override and nothing more in env', async () => {

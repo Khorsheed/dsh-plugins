@@ -53,6 +53,12 @@
   gap: 4px;
 }
 
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .name {
   font-size: 15px;
   font-weight: 600;

@@ -11,6 +11,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId, SessionListState, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
+import { resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import {
   KimiSettingsCard, type KimiLiveSettings, type KimiSettingsCardProps,
 } from '../src/client/SettingsCard.tsx'
@@ -20,6 +21,7 @@ afterEach(() => {
   cleanup()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
+  resetAuthStatuses()
 })
 
 const SESSION = 'session' as SessionId
@@ -151,6 +153,23 @@ describe('KimiSettingsCard', () => {
     const toggle = screen.getByRole('switch', { name: zh['live.enable'] })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('shows the credential dot in the collapsed header, fed by the status bus', async () => {
+    renderCard({ authenticated: true })
+    // The dot probes on mount (no expand needed) and lands on authenticated.
+    await act(async () => {})
+    const dot = document.body.querySelector('[data-auth-status]')
+    expect(dot?.getAttribute('data-auth-status')).toBe('authenticated')
+    expect(dot?.getAttribute('aria-label')).toBe(coreZh['settings.authenticated'])
+  })
+
+  it('the header dot lands on the not-authenticated color when the probe says anonymous', async () => {
+    renderCard({ authenticated: false })
+    await act(async () => {})
+    const dot = document.body.querySelector('[data-auth-status]')
+    expect(dot?.getAttribute('data-auth-status')).toBe('anonymous')
+    expect(dot?.getAttribute('aria-label')).toBe(coreZh['settings.notAuthenticated'])
   })
 
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {

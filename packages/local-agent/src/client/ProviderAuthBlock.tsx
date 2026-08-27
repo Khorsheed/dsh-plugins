@@ -5,6 +5,7 @@ import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from './locales.ts'
+import { publishAuthStatus } from './auth-status.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 import css from './LocalAgentSettingsSection.module.css'
 
@@ -104,6 +105,9 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
     void status(id).then((probe) => {
       const statusKind = probe === undefined ? 'unavailable'
         : probe.authenticated ? 'authenticated' : 'anonymous'
+      // Card headers read the same probe through the status bus (the dot
+      // flips the moment a login/logout lands, in every mounted card).
+      publishAuthStatus(id, statusKind)
       const capabilities = probe === undefined
         ? {}
         : {
@@ -128,6 +132,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
         })
       }
     }).catch(() => {
+      publishAuthStatus(id, 'unavailable')
       setView(prev => ({ ...prev, status: 'unavailable' }))
     })
   }

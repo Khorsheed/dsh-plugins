@@ -1,0 +1,20 @@
+.credentialDot {
+  box-sizing: border-box;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotOn {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.dotOff {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.dotPending {
+  background: var(--dsw-alias-fill-l3);
+}

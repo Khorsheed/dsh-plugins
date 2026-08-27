@@ -985,7 +985,14 @@ export async function startClaudeCliRun(
   }))
 }
 
-/** Fold one transcript line into the child session as one assistant step. */
+/** One assistant-role message event, attributed to the claude route. */
+export function assistantEvent(blocks: readonly ContentBlock[]) {
+  return createAssistantMessage({
+    content: blocks as ContentBlock[],
+    source: { provider: 'claude-local', model: 'claude' },
+  })
+}
+
 /** Fold one transcript line into the child session as one assistant step. */
 export function appendClaudeTranscriptLine(
   childSession: Session,
@@ -1024,10 +1031,7 @@ export function appendClaudeTranscriptLine(
   childSession.append('assistant/message', {
     turn,
     step,
-    message: createAssistantMessage({
-      content: blocks,
-      source: { provider: 'claude-local', model: 'claude' },
-    }),
+    message: assistantEvent(blocks),
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
 }
