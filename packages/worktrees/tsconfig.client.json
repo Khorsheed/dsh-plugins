@@ -31,6 +31,7 @@
     "src/client/LocalFilesDrawer.tsx",
     "src/client/language.ts",
     "src/client/local-root.ts",
+    "src/client/structured.tsx",
     "src/client/locales.ts",
     "src/client/Overview.tsx",
     "src/client/panel-service.ts",
