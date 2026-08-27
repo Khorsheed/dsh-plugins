@@ -35,8 +35,8 @@ export interface WorktreesBadgeInjected {
   summary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
   /** Open the drawer in one mode (routes to the root drawer store). */
   open: (mode: DrawerMode) => void
-  /** Open the local-files browser from a starting directory. */
-  openLocalFiles: (start: string) => void
+  /** Open the local-files browser from a starting directory for one session. */
+  openLocalFiles: (sessionId: SessionId, start: string) => void
 }
 
 /** Full props of the session-header badge entry. */

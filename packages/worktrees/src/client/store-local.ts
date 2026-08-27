@@ -13,6 +13,8 @@ import type { ListLocalDirectoryResult, LocalImageResult, ReadLocalFileResult } 
 export interface LocalFilesState {
   /** Whether the browser panel is open. */
   open: boolean
+  /** The session this browser is currently serving (for per-session memory). */
+  sessionId: string
   /** The directory currently listed (absolute path; null until first fetch). */
   root: string | null
   /** The current listing (null until loaded). */
@@ -33,7 +35,7 @@ export interface LocalFilesState {
 
 /** Annotation twin of the actions literal below. */
 export type LocalFilesActions = {
-  open: (draft: LocalFilesState, start: string) => void
+  open: (draft: LocalFilesState, sessionId: string, start: string) => void
   close: (draft: LocalFilesState) => void
   setRoot: (draft: LocalFilesState, path: string) => void
   setListing: (draft: LocalFilesState, listing: ListLocalDirectoryResult) => void
@@ -47,6 +49,7 @@ export type LocalFilesActions = {
 
 const INITIAL: LocalFilesState = {
   open: false,
+  sessionId: '',
   root: null,
   listing: null,
   selectedPath: null,
@@ -65,8 +68,9 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
   return defineStore({
     init: (): LocalFilesState => ({ ...INITIAL }),
     actions: {
-      open: (d, start: string) => {
+      open: (d, sessionId: string, start: string) => {
         d.open = true
+        d.sessionId = sessionId
         d.root = start
         d.listing = null
         d.selectedPath = null

@@ -12,11 +12,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { IconBranchOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionSummary } from '../types.ts'
 import type { WorktreesBadgeProps } from './contract.ts'
+import { useLocalRoot } from './local-root.ts'
+import { basenameOf } from './language.ts'
 import css from './Badge.module.css'
 
 /** The badge. */
 export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: WorktreesBadgeProps): ReactNode {
   const [data, setData] = useState<SessionSummary | null>(null)
+  // This session's current/remembered local-files root (its badge label).
+  const localRoot = useLocalRoot(sessionId)
 
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return
@@ -41,9 +45,11 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
   })} / ${t('summary.committed', {
     add: String(data.committed.additions), del: String(data.committed.deletions),
   })}` : ''
-  // The LEFT capsule's browse start: the repository root in a repo session,
-  // otherwise the filesystem root (the user navigates from there).
-  const localStart = data.repo !== '' ? data.repo : '/'
+  // The LEFT capsule label: this session's local-files root (its basename) when
+  // one is remembered, else the session repo name (the default browse start).
+  const localName = localRoot !== '' ? basenameOf(localRoot) : (isRepo ? data.repoName : t('local.title'))
+  // The browse start: the remembered root if any, else the session repo root.
+  const localStart = localRoot !== '' ? localRoot : (data.repo !== '' ? data.repo : '/')
 
   return (
     <span
@@ -54,12 +60,12 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
       <button
         type="button"
         className={`${css.zone} ${css.repoZone}`}
-        title={isRepo ? `${data.repoName} · ${data.repo}` : t('local.browse')}
+        title={localRoot !== '' ? localRoot : (isRepo ? `${data.repoName} · ${data.repo}` : t('local.browse'))}
         aria-label={t('aria.openLocal')}
-        onClick={() => { openLocalFiles(localStart) }}
+        onClick={() => { openLocalFiles(sessionId, localStart) }}
       >
         <IconFolderOpenOutline16 />
-        <span className={css.zoneText}>{isRepo ? data.repoName : t('local.title')}</span>
+        <span className={css.zoneText}>{localName}</span>
       </button>
       {isRepo && (
         <>

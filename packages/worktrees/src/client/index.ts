@@ -96,7 +96,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     inject: (): WorktreesBadgeInjected => ({
       summary: (sid: SessionId) => remote.summary(sid),
       open: (mode) => { controller.open(mode) },
-      openLocalFiles: (start: string) => { controller.openLocalFiles(start) },
+      openLocalFiles: (sid: SessionId, start: string) => { controller.openLocalFiles(sid, start) },
     }),
   }, WorktreesBadge))
 
