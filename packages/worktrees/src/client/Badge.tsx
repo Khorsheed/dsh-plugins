@@ -57,19 +57,8 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
       role="status"
       aria-label={t('aria.badge')}
     >
-      <button
-        type="button"
-        className={`${css.zone} ${css.repoZone}`}
-        title={localRoot !== '' ? localRoot : (isRepo ? `${data.repoName} · ${data.repo}` : t('local.browse'))}
-        aria-label={t('aria.openLocal')}
-        onClick={() => { openLocalFiles(sessionId, localStart) }}
-      >
-        <IconFolderOpenOutline16 />
-        <span className={css.zoneText}>{localName}</span>
-      </button>
       {isRepo && (
         <>
-          <span className={css.sep} aria-hidden="true" />
           <button
             type="button"
             className={css.zone}
@@ -81,8 +70,19 @@ export function WorktreesBadge({ sessionId, summary, open, openLocalFiles, t }: 
             <span className={css.zoneText}>{branchLabel}</span>
             <span className={`${css.counts} ${hasChanges ? css.countsDirty : ''}`}>+{totalAdd} −{totalDel}</span>
           </button>
+          <span className={css.sep} aria-hidden="true" />
         </>
       )}
+      <button
+        type="button"
+        className={`${css.zone} ${css.repoZone}`}
+        title={localRoot !== '' ? localRoot : (isRepo ? `${data.repoName} · ${data.repo}` : t('local.browse'))}
+        aria-label={t('aria.openLocal')}
+        onClick={() => { openLocalFiles(sessionId, localStart) }}
+      >
+        <IconFolderOpenOutline16 />
+        <span className={css.zoneText}>{localName}</span>
+      </button>
     </span>
   )
 }
