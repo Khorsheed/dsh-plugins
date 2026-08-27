@@ -519,10 +519,12 @@ export function startKimiCliRun(
   spec.childSession?.append('turn/start', { turn })
 
   const child = spec.spawn({
-    // -S must precede -p: after -p, kimi parses the id as a command.
+    // -S must precede -p: after -p, kimi parses the id as a command. The
+    // recorded id may already carry the ACP directory prefix (a record
+    // written by a live round): never double-prefix.
     argv: spec.resume === undefined
       ? ['kimi', '-p', task]
-      : ['kimi', '-S', `session_${spec.resume.cliSessionId}`, '-p', task],
+      : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,

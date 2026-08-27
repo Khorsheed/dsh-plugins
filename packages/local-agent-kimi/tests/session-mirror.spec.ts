@@ -149,6 +149,15 @@ describe('session-mirror', () => {
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
   })
 
+  it('resolves a session id that already carries the ACP directory prefix (never double-prefixes)', async () => {
+    const { home } = wireHome('named', fullWire)
+    const child = Session.create(SessionId('child-3p'))
+    await mirrorKimiSession(new Context(), child, home, 'session_named')
+
+    const user = child.events.find(event => event.type === 'user/message')
+    expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
+  })
+
   it('keeps looking for a named session past earlier empty workspaces', async () => {
     // The named session lives in the SECOND workspace; the first contains a
     // directory for another session id, whose absent wire log reads as an
