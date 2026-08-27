@@ -18,6 +18,8 @@ live 设置卡片的真机验收（demo 3291）暴露了 kimi live 模式的三�
 
 **3b. 用量挂载窗口排除了边界记录。** kimi 把一个请求的 `usage.record` 写在它记账的内容**之前**，offset 推进后记录恰好落在 `fromLines` 边界上，旧的 `> fromLines` 过滤把它丢掉——增量折叠丢掉整轮记账。修复：改为 `>= fromLines`（接受的代价：恰好压在 pass 边界的记录可能挂到两趟上；总比整轮丢用量好）。
 
+**4. 流式 think/正文渲染到了提问上面（token 粒度）。** 用户消息此前只能等 wire 落盘 + 镜像趟才出现，流式 chunk（step 1）抢在它之前渲染。修复（对齐 codex/claude live 的既有模式）：kimi live driver 在轮开始（turn 边界开启时）就自写本轮的 `user/message`，折叠层跳过 wire 里同一条提示词（`userAlreadyAppended`——按 turn 限定范围、按文本匹配，不同轮里相同的提示词仍各自折叠）。提问现在立即可见且永远在最前。
+
 ## Alternatives considered
 
 - **记录里存 ACP 原生 id**——否决：exec 记录是裸 uuid，混合形式逼着每个消费方猜格式；一种规范形式 + 容忍的消费方更简单。

@@ -33,6 +33,7 @@
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -849,8 +850,15 @@ export class KimiAcpLiveDriver {
       }
       // The turn boundary opens before the prompt goes out (exec parity: the
       // exec path opens at spawn). session/prompt has no separate accept ack —
-      // the request IS the turn.
+      // the request IS the turn. The prompt's user/message lands here too
+      // (codex/claude live parity): immediately visible instead of waiting
+      // for the wire flush + mirror pass — which would render the streamed
+      // think/text ABOVE the question. The fold skips it (turn+text dedupe).
       childSession.append('turn/start', { turn })
+      childSession.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: task }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
       turnOpened = true
     })()
 
