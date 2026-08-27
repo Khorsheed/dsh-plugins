@@ -103,8 +103,9 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
   if (granularityOverridden) yamlParts.push(`liveMirrorGranularity=${base.liveMirrorGranularity ?? 'event'}`)
 
   const title = t('card.title')
-  // The at-a-glance credential dot in the collapsed header: the auth block's
-  // probes publish through the status bus, so login/logout flips it live.
+  // The at-a-glance credential dot in the collapsed header: every mount
+  // re-probes (a credential expiring mid-session must flip the dot at the
+  // next view); the bus dedupes identical results, so no re-render storm.
   const authStatus = useHarnessAuthStatus('kimi', auth.status)
   const dotLabel = authT(
     authStatus === 'authenticated' ? 'settings.authenticated'
@@ -122,8 +123,8 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
       >
         <span className={css.headText}>
           <span className={css.nameRow}>
-            <AuthStatusDot status={authStatus} label={dotLabel} />
             <span className={css.name}>{title}</span>
+            <AuthStatusDot status={authStatus} label={dotLabel} />
           </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>
