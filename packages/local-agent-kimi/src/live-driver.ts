@@ -54,6 +54,7 @@ import {
 } from './kimi-cli-provider.ts'
 import { assistantEvent } from './session-mirror.ts'
 import type { KimiMirrorOptions } from './session-mirror.ts'
+import { guardKimiCredential } from './credential-guard.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -619,8 +620,13 @@ export class KimiAcpLiveDriver {
    * never exits: the match runs against the settled error instead). Degrades
    * silently on a core predating reportAuthFailure.
    */
-  private reportAuthIfShaped(error: Error): void {
+  private reportAuthIfShaped(error: Error, homeDir?: string): void {
     if (!KIMI_LIVE_AUTH_FAILURE.test(error.message)) return
+    // The sentinel: if the credential file was wiped into an empty shell, a
+    // restore here makes the caller's retry (or the next round) succeed.
+    if (homeDir !== undefined) {
+      void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
+    }
     // Duck-typed: the method lands with the auth-truthfulness core; older
     // cores simply skip the mark.
     const registry = this.ctx.localAgent as unknown as {
@@ -924,7 +930,7 @@ export class KimiAcpLiveDriver {
         const diagnostics = runtime?.diagnostics ?? ''
         const suffix = diagnostics === '' ? '' : `; ${diagnostics}`
         this.ctx.logger.warn(`subagent-kimi: live round failed (${stopReason}): ${error.message}${suffix}`)
-        this.reportAuthIfShaped(error)
+        this.reportAuthIfShaped(error, spec.homeDir)
       },
       signal: request.signal,
       onAbort,
