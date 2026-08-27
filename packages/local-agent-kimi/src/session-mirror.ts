@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
@@ -21,7 +21,7 @@ function userEvent(text: string) {
 }
 
 /** One assistant-role message event, attributed to the kimi route. */
-function assistantEvent(blocks: readonly ContentBlock[]) {
+export function assistantEvent(blocks: readonly ContentBlock[]) {
   return createAssistantMessage({
     content: blocks as ContentBlock[],
     source: { provider: 'kimi-cli', model: 'k3' },
@@ -62,6 +62,26 @@ export interface KimiMirrorDelta {
    * mirror is therefore a no-op).
    */
   texts: string[]
+  /**
+   * The usage this pass computed for its window. When assistant content is
+   * folded it is attached to the last folded message (and repeated here for
+   * convenience); with `skipAssistantContent` there is no folded message, so
+   * the caller (the token-granularity live driver) attaches it to the
+   * combined final message that completes the stream.
+   */
+  usage?: TokenUsage
+}
+
+/** Mirror behavior switches shared by the exec and live paths. */
+export interface KimiMirrorOptions {
+  /**
+   * Do not fold think/assistant lines into `assistant/message` events (the
+   * token-granularity live mode streams that content as `assistant/chunk`
+   * instead; the driver completes the stream with one combined final
+   * message). User and tool lines still fold, and the window's usage is
+   * returned on the delta instead of being attached.
+   */
+  skipAssistantContent?: boolean
 }
 
 /**
@@ -100,6 +120,7 @@ export async function mirrorKimiSessionDelta(
   homeDir: string,
   kimiSessionId?: string,
   fromLines = 0,
+  options?: KimiMirrorOptions,
 ): Promise<KimiMirrorDelta> {
   let workspaces: string[]
   try {
@@ -110,8 +131,11 @@ export async function mirrorKimiSessionDelta(
   }
   let transcript: Awaited<ReturnType<typeof readKimiTranscript>> | undefined
   if (kimiSessionId !== undefined) {
+    // Records may be bare uuids (the convention) or carry the ACP directory
+    // prefix (legacy live records): normalize instead of double-prefixing.
+    const dirName = kimiSessionId.startsWith('session_') ? kimiSessionId : `session_${kimiSessionId}`
     for (const workspace of workspaces) {
-      const dir = join(homeDir, 'sessions', workspace, `session_${kimiSessionId}`)
+      const dir = join(homeDir, 'sessions', workspace, dirName)
       try {
         transcript = await readKimiTranscript(dir)
       } catch {
@@ -157,11 +181,13 @@ export async function mirrorKimiSessionDelta(
   // No early return on an empty delta: a result that merged into an
   // already-mirrored tool line does not change the line count, and the
   // backfill below still owes that call its `tool/result` event.
-  // The pass attaches the usage records that trail ITS lines: positions in
-  // (fromLines, newTotal]. Each record is one LLM request's accounting (kimi
-  // does not accumulate within a turn).
+  // The pass attaches the usage records whose content ITS lines carry. kimi
+  // writes a request's `usage.record` BEFORE the content parts it accounts
+  // for, so a record sitting exactly on the delta boundary (its content is
+  // entirely inside this pass) must attach here — otherwise incremental
+  // folds (live mid-run + settle) lose the round's accounting entirely.
   const deltaUsage = sumUsageRecords(
-    transcript.usageRecords.filter(record => record.line > fromLines && record.line <= newTotal),
+    transcript.usageRecords.filter(record => record.line >= fromLines && record.line <= newTotal),
   )
   // Attach the summed usage to the delta's LAST assistant message (text or
   // think both carry the round's accounting; tool lines do not).
@@ -223,10 +249,9 @@ export async function mirrorKimiSessionDelta(
     // No new lines this pass: only the late-result backfill above could have
     // produced events. Persist those and skip the empty delta loop.
     if (texts.length > 0) {
-      const persistence = ctx.get('sessionPersistence')
-      await persistence?.append(childSession.id, childSession.events)
+      await persistIfStandalone(ctx, childSession)
     }
-    return { total: newTotal, texts }
+    return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
   }
   for (let index = 0; index < delta.length; index += 1) {
     const line = delta[index]
@@ -236,6 +261,11 @@ export async function mirrorKimiSessionDelta(
     // same rounds.
     const turn = line.turn
     if (line.kind === 'user') {
+      // The live driver appends the round's user/message at turn start (so the
+      // question renders before the streamed think/text instead of after it).
+      // Skip the wire's copy of the same prompt — scoped to THIS turn so two
+      // rounds with identical prompts still fold independently.
+      if (userAlreadyAppended(childSession, turn, line.text)) continue
       steps.set(turn, 1)
       childSession.append('user/message', userEvent(line.text), { surfaceOp: 'append' })
       texts.push(line.text)
@@ -264,6 +294,10 @@ export async function mirrorKimiSessionDelta(
         }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
       }
     } else {
+      // Token-granularity live mode streams think/text as assistant/chunk;
+      // the driver completes the stream with one combined final message, so
+      // the fold leaves these lines out (their usage rides the delta).
+      if (options?.skipAssistantContent === true) continue
       const step = steps.get(turn) ?? 1
       steps.set(turn, step + 1)
       childSession.append('assistant/message', {
@@ -275,9 +309,46 @@ export async function mirrorKimiSessionDelta(
       texts.push(kimiLineProgressText(line))
     }
   }
+  await persistIfStandalone(ctx, childSession)
+  return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record).
+ */
+async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
   await persistence?.append(childSession.id, childSession.events)
-  return { total: newTotal, texts }
+}
+
+/**
+ * Whether the turn already carries a user/message with this exact text (the
+ * live driver's round-start append). Scoped to the events at or after this
+ * turn's turn/start so identical prompts across rounds stay independent.
+ */
+function userAlreadyAppended(childSession: Session, turn: number, text: string): boolean {
+  let turnStartSeq = -1
+  for (const event of childSession.events) {
+    if (event.type === 'turn/start' && (event.data as { turn?: number }).turn === turn) {
+      turnStartSeq = event.seq
+    }
+  }
+  if (turnStartSeq < 0) return false
+  for (const event of childSession.events) {
+    if (event.seq < turnStartSeq || event.type !== 'user/message') continue
+    const data = event.data as { content?: readonly { type: string; text?: string }[] }
+    const existing = (data.content ?? []).map(block => block.text ?? '').join('')
+    if (existing === text) return true
+  }
+  return false
 }
 
 /**

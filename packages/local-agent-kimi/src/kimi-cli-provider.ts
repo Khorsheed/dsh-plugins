@@ -33,7 +33,7 @@ import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
-import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.ts'
+import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -62,7 +62,23 @@ export class KimiCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
-  constructor(private readonly ctx: Context, private readonly live?: KimiAcpLiveDriver) {}
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
+  ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): KimiAcpLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /**
    * Register one run with the member channel and declare the bridge MCP server
@@ -174,9 +190,10 @@ export class KimiCliProvider implements SubagentProvider {
     // Live driver: the round goes to the member's resident `kimi acp` process.
     // A channel that fails at spawn/handshake falls through to the exec
     // one-shot below — and stays there until the breaker cools down.
-    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
-        return await this.live.startRound(request, {
+        return await live.startRound(request, {
           cwd: parentCwd,
           homeDir,
           childSession,
@@ -264,9 +281,10 @@ export class KimiCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident ACP session. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      if (this.live !== undefined && !this.live.disabled) {
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
         try {
-          const liveRun = await this.live.startRound(request, {
+          const liveRun = await live.startRound(request, {
             cwd: parentCwd,
             homeDir,
             childSession,
@@ -433,13 +451,14 @@ export async function mirrorKimiDelta(
   childSession: Session,
   homeDir: string,
   kimiSessionId: string | undefined,
+  options?: KimiMirrorOptions,
 ): Promise<KimiMirrorDelta> {
   // Degrade without the localAgent service: the transcript still mirrors (the
   // pre-live-mirror behavior for a bare context), only the offset bookkeeping
   // and progress reporting drop out.
   const localAgent = ctx.get('localAgent')
   const fromLines = localAgent?.kimiMirroredLines(childSession.id) ?? 0
-  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines)
+  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines, options)
   if (delta.texts.length === 0) return delta
   localAgent?.setKimiMirroredLines(childSession.id, delta.total)
   for (const text of delta.texts) {
@@ -501,10 +520,12 @@ export function startKimiCliRun(
   spec.childSession?.append('turn/start', { turn })
 
   const child = spec.spawn({
-    // -S must precede -p: after -p, kimi parses the id as a command.
+    // -S must precede -p: after -p, kimi parses the id as a command. The
+    // recorded id may already carry the ACP directory prefix (a record
+    // written by a live round): never double-prefix.
     argv: spec.resume === undefined
       ? ['kimi', '-p', task]
-      : ['kimi', '-S', `session_${spec.resume.cliSessionId}`, '-p', task],
+      : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,

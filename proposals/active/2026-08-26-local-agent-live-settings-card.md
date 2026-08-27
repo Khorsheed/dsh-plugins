@@ -1,7 +1,7 @@
 # local-agent 设置卡片（认证 + 常驻模式进设置页插件卡片）（local-agent-live-settings-card）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress
 - **最后更新**：2026-08-27
 - **查重结果**：已搜 `proposals/active/`（member-state、member-channel、delegation-api、mode-switcher、plugin-manager 等，均非同一意图）与 `proposals/closed/`（live-driver——本提案是它的配置面后续，不重复立项）。无重复，新建。
 - **官方依赖**：纯插件。设置卡片走官方 `settings.plugin.item` keyed 槽（`ui-settings-plugins` 声明，专为仓外插件设计）；设置数据走官方 `settingsNamespace()` / `settingsScope.bind`（revision-fenced 写 + 镜像订阅）。零 harness 改动。
@@ -132,4 +132,5 @@
 
 ## 实现记录
 
-（待填）
+- M1 kimi 样板已落地（分支 `feat/local-agent-live-settings-card`，worktree `dsh-plugins-wt-live-settings`）：host 侧 `src/live-switch.ts` 的 `LiveDriverSwitch`（settings 命名空间 `local-agent-kimi` 以 YAML config 作 composition base，三层合并零手写；热切换代 + 旧代 `drain()`——拒新轮、in-flight 不打断、空闲即回收；粒度切换走 `setLiveMirrorGranularity` 同代生效；换代门闩按成员回退 exec），driver 新增 `drain/hasRuntime/setLiveMirrorGranularity`，provider 改吃每成员解析器（直传兼容）。client 侧 core 抽共享 `ProviderAuthBlock`（section 逐字平价，M3 才撤 section），kimi 长出 client 半：`settings.plugin.item` 卡片（认证区块 + live 开关 + 粒度单选 + 覆盖徽标/恢复默认 + ⓘ 悬浮说明）。测试：kimi 105 绿（host 96 + client 9），core 174 绿（含平价套件），全仓 build/test 双 0，门禁全过。Agent Note：`.agents/notes/implemented/feature/2026-08-27-local-agent-live-settings-card-m1.md`。
+- M1 真机验收已过（2026-08-27，演示实例 `~/.dsh-live-demo`，端口 3291，link 到 worktree）：卡片在「插件配置」tab 渲染，认证区块显示已登录（凭证从 3080 scoped home 拷贝，全程未触碰）；ⓘ 悬浮出差异说明；开 live → `settings.yaml` 落 `live: true` + 覆盖徽标/恢复默认出现；委派一轮走 live（常驻 `kimi acp` 拉起，委派记录在 session/new 时即落 ACP session id，结果交付后进程常驻）；关 live → 进程数秒内被 drain 回收、设置落 `live:false`；再委派走 exec 一次性（跑完无残留进程）；开 live + 逐字流式 → 子会话实时出现 `assistant/chunk`（含 reasoning-delta）。claude-code 按约定豁免；codex/dsh 属 M2。

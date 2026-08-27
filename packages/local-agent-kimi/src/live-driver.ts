@@ -33,6 +33,8 @@
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -50,6 +52,8 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
+import { assistantEvent } from './session-mirror.ts'
+import type { KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -105,6 +109,11 @@ const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
   mirrorThrottleMs: DEFAULT_LIVE_MIRROR_THROTTLE_MS,
 }
 
+/** Settle-mirror quiescence: poll cadence, required consecutive stable reads, and the overall bound. */
+const SETTLE_MIRROR_POLL_MS = 300
+const SETTLE_MIRROR_STABLE_READS = 3
+const SETTLE_MIRROR_QUIESCE_MS = 3_000
+
 /** How much of the live event stream crosses into the child session. */
 export type KimiLiveMirrorGranularity = 'event' | 'token'
 
@@ -141,6 +150,26 @@ function thrown(value: unknown): Error {
  * when the process does not exit.
  */
 export const KIMI_LIVE_AUTH_FAILURE = /401|unauthorized|invalid api key|not authenticated|authentication required/i
+
+/**
+ * kimi ACP session ids are directory names (`session_<uuid>`); the family
+ * delegation record convention is the bare uuid (the exec path's settle-time
+ * stderr parse). Strip the prefix so live- and exec-written records stay
+ * interchangeable.
+ */
+export function bareKimiSessionId(acpSessionId: string): string {
+  return acpSessionId.startsWith('session_') ? acpSessionId.slice('session_'.length) : acpSessionId
+}
+
+/** The ACP-native form of a recorded kimi session id (idempotent). */
+export function acpKimiSessionId(recordedId: string): string {
+  return recordedId.startsWith('session_') ? recordedId : `session_${recordedId}`
+}
+
+/** The fold options for one granularity: token mode streams think/text as chunks, so the fold skips it. */
+function mirrorOptions(granularity: KimiLiveMirrorGranularity): KimiMirrorOptions | undefined {
+  return granularity === 'token' ? { skipAssistantContent: true } : undefined
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -379,6 +408,13 @@ export class KimiAcpLiveDriver {
   private readonly roundChains = new Map<string, Promise<unknown>>()
   private channelBrokenAt: number | undefined
   private disposed = false
+  /**
+   * Set by drain() (a settings-driven generation handoff): new rounds are
+   * refused so the provider falls back to exec, while in-flight rounds finish
+   * on their runtime undisturbed. Unlike `disposed`, the driver still serves
+   * what it already accepted.
+   */
+  private draining = false
   private readonly disposeController = new AbortController()
 
   constructor(
@@ -431,6 +467,41 @@ export class KimiAcpLiveDriver {
     for (const key of [...this.runtimes.keys()]) {
       await this.reclaim(key)
     }
+  }
+
+  /**
+   * True while the member's runtime exists or is being spawned. The settings
+   * controller gates a new generation on this: a fresh driver must not serve
+   * a member whose retiring generation still hosts the (same) kimi session.
+   */
+  hasRuntime(key: string): boolean {
+    return this.runtimes.has(key) || this.ensuring.has(key)
+  }
+
+  /**
+   * Live-update the mirror granularity for subsequent rounds. Granularity is
+   * read per round, so a settings change needs no runtime recycle.
+   */
+  setLiveMirrorGranularity(granularity: KimiLiveMirrorGranularity): void {
+    this.config.liveMirrorGranularity = granularity
+  }
+
+  /**
+   * Drain for a settings-driven generation handoff: refuse new rounds (the
+   * provider's catch falls back to exec), let every in-flight round finish on
+   * its runtime, then reclaim. Resolves when no runtime or spawn remains.
+   * Unlike disposeAll, in-flight work is never interrupted.
+   */
+  async drain(): Promise<void> {
+    this.draining = true
+    // Snapshot: rounds chain synchronously at startRound, so every accepted
+    // round is already in roundChains; anything later is refused.
+    const keys = new Set([...this.runtimes.keys(), ...this.ensuring.keys(), ...this.roundChains.keys()])
+    await Promise.all([...keys].map(async (key) => {
+      await (this.roundChains.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await (this.ensuring.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await this.reclaim(key)
+    }))
   }
 
   private ensureRuntime(spec: KimiLiveRoundSpec, signal: AbortSignal): Promise<KimiLiveRuntime> {
@@ -627,6 +698,11 @@ export class KimiAcpLiveDriver {
    * bookkeeping); cancel is `session/cancel` and the process survives.
    */
   async startRound(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
+    // A draining generation refuses new rounds BEFORE chaining so the
+    // provider's exec fallback does not queue behind an in-flight round.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
     const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
@@ -642,6 +718,12 @@ export class KimiAcpLiveDriver {
     const task = textTask(request.prompt)
     if (request.signal.aborted) {
       throw new Error('subagent-kimi: request was aborted before the run started')
+    }
+    // The drain race: the round chained before drain() but dequeued after it.
+    // Refuse so the provider falls back to exec instead of reusing a runtime
+    // the handoff is about to reclaim.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
     }
     if (this.disposed) {
       throw new Error('subagent-kimi: the live driver is disposed')
@@ -660,6 +742,12 @@ export class KimiAcpLiveDriver {
     let turnOpened = false
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
+    /** The round's accumulated thinking (token granularity; completes the stream's final message). */
+    let roundThink = ''
+    /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
+    const chunkSeqs: number[] = []
+    /** The usage the settle fold computed for this round (rides the combined final in token mode). */
+    let settleUsage: TokenUsage | undefined
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
 
@@ -669,7 +757,7 @@ export class KimiAcpLiveDriver {
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
       mirrorQueue = mirrorQueue.then(() =>
-        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId).catch((error: unknown) => {
+        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId), mirrorOptions(granularity)).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: live mirror pass failed: ${thrown(error).message}`)
         }))
     }
@@ -704,11 +792,14 @@ export class KimiAcpLiveDriver {
         if (text !== '') {
           roundText += text
           if (granularity === 'token') {
-            childSession.append('assistant/chunk', {
+            // The stream's block layout matches the combined final message:
+            // reasoning at index 0, reply text at index 1.
+            const event = childSession.append('assistant/chunk', {
               turn,
               step: 1,
-              chunk: { type: 'text-delta', index: 0, text },
+              chunk: { type: 'text-delta', index: 1, text },
             })
+            chunkSeqs.push(event.seq)
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
           }
         }
@@ -716,11 +807,13 @@ export class KimiAcpLiveDriver {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
-          childSession.append('assistant/chunk', {
+          roundThink += text
+          const event = childSession.append('assistant/chunk', {
             turn,
             step: 1,
             chunk: { type: 'reasoning-delta', index: 0, text },
           })
+          chunkSeqs.push(event.seq)
         }
       }
       // Every update (chunks, tool calls, plans) triggers a throttled mirror
@@ -748,14 +841,21 @@ export class KimiAcpLiveDriver {
               throw new Error('subagent-kimi live: session/new returned no session id')
             }
             rt.sessionId = response.sessionId
-            spec.onCliSessionId?.(rt.sessionId)
+            // The record convention is the bare uuid (the exec path's
+            // settle-time parse); the ACP id is a directory name
+            // (`session_<uuid>`). Strip before recording so live- and
+            // exec-written records stay interchangeable.
+            spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
           } else {
+            // Resume: the record may be bare (exec-written) or carry the ACP
+            // prefix (legacy live records); the wire always wants the
+            // ACP-native form.
+            rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
             await rt.peer.request('session/load', {
-              sessionId: spec.resume.cliSessionId,
+              sessionId: rt.sessionId,
               cwd: spec.cwd,
               mcpServers: member?.mcpServers ?? [],
             })
-            rt.sessionId = spec.resume.cliSessionId
           }
         }
       } catch (error) {
@@ -769,8 +869,15 @@ export class KimiAcpLiveDriver {
       }
       // The turn boundary opens before the prompt goes out (exec parity: the
       // exec path opens at spawn). session/prompt has no separate accept ack —
-      // the request IS the turn.
+      // the request IS the turn. The prompt's user/message lands here too
+      // (codex/claude live parity): immediately visible instead of waiting
+      // for the wire flush + mirror pass — which would render the streamed
+      // think/text ABOVE the question. The fold skips it (turn+text dedupe).
       childSession.append('turn/start', { turn })
+      childSession.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: task }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
       turnOpened = true
     })()
 
@@ -841,14 +948,47 @@ export class KimiAcpLiveDriver {
       return settled
     })
 
-    // Settle reconciliation: one authoritative final mirror pass (the ACP
-    // runtime flushed its wire.jsonl by turn end), then re-arm the reaper.
-    void result.then(async () => {
+    // Settle reconciliation: the kimi wire flushes asynchronously past the
+    // prompt response (prompt lines early, the answer by turn end), so the
+    // final mirror folds until two consecutive reads see no growth — bounded,
+    // so a stuck flush cannot pin the round. Then re-arm the reaper.
+    void result.then(async (settled) => {
       try {
         if (turnOpened) {
           await mirrorQueue.catch(() => {})
-          const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId)
-          localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+          const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
+          let lastTotal = -1
+          let stableReads = 0
+          const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
+          for (;;) {
+            const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(granularity))
+            if (delta.usage !== undefined) settleUsage = delta.usage
+            localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+            stableReads = delta.total === lastTotal ? stableReads + 1 : 0
+            lastTotal = delta.total
+            if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
+            if (Date.now() >= deadline) break
+            await delay(SETTLE_MIRROR_POLL_MS)
+          }
+          // Token granularity: complete the step-1 stream with ONE combined
+          // final message at the SAME (turn, step) — the official projection
+          // replaces the stream with it (no duplicated content, no dangling
+          // '已停止' badge) and surfaces the usage. A non-completed round is
+          // marked interrupted, so a cancelled turn reads 已停止 legitimately.
+          if (granularity === 'token') {
+            const blocks: ContentBlock[] = []
+            if (roundThink.trim() !== '') blocks.push({ type: 'reasoning', text: roundThink })
+            if (roundText.trim() !== '') blocks.push({ type: 'text', text: roundText })
+            if (blocks.length > 0) {
+              childSession.append('assistant/message', {
+                turn,
+                step: 1,
+                message: assistantEvent(blocks),
+                ...settleUsage !== undefined ? { usage: settleUsage } : {},
+                ...settled.stopReason === 'completed' ? {} : { interrupted: true },
+              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+            }
+          }
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
