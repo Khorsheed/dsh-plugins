@@ -1,15 +1,20 @@
 /**
  * The detail pane: the selected file's diff or current content, mirroring
- * ui-file-preview's FilePreviewPane shape (a `diff | content` view toggle,
- * official CodeBlock for content, this repo's DiffView for patches). Files
- * with no change record (repo browse) and untracked files only offer the
- * content view.
+ * ui-file-preview's FilePreviewPane shape. The header is a two-line title bar
+ * (filename + language tag on the first line with the preview/source toggle
+ * and copy button; the relative path on the second line). The content view
+ * renders Markdown (.md/.markdown/.mdx) as a rendered preview by default via
+ * the official MarkdownText, with a 预览/源码 toggle back to the raw code
+ * block. Files with no change record (repo browse) and untracked files only
+ * offer the content view.
  */
-import type { ReactNode } from 'react'
-import { CodeBlock, IconChevronLeftOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useState, type ReactNode } from 'react'
+import {
+  CodeBlock, IconChevronLeftOutline14, IconCopyOutline16, MarkdownText,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile, FileDiffResult, LocalImageResult, ReadFileResult } from '../types.ts'
-import { languageFor } from './language.ts'
+import { basenameOf, dirnameOf, isMarkdown, languageFor } from './language.ts'
 import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
 import { ImagePreview } from './ImagePreview.tsx'
@@ -39,6 +44,8 @@ export interface DetailPaneProps {
   error: string | null
   /** Called when the view toggle changes. */
   onViewChange: (view: DetailView) => void
+  /** Copy the raw content to the clipboard; resolves true only on acceptance. */
+  onCopy?: ((text: string) => Promise<boolean>) | undefined
   /** When given and a file is selected, renders a back button to leave the
    * file view (e.g. back to the commit's file list). */
   onBack?: (() => void) | undefined
@@ -53,14 +60,24 @@ export interface DetailPaneProps {
 
 /** The detail pane. */
 export function DetailPane({
-  path, hasDiff, untracked, deleted, detailView, diff, content, image, loading, error, onViewChange, onBack, embedded = false, t,
+  path, hasDiff: _hasDiff, untracked, deleted, detailView, diff, content, image, loading, error, onViewChange, onBack, onCopy, embedded = false, t,
 }: DetailPaneProps): ReactNode {
+  void _hasDiff
+  // Preview-vs-source for the content view; a Markdown file defaults to the
+  // rendered preview, everything else to the raw source.
+  const [showPreview, setShowPreview] = useState<boolean | null>(null)
+  // Post-copy "copied" confirmation window.
+  const [copied, setCopied] = useState(false)
+
   if (path === '') {
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
   }
 
-  const diffDisabled = !hasDiff
   const contentDisabled = deleted
+  const markdown = isMarkdown(path)
+  // A null showPreview means "default": Markdown → preview, else source.
+  const sourceMode = markdown ? showPreview === false : showPreview !== true
+  const previewMode = !sourceMode
 
   const body = ((): ReactNode => {
     if (loading) return <div className={css.placeholder}>{t('state.loading')}</div>
@@ -69,55 +86,102 @@ export function DetailPane({
     if (image !== null && image !== undefined) {
       return <ImagePreview path={path} src={image.dataUrl} />
     }
-    const lang = languageFor(path)
     if (untracked) {
       if (content === null) return <div className={css.placeholder}>{t('detail.untracked')}</div>
+      const raw = content.content
       return (
         <div className={css.untrackedView}>
           <div className={css.untrackedNote}>{t('detail.untrackedNote')}</div>
-          <CodeBlock className={css.code} code={content.content} lang={lang} />
+          {markdown
+            ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
+            : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
         </div>
       )
     }
     if (detailView === 'diff') {
       return diff === null ? <div className={css.placeholder}>{t('detail.noSelection')}</div> : <DiffView diff={diff.diff} t={t} />
     }
-    return content === null
-      ? <div className={css.placeholder}>{t('state.loading')}</div>
-      : <CodeBlock className={css.code} code={content.content} lang={lang} />
+    if (content === null) return <div className={css.placeholder}>{t('state.loading')}</div>
+    const raw = content.content
+    return previewMode
+      ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
+      : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />
   })()
+
+  const basename = basenameOf(path)
+  const dirname = dirnameOf(path)
+  const lang = languageFor(path)
+
+  const doCopy = (): void => {
+    if (content === null || onCopy === undefined) return
+    void onCopy(content.content).then(ok => {
+      if (ok) {
+        setCopied(true)
+        window.setTimeout(() => { setCopied(false) }, 1200)
+      }
+    })
+  }
 
   return (
     <div className={css.root}>
-      <div className={`${css.header} ${embedded ? css.headerEmbedded : ''}`}>
-        {onBack !== undefined && path !== '' && (
-          <button type="button" className={css.back} title={t('detail.back')} onClick={onBack}>
-            <IconChevronLeftOutline14 />
-          </button>
-        )}
-        <span className={css.path} title={path}>{path}</span>
-        <span className={css.toggle}>
-          {/* The diff toggle only shows when the file actually has a change
-              record — a pristine repository file (repo browse) has no diff,
-              so the toggle is hidden rather than permanently grayed. */}
-          {!diffDisabled && (
-            <button
-              type="button"
-              className={`${css.viewButton} ${detailView === 'diff' ? css.viewActive : ''}`}
-              onClick={() => { onViewChange('diff') }}
-            >
-              {t('detail.diff')}
+      <div className={`${css.titleBar} ${embedded ? css.headerEmbedded : ''}`}>
+        <div className={css.titleRow}>
+          {onBack !== undefined && (
+            <button type="button" className={css.back} title={t('detail.back')} onClick={onBack}>
+              <IconChevronLeftOutline14 />
             </button>
           )}
-          <button
-            type="button"
-            className={`${css.viewButton} ${detailView === 'content' ? css.viewActive : ''}`}
-            disabled={contentDisabled}
-            onClick={() => { onViewChange('content') }}
-          >
-            {t('detail.content')}
-          </button>
-        </span>
+          <span className={css.title} title={basename}>
+            {basename}
+            {markdown && <span className={css.langTag}>MD</span>}
+            {lang !== undefined && !markdown && <span className={css.langTag}>{lang}</span>}
+          </span>
+          <span className={css.titleActions}>
+            {detailView === 'diff' ? (
+              <span className={css.toggle}>
+                <button
+                  type="button"
+                  className={`${css.viewButton} ${detailView === 'diff' ? css.viewActive : ''}`}
+                  onClick={() => { onViewChange('diff') }}
+                >
+                  {t('detail.diff')}
+                </button>
+                <button
+                  type="button"
+                  className={`${css.viewButton} ${detailView !== 'diff' ? css.viewActive : ''}`}
+                  disabled={contentDisabled}
+                  onClick={() => { onViewChange('content') }}
+                >
+                  {t('detail.content')}
+                </button>
+              </span>
+            ) : (
+              <span className={css.seg}>
+                <button
+                  type="button"
+                  className={`${css.segButton} ${previewMode ? css.segActive : ''}`}
+                  onClick={() => { setShowPreview(true) }}
+                >
+                  {t('detail.preview')}
+                </button>
+                <button
+                  type="button"
+                  className={`${css.segButton} ${sourceMode ? css.segActive : ''}`}
+                  onClick={() => { setShowPreview(false) }}
+                >
+                  {t('detail.source')}
+                </button>
+              </span>
+            )}
+            {onCopy !== undefined && content !== null && (
+              <button type="button" className={css.copy} title={copied ? t('action.copied') : t('action.copy')} onClick={doCopy}>
+                <IconCopyOutline16 />
+                {copied && <span className={css.copied}>{t('action.copied')}</span>}
+              </button>
+            )}
+          </span>
+        </div>
+        {dirname !== '' && <div className={css.pathLine} title={path}>{dirname}</div>}
       </div>
       <div className={css.body}>{body}</div>
     </div>

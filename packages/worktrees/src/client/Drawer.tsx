@@ -606,6 +606,7 @@ export function WorktreesDrawer({
                 loading={loading}
                 error={error}
                 onViewChange={actions.setDetailView}
+                onCopy={(text) => copyBranch(text)}
                 t={t}
               />
             ) : (
