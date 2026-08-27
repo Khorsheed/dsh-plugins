@@ -500,6 +500,55 @@ describe('kimi live driver rounds', () => {
     await on.driver.disposeAll()
   })
 
+  it('token granularity: the settle completes the stream with ONE combined final message (no duplicate fold)', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-kimi-token-final'))
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '文件建好了')
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '想一下' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '建好了' } })
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    // One final at the stream's own (turn, step): the projection replaces the
+    // stream with it — no duplicated content, no dangling interrupted badge.
+    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
+      { type: 'reasoning', text: '想一下' },
+      { type: 'text', text: '文件建好了' },
+    ])
+    expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-kimi-token-abort'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ hang: true }) }))
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    const fake = m.spawns[0]!.fake!
+    // Stream one partial chunk, then cancel.
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '写到一半' } })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    fake.resolvePrompt({ stopReason: 'cancelled' })
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    await m.driver.disposeAll()
+  })
+
   it('settles error when session/new fails (auth) and reclaims the runtime', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-9'))

@@ -29,7 +29,7 @@ live 设置卡片的真机验收（demo 3291）暴露了 kimi live 模式的三�
 ## Consequences
 
 - live 子会话现在正确显示：成员提示词恰好一条、带用量的折叠答案（UI 渲染 token 与缓存命中）、委派记录恢复携带镜像 offset。
-- **已知遗留（本次未修）：** `liveMirrorGranularity: 'token'` 下，流式 chunk 与 settle 折叠重复渲染同一份内容，且硬编码 `step: 1` 的 chunk 流永不闭合——UI 在悬挂的流上显示「已停止」徽标。官方投影只有流与消息同 step 才合并；让流的 step 与折叠对齐（或 token 模式下折叠跳过正文）是后续项。默认 `event` 粒度不受影响。
+- **token 粒度流式收尾（已修，同分支）：** kimi live driver 现在在 settle 时用**一条**合成 `assistant/message` 打在流式的同一个 `(turn, step)` 上完成流（内容 `[reasoning, text]`，usage 取自折叠 delta，`sourceEventSeqs` 指向 chunk seq）——官方投影用它整块替换流，内容不再重复、悬挂流的「已停止」徽标消失。折叠层新增 `skipAssistantContent`（用户/工具行照常折叠，窗口 usage 改由 delta 返回）。非 completed 轮的合成消息带 `interrupted: true`，被取消的轮名正言顺显示「已停止」。流式块布局与最终消息一致：reasoning index 0、text index 1。
 - codex/claude-code 的 live driver 在轮开始自写 `user/message`（不共用此折叠），但 M2 应拿根因 2、3a 复查它们的 settle 镜像。
 
 ## Testing

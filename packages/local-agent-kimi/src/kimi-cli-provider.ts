@@ -33,7 +33,7 @@ import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
-import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.ts'
+import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -451,13 +451,14 @@ export async function mirrorKimiDelta(
   childSession: Session,
   homeDir: string,
   kimiSessionId: string | undefined,
+  options?: KimiMirrorOptions,
 ): Promise<KimiMirrorDelta> {
   // Degrade without the localAgent service: the transcript still mirrors (the
   // pre-live-mirror behavior for a bare context), only the offset bookkeeping
   // and progress reporting drop out.
   const localAgent = ctx.get('localAgent')
   const fromLines = localAgent?.kimiMirroredLines(childSession.id) ?? 0
-  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines)
+  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines, options)
   if (delta.texts.length === 0) return delta
   localAgent?.setKimiMirroredLines(childSession.id, delta.total)
   for (const text of delta.texts) {
