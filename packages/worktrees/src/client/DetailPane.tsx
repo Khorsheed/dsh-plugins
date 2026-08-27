@@ -8,10 +8,11 @@
 import type { ReactNode } from 'react'
 import { CodeBlock, IconChevronLeftOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ChangedFile, FileDiffResult, ReadFileResult } from '../types.ts'
+import type { ChangedFile, FileDiffResult, LocalImageResult, ReadFileResult } from '../types.ts'
 import { languageFor } from './language.ts'
 import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
+import { ImagePreview } from './ImagePreview.tsx'
 import css from './DetailPane.module.css'
 
 /** Props of the detail pane. */
@@ -30,6 +31,8 @@ export interface DetailPaneProps {
   diff: FileDiffResult | null
   /** The fetched content (null until loaded). */
   content: ReadFileResult | null
+  /** The fetched inline image (null unless the selected file is an image). */
+  image?: LocalImageResult | null
   /** Whether a fetch is in flight. */
   loading: boolean
   /** Human-readable fetch failure, or null. */
@@ -50,7 +53,7 @@ export interface DetailPaneProps {
 
 /** The detail pane. */
 export function DetailPane({
-  path, hasDiff, untracked, deleted, detailView, diff, content, loading, error, onViewChange, onBack, embedded = false, t,
+  path, hasDiff, untracked, deleted, detailView, diff, content, image, loading, error, onViewChange, onBack, embedded = false, t,
 }: DetailPaneProps): ReactNode {
   if (path === '') {
     return <div className={css.placeholder}>{t('detail.noSelection')}</div>
@@ -63,6 +66,9 @@ export function DetailPane({
     if (loading) return <div className={css.placeholder}>{t('state.loading')}</div>
     if (error !== null) return <div className={css.placeholder}>{t('state.error', { message: error })}</div>
     if (deleted) return <div className={css.placeholder}>{t('detail.deleted')}</div>
+    if (image !== null && image !== undefined) {
+      return <ImagePreview path={path} src={image.dataUrl} />
+    }
     const lang = languageFor(path)
     if (untracked) {
       if (content === null) return <div className={css.placeholder}>{t('detail.untracked')}</div>

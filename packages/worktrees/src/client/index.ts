@@ -22,7 +22,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import worktreesRemote from '@khorsheed/dsh-worktrees/remote'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  FileDiffRequest, ListLocalDirectoryRequest, ReadFileAtCommitRequest, ReadFileRequest, ReadLocalFileRequest,
+  FileDiffRequest, ListLocalDirectoryRequest, ReadFileAtCommitRequest, ReadFileRequest,
+  ReadLocalFileRequest, ReadLocalImageRequest, ReadRepoImageRequest,
 } from '../types.ts'
 import { WorktreesBadge } from './Badge.tsx'
 import { WorktreesDrawer } from './Drawer.tsx'
@@ -119,6 +120,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         fetchFileDiff: (sid: SessionId, request: FileDiffRequest) => remote.fileDiff(sid, request),
         fetchReadFile: (sid: SessionId, request: ReadFileRequest) => remote.readFile(sid, request),
         fetchReadFileAtCommit: (sid: SessionId, request: ReadFileAtCommitRequest) => remote.readFileAtCommit(sid, request),
+        fetchReadRepoImage: (sid: SessionId, request: ReadRepoImageRequest) => remote.readRepoImage(sid, request),
         isLoopback: connection.isLoopback,
         hooks: { hostDescription: connection.hostDescription },
         openExternal: (path) => { openOnHost(path) },
@@ -138,6 +140,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       return {
         listLocalDirectory: (request: ListLocalDirectoryRequest) => remote.listLocalDirectory(request),
         readLocalFile: (request: ReadLocalFileRequest) => remote.readLocalFile(request),
+        readLocalImage: (request: ReadLocalImageRequest) => remote.readLocalImage(request),
         listWorkspaces,
         pickWorkspace,
         isLoopback: connection.isLoopback,

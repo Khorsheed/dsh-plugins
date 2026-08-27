@@ -121,6 +121,48 @@ export interface ReadFileResult {
   content: string
 }
 
+/** MIME types this plugin previews inline as images. */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+}
+
+/** Whether a path (by extension) is an image this plugin previews inline. */
+export function isImagePath(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  return ext in IMAGE_EXTENSIONS
+}
+
+/** MIME for a recognized image path, or null when not a known image. */
+export function imageMimeOf(path: string): string | null {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  return IMAGE_EXTENSIONS[ext] ?? null
+}
+
+/** An inline image preview read (base64 data URL + MIME). */
+export interface LocalImageResult {
+  /** base64 data URL (`data:<mime>;base64,<...>`). */
+  dataUrl: string
+  /** The image's content type. */
+  mime: string
+}
+
+/** Read a repo-relative file as an inline image (the repo browser's data plane). */
+export interface ReadRepoImageRequest {
+  path: string
+}
+
+/** Read an absolute local file as an inline image (the local-browser data plane). */
+export interface ReadLocalImageRequest {
+  path: string
+}
+
 /** Local-directory listing request (absolute path, git-agnostic). */
 export interface ListLocalDirectoryRequest {
   /** Absolute local directory path to list. */
@@ -502,6 +544,28 @@ export class WorktreesService {
   }
 
   /**
+   * Read a repo-relative file as an inline image (the repo browser's data
+   * plane). Reads the working-tree bytes and encodes them as a base64 data
+   * URL so the client can render the image directly. Callers must gate by
+   * {@link isImagePath}; a non-image path still returns a data URL with the
+   * MIME guessed from its extension.
+   * @param cwd - session working directory.
+   * @param path - repo-relative path.
+   * @returns a base64 data URL plus the content type.
+   */
+  async readRepoImage(cwd: string, path: string): Promise<LocalImageResult> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const safe = assertSafePath(path)
+    const buffer = await readFile(join(repo, ...safe.split('/')))
+    if (buffer.byteLength > MAX_CONTENT_BYTES) {
+      throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
+    }
+    const mime = imageMimeOf(path) ?? 'application/octet-stream'
+    return { dataUrl: `data:${mime};base64,${Buffer.from(buffer).toString('base64')}`, mime }
+  }
+
+  /**
    * List one local directory as a plain file-system view — the git-agnostic
    * browser's data plane. Unlike the git data face, no repository is involved:
    * the caller browses any absolute local path (including untracked, ignored,
@@ -568,6 +632,29 @@ export class WorktreesService {
     }
     const binary = text.length > 0 && controls / text.length > WorktreesService.BINARY_THRESHOLD
     return { content: binary ? null : text, complete, size: info.size }
+  }
+
+  /**
+   * Read one local file as an inline image — the git-agnostic browser's image
+   * plane. Reads the bytes and encodes them as a base64 data URL so the client
+   * can render the image directly. The path is absolute and independent of any
+   * session workspace; callers gate by {@link isImagePath}.
+   * @param path - absolute local file path.
+   * @returns a base64 data URL plus the content type.
+   */
+  async readLocalImage(path: string): Promise<LocalImageResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => safe)
+    const info = await stat(canonical).catch(() => null)
+    if (info === null || info.isDirectory()) {
+      throw new Error(`worktrees: not a file: ${path}`)
+    }
+    const buffer = await readFile(canonical)
+    if (buffer.byteLength > MAX_CONTENT_BYTES) {
+      throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
+    }
+    const mime = imageMimeOf(path) ?? 'application/octet-stream'
+    return { dataUrl: `data:${mime};base64,${Buffer.from(buffer).toString('base64')}`, mime }
   }
 
   /** Uncommitted changed-file count in one worktree (0 when clean/transient). */
