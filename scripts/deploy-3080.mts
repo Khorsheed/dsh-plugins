@@ -131,9 +131,14 @@ try {
     m.tgzName = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}+${buildStamp}.tgz`
     copyFileSync(join(outDir, canonical), join(TARBALLS, m.tgzName))
     // Prune older timestamped copies of the same package — they exist only to
-    // bust the install cache of the moment they were deployed.
+    // bust the install cache of the moment they were deployed. The name prefix
+    // must end at a VERSION digit: `khorsheed-dsh-local-agent-` is a prefix of
+    // `khorsheed-dsh-local-agent-codex-…`, and a bare startsWith pruned the
+    // family's tarballs alive in the profile (ENOENT at profile install).
+    const base = m.name.replace('@khorsheed/', 'khorsheed-')
+    const prunePattern = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d.*\\+.*\\.tgz$`)
     for (const f of readdirSync(TARBALLS)) {
-      if (f !== m.tgzName && f.startsWith(`${m.name.replace('@khorsheed/', 'khorsheed-')}-`) && f.includes('+')) rmSync(join(TARBALLS, f), { force: true })
+      if (f !== m.tgzName && prunePattern.test(f)) rmSync(join(TARBALLS, f), { force: true })
     }
     m.tgzPath = join(TARBALLS, m.tgzName)
   }
