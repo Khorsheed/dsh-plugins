@@ -84,6 +84,35 @@ describe('claudeAuthenticated credential file', () => {
     const home = homeWithCredentialFile(Date.now() - 1_000)
     await expect(claudeAuthenticated(home)).resolves.toBe(false)
   })
+
+  it('accepts an expired access token while its refresh token is still valid (the CLI refreshes on use)', async () => {
+    const home = tempHome('claude-credfile-refresh-')
+    writeFileSync(join(home, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: { expiresAt: Date.now() - 1_000, refreshTokenExpiresAt: Date.now() + 3_600_000 },
+    }))
+    await expect(claudeAuthenticated(home)).resolves.toBe(true)
+  })
+
+  it('mirrors a fresher keychain credential over the file before judging (refresh-on-run case)', async () => {
+    const home = tempHome('claude-credfile-stale-')
+    writeFileSync(join(home, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: { expiresAt: Date.now() - 1_000 },
+    }))
+    const fresh = JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + 3_600_000 } })
+    const savedExec = internals.exec
+    internals.exec = (async (file: string, args: string[]) => {
+      expect(file).toBe('security')
+      expect(args[0]).toBe('find-generic-password')
+      return { stdout: fresh + '\n', stderr: '' }
+    }) as never
+    try {
+      await expect(claudeAuthenticated(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(fresh)
+    } finally {
+      internals.exec = savedExec
+    }
+  })
 })
 describe('keychain credential sync', () => {
   const realExec = internals.exec
