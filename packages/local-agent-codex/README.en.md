@@ -6,7 +6,7 @@ Delegate coding tasks from any dsh agent preset to your locally installed Codex 
 
 ## Features
 
-- **Delegate from any preset** — the `subagent_codex_local` tool mounts at the profile root; no per-preset setup.
+- **Delegate from any preset** — the `subagent_codex` tool mounts at the profile root; no per-preset setup.
 - **Scoped-home isolation** — all Codex state lives in `$DSH_HOME/local-agent/codex`, separate from your `~/.codex`.
 - **In-session login** — device-code `/codex login`, with auth status and sign-out under Settings → 本地 Agent.
 - **Resume a thread** — pass `resume="<childSessionId>"` to continue the same codex thread in the same dsh child session.
@@ -76,7 +76,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 <details>
 <summary>Internals (click to expand)</summary>
 
-**Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, device-code login, rollout-file session records) and mounts `subagent_codex_local` at the profile root; the `codex-local` one-shot provider spawns `codex exec` under that home. The settings section ships with the family core's `./client` half; the core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
+**Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, device-code login, rollout-file session records) and mounts `subagent_codex` at the profile root; the `codex-local` one-shot provider spawns `codex exec` under that home. The settings section ships with the family core's `./client` half; the core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
 
 **Login and credentials.** `/codex login` shows the device-code URL in-session and polls in the background; credentials land in the scoped home on authorization. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.
 

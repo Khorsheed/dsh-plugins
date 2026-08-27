@@ -344,3 +344,42 @@ describe('mirrorDshLiveEvent', () => {
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
   })
 })
+
+describe('mirrorDshSession persistence', () => {
+  it('persists only a standalone child session (a live session’s write-behind owns durability)', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-persist', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('任务', 'user'),
+      assistantLine(1, '回复'),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const appends: string[] = []
+    const persistence = { append: async (id: string) => { appends.push(id) } }
+    const standaloneCtx = {
+      get: (name: string) => name === 'sessionPersistence' ? persistence : undefined,
+      logger: { warn: () => undefined },
+    } as unknown as Context
+    const standalone = childWithRounds('child-persist', 1)
+    await mirrorDshSession(standaloneCtx, standalone, home, 'child-persist')
+    expect(appends).toEqual(['child-persist'])
+
+    // A session live in the sessions service must NOT get the redundant
+    // full-list append: its own write-behind pipeline is durable, and the
+    // append would violate the store's contiguous-seq contract.
+    const liveCtx = {
+      get: (name: string) => {
+        if (name === 'sessions') return { get: () => ({}) }
+        if (name === 'sessionPersistence') return persistence
+        return undefined
+      },
+      logger: { warn: () => undefined },
+    } as unknown as Context
+    const live = childWithRounds('child-persist', 1)
+    const delta = await mirrorDshSession(liveCtx, live, home, 'child-persist')
+    expect(delta.texts.length).toBeGreaterThan(0)
+    expect(live.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(appends).toEqual(['child-persist'])
+  })
+})

@@ -15,9 +15,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { ClaudeCliProvider } from './claude-cli-provider.ts'
-import { DEFAULT_LIVE_IDLE_MS, ClaudeLiveDriver } from './live-driver.ts'
+import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
+import { LiveDriverSwitch } from './live-switch.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome } from './provision.ts'
 
@@ -25,7 +27,7 @@ import { claudeLogout, provisionClaudeHome } from './provision.ts'
 export const name = 'local-agent-claude-code'
 
 /** Services required before the harness can register. */
-export const inject = ['localAgent', 'subagents', 'subprocess']
+export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
 /** Plugin config: the permission mode fresh delegations default to, plus the live driver. */
 export interface Config {
@@ -84,6 +86,19 @@ export const Config: z<Config> = z.object({
 export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 'skip'
 
 /**
+ * Settings namespace for the settings-page card. The Cordis config feeds the
+ * composition `base` layer, so a field absent from the user layer inherits the
+ * YAML value — the card only ever stores deliberate overrides.
+ */
+export const CLAUDE_SETTINGS_NAMESPACE = settingsNamespace('local-agent-claude-code')
+
+/** The card's schema; field defaults are the innermost layer below `base`. */
+const CLAUDE_SETTINGS_SCHEMA = z.object({
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+})
+
+/**
  * Register the Claude Code harness into the local-agent registry.
  * @param ctx - plugin context carrying the registry.
  * @param config - plugin config; `permissionMode` selects the `claude -p` policy.
@@ -98,18 +113,24 @@ export function apply(ctx: Context, config: Config): void {
     void provisionClaudeHome(homeDir, config.proxyUrl).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-claude-code: scoped home provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    // The live driver owns every resident runtime of this generation; its
-    // disposal runs with the effect teardown, so no process survives an
-    // unload.
-    const liveDriver = config.live === true
-      ? new ClaudeLiveDriver(ctx, {
-        ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
-        ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
-        ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+    // The live driver is settings-driven: the settings card's toggle (user
+    // layer over the YAML composition base) swaps driver generations without
+    // a reload. Toggling OFF drains the retiring generation — new rounds fall
+    // back to exec, in-flight rounds finish on their runtime, idle runtimes
+    // are reclaimed at once. A granularity change needs no new generation:
+    // the driver reads it per round.
+    const scope = ctx.settings.register(CLAUDE_SETTINGS_NAMESPACE, CLAUDE_SETTINGS_SCHEMA, {
+      base: {
+        ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
-      })
-      : undefined
-    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveDriver))
+      },
+    })
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, {
+      ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+    })
+    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve))
     const disposeHarness = ctx.localAgent.register({
       name: 'claude-code',
       displayName: 'Claude Code',
@@ -155,7 +176,7 @@ export function apply(ctx: Context, config: Config): void {
     return () => {
       disposeProvider()
       disposeHarness()
-      void liveDriver?.disposeAll()
+      liveSwitch.dispose()
     }
   }, 'local-agent-claude-code: harness')
 }

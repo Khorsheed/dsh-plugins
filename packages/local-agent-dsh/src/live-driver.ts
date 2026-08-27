@@ -49,7 +49,7 @@ import {
   resolveApiKey,
 } from './dsh-cli-provider.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
-import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
+import { mirrorDshLiveEvent, mirrorDshSession, persistIfStandalone, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -278,7 +278,9 @@ class LiveRuntime {
 
 /**
  * The live driver owns every resident runtime of this provider generation.
- * Created only when `live: true`; disposed with the toggle (disposeAll).
+ * The LiveDriverSwitch builds a generation when the settings resolve live on,
+ * retires one with {@link DshLiveDriver.drain} (never interrupts), and
+ * disposes with the enabled toggle (disposeAll).
  */
 export class DshLiveDriver {
   private readonly runtimes = new Map<string, LiveRuntime>()
@@ -290,6 +292,13 @@ export class DshLiveDriver {
   /** When the channel last failed its spawn/handshake probe (breaker with cooldown). */
   private channelBrokenAt: number | undefined
   private disposed = false
+  /**
+   * Set by drain() (a settings-driven generation handoff): new rounds are
+   * refused so the provider falls back to exec, while in-flight rounds finish
+   * on their runtime undisturbed. Unlike `disposed`, the driver still serves
+   * what it already accepted.
+   */
+  private draining = false
   /** Aborts in-flight spawns when the driver is disposed mid-handshake. */
   private readonly disposeController = new AbortController()
 
@@ -349,6 +358,41 @@ export class DshLiveDriver {
     for (const key of [...this.runtimes.keys()]) {
       await this.reclaim(key)
     }
+  }
+
+  /**
+   * True while the member's runtime exists or is being spawned. The settings
+   * controller gates a new generation on this: a fresh driver must not serve
+   * a member whose retiring generation still hosts the (same) sub-dsh session.
+   */
+  hasRuntime(key: string): boolean {
+    return this.runtimes.has(key) || this.ensuring.has(key)
+  }
+
+  /**
+   * Live-update the mirror granularity for subsequent rounds. Granularity is
+   * read per round, so a settings change needs no runtime recycle.
+   */
+  setLiveMirrorGranularity(granularity: DshLiveMirrorGranularity): void {
+    this.config.liveMirrorGranularity = granularity
+  }
+
+  /**
+   * Drain for a settings-driven generation handoff: refuse new rounds (the
+   * provider's catch falls back to exec), let every in-flight round finish on
+   * its runtime, then reclaim. Resolves when no runtime or spawn remains.
+   * Unlike disposeAll, in-flight work is never interrupted.
+   */
+  async drain(): Promise<void> {
+    this.draining = true
+    // Snapshot: rounds chain synchronously at startRound, so every accepted
+    // round is already in roundChains; anything later is refused.
+    const keys = new Set([...this.runtimes.keys(), ...this.ensuring.keys(), ...this.roundChains.keys()])
+    await Promise.all([...keys].map(async (key) => {
+      await (this.roundChains.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await (this.ensuring.get(key) ?? Promise.resolve()).catch(() => undefined)
+      await this.reclaim(key)
+    }))
   }
 
   /**
@@ -477,6 +521,11 @@ export class DshLiveDriver {
    * the earlier round forever.
    */
   async startRound(request: SubagentStartRequest, spec: DshLiveRoundSpec): Promise<SubagentRun> {
+    // A draining generation refuses new rounds BEFORE chaining so the
+    // provider's exec fallback does not queue behind an in-flight round.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
     const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
@@ -503,6 +552,12 @@ export class DshLiveDriver {
     if (request.signal.aborted) {
       throw new Error('subagent-dsh: request was aborted before the run started')
     }
+    // The drain race: the round chained before drain() but dequeued after it.
+    // Refuse so the provider falls back to exec instead of reusing a runtime
+    // the handoff is about to reclaim.
+    if (this.draining) {
+      throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    }
     if (this.disposed) {
       throw new Error('subagent-dsh: the live driver is disposed')
     }
@@ -525,8 +580,7 @@ export class DshLiveDriver {
     const bufferedEvents: SessionEvent[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
-      persistQueue = persistQueue.then(() =>
-        this.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events))
+      persistQueue = persistQueue.then(() => persistIfStandalone(this.ctx, childSession))
     }
 
     const requestCancel = (): void => {

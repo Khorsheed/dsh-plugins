@@ -4,7 +4,7 @@
 
 [English](README.en.md) | 中文
 
-[local-agent 家族](../local-agent/README.zh.md)的家族自有委派工具:各 harness bundle 用本工具替换官方 `@deepseek-ai/dsh-tool-subagent` 行,`toolName` 保持不变(`subagent_kimi`、`subagent_codex_local`、`subagent_claude_code_local`),同时新增可续聊的委派。
+[local-agent 家族](../local-agent/README.zh.md)的家族自有委派工具:各 harness bundle 用本工具替换官方 `@deepseek-ai/dsh-tool-subagent` 行,`toolName` 保持不变(`subagent_kimi`、`subagent_codex`、`subagent_claude_code`),同时新增可续聊的委派。
 
 ## 特性
 

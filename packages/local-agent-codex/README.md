@@ -6,7 +6,7 @@
 
 ## 特性
 
-- **任意 preset 皆可委派**——`subagent_codex_local` 工具挂在 profile 根，无需逐 preset 配置。
+- **任意 preset 皆可委派**——`subagent_codex` 工具挂在 profile 根，无需逐 preset 配置。
 - **作用域目录隔离**——Codex 的全部状态留在 `$DSH_HOME/local-agent/codex`，与你的 `~/.codex` 互不干扰。
 - **会话内登录**——device-code `/codex login`，设置 → 本地 Agent 显示认证状态并提供退出登录按钮。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程。
@@ -76,7 +76,7 @@ model_provider = "dsh-router"
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**bundle 组成。** patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、device-code 登录、rollout 文件会话记录），并把 `subagent_codex_local` 工具挂到 profile 根；`codex-local` 一次性 provider 在该作用域目录下 spawn `codex exec`。设置分区随家族 core 的 `./client` 半提供；core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+**bundle 组成。** patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、device-code 登录、rollout 文件会话记录），并把 `subagent_codex` 工具挂到 profile 根；`codex-local` 一次性 provider 在该作用域目录下 spawn `codex exec`。设置分区随家族 core 的 `./client` 半提供；core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
 **登录与凭据。** `/codex login` 在会话中显示 device-code URL 并在后台轮询；用户授权后凭据写入作用域目录。首次启动写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain，把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效；已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`，之后重新登录即可换账号。
 

@@ -4,7 +4,7 @@
 
 English | [中文](README.md)
 
-The [local-agent family](../local-agent/README.md)'s own delegation tool: each harness bundle mounts it in place of the official `@deepseek-ai/dsh-tool-subagent` row, keeping the same `toolName` (`subagent_kimi`, `subagent_codex_local`, `subagent_claude_code_local`) while adding resumable delegation.
+The [local-agent family](../local-agent/README.md)'s own delegation tool: each harness bundle mounts it in place of the official `@deepseek-ai/dsh-tool-subagent` row, keeping the same `toolName` (`subagent_kimi`, `subagent_codex`, `subagent_claude_code`) while adding resumable delegation.
 
 ## Features
 

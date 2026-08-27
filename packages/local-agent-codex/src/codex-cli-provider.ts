@@ -8,8 +8,9 @@
  * The provider name `codex-local` avoids colliding with the official
  * `subagent-codex` package's provider name `codex` — a composition that
  * mounts both would fail loud with DUPLICATE_PROVIDER. The tool row in this
- * bundle's patch uses `subagent_codex_local` for the same reason (the
- * official presets carry a disabled `subagent_codex` row).
+ * bundle's patch takes the official model-facing name `subagent_codex`
+ * instead: the official preset row ships disabled, and the patch disables
+ * it too (a deliberate user re-enable conflicts loud, by design).
  * @module @khorsheed/dsh-local-agent-codex/codex-cli-provider
  */
 
@@ -128,11 +129,24 @@ export class CodexCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
   constructor(
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
-    private readonly live?: CodexLiveDriver,
+    private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
   ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): CodexLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /** Per-round member-channel registration for the exec path (see {@link registerCodexMemberRun}). */
   private memberRun(
@@ -197,9 +211,10 @@ export class CodexCliProvider implements SubagentProvider {
     // Live driver: the round goes to the resident app-server process (one per
     // member). A channel that fails at spawn/handshake falls through to the
     // exec one-shot below — and stays there until the breaker cools down.
-    if (this.live !== undefined && childSession !== undefined && !this.live.disabled) {
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
-        return await this.live.startRound(request, {
+        return await live.startRound(request, {
           cwd: parentCwd,
           homeDir,
           childSession,
@@ -290,9 +305,10 @@ export class CodexCliProvider implements SubagentProvider {
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
       // Live driver: continue the member's resident app-server thread. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      if (this.live !== undefined && !this.live.disabled) {
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
         try {
-          const liveRun = await this.live.startRound(request, {
+          const liveRun = await live.startRound(request, {
             cwd: parentCwd,
             homeDir,
             childSession,
@@ -882,6 +898,22 @@ export function codexLineText(line: CodexTranscriptLine): string {
 }
 
 /**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record).
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
+}
+
+/**
  * Per-run live mirror: folds stdout chunks incrementally and mirrors newly
  * completed transcript lines into the child session as they arrive, so a
  * caller watching the child session sees progress instead of silence until
@@ -957,7 +989,7 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
           if (carrierMirrored && parser.usage !== undefined) {
             appendCodexUsageChunk(childSession, turn, parser.usage)
           }
-          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          await persistIfStandalone(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         } catch (error: unknown) {
           ctx.logger.warn(`subagent-codex: live mirror failed: ${thrown(error).message}`)
@@ -1022,7 +1054,7 @@ async function appendCodexResponse(
     // as a usage chunk pinned to the carrier's step.
     appendCodexUsageChunk(childSession, turn, parsed.usage)
   }
-  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  await persistIfStandalone(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
 }
 

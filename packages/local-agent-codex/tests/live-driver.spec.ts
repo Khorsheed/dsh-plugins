@@ -678,3 +678,99 @@ describe('codex live driver review fixes', () => {
     void second
   })
 })
+
+describe('codex live driver drain (settings handoff)', () => {
+  it('refuses new rounds immediately once draining (no queueing behind in-flight work)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-drain1'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('done') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.hasRuntime('child-codex-drain1')).toBe(true)
+    const drained = m.driver.drain()
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('draining')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(m.driver.hasRuntime('child-codex-drain1')).toBe(false)
+  })
+
+  it('lets the in-flight round finish undisturbed, then reclaims the runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-drain2'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    let drainedFlag = false
+    const drained = m.driver.drain().then(() => { drainedFlag = true })
+    // The hung round is still in flight: drain waits, the process lives.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(drainedFlag).toBe(false)
+    expect(fake.stdinEnded).toBe(false)
+    fake.runTurn('thread-1', 'turn-1', { items: answerItems('done') })
+    // The in-flight turn settles normally.
+    expect((await run.result).stopReason).toBe('completed')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(fake.stdinEnded).toBe(true)
+  })
+
+  it('a round queued before the drain dequeues into the refusal (provider falls back to exec)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-drain3'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Chain round 2 BEFORE draining, then drain while round 1 hangs.
+    const second = m.driver.startRound(request({ prompt: '第二轮' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
+    const drained = m.driver.drain()
+    fake.runTurn('thread-1', 'turn-1', { items: answerItems('done') })
+    await first.result.catch(() => {})
+    await expect(second).rejects.toThrow('draining')
+    await drained
+    // Round 2 never reached the wire.
+    expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(1)
+    expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-drain4'))
+    child.append('turn/start', { turn: 1 })
+    const deltas: [string, string][] = [['item-x', 'hel'], ['item-x', 'lo']]
+    m.queueChild(new FakeAppServer({ turn: () => ({ deltas, items: answerItems('hello') }) }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await first.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    m.driver.setLiveMirrorGranularity('token')
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
+    await second.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Same runtime, same process: granularity rides the existing generation.
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('codex provider live resolver', () => {
+  it('a resolver returning undefined routes the round to exec (retiring-generation gate)', async () => {
+    const m = mount()
+    // No app-server child queued: the exec fallback spawn answers.
+    const provider = new CodexCliProvider(m.ctx, 'workspace-write', () => undefined)
+    const run = await provider.start(request() as never)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: 'exec 答案' }])
+    expect(m.spawns[0]!.spec.argv).toContain('exec')
+    await run.dispose()
+  })
+
+  it('a resolver returning the driver per member routes to live (backward compatible)', async () => {
+    const m = mount()
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('完成') }) }))
+    const provider = new CodexCliProvider(m.ctx, 'workspace-write', () => m.driver)
+    const run = await provider.start(request() as never)
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '--stdio'])
+    await m.driver.disposeAll()
+  })
+})

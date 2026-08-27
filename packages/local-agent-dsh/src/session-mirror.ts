@@ -239,7 +239,9 @@ export function mirrorDshLiveEvent(
 
 /**
  * Mirror the current round's events from the sub-dsh session into the child
- * session, then persist. Runs both from the provider's live poll (while the
+ * session, then persist (standalone sessions only — a live session's own
+ * write-behind owns durability; see {@link persistIfStandalone}). Runs both
+ * from the provider's live poll (while the
  * sub-dsh writes its log in batches — a torn final zstd frame is skipped
  * until the next pass) and after the child process exits (the settle pass);
  * the round's already-mirrored prefix in the child session is the offset, so
@@ -329,11 +331,26 @@ export async function mirrorDshSession(
       }
     }
     if (texts.length > 0 || todosAppended > 0) {
-      await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+      await persistIfStandalone(ctx, childSession)
     }
     return { texts, total: mirrored + mirroredTodos.length + texts.length + todosAppended }
   } catch (error) {
     ctx.logger.warn(`subagent-dsh: session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
     return empty
   }
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same events (duplicated messages, no usage on the record).
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
 }

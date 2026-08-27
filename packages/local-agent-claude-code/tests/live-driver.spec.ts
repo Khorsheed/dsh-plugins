@@ -487,3 +487,100 @@ describe('claude provider live dispatch', () => {
     await run.dispose()
   })
 })
+
+describe('claude live driver drain (settings handoff)', () => {
+  it('refuses new rounds immediately once draining (no queueing behind in-flight work)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-drain1'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('done') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.driver.hasRuntime('child-claude-drain1')).toBe(true)
+    const drained = m.driver.drain()
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('draining')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(m.driver.hasRuntime('child-claude-drain1')).toBe(false)
+  })
+
+  it('lets the in-flight round finish undisturbed, then reclaims the runtime', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-drain2'))
+    const fake = new FakeClaude({ turn: () => ({ events: answerEvents('done'), hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    let drainedFlag = false
+    const drained = m.driver.drain().then(() => { drainedFlag = true })
+    // The hung round is still in flight: drain waits, the process lives.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(drainedFlag).toBe(false)
+    expect(fake.stdinEnded).toBe(false)
+    // The turn's result lands; the in-flight round settles normally.
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 1, cache_read_input_tokens: 0, output_tokens: 1 } })
+    expect((await run.result).stopReason).toBe('completed')
+    await drained
+    expect(m.driver.liveCount).toBe(0)
+    expect(fake.stdinEnded).toBe(true)
+  })
+
+  it('a round queued before the drain dequeues into the refusal (provider falls back to exec)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-drain3'))
+    const fake = new FakeClaude({
+      turn: ({ text }) => text === '第二轮' ? { events: answerEvents('不该发生') } : { events: answerEvents('done'), hang: true },
+    })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Chain round 2 BEFORE draining, then drain while round 1 hangs.
+    const second = m.driver.startRound(request({ prompt: '第二轮' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
+    const drained = m.driver.drain()
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 1, cache_read_input_tokens: 0, output_tokens: 1 } })
+    await first.result.catch(() => {})
+    await expect(second).rejects.toThrow('draining')
+    await drained
+    // Round 2 never reached the wire.
+    expect(fake.userMessages).toEqual(['建个文件'])
+    expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('setLiveMirrorGranularity flips subsequent rounds without a new generation', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-drain4'))
+    child.append('turn/start', { turn: 1 })
+    m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['一', '二'], events: answerEvents('done') }) }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await first.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    m.driver.setLiveMirrorGranularity('token')
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
+    await second.result
+    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    // Same runtime, same process: granularity rides the existing generation.
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('claude provider live resolver', () => {
+  it('a resolver returning undefined routes the round to exec (retiring-generation gate)', async () => {
+    const m = mount()
+    // No live child queued: the exec fallback spawn answers.
+    const provider = new ClaudeCliProvider(m.ctx, 'skip', undefined, () => undefined)
+    const run = await provider.start(request() as never)
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: 'exec 答案' }])
+    expect(m.spawns[0]!.spec.argv).not.toContain('--input-format')
+    await run.dispose()
+  })
+
+  it('a resolver returning the driver per member routes to live (backward compatible)', async () => {
+    const m = mount()
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('完成') }) }))
+    const provider = new ClaudeCliProvider(m.ctx, 'skip', undefined, () => m.driver)
+    const run = await provider.start(request() as never)
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns[0]!.spec.argv).toContain('--input-format')
+    await m.driver.disposeAll()
+  })
+})
