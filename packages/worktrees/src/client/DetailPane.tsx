@@ -14,9 +14,10 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile, FileDiffResult, LocalImageResult, ReadFileResult } from '../types.ts'
-import { basenameOf, dirnameOf, isMarkdown, languageFor } from './language.ts'
+import { basenameOf, dirnameOf, isHtmlFile, isMarkdown, languageFor } from './language.ts'
 import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
+import { HtmlPreview } from './HtmlPreview.tsx'
 import { ImagePreview } from './ImagePreview.tsx'
 import css from './DetailPane.module.css'
 
@@ -75,8 +76,11 @@ export function DetailPane({
 
   const contentDisabled = deleted
   const markdown = isMarkdown(path)
-  // A null showPreview means "default": Markdown → preview, else source.
-  const sourceMode = markdown ? showPreview === false : showPreview !== true
+  const html = isHtmlFile(path)
+  const lang = languageFor(path)
+  // A null showPreview means "default": Markdown/HTML → preview, else source.
+  const defaultPreview = markdown || html
+  const sourceMode = defaultPreview ? showPreview === false : showPreview !== true
   const previewMode = !sourceMode
 
   const body = ((): ReactNode => {
@@ -92,9 +96,11 @@ export function DetailPane({
       return (
         <div className={css.untrackedView}>
           <div className={css.untrackedNote}>{t('detail.untrackedNote')}</div>
-          {markdown
-            ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
-            : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
+          {html
+            ? <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
+            : markdown
+              ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
+              : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
         </div>
       )
     }
@@ -103,14 +109,15 @@ export function DetailPane({
     }
     if (content === null) return <div className={css.placeholder}>{t('state.loading')}</div>
     const raw = content.content
-    return previewMode
-      ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
-      : <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />
+    if (previewMode) {
+      if (html) return <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
+      if (markdown) return <div className={css.mdRender}><MarkdownText text={raw} /></div>
+    }
+    return <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />
   })()
 
   const basename = basenameOf(path)
   const dirname = dirnameOf(path)
-  const lang = languageFor(path)
 
   const doCopy = (): void => {
     if (content === null || onCopy === undefined) return
