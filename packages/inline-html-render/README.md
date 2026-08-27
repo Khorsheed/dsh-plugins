@@ -37,7 +37,7 @@ dsh plugin --profile <p> remove @khorsheed/dsh-inline-html-render   # 卸载
 
 host 半边注册了 `inline-html-card` skill。只要用户想要**看得见的结果**(比如 "show me / 预览 / 做个卡片看看 / 对比几个视觉效果 / 想要个能点击的小组件",而不是读一段文字),agent 就会套用这个协议。核心约束(详见 skill):
 
-- 恰好一个 fenced block,info string 严格为 `dsh-card`。
+- 恰好一个 fenced block,info string 严格为 `dsh-card`;**用三个反引号 ```,不要用四个反引号嵌套**(嵌套会被解析成外层代码块,卡片不渲染)。
 - 内容自包含:CSS/JS 内联,图片用 `data:` URI,零外部网络。
 - 不要访问宿主——用 `window.dshBridge` 做外链/复制/下载。
 

@@ -54,6 +54,11 @@ describe('inline-html-card skill registration', () => {
     expect(reg?.content).toContain('addEventListener')
     expect(reg?.content).toContain('The content IS the card')
     expect(reg?.content).toContain('no fixed narrow width')
+    // Push the three-backtick / no-nested-fence rule so the model cannot
+    // write a four-backtick nested block (which renders as an outer code
+    // block and never becomes a card).
+    expect(reg?.content).toMatch(/use exactly three backticks|three backticks/i)
+    expect(reg?.content).toContain('never four')
     // Distinguish "no fake window" from "no content padding": a panel's own
     // inset is part of the content and must be kept, not stripped.
     expect(reg?.content).toContain("Keep the content's own breathing room")

@@ -22,13 +22,15 @@ Reach for the file only when it's genuinely a deliverable, not when the goal is 
 
 ## The contract
 
-Write exactly one fenced code block whose info string is `dsh-card`:
+Write exactly one fenced code block whose info string is `dsh-card` — **using three backticks**, never four:
 
 ````
 ```dsh-card
 ...your HTML here...
 ```
 ````
+
+**Use exactly three backticks.** Do NOT use four backticks (````) — that is how this skill demonstrates the fence in a doc so it is not parsed, and writing it that way in your reply makes the parser treat it as an outer code block, so the `dsh-card` info string is never picked up and the card is not rendered. Write a plain top-level ` ```dsh-card …``` ` block, not a nested one.
 
 Inside the fence, put a **fully self-contained HTML document** (fragment is fine; the renderer wraps missing `<html>`/`<head>` automatically). The browser half turns this into a sandboxed iframe and renders it inline where the block sits.
 
@@ -87,6 +89,7 @@ The renderer injects its own CSP if you omit it, but embedding the same one is h
 - [ ] No external URL anywhere.
 - [ ] No `fetch` / XHR / WebSocket.
 - [ ] Fence info string is exactly `dsh-card`.
+- [ ] Used **three** backticks ( ``` ), never four ( ```` ) — a four-backtick or nested fence makes the parser read it as an outer block and the card never renders.
 - [ ] Defaulted to an inline preview to confirm the look; only wrote an HTML file if the user asked for one or the details were settled and they wanted a complete artifact.
 - [ ] For a local detail, rendered just that part, not a whole deliverable.
 - [ ] The content IS the card — no fixed narrow width centered in a big panel, no extra solid-background "window" wrapper, no large empty `min-height`. You chose colors/theme/fonts for the content, not for the surrounding chat. Kept the padding/margins that are genuinely part of the content (a panel's own inset is not a fake window).
