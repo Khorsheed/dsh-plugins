@@ -9,10 +9,10 @@
  * Git-agnostic: browsable dirs are plain local filesystem paths. State is
  * session-scoped (bound to the calling session).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
-  IconFolderOpen16, IconFolderOpenOutline16,
-  IconPlusOutline16, IconRefreshOutline16, IconCloseOutline16, writeClipboard,
+  IconFolderOpenOutline16, IconProjectAddOutline16,
+  IconRefreshOutline16, IconCloseOutline16, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListLocalDirectoryResult } from '../types.ts'
 import type { LocalFilesDrawerProps } from './contract.ts'
@@ -54,7 +54,7 @@ function toItems(listing: ListLocalDirectoryResult | null): FileTreeItem[] {
 /** The local-files browser. */
 export function LocalFilesDrawer({
   useStore, actions, t,
-  listLocalDirectory, readLocalFile, readLocalImage, listWorkspaces, pickWorkspace, isLoopback, useHostDescription, openExternal,
+  listLocalDirectory, readLocalFile, readLocalImage, pickWorkspace, isLoopback, useHostDescription, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const root = useStore(s => s.root)
@@ -63,6 +63,7 @@ export function LocalFilesDrawer({
   const preview = useStore(s => s.preview)
   const image = useStore(s => s.image)
   const error = useStore(s => s.error)
+  const rev = useStore(s => s.rev)
   const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
 
   const {
@@ -71,10 +72,6 @@ export function LocalFilesDrawer({
     onPointerMove: onResizePointerMove,
     onPointerUp: onResizePointerUp,
   } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
-
-  const [wsOpen, setWsOpen] = useState(false)
-  const wsRef = useRef<HTMLDivElement | null>(null)
-  const workspaces = useMemo(() => listWorkspaces(), [listWorkspaces])
 
   // Load the root directory's first level whenever the root changes.
   useEffect(() => {
@@ -87,7 +84,7 @@ export function LocalFilesDrawer({
       else actions.setError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [open, root, listLocalDirectory, actions])
+  }, [open, root, rev, listLocalDirectory, actions])
 
   // Load a sub-directory's first level on demand (FileTree lazy expansion).
   const loadChildren = (dirPath: string): Promise<FileTreeItem[]> => {
@@ -126,16 +123,6 @@ export function LocalFilesDrawer({
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [open, actions])
-
-  // Close the workspace switcher on an outside mousedown.
-  useEffect(() => {
-    if (!wsOpen) return
-    const onDown = (event: MouseEvent): void => {
-      if (wsRef.current !== null && !wsRef.current.contains(event.target as Node)) setWsOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => { document.removeEventListener('mousedown', onDown) }
-  }, [wsOpen])
 
   if (!open) return null
 
@@ -192,47 +179,18 @@ export function LocalFilesDrawer({
             ))}
           </div>
           <div className={css.actions}>
-            <div className={css.wsWrap} ref={wsRef}>
-              <button type="button" className={css.browserAction} title={t('local.workspace')} onClick={() => { setWsOpen(v => !v) }}>
-                <IconFolderOpen16 />
-              </button>
-              {wsOpen && (
-                <div className={css.worktreePopover} role="listbox">
-                  {workspaces.length === 0
-                    ? <div className={css.worktreeEmpty}>{t('local.noWorkspaces')}</div>
-                    : workspaces.map(workspace => (
-                      <button
-                        key={workspace.id}
-                        type="button"
-                        role="option"
-                        className={css.worktreeRow}
-                        onClick={() => { navigate(workspace.path); setWsOpen(false) }}
-                      >
-                        <span className={css.worktreePath}>{workspace.title}</span>
-                        <span className={css.worktreeMeta}>{workspace.path}</span>
-                      </button>
-                    ))}
-                  <button
-                    type="button"
-                    className={`${css.worktreeRow} ${css.worktreeNew}`}
-                    title={t('local.newWorkspace')}
-                    onClick={() => { setWsOpen(false); void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}
-                  >
-                    <IconPlusOutline16 />
-                    <span className={css.worktreePath}>{t('local.newWorkspace')}</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            <button type="button" className={css.browserAction} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
+              <IconProjectAddOutline16 />
+            </button>
             {canOpenHost && root !== null && (
               <button type="button" className={css.browserAction} title={t('local.openFolder')} onClick={() => { openExternal(root) }}>
                 <IconFolderOpenOutline16 />
               </button>
             )}
-            <button type="button" className={css.browserAction} title={t('action.refresh')} onClick={() => { if (root !== null) actions.setRoot(root) }}>
+            <button type="button" className={css.browserAction} title={t('local.refreshFiles')} onClick={() => { if (root !== null) actions.refresh() }}>
               <IconRefreshOutline16 />
             </button>
-            <button type="button" className={`${css.browserAction} ${css.browserClose}`} title={t('action.close')} onClick={() => { actions.close() }}>
+            <button type="button" className={css.browserAction} title={t('action.close')} onClick={() => { actions.close() }}>
               <IconCloseOutline16 />
             </button>
           </div>
