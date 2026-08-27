@@ -110,8 +110,11 @@ export async function mirrorKimiSessionDelta(
   }
   let transcript: Awaited<ReturnType<typeof readKimiTranscript>> | undefined
   if (kimiSessionId !== undefined) {
+    // Records may be bare uuids (the convention) or carry the ACP directory
+    // prefix (legacy live records): normalize instead of double-prefixing.
+    const dirName = kimiSessionId.startsWith('session_') ? kimiSessionId : `session_${kimiSessionId}`
     for (const workspace of workspaces) {
-      const dir = join(homeDir, 'sessions', workspace, `session_${kimiSessionId}`)
+      const dir = join(homeDir, 'sessions', workspace, dirName)
       try {
         transcript = await readKimiTranscript(dir)
       } catch {
@@ -157,11 +160,13 @@ export async function mirrorKimiSessionDelta(
   // No early return on an empty delta: a result that merged into an
   // already-mirrored tool line does not change the line count, and the
   // backfill below still owes that call its `tool/result` event.
-  // The pass attaches the usage records that trail ITS lines: positions in
-  // (fromLines, newTotal]. Each record is one LLM request's accounting (kimi
-  // does not accumulate within a turn).
+  // The pass attaches the usage records whose content ITS lines carry. kimi
+  // writes a request's `usage.record` BEFORE the content parts it accounts
+  // for, so a record sitting exactly on the delta boundary (its content is
+  // entirely inside this pass) must attach here — otherwise incremental
+  // folds (live mid-run + settle) lose the round's accounting entirely.
   const deltaUsage = sumUsageRecords(
-    transcript.usageRecords.filter(record => record.line > fromLines && record.line <= newTotal),
+    transcript.usageRecords.filter(record => record.line >= fromLines && record.line <= newTotal),
   )
   // Attach the summed usage to the delta's LAST assistant message (text or
   // think both carry the round's accounting; tool lines do not).
@@ -223,8 +228,7 @@ export async function mirrorKimiSessionDelta(
     // No new lines this pass: only the late-result backfill above could have
     // produced events. Persist those and skip the empty delta loop.
     if (texts.length > 0) {
-      const persistence = ctx.get('sessionPersistence')
-      await persistence?.append(childSession.id, childSession.events)
+      await persistIfStandalone(ctx, childSession)
     }
     return { total: newTotal, texts }
   }
@@ -275,9 +279,24 @@ export async function mirrorKimiSessionDelta(
       texts.push(kimiLineProgressText(line))
     }
   }
+  await persistIfStandalone(ctx, childSession)
+  return { total: newTotal, texts }
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record).
+ */
+async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
   await persistence?.append(childSession.id, childSession.events)
-  return { total: newTotal, texts }
 }
 
 /**

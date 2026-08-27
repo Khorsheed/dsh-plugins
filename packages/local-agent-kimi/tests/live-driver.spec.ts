@@ -152,7 +152,8 @@ class FakeAcpServer {
           return
         }
         this.sessionSeq += 1
-        respond({ sessionId: `acp-session-${this.sessionSeq}` })
+        // Real kimi ACP session ids are directory names (`session_<uuid>`).
+        respond({ sessionId: `session_acp-session-${this.sessionSeq}` })
         return
       case 'session/load':
         respond({})
@@ -209,6 +210,12 @@ function mount(options: {
   config?: ConstructorParameters<typeof KimiAcpLiveDriver>[1]
   timeouts?: ConstructorParameters<typeof KimiAcpLiveDriver>[2]
   intent?: unknown
+  /**
+   * Emulate the production wiring: every session reads as live (write-behind
+   * owns durability) and the redundant full-list persistence append throws
+   * like the real coordinator's contiguous-seq contract.
+   */
+  strictPersistence?: boolean
 } = {}): Mount {
   const homeDir = mkdtempSync(join(tmpdir(), 'kimi-live-'))
   const reports: Mount['reports'] = []
@@ -263,8 +270,19 @@ function mount(options: {
   })
   ctx.provide('sessions', {
     create: (id: string) => Session.create(SessionId(id)),
-    get: () => undefined,
+    // strictPersistence: any session reads as live (write-behind owns its
+    // durability), like the production wiring.
+    get: options.strictPersistence === true ? () => ({}) : () => undefined,
   })
+  if (options.strictPersistence === true) {
+    // The production coordinator's contiguous-seq contract: the mirror's
+    // redundant full-list append always fails. The mirror must never call it
+    // for a live session — and must not die when it does fire.
+    ctx.provide('sessionPersistence', {
+      append: () => Promise.reject(new Error('append seq mismatch (strict test double)')),
+      create: async () => {},
+    })
+  }
   ctx.provide('logger', { warn: () => {}, info: () => {} })
   const driver = new KimiAcpLiveDriver(ctx, options.config ?? {}, options.timeouts)
   return {
@@ -390,7 +408,19 @@ describe('kimi live driver rounds', () => {
     expect((await secondRun.result).stopReason).toBe('completed')
     expect(m.spawns).toHaveLength(2)
     expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
-    expect(second.requests[1]?.params).toMatchObject({ sessionId: 'acp-session-1' })
+    expect(second.requests[1]?.params).toMatchObject({ sessionId: 'session_acp-session-1' })
+    await m.driver.disposeAll()
+  })
+
+  it('a legacy prefixed record id loads idempotently (no double prefix)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-4p'))
+    child.append('turn/start', { turn: 1 })
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['续上'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child, { resume: { cliSessionId: 'session_acp-session-9', turn: 2 } }))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns[0]!.fake!.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    expect(m.spawns[0]!.fake!.requests[1]?.params).toMatchObject({ sessionId: 'session_acp-session-9' })
     await m.driver.disposeAll()
   })
 
@@ -443,8 +473,8 @@ describe('kimi live driver rounds', () => {
     m.queueChild(fake)
     const pending = m.driver.startRound(request() as never, roundSpec(m, child))
     await vi.waitFor(() => { expect(fake.requests.map(r => r.method)).toContain('session/prompt') })
-    fake.askPermission('acp-session-1', [{ kind: 'allow_once', optionId: 'opt-1' }])
-    fake.askPermission('acp-session-1', [{ kind: 'reject_once', optionId: 'opt-2' }])
+    fake.askPermission('session_acp-session-1', [{ kind: 'allow_once', optionId: 'opt-1' }])
+    fake.askPermission('session_acp-session-1', [{ kind: 'reject_once', optionId: 'opt-2' }])
     const run = await pending
     expect((await run.result).stopReason).toBe('completed')
     expect(fake.serverAnswers).toContainEqual({ outcome: { outcome: 'selected', optionId: 'opt-1' } })
@@ -589,6 +619,73 @@ describe('kimi live driver review fixes', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
     expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    await m.driver.disposeAll()
+  })
+
+  it('a live-backed child folds each line once even when the coordinator rejects the redundant persistence append', async () => {
+    const m = mount({
+      strictPersistence: true,
+      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0 },
+    })
+    const child = Session.create(SessionId('child-kimi-livepersist'))
+    // The ACP runtime flushes the wire incrementally: the prompt line first.
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeFileSync(join(wireDir, 'wire.jsonl'), `${JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } })}\n`)
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // A mid-run update triggers a throttled pass over the prompt-only wire.
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1) })
+    expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBe(1)
+    // The full wire lands by turn end — in the real kimi order, where the
+    // request's usage.record sits BEFORE the content parts it accounts for
+    // (record.line == the pass's fromLines boundary).
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 10, output: 4 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '文件建好了' } } }),
+    ].join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) })
+    // The offset advanced past the strict persistence double's rejection, so
+    // the settle pass did NOT re-fold the user line; the usage record on the
+    // delta boundary still attached to the answer it accounts for.
+    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(child.events.filter(e => e.type === 'assistant/message')[0]?.data).toMatchObject({
+      usage: { inputTokens: 10, outputTokens: 4 },
+    })
+    expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBe(2)
+    await m.driver.disposeAll()
+  })
+
+  it('the settle fold waits out a wire flush that lands after the prompt response', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-flushrace'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        // Only the prompt line is on disk when the prompt resolves.
+        writeFileSync(join(wireDir, 'wire.jsonl'), `${JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } })}\n`)
+        return { chunks: ['文件建好了'] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    // The answer lands in the wire 500ms after the prompt response — inside
+    // the quiescence window (3 stable reads at 300ms).
+    setTimeout(() => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '文件建好了') }, 500)
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(m.mirrorOffsets.get('child-kimi-flushrace')).toBe(2)
     await m.driver.disposeAll()
   })
 })

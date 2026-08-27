@@ -463,6 +463,59 @@ describe('kimi-cli-provider resume round', () => {
     await run.dispose()
   })
 
+  it('does not double-prefix a record id that already carries the ACP directory prefix', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-legacy'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const sessions = { get: (id: SessionId) => (id === SessionId('child-run-legacy') ? child : undefined) }
+    ctx.provide('sessions', sessions as never)
+    ctx.provide('sessionPersistence', { create: async () => {}, append: vi.fn(async () => {}) })
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      // A legacy record written by a live round (ACP directory-name form).
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-legacy',
+        cliSessionId: 'session_run-legacy',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
+      kimiMirroredLines: () => 0,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+    } as never)
+
+    const spawned: string[][] = []
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: string[] }) => {
+        spawned.push(spec.argv)
+        const { handle } = stubChild('run-legacy')
+        return handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    await run.result
+    expect(spawned[0]).toEqual(['kimi', '-S', 'session_run-legacy', '-p', '接着做'])
+    await run.dispose()
+  })
+
   it('fails loud when the resume target child session is not live', async () => {
     const ctx = new Context()
     ctx.provide('sessions', { get: () => undefined } as never)

@@ -105,6 +105,11 @@ const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
   mirrorThrottleMs: DEFAULT_LIVE_MIRROR_THROTTLE_MS,
 }
 
+/** Settle-mirror quiescence: poll cadence, required consecutive stable reads, and the overall bound. */
+const SETTLE_MIRROR_POLL_MS = 300
+const SETTLE_MIRROR_STABLE_READS = 3
+const SETTLE_MIRROR_QUIESCE_MS = 3_000
+
 /** How much of the live event stream crosses into the child session. */
 export type KimiLiveMirrorGranularity = 'event' | 'token'
 
@@ -141,6 +146,21 @@ function thrown(value: unknown): Error {
  * when the process does not exit.
  */
 export const KIMI_LIVE_AUTH_FAILURE = /401|unauthorized|invalid api key|not authenticated|authentication required/i
+
+/**
+ * kimi ACP session ids are directory names (`session_<uuid>`); the family
+ * delegation record convention is the bare uuid (the exec path's settle-time
+ * stderr parse). Strip the prefix so live- and exec-written records stay
+ * interchangeable.
+ */
+export function bareKimiSessionId(acpSessionId: string): string {
+  return acpSessionId.startsWith('session_') ? acpSessionId.slice('session_'.length) : acpSessionId
+}
+
+/** The ACP-native form of a recorded kimi session id (idempotent). */
+export function acpKimiSessionId(recordedId: string): string {
+  return recordedId.startsWith('session_') ? recordedId : `session_${recordedId}`
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -722,7 +742,7 @@ export class KimiAcpLiveDriver {
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
       mirrorQueue = mirrorQueue.then(() =>
-        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId).catch((error: unknown) => {
+        mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: live mirror pass failed: ${thrown(error).message}`)
         }))
     }
@@ -801,14 +821,21 @@ export class KimiAcpLiveDriver {
               throw new Error('subagent-kimi live: session/new returned no session id')
             }
             rt.sessionId = response.sessionId
-            spec.onCliSessionId?.(rt.sessionId)
+            // The record convention is the bare uuid (the exec path's
+            // settle-time parse); the ACP id is a directory name
+            // (`session_<uuid>`). Strip before recording so live- and
+            // exec-written records stay interchangeable.
+            spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
           } else {
+            // Resume: the record may be bare (exec-written) or carry the ACP
+            // prefix (legacy live records); the wire always wants the
+            // ACP-native form.
+            rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
             await rt.peer.request('session/load', {
-              sessionId: spec.resume.cliSessionId,
+              sessionId: rt.sessionId,
               cwd: spec.cwd,
               mcpServers: member?.mcpServers ?? [],
             })
-            rt.sessionId = spec.resume.cliSessionId
           }
         }
       } catch (error) {
@@ -894,14 +921,27 @@ export class KimiAcpLiveDriver {
       return settled
     })
 
-    // Settle reconciliation: one authoritative final mirror pass (the ACP
-    // runtime flushed its wire.jsonl by turn end), then re-arm the reaper.
+    // Settle reconciliation: the kimi wire flushes asynchronously past the
+    // prompt response (prompt lines early, the answer by turn end), so the
+    // final mirror folds until two consecutive reads see no growth — bounded,
+    // so a stuck flush cannot pin the round. Then re-arm the reaper.
     void result.then(async () => {
       try {
         if (turnOpened) {
           await mirrorQueue.catch(() => {})
-          const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId)
-          localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+          const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
+          let lastTotal = -1
+          let stableReads = 0
+          const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
+          for (;;) {
+            const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId)
+            localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+            stableReads = delta.total === lastTotal ? stableReads + 1 : 0
+            lastTotal = delta.total
+            if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
+            if (Date.now() >= deadline) break
+            await delay(SETTLE_MIRROR_POLL_MS)
+          }
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
