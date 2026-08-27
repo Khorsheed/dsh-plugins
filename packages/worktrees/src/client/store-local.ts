@@ -27,6 +27,8 @@ export interface LocalFilesState {
   loading: boolean
   /** Human-readable fetch failure, or null. */
   error: string | null
+  /** Bumped by refresh to re-trigger the directory load (same root). */
+  rev: number
 }
 
 /** Annotation twin of the actions literal below. */
@@ -40,6 +42,7 @@ export type LocalFilesActions = {
   setImage: (draft: LocalFilesState, image: LocalImageResult) => void
   setLoading: (draft: LocalFilesState, loading: boolean) => void
   setError: (draft: LocalFilesState, error: string | null) => void
+  refresh: (draft: LocalFilesState) => void
 }
 
 const INITIAL: LocalFilesState = {
@@ -51,6 +54,7 @@ const INITIAL: LocalFilesState = {
   image: null,
   loading: false,
   error: null,
+  rev: 0,
 }
 
 /**
@@ -105,6 +109,7 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
       },
       setLoading: (d, loading: boolean) => { d.loading = loading },
       setError: (d, error: string | null) => { d.error = error },
+      refresh: (d) => { d.rev += 1 },
     },
   })
 }

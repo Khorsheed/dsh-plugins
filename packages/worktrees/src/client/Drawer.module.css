@@ -188,11 +188,8 @@ body[data-ds-dark-theme] {
   color: var(--dsw-alias-label-primary);
 }
 
-/* The close button is spaced further from refresh to read as an "exit", not a
-   routine action. */
-.browserClose {
-  margin-left: 9px;
-}
+/* The four browser actions (workspace / open / refresh / close) sit evenly in
+   the top bar's right group; the shared .actions gap keeps them equidistant. */
 
 /* The branch glyph sits ~2px lower than the 22px title line, matching the
    icon's optical baseline against the following text. */
