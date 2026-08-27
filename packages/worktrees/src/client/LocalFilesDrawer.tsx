@@ -9,7 +9,7 @@
  * Git-agnostic: browsable dirs are plain local filesystem paths. State is
  * session-scoped (bound to the calling session).
  */
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   IconFolderOpenOutline16, IconProjectAddOutline16,
   IconRefreshOutline16, IconCloseOutline16, writeClipboard,
@@ -19,6 +19,7 @@ import type { LocalFilesDrawerProps } from './contract.ts'
 import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { ImagePreview, isImageFile } from './ImagePreview.tsx'
+import { basenameOf } from './language.ts'
 import { useDrawerWidth } from './Drawer.tsx'
 import css from './Drawer.module.css'
 
@@ -44,11 +45,14 @@ function rememberRoot(path: string): void {
 
 /** Map a directory listing to FileTree leaves (an entry's name is a one-segment
  * path; a dir keeps `isDir` so the tree renders it expandable while its
- * children are lazily fetched). */
-function toItems(listing: ListLocalDirectoryResult | null): FileTreeItem[] {
-  return (listing?.entries ?? []).map(entry => entry.isDir
-    ? { path: entry.name, isDir: true }
-    : { path: entry.name, status: '' })
+ * children are lazily fetched). Hidden (dot-prefixed) entries are dropped when
+ * `showHidden` is false. */
+function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean): FileTreeItem[] {
+  return (listing?.entries ?? [])
+    .filter(entry => showHidden || !entry.name.startsWith('.'))
+    .map(entry => entry.isDir
+      ? { path: entry.name, isDir: true }
+      : { path: entry.name, status: '' })
 }
 
 /** The local-files browser. */
@@ -73,6 +77,9 @@ export function LocalFilesDrawer({
     onPointerUp: onResizePointerUp,
   } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
 
+  // Whether hidden (dot-prefixed) entries are shown; default hides them.
+  const [hideHidden, setHideHidden] = useState(true)
+
   // Load the root directory's first level whenever the root changes.
   useEffect(() => {
     if (!open || root === null) return
@@ -89,7 +96,7 @@ export function LocalFilesDrawer({
   // Load a sub-directory's first level on demand (FileTree lazy expansion).
   const loadChildren = (dirPath: string): Promise<FileTreeItem[]> => {
     return listLocalDirectory({ path: dirPath }).then(result => {
-      return result.ok ? toItems(result.value) : []
+      return result.ok ? toItems(result.value, !hideHidden) : []
     })
   }
 
@@ -150,7 +157,7 @@ export function LocalFilesDrawer({
     key: 'local',
     title: '',
     count: listing?.entries.length ?? 0,
-    items: toItems(listing),
+    items: toItems(listing, !hideHidden),
   }]
 
   return (
@@ -210,9 +217,12 @@ export function LocalFilesDrawer({
                   // A selected file uses its absolute path; prefix the root.
                   actions.select(`${root ?? ''}/${path}`)
                 }}
-                treeTitle={current}
+                treeTitle={current === '' ? '' : basenameOf(current)}
                 loadChildren={loadChildren}
                 rootPath={root ?? ''}
+                showHidden={!hideHidden}
+                onToggleHidden={() => { setHideHidden(value => !value) }}
+                iconActions
                 t={t}
               />
             )}
