@@ -172,11 +172,12 @@ function EyeGlyph({ open }: { open: boolean }): ReactNode {
           <circle cx="8" cy="8" r="2.2" fill="currentColor" />
         </>
       ) : (
-        /* Closed lid: a horizontal lid line with downward lashes, meaning the
-           hidden files are not visible. */
+        /* Closed lid: a downward-hanging lid curve (corners high, middle low)
+           with lashes dropping from the corners, so the lid and lashes read as
+           one closed eye. */
         <>
-          <path d="M2 6.5c1-1.5 3.2-2.5 6-2.5s5 1 6 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          <path d="M3.5 8.5l-0.8 1.4M6 9l-0.4 1.7M8 9.2V11M10 9l0.4 1.7M12.5 8.5l0.8 1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M2.5 6c1.2 1.4 3.2 2.3 5.5 2.3S12.3 7.4 13.5 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M3.1 7.4l-0.7 1.5M5.6 8.1l-0.4 1.7M8 8.4V10.3M10.4 8.1l0.4 1.7M12.9 7.4l0.7 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </>
       )}
     </svg>
