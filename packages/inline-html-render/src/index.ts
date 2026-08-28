@@ -20,18 +20,38 @@ import type { Context } from '@deepseek-ai/cordis'
 
 /** The slice of the skill registry this package consumes (optional service). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string; source: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+    resourceBase?: { kind: 'directory'; path: string }
+  }) => () => void
 }
 
 /**
  * Read and parse the shipped `inline-html-card` SKILL.md into a registration.
+ * Exposes `resourceBase` pointing at the skill's directory so the capability
+ * catalog can list its bundle files (at minimum SKILL.md) — without it the
+ * catalog treats the skill as content-only and cannot show where its file is.
  * @param ctx - plugin context (for logging).
  * @returns the parsed skill, or undefined when the file is missing/malformed
  *   (a discovery aid must never take a boot down, so each failure warns).
  */
-function readCardSkill(ctx: Context): { name: string; description: string; content: string; source: string } | undefined {
+function readCardSkill(
+  ctx: Context,
+): {
+  name: string
+  description: string
+  content: string
+  source: string
+  provider: string
+  resourceBase: { kind: 'directory'; path: string }
+} | undefined {
   try {
-    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card', 'SKILL.md')
+    const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card')
+    const skillFile = join(skillDir, 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
     const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
@@ -41,7 +61,14 @@ function readCardSkill(ctx: Context): { name: string; description: string; conte
       ctx.logger.warn('inline-html-render: shipped SKILL.md is malformed — the inline-html-card skill is not registered')
       return undefined
     }
-    return { name, description, content, source: 'runtime' as const }
+    return {
+      name,
+      description,
+      content,
+      source: 'runtime' as const,
+      provider: 'inline-html-render',
+      resourceBase: { kind: 'directory', path: skillDir },
+    }
   } catch (error) {
     ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the inline-html-card skill is not registered`)
     return undefined

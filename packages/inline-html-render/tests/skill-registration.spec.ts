@@ -15,6 +15,8 @@ interface Registered {
   description: string
   content: string
   source?: string
+  provider?: string
+  resourceBase?: { kind: 'directory'; path: string }
 }
 
 describe('inline-html-card skill registration', () => {
@@ -74,6 +76,12 @@ describe('inline-html-card skill registration', () => {
     expect(reg?.content).toContain('Colors, theme, and fonts are yours to choose')
     // The registry validates `source` at LOAD time — pin it (the ankh-guard 8.9 bug).
     expect(reg?.source).toBe('runtime')
+    // Expose the bundle so the capability catalog can list where the skill's
+    // file is (at minimum SKILL.md); without resourceBase the catalog sees the
+    // skill as content-only.
+    expect(reg?.provider).toBe('inline-html-render')
+    expect(reg?.resourceBase?.kind).toBe('directory')
+    expect(reg?.resourceBase?.path).toMatch(/skills[/\\]inline-html-card$/)
   })
 
   it('does not crash when the skills service is absent — it stays pending, no warning', () => {

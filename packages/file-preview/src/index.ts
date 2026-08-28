@@ -30,9 +30,19 @@ interface ImageRouteHost {
   register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
 }
 
-/** The slice of the skill registry this package consumes (optional service). */
+/** The slice of the skill registry this package consumes (optional service).
+ * `provider`/`resourceBase` are the capability-catalog bundle-visibility
+ * contract: registering the shipped skills directory exposes the bundle (file
+ * tree + model relative-resource resolution), not just a content block. */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string; source: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+    resourceBase?: { kind: 'directory'; path: string }
+  }) => () => void
 }
 
 /**
@@ -59,7 +69,8 @@ function registerArtifactSkill(ctx: Context): void {
     return
   }
   try {
-    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact', 'SKILL.md')
+    const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact')
+    const skillFile = join(skillDir, 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
     const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
@@ -69,7 +80,17 @@ function registerArtifactSkill(ctx: Context): void {
       ctx.logger.warn('file-preview: shipped SKILL.md is malformed — the 3d-artifact skill is not registered')
       return
     }
-    ctx.effect(() => skills.register({ name, description, content, source: 'runtime' }))
+    ctx.effect(() => skills.register({
+      name,
+      description,
+      content,
+      source: 'runtime',
+      provider: 'file-preview',
+      // Expose the shipped bundle (capability-catalog protocol): the catalog
+      // walks this directory for the source browser and the model's relative
+      // resource resolution can reach files beside SKILL.md.
+      resourceBase: { kind: 'directory', path: skillDir },
+    }))
   } catch (error) {
     ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
   }
