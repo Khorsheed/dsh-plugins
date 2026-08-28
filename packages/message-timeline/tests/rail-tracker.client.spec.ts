@@ -118,6 +118,27 @@ describe('flowLeftX', () => {
     const scrollport = document.createElement('div')
     expect(flowLeftX(scrollport)).toBeNull()
   })
+
+  it('skips a withdrawn row left at x=0 and uses the real flow instead', () => {
+    const scrollport = document.createElement('div')
+    const hidden = document.createElement('div')
+    hidden.setAttribute('data-chat-flow-kind', 'user')
+    rect(hidden, { top: 40, left: 0, width: 0, height: 0 }) // withdrawn, not laid out
+    scrollport.appendChild(hidden)
+    flowRow(scrollport, 'message-tools-edited', 200) // the real bubble in the column
+
+    expect(flowLeftX(scrollport)).toBe(200)
+  })
+
+  it('returns null when every flow row is unlaid-out or off-column', () => {
+    const scrollport = document.createElement('div')
+    const hidden = document.createElement('div')
+    hidden.setAttribute('data-chat-flow-kind', 'user')
+    rect(hidden, { top: 40, left: 0, width: 0, height: 0 })
+    scrollport.appendChild(hidden)
+
+    expect(flowLeftX(scrollport)).toBeNull()
+  })
 })
 
 describe('activeRowKey', () => {

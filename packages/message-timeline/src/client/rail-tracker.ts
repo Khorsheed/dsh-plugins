@@ -75,16 +75,28 @@ export function measureGeometry(scrollport: HTMLElement): { left: number; top: n
 
 /**
  * The viewport x of the message flow's left edge: the left of the first
- * rendered `[data-chat-flow-kind]` row, which sits flush inside the official
- * centered content column (max 748px, `margin: 0 auto`). Every flow row
- * shares that edge, so the first one found suffices. The panel's right edge
- * stays left of it — the panel may only occupy the scrollport's left gutter.
+ * laid-out `[data-chat-flow-kind]` row, which sits flush inside the official
+ * centered content column (max 748px, `margin: 0 auto`). Laid-out flow rows
+ * share that edge, so the first meaningful one suffices. The panel's right
+ * edge stays left of it — the panel may only occupy the scrollport's left
+ * gutter.
+ *
+ * Rows that are not laid out in the flow are skipped: a message-tools edit
+ * leaves the withdrawn originals in the DOM (hidden, zero-size, or off the
+ * column at x=0), and probing their left edge yields 0 — which would make the
+ * width gate compute a negative left gutter and hide the entire rail. Any
+ * real flow row sits inside the conversation column at a positive x.
  * @param scrollport - the official conversation scrollport element.
- * @returns the flow's left edge, or null while no flow row is rendered.
+ * @returns the flow's left edge, or null while no laid-out flow row is rendered.
  */
 export function flowLeftX(scrollport: HTMLElement): number | null {
-  const row = scrollport.querySelector<HTMLElement>('[data-chat-flow-kind]')
-  return row === null ? null : row.getBoundingClientRect().left
+  for (const row of scrollport.querySelectorAll<HTMLElement>('[data-chat-flow-kind]')) {
+    const rect = row.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) continue
+    if (rect.left <= 0) continue
+    return rect.left
+  }
+  return null
 }
 
 /**
