@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/types.ts",
+    "src/channels.ts",
+    "src/skills.ts",
+    "src/remote.ts",
+    "src/import.ts",
+    "src/zip.ts",
+    "src/official-tools.ts",
+    "src/namespace.ts",
+    "src/settings.ts"
+  ]
+}
