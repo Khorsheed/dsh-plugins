@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-18-preflight-engine-fidelity.md
-.agents/notes/implemented/bug-fix/2026-08-18-preflight-engine-fidelity.md: d73489b7b4932ae8e6604de78f0374f79ec8ee7a
-.agents/notes/implemented/bug-fix/2026-08-18-preflight-engine-fidelity.zh.md: d89dc1a8f082aab46b4609c3dccd5ef07a55a579
+.agents/notes/implemented/bug-fix/2026-08-18-preflight-engine-fidelity.md: 0523b19aa000da9a7642c0a79e60c347983c1826
+.agents/notes/implemented/bug-fix/2026-08-18-preflight-engine-fidelity.zh.md: 5ca0d345bc52ec14690516756149b80c92b83ecf
