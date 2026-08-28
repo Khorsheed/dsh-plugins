@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
 import { TaskPilotDock } from '../src/client/TaskPilotDock.tsx'
 import { t } from './helpers.ts'
 

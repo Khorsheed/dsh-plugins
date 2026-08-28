@@ -1236,6 +1236,9 @@ importers:
         specifier: 0.1.1-rc.2
         version: 0.1.1-rc.2(41d5ff529e06289e51a68d84fe32d51b)
     devDependencies:
+      '@deepseek-ai/dsh-client-store':
+        specifier: link:../../../deepseek-harness-alpha/packages/client/store
+        version: link:../../../deepseek-harness-alpha/packages/client/store
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1

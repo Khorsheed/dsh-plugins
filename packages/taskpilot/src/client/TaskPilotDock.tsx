@@ -16,11 +16,14 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { indexSubagentDescendants, type JobView } from '@deepseek-ai/dsh-client-runtime/client'
 import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+// JobView moved onto the remotes assembly in 0.1.2-alpha.1 (SessionJob,
+// re-exported as JobView); the index helper went package-internal upstream,
+// mirrored locally in ./subagent-lineage.ts.
+import type { JobView, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { indexSubagentDescendants } from './subagent-lineage.ts'
 import type { NS, TaskPilotLocale } from './locales.ts'
 import css from './TaskPilotDock.module.css'
 
@@ -182,8 +185,9 @@ interface DescendantRow {
 
 /**
  * Flatten the subagent-only descendant lineage of one session, depth-first,
- * cycles fail soft. The header tree counts the same lineage through
- * `indexSubagentDescendants`; this walk supplies the rows it aggregates.
+ * cycles fail soft. The header tree counts the same lineage through its own
+ * package-internal copy of the index (mirrored here in
+ * ./subagent-lineage.ts); this walk supplies the rows it aggregates.
  * @param summaries - retained session summaries keyed by id.
  * @param parentId - the session whose lineage to walk.
  * @param active - optional set of child session ids with an in-flight

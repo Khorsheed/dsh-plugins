@@ -9,9 +9,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { HistoryEntry, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+// JobView moved onto the remotes assembly in 0.1.2-alpha.1 (SessionJob,
+// re-exported as JobView); HistoryEntry retired with the apiproxy — the
+// drawer now reads the generated session remote's history records, unwrapped
+// at the seam into the fold's narrow row shape.
+import type { JobView, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { buildJobTrajectory, type SessionLogRow } from './job-trajectory.ts'
 import { computeDrawerInset } from './drawer-inset.ts'
@@ -20,13 +23,13 @@ import type { createDrawerStore } from './drawer-store.ts'
 import type { NS } from './locales.ts'
 import css from './JobDrawer.module.css'
 
-/** One history page as the drawer reads it. */
+/** One history page as the drawer reads it: raw wire rows, oldest first. */
 export interface HistoryPage {
-  readonly events: readonly HistoryEntry[]
+  readonly events: readonly SessionLogRow[]
   readonly hasMore: boolean
 }
 
-/** Injected data channel; the apply closure wires it to the connection API. */
+/** Injected data channel; the apply closure wires it to the session remote. */
 export interface JobDrawerInjected {
   loadHistory: (
     sessionId: SessionId,
@@ -145,7 +148,7 @@ export function JobDrawer(props: JobDrawerProps): React.ReactElement | null {
         setError('history unavailable')
         return
       }
-      const rows = page.events.map(entry => entry.event as unknown as SessionLogRow)
+      const rows = page.events
       const folded = buildJobTrajectory(rows, jobId)
       setEntries(folded)
       setHasMore(page.hasMore)
@@ -183,7 +186,7 @@ export function JobDrawer(props: JobDrawerProps): React.ReactElement | null {
     const page = await loadHistory(sessionId, beforeSeq, PAGE_MESSAGES)
     setLoading(false)
     if (page === undefined) return
-    const rows = page.events.map(entry => entry.event as unknown as SessionLogRow)
+    const rows = page.events
     const older = buildJobTrajectory(rows, jobId)
     setEntries(current => [...older, ...current])
     setHasMore(page.hasMore)

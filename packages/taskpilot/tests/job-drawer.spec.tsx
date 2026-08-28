@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { JobView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { JobDrawer, type HistoryPage } from '../src/client/JobDrawer.tsx'
 import { createDrawerStore } from '../src/client/drawer-store.ts'
@@ -26,36 +26,28 @@ function historyPage(): HistoryPage {
   return {
     hasMore: false,
     events: [{
-      event: {
-        type: 'tool/call',
-        seq: 1,
-        time: 1_000,
-        data: { callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'pnpm build', run_in_background: true }) },
+      type: 'tool/call',
+      seq: 1,
+      time: 1_000,
+      data: { callId: 'c1', name: 'bash', arguments: JSON.stringify({ command: 'pnpm build', run_in_background: true }) },
+    }, {
+      type: 'tool/result',
+      seq: 2,
+      time: 1_000,
+      data: {
+        message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'job started: bash-1' }] }] },
       },
     }, {
-      event: {
-        type: 'tool/result',
-        seq: 2,
-        time: 1_000,
-        data: {
-          message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'job started: bash-1' }] }] },
-        },
-      },
+      type: 'tool/call',
+      seq: 3,
+      time: 2_000,
+      data: { callId: 'c2', name: 'job_output', arguments: JSON.stringify({ job_id: 'bash-1' }) },
     }, {
-      event: {
-        type: 'tool/call',
-        seq: 3,
-        time: 2_000,
-        data: { callId: 'c2', name: 'job_output', arguments: JSON.stringify({ job_id: 'bash-1' }) },
-      },
-    }, {
-      event: {
-        type: 'tool/result',
-        seq: 4,
-        time: 2_000,
-        data: {
-          message: { content: [{ type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'compiling...\n[status: running]' }] }] },
-        },
+      type: 'tool/result',
+      seq: 4,
+      time: 2_000,
+      data: {
+        message: { content: [{ type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'compiling...\n[status: running]' }] }] },
       },
     }] as HistoryPage['events'],
   }
