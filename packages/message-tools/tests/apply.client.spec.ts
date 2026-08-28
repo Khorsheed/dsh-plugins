@@ -33,6 +33,8 @@ interface BenchOptions {
   bindingVanishes?: boolean
   /** The turn never settles (cancel never closes it): waitIdle hits its deadline. */
   stuckRunning?: boolean
+  /** Which host-line registry seat the bench provides (default 'rc'). */
+  eventsSeat?: 'rc' | 'alpha'
 }
 
 /** The settle-shaped snapshot stub: a turn whose teardown lands only when cancel completes it. */
@@ -56,7 +58,14 @@ async function bench(options: BenchOptions = {}) {
   const remote = remoteStub()
   ctx.provide('remote.messageTools', remote as never)
   const conversationEvents = { register: vi.fn(() => () => {}) }
-  ctx.provide('conversationEvents', conversationEvents as never)
+  // The event-Definition registry seat differs per host line: rc exposes the
+  // standalone conversationEvents service, 0.1.2 folds it into
+  // uiConversation.events. The plugin probes both arms; the bench picks one.
+  if (options.eventsSeat === 'alpha') {
+    ctx.provide('uiConversation', { events: conversationEvents } as never)
+  } else {
+    ctx.provide('conversationEvents', conversationEvents as never)
+  }
   const input = {
     state: createSnapshotStore({ draft: options.draft ?? '' }),
     setDraft: vi.fn((text: string) => { input.state.getSnapshot().draft = text }),
@@ -135,12 +144,13 @@ describe('message-tools client apply', () => {
   afterEach(() => { document.head.innerHTML = '' })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'remote', 'conversation', 'conversationEvents', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'remote', 'conversation', 'locale'])
   })
 
   it('mounts the Remote, registers four Definitions and six chat-node entries', async () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
     expect(conversationEvents.register).toHaveBeenCalledTimes(4)
     const keys = slots.entries('conversation.chat.node').map(item => item.options.key)
@@ -149,6 +159,13 @@ describe('message-tools client apply', () => {
       'user', 'steering', 'message-tools-edited', 'message-tools-restored',
     ]))
     expect(keys).toHaveLength(6)
+  })
+
+  it('registers the Definitions through uiConversation.events when the standalone service is absent (host 0.1.2)', async () => {
+    const { ctx, conversationEvents } = await bench({ eventsSeat: 'alpha' })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    expect(conversationEvents.register).toHaveBeenCalledTimes(4)
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {

@@ -110,6 +110,25 @@ describe('installDomHider', () => {
     expect(document.querySelector('style[data-message-tools-hider]')).toBeNull()
   })
 
+  it('installs without the currentProvideInfo feed (host 0.1.2-alpha.1 removed it)', async () => {
+    const { ctx, list, sessions } = harness()
+    delete (ctx.sessions as unknown as { currentProvideInfo?: unknown }).currentProvideInfo
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    const session = createSnapshotStore(snapshotOf([
+      node('user', '4:userA', 5),
+      divider(5, 10),
+    ]))
+    sessions.set('s1', session)
+    const dispose = installDomHider(ctx)
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    const style = document.querySelector('style[data-message-tools-hider]')
+    expect(style?.textContent).toContain('[data-chat-flow-key="4:userA"]')
+    dispose()
+  })
+
   it('disables itself with one warning only after the probe retry window expires with rows still absent', async () => {
     const { ctx, list, sessions } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

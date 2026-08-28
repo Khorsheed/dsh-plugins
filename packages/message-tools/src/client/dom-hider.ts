@@ -19,6 +19,7 @@
  * sessions), and only one chat view is mounted at a time.
  */
 import type { ChatConversationViewNode, ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
 
@@ -219,11 +220,18 @@ export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {
   }
 
   const stopList = ctx.sessions.list.subscribe(bindCurrent)
-  const stopProvide = ctx.sessions.currentProvideInfo.subscribe(bindCurrent)
+  // Host 0.1.2-alpha.1 removed ISessions.currentProvideInfo (commit
+  // be531688f3, with the runtime package). It was only an extra rebind
+  // trigger here — bindCurrent re-resolves the session binding on every
+  // list snapshot, and alpha's binding() is pure addressing available as
+  // soon as the session is listed — so subscribe when the feed exists
+  // (rc hosts) and go without it when it does not.
+  const provideFeed = (ctx.sessions as { currentProvideInfo?: HostObservable<unknown> }).currentProvideInfo
+  const stopProvide = provideFeed?.subscribe(bindCurrent)
   bindCurrent()
   return () => {
     stopList()
-    stopProvide()
+    stopProvide?.()
     stopSession?.()
     stopRetry()
     style.remove()

@@ -13,7 +13,7 @@
  * adds.
  * @module @khorsheed/dsh-client-message-tools/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, ConversationNodeDefinition, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ctx.locale service merge.
@@ -56,15 +56,55 @@ const EMPTY_MODEL_DIRECTORY_STATE: ModelDirectoryState = Object.freeze({
 
 /**
  * Required services: slots, sessions, the remote channel, the scope-addressed
- * conversation service, conversation node registration, and the copy.
+ * conversation service, and the copy.
  * `remote.messageTools` is deliberately NOT an inject: this plugin both
  * mounts the namespace (through `$mount` below) and consumes it, and the
  * Cordis property proxy only resolves services declared in `inject` or
  * provided by an ancestor fiber. Declaring it would deadlock the loader; the
  * namespace is read back from the global store with `ctx.get` after the
  * awaited mount.
+ * The event-Definition registry is likewise NOT a static inject: its service
+ * name differs per host line (see registerEventDefinitions below), so a
+ * static entry would pend the fiber forever on the other line.
  */
-export const inject = ['slots', 'sessions', 'remote', 'conversation', 'conversationEvents', 'locale']
+export const inject = ['slots', 'sessions', 'remote', 'conversation', 'locale']
+
+/** Structural face of the host event-Definition registry (identical on both host lines). */
+interface EventDefinitionRegistry {
+  register(definition: ConversationNodeDefinition): unknown
+}
+
+/**
+ * Register the four message-tools event Definitions against whichever
+ * registry seat the host line exposes: rc hosts carry the standalone
+ * `conversationEvents` service (client-runtime package), 0.1.2 folded it
+ * into `uiConversation.events` (upstream commit be531688f3). Neither name
+ * exists on the other line, so both probes install and exactly one ever
+ * fires. The registries are live (a registration re-assembles mounted
+ * views), so the deferred arm needs no ordering against ui-conversation's
+ * own apply.
+ * @param ctx - client root context.
+ */
+function registerEventDefinitions(ctx: ClientContext): void {
+  const registerAll = (registry: EventDefinitionRegistry): void => {
+    registry.register(withdrawnDividerDefinition)
+    registry.register(restoredMessageDefinition)
+    registry.register(restoredAssistantMessageDefinition)
+    registry.register(editedMessageDefinition)
+  }
+  ctx.inject(['conversationEvents'], (lctx) => { registerAll(lctx.conversationEvents) })
+  // The alpha seat's name does not typecheck against the rc line's Context
+  // merge — probe it through the stringly face (feature detection, not a
+  // version check).
+  const probe = ctx as unknown as {
+    inject(deps: readonly string[], callback: () => void): unknown
+    get(name: string): unknown
+  }
+  probe.inject(['uiConversation'], () => {
+    const face = probe.get('uiConversation') as { events: EventDefinitionRegistry } | undefined
+    if (face !== undefined) registerAll(face.events)
+  })
+}
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the
@@ -106,10 +146,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'message-tools: dictionaries')
   const t = ctx.locale.bind(NS)
-  ctx.conversationEvents.register(withdrawnDividerDefinition)
-  ctx.conversationEvents.register(restoredMessageDefinition)
-  ctx.conversationEvents.register(restoredAssistantMessageDefinition)
-  ctx.conversationEvents.register(editedMessageDefinition)
+  registerEventDefinitions(ctx)
   ctx.effect(() => installDomHider(ctx), 'message-tools: dom hider')
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
