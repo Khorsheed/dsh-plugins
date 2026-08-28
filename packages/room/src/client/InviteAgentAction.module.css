@@ -1,0 +1,19 @@
+/* The session-header 邀请 agent chip: quiet text button in the header action
+   row, business-primary text, hover fill from the header's own vocabulary. */
+.trigger {
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.2));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  font-size: 12px;
+  line-height: 18px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trigger:hover {
+  background: var(--dsw-alias-fill-light, rgba(128, 128, 128, 0.08));
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+}

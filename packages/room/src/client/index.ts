@@ -1,12 +1,13 @@
 /**
  * room client plugin, browser half. Mounts the room Remote through the
  * official `ctx.remote.$mount` channel, feeds the client-side RoomStore, and
- * registers the slot entries: the sidebar footer「+ New room」action, the
- * `conversation.composer` chain takeover (claims the composer exactly when
- * the current session is a cached room — and renders the dock capsules plus
- * the session stats row itself, because both of their official homes ride the
- * fallback tree the takeover hides), and the 成员 `conversation.view`
- * tab. Composing this plugin out of cordis.yml removes every surface it adds.
+ * registers the slot entries: the session-header「邀请 agent」action (every
+ * session — inviting promotes it into a room), the `conversation.composer`
+ * chain takeover (claims the composer exactly when the current session is a
+ * cached room — and renders the dock capsules plus the session stats row
+ * itself, because both of their official homes ride the fallback tree the
+ * takeover hides), and the 成员 `conversation.view` tab. Composing this
+ * plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
@@ -14,14 +15,13 @@ import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/c
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API merge for the room namespace.
 import type {} from '@khorsheed/dsh-room/remote'
-// Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer', 'conversation.view').
+// Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
+// 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.footer.action').
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { en, zh } from './locales.ts'
-import { NewRoomAction } from './NewRoomAction.tsx'
+import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
@@ -32,7 +32,7 @@ import { RoomStore } from './room-store.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
-  NewRoomInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomMutationOutcome,
+  InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomMutationOutcome,
   RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
@@ -51,29 +51,6 @@ const NS = 'room'
  * provided by an ancestor fiber — declaring it would deadlock the loader.
  */
 export const inject = ['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale']
-
-/**
- * The cwd a new room inherits, mirroring the official startSession's
- * workspace choice: the current session's own cwd, then the workspace
- * holding the current session, then the recent-workspace projection. CLI
- * members run their process in the parent (room) session's cwd, so a room
- * without one cannot host them — undefined refuses creation instead.
- */
-export function inheritCwd(ctx: ClientContext): string | undefined {
-  const sessions = ctx.sessions.list.getSnapshot()
-  const current = sessions.current
-  if (current !== undefined) {
-    const entry = sessions.byId[current]
-    if (entry?.cwd !== undefined && entry.cwd !== '') return entry.cwd
-  }
-  const workspaces = ctx.workspaces.list.getSnapshot()
-  const holding = current === undefined
-    ? undefined
-    : workspaces.items.find(item => item.sessionIds.includes(current))
-  const target = holding
-    ?? workspaces.items.find(item => item.workspaceId === workspaces.recentWorkspaceId)
-  return target?.path
-}
 
 /**
  * Client plugin body: mount the Remote, start the store, register the
@@ -98,21 +75,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
-
-  const createRoom = async (): Promise<RoomMutationOutcome> => {
-    if (remote === undefined) return { ok: false, message: t('action.error.generic') }
-    const cwd = inheritCwd(ctx)
-    // No inheritable cwd: CLI members would fail every dispatch (the provider
-    // runs in the parent session's working directory) — refuse with guidance.
-    if (cwd === undefined) return { ok: false, message: t('action.error.noWorkspace') }
-    const carried = await remote.createRoom({ cwd })
-    if (!carried.ok) return { ok: false, message: t('action.error.generic') }
-    ctx.sessions.open(carried.value.sessionId)
-    // Seed the cache immediately: the freshly opened room must not flash the
-    // official composer while the list-driven first pull is in flight.
-    void roomStore.refresh(carried.value.sessionId)
-    return { ok: true }
-  }
 
   const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
@@ -258,18 +220,22 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.conversationEvents.register(roomRelayDefinition)
   ctx.conversationEvents.register(roomTaskLineDefinition)
 
-  // The slots are declared by ui-sidebar / ui-conversation, whose apply order
+  // The slots are declared by ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
   // each entry waits for the declaration instead of crashing the loader entry
   // at boot.
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
+  // The 邀请 agent entry: every session's header carries it (inviting a plain
+  // session promotes it into a room host-side). Ordered after the lineage and
+  // jobs entries.
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     {
-      name: 'sidebar.footer.action',
-      id: 'room-new',
+      name: 'conversation.session.header.actions',
+      id: 'room-invite-agent',
+      order: 30,
       locale: NS,
-      inject: (): NewRoomInjected => ({ createRoom }),
+      inject: (sessionId: SessionId): InviteAgentInjected => inviteFace(sessionId),
     },
-    NewRoomAction,
+    InviteAgentAction,
   ))
   // The composer takeover: claim exactly the cached-room sessions, at the
   // ui-subagent precedence (-10). Pending interactions (the approval panel's

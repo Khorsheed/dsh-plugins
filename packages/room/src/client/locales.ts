@@ -2,9 +2,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'action.newRoom': '新建 Room',
-  'action.error.noWorkspace': '请先打开一个工作区会话：room 需要继承它的工作目录（CLI 成员在其中运行）',
-  'action.error.generic': '创建 room 失败，请重试',
+  'action.inviteAgent': '＋ 邀请 agent',
   'view.members': '成员',
   'members.empty': '暂无成员',
   'composer.placeholder': '跟主 agent 对话；@ 成员以派发',
@@ -71,7 +69,8 @@ export const zh = {
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': '缓存命中 {percent}%',
   'stats.tokens': '输入 {input} tok · 输出 {output} tok',
-  'members.notRoom': '此会话不是 room',
+  'members.notRoom': '此会话还不是 room —— 邀请一个 agent 进来即可开始协作',
+  'members.notRoomAction': '邀请 agent',
   'members.status.idle': '空闲',
   'members.status.running': '运行中',
   'members.status.failed': '失败',
@@ -126,9 +125,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'action.newRoom': 'New room',
-  'action.error.noWorkspace': 'Open a workspace session first: the room inherits its working directory (CLI members run in it)',
-  'action.error.generic': 'Could not create the room; please retry',
+  'action.inviteAgent': '＋ Invite agent',
   'view.members': 'Members',
   'members.empty': 'No members yet',
   'composer.placeholder': 'Talk to the main agent; @ a member to dispatch',
@@ -195,7 +192,8 @@ export const en = {
   'stats.tokensPerSecond': '{throughput} tok/s',
   'stats.cacheHit': 'Cache hit {percent}%',
   'stats.tokens': 'Input {input} tok · Output {output} tok',
-  'members.notRoom': 'This session is not a room',
+  'members.notRoom': 'This session is not a room yet — invite an agent to start collaborating',
+  'members.notRoomAction': 'Invite agent',
   'members.status.idle': 'idle',
   'members.status.running': 'running',
   'members.status.failed': 'failed',

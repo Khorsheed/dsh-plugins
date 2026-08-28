@@ -182,19 +182,38 @@ export class RoomStore {
   }
 
   /**
-   * One live-feed nudge: refresh only when the current session is a known
-   * room (a non-room's snapshot churn never reaches the wire), debounced so
-   * an event burst costs one pull.
+   * One live-feed nudge, debounced so an event burst costs one probe: a known
+   * room refreshes its state; a session cached NOT a room re-probes `isRoom`
+   * (a promotion lands as a host-side `room/created` append the client never
+   * initiated — the room_invite/room_message tools promote in place); a
+   * first-pull-in-flight session (undefined verdict) waits for ensure.
    */
   private onLiveEvent(): void {
-    if (this.current === undefined || this.room.get(this.current) !== true) return
+    if (this.current === undefined || this.room.get(this.current) === undefined) return
     if (this.liveTimer !== undefined) clearTimeout(this.liveTimer)
     this.liveTimer = setTimeout(() => {
       this.liveTimer = undefined
-      if (this.current !== undefined && this.room.get(this.current) === true) {
-        void this.refresh(this.current)
+      const current = this.current
+      if (current === undefined) return
+      if (this.room.get(current) === true) {
+        void this.refresh(current)
+      } else {
+        void this.reprobe(current)
       }
     }, ROOM_LIVE_REFRESH_DEBOUNCE_MS)
+  }
+
+  /**
+   * Re-probe a cached-non-room session's verdict: a promotion flips the cache
+   * and pulls the state (the composer takeover follows on the next notify).
+   * @param sessionId - the session whose verdict may have changed.
+   */
+  private async reprobe(sessionId: SessionId): Promise<void> {
+    if (this.gateway === undefined) return
+    const carried = await this.gateway.isRoom({ sessionId })
+    if (!carried.ok || !carried.value) return
+    this.room.set(sessionId, true)
+    await this.refresh(sessionId)
   }
 
   private notify(): void {

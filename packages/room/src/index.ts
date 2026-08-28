@@ -1,6 +1,6 @@
 /**
  * room host half: the `room` Typert Remote service plus the `room_invite` /
- * `room_task` model tools. The room's entire state is the session's `room/*` custom-event
+ * `room_task` / `room_message` model tools. The room's entire state is the session's `room/*` custom-event
  * journal (log-only events — persistence and reload-replay come free, the
  * model never sees them, and harnesses without this plugin replay the session
  * safely); every read folds the journal through the pure replay, and every
@@ -16,7 +16,6 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -38,13 +37,12 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine } from './dispatch.ts'
 import { isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
-import { BlankRoomRegistry } from './registry.ts'
 import { roomInviteTool, roomMessageTool, roomTaskTool } from './tool.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
   RoomCloseTaskRequest, RoomCloseTaskResult,
-  RoomCreateRequest, RoomCreateResult, RoomFailure,
+  RoomFailure,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
@@ -96,48 +94,26 @@ function taskTitle(text: string): string {
   return first.length > 60 ? `${first.slice(0, 60)}…` : first
 }
 
-/** Plugin config: where the blank-room registry persists. */
-export interface Config {
-  /**
-   * The blank-room registry's JSON backing file (the bundle patch resolves it
-   * with `dshHomePath`). Omitted = in-memory only: createRoom's reuse-or-create
-   * survives within one boot but not across a restart.
-   */
-  readonly registryFile?: string
-}
-
-/** The archived-session probe face of the workspace registry (soft — room never injects it). */
-interface ArchivedProbe {
-  readonly archivedSessionIds: readonly string[]
-}
-
 /**
- * room Remote service: room creation, roster management, the human @-message
+ * room Remote service: promotion, roster management, the human @-message
  * intake, the notification gate, the task board, and run cancellation. A
- * room IS a normal session; the journal is its only state.
+ * room IS a normal session; the journal is its only state. A room is never
+ * CREATED apart from a session — inviting an agent into any session promotes
+ * it (see ensureRoom; the room-session-promotion proposal).
  */
 export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
-  /** Plugin config schema (every field optional: the registry degrades to in-memory). */
-  static Config: z<Config> = z.object({
-    registryFile: z.string(),
-  })
-
   /** The dispatch engine executing this service's dispatch records. */
   readonly engine: DispatchEngine
-
-  /** createRoom's reuse-or-create memory (see registry.ts). */
-  private readonly blankRooms: BlankRoomRegistry
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
   private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
 
   /**
    * @param ctx - host context carrying the session store.
-   * @param config - plugin config.
    */
-  constructor(ctx: Context, public config: Config) {
+  constructor(ctx: Context) {
     super(ctx, 'room')
     // Join the persistence catalog BEFORE any room event can be appended:
     // the read path refuses logs with out-of-catalog types, so a room written
@@ -145,13 +121,6 @@ export class RoomService extends TypertRemoteService {
     const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
     for (const type of ROOM_EVENT_TYPES) catalog.add(type)
     this.engine = new DispatchEngine(ctx)
-    this.blankRooms = new BlankRoomRegistry(config.registryFile)
-    // A room's first turn ends its blankness: the registry tracks blank rooms
-    // only, so the first turn/start drops the id (the session is visible in
-    // the list from then on and never needs reuse).
-    ctx.on('session/event', (session, event) => {
-      if (event.type === 'turn/start') this.blankRooms.drop(session.id)
-    })
     // The tools registry joins through DEFERRED injection, not a constructor
     // probe: an apply-time ctx.get races the registry's own mount order (the
     // probe loses on the real composition tree), while ctx.inject fires when
@@ -244,70 +213,35 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Create a room — or reuse one, mirroring the official startSession
-   * blank-reuse contract: a same-cwd room that is still blank (carries the
-   * `room/created` marker but no `turn/start`, i.e. invisible in the sidebar
-   * unless current) and not archived answers the request unchanged, roster
-   * and all; the registry (see registry.ts) holds exactly those blank rooms
-   * and sheds an id at its first turn or when the record proves stale.
-   * Otherwise publish the session through the agent factory (the official
-   * session.create shape — a live main agent under the default preset, its id
-   * recorded on the header), append the `room/created` identity marker, seat
-   * the main agent on the roster (an equal member, addressable like any
-   * other), flush durable, and register the fresh blank room. The live agent
-   * is what CLI-member dispatch anchors to (the delegation facade resolves
-   * the parent through `ctx.agents.get`, live agents only).
-   * @param request - optional storage metadata (cwd).
-   * @returns the new (or reused) room session's identity.
+   * Resolve a session for a room WRITE, promoting it when it isn't a room
+   * yet: a live plain session gains the `room/created` identity marker and
+   * the main agent's roster seat (the promotion IS the entry model — the
+   * room-session-promotion proposal: any session an agent is invited into
+   * becomes a room). Idempotent — an existing room passes through untouched,
+   * and concurrent promotions converge on the log (the first `room/created`
+   * wins identity). A cold EXISTING room resumes through the normal path;
+   * a cold PLAIN session cannot be promoted sight-unseen (promotion writes
+   * on the live session, and the surfaces that promote — the open session's
+   * invite dialog, the room tools running in their own session — always hold
+   * it live), so it answers `not-a-room`. NOT a Remote — the surfaces reach
+   * it through the write paths (invite/messageMember); public so tests and a
+   * future manual "promote" surface share the one entry.
+   * @param sessionId - the session to write.
+   * @returns the live session plus replayed state, or the rejection.
    */
-  @Remote('createRoom')
-  async createRoom(request: RoomCreateRequest): Promise<RoomCreateResult> {
-    const reused = await this.findReusableRoom(request.cwd)
-    if (reused !== undefined) return { sessionId: reused }
-    const composition = await composeRoomAgent(this.ctx, undefined)
-    const handle = await this.ctx.agents.create({
-      sessionId: SessionId(`session-${randomUUID()}`),
-      meta: {
-        ...request.cwd === undefined ? {} : { cwd: request.cwd },
-        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-      },
-      ...composition.setup === undefined ? {} : { setup: composition.setup },
-    })
-    const session = handle.agent.session
-    session.append('room/created', { version: 1 })
-    session.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
-    await this.ctx.sessions.flush(session)
-    this.blankRooms.track(session.id, request.cwd ?? '')
-    return { sessionId: session.id }
-  }
-
-  /**
-   * The reuse half of createRoom: the oldest registered blank room under the
-   * same cwd that still IS one (live or cold — `inspectCold` answers from the
-   * durable log without resuming anything). Stale records — the session is
-   * gone, its log is no longer a room's, or a turn started — drop out of the
-   * registry as they are met; an archived room stays registered but never
-   * reuses while archived (the workspace registry is probed soft: no
-   * workspace service, no archived set).
-   * @param cwd - the requested cwd (undefined matches cwd-less rooms).
-   * @returns the reusable room's id, or undefined to create fresh.
-   */
-  private async findReusableRoom(cwd: string | undefined): Promise<SessionId | undefined> {
-    const archived = new Set(
-      (this.ctx.get('workspaceRegistry') as ArchivedProbe | undefined)?.archivedSessionIds ?? [],
-    )
-    for (const id of this.blankRooms.ofCwd(cwd ?? '')) {
-      const sessionId = SessionId(id)
-      if (archived.has(id)) continue
-      const live = this.ctx.sessions.get(sessionId)
-      const events = live?.events ?? (await inspectCold(this.ctx, sessionId))?.events
-      if (events === undefined || !isRoomLog(events) || events.some(event => event.type === 'turn/start')) {
-        this.blankRooms.drop(id)
-        continue
-      }
-      return sessionId
+  async ensureRoom(sessionId: SessionId): Promise<RoomLoad> {
+    const live = this.ctx.sessions.get(sessionId)
+    if (live === undefined) {
+      const cold = await this.loadCold(sessionId)
+      if (!cold.ok) return { ok: false, error: cold.error }
+      return this.ensureLive(sessionId)
     }
-    return undefined
+    if (!isRoomLog(live.events)) {
+      live.append('room/created', { version: 1 })
+      live.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
+      await this.ctx.sessions.flush(live)
+    }
+    return { ok: true, session: live, state: replay(live.events) }
   }
 
   /**
@@ -353,7 +287,8 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Validate and journal an invitation: the name must be parseable by the
+   * Validate, PROMOTE (a plain session becomes a room — see ensureRoom), and
+   * journal an invitation: the name must be parseable by the
    * composer @-grammar and unique, the provider non-blank AND a registered
    * delegation provider (the classic slip is the harness name `kimi` where
    * the family registered `kimi-cli` — validated against the roster's
@@ -370,7 +305,8 @@ export class RoomService extends TypertRemoteService {
    * @returns the invitation receipt, or a rejection.
    */
   async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent'): Promise<RoomInviteResult> {
-    const loaded = await this.ensureLive(request.sessionId)
+    // Invite PROMOTES: inviting an agent into a plain session makes it a room.
+    const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (!validName(request.name)) return { ok: false, error: { code: 'invalid-name' } }
     if (loaded.state.members.some(member => member.name === request.name)) {
@@ -569,7 +505,10 @@ export class RoomService extends TypertRemoteService {
    * @returns the dispatch receipt, or a rejection.
    */
   async messageMember(request: RoomMessageRequest): Promise<RoomMessageResult> {
-    const loaded = await this.ensureLive(request.sessionId)
+    // Messaging PROMOTES too (the room_message tool's gate): the main agent
+    // answering "把 kimi 拉进来问一下…" promotes its own session, then the
+    // roster check runs against the promoted state.
+    const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (!loaded.state.members.some(member => member.name === request.member)) {
       return { ok: false, error: { code: 'member-not-found' } }

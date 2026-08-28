@@ -5,6 +5,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
 import { stubAgents } from './agents-stub.ts'
+import { createRoom } from './promote.ts'
 
 /** The REAL composition plus a stubbed tools registry capturing the registered definition. */
 async function boot() {
@@ -57,18 +58,21 @@ describe('room_invite tool (real composition)', () => {
     expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'instructions', 'firstTask', 'cwd'])
   })
 
-  it('rejects a non-agent caller and a non-room session with readable text', async () => {
+  it('rejects a non-agent caller, and PROMOTES a plain session on invite', async () => {
     const { ctx, tool } = await boot()
-    expect(await call(tool, { provider: 'kimi', name: 'ada', instructions: '后端' }, execFor(undefined)))
+    expect(await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(undefined)))
       .toContain('requires a calling agent')
+    // The promotion entry model: inviting into a plain session makes it a room.
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
-    expect(await call(tool, { provider: 'kimi', name: 'ada', instructions: '后端' }, execFor(plain)))
-      .toContain('not a room')
+    const text = await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(plain))
+    expect(text).toContain('joined')
+    expect(plain.events.filter(event => event.type.startsWith('room/')).map(event => event.type))
+      .toEqual(['room/created', 'room/member-added', 'room/member-added'])
   })
 
   it('invites an agent-originated member inside a room', async () => {
     const { ctx, service, tool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     const text = await call(tool, {
       provider: 'kimi-cli', name: 'ada', instructions: '负责 API',
@@ -84,7 +88,7 @@ describe('room_invite tool (real composition)', () => {
 
   it('returns a self-correcting error text on an unknown provider (the harness-name slip)', async () => {
     const { ctx, service, tool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     // The real-machine bug: the model passed the harness name "kimi".
     const text = await call(tool, { provider: 'kimi', name: 'ada', instructions: '后端' }, execFor(room))
@@ -104,7 +108,7 @@ describe('room_invite tool (real composition)', () => {
 
   it('returns a retryable error text on a name collision and an invalid name', async () => {
     const { ctx, service, tool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
 
@@ -120,7 +124,7 @@ describe('room_task tool (real composition)', () => {
   /** Boot a room with ada on the roster; return the board ids as they appear. */
   async function bootRoom() {
     const { ctx, service, taskTool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
     return { ctx, service, taskTool, sessionId, room }
@@ -236,7 +240,7 @@ describe('room_task tool (real composition)', () => {
 describe('room_message tool (real composition)', () => {
   it('dispatches to the member like a human @-message, minus the user bubble', async () => {
     const { ctx, service, messageTool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
 
@@ -257,9 +261,9 @@ describe('room_message tool (real composition)', () => {
     })
   })
 
-  it('rejects an unknown member with the live roster, a blank text, a non-room session, and a non-agent caller', async () => {
+  it('rejects an unknown member with the live roster, a blank text, and a non-agent caller; a plain session promotes', async () => {
     const { ctx, service, messageTool } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
 
     const unknown = await call(messageTool, { member: 'ghost', text: '在吗' }, execFor(room))
@@ -269,10 +273,14 @@ describe('room_message tool (real composition)', () => {
     expect(unknown).toContain('Retry')
 
     expect(await call(messageTool, { member: 'main', text: '  ' }, execFor(room))).toContain('non-blank')
-
-    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
-    expect(await call(messageTool, { member: 'main', text: 'x' }, execFor(plain))).toContain('not a room')
     expect(await call(messageTool, { member: 'main', text: 'x' }, execFor(undefined)))
       .toContain('requires a calling agent')
+
+    // The promotion gate: messaging from a plain session turns it into a room
+    // (main is seated by the promotion, so addressing main lands).
+    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
+    const text = await call(messageTool, { member: 'main', text: '给自己记一笔' }, execFor(plain))
+    expect(text).toContain('Dispatched to main')
+    expect(plain.events.some(event => event.type === 'room/created')).toBe(true)
   })
 })

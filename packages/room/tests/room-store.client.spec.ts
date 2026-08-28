@@ -172,7 +172,7 @@ describe('RoomStore', () => {
     dispose()
   })
 
-  it('ignores the live feed of a non-room current session', async () => {
+  it('a live nudge on a cached non-room re-probes the verdict (promotion flips the cache)', async () => {
     vi.useFakeTimers()
     const b = bench()
     const { list, store, gateway } = b
@@ -181,11 +181,22 @@ describe('RoomStore', () => {
     list.update((draft) => { draft.current = 'plain-1' as SessionId })
     await vi.advanceTimersByTimeAsync(0)
     expect(store.isRoomCached('plain-1' as SessionId)).toBe(false)
-    const baseline = gateway.getState.mock.calls.length
+    const stateCalls = gateway.getState.mock.calls.length
+    const probeCalls = gateway.isRoom.mock.calls.length
 
+    // A nudge on the plain session re-probes (debounced) but never pulls state.
     poke(b, 'plain-1' as SessionId)
-    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 4)
-    expect(gateway.getState.mock.calls.length).toBe(baseline)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 2)
+    expect(gateway.isRoom.mock.calls.length).toBe(probeCalls + 1)
+    expect(gateway.getState.mock.calls.length).toBe(stateCalls)
+
+    // The promotion lands host-side: the next re-probe flips the cache and
+    // pulls the state.
+    gateway.isRoom.mockResolvedValue({ ok: true, value: true } as never)
+    poke(b, 'plain-1' as SessionId)
+    await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 2)
+    expect(store.isRoomCached('plain-1' as SessionId)).toBe(true)
+    expect(store.getCached('plain-1' as SessionId)).toEqual(IDLE_ROOM)
     dispose()
   })
 

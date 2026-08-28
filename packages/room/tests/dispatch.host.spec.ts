@@ -49,8 +49,8 @@ async function bootRoom(options: { liveAgent?: boolean } = {}): Promise<Bench> {
     : { followup: vi.fn(), whenIdle: vi.fn(async () => {}) }
   ctx.provide('agents', {
     get: () => agent,
-    // createRoom publishes through the factory: mint the session via the
-    // real store, as the agent factory would.
+    // Rooms mint through the factory: the session via the real store, as
+    // the agent factory would.
     create: vi.fn(async (request: { sessionId: SessionId; meta?: Record<string, unknown> }) => {
       const session = ctx.sessions.create(request.sessionId, { meta: request.meta ?? {} })
       return { agent: { id: session.id, session }, dispose: async () => {} }
@@ -66,7 +66,7 @@ async function bootRoom(options: { liveAgent?: boolean } = {}): Promise<Bench> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
-  const { sessionId } = await service.createRoom({})
+  const sessionId = await createRoom(ctx, service)
   return { ctx, service, sessionId, facade: facade as Bench['facade'], localAgentStub, agent }
 }
 
@@ -417,3 +417,4 @@ describe('DispatchEngine (real composition)', () => {
     expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'ada', status: 'cancelled' }] } })
   })
 })
+import { createRoom } from './promote.ts'

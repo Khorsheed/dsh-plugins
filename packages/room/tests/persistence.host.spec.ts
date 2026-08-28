@@ -17,6 +17,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import RoomService, { ROOM_EVENT_TYPES } from '../src/index.ts'
 import { stubAgents } from './agents-stub.ts'
+import { createRoom } from './promote.ts'
 
 /** A hand-written log covering every room event type (the control's payload). */
 function roomLogFixture(): SessionEvent[] {
@@ -92,7 +93,7 @@ describe('room journal persistence', () => {
     const fix = await makeFixture(true)
     try {
       const service = fix.ctx.get('room') as RoomService
-      const { sessionId } = await service.createRoom({})
+      const sessionId = await createRoom(fix.ctx, service)
       const session = fix.ctx.sessions.get(sessionId)!
       session.append('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' })
       session.append('room/member-updated', { name: 'ada', instructions: '后端' })
@@ -126,7 +127,7 @@ describe('room journal persistence', () => {
       const fiberA = await ctxA.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
       await ctxA.plugin(RoomService)
       const serviceA = ctxA.get('room') as RoomService
-      const { sessionId } = await serviceA.createRoom({})
+      const sessionId = await createRoom(ctxA, serviceA)
       const roomA = ctxA.sessions.get(sessionId)!
       roomA.append('room/task-added', { id: 't1', member: 'main', title: '积压', status: 'pending' })
       await ctxA.sessions.flush(roomA)

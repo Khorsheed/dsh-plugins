@@ -4,9 +4,8 @@
  */
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: pulls ui-sidebar's SlotMap merge ('sidebar.footer.action').
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-// Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer', 'conversation.view').
+// Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
+// 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
@@ -18,21 +17,13 @@ export type RoomMutationOutcome =
   | { readonly ok: true }
   | { readonly ok: false; readonly message: string }
 
-/** Injected action face of the sidebar footer action. */
-export interface NewRoomInjected {
-  /**
-   * Create a room session through the Remote and open it. The request carries
-   * the inherited workspace cwd (CLI members need the parent session's
-   * working directory); without one the outcome carries the localized
-   * guidance and nothing is created.
-   */
-  createRoom: () => Promise<RoomMutationOutcome>
-}
+/** Injected action face of the session-header 邀请 agent action. */
+export type InviteAgentInjected = RoomInviteInjected
 
-/** Full props of the 'sidebar.footer.action' entry. */
-export type NewRoomActionProps =
-  PropsRuntime<'sidebar.footer.action'>
-  & InjectFace<NewRoomInjected>
+/** Full props of the 'conversation.session.header.actions' entry. */
+export type InviteAgentActionProps =
+  PropsRuntime<'conversation.session.header.actions'>
+  & InjectFace<InviteAgentInjected>
   & PropsLocale<'room'>
 
 /** Injected face of the dock capsules (goal capsule + task capsule). */
@@ -52,9 +43,10 @@ export interface RoomTasksInjected {
 }
 
 /**
- * The invite dialog's injected share (sessionId binds at inject time). Both
- * dialog hosts — the members tab and the fresh-room dock's invite capsule —
- * take exactly this face; neither inherits the other's surface actions.
+ * The invite dialog's injected share (sessionId binds at inject time). The
+ * three dialog hosts — the members tab, the session-header 邀请 agent action,
+ * and the fresh-room dock's invite capsule — take exactly this face; none
+ * inherits another's surface actions.
  */
 export interface RoomInviteInjected {
   /** The room session's own cwd (the invite dialog's empty-cwd placeholder). */

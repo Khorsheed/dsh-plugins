@@ -143,11 +143,6 @@ export function MembersView({
     return () => { clearInterval(timer) }
   }, [anyRunning])
 
-  if (roomStore.isRoomCached(sessionId) === false) {
-    return <div className={css.empty}>{t('members.notRoom')}</div>
-  }
-  if (state === undefined) return null
-
   const flash = (message: string): void => {
     setNotice(message)
     setTimeout(() => { setNotice(null) }, 3000)
@@ -200,6 +195,37 @@ export function MembersView({
     if (!outcome.ok) setError(outcome.message)
   }
 
+  const dialogNode = dialog !== null && (
+    <InviteDialog
+      mode={dialog.mode}
+      member={dialog.mode === 'edit' ? dialog.member : undefined}
+      providers={providers?.providers}
+      localAgentAvailable={providers?.localAgentAvailable ?? true}
+      inheritedCwd={roomCwd}
+      browseDirectory={browseDirectory}
+      onSubmit={submitDialog}
+      onClose={() => { setDialog(null) }}
+      t={t}
+    />
+  )
+
+  // A plain session gets the guide state instead of the bare "not a room":
+  // inviting an agent IS the promotion (the header action is its twin entry).
+  if (roomStore.isRoomCached(sessionId) === false) {
+    return (
+      <div className={css.members}>
+        <div className={css.empty}>
+          <p>{t('members.notRoom')}</p>
+          <button type="button" className={css.invite} onClick={openInvite}>
+            {t('members.notRoomAction')}
+          </button>
+        </div>
+        {dialogNode}
+      </div>
+    )
+  }
+  if (state === undefined) return null
+
   return (
     <div className={css.members}>
       <div className={css.grid}>
@@ -225,19 +251,7 @@ export function MembersView({
       </div>
       {notice !== null && <div className={css.notice} role="status">{notice}</div>}
       {error !== null && <div className={css.error} role="alert">{error}</div>}
-      {dialog !== null && (
-        <InviteDialog
-          mode={dialog.mode}
-          member={dialog.mode === 'edit' ? dialog.member : undefined}
-          providers={providers?.providers}
-          localAgentAvailable={providers?.localAgentAvailable ?? true}
-          inheritedCwd={roomCwd}
-          browseDirectory={browseDirectory}
-          onSubmit={submitDialog}
-          onClose={() => { setDialog(null) }}
-          t={t}
-        />
-      )}
+      {dialogNode}
     </div>
   )
 }

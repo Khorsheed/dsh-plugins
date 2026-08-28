@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { stubAgents } from './agents-stub.ts'
+import { createRoom } from './promote.ts'
 
 interface BenchOptions {
   /** false: no localAgent service at all (facade probe misses). */
@@ -47,7 +49,7 @@ async function boot(options: BenchOptions = {}) {
 /** Boot with one room created; returns its id. */
 async function bootRoom(options: BenchOptions = {}) {
   const { ctx, service, facade, agents } = await boot(options)
-  const { sessionId } = await service.createRoom({})
+  const sessionId = await createRoom(ctx, service)
   return { ctx, service, facade, agents, sessionId }
 }
 
@@ -77,12 +79,42 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'session-not-found' } })
   })
 
-  it('createRoom publishes the session through the agent factory (a live main agent)', async () => {
-    const { service, agents, sessionId } = await bootRoom()
-    expect(agents.create).toHaveBeenCalledTimes(1)
-    // The dispatch anchor: the delegation facade resolves the parent through
-    // agents.get — a room born without a live agent cannot dispatch at all.
-    expect(agents.get(sessionId)).toBeDefined()
+  it('ensureRoom promotes a plain session in place (marker + main seat, idempotent)', async () => {
+    const { ctx, service, agents } = await boot()
+    // Mint a plain session through the factory stub, as any session is born.
+    const sessionId = SessionId(`session-${randomUUID()}`)
+    await agents.create({ sessionId, meta: {} })
+    const session = ctx.sessions.get(sessionId)!
+    expect(session.events.some(event => event.type === 'room/created')).toBe(false)
+
+    const promoted = await service.ensureRoom(sessionId)
+    expect(promoted.ok).toBe(true)
+    // The marker and the main-agent seat journal onto the SAME session.
+    expect(session.events.filter(event => event.type.startsWith('room/')).map(event => event.type))
+      .toEqual(['room/created', 'room/member-added'])
+    const state = await service.getState({ sessionId })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [] } })
+
+    // Idempotent: a second promotion journals nothing more.
+    const again = await service.ensureRoom(sessionId)
+    expect(again.ok).toBe(true)
+    expect(session.events.filter(event => event.type === 'room/created')).toHaveLength(1)
+  })
+
+  it('invite into a PLAIN session promotes it and lands the member', async () => {
+    const { ctx, service, agents } = await boot()
+    const sessionId = SessionId(`session-${randomUUID()}`)
+    await agents.create({ sessionId, meta: {} })
+    const invited = await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    expect(invited).toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: false } })
+    const events = ctx.sessions.get(sessionId)!.events
+    expect(events.filter(event => event.type.startsWith('room/')).map(event => event.type))
+      .toEqual(['room/created', 'room/member-added', 'room/member-added'])
+    const state = await service.getState({ sessionId })
+    expect(state).toMatchObject({
+      ok: true,
+      value: { members: [MAIN_MEMBER, { name: 'ada', kind: 'cli', invitedBy: 'human' }] },
+    })
   })
 
   it('invite lands a cli member on the roster and acknowledges a dispatched first task', async () => {

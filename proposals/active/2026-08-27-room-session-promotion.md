@@ -88,7 +88,7 @@ local-agent 侧（`main`，`packages/local-agent`，均已核实）：
 
 ## 实现记录
 
-- （本提案刚立项，尚无实现。随实施追加。）
+- 2026-08-29（room 分支）：M1 落地。`ensureRoom` 成为唯一提升入口（invite/messageMember/room_invite/room_message 经它提升，其余写入路径仍要求已是 room）；「+ New room」创建流整体移除（`NewRoomAction`、`createRoom` Remote、`BlankRoomRegistry` 及其注册表文件/配置）；「邀请 agent」挂上 `conversation.session.header.actions`（所有会话可见），成员 tab 的非 room 态改为引导态；store 的实时订阅对缓存为非 room 的会话改为去抖重探 `isRoom`（工具驱动的提升因此即时可见）。测试 172 全绿。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 

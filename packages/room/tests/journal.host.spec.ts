@@ -7,6 +7,7 @@ import {
   isRoomLog, parseMentions, parseRelayDirective, pendingInstructions, previousCursor, replay, taskProgress,
 } from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
+import { createRoom } from './promote.ts'
 
 /** The REAL composition: a cordis root, the real SessionStore plugin, and the package's own service plugin. */
 async function boot() {
@@ -19,9 +20,9 @@ async function boot() {
 }
 
 describe('RoomService journal (real composition)', () => {
-  it('createRoom appends the room/created marker and isRoom recovers identity from the log', async () => {
+  it('ensureRoom appends the room/created marker and isRoom recovers identity from the log', async () => {
     const { ctx, service } = await boot()
-    const { sessionId } = await service.createRoom({})
+    const sessionId = await createRoom(ctx, service)
 
     expect(await service.isRoom({ sessionId })).toBe(true)
     const session = ctx.sessions.get(sessionId)!
@@ -32,9 +33,9 @@ describe('RoomService journal (real composition)', () => {
     expect(session.surface.nodes).toEqual([])
   })
 
-  it('createRoom records the cwd in the session header when given', async () => {
+  it("a session promoted in place keeps its own header (the cwd was always the session's)", async () => {
     const { ctx, service } = await boot()
-    const { sessionId } = await service.createRoom({ cwd: '/home/user/work' })
+    const sessionId = await createRoom(ctx, service, { cwd: '/home/user/work' })
     expect(ctx.sessions.get(sessionId)!.header.cwd).toBe('/home/user/work')
   })
 

@@ -83,9 +83,12 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
 }
 
 describe('MembersView', () => {
-  it('shows the not-room empty state for a plain session', async () => {
-    await bench({ room: false })
-    expect(screen.getByText('此会话不是 room')).toBeDefined()
+  it('shows the guide state for a plain session (inviting IS the promotion)', async () => {
+    const { face } = await bench({ room: false })
+    expect(screen.getByText('此会话还不是 room —— 邀请一个 agent 进来即可开始协作')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '邀请 agent' }))
+    expect(await screen.findByRole('dialog')).toBeDefined()
+    expect(face.listProviders).toHaveBeenCalled()
   })
 
   it('renders member cards with avatar letters, provider/kind, and status chips', async () => {

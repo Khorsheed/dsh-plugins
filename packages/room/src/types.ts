@@ -362,18 +362,6 @@ export interface RoomIsRoomRequest {
   readonly sessionId: SessionId
 }
 
-/** createRoom request. */
-export interface RoomCreateRequest {
-  /** Working directory recorded in the session header; omitted for none. */
-  readonly cwd?: string
-}
-
-/** createRoom result: the freshly created room session's identity. */
-export interface RoomCreateResult {
-  /** The new room session. */
-  readonly sessionId: SessionId
-}
-
 /** getState request. */
 export interface RoomGetStateRequest {
   /** Room session to replay. */

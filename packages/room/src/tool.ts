@@ -1,8 +1,10 @@
 /**
  * The room's model-facing tools, `room_invite`, `room_task`, and
  * `room_message`: the main
- * agent's paths into the room it belongs to. Both are gated at execute time —
- * the calling agent's session must be a room (the journal carries
+ * agent's paths into the room it belongs to. `room_invite` and
+ * `room_message` PROMOTE: calling them in a plain session turns it into a
+ * room (ensureRoom) instead of rejecting. `room_task` stays gated at execute
+ * time — the calling agent's session must be a room (the journal carries
  * `room/created`); anywhere else the tool answers with readable error text
  * instead of throwing, so the model can see the rejection and self-correct.
  * `room_invite` lands in the same invite path as the human dialog
@@ -40,7 +42,8 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
   return defineTool({
     name: 'room_invite',
     description:
-      'Invite a CLI agent member into the current room (only usable inside a room session). '
+      'Invite a CLI agent member into the current session (any session works — inviting promotes it '
+      + 'into a room: the multi-agent group conversation surface wakes up on it). '
       + 'The member becomes @-addressable by the human and by other members: pick a short unique '
       + 'name (no whitespace, no "@", e.g. ada/bill/cathy) — it is the addressing name, decoupled '
       + 'from the provider so two instances of one provider can coexist. The instructions are the '
@@ -93,9 +96,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
     async execute(args, exec) {
       const agent = exec.agent
       if (agent === undefined) return { text: 'room_invite requires a calling agent (exec.agent was undefined).' }
-      if (!isRoomLog(agent.session.events)) {
-        return { text: 'The current session is not a room; room_invite is only usable inside a room session.' }
-      }
+      // No room gate: inviteMember PROMOTES the calling session into a room.
       const result = await backend.inviteMember({
         sessionId: agent.session.id,
         provider: args.provider,
@@ -305,7 +306,8 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
   return defineTool({
     name: 'room_message',
     description:
-      'Dispatch a message to a member of the current room (only usable inside a room session). '
+      'Dispatch a message to a member of the current room (works in any session — it promotes the '
+      + 'session into a room if it is not one yet). '
       + 'A member is an independent CLI session: the message runs asynchronously, and the member\'s '
       + 'reply appears in the room as member speech (the human sees it; you read it through the '
       + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
@@ -340,9 +342,7 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
     async execute(args, exec) {
       const agent = exec.agent
       if (agent === undefined) return { text: 'room_message requires a calling agent (exec.agent was undefined).' }
-      if (!isRoomLog(agent.session.events)) {
-        return { text: 'The current session is not a room; room_message is only usable inside a room session.' }
-      }
+      // No room gate: messageMember PROMOTES the calling session into a room.
       const sessionId = agent.session.id
       const result = await backend.messageMember({ sessionId, member: args.member, text: args.text })
       if (!result.ok) {

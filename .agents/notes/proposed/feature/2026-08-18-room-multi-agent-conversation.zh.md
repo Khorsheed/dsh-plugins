@@ -16,7 +16,7 @@ Status: proposed
 
 ### 会话与成员模型
 
-- 创建 room（`sidebar.footer.action` 里的 `+ 新 room` 入口——按钮穿官方「新会话」的壳：SidebarRoot `.newSession` 那套 elevated 底色 + l2 细边 + r12 + floating hover，图标位放多 agent 三环glyph IconAgentPresetOutline16，56px 栏收起为纯图标 36px 透明钮，2026-08-25）就是创建一个普通会话并 append 一条 `room/created` 自定义事件——它是 room 的身份标记，也是其日志的根。名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。**复用或创建（2026-08-26）**，对齐官方 startSession 的 blank 契约：从没跑过回合的 room 在官方 `sessionBlank` 语义下是 blank（无 `turn/start`——侧栏只在它是当前会话时才显示 blank 会话，所以只邀请了成员而没跑过回合的 room 刷新后就从列表消失），同 cwd 的 `createRoom` 请求命中一个仍然 blank、未归档的 room 时直接复用它而不是再堆一个新的。blank room 注册表（harness home 下的一个小 JSON，由 bundle patch 里的 `!!js dshHomePath` 解析，与 session 后端的 root 同一 seam；缺配置时退化为内存表）只登记这类 room，在首个 `turn/start`（host `session/event` 监听）摘除 id，并在校验时惰性清理坏记录（会话已删、日志不再是 room）。
+- **入口模型（2026-08-29 重写，room-session-promotion 提案）**：room 从不脱离会话单独创建——「邀请 agent」动作挂在每个会话的头部（`conversation.session.header.actions`，成员 tab 的引导态是它的孪生入口），把 agent 请进任意会话即原地提升：`ensureRoom` 幂等地补写 `room/created` 标记并让主 agent 入座，并发由事件日志收敛（首个 `room/created` 定身份）。`room_invite`/`room_message` 同样提升（它们的门控就是 ensureRoom——普通会话的主 agent 被叫"把 kimi 拉进来"时先提升自己所在的会话）；其余写入路径仍要求已是 room。提升翻转经实时流到达 client：缓存为非 room 的会话在去抖通知后重新探测 `isRoom`（store 的实时订阅原本只对已知 room 生效）。更早的「+ 新建 Room」创建流整体退役——`NewRoomAction`、`createRoom` Remote、BlankRoomRegistry（reuse-or-create 记账，2026-08-26）全部移除：不会再有"先建一个空 room 再忘掉"，邀请就发生在你正在用的会话里。room = journal 上带 `room/created` 的普通会话；名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。
 - 会话自己的主 agent 是无特权成员。**不带 @ 的消息就是跟主 agent 的正常对话**（composer 放行给官方提交路径）；**@ 是派发触发器**。主 agent 因此天然感知人的全部消息——裸消息与 @ 派发文本都是普通 `user/message` 事件（@ 派发由 host 侧 append，不唤醒主 agent，但进它的模型可见历史，主 agent 能据此推测名册与任务），对成员回复零感知。
 - 外部成员（如 `@ada`）是 local-agent 家族 CLI provider 的委派：一个 dsh 子会话（`parentSession = room 会话`），通过家族 resume 注册表跨轮延续。每个成员保持自己私有的 CLI 上下文；子会话里的镜像 transcript 是完整轨迹。
 - **成员级 `cwd`**：成员合法地可能与 room 会话在不同工作目录干活（主 agent 在仓库 A，CLI 成员在仓库 B）。邀请弹窗带 cwd 字段（缺省继承 room 会话的 cwd）；投递需要门面层的覆盖参数（下方需求 R2）。
@@ -117,7 +117,7 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 
 ### Why not 通过 composer 的 @ 菜单邀请？
 
-邀请需要填名字，角色指令和 cwd 可选——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在成员 tab 的弹窗、新 room 初始态 dock 的邀请胶囊和主 agent 的 `room_invite` 工具里。
+邀请需要填名字，角色指令和 cwd 可选——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在会话头部「邀请 agent」动作（所有会话可见，2026-08-29）、成员 tab 的弹窗、新 room 初始态 dock 的邀请胶囊和主 agent 的 `room_invite` 工具里。
 
 ### Why not 把成员产出写成 room 会话里模型可见的事件？
 
@@ -133,7 +133,7 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 
 ## Acceptance criteria
 
-- `+ 新 room` 创建流程产出一个以 room 形态打开的会话（重开时从 `room/created` 事件恢复身份）；视图导航有成员 tab；dock 出现 goal/任务双胶囊。
+- 在任意会话里邀请 agent 即把它提升为 room（重开时从 `room/created` 事件恢复身份）；视图导航有成员 tab；dock 出现 goal/任务双胶囊。
 - 不带 @ 的消息产生正常的主 agent 回合；`@ada <任务>` 派发（首轮 fresh、之后 resume——子会话 transcript 验证），且 @ 消息本身作为标准 `user/message` 渲染为官方用户气泡、进入主 agent 的模型可见历史但不唤醒它；未知成员结构化拒绝；两个成员并行、同一成员串行。
 - 每次派发的 prompt 含名册、该成员的待收通知、本次文本——**且无滚动流水账、无任务板摘要**（绝不重发成员已见过的内容，成员也不感知 room 全景）。
 - 邀请弹窗：provider 列表反映 `localAgent.roster()` 登录态；cwd 缺省继承 room 会话且按成员生效（门面 R2）；角色指令可在子会话首轮验证拼在最前。主 agent 的 `room_invite` 工具产出完全相同的成员记录；重名或含 `@`/空白的名字以工具错误拒绝。
