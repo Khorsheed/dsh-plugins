@@ -46,6 +46,31 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 
 两个 domain 的交集是 **local-agent + mission**——它们是共同前置。**capability 层不收口，任何 domain 包都发不出去。**
 
+### domain 在两层落地
+
+一个 domain 不只是「装哪些插件」，它同时是「这个会话看到什么」：
+
+| 层 | 承载 | 切换成本 |
+|---|---|---|
+| profile `bundles` | 插件全集。`capability` 层的包按需挂载、探测不到即静默降级，因此全装无害 | 重启（很少发生） |
+| **agent preset** | 该 domain 的视图：工具子集、prompt sections、skills、persona | 新建会话时选 |
+
+同一个实例因此能并存「开发会话」与「评测会话」，不必重启切换。整合包的目录形状：
+
+```
+dsh-dev/
+├─ package.json              成员插件为直接依赖
+├─ cordis.yml                dsh.profile.bundles 层
+│                            + agent-presets 的 roots 指向 ./presets
+└─ presets/dev/agent.cordis.yml   工具子集 + prompt sections + skills + persona
+```
+
+`roots` 接受任意路径（官方配置示例即 `~/company-presets`），所以整合包自带 preset 无需上游 seam。
+
+两条官方硬约束：**会话只能在零产出时切 preset**（`agent-presets` README：*a session can switch to a different preset only while it has produced nothing*），因此 mode 只能在新建会话时选，不能中途切；**子 agent 继承父的组合**，所以委派出去的子会话与父会话同 preset。
+
+「不感知某能力」不需要屏蔽机制：novel preset 不挂 `worktrees`，它的 prompt section 就不存在，模型看不到——比写一条「别用 worktree」的指令更干净，也不占 token。
+
 ## 四、包账本
 
 状态标记：✅ 已上架 npm ｜ 🔶 rc，功能通未发布 ｜ 🌿 分支未合流 ｜ ⬜ 未开工
@@ -64,7 +89,7 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 | `ui-shortcuts` | 0.1.0 | ✅ | 可自定义键位的快捷键 | — |
 | `context-guard` | 0.1.0 | ✅ | 上下文占用越阈值时出现压缩按钮 | [context-clearing](../proposals/active/2026-08-19-context-clearing.md) `idea` |
 | `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片 | — |
-| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具 | `capability-catalog` `in-progress` ※ |
+| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | `capability-catalog` `in-progress` ※ |
 
 ### capability — 能力原语
 
@@ -121,6 +146,8 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 7. **live 通道留在家族自有 wire**，官方 SDK 只承接 one-shot / resume——v0.1.2-alpha.1 仍无 mid-turn cancel（`sdk/client/README.md` 明列为已知限制）。
 8. **上游 0.1.2 新增浏览器 token 认证**（`client/connection/src/browser-auth.ts`）：launch token → 签名 cookie，取代了原先的 `PRIVILEGED_METHODS` loopback 分层。mobile-access 提案里「进程内认证无 seam」的前提已失效。但 cookie 不带 `Secure`、`--host 0.0.0.0` 仍不支持，**TLS 前置仍是硬要求**。
 
+9. **domain 在两层落地**：profile 提供插件全集，preset 提供 domain 视图（工具子集 / prompt sections / skills / persona）。工作方式的表述按性质分流——通用实践进 preset 的 prompt section，项目纪律留在项目 `AGENTS.md`，跨项目个人偏好留在 `$DSH_HOME/AGENTS.md`。三者叠加，互不替代。
+
 ## 六、优先级
 
 | 阶段 | 动作 | 解锁 |
@@ -165,7 +192,7 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 | 阶段 | 目标 | 前置 | 里程碑（可验收） |
 |---|---|---|---|
 | **一** | 家族进 3080 | 无 | local-agent 七包在 3080 跑起来，迁移验收三步通过，**3 天观察期开始计时** |
-| 二 | 首个 domain 包 | 阶段一 | 空 `$DSH_HOME` 一条命令装出完整开发工作台（`dsh-dev`） |
+| 二 | 首个 domain 包 | 阶段一 | 空 `$DSH_HOME` 一条命令装出完整开发工作台（`dsh-dev`），**且新建会话能选到 `dev` preset**，catalog 里可见该 preset 作用域下的工具与 skill |
 | 三 | room 归队 | 阶段一（契约冻结后适配才不是移动靶） | `packages/room` 在今天的 main 上 build+test 绿，合入 main |
 | 四 | npm 第二波 | 阶段一 + 前置 10 到期 + 前置 9、11、13 | 七包上架，一次性目录装得上并 import 通过 |
 | 五 | eval pilot | CLI 版本指纹 + 阶段一 | 产出第一个 export bundle，判据与管道得到验证 |
@@ -181,6 +208,17 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 | CLI 版本指纹 | 施工（并行） | acquire 时把四个 harness CLI 的 `--version` 与模型端点标识写进 mission `refs` | 独立项，随时可停；它真正服务的是阶段五 |
 | capability-catalog 的 Agent Note 首节 | 修复 | 首节须为 `## Problem`，当前为 `## Decision`，`verify-agent-note-format` 会红 | 属他人在制品时不代改，只通报 |
 
+### 阶段二的构成
+
+`dsh-dev` 是第一个按决策 9 组装的 domain 包，两半都要：
+
+| 半边 | 内容 | 验收 |
+|---|---|---|
+| profile | `bundles` 层列出成员插件；`agent-presets` 配置 `roots` 指向 `./presets` | 空 `$DSH_HOME` 一条命令装起来 |
+| preset | `presets/dev/agent.cordis.yml`：开发工具子集、开发工作流的 prompt section（通用实践，非项目纪律）、persona | 新建会话选得到 `dev`；`capability-catalog` 列出该作用域的工具与 skill |
+
+preset 半边是这个阶段的**新工作**——形态 B 的 profile 模板已有先例（`dsh-web-basic`），preset 分发没有。先做一个最小 preset（工具子集 + 一段 prompt section）跑通链路，persona 与 skill 子集随后迭代。
+
 **room 不在阶段一。** 它是 `dsh-dev` 的增强而非前提——不含 room 的 `dsh-dev`（base + local-agent + worktrees + mission）已是完整可用的开发工作台。room 的适配面对的是 175 个提交的契约漂移（main 侧已有 `retire the standalone settings section`、`expose activeDelegations` 等实质变动），工作量不可控，给它独立阶段以免拖垮关键路径。
 
 ## 八、待决
@@ -188,6 +226,8 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 - **`dsh-web-basic` 含 `ankh-guard`（ops 层）**是历史组成。四层模型下 base 整合包是否应包含 ops 包，需在 package-management 里定；改动会影响已发布整合包的成员清单。
 - **eval 的重复实验建模**：N 次重复是 N 个 attempt 还是 N 个 mission（`retry` 不幂等）。pilot 时定死，影响后续能否算方差。
 - **attest key 的人机边界**：若要求某些转移必须人来，需在模板层约定该 key 只由 CLI/slash 登记，或排除出模型工具可写范围。
+
+- **`mode-switcher` 提案需补一条官方约束**：会话只能在零产出时切 preset，因此 mode 是新建会话时的选择，不是会话内的开关。该提案目前在主工作树未提交，待其进入 main 后补。
 
 ## 九、维护规则
 
