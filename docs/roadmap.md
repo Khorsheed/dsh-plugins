@@ -125,27 +125,73 @@ domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物—
 
 | 阶段 | 动作 | 解锁 |
 |---|---|---|
-| **P0** | capability 层收口：local-agent 第二波上架（member-channel 收尾）、mission / worktrees 转正式版 | 一切 domain 包 |
-| **P0** | room 合 main | `dsh-dev` 的最后一块 |
+| **P0** | capability 层收口：local-agent 第二波发布、mission / worktrees 转正式版 | 一切 domain 包 |
 | **P1** | 首发 `dsh-dev`（形态 B：profile 目录模板） | 验证「base + capability 组装成 workflow」形态成立 |
+| **P1** | room 归队 | `dsh-dev` 的协作面（增强，非前提） |
 | **P1** | `eval` pilot：1 维度 × 4 原生组合 × 3 重复 | 验证 bundle 能否支撑可发布结论 |
 | **P2** | 出 `dsh-eval`；mobile-access 重写并落地 | 访问维度 |
 | **P3** | 多人协作（每人一实例 + 共享数据面） | — |
 
-### 下一步三件事
+执行层面的依赖、闸门与里程碑见[当前迭代](#七当前迭代)——那里是唯一维护的一份，本节只排长期次序。
 
-1. **member-channel 收尾 → local-agent 第二波上架**。它同时堵着 `dsh-dev` 和 `dsh-eval`。
-2. **room 合 main**。现在是孤儿分支，越晚合冲突越大。
-3. **eval pilot 前补一条**：把各 harness CLI 的 `--version` 与模型端点标识写进 mission `refs`——lab 的环境指纹只覆盖容器镜像 digest，而 local-agent 在宿主 spawn CLI，**被测对象的版本目前不在任何指纹里**，CLI 自动更新会静默毁掉可复现性。
+## 七、当前迭代
 
-## 七、待决
+阶段不绑时间，绑**依赖与里程碑**：前一阶段的里程碑达成，后一阶段才有意义。近期重点是阶段一。
+
+### 发布前置依赖（local-agent 第二波）
+
+一次 npm 发布要过的全部闸，按依赖顺序。`来源`列指向规则的事实源，避免凭记忆施工。
+
+| # | 前置 | 判据 | 来源 |
+|---|---|---|---|
+| 1 | 家族契约冻结 | 「member-channel 不阻塞第二波」的决策入册；家族按现有能力发布 | 本文件决策清单 |
+| 2 | 版本线确认 | `npm view <包名> version`，新版本必须更高（403/409 就是撞这个） | publishing.md ② |
+| 3 | build + test 全绿 | `pnpm --filter <包名> run build && test`，逐包 | publishing.md ③ |
+| 4 | Compatibility 双写同步 | 两个 README 的 `Compatibility` 段 + package.json 的 `dsh.compat`（`minHost`，降级项写 `notes`） | AGENTS.md 包约定 |
+| 5 | pack-dist 出包 | `scripts/pack-dist.ts` 做 scope 重写与 `files` 校验；禁止对源目录直接 `npm publish` | publishing.md ④ |
+| 6 | tarball 内容完整 | `tar -tzf` 确认 `lib/`、`cordis.patch.yml`、`scripts/` 一个不少 | publishing.md ⑤ |
+| 7 | 进 3080 六道闸 | `pnpm deploy:3080` 逐包跑：build+test → pack-dist → 刷新清单 → 录绿色凭证 → **preflight（FAIL 即停，永不绕过）** → 重启 + canary PASS | ops.md 门禁清单 |
+| 8 | 迁移验收三步 | ① 会话里列出 skill 并**真调用一次**（只看目录会漏「列出即正常、调用即炸」）② `check-env --port 3080` 读数无异常 ③ 走一遍门禁重启，canary PASS | ops.md 验收清单 |
+| 9 | README 截图回填 | 验收时逐包拍可见界面，`git add -f` 替换占位注释；缺图不阻塞发布，占位注释必须在 | ops.md |
+| 10 | **3080 连续 3 天无事故** | 崩溃、功能回退、相关 preflight 失败均无 | ops.md 放行标准 |
+| 11 | npm 账号与 scope | `npm whoami` 是 `@khorsheed` 的所有者；`@deepseek-ai` 是官方 org，不要尝试 | publishing.md ①、失败对照表 |
+| 12 | 家族同发、按依赖序 | 七包一次发齐，core 先于 provider（唯一的齐步走例外，其余插件各走独立线） | ops.md 发布节奏 |
+| 13 | 消费者验证 | 一次性目录 `npm install` + `import` 冒烟，30 秒 | publishing.md 发布后验证 |
+
+**第 10 项是时间门，不是工作量**——它把 npm 发布从「能不能做完」变成「什么时候到期」，因此阶段四只能排在最后，且不阻塞其余阶段。
+
+### 阶段
+
+| 阶段 | 目标 | 前置 | 里程碑（可验收） |
+|---|---|---|---|
+| **一** | 家族进 3080 | 无 | local-agent 七包在 3080 跑起来，迁移验收三步通过，**3 天观察期开始计时** |
+| 二 | 首个 domain 包 | 阶段一 | 空 `$DSH_HOME` 一条命令装出完整开发工作台（`dsh-dev`） |
+| 三 | room 归队 | 阶段一（契约冻结后适配才不是移动靶） | `packages/room` 在今天的 main 上 build+test 绿，合入 main |
+| 四 | npm 第二波 | 阶段一 + 前置 10 到期 + 前置 9、11、13 | 七包上架，一次性目录装得上并 import 通过 |
+| 五 | eval pilot | CLI 版本指纹 + 阶段一 | 产出第一个 export bundle，判据与管道得到验证 |
+
+阶段二至五**只依赖阶段一**，彼此不互相阻塞——阶段一是唯一的关键路径。
+
+### 阶段一的内容
+
+| 事项 | 类型 | 说明 | 降级 |
+|---|---|---|---|
+| member-channel 解耦决策 | 决策 | 家族核心能力（四 provider 委派、resume、分桶记账、live）已通；member-channel 是 `planned` 的完整增强功能，不是收尾。发布按现有能力走，该功能作为后续版本 | 若不解耦，阶段一到五全部推迟到该功能完成 |
+| 前置 2–8 逐包过闸 | 施工 | 七包按依赖序，core 先行 | 任一闸不过即停，不绕过 preflight |
+| CLI 版本指纹 | 施工（并行） | acquire 时把四个 harness CLI 的 `--version` 与模型端点标识写进 mission `refs` | 独立项，随时可停；它真正服务的是阶段五 |
+| capability-catalog 的 Agent Note 首节 | 修复 | 首节须为 `## Problem`，当前为 `## Decision`，`verify-agent-note-format` 会红 | 属他人在制品时不代改，只通报 |
+
+**room 不在阶段一。** 它是 `dsh-dev` 的增强而非前提——不含 room 的 `dsh-dev`（base + local-agent + worktrees + mission）已是完整可用的开发工作台。room 的适配面对的是 175 个提交的契约漂移（main 侧已有 `retire the standalone settings section`、`expose activeDelegations` 等实质变动），工作量不可控，给它独立阶段以免拖垮关键路径。
+
+## 八、待决
 
 - **`dsh-web-basic` 含 `ankh-guard`（ops 层）**是历史组成。四层模型下 base 整合包是否应包含 ops 包，需在 package-management 里定；改动会影响已发布整合包的成员清单。
 - **eval 的重复实验建模**：N 次重复是 N 个 attempt 还是 N 个 mission（`retry` 不幂等）。pilot 时定死，影响后续能否算方差。
 - **attest key 的人机边界**：若要求某些转移必须人来，需在模板层约定该 key 只由 CLI/slash 登记，或排除出模型工具可写范围。
 
-## 八、维护规则
+## 九、维护规则
 
 - 新 proposal 立项时，在「包账本」对应层补一行相关 proposal；找不到落点先改本文件。
+- 「当前迭代」随阶段推进重写：里程碑达成即划掉该阶段，下一阶段成为重点。发布前置依赖表只在规则本身（ops.md / publishing.md）变化时改。
 - 包发布或状态变化时更新状态标记；版本以 `package.json` 为准，发布事实以 [release-status.md](release-status.md) 为准。
 - 「已定决策」只增不改：结论被推翻时保留原条目并注明失效原因与日期（如决策 8 的形态）。
