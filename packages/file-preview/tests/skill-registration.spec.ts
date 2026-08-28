@@ -28,9 +28,9 @@ describe('3d-artifact skill registration', () => {
   it('registers the skill when the skills service is present', () => {
     const ctx = new Context()
     Object.assign(ctx, { fs: fsStub })
-    const registrations: Array<{ name: string; description: string; content: string; source?: string }> = []
+    const registrations: Array<{ name: string; description: string; content: string; source?: string; provider?: string; resourceBase?: { kind: 'directory'; path: string } }> = []
     ctx.provide('skills', {
-      register: (skill: { name: string; description: string; content: string }) => {
+      register: (skill: { name: string; description: string; content: string; provider?: string; resourceBase?: { kind: 'directory'; path: string } }) => {
         registrations.push(skill)
         return () => {}
       },
@@ -45,6 +45,13 @@ describe('3d-artifact skill registration', () => {
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // Capability-catalog bundle visibility: the registration names the
+    // provider and exposes the shipped skills directory as a resource base so
+    // the catalog's source browser (and the model's relative-resource
+    // resolution) can reach the bundle, not just a content block.
+    expect(registrations[0]?.provider).toBe('file-preview')
+    expect(registrations[0]?.resourceBase?.kind).toBe('directory')
+    expect(registrations[0]?.resourceBase?.path.endsWith(join('skills', '3d-artifact'))).toBe(true)
     // The registry validates `source` at LOAD time — a registration without
     // it lists fine in the catalog but explodes on invocation (the published
     // ankh-guard 8.9 failure). Pin it here.
