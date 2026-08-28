@@ -20,7 +20,13 @@ Category membership follows *whether the package is installed*, not *what it dis
 
 The two layers carry different lifecycle expectations, which governs how much to invest. `base` covers for an official GUI that is not yet good enough, so it is deliberately thin: when upstream ships the missing piece, AGENTS.md's Compatibility labeling already requires retiring the degraded path, and the proposal closes as 官方吸收. `feature` is domain capability upstream will not build — nobody else is going to write mission, lab, or room — so it is worth depth.
 
-A domain lands on two planes rather than one. The profile plane carries the plugin set; capability packages mount on demand and degrade silently when a peer is absent, so installing all of them costs nothing. The agent preset plane carries that domain's view — the tool subset, prompt sections, skills, and persona — which the official `agent-presets` package composes per session from a directory holding one `agent.cordis.yml`. A domain pack therefore ships both halves: a `bundles` layer and a `presets/` directory its `cordis.yml` points `roots` at. One instance can then hold a development session and an evaluation session side by side without a restart.
+A domain is one profile, and switching work modes means switching profiles through `ankh-guard restart` — the same guarded path `dsh-web-basic` already ships: credential check, then a preflight that boots the target composition in a child process and **refuses to stop the running instance if it cannot come up**, then a watchdog-supervised handover on the same port, then a canary. The browser reloads the original address.
+
+Agent presets do not carry domains. A preset composes tools, prompt sections, and skills; browser UI mounts on the profile's client slots, out of a preset's reach, so a preset-based domain would leave every domain's UI visible while its tools disappeared — visible but unusable. Isolating the UI would mean splitting every feature package into host and client rows. Presets keep the granularity upstream built them for: agent variants inside one profile (`standard`, a read-only `review`), which is exactly what the four shipped presets are.
+
+The cost is that one instance runs one mode. Evaluation therefore gets its own instance (:3082, its own `$DSH_HOME`), which suits it better anyway — environment isolation is a precondition for comparison, not an inconvenience.
+
+The registry mechanics settle why isolation must live at the profile plane: skill and tool registries are host+per-scope layered, so a plugin mounted by the profile's bundles lands in the global layer that every preset sees. What the profile mounts cannot be filtered out downstream.
 
 Working-style text splits by nature across the two planes and a third: a general practice belongs in a preset's prompt section, a repository's own discipline stays in that project's `AGENTS.md`, and a cross-project personal preference stays in `$DSH_HOME/AGENTS.md`. The three stack; none replaces another. Not perceiving a capability needs no suppression mechanism — a preset that does not mount `worktrees` has no worktree prompt section, so the model never sees one.
 
@@ -38,9 +44,11 @@ The roadmap also records eight standing decisions that bound future proposals, a
 
 **No upper-level document; let each proposal own its scope.** Rejected: this is the status quo that produced the conflict. Twenty-one proposals already disagree about whether `mission` serves eval or dev, and nothing arbitrates.
 
-**A domain as a profile alone.** Rejected: switching domains would mean restarting the instance, and the same machine routinely runs both development and evaluation work.
+**A domain as an agent preset.** Rejected after tracing the mechanics: a preset reaches tools, prompt sections, and skills but not the client UI, so the interface would not follow the mode. Two upstream constraints compound it — a session may switch presets only while it has produced nothing, and a child agent inherits its parent's composition.
 
-**A domain as a preset alone**, with every plugin installed in one profile. Rejected as insufficient rather than wrong: presets compose what a session sees, but a plugin absent from the profile cannot be composed at all, so the profile plane is still needed to decide what exists.
+**Plugin-row toggles written to the profile user patch layer** (the mode-switcher draft's route). Rejected: it has no preflight equivalent. A bad overlay only fails at the next composition, by which point the instance is already down. The guarded restart validates before it stops, which is the difference that matters.
+
+**Keeping both instances of a mode open at once.** Given up deliberately: it was the main argument for the preset route, and a separate evaluation instance serves it better.
 
 **Ship `dsh-eval` first**, as package-management planned. Deferred rather than rejected: eval's value lands only after a comparison run completes, while dev is the shape already in daily use and returns feedback immediately. The choice does not change the critical path — the shared capability layer blocks both — so it is a sequencing preference, not a structural one.
 

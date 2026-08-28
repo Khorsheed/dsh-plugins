@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-28-roadmap-feature-layer.md
-.agents/notes/implemented/process/2026-08-28-roadmap-feature-layer.md: 0c963cd052e6ef7bd3996d4b2384321d50326433
-.agents/notes/implemented/process/2026-08-28-roadmap-feature-layer.zh.md: ca295a75ed9268459104534c6608b5ec8b5b422f
+.agents/notes/implemented/process/2026-08-28-roadmap-feature-layer.md: 6ef6c4324456f4790d9fe91be0633207722cd4a7
+.agents/notes/implemented/process/2026-08-28-roadmap-feature-layer.zh.md: 3b9604f3f18ac27895dec8fe2d4e1aed1eea3fa9
