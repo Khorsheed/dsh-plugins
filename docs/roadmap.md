@@ -36,10 +36,11 @@
 
 ## 三、domain 清单
 
-domain 是 **workflow 的组装单位**，也是 UI 上「mode」的对应物——切 mode 即切当前 workflow 的界面重心（见 `mode-switcher` ※）。
+domain 是 **workflow 的组装单位**。一个 domain 在运行时表现为一个或多个 agent preset，用户新建会话时选择的就是它（UI 形态见 `mode-switcher` ※）。内部术语统一用 `domain`，不再与「mode」混用。
 
 | domain | 组成 | 状态 |
 |---|---|---|
+| **`daily`** 日常 | base 全体（UI）+ `daily` preset | preset = 官方 `standard` + `inline-html-card` skill + `list_capabilities`；是 `agent-presets` 的 `default` |
 | **`dev`** 开发工作台 | base + local-agent + worktrees + mission + room | **首发目标**。日常管理 catmem 这类项目的形态 |
 | `eval` 评测对比 | base + local-agent + mission + datasets + lab | 组成初稿见 package-management |
 | `novel` 小说创作 | base + ? | 未展开 |
@@ -71,6 +72,16 @@ dsh-dev/
 
 「不感知某能力」不需要屏蔽机制：novel preset 不挂 `worktrees`，它的 prompt section 就不存在，模型看不到——比写一条「别用 worktree」的指令更干净，也不占 token。
 
+### 什么进 preset，什么不进
+
+preset 只组合三样：**tools、prompt sections、skills**。浏览器 UI 插件（`dsh.client` 声明的 client 半）挂在 profile 的 client slot 上，**所有 domain 共享，不参与 preset**——这正是 base 层之所以叫 base 的原因。
+
+base 层 11 个包里只有两个带 agent 侧成分：`inline-html-render`（注册 `inline-html-card` skill）与 `capability-catalog`（`list_capabilities` 工具）。其余九个是纯 UI 或 host 服务，全局生效。
+
+skill 是**拉取式**的：preset 组合 skill 等于声明哪些 skill 在册，而不是把内容塞进系统提示词。因此不同 preset 下的 skill 集合会实际改变 agent 能力——**评测必须固定 preset**，否则条件不可比。
+
+preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目录再改），所以自建 preset 从复制官方 `standard` 起步，而不是从零写组合文件。官方自带四个：`standard`（功能完整的编码 Agent）、`minimal`（bash + 编辑器双工具）、`ptc`（standard + PTC 模式 SDK）、`cordis`（standard + 运行时检查与 preset 创作指导）。
+
 ## 四、包账本
 
 状态标记：✅ 已上架 npm ｜ 🔶 rc，功能通未发布 ｜ 🌿 分支未合流 ｜ ⬜ 未开工
@@ -88,8 +99,8 @@ dsh-dev/
 | `whalesong` | 0.1.0 | ✅ | 任务氛围：鲸鱼喷水、favicon 动画、完成提示音 | — |
 | `ui-shortcuts` | 0.1.0 | ✅ | 可自定义键位的快捷键 | — |
 | `context-guard` | 0.1.0 | ✅ | 上下文占用越阈值时出现压缩按钮 | [context-clearing](../proposals/active/2026-08-19-context-clearing.md) `idea` |
-| `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片 | — |
-| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | `capability-catalog` `in-progress` ※ |
+| `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片。**注册 `inline-html-card` skill（拉取式）——base 层仅有的两个 agent 侧成分之一，进 preset** | — |
+| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | `capability-catalog` `in-progress` ※ |
 
 ### capability — 能力原语
 
@@ -192,7 +203,7 @@ dsh-dev/
 | 阶段 | 目标 | 前置 | 里程碑（可验收） |
 |---|---|---|---|
 | **一** | 家族进 3080 | 无 | local-agent 七包在 3080 跑起来，迁移验收三步通过，**3 天观察期开始计时** |
-| 二 | 首个 domain 包 | 阶段一 | 空 `$DSH_HOME` 一条命令装出完整开发工作台（`dsh-dev`），**且新建会话能选到 `dev` preset**，catalog 里可见该 preset 作用域下的工具与 skill |
+| 二 | 首个 domain 包 + 两层模型验证 | 阶段一 | `daily` 与 `dev` 两个 preset 并存，下方五条判据全过 |
 | 三 | room 归队 | 阶段一（契约冻结后适配才不是移动靶） | `packages/room` 在今天的 main 上 build+test 绿，合入 main |
 | 四 | npm 第二波 | 阶段一 + 前置 10 到期 + 前置 9、11、13 | 七包上架，一次性目录装得上并 import 通过 |
 | 五 | eval pilot | CLI 版本指纹 + 阶段一 | 产出第一个 export bundle，判据与管道得到验证 |
@@ -210,14 +221,27 @@ dsh-dev/
 
 ### 阶段二的构成
 
-`dsh-dev` 是第一个按决策 9 组装的 domain 包，两半都要：
+`dsh-dev` 是第一个按决策 9 组装的 domain 包。验证两层模型至少需要两个 preset 同时在场，因此本阶段同时产出 `daily`：
 
-| 半边 | 内容 | 验收 |
+| 半边 | 内容 | 来源 |
 |---|---|---|
-| profile | `bundles` 层列出成员插件；`agent-presets` 配置 `roots` 指向 `./presets` | 空 `$DSH_HOME` 一条命令装起来 |
-| preset | `presets/dev/agent.cordis.yml`：开发工具子集、开发工作流的 prompt section（通用实践，非项目纪律）、persona | 新建会话选得到 `dev`；`capability-catalog` 列出该作用域的工具与 skill |
+| profile | `bundles` 层列出成员插件；`agent-presets` 配置 `roots` 指向 `./presets`，`default` 设为 `daily` | 形态 B，有 `dsh-web-basic` 先例 |
+| `daily` preset | 复制官方 `standard`，加 `inline-html-card` skill 与 `list_capabilities` | 归 `dsh-web-basic` |
+| `dev` preset | 复制官方 `standard`，加 local-agent / mission / worktrees 的工具行 + 开发 workflow 的 prompt section（通用实践，非项目纪律） | 归 `dsh-dev` |
 
-preset 半边是这个阶段的**新工作**——形态 B 的 profile 模板已有先例（`dsh-web-basic`），preset 分发没有。先做一个最小 preset（工具子集 + 一段 prompt section）跑通链路，persona 与 skill 子集随后迭代。
+preset 半边是本阶段的**新工作**——profile 模板已有先例，preset 分发没有。先做最小可用形态跑通链路，persona 与 skill 子集随后迭代。
+
+#### 里程碑判据：domain 切换不受影响
+
+| # | 判据 | 验证什么 |
+|---|---|---|
+| 1 | 装齐多个 domain 包后，roster 里所有 preset 健康，无 broken row | preset 命名的插件都能解析；顺带证明两个整合包装进同一 profile 不冲突 |
+| 2 | 新建会话选不同 preset，工具集确实不同 | preset 真的在分工具 |
+| 3 | `capability-catalog` 在不同 preset 下显示不同的工具与 skill | catalog 作为该模型展示面的价值兑现 |
+| 4 | 切换不重启进程（pid 不变），只发 `tools/change` | 热挂载成立（`agent-presets` 是 per-process standing scope，非重启） |
+| 5 | **base 层 UI 在所有 preset 下一致可用** | profile 级 UI 与 agent 级工具的分层正确 |
+
+第 5 条是这组判据的核心：若切到某个 preset 后消息编辑之类的能力消失，说明有 UI 插件被错误地放进了 preset 层。
 
 **room 不在阶段一。** 它是 `dsh-dev` 的增强而非前提——不含 room 的 `dsh-dev`（base + local-agent + worktrees + mission）已是完整可用的开发工作台。room 的适配面对的是 175 个提交的契约漂移（main 侧已有 `retire the standalone settings section`、`expose activeDelegations` 等实质变动），工作量不可控，给它独立阶段以免拖垮关键路径。
 
@@ -228,6 +252,8 @@ preset 半边是这个阶段的**新工作**——形态 B 的 profile 模板已
 - **attest key 的人机边界**：若要求某些转移必须人来，需在模板层约定该 key 只由 CLI/slash 登记，或排除出模型工具可写范围。
 
 - **`mode-switcher` 提案需补一条官方约束**：会话只能在零产出时切 preset，因此 mode 是新建会话时的选择，不是会话内的开关。该提案目前在主工作树未提交，待其进入 main 后补。
+
+- **逐包标注「哪部分进 preset」**：像 `capability-catalog` 既有 `list_capabilities`（进 preset）又有设置 tab（profile 级 UI，不进）。这份标注无法靠 grep 得到——`inline-html-render` 的 skill 注册就不匹配常见关键词——须逐包人工过一遍，否则组装 preset 时只能翻 README。
 
 ## 九、维护规则
 
