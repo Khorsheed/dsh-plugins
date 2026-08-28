@@ -69,10 +69,13 @@ resolution can reach those files too. Asking the catalog to "scan every plugin
 package" is deliberately not done: the registry is the source of truth for what is
 installed, and it already attributes each skill to its provider.
 
-If a plugin has **no bundle** (a single self-contained SKILL.md body, like
-`inline-html-card`), omitting `resourceBase` is fine — the catalog falls back to a
-plain content block. This is why `inline-html-card` shows no file tree today: its
-plugin registers content only.
+A **content-only** skill (a single self-contained `SKILL.md` body with no scripts,
+assets, or references beside it — e.g. `inline-html-card`) should **omit**
+`resourceBase` rather than point it at a directory that only holds `SKILL.md`.
+The browser half renders such a skill as a single virtual `SKILL.md` node whose
+content is the body — a unified source browser for every skill, without the host
+fabricating a disk path that is not a real resource bundle. The data contract
+stays honest: `files` is reported only when a bundle exists.
 
 The harness's `@deepseek-ai/dsh-skill` already documents `resourceBase` and
 `register()` / `registerProvider()`; this section is the catalog-side contract

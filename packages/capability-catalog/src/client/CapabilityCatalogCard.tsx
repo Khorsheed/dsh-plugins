@@ -242,25 +242,32 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 
             <details className={css.source} open>
               <summary className={css.sourceTitle}>{t('viewSource')}</summary>
-              {data.files !== undefined && data.files.length > 0 ? (
-                <div className={css.split}>
-                  <div className={css.treePane}>
-                    <BundleFileTree
-                      files={data.files}
-                      selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
-                      onSelect={selectSource}
-                    />
+              {/* The source browser is always the split (left tree + right pane).
+                  A skill with a real bundle (resourceBase.kind === 'directory')
+                  lists its files; a content-only skill (no bundle) renders a
+                  single virtual SKILL.md node whose content is the body. The data
+                  contract only reports `files` when a bundle exists — the renderer
+                  never fabricates a disk path for a content-only skill. */}
+              {(() => {
+                const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
+                return (
+                  <div className={css.split}>
+                    <div className={css.treePane}>
+                      <BundleFileTree
+                        files={files}
+                        selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
+                        onSelect={selectSource}
+                      />
+                    </div>
+                    <div className={css.detailPane}>
+                      {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                        : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                          : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                            : <pre className={css.codeBlk}>{srcContent}</pre>}
+                    </div>
                   </div>
-                  <div className={css.detailPane}>
-                    {srcLoading ? <div className={css.empty}>{t('loading')}</div>
-                      : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
-                        : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
-                          : <pre className={css.codeBlk}>{srcContent}</pre>}
-                  </div>
-                </div>
-              ) : (
-                <pre className={css.codeBlk}>{data.content}</pre>
-              )}
+                )
+              })()}
             </details>
 
             {data.metadataText !== undefined ? (

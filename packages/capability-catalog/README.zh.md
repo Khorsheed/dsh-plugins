@@ -43,7 +43,7 @@ ctx.skills.register({
 
 当 `resourceBase.kind === 'directory'`，目录会 walk `resourceBase.path` 并把 bundle 显示成文件树，模型的相对资源解析也能触达这些文件。**有意不做**"目录去扫所有插件包"：registry 才是"装了哪些"的真相源，它已把每个 skill 归属到 provider。
 
-如果插件**没有 bundle**（单个自包含的 SKILL.md 正文，如 `inline-html-card`），省略 `resourceBase` 即可——目录回退为裸正文块。这就是今天 `inline-html-card` 没文件树的原因：它的插件只注册了 content。
+**内容合成型** skill（单个自包含的 SKILL.md 正文，无 scripts/assets/references，如 `inline-html-card`）**应省略 `resourceBase`**，而不是指向一个只有 SKILL.md 的目录。浏览器半会把这种 skill 渲染成一个**虚拟单节点 `SKILL.md`**（正文即内容）——所有 skill 统一的源码浏览器，host 也不用为"并非真实资源 bundle"的东西伪造磁盘路径。数据契约保持诚实：**只有存在 bundle 时才报 `files`**。
 
 harness 的 `@deepseek-ai/dsh-skill` 已文档化 `resourceBase` 与 `register()` / `registerProvider()`；本节是**目录侧的契约**，把插件侧的期望讲明。（上游候选措辞：建议 dsh-skill 明确"带 bundle 资源的运行时插件技能应携带 `resourceBase` 目录"。）
 
