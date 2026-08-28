@@ -174,9 +174,34 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
     for (const fn of [...listeners]) fn()
   }
 
+  const attach = (el: HTMLElement): void => {
+    if (scrollport !== null) scrollport.removeEventListener('scroll', onScroll)
+    resizeObserver?.disconnect()
+    scrollport = el
+    scrollport.addEventListener('scroll', onScroll, { passive: true })
+    if (typeof ResizeObserver === 'function') {
+      resizeObserver = new ResizeObserver(scheduleUpdate)
+      resizeObserver.observe(el)
+      const composer = el.querySelector<HTMLElement>('[data-composer-seat]')
+      if (composer !== null) resizeObserver.observe(composer)
+    }
+  }
+
   const update = (): void => {
-    if (scrollport === null) return
-    const geometry = measureGeometry(scrollport)
+    // Self-heal the scrollport binding: while unbound (or bound to a node the
+    // host remounted away — the conversation view re-renders under a stable
+    // session), re-probe the DOM. On rc hosts currentProvideInfo announced
+    // the remount; on 0.1.2 the feed is gone, so the observer/resize/scroll
+    // cadence that already lands here owns re-resolution on both lines.
+    let el = scrollport
+    if (el === null || !el.isConnected) {
+      if (activeSession === undefined) return
+      const found = document.querySelector<HTMLElement>('[data-conversation-scroll]')
+      if (found === null) return
+      attach(found)
+      el = found
+    }
+    const geometry = measureGeometry(el)
     if (geometry === null) return
     publish({
       sessionId: activeSession,
@@ -185,9 +210,9 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
       top: geometry.top,
       height: geometry.height,
       scrollportWidth: geometry.width,
-      flowLeft: flowLeftX(scrollport),
-      activeKey: activeRowKey(scrollport, includeSteering),
-      chatView: scrollport.querySelector('[data-chat-flow]') !== null,
+      flowLeft: flowLeftX(el),
+      activeKey: activeRowKey(el, includeSteering),
+      chatView: el.querySelector('[data-chat-flow]') !== null,
     })
   }
 
@@ -228,14 +253,7 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
         publish(IDLE)
         return
       }
-      scrollport = found
-      scrollport.addEventListener('scroll', onScroll, { passive: true })
-      if (typeof ResizeObserver === 'function') {
-        resizeObserver = new ResizeObserver(scheduleUpdate)
-        resizeObserver.observe(scrollport)
-        const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-        if (composer !== null) resizeObserver.observe(composer)
-      }
+      attach(found)
       update()
     })
   }
@@ -244,7 +262,15 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
     bind(ctx.sessions.list.getSnapshot().current)
   }
   const stopList = ctx.sessions.list.subscribe(bindCurrent)
-  const stopProvide = ctx.sessions.currentProvideInfo.subscribe(bindCurrent)
+  // Host 0.1.2-alpha.1 removed ISessions.currentProvideInfo (commit
+  // be531688f3 — the provide-channel projection went with the runtime
+  // package). rc hosts still publish it, and it is the precise remount
+  // signal there, so subscribe when the feed exists and skip it when the
+  // service predates/omits it — update() below re-resolves a missing or
+  // detached scrollport from the MutationObserver/resize cadence, which
+  // covers the remount signal on both lines.
+  const provideFeed = (ctx.sessions as { currentProvideInfo?: HostObservable<unknown> }).currentProvideInfo
+  const stopProvide = provideFeed?.subscribe(bindCurrent)
   bindCurrent()
 
   // Layout fallbacks beyond the scrollport's own ResizeObserver: a window
@@ -273,7 +299,7 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
     },
     dispose: () => {
       stopList()
-      stopProvide()
+      stopProvide?.()
       if (typeof window !== 'undefined') window.removeEventListener('resize', onWindowResize)
       mutationObserver?.disconnect()
       teardownBind()
