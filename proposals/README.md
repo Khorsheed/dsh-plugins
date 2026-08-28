@@ -53,9 +53,26 @@ idea → planned → in-progress → verified → done（移入 closed/）
 | `blocked` | 卡住，**必须写原因**（缺前置 / 等 seam / 等上游） | active/ |
 | `verified` | 验收通过（探针 / 实测全绿；补丁流环境可用） | active/ |
 | `done` | **以可插拔插件交付并验收**（零官方改动） | closed/ |
-| `closed` | 放弃 / 被取代 / 官方吸收（注明理由） | closed/ |
+| `closed` | 放弃 / 被取代 / 官方吸收（**理由分类必填**，见下） | closed/ |
 
 **状态变更 = 改文件头部 + 移动文件 + 更新 README 总表，同一 commit。**
+
+**`closed` 的理由必须是这三种之一**，写在状态行括号里——`closed/` 目录同时装着 `done`（做完了）与 `closed`（不做了），理由分类是把后者扫出来的唯一手段：
+
+```
+closed（放弃：<原因>）
+closed（被取代：<接替它的提案>）
+closed（官方吸收：<官方能力>）
+```
+
+于是「哪些是决定不做的」可机械查询：
+
+```sh
+grep -l '状态.*closed（' proposals/closed/*.md          # 全部不做的
+grep -l '状态.*closed（放弃' proposals/closed/*.md      # 只看放弃的
+```
+
+理由分类同样写进总表状态列（`closed（放弃）` 这样的短形），完整原因留在提案文件里。这与 Agent Note 的 `Status: rejected — <why>` 同源：裁决本身就是读者要来看的事实。
 
 **实现后及时关闭**：`verified` 后应在 7 天内转 `done` 并移入 `closed/`；拖着不关会被标 ⚠️ stale。`done` 是"关闭"不是"开始新工作"——能力交付即归档，后续增量走新提案或 note。
 
@@ -124,7 +141,7 @@ idea → planned → in-progress → verified → done（移入 closed/）
 | plugin | 能力目录：skill+tool 全量注册渠道（capability-catalog）⚠️ | idea | 纯插件 | 无 | skill 渠道元数据官方自带；工具归因 = mcp__ 前缀 + 脚本生成白名单 + tools/change 差分置信度 + cordis.yml 交叉验证；settings.section GUI + list_capabilities 工具；npm 分发走方案 C 独立提案。**⚠️ 提案文件缺失**——包已在开发（`packages/capability-catalog` v0.1.24），但 `active/2026-08-26-capability-catalog.md` 不在 main 上，需补回 | 2026-08-26 |
 | plugin | [多 agent 房间以「会话内邀请 agent」为入口，而非独立新建（room-session-promotion）](active/2026-08-27-room-session-promotion.md) | planned | 纯插件 | local-agent（家族引擎，探针）· room note（设计设想） | room 能力账本立项：任意会话邀请 agent 即提升为 room；守 local-agent 引擎 + room 表面两层，**不熔合**；会话对话/成员 tab/互召唤/多成员胶囊保留 | 2026-08-27 |
 | plugin | [常态工具结果清理（context-clearing）](active/2026-08-19-context-clearing.md) | idea | 纯插件 | 无（配套分析器 scripts/analyze-clearing-fit.ts 已落地） | 上下文远低于压缩线时把 keep 窗口外的旧工具结果替换为占位符；与官方 compaction / tool-result-pruner 不同生态位，不替代 | 2026-08-19 |
-| plugin | [插件开关管理器（plugin-manager）](active/2026-08-22-plugin-manager.md) | planned | 纯插件 | 无（loader 对 profile 用户 patch 层的 HMR） | 设置里一个分区，每行一个开关：关闭 = 写 `disabled: true` 到用户 patch 层，config HMR 热生效、不重启不卸载。官方 0.1.2 的 Plugin list 只读、Plugin configuration 只改配置，均无 loader 级开关 | 2026-08-28 |
+| plugin | [插件开关管理器（plugin-manager）](closed/2026-08-22-plugin-manager.md) | closed（放弃） | 纯插件 | 无（loader 对 profile 用户 patch 层的 HMR） | 唯一消费方 mode-switcher 已转向 agent preset；官方 0.1.2 的 Plugin list（只读清单）与 Plugin configuration（配置编辑）已覆盖查看需求，剩余的 loader 级开关不足以单独立项。方案与 watchUserPatches 热生效实测留档，需要时可重开 | 2026-08-29 |
 | plugin | [本地文件浏览器（local-files-browser）](closed/2026-08-26-local-files-browser.md) | done | 纯插件 | 无（从 worktrees 拆出） | 已作为 `@khorsheed/dsh-local-files` 独立交付（提交 3df3044）：工作区 tab、懒加载文件树、结构化预览、git 无关、按会话记忆根目录 | 2026-08-28 |
 | plugin | [dsh 接续通道迁官方 SDK client（local-agent-dsh-sdk-resume）](active/2026-08-27-local-agent-dsh-sdk-resume.md) | planned | 纯插件（resume）· live 全退役需契约扩展（upstream 候选，S8） | local-agent-delegation-api（家族门面/锁/持久化，不变） | 只迁 one-shot/resume，live 保留家族自有 wire——0.1.2-alpha.1 实测 SDK 协议零新增、仍无 mid-turn cancel；同时是远程执行（SSH stdio）的前置 | 2026-08-28 |
 | plugin | [工作模式切换（mode-switcher）](active/2026-08-26-mode-switcher.md) | idea | 纯插件 | 官方 agent-presets（底座）· capability-catalog（模式内容展示面）· ui-shortcuts（可选快捷键） | 模式 = 官方 agent preset（会话级组合：工具/prompt/skill/persona），新建会话时选；不重启、多模式可同时在场。**已重写**：放弃原草稿的 profile patch + HMR 行开关路线（profile 级，做不到会话并存），对 plugin-manager 的依赖随之消失 | 2026-08-29 |

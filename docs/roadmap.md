@@ -134,7 +134,7 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 | 包 | 版本 | 状态 | 功能 | 相关 proposal |
 |---|---|---|---|---|
 | `ankh-guard` | 0.1.1 | ✅ | 自修改重启的安全门禁：绿色凭证 + preflight + watchdog 回滚 | — |
-| `plugin-manager` | — | ⬜ | 设置里的插件开关分区，写 `disabled: true` 热生效 | [plugin-manager](../proposals/active/2026-08-22-plugin-manager.md) `proposed` |
+| ~~`plugin-manager`~~ | — | — | 已废除：唯一消费方转向 preset，官方 0.1.2 已覆盖查看需求 | [plugin-manager](../proposals/closed/2026-08-22-plugin-manager.md) `closed（放弃）` |
 
 ### 跨层 / 分发基建
 
