@@ -16,6 +16,7 @@
     "src/zip.ts",
     "src/official-tools.ts",
     "src/namespace.ts",
-    "src/settings.ts"
+    "src/settings.ts",
+    "src/shellEnv.ts"
   ]
 }

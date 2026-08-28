@@ -6,6 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { credentialRef, isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -104,7 +105,8 @@ export async function catalogSetCredential(
   const { credentials } = resolveServices(ctx)
   if (credentials === undefined) return false
   try {
-    await credentials.set(request.key as never, request.value)
+    if (!isCredentialRefName(request.key)) return false
+    await credentials.set(credentialRef(request.key), request.value)
     return true
   } catch {
     return false

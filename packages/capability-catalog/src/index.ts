@@ -29,6 +29,7 @@ import type {
 } from './types.ts'
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
+import { installSkillEnvInjection } from './shellEnv.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
@@ -104,6 +105,12 @@ export class CapabilityCatalogService extends TypertRemoteService {
     this.appearedAfterApply = new Set()
     ctx.on('tools/change', () => this.markNewTools(tools))
     this.registerListTool()
+    // Expose each configured skill credential as a trusted per-execution
+    // `DSH_<KEY>` env var so the agent's shell can use it (shell expansion),
+    // without the raw value entering the model's context (default-hide). The
+    // catalog is service-agnostic — it knows nothing about the specific service;
+    // the skill tells the agent how to query. Degrades silently when absent.
+    installSkillEnvInjection(ctx, () => this.catalogScope())
   }
 
   /** Record tools that appeared after the apply-time baseline. */

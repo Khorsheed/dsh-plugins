@@ -12,6 +12,7 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { credentialRef, isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import type {
   CapabilityCatalogSnapshot,
   CatalogCredentialDecl,
@@ -21,10 +22,10 @@ import type {
   CatalogSkillRow,
 } from './types.ts'
 
-/** The slice of the credentials service this package reads (optional). */
+/** The slice of the credentials service this package reads (optional; ref space). */
 export interface CredentialsSlice {
-  describeRecord: (key: string) => Promise<{ readonly set?: boolean } | undefined>
-  set: (ref: string, value: string) => Promise<void>
+  describe: (ref: unknown) => Promise<{ readonly configured?: boolean; readonly source?: string; readonly writable?: boolean } | undefined>
+  set: (ref: unknown, value: string) => Promise<void>
 }
 
 /** Minimal SkillSummary shape (invocation-neutral). */
@@ -246,11 +247,13 @@ export async function loadSkillDetail(
   let credentialStates: readonly CatalogCredentialState[] = []
   if (decls.length > 0 && credentials !== undefined) {
     credentialStates = await Promise.all(decls.map(async (decl) => {
-      const record = await credentials.describeRecord(decl.key).catch(() => undefined)
+      const configured = isCredentialRefName(decl.key)
+        ? (await credentials.describe(credentialRef(decl.key)).catch(() => undefined))?.configured === true
+        : false
       return {
         key: decl.key,
         ...decl.label !== undefined ? { label: decl.label } : {},
-        configured: record?.set === true,
+        configured,
       }
     }))
   }

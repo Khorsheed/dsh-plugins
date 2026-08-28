@@ -118,22 +118,20 @@
   ```
   目录读 `metadata.credentials[]`，据此展示凭据配置块；未声明则无凭据块。非 npm skill（纯文件 / GitHub 克隆）也能用——比"靠插件 settings 声明"更通用。
 
-### 4.6) skill 凭据到达执行（评审后定为方案 B：catalog 自有窄工具；`ctx.shellEnv` 方案已否决）
+### 4.6) skill 凭据到达执行（最终：`ctx.shellEnv` 注入 DSH_\*，default-hide + 服务无关；未来：假 key 代理）
 
 - **问题**：skill 正文引用 `$<ENV>`（如 `$WEREED_API_KEY`），配置的凭据存在 dsh 官方凭据库（`$DSH_HOME/.credentials.yaml`），但**不会**被写进 `process.env`——launch-env 只是只读快照（process/project-env/user-env），无 credential→env 注入；模型/工具执行时环境里没有它（env 缺口）。
-- **已否决：`ctx.shellEnv` 注入 DSH_\* 方案**（曾被初步实现，复核后否决并清除实现，只留本决策记录）：
-  - **per-skill 隔离做不到（架构属性，非 bug）**：`shellEnv` 是按「agent scope」注入的，同一 preset scope 下所有 skill 的凭据会合成全集，对该作用域内**每一条模型 shell 命令**都可见（不区分当前执行哪个 skill）。这是把 secret 暴露给整个执行环境，不是「授权给某个 skill」。
-  - **注入名强制 `DSH_*`**：官方 seam 只允许 `DSH_` 前缀变量（`shell-env/src/index.ts:119`），所以 skill 要的 `$WEREED_API_KEY` 不会自动出现，只能 `$DSH_WEREED_API_KEY`——不满足「原始名可用」。
-  - **凭据 ref/key 空间错位**：目录写用 `credentials.set(ref, value)`（CredentialRef），`readRecord()`/`describeRecord()` 读的却是 CredentialKey（`<scope>/<id>`），harness 设计上两套刻意互斥——同一变量读不到。
-  - **保留/已占用 key 崩整次注册**：`$HOME`→`DSH_HOME`（保留）、`DSH_SESSION_JSONL` 被 `session-persistence` 占用；任何 skill 出现这类声明会让整个 contributor 注册失败。
-- **方案 B（评审选定）：catalog 自有窄工具**：
-  - skill 明确要求模型「用 capability catalog 提供的 weread_\* 工具完成微信读书操作」，**不要自行读取/打印/配置 `WEREED_API_KEY`**。
-  - 工具每次 operation **现场** `ctx.credentials.resolve(credentialRef('WEREED_API_KEY'))` 取到值（写用 ref、读也必须走 ref 空间的 `resolve()`；`credentialRef(key)` 官方校验后再 `set()`，不要裸 `as never`）。官方要求**每次 operation 重新 resolve**，凭据轮换立即生效。
-  - 工具再（a）直接调 Weread API，或（b）固定 CLI + 固定 argv 模板，经 `ctx.shell.run({ env: { WEREED_API_KEY: value } })` 显式传给子进程——`ShellExecRequest.env` 是官方给进程内插件的普通环境通道，显式 credential-shaped 值会在 subprocess 清洗**之后**合并，**不会被 `scrubbedParentEnv()` 删掉**，所以**原始名可用**。
-  - **窄工具铁律**：模型不能指定任意 command/env；CLI/argv 由插件固定、从结构化参数生成、不拼 shell 字符串；secret 不进工具结果/错误/日志；**每次 resolve、不留缓存**；若直接 HTTP，拒绝带凭据的自动跨域重定向。
-- **凭据空间修正（统一）**：环境变量式 API key 用 **CredentialRef**（`credentialRef(key)` + `resolve()` + `set(ref, value)`）；仅当目录决定拥有结构化 grant record 时才用 `credentialKey()`/`readRecord()`/`modifyRecord()`（地址形如 `capability-catalog/<id>`）。`skills.ts` 的 `describeRecord(decl.key)` + `remote.ts` 的 `set(request.key as never, …)` 需一并修正到 ref 空间。
-- **安全边界**：B 把 resolve 出的 secret 只投进**那条固定的窄子进程**（或结构化 API 调用），不暴露给模型可见的 shell/输出；比 A 的「全集对 scope 内所有 shell 可见」清晰得多。
-- **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」并可绑定 narrow tool；非阻塞。
+- **最终方案（服务无关 + default-hide）**：用 harness **`ctx.shellEnv`** 注册 contributor，把每个**已配置**的 skill 凭据作为 `DSH_<KEY>` 注入到**模型 shell 环境**：
+  - agent 用**shell 展开**引用它（`--key="$DSH_WEREED_API_KEY"`），值由 shell 展开进子进程、**默认不进模型上下文**；模型只在**主动 echo/命令输出泄漏**时才看到明文——「default-hide」，不是硬密码边界。
+  - 目录**不感知具体服务**：它只把已配置凭据注入 env，skill 指引告诉 agent 怎么查；weread 或任何服务都一样。
+- **关键约束与实现要点**（`src/shellEnv.ts`，已修）：
+  - key 强制 `DSH_*` + 后缀 `/^[A-Z][A-Z0-9_]*$/`、每 key 一个 owner、内置 `DSH_HOME/DSH_SHELL/DSH_SESSION_ID` 保留不可占。
+  - 排除会映射到保留/已占用 key 的 env（`HOME/SHELL/SESSION_ID`；`shellEnv.list()` 里已由他人占有的如 `DSH_SESSION_JSONL`）——单个坏 key 不再拖垮整次注册，跳过 + 告警。
+  - 读凭据走 **ref 空间**：`credentialRef(key)` + `credentials.resolve(ref)`（取 `{value, source}`），**不用** `readRecord`/`describeRecord`；写也统一 `credentials.set(credentialRef(key), value)`、「已配置」判定用 `describes(ref).configured`。官方要求每次 operation 重新 resolve，轮换立即生效。
+  - `resolve()` 同步 → 值放**缓存**，apply 时 + `credentials/*-updated` 时异步刷新；**声明超集**（注册全量合法 key 集合，删除只让 resolve 返回空，避免 delete-then-register）；refresh **串行 + generation + disposed 检查**（旧任务不能覆盖/失效后重注册）。
+- **安全取舍（如实）**：default-hide 挡「默认/无意泄露」，**挡不住恶意诱导主动 `echo`**（用户仍可让模型打印）。若需「模型压根不持有真值」，见未来方案 **masked-credential-proxy**（`proposals/active/2026-08-29-masked-credential-proxy.md`）：给模型一个**假 key / 句柄**，由一个可信组件在落地前用真 key 替换——模型不掌握真 secret，套取无从谈起。此为后续加固，本迭代先跑通 default-hide 注入。
+- **已否决：catalog 自有窄工具（B）**：会让 catalog **认识具体服务**（配 weread 接口/固定命令），与「目录=服务无关、只给文件+key、agent 自己查」的定位相悖；且模型不掌握 key 才能做到「模型读不到」。该方向归档进 masked-credential-proxy proposal 作为更硬边界。
+- **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」；非阻塞。
 
 ### 5) skill 新增入口（列表顶部按钮，已落地）
 
