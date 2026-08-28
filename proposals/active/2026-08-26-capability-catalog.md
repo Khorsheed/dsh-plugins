@@ -118,25 +118,22 @@
   ```
   目录读 `metadata.credentials[]`，据此展示凭据配置块；未声明则无凭据块。非 npm skill（纯文件 / GitHub 克隆）也能用——比"靠插件 settings 声明"更通用。
 
-### 4.6) skill env 注入：让配置的凭据进入 skill 执行环境（`ctx.shellEnv`，调研后新增）
+### 4.6) skill 凭据到达执行（评审后定为方案 B：catalog 自有窄工具；`ctx.shellEnv` 方案已否决）
 
 - **问题**：skill 正文引用 `$<ENV>`（如 `$WEREED_API_KEY`），配置的凭据存在 dsh 官方凭据库（`$DSH_HOME/.credentials.yaml`），但**不会**被写进 `process.env`——launch-env 只是只读快照（process/project-env/user-env），无 credential→env 注入；模型/工具执行时环境里没有它（env 缺口）。
-- **机制（官方、零 host 改动）**：用 harness 的 **`ctx.shellEnv`**（`@deepseek-ai/dsh-shell-env`）注册 contributor：
-  ```ts
-  ctx.shellEnv.register({
-    name: 'capability-catalog',
-    variables: { 'DSH_WEREED_API_KEY': { description: '…' } },
-    resolve(execution) { return envCache },   // 同步返回本次的 DSH_* 值
-  })
-  ```
-  每次 **shell tool 执行**（bash/pwsh 都依赖 `shellEnv`）时 `ctx.shellEnv.collect(exec)` 把内置项 + 当前 contributor 解析值打包，**显式**合并进子进程 env（在 `scrubbedParentEnv()` 之后，因此能穿过对名字含 `KEY/PASSWORD/SECRET/TOKEN` 及所有 `DSH_*` 的父环境清洗）。
-- **约束**（`shell-env/src/index.ts`）：key 必须以 `DSH_` 开头、后缀匹配 `/^[A-Z][A-Z0-9_]*$/`；每 key 一个 owner；内置 key（`DSH_HOME/DSH_SHELL/DSH_SESSION_ID`）保留不可占；`resolve()` **必须同步**返回。
-- **由配置到 env**：读 skill 正文 env 声明（`decodeEnvDecls`）→ 对每个已配置凭据的 key 用 `credentials.readRecord(key)` 取 `ApiKeyRecord.key` → 缓存 `DSH_<KEY>` → `resolve()` 从缓存同步返回。key（如 `WEREED_API_KEY`）就是目录保存凭据所用的 key（`remote.setCredential` 用 `credentials.set(request.key, value)`）。
-- **同步约束的处理**：`readRecord` 是异步、`resolve` 要同步——目录在 apply 时 + 凭据变更（订阅 `credentials/record-updated` / `reference-updated`）+ `setCredential` 后**刷新缓存**，`resolve()` 只读缓存。若 key 集合随 skill 增减变化，dispose 后重注册（或把 `DSH_<KEY>` 声明为当前全量、`resolve` 动态返回空值）。
-- **skill 侧用法**：注入名强制 `DSH_*`，故 skill 文本引用 `$DSH_<ENV>`；第三方 CLI 需原名时，可在 skill 里把 `$DSH_WEREED_API_KEY` 展开映射成该 CLI 期望的变量名（密钥由 shell 展开，模型不接触实际值）。
-- **安全取舍（如实）**：它把值注入到**模型驱动 shell env**，模型可 `echo $DSH_WEREED_API_KEY` 读到原始值——即「secret 对执行可见」，非「对模型隐藏」。这与 dsh「agent 用凭据」的模型一致；若需「原始值绝不到模型手里」，改用目录自有的窄功能 tool（内部解析凭据后 `ctx.shell.run({ env: { KEY } })` 或直接调 API），把 secret 放进显式 env 层。
-- **已被拒**：改全局 `process.env.<KEY>`——官方 subprocess 的 `scrubbedParentEnv()`（`subprocess/src/index.ts:37`）会清洗名字含 `KEY/PASSWORD/SECRET/TOKEN` 的继承变量，该 hack 会被清掉；且它是全局、非 skill 隔离。
-- **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」；非阻塞，本机制已能在官方 seam 内落地。
+- **已否决：`ctx.shellEnv` 注入 DSH_\* 方案**（曾被初步实现，复核后否决并清除实现，只留本决策记录）：
+  - **per-skill 隔离做不到（架构属性，非 bug）**：`shellEnv` 是按「agent scope」注入的，同一 preset scope 下所有 skill 的凭据会合成全集，对该作用域内**每一条模型 shell 命令**都可见（不区分当前执行哪个 skill）。这是把 secret 暴露给整个执行环境，不是「授权给某个 skill」。
+  - **注入名强制 `DSH_*`**：官方 seam 只允许 `DSH_` 前缀变量（`shell-env/src/index.ts:119`），所以 skill 要的 `$WEREED_API_KEY` 不会自动出现，只能 `$DSH_WEREED_API_KEY`——不满足「原始名可用」。
+  - **凭据 ref/key 空间错位**：目录写用 `credentials.set(ref, value)`（CredentialRef），`readRecord()`/`describeRecord()` 读的却是 CredentialKey（`<scope>/<id>`），harness 设计上两套刻意互斥——同一变量读不到。
+  - **保留/已占用 key 崩整次注册**：`$HOME`→`DSH_HOME`（保留）、`DSH_SESSION_JSONL` 被 `session-persistence` 占用；任何 skill 出现这类声明会让整个 contributor 注册失败。
+- **方案 B（评审选定）：catalog 自有窄工具**：
+  - skill 明确要求模型「用 capability catalog 提供的 weread_\* 工具完成微信读书操作」，**不要自行读取/打印/配置 `WEREED_API_KEY`**。
+  - 工具每次 operation **现场** `ctx.credentials.resolve(credentialRef('WEREED_API_KEY'))` 取到值（写用 ref、读也必须走 ref 空间的 `resolve()`；`credentialRef(key)` 官方校验后再 `set()`，不要裸 `as never`）。官方要求**每次 operation 重新 resolve**，凭据轮换立即生效。
+  - 工具再（a）直接调 Weread API，或（b）固定 CLI + 固定 argv 模板，经 `ctx.shell.run({ env: { WEREED_API_KEY: value } })` 显式传给子进程——`ShellExecRequest.env` 是官方给进程内插件的普通环境通道，显式 credential-shaped 值会在 subprocess 清洗**之后**合并，**不会被 `scrubbedParentEnv()` 删掉**，所以**原始名可用**。
+  - **窄工具铁律**：模型不能指定任意 command/env；CLI/argv 由插件固定、从结构化参数生成、不拼 shell 字符串；secret 不进工具结果/错误/日志；**每次 resolve、不留缓存**；若直接 HTTP，拒绝带凭据的自动跨域重定向。
+- **凭据空间修正（统一）**：环境变量式 API key 用 **CredentialRef**（`credentialRef(key)` + `resolve()` + `set(ref, value)`）；仅当目录决定拥有结构化 grant record 时才用 `credentialKey()`/`readRecord()`/`modifyRecord()`（地址形如 `capability-catalog/<id>`）。`skills.ts` 的 `describeRecord(decl.key)` + `remote.ts` 的 `set(request.key as never, …)` 需一并修正到 ref 空间。
+- **安全边界**：B 把 resolve 出的 secret 只投进**那条固定的窄子进程**（或结构化 API 调用），不暴露给模型可见的 shell/输出；比 A 的「全集对 scope 内所有 shell 可见」清晰得多。
+- **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」并可绑定 narrow tool；非阻塞。
 
 ### 5) skill 新增入口（列表顶部按钮，已落地）
 
