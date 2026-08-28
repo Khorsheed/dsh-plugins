@@ -2,7 +2,7 @@
  * change-history tab that steps through every recorded write/edit diff. Used
  * by both the file view tab and the link-click drawer. */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import { CodeBlock, DiffBlock, MarkdownText, IconCloseOutline16, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -43,6 +43,26 @@ function markLine(line: string, lowerQuery: string): ReactNode {
     at = hit + lowerQuery.length
   }
   return parts
+}
+
+// Host 0.1.2-alpha.1 made the DiffBlock chrome a required `labels` prop; the
+// npm rc line's DiffBlockProps has no such key, so a direct `labels={…}`
+// attribute fails the rc-side typecheck. Spreading a Partial-cast object
+// keeps one source compiling on both lines (the extraction-anchor pattern of
+// the CallId→ToolCallId rename); on the rc line the extra prop is inert.
+/** Localized DiffBlock chrome from the filePreview dictionary. */
+function diffBlockChrome(t: TranslateNS<'filePreview'>): Partial<ComponentProps<typeof DiffBlock>> {
+  return {
+    labels: {
+      copy: t('diff.copy'),
+      copied: t('diff.copied'),
+      collapse: t('diff.collapse'),
+      collapseAria: t('diff.collapseAria'),
+      expand: (count: number) => t('diff.expand', { count }),
+      expandAria: (count: number) => t('diff.expandAria', { count }),
+      files: (count: number) => t('diff.files', { count }),
+    },
+  } as Partial<ComponentProps<typeof DiffBlock>>
 }
 
 /** Plain-text render with per-line match highlighting (search mode). */
@@ -498,7 +518,7 @@ export function FilePreviewPane(props: {
                 ▶
               </button>
             </div>
-            <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} />
+            <DiffBlock className={css.diffWrap} diffs={[{ path: diffPath, oldText: current.oldText, newText: current.newText }]} {...diffBlockChrome(t)} />
           </div>
         )
         : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}

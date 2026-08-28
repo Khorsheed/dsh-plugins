@@ -70,6 +70,13 @@ export type FilePreviewKey =
   | 'drawer.tab.diff'
   | 'drawer.tab.content'
   | 'drawer.missingPath'
+  | 'diff.copy'
+  | 'diff.copied'
+  | 'diff.collapse'
+  | 'diff.collapseAria'
+  | 'diff.expand'
+  | 'diff.expandAria'
+  | 'diff.files'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -145,6 +152,13 @@ export const zh: Record<FilePreviewKey, string> = {
   'drawer.tab.diff': '改动记录',
   'drawer.tab.content': '当前内容',
   'drawer.missingPath': '记录路径：{path}',
+  'diff.copy': '复制差异',
+  'diff.copied': '已复制',
+  'diff.collapse': '收起',
+  'diff.collapseAria': '收起差异',
+  'diff.expand': '展开其余 {count} 行',
+  'diff.expandAria': '展开其余 {count} 行',
+  'diff.files': '{count} 个文件',
 }
 
 /** English dictionary. */
@@ -214,4 +228,11 @@ export const en: Record<FilePreviewKey, string> = {
   'drawer.tab.diff': 'Change history',
   'drawer.tab.content': 'Current content',
   'drawer.missingPath': 'Recorded path: {path}',
+  'diff.copy': 'Copy diff',
+  'diff.copied': 'Copied',
+  'diff.collapse': 'Collapse',
+  'diff.collapseAria': 'Collapse the diff',
+  'diff.expand': 'Show {count} more lines',
+  'diff.expandAria': 'Show {count} more lines',
+  'diff.files': '{count} files',
 }
