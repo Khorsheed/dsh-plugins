@@ -16,7 +16,7 @@
  * Composing this plugin out of cordis.yml removes every surface it adds.
  */
 import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'

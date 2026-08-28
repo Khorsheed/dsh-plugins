@@ -10,7 +10,8 @@
  * marks the spot.
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
-import { shallowEqual, type ConversationSnapshot, type UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
+import { shallowEqual } from '@deepseek-ai/dsh-client-store'
+import type { ConversationSnapshot, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   Button, IconCheckOutline16, IconCopyOutline16, IconEditOutline16,
   JsonBlock, MessageText, RiskConfirmation, Tooltip, writeClipboard,

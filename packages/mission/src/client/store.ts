@@ -5,7 +5,8 @@
  * store's identity in the module cache (a de-facto singleton surviving
  * plugin reloads).
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MissionDetail, MissionQueueResult } from '../types.ts'
 import type { Bucket } from '../types.ts'
 
