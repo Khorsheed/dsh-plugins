@@ -86,10 +86,6 @@ function registerArtifactSkill(ctx: Context): void {
       content,
       source: 'runtime',
       provider: 'file-preview',
-      // Expose the shipped bundle (capability-catalog protocol): the catalog
-      // walks this directory for the source browser and the model's relative
-      // resource resolution can reach files beside SKILL.md.
-      resourceBase: { kind: 'directory', path: skillDir },
     }))
   } catch (error) {
     ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)

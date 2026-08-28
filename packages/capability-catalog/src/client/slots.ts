@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the generated Remote namespace merge.
 import type {} from '@khorsheed/dsh-capability-catalog/remote'
-import type { CapabilityCatalogSnapshot, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
 
 /** A tiny external store holding the last catalog snapshot (re-created on change). */
 export interface CatalogHook {
@@ -28,10 +28,12 @@ export interface CapabilityCatalogInjected {
   detail: (name: string) => Promise<CatalogSkillDetail | undefined>
   /** Read one skill-bundle file's text content on demand. */
   readSkillFile: (name: string, path: string) => Promise<CatalogSkillFileRead | undefined>
+  /** List the skills inside a local container dir (add-skill chooser). */
+  listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   /** Set one declared credential value. */
   setCredential: (key: string, value: string) => Promise<boolean>
-  /** Add a skill from a SKILL.md payload. */
-  addSkill: (payload: string, modelInvocable: boolean, root: 'user' | 'project') => Promise<{ ok: boolean; error?: string; name?: string }>
+  /** Add a skill via a full request (upload zip/text or clone-from-source). */
+  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
 }
 
 /** Full props of the settings.section entry (a standalone nav tab). */

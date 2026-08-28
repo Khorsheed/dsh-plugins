@@ -69,6 +69,45 @@ export function decodeCredentialDecls(metadata: Readonly<Record<string, unknown>
   return out
 }
 
+/** Scan a skill body for env-var references (`$X`, `process.env.X`, `env['X']`,
+ * `{{env:X}}`) and surface them as generic credential decls — envs are not
+ * assumed to be API keys; they may be tokens, ids, or any secret. */
+export function decodeEnvDecls(content: string): readonly CatalogCredentialDecl[] {
+  const seen = new Set<string>()
+  const out: CatalogCredentialDecl[] = []
+  const add = (raw: string | undefined): void => {
+    if (raw === undefined) return
+    const key = raw.replace(/^\$\{?/, '').replace(/\}?$/, '').trim()
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || seen.has(key)) return
+    seen.add(key)
+    out.push({ key })
+  }
+  const patterns = [
+    /\$\{?([A-Z][A-Z0-9_]*)\}?/g,
+    /process\.env\.([A-Z][A-Z0-9_]*)/g,
+    /env\[\s*['"]?([A-Z][A-Z0-9_]+)['"]?\s*\]/g,
+    /\{\{\s*env:([A-Z][A-Z0-9_]*)\s*\}\}/g,
+  ]
+  for (const p of patterns) {
+    let m: RegExpExecArray | null
+    while ((m = p.exec(content)) !== null) add(m[1])
+  }
+  return out
+}
+
+/** Merge metadata.credentials and env-derived decls, deduped by key. */
+export function mergeCredentialDecls(
+  metadataDecls: readonly CatalogCredentialDecl[],
+  envDecls: readonly CatalogCredentialDecl[],
+): readonly CatalogCredentialDecl[] {
+  const byKey = new Map<string, CatalogCredentialDecl>()
+  for (const decl of [...metadataDecls, ...envDecls]) {
+    const existing = byKey.get(decl.key)
+    byKey.set(decl.key, existing !== undefined && existing.label !== undefined ? existing : decl)
+  }
+  return [...byKey.values()]
+}
+
 /** Project one summary onto a wire skill row. */
 export function skillRowFrom(summary: SkillSummaryLike): CatalogSkillRow {
   return {
@@ -202,7 +241,7 @@ export async function loadSkillDetail(
   const lookup = scope === undefined ? base : { ...base, scope }
   const def = await registry.get(name, lookup)
   if (def === undefined) return undefined
-  const decls = decodeCredentialDecls(def.metadata)
+  const decls = mergeCredentialDecls(decodeCredentialDecls(def.metadata), decodeEnvDecls(def.content))
   const { credentials } = resolveServices(ctx)
   let credentialStates: readonly CatalogCredentialState[] = []
   if (decls.length > 0 && credentials !== undefined) {

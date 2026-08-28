@@ -15,10 +15,15 @@
  * @module @khorsheed/dsh-capability-catalog/import
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { CatalogAddSkillRequest, CatalogAddSkillResult } from './types.ts'
+import { promisify } from 'node:util'
+import type { CatalogAddSkillRequest, CatalogAddSkillResult, CatalogDirSkillInfo } from './types.ts'
 import { extractZip, type ZipEntry } from './zip.ts'
+
+const execFileAsync = promisify(execFile)
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
 
@@ -220,4 +225,179 @@ export async function addSkillFromZip(request: CatalogAddSkillRequest, dshHome: 
 export async function addSkillFromPayload(request: CatalogAddSkillRequest, dshHome: string): Promise<CatalogAddSkillResult> {
   if (isZipPayload(request.payload)) return addSkillFromZip(request, dshHome)
   return addSkillFromText(request, dshHome)
+}
+
+/** Turn a repo spec (owner/repo, git URL, or `npx skills add <repo> -g`) into a clone URL. */
+function repoSpecToClone(spec: string): string | undefined {
+  let s = spec.trim()
+  const prefix = /^npx\s+skills\s+add\s+/i
+  if (prefix.test(s)) s = s.replace(prefix, '')
+  s = s.trim().replace(/\s+-g$/, '')
+  if (s === '') return undefined
+  if (/^https?:\/\//.test(s)) return s
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/.test(s)) {
+    const [owner, repo] = s.split('/')
+    return `https://github.com/${owner}/${repo}`
+  }
+  return undefined
+}
+
+/** Expand a leading `~` to the OS home directory. */
+function expandHome(p: string): string {
+  if (p === '~') return homedir()
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2))
+  return p
+}
+
+/** Sub-directories of `dir` that contain a SKILL.md (a skills container). */
+async function listSkillDirs(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true })
+    const out: string[] = []
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      try {
+        await stat(join(dir, entry.name, 'SKILL.md'))
+        out.push(entry.name)
+      } catch {
+        // not a skill dir
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Install a skill by cloning a source repo (owner/repo, git URL, or an
+ * `npx skills add <repo>` form) into the managed root. The frontmatter name
+ * drives the target folder; the repo must carry a `SKILL.md` at its root. This
+ * is the dsh-native "install from source" — a plain `npx skills add` writes
+ * into an external skills dir the dsh filesystem watcher does not scan.
+ * @param request - the add-skill request (channel 'command', repo carries the spec).
+ * @param dshHome - the dsh home root.
+ */
+export async function commandInstall(request: CatalogAddSkillRequest, dshHome: string): Promise<CatalogAddSkillResult> {
+  const spec = request.repo ?? ''
+  const trimmed = spec.trim()
+  // A `npx skills add ...` form is treated as its repo (the real npx installer
+  // writes into an external skills dir dsh cannot scan); repoSpecToClone below
+  // extracts the repo from that form. Local directory copy is handled next.
+  // Local directory: copy it (or a selected sub-skill) into the managed root.
+  const expanded = expandHome(trimmed)
+  let dirStat
+  try {
+    dirStat = await stat(expanded)
+  } catch {
+    dirStat = undefined
+  }
+  if (dirStat?.isDirectory() === true) {
+    const copyInto = async (src: string, skillName?: string): Promise<CatalogAddSkillResult> => {
+      const skillMd = join(src, 'SKILL.md')
+      let content: string
+      try {
+        content = await readFile(skillMd, 'utf8')
+      } catch {
+        return { ok: false, error: 'directory has no SKILL.md' }
+      }
+      const parsed = resolveSkillNameFromContent(content)
+      if (parsed === undefined) return { ok: false, error: 'SKILL.md missing name/description frontmatter' }
+      const name = skillName ?? parsed.name
+      const target = join(managedRoot(request.root, dshHome), name)
+      try {
+        await rm(target, { recursive: true, force: true })
+      } catch {
+        // ignore
+      }
+      await cp(src, target, { recursive: true })
+      await writeFile(join(target, 'SKILL.md'), finalizeSkillText(content, request.modelInvocable), 'utf8')
+      return { ok: true, name }
+    }
+    // A skills container (multiple <name>/SKILL.md): install the selected
+    // sub-skills (request.skills), or error listing them for the chooser.
+    const children = await listSkillDirs(expanded)
+    if (request.skills !== undefined && request.skills.length > 0) {
+      const results = await Promise.all(request.skills.map(async (s) => copyInto(join(expanded, s), s)))
+      const ok = results.filter(r => r.ok)
+      if (ok.length > 0) return { ok: true, name: ok.map(r => r.name).join(', ') }
+      const firstBad = results.find(r => !r.ok)
+      return firstBad ?? { ok: false, error: 'no skills installed' }
+    }
+    if (children.length > 1) {
+      return { ok: false, error: `directory has ${children.length} skills — pick one: ${children.join(', ')}` }
+    }
+    const only = children[0]
+    if (children.length === 1 && only !== undefined) return copyInto(join(expanded, only), only)
+    return copyInto(expanded)
+  }
+  const url = repoSpecToClone(spec)
+  if (url === undefined) return { ok: false, error: `unrecognized repo spec: ${spec || '(empty)'}` }
+  const repoName = url.replace(/\.git$/, '').split('/').pop() ?? 'skill'
+  const dest = join(managedRoot(request.root, dshHome), repoName)
+  try {
+    await rm(dest, { recursive: true, force: true })
+  } catch {
+    // ignore — the destination may not exist yet
+  }
+  try {
+    await execFileAsync('git', ['clone', '--depth', '1', url, dest])
+  } catch (error) {
+    return { ok: false, error: `install failed: ${String(error)}` }
+  }
+  const found = await findSkillMd(dest)
+  if (found === undefined) return { ok: false, error: 'cloned repo has no SKILL.md' }
+  const parsed = resolveSkillNameFromContent(found.content)
+  if (parsed === undefined) return { ok: false, error: 'cloned SKILL.md missing name/description frontmatter' }
+  const name = parsed.name
+  const target = join(managedRoot(request.root, dshHome), name)
+  try {
+    await rm(target, { recursive: true, force: true })
+  } catch {
+    // ignore
+  }
+  // Lift the skill dir (which may be nested, e.g. <repo>/skills/<name>) to <managedRoot>/<name>/.
+  if (found.skillDir !== dest) {
+    await cp(found.skillDir, target, { recursive: true })
+  } else {
+    await rename(dest, target)
+  }
+  await writeFile(join(target, 'SKILL.md'), finalizeSkillText(found.content, request.modelInvocable), 'utf8')
+  return { ok: true, name }
+}
+
+/** Find a SKILL.md under `dir` (shallowest, valid frontmatter), skipping .git. */
+async function findSkillMd(dir: string, depth = 0): Promise<{ skillDir: string; content: string } | undefined> {
+  if (depth > 4) return undefined
+  const rootMd = join(dir, 'SKILL.md')
+  try {
+    const content = await readFile(rootMd, 'utf8')
+    if (resolveSkillNameFromContent(content) !== undefined) return { skillDir: dir, content }
+  } catch {
+    // no SKILL.md here
+  }
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === '.git') continue
+    const res = await findSkillMd(join(dir, entry.name), depth + 1)
+    if (res !== undefined) return res
+  }
+  return undefined
+}
+
+/**
+ * List the skills inside a local container dir (each `<name>/SKILL.md`), for
+ * the add-skill chooser to present to the user before installing.
+ * @param dirPath - the local directory path (may be `~`-prefixed).
+ */
+export async function listDirSkills(dirPath: string): Promise<readonly CatalogDirSkillInfo[]> {
+  const expanded = expandHome(dirPath)
+  const names = await listSkillDirs(expanded)
+  const out: CatalogDirSkillInfo[] = []
+  for (const name of names) {
+    const content = await readFile(join(expanded, name, 'SKILL.md'), 'utf8').catch(() => '')
+    const parsed = resolveSkillNameFromContent(content)
+    out.push({ name, description: parsed?.description ?? '' })
+  }
+  return out
 }

@@ -104,16 +104,24 @@ export interface CatalogSkillFileRead {
   readonly content: string
 }
 
+/** One skill found inside a local skill container dir. */
+export interface CatalogDirSkillInfo {
+  readonly name: string
+  readonly description: string
+}
+
 /** Add-skill channel. */
-export type AddSkillChannel = 'zip' | 'github'
+export type AddSkillChannel = 'zip' | 'github' | 'command'
 
 /** Request to add a skill (upload a zip or clone a GitHub repo). */
 export interface CatalogAddSkillRequest {
   readonly channel: AddSkillChannel
   /** Base64-encoded zip/tgz bytes for `zip`; opaque for `github`. */
   readonly payload: string
-  /** owner/repo[/path] for `github`. */
+  /** owner/repo[/path] or local dir path for `command`. */
   readonly repo?: string
+  /** Selected skill sub-directory names when `repo` is a multi-skill container dir. */
+  readonly skills?: readonly string[]
   /** Whether the added skill is model-invocable (written as disable-model-invocation inversely). */
   readonly modelInvocable: boolean
   /** Target root: user (`$DSH_HOME/skills`) or project (`.agents/skills`). */
@@ -138,6 +146,7 @@ export interface CapabilityCatalogRemote {
   readonly snapshot: (workdir?: string) => Promise<CapabilityCatalogSnapshot>
   readonly detail: (name: string, workdir?: string) => Promise<CatalogSkillDetail | undefined>
   readonly readSkillFile: (name: string, filePath: string, workdir?: string) => Promise<CatalogSkillFileRead | undefined>
+  readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
 }

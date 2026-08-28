@@ -85,12 +85,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       const carried = await remote?.readSkillFile(name, path, undefined)
       return carried !== undefined && carried.ok ? carried.value : undefined
     },
+    listDirSkills: async (dirPath) => {
+      const carried = await remote?.listDirSkills(dirPath)
+      return carried !== undefined && carried.ok ? carried.value : []
+    },
     setCredential: async (key, value) => {
       const carried = await remote?.setCredential({ key, value })
       return carried !== undefined && carried.ok ? carried.value : false
     },
-    addSkill: async (payload, modelInvocable, root) => {
-      const carried = await remote?.addSkill({ channel: 'zip', payload, modelInvocable, root })
+    addSkill: async (request) => {
+      const carried = await remote?.addSkill(request)
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
   }

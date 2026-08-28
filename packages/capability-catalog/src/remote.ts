@@ -11,13 +11,14 @@ import type {
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
+  CatalogDirSkillInfo,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogToolRow,
 } from './types.ts'
 import { collectSkills, loadSkillDetail, readSkillFileContent, resolveServices, type CredentialsSlice, type RegistrySlice } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
-import { addSkillFromPayload, resolveSkillNameFromContent } from './import.ts'
+import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
 
 export type { CredentialsSlice, RegistrySlice }
@@ -121,7 +122,15 @@ export async function catalogAddSkill(
   if (request.channel === 'zip') {
     return addSkillFromPayload(request, dshHome)
   }
+  if (request.channel === 'command') {
+    return commandInstall(request, dshHome)
+  }
   return { ok: false, error: 'github clone not wired in v1' }
+}
+
+/** List the skills inside a local container dir (for the add-skill chooser). */
+export async function catalogListDirSkills(dirPath: string): Promise<readonly CatalogDirSkillInfo[]> {
+  return listDirSkills(dirPath)
 }
 
 export { resolveSkillNameFromContent }

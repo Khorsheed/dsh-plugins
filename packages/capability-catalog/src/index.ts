@@ -25,8 +25,9 @@ import type {
   CatalogCredentialSetRequest,
   CatalogSkillDetail,
   CatalogSkillFileRead,
+  CatalogDirSkillInfo,
 } from './types.ts'
-import { catalogAddSkill, catalogDetail, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
+import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -215,6 +216,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return undefined
     return catalogReadSkillFile(registry, name, filePath, workdir, await this.catalogScope())
+  }
+
+  @Remote('listDirSkills')
+  async listDirSkills(dirPath: string): Promise<readonly CatalogDirSkillInfo[]> {
+    return catalogListDirSkills(dirPath)
   }
 
   @Remote('setCredential')

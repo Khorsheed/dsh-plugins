@@ -6,9 +6,14 @@
 
 ## 展示什么
 
-- **Skills**：三列预览网格（名字 + 一行描述 + 来源/provider 徽标）。点卡片弹居中详情：完整描述、来源/provider/调用面 meta、**源码分栏**（左文件树 + 右内容窗格，worktrees 仓库文件样式）、frontmatter metadata，以及 `metadata.credentials` 声明的**凭据配置块**（值不上 wire）。
+- **Skills**：三列预览网格（名字 + 一行描述 + 来源/provider 徽标）。点卡片弹居中详情：完整描述、来源/provider/调用面 meta、**统一源码浏览器**（左文件树 + 右内容窗格；内容合成型 skill 渲染成单个虚拟 `SKILL.md` 节点）、frontmatter metadata，以及**凭据配置块**——从 `metadata.credentials` 与正文里的 `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` 引用解析出的每个 env（值不上 wire）。
 - **Tools**：折叠卡 + 渠道归因（`mcp__` 前缀 / 生成的官方白名单 / apply 时序差分）。
-- **新增 skill**：弹窗从上传 zip（零依赖、`node:zlib` 解压）或粘贴 `SKILL.md` 安装到用户/项目 skill 根，skill-filesystem watcher 自动发现。GitHub 克隆 v1 暂缓。
+- **新增 skill**：一个弹窗三来源——
+  - **文件上传**：拖拽（或点选）单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个 skill 文件夹（零依赖 `node:zlib` 解压）。
+  - **命令安装**：填 `owner/repo`、git URL 或 `npx skills add <repo> -g` 表单——host 提取 repo 做 `git clone` 进用户/项目 skill 根，并把嵌套的 `SKILL.md` 抬到 `<root>/<name>/`（dsh 原生安装；真 `npx skills add` 会装到 dsh 扫不到的外部目录）。
+  - **从本机目录**：本地 skill 目录可列出（每个 `<name>/SKILL.md`），用户勾选要装的，host 拷贝到受管根。
+
+每个来源都可选目标根（`$DSH_HOME/skills` / `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 自动发现结果。
 
 目录用 **agent preset 的 standing scope**（`agentPresets.standingKeyFor(defaultId)`）读 skill registry，列出的官方/插件/用户技能与模型一致；`list_capabilities` 工具跑在调用方的 agent scope。
 

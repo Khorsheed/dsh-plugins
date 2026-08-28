@@ -47,7 +47,6 @@ function readCardSkill(
   content: string
   source: string
   provider: string
-  resourceBase: { kind: 'directory'; path: string }
 } | undefined {
   try {
     const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card')
@@ -67,7 +66,6 @@ function readCardSkill(
       content,
       source: 'runtime' as const,
       provider: 'inline-html-render',
-      resourceBase: { kind: 'directory', path: skillDir },
     }
   } catch (error) {
     ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the inline-html-card skill is not registered`)

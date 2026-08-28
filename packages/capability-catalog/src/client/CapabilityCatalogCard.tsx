@@ -10,7 +10,7 @@
  * - The add-skill button opens a modal that installs a skill from an uploaded
  *   zip archive or a pasted SKILL.md, then refreshes the catalog.
  */
-import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14,
   IconChevronRightOutline14,
@@ -19,13 +19,13 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
-import type { CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
 
-export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, setCredential, addSkill, refresh, t }: CapabilityCatalogCardProps) {
+export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, setCredential, addSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
   const [openTool, setOpenTool] = useState<string | null>(null)
@@ -53,17 +53,19 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, setCr
     <div className={css.section}>
       <div className={css.headRow}>
         <h2 className={css.heading}>{t('title')}</h2>
-        <button type="button" className={css.addBtn} onClick={() => setShowAdd(true)}>{t('addSkill')}</button>
       </div>
       <p className={css.intro}>{t('intro')}</p>
 
-      <div className={css.tabs} role="tablist">
-        <button type="button" className={css.tab} data-active={kind === 'skills'} role="tab" onClick={() => setKind('skills')}>
-          {t('skillTab')}<span className={css.tabCnt}>{skills.length}</span>
-        </button>
-        <button type="button" className={css.tab} data-active={kind === 'tools'} role="tab" onClick={() => setKind('tools')}>
-          {t('toolTab')}<span className={css.tabCnt}>{tools.length}</span>
-        </button>
+      <div className={css.tabRow}>
+        <div className={css.tabs} role="tablist">
+          <button type="button" className={css.tab} data-active={kind === 'skills'} role="tab" onClick={() => setKind('skills')}>
+            {t('skillTab')}<span className={css.tabCnt}>{skills.length}</span>
+          </button>
+          <button type="button" className={css.tab} data-active={kind === 'tools'} role="tab" onClick={() => setKind('tools')}>
+            {t('toolTab')}<span className={css.tabCnt}>{tools.length}</span>
+          </button>
+        </div>
+        <button type="button" className={css.addBtn} onClick={() => setShowAdd(true)}>{t('addSkill')}</button>
       </div>
 
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
@@ -94,7 +96,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, setCr
       ) : null}
 
       {showAdd ? (
-        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} refresh={refresh} t={t} />
+        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} refresh={refresh} t={t} />
       ) : null}
     </div>
   )
@@ -283,40 +285,74 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
   )
 }
 
-/** Add-skill modal: install from a zip archive or a pasted SKILL.md. */
-function AddSkillModal({ onClose, addSkill, refresh, t }: {
+/** Add-skill modal: file upload (drag-drop) or clone-from-source (command). */
+function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
   onClose: () => void
-  addSkill: (payload: string, modelInvocable: boolean, root: 'user' | 'project') => Promise<{ ok: boolean; error?: string; name?: string }>
+  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
+  listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   refresh: () => Promise<void>
   t: (key: CapabilityCatalogKey) => string
 }) {
-  const [tab, setTab] = useState<'zip' | 'text'>('zip')
+  const [tab, setTab] = useState<'upload' | 'command' | 'localdir'>('upload')
   const [zipBase64, setZipBase64] = useState<string | null>(null)
   const [zipName, setZipName] = useState<string>('')
-  const [text, setText] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const [command, setCommand] = useState('')
+  const [dir, setDir] = useState('')
+  const [dirSkills, setDirSkills] = useState<readonly CatalogDirSkillInfo[]>([])
+  const [selectedSkills, setSelectedSkills] = useState<readonly string[]>([])
   const [modelInvocable, setModelInvocable] = useState(true)
   const [root, setRoot] = useState<'user' | 'project'>('user')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const canSubmit = tab === 'zip' ? zipBase64 !== null : text.trim() !== ''
+  const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir.trim() !== ''
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0]
-    if (file === undefined) return
+  const onListDir = async (): Promise<void> => {
+    setMsg(null)
+    const skills = await listDirSkills(dir)
+    if (skills.length === 0) {
+      setDirSkills([])
+      setSelectedSkills([])
+      setMsg({ ok: false, text: t('noSkillsFound') })
+      return
+    }
+    setDirSkills(skills)
+    setSelectedSkills(skills.map(s => s.name))
+  }
+
+  const toggleSkill = (name: string): void => {
+    setSelectedSkills(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name])
+  }
+
+  const readFile = (file: File): void => {
     const reader = new FileReader()
     reader.onload = () => setZipBase64(arrayBufferToBase64(reader.result as ArrayBuffer))
     reader.onerror = () => setMsg({ ok: false, text: t('readFailed') })
     reader.readAsArrayBuffer(file)
     setZipName(file.name)
   }
+  const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    if (file !== undefined) readFile(file)
+  }
+  const onDrop = (e: DragEvent<HTMLLabelElement>): void => {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file !== undefined) readFile(file)
+  }
 
   const submit = async (): Promise<void> => {
     if (!canSubmit || busy) return
     setBusy(true)
     setMsg(null)
-    const payload = tab === 'zip' ? zipBase64 as string : utf8ToBase64(text)
-    const res = await addSkill(payload, modelInvocable, root)
+    const req = tab === 'upload'
+      ? { channel: 'zip' as const, payload: zipBase64 as string, modelInvocable, root }
+      : tab === 'command'
+        ? { channel: 'command' as const, payload: '', repo: command, modelInvocable, root }
+        : { channel: 'command' as const, payload: '', repo: dir, modelInvocable, root, ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}) }
+    const res = await addSkill(req)
     if (res.ok) {
       await refresh()
       setMsg({ ok: true, text: `${t('addSuccess')}${res.name ?? ''}` })
@@ -334,21 +370,59 @@ function AddSkillModal({ onClose, addSkill, refresh, t }: {
           <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
         </div>
         <div className={css.modalBody}>
-          <p className={css.confHint}>{t('addSkillHint')}</p>
-
           <div className={`${css.tabs} ${css.innerTabs}`} role="tablist">
-            <button type="button" className={css.tab} data-active={tab === 'zip'} role="tab" onClick={() => setTab('zip')}>{t('addTabUpload')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'text'} role="tab" onClick={() => setTab('text')}>{t('addTabPaste')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => setTab('upload')}>{t('addTabUpload')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => setTab('command')}>{t('addTabCommand')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => setTab('localdir')}>{t('addTabDir')}</button>
           </div>
 
-          {tab === 'zip' ? (
-            <div>
-              <input type="file" accept=".zip" className={css.file} onChange={onFile} />
+          {tab === 'upload' ? (
+            <label
+              className={`${css.dropzone} ${dragging ? css.dragging : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+            >
+              <div className={css.dropTitle}>{t('dropTitle')}</div>
+              <div className={css.dropHint}>{t('dropHint')}</div>
+              <input type="file" accept=".zip,.md" className={css.fileInput} onChange={onFile} />
               {zipName !== '' ? <div className={css.fileName}>{zipName}</div> : null}
+            </label>
+          ) : null}
+
+          {tab === 'command' ? (
+            <div className={css.command}>
+              <label className={css.fieldLabel}>{t('commandLabel')}</label>
+              <input className={css.input} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('commandPlaceholder')} spellCheck={false} />
+              <p className={css.confHint}>{t('commandHint')}</p>
             </div>
-          ) : (
-            <textarea className={css.textarea} value={text} onChange={(e) => setText(e.target.value)} placeholder={t('addPastePlaceholder')} rows={12} spellCheck={false} />
-          )}
+          ) : null}
+
+          {tab === 'localdir' ? (
+            <div className={css.command}>
+              <label className={css.fieldLabel}>{t('dirLabel')}</label>
+              <input className={css.input} value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('dirPlaceholder')} spellCheck={false} />
+              <button type="button" className={css.btnGhost} onClick={() => void onListDir()}>{t('listDir')}</button>
+              <p className={css.confHint}>{t('dirHint')}</p>
+              {dirSkills.length > 0 ? (
+                <div className={css.skillPick}>
+                  <div className={css.fieldLabel}>{t('pickSkills')}</div>
+                  {dirSkills.map((s) => (
+                    <label className={css.pickRow} key={s.name}>
+                      <span className={css.check}>
+                        <input type="checkbox" checked={selectedSkills.includes(s.name)} onChange={() => toggleSkill(s.name)} />
+                        <span className={css.checkMark} />
+                      </span>
+                      <div className={css.pickText}>
+                        <div className={css.pickName}>{s.name}</div>
+                        <div className={css.pickDesc}>{s.description}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className={css.switchRow}>
             <span className={css.enableLabel}>{t('addModelInvocable')}</span>
@@ -384,15 +458,6 @@ function AddSkillModal({ onClose, addSkill, refresh, t }: {
 /** Encode an ArrayBuffer to base64 (chunked to avoid stack overflow). */
 function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf)
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  return btoa(binary)
-}
-
-/** Encode a UTF-8 string to base64. */
-function utf8ToBase64(s: string): string {
-  const bytes = new TextEncoder().encode(s)
   let binary = ''
   const chunk = 0x8000
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk))

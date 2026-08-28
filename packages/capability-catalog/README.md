@@ -11,16 +11,30 @@ English | [中文](README.zh.md)
 
 - **Skills** as a 3-column preview grid (name + one-line description +
   source/provider pill). Click a card to open a centered modal with the full
-  description, source/provider/invocation meta, a **source browser** (left file
-  tree + right content pane, worktrees repo-file style), frontmatter metadata,
-  and — for skills whose `metadata.credentials` declares them — a per-credential
-  config block (value never crosses the wire).
+  description, source/provider/invocation meta, a **unified source browser** (left
+  file tree + right content pane; a content-only skill renders a single virtual
+  `SKILL.md` node), frontmatter metadata, and a **credential config** block for
+  every env the skill declares — parsed from `metadata.credentials` and from
+  `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` references in the body
+  (values never cross the wire).
 - **Tools** as collapsible cards with channel attribution (`mcp__` prefix /
   generated official whitelist / apply-time baseline diff).
-- **Add skill**: a modal that installs a skill from an uploaded zip archive (a
-  dependency-free, `node:zlib` zip reader) or a pasted `SKILL.md`, into the user
-  or project skill root; the skill-filesystem watcher picks it up. GitHub clone
-  is v1-deferred.
+- **Add skill** — three install sources in one modal:
+  - **文件上传 / Upload**: drag-drop (or click) a single `SKILL.md`, a `.zip`
+    containing `SKILL.md`, or an entire skill folder (dependency-free
+    `node:zlib` zip reader).
+  - **命令安装 / Install from source**: give an `owner/repo`, a git URL, or an
+    `npx skills add <repo> -g` form — the host extracts the repo and `git clone`s
+    it into the user/project skill root, lifting a nested `SKILL.md` to
+    `<root>/<name>/` (the dsh-native install; a real `npx skills add` writes into
+    an external skills dir dsh cannot scan).
+  - **从本机目录 / From directory**: a local skill dir can be listed (each
+    `<name>/SKILL.md`), the user picks which to install, and the selected ones are
+    copied into the managed root.
+
+Each source lets you choose the target root (`$DSH_HOME/skills` / `.agents/skills`)
+and whether the skill enters the model catalog. The skill-filesystem watcher
+discovers the result.
 
 The catalog reads the skill registry at the **agent preset's standing scope**
 (`agentPresets.standingKeyFor(defaultId)`) so it lists the same official/plugin/user
