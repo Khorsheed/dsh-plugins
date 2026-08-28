@@ -117,7 +117,7 @@ describe('FilePreviewService.list with the collector', () => {
     ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
     ctx.emit('session/event', session, toolResult('c1', 2))
     await flush()
-    const list = service.list({ session } as unknown as Agent)
+    const list = await service.list({ session } as unknown as Agent)
     expect(list.entries.map(entry => entry.path)).toContain('/tmp/whale.html')
     const entry = list.entries.find(e => e.path === '/tmp/whale.html')
     expect(entry).toMatchObject({ op: 'write', turn: 1, step: 1, diffs: [] })
@@ -131,15 +131,48 @@ describe('FilePreviewService.list with the collector', () => {
     ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
     ctx.emit('session/event', session, toolResult('c1', 2))
     await flush()
-    const list = service.list({ session } as unknown as Agent)
+    const list = await service.list({ session } as unknown as Agent)
     expect(list.entries).toEqual([])
+  })
+
+  it('drops logged files that no longer exist on disk', async () => {
+    const ctx = new Context()
+    // /work/written.md is a logged write; only /work/survivor.md exists.
+    Object.assign(ctx, { fs: makeFs(['/work/survivor.md']) })
+    const service = new FilePreviewService(ctx)
+    const written = {
+      type: 'tool/call', seq: 1, time: 0,
+      data: { turn: 1, step: 1, callId: 'w1', name: 'write', arguments: JSON.stringify({ file_path: '/work/written.md', content: 'x' }) },
+    } as unknown as SessionEvent
+    const session = fakeSession('s1', '/work', [written])
+    const list = await service.list({ session } as unknown as Agent)
+    expect(list.entries.map(entry => entry.path)).toEqual([])
+  })
+
+  it('turnFiles drops a turn file that was cleaned up after the fold', async () => {
+    const ctx = new Context()
+    // /work/gone.md no longer exists; /work/kept.md does.
+    Object.assign(ctx, { fs: makeFs(['/work/kept.md']) })
+    const service = new FilePreviewService(ctx)
+    const gone = {
+      type: 'tool/call', seq: 1, time: 0,
+      data: { turn: 3, step: 1, callId: 'g1', name: 'write', arguments: JSON.stringify({ file_path: '/work/gone.md', content: 'x' }) },
+    } as unknown as SessionEvent
+    const kept = {
+      type: 'tool/call', seq: 2, time: 0,
+      data: { turn: 3, step: 2, callId: 'k1', name: 'write', arguments: JSON.stringify({ file_path: '/work/kept.md', content: 'y' }) },
+    } as unknown as SessionEvent
+    const session = fakeSession('s1', '/work', [gone, kept])
+    const map = await service.turnFiles({ session } as unknown as Agent)
+    expect(map.turns).toHaveLength(1)
+    expect(map.turns[0]!.files.map(file => file.path)).toEqual(['/work/kept.md'])
   })
 })
 
 describe('FilePreviewService.turnFiles', () => {
   it('returns per-turn groups with exact turn attribution and captured merge', async () => {
     const ctx = new Context()
-    Object.assign(ctx, { fs: makeFs(['/tmp/bash.html']) })
+    Object.assign(ctx, { fs: makeFs(['/tmp/bash.html', '/work/a.md']) })
     const service = new FilePreviewService(ctx)
     const write2 = {
       type: 'tool/call', seq: 1, time: 0,
@@ -155,7 +188,7 @@ describe('FilePreviewService.turnFiles', () => {
     ctx.emit('session/event', session, toolCall('b1', 'cat > /tmp/bash.html', 3, 5))
     ctx.emit('session/event', session, toolResult('b1', 4))
     await flush()
-    const map = service.turnFiles({ session } as unknown as Agent)
+    const map = await service.turnFiles({ session } as unknown as Agent)
     const turn2 = map.turns.find(group => group.turn === 2)
     const turn5 = map.turns.find(group => group.turn === 5)
     // Exact attribution: turn 2 has the write, turn 5 has the edit AND the bash capture.

@@ -570,13 +570,25 @@ export class MissionService {
     })
   }
 
-  /** Index one artifact of the current attempt (same path again = no-op; conflicting kind fails). */
+  /**
+   * Index one artifact of the current attempt. The path must EXIST under the
+   * attempt's run-data directory (file or directory) — a missing path fails
+   * loud instead of becoming a ghost artifact a consumer ENOENTs on. Same
+   * path + kind again is a no-op (existence is still checked); conflicting
+   * kind fails.
+   */
   async addArtifact(missionId: string, artifact: { path: string; kind: string }, options?: CallOptions & { runId?: string }): Promise<{ added: boolean }> {
     const { run } = this.locate(missionId, options?.runId)
     const now = this.now(options)
     return await this.store.update<{ added: boolean }>(run.id, (stored) => {
       const mission = (stored as RunRecord).missions.find(m => m.id === missionId) as MissionRecord
       const attempt = currentAttempt(mission)
+      const target = resolveInside(
+        this.store.attemptDataDir(run.id, mission.id, attempt.attempt), artifact.path, 'artifact path',
+      )
+      if (!existsSync(target)) {
+        throw new Error(`mission: artifact ${artifact.path} does not exist under the attempt's run-data directory (run ${run.id}, mission ${missionId}, attempt ${attempt.attempt}) — submit or write it first`)
+      }
       const existing = attempt.artifacts.find(a => a.path === artifact.path)
       if (existing !== undefined) {
         if (existing.kind !== artifact.kind) {

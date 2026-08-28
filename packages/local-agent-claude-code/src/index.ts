@@ -1,8 +1,9 @@
 /**
  * Claude Code harness instantiation of the local-agent family. Registers the
  * `claude-code` harness into the core registry: scoped home under the shared
- * homes root (`CLAUDE_CONFIG_DIR`), browser-login through
- * `claude auth login` (prompt captured from stdout), and project-file
+ * homes root (`CLAUDE_CONFIG_DIR`), login as a manual handoff (claude ≥2.1
+ * prints no OAuth URL off a TTY, so `/login` replies with the exact terminal
+ * command and the registry watches for the credential), and project-file
  * session records. Delegation mounts through the `claude-local` provider
  * (one-shot `claude -p --output-format json` under the scoped home); the
  * bundle patch's `tool-subagent-claude-code-local` row puts the tool on the
@@ -14,18 +15,21 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { ClaudeCliProvider } from './claude-cli-provider.ts'
-import { claudeAuthenticated, listClaudeSessions } from './records.ts'
+import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
+import { LiveDriverSwitch } from './live-switch.ts'
+import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
 import { claudeLogout, provisionClaudeHome } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-claude-code'
 
 /** Services required before the harness can register. */
-export const inject = ['localAgent', 'subagents', 'subprocess']
+export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
-/** Plugin config: the permission mode fresh delegations default to. */
+/** Plugin config: the permission mode fresh delegations default to, plus the live driver. */
 export interface Config {
   /**
    * `claude -p` permission handling; `skip` passes
@@ -41,6 +45,28 @@ export interface Config {
    * different endpoint than the login flow used.
    */
   baseUrl?: string
+  /**
+   * HTTP proxy for the child CLI's own traffic (model calls AND OAuth
+   * refresh), provisioned into the scoped `settings.json` env block. Needed
+   * when the host process environment carries no proxy (a supervisor-spawned
+   * instance does not inherit the user's shell exports).
+   */
+  proxyUrl?: string
+  /**
+   * Live driver: keep one resident stream-json process per member and drive
+   * turns over stdin messages (runtime-level graceful interrupt, same-shape
+   * push stream) instead of one `claude -p` process per round. Default off;
+   * the exec one-shot stays the fallback whenever the channel cannot come up.
+   */
+  live?: boolean
+  /** Idle lifetime of an unused resident runtime before reclaim. */
+  liveIdleMs?: number
+  /**
+   * Live mirror granularity: `event` mirrors the shared stream fold;
+   * `token` additionally spawns with `--include-partial-messages` and
+   * appends `assistant/chunk` deltas (write amplification — opt-in).
+   */
+  liveMirrorGranularity?: 'event' | 'token'
 }
 
 /** Runtime schema so the Loader always passes an object, never undefined. */
@@ -50,10 +76,27 @@ export const Config: z<Config> = z.object({
     z.const('normal'),
   ]),
   baseUrl: z.string(),
+  proxyUrl: z.string(),
+  live: z.boolean().default(false),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
 })
 
 /** The permission mode a fresh delegation defaults to. */
 export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 'skip'
+
+/**
+ * Settings namespace for the settings-page card. The Cordis config feeds the
+ * composition `base` layer, so a field absent from the user layer inherits the
+ * YAML value — the card only ever stores deliberate overrides.
+ */
+export const CLAUDE_SETTINGS_NAMESPACE = settingsNamespace('local-agent-claude-code')
+
+/** The card's schema; field defaults are the innermost layer below `base`. */
+const CLAUDE_SETTINGS_SCHEMA = z.object({
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+})
 
 /**
  * Register the Claude Code harness into the local-agent registry.
@@ -67,24 +110,54 @@ export function apply(ctx: Context, config: Config): void {
     const homeDir = ctx.localAgent.homeDir('claude-code')
     // Claude creates the scoped home lazily; create it eagerly so the
     // harness's homeDir contract is uniform with the other harnesses.
-    void provisionClaudeHome(homeDir).catch((error: unknown) => {
+    void provisionClaudeHome(homeDir, config.proxyUrl).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-claude-code: scoped home provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl))
-    return ctx.localAgent.register({
+    // The live driver is settings-driven: the settings card's toggle (user
+    // layer over the YAML composition base) swaps driver generations without
+    // a reload. Toggling OFF drains the retiring generation — new rounds fall
+    // back to exec, in-flight rounds finish on their runtime, idle runtimes
+    // are reclaimed at once. A granularity change needs no new generation:
+    // the driver reads it per round.
+    const scope = ctx.settings.register(CLAUDE_SETTINGS_NAMESPACE, CLAUDE_SETTINGS_SCHEMA, {
+      base: {
+        ...config.live === undefined ? {} : { live: config.live },
+        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+      },
+    })
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, {
+      ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+    })
+    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve))
+    const disposeHarness = ctx.localAgent.register({
       name: 'claude-code',
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
       login: {
-        command: 'claude',
-        args: ['auth', 'login'],
-        // claude auth login prints the browser OAuth URL to stdout; the CLI
-        // polls in the background while the user authorizes in the browser.
-        capture: 'stdout',
+        // claude ≥2.1 (verified 2.1.235+) runs its auth only on a TTY: under
+        // the pty wrapper it auto-opens the user's browser and prints the
+        // OAuth URL as fallback; the page hands back a code the user pastes
+        // via /claude-code code <value>. The relay env is scrubbed and the
+        // scoped home pinned so the credential lands where delegations read
+        // it (the wrapper passes the harness env through).
+        pty: {
+          command: 'env',
+          args: ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', `CLAUDE_CONFIG_DIR=${homeDir}`, 'claude', 'auth', 'login'],
+        },
+        // The watch syncs the keychain credential into the runtime-readable
+        // file first (claude 2.1.236 writes keychain but reads the file),
+        // then probes.
+        watch: async (home) => {
+          await syncClaudeCredentialFile(home)
+          return claudeAuthenticated(home)
+        },
       },
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
       isAuthenticated: claudeAuthenticated,
+      credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {
         const [verb] = input.split(/\s+/)
@@ -100,5 +173,10 @@ export function apply(ctx: Context, config: Config): void {
         return undefined
       },
     })
+    return () => {
+      disposeProvider()
+      disposeHarness()
+      liveSwitch.dispose()
+    }
   }, 'local-agent-claude-code: harness')
 }

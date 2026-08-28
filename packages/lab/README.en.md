@@ -17,6 +17,8 @@ Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over 
 - **Unit** — one labeled container (`dsh-lab-<id>`). The docker daemon is the registry of record: unit id, fingerprint, and mission binding ride resource labels, so `status` / `release` reconcile and survive a host restart — lab keeps no state files of its own.
 - **Environment fingerprint** — `acquire` resolves the image's repo digest (falling back to the image id, pulling when absent locally) and writes it into the mission's refs together with the resource id. Environments differ → results aren't comparable; this is a mechanism, not a convention.
 - **Inputs** — two paths: declare `mounts` at acquire for a zero-copy read-only bind mount (container mounts cannot be added after creation), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
+- **Materialization manifest** — `populate` returns `{ sha, count, files }` (per-file content hashes plus an overall hash over the sorted list), and with `manifestPath` writes the manifest file and registers it as a mission artifact of kind `materialization`. Identical inputs hash identically — the byte-level fairness proof across parallel units — and the manifest doubles as the baseline a later `collect` diffs against (what was given vs what was produced).
+- **Activity facts, not verb timestamps** — `status` reports `lastActivityAt` from the newest workspace file mtime inside the unit (work writes files; lab is not invoked meanwhile, so a verb-call timestamp would be a fake metric), plus cumulative container CPU from cgroup `cpu.stat` as the secondary fact. Because `docker cp` preserves source mtimes, `populate` stamps a `.lab-materialized` marker into the target as the activity baseline — otherwise a freshly populated unit would look idle for the source's whole age.
 - **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach.
 - **`maxConcurrentUnits`** — a plain ceiling (config, default 4): `acquire` refuses at the limit with an explicit error. lab doesn't know which phases may overlap (that's the caller's semantics); one number blocks accidental concurrency, which silently corrupts timing-sensitive measurements.
 - **Checkpoint** — commit the workspace (auto-initialized as a git repo on first checkpoint) and tag it; the commit sha goes into the mission's checkpoint `ref`. A read-only mounted workspace fails loud — it cannot be committed, which is the correct signal.
@@ -48,7 +50,8 @@ const unit = await ctx.lab.acquire({
   missionId: 'F1-a-r1',                       // optional mission binding
   mounts: [{ source: worktreePath, target: '/input', readonly: true }],
 })
-await ctx.lab.populate(unit.id, { source: '/path/to/layer', target: '/workspace' })
+await ctx.lab.populate(unit.id, { source: '/path/to/layer', manifestPath: '/host/run-data/materialization.json' })
+// → { sha, count, files } — registered as a 'materialization' artifact
 const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
 const outcome = await ctx.lab.verify(unit.id, { command: ['npm', 'test'], source: '/path/to/checks', timeoutMs: 300_000 })
 // outcome = { exitCode, stdout, stderr, durationMs, timedOut } — verbatim; also annotated into mission ns 'lab'
@@ -66,14 +69,24 @@ The mission integration is a probed structural face (`setRefs` / `addArtifact` /
 
 ```sh
 dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
-dsh-lab populate UNIT --source DIR [--target DIR]
-dsh-lab collect UNIT --source DIR --target DIR [--kind K]
+dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
+dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
 dsh-lab checkpoint UNIT --name NAME
 dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
-dsh-lab archive UNIT --target DIR [--kind K]
+dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
 dsh-lab release UNIT [--force]
-dsh-lab status [UNIT]
+dsh-lab status [UNIT] [--json]
 ```
+
+Bare `dsh-lab status` prints the progress table — one row per unit joining container facts (up-time), in-container activity (workspace mtime), the mission state and coordinate labels (via the mission face, absent-tolerant), and the materialization hash:
+
+```text
+UNIT      MISSION           CONTAINER   LAST-ACTIVITY  TASK     LABELS
+u-a3f9    cell-1:working    up 2h14m    3m ago         9f2c1a2b  task=F1,subject=A
+u-b71c    cell-2:collected  up 2h14m    47m ago        9f2c1a2b  task=F1,subject=B
+```
+
+Identical TASK hashes across rows are the fairness proof at a glance; a long `LAST-ACTIVITY` gap on a `working` row is the stuck-cell signal. `--json` emits the structured rows instead.
 
 The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and refs / artifacts / checkpoints / annotations register through the mission bin's verbs (`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`). Without the bin on PATH, registration warns and skips, and `release` needs `--force`.
 
@@ -84,6 +97,18 @@ The CLI is the same `LabService` kernel over a `child_process` runner, with the 
 
 Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. The `lab_*` model tools (M3) do not exist in this line yet.
 
+## Failure recovery loop
+
+A crashed cell loses nothing and re-runs alone. The loop (the orchestrator drives it; each step is one existing verb):
+
+1. `collect` whatever output already exists (partial is the norm);
+2. `archive` the unit — the crash scene (half-finished work, crash output, checkpoints) is the most valuable data in the run; releasing without it destroys evidence;
+3. the orchestrator writes what the template's failure gate expects (e.g. a crash dump) into the attempt's run-data directory and `attest`s the teardown key;
+4. the transition into the failed state passes its `file-check` — the failure path gets **no gate exception**: entering a releasable state carries the archive check just like the success path (express attested-plus-file-check as a state chain like `working → archived-failed → failed`, not a new guard combinator);
+5. `release` destroys the unit; `mission_retry` opens a fresh attempt for that one cell (the old attempt stays immutable), and a new unit is acquired for it.
+
+The integration suite runs this loop end to end (`scripts/integration-triad.spec.ts`, failure-path block).
+
 ## Known Limitations and Deferred Work
 
 - **`populate` copies; mounts are declared at acquire** — docker cannot add mounts to a created container, so the zero-copy read-only path is `acquire`'s `mounts`, and `populate` materializes a copy into the unit's writable layer (that is what "into the unit" means once it runs).
@@ -92,4 +117,5 @@ Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@kh
 - **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper; `checkpoint` additionally needs `git` inside the unit.
 - **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
 - **M3 scope** — the `lab_*` model tools are designed in the proposal and deliberately absent here.
-- **CLI-mode registration goes through the mission bin** — it requires `dsh-mission` on PATH and covers exactly its verb set (set-refs / add-artifact / add-checkpoint / annotate / is-releasable); anything richer belongs to the in-host service face.
+- **`lastActivityAt` needs GNU `stat` or busybox `date -r` in the image** — the workspace-mtime probe degrades to "no reading" on images with neither (the row shows `-`); the CPU fact needs cgroup `cpu.stat` (v2) or `cpuacct.usage` (v1).
+- **CLI-mode registration goes through the mission bin** — it requires `dsh-mission` on PATH and covers exactly its verb set (set-refs / add-artifact / add-checkpoint / annotate / is-releasable / get); anything richer belongs to the in-host service face.

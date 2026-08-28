@@ -1,4 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -209,8 +212,18 @@ describe('codex-cli-provider run settlement', () => {
       { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 6, output_tokens: 4 } },
     )
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(3)
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
+    // The command_execution item mirrors as a native tool/call + tool/result
+    // pair, paired by the stream item id.
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect((calls[0]!.data as { callId: string; name: string; arguments: string }))
+      .toMatchObject({ callId: 'item_1', name: 'Bash', arguments: 'ls' })
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect((results[0]!.data as { message: { content: { toolCallId: string; content: unknown }[] } }).message.content[0])
+      .toMatchObject({ toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
 
     // Settle: the live mirror already covered the stream — no duplicates.
     finish({ exitCode: 0, signal: null })
@@ -222,7 +235,8 @@ describe('codex-cli-provider run settlement', () => {
     const texts = assistant.map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
     expect(new Set(texts).size).toBe(texts.length)
     expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
-    expect((assistant[2]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     await done
   })
 
@@ -255,6 +269,58 @@ describe('codex-cli-provider run settlement', () => {
     expect(endData?.reason?.kind).toBe('error')
     expect(endData?.reason?.error?.message).toContain('exited with code 1')
     expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    await done
+  })
+
+  it('reports auth-shaped failures through onAuthFailure', async () => {
+    const done = Promise.resolve({ exitCode: 1, signal: null })
+    const authFailures: string[] = []
+    const handle: SubprocessHandle = {
+      pid: 4244,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from([]),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: 'Error: 401 Unauthorized — access token expired\n', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startCodexCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      { cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle, onAuthFailure: detail => authFailures.push(detail) },
+    )
+    expect((await run.result).stopReason).toBe('error')
+    // Auth detection runs on the post-exit chain (after streams drain).
+    await vi.waitFor(() => { expect(authFailures).toHaveLength(1) })
+    expect(authFailures[0]).toContain('401')
+    await done
+  })
+
+  it('does not report non-auth failures through onAuthFailure', async () => {
+    const done = Promise.resolve({ exitCode: 1, signal: null })
+    const authFailures: string[] = []
+    const handle: SubprocessHandle = {
+      pid: 4245,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from(['Error: sandbox denied the write\n']),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startCodexCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      { cwd: '/tmp', env: {}, sandbox: 'workspace-write', disposeGraceMs: 3_000, spawn: () => handle, onAuthFailure: detail => authFailures.push(detail) },
+    )
+    expect((await run.result).stopReason).toBe('error')
+    expect(authFailures).toHaveLength(0)
     await done
   })
 
@@ -519,12 +585,21 @@ describe('codex-cli-provider abort path', () => {
     done: Promise<{ exitCode: number; signal: null }>
     terminated: () => boolean
   } {
-    const partialStream = [
+    return hangingChildWith([
       { type: 'thread.started', thread_id: 't-abort' },
       { type: 'turn.started' },
       { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: '我先创建一个文件。' } },
       { type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: 'echo hi > hi.txt', aggregated_output: '' } },
-    ].map(event => JSON.stringify(event)).join('\n')
+    ])
+  }
+
+  /** The fake CLI, emitting a caller-chosen partial NDJSON stream. */
+  function hangingChildWith(events: unknown[]): {
+    handle: SubprocessHandle
+    done: Promise<{ exitCode: number; signal: null }>
+    terminated: () => boolean
+  } {
+    const partialStream = events.map(event => JSON.stringify(event)).join('\n')
     const stdout = new Readable({ read() {} })
     const stderr = new Readable({ read() {} })
     stderr.push('')
@@ -559,6 +634,36 @@ describe('codex-cli-provider abort path', () => {
       stdout.push(null)
     })
     return { handle, done, terminated: () => terminated }
+  }
+
+  /**
+   * A scoped home whose sessions tree holds one rollout file for the fake
+   * run's thread, ending with the token_count codex writes at turn boundaries
+   * (including interrupted turns). The recorded usage is the number the
+   * fallback must attach to the aborted child session. The file is stamped
+   * NOW (the test's spawn moment), so the time-window fallback matches too.
+   */
+  function homeWithRollout(threadId: string): string {
+    const home = mkdtempSync(join(tmpdir(), 'codex-abort-rollout-'))
+    const now = new Date()
+    const dir = join(home, 'sessions', '2026', '08', '16')
+    mkdirSync(dir, { recursive: true })
+    const stamp = now.toISOString().replace(/[:.]/g, '-')
+    writeFileSync(join(dir, `rollout-${stamp}-${threadId}.jsonl`), [
+      JSON.stringify({ type: 'session_meta', payload: { id: threadId, timestamp: now.toISOString(), cwd: '/tmp' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25, total_tokens: 125 },
+            total_token_usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25, total_tokens: 125 },
+          },
+        },
+      }),
+      '',
+    ].join('\n'))
+    return home
   }
 
   it('settles the result immediately on abort and mirrors the partial NDJSON after the kill', async () => {
@@ -604,11 +709,103 @@ describe('codex-cli-provider abort path', () => {
 
     // The partial stream (reply text + command) is mirrored after the kill.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      // The killed stream's trailing command mirrors as a native tool/call
+      // (no result — the kill landed first).
+      expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
     })
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '我先创建一个文件。' }])
-    expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: '[工具 Bash] echo hi > hi.txt' }])
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect((calls[0]!.data as { name: string; arguments: string }))
+      .toMatchObject({ name: 'Bash', arguments: 'echo hi > hi.txt' })
+    await hanging.done
+  })
+
+  it('attaches the rollout file last token_count usage to a killed run (thread-id locator)', async () => {
+    const home = homeWithRollout('t-abort')
+    const child = Session.create(SessionId('child-abort-rollout'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    const hanging = hangingChild()
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: home },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      ctx,
+    })
+    await new Promise(resolve => { setTimeout(resolve, 50) })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await run.dispose()
+
+    // The abort mirror preserves the partial stream AND recovers the usage
+    // codex wrote to the rollout file's last token_count (input 100 − cached
+    // 40 = 60 uncached). The killed stream ends with the command, so the
+    // carrier assistant message went out through the live mirror before the
+    // usage was knowable — the recovery books it as a usage chunk pinned to
+    // the carrier's step (the token projection counts it identically).
+    await vi.waitFor(() => {
+      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      expect(assistant).toHaveLength(1)
+      const usageChunk = child.events.find(event =>
+        event.type === 'assistant/chunk' && event.data.chunk.type === 'usage')
+      expect(usageChunk?.data.chunk.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+    })
+    await hanging.done
+  })
+
+  it('reaches the same usage via the time window when a kill truncated the stream before thread.started', async () => {
+    const home = homeWithRollout('t-window')
+    const child = Session.create(SessionId('child-abort-window'))
+    const ctx = new Context()
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
+    // No thread.started in the stream: the locator falls back to the spawn
+    // time window and still finds the run's rollout file.
+    const hanging = hangingChildWith([
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: '部分结果' } },
+    ])
+
+    const controller = new AbortController()
+    const request = {
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: controller.signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startCodexCliRun(request, {
+      cwd: '/tmp',
+      env: { CODEX_HOME: home },
+      sandbox: 'workspace-write',
+      disposeGraceMs: 3_000,
+      spawn: () => hanging.handle,
+      childSession: child,
+      ctx,
+    })
+    await new Promise(resolve => { setTimeout(resolve, 50) })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await run.dispose()
+
+    await vi.waitFor(() => {
+      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      expect(assistant).toHaveLength(1)
+      expect(assistant[0]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+    })
     await hanging.done
   })
 })

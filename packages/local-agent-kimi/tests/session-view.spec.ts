@@ -41,7 +41,7 @@ describe('session-view', () => {
       { kind: 'user', text: '建个文件', turn: 1 },
       { kind: 'think', text: 'Simple task.', turn: 1 },
       { kind: 'assistant', text: '我开始了。', turn: 1 },
-      { kind: 'tool', name: 'Write', args: '/tmp/a.txt', result: 'Wrote 10 bytes', turn: 1 },
+      { kind: 'tool', id: 'tc1', name: 'Write', args: '/tmp/a.txt', result: 'Wrote 10 bytes', turn: 1 },
       { kind: 'assistant', text: '任务完成。', turn: 1 },
     ])
   })
@@ -58,8 +58,8 @@ describe('session-view', () => {
     ].join('\n'))
     const transcript = await readKimiTranscript(dir)
     expect(transcript.lines).toEqual([
-      { kind: 'tool', name: 'WebSearch', args: 'A', result: 'RESULT_A', turn: 1 },
-      { kind: 'tool', name: 'WebSearch', args: 'B', result: 'RESULT_B', turn: 1 },
+      { kind: 'tool', id: 'tA', name: 'WebSearch', args: 'A', result: 'RESULT_A', turn: 1 },
+      { kind: 'tool', id: 'tB', name: 'WebSearch', args: 'B', result: 'RESULT_B', turn: 1 },
     ])
   })
 

@@ -39,11 +39,19 @@ const NODES: Record<string, ChatConversationViewNode> = {
   k3: node('k3', 'user', '谢谢'),
 }
 
+/** A ChatNodeStore stub exposing both `get` and `values` (the rail reads values). */
+function nodeStore(...list: ChatConversationViewNode[]): { get: (key: string) => ChatConversationViewNode | undefined; values: () => readonly ChatConversationViewNode[] } {
+  const byKey = new Map(list.map(n => [n.key, n]))
+  return { get: (key: string) => byKey.get(key), values: () => list }
+}
+
+const ALL_NODES = Object.values(NODES)
+
 function sessionSnapshot(overrides: { order?: readonly string[]; hasMore?: boolean; loadingOlder?: boolean } = {}) {
   return {
     chat: {
       order: overrides.order ?? ['k1', 'k2', 'k3'],
-      nodes: { get: (key: string) => NODES[key] },
+      nodes: nodeStore(...ALL_NODES),
     },
     hasMore: overrides.hasMore ?? false,
     loadingOlder: overrides.loadingOlder ?? false,
@@ -93,6 +101,93 @@ describe('the flat timeline panel', () => {
     expect(items()).toHaveLength(3)
     expect(panel().textContent).toContain('你好')
     expect(panel().textContent).toContain('继续')
+    expect(panel().textContent).toContain('谢谢')
+  })
+
+  it('keeps the ordinary-session baseline: a normal session renders exactly its order rows', () => {
+    // Regression guard: the fix must not change an ordinary (non-edited)
+    // session. A plain order + store with no message-tools nodes renders the
+    // three user/steering rows and nothing else.
+    const sessionStore = createSnapshotStore(sessionSnapshot())
+    renderRail({ useSession: bindSnapshotSelector(sessionStore) })
+    expect(items()).toHaveLength(3)
+    expect(panel().textContent).toContain('你好')
+    expect(panel().textContent).toContain('继续')
+    expect(panel().textContent).toContain('谢谢')
+  })
+
+  it('keeps the edited bubble when the host order omits it (an edit never drains the rail)', () => {
+    // An in-place edit replaces the surface tail; the host's visible order can
+    // come back without the `message-tools-edited` bubble even though it is in
+    // the store and renders in the flow. The rail must surface it — editing the
+    // first message must not drain the rail to zero rows.
+    const edited = {
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
+      data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
+    } as unknown as ChatConversationViewNode
+    const withdrawn = {
+      key: 'k2', kind: 'user', target: 'chat', anchorSeq: 5, visibility: 'hidden',
+      data: { content: [{ type: 'text', text: '被撤回的原消息' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: {
+          // The host order no longer surfaces any user bubble (all withdrawn /
+          // replaced); the edited bubble lives only in the store.
+          order: [],
+          nodes: nodeStore(edited, withdrawn),
+        },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(1)
+    expect(panel().textContent).toContain('改过的内容')
+    expect(panel().textContent).not.toContain('被撤回的原消息')
+  })
+
+  it('keeps the edited bubble and the still-visible user rows when the order surfaces both', () => {
+    // A middle-message edit: order still lists the pre-edit user messages and
+    // the appended edited bubble follows them.
+    const edited = {
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
+      data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: {
+          order: ['k1', 'k3'],
+          nodes: nodeStore(NODES.k1, NODES.k3, edited),
+        },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(3)
+    expect(panel().textContent).toContain('你好')
+    expect(panel().textContent).toContain('谢谢')
+    expect(panel().textContent).toContain('改过的内容')
+  })
+
+  it('degrades to the order rows when the store read fails (ordinary session still renders)', () => {
+    // A store whose `values()` throws must not break the rail: the primary
+    // order loop still renders, the append silently drops.
+    const badStore = {
+      get: (key: string) => NODES[key],
+      values: () => { throw new Error('boom') },
+    }
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: { order: ['k1', 'k3'], nodes: badStore },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(2)
+    expect(panel().textContent).toContain('你好')
     expect(panel().textContent).toContain('谢谢')
   })
 

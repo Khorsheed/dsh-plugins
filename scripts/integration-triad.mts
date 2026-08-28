@@ -69,6 +69,8 @@ export interface TriadEvidence {
   worktree: ManagedWorktree
   /** Sparse-checkout mechanism on the host side: grading/verify absent from the worktree. */
   worktreeTree: string[]
+  /** populate's materialization manifest (fairness evidence). */
+  materialization: { sha: string; count: number }
   lint: { errors: string[]; warnings: string[] }
   unit: UnitInfo
   refsAfterAcquire: AttemptRecord['refs']
@@ -293,7 +295,11 @@ export async function runTriad(image: string): Promise<TriadResult> {
     log(`acquired ${unit.resource} (fingerprint ${unit.fingerprint}); mission refs: ${JSON.stringify(refsAfterAcquire)}`)
 
     await mission.transition(TRIAD_MISSION_ID, 'ws-ready', { runId: TRIAD_RUN_ID, by: 'driver' })
-    await lab.populate(unit.id, { source: worktree.path })
+    const attemptDataDir = join(tempRoot, 'mission', 'runs', TRIAD_RUN_ID, 'data', TRIAD_MISSION_ID, 'attempt-1')
+    const manifestPath = join(attemptDataDir, 'materialization.json')
+    mkdirSync(dirname(manifestPath), { recursive: true })
+    const materialization = await lab.populate(unit.id, { source: worktree.path, manifestPath, artifactPath: 'materialization.json' })
+    log(`populated ${materialization.count} file(s), manifest sha ${materialization.sha.slice(0, 12)}…`)
     await mission.transition(TRIAD_MISSION_ID, 'working', { runId: TRIAD_RUN_ID, by: 'driver' })
 
     const visibilityProbe = await lab.verify(unit.id, {
@@ -310,8 +316,8 @@ export async function runTriad(image: string): Promise<TriadResult> {
       command: ['sh', '-c', 'mkdir -p /workspace/out && printf "triad output\\n" > /workspace/out/output.txt && cat /workspace/out/output.txt'],
     })
 
-    const collectTarget = join(tempRoot, 'collected', TRIAD_MISSION_ID)
-    await lab.collect(unit.id, { source: '/workspace/out', target: collectTarget })
+    const collectTarget = join(attemptDataDir, 'collected')
+    await lab.collect(unit.id, { source: '/workspace/out', target: collectTarget, artifactPath: 'collected' })
     const collectedContent = readFileSync(join(collectTarget, 'output.txt'), 'utf8')
     const artifactsAfterCollect = mission.get(TRIAD_MISSION_ID, TRIAD_RUN_ID).mission.attempts[0]?.artifacts ?? []
     await mission.transition(TRIAD_MISSION_ID, 'collected', { runId: TRIAD_RUN_ID, by: 'driver' })
@@ -352,6 +358,7 @@ export async function runTriad(image: string): Promise<TriadResult> {
         snapshot,
         worktree,
         worktreeTree,
+        materialization: { sha: materialization.sha, count: materialization.count },
         lint,
         unit,
         refsAfterAcquire,
@@ -384,18 +391,21 @@ export async function runTriad(image: string): Promise<TriadResult> {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Failure-path template: a `failed` terminal reachable from `working`,
- * gated by an ATTESTED guard (teardown after failure is an attested human
- * decision), and `failed` itself is the releasable state — a failed cell
- * still holds a resource that must be destroyable.
+ * Failure-path template: a failed cell tears down through an ARCHIVE gate,
+ * not around it — `working → archived-failed` is attested (teardown is a
+ * human decision), `archived-failed → failed` carries the same file-check
+ * the success path uses (the crash-scene dump must exist first; partial
+ * dumps are the norm and the template names what the orchestrator must
+ * produce), and `failed` is the releasable state.
  */
 export const TRIAD_FAILURE_TEMPLATE = {
   name: 'triad-failure',
-  states: ['pending', 'ws-ready', 'working', 'failed'],
+  states: ['pending', 'ws-ready', 'working', 'archived-failed', 'failed'],
   transitions: [
     { from: 'pending', to: 'ws-ready' },
     { from: 'ws-ready', to: 'working' },
-    { from: 'working', to: 'failed', guard: { type: 'attested', key: 'teardown-approved' } },
+    { from: 'working', to: 'archived-failed', guard: { type: 'attested', key: 'teardown-approved' } },
+    { from: 'archived-failed', to: 'failed', guard: { type: 'file-check', dir: 'archive', expectedFiles: ['crash-dump.txt'] } },
   ],
   releasableStates: ['failed'],
   missions: [{ id: 'cell-f1', title: 'failure cell', labels: { task: 't1', player: 'driver', rep: '1' } }],
@@ -421,8 +431,9 @@ export interface TriadFailureEvidence {
   ghostReleaseError: string
   /** …and force does NOT bypass a gate whose query errors. */
   ghostReleaseForceError: string
-  /** Attested teardown: attest → transition to failed → release destroys. */
-  teardown: { stateAfterAttest: string; releasable: boolean; containerGone: boolean }
+  /** Attested teardown: premature failed-transition refused (no crash dump),
+   *  then dump written → gate passes → release destroys. */
+  teardown: { prematureFailedError: string; stateAfter: string; releasable: boolean; containerGone: boolean }
   warnings: string[]
 }
 
@@ -492,11 +503,21 @@ export async function runTriadFailures(image: string): Promise<TriadFailureResul
     const ghostReleaseForceError = await captureError(() => lab.release(ghost.id, { force: true }))
     log(`ghost release refused (fail closed): ${ghostReleaseError}; force also refused: ${ghostReleaseForceError}`)
 
-    // ── Chain 3: attested teardown of the failed cell ────────────────────
-    log('chain 3: attest teardown-approved → failed → release destroys the container')
+    // ── Chain 3: the failure recovery loop — archive the scene BEFORE release ──
+    log('chain 3: collect → archive the crash scene → attest → archive gate → release')
     await mission.attest(TRIAD_FAILURE_MISSION_ID, 'teardown-approved', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    await mission.transition(TRIAD_FAILURE_MISSION_ID, 'archived-failed', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
+    // The failure path gets NO gate exception: without the crash dump the
+    // file-check refuses exactly like the success path's missing archive.
+    const prematureFailedError = await captureError(() => mission.transition(TRIAD_FAILURE_MISSION_ID, 'failed', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' }))
+    log(`archived-failed→failed refused before the dump exists: ${prematureFailedError}`)
+    // Orchestrator export of the crash scene (partial is the norm; the
+    // template declares what must exist).
+    const failArchiveDir = join(tempRoot, 'mission', 'runs', TRIAD_FAILURE_RUN_ID, 'data', TRIAD_FAILURE_MISSION_ID, 'attempt-1', 'archive')
+    mkdirSync(failArchiveDir, { recursive: true })
+    writeFileSync(join(failArchiveDir, 'crash-dump.txt'), `populate failed: ${populateError}\n`, 'utf8')
     await mission.transition(TRIAD_FAILURE_MISSION_ID, 'failed', { runId: TRIAD_FAILURE_RUN_ID, by: 'driver' })
-    const stateAfterAttest = (mission.get(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID).mission.attempts[0] as AttemptRecord).state
+    const stateAfter = (mission.get(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID).mission.attempts[0] as AttemptRecord).state
     const releasable = mission.isReleasable(TRIAD_FAILURE_MISSION_ID, TRIAD_FAILURE_RUN_ID)
     await lab.release(unit.id)
     const containerGone = !containerExists(unit.resource)
@@ -513,7 +534,7 @@ export async function runTriadFailures(image: string): Promise<TriadFailureResul
         ghostAcquireWarned,
         ghostReleaseError,
         ghostReleaseForceError,
-        teardown: { stateAfterAttest, releasable, containerGone },
+        teardown: { prematureFailedError, stateAfter, releasable, containerGone },
         warnings,
       },
       cleanup,

@@ -8,17 +8,27 @@
  * share from the return type.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DatasetBinding, DatasetSummary, ItemRecord, ReadResult } from '../types.ts'
+import type { DatasetBinding, DatasetSummary, ItemRecord, ListItemsResult, ReadResult } from '../types.ts'
 
-/** One selected file: its coordinates down to the layer-relative path. */
-export interface DatasetSelection {
-  readonly dataset: string
-  /** Item id, or null for a DATASET-LEVEL (shared) layer file. */
-  readonly item: string | null
-  readonly layer: string
-  /** Layer-relative file path (as the layer's file list reports it). */
-  readonly path: string
-}
+/** One selected file: a layer file, or a passthrough-zone file (either readable). */
+export type DatasetSelection =
+  | {
+    readonly kind: 'layer'
+    readonly dataset: string
+    /** Item id, or null for a DATASET-LEVEL (shared) layer file. */
+    readonly item: string | null
+    readonly layer: string
+    /** Layer-relative file path (as the layer's file list reports it). */
+    readonly path: string
+  }
+  | {
+    readonly kind: 'passthrough'
+    readonly dataset: string
+    /** Item id for item.json, or null for a dataset-level passthrough file. */
+    readonly item: string | null
+    /** Dataset-relative file path (manifest.yml, docs/x.md, items/<item>/item.json). */
+    readonly path: string
+  }
 
 /** The view's state; fetched results are whole values, null until loaded. */
 export interface DatasetsViewState {
@@ -42,6 +52,8 @@ export interface DatasetsViewState {
   items: Record<string, readonly ItemRecord[]>
   /** Dataset-level (shared) layer files per dataset id, loaded with its items. */
   sharedLayers: Record<string, Record<string, readonly string[]>>
+  /** The passthrough zone per dataset id (never filtered — shown BECAUSE it is unprotected). */
+  passthrough: Record<string, readonly string[]>
   /** The selected file's coordinates, or null when nothing is selected. */
   selection: DatasetSelection | null
   /** The selected file's content, or null before one completes. */
@@ -61,7 +73,7 @@ export type DatasetsViewActions = {
   setListLoading: (draft: DatasetsViewState, loading: boolean) => void
   setListError: (draft: DatasetsViewState, error: string | null) => void
   expand: (draft: DatasetsViewState, dataset: string | null) => void
-  setItems: (draft: DatasetsViewState, dataset: string, items: readonly ItemRecord[], shared: Record<string, readonly string[]>) => void
+  setDetails: (draft: DatasetsViewState, dataset: string, detail: ListItemsResult) => void
   select: (draft: DatasetsViewState, selection: DatasetSelection) => void
   setPreview: (draft: DatasetsViewState, preview: ReadResult) => void
   setPreviewLoading: (draft: DatasetsViewState, loading: boolean) => void
@@ -79,6 +91,7 @@ const INITIAL: DatasetsViewState = {
   expandedDataset: null,
   items: {},
   sharedLayers: {},
+  passthrough: {},
   selection: null,
   preview: null,
   previewLoading: false,
@@ -102,6 +115,7 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
         d.expandedDataset = null
         d.items = {}
         d.sharedLayers = {}
+        d.passthrough = {}
         d.selection = null
         d.preview = null
         d.previewError = null
@@ -115,9 +129,10 @@ export function createDatasetsViewStore(): EngineStoreHandle<DatasetsViewState, 
       setListLoading: (d, loading: boolean) => { d.listLoading = loading },
       setListError: (d, error: string | null) => { d.listError = error },
       expand: (d, dataset: string | null) => { d.expandedDataset = dataset },
-      setItems: (d, dataset: string, items: readonly ItemRecord[], shared: Record<string, readonly string[]>) => {
-        d.items[dataset] = items
-        d.sharedLayers[dataset] = shared
+      setDetails: (d, dataset: string, detail: ListItemsResult) => {
+        d.items[dataset] = detail.items
+        d.sharedLayers[dataset] = detail.datasetLayers
+        d.passthrough[dataset] = detail.passthrough
       },
       select: (d, selection: DatasetSelection) => {
         d.selection = selection

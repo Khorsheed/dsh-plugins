@@ -35,9 +35,28 @@ T=$(mktemp -d) && cd "$T" && npm install <包名>@<新版本> \
 | git 源安装后没有 lib/ | 缺 `prepare` 脚本 | package.json 加 `"prepare": "npm run build"`(git 依赖安装时会执行) |
 | 消费者侧 `ERR_MODULE_NOT_FOUND` | tarball 内相对导入指向未包含的文件 | 跑 pack smoke:包内每个相对导入都必须可解析 |
 
+## 变更记录与发版标记
+
+每次发版在三个层级记录变更：
+
+- **包自己**:`packages/<包>/CHANGELOG.md` 记完整条目(版本号、日期、功能要点)。
+- **monorepo 根**:`CHANGELOG.md` 记一行摘要(什么包、什么版本)。
+- **整合包仓**:dsh-web-basic 的 `CHANGELOG.md` 记用户向大白话——仅当该包属于整合包成员时。
+
+发版时打 git tag,格式 `<包名去掉 @khorsheed/dsh- 前缀>-v<版本>`,如 `message-tools-v0.5.0`;并在 GitHub 上建对应 Release(可附 CHANGELOG 条目)。local-agent 家族整体一波发布,tag 逐包打。
+
+每波发布后运行 `pnpm release:status` 重新生成 [release-status.md](release-status.md)(各包 npm 已发布版本 / 仓内版本 / minHost / verifiedHost / 整合包成员一览)并提交——发布状态以此为准,不手维护。
+
+**ankh-guard 镜像同步**:每次 ankh-guard 发版(或其代码进 main 的关键节点)运行 `npx tsx scripts/sync-ankh-guard-mirror.mts`,把 `packages/ankh-guard` 同步到公开的单插件仓 Khorsheed/dsh-ankh-guard。镜像面向"只装这一个插件"的受众:issue 开在镜像仓,PR 回流 monorepo。
+
+## README 图片
+
+包 README 的截图一律用 dsh-web-basic 仓的绝对地址(`https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/<文件>`),不用相对路径——npm 按 `repository` 字段改写相对路径,dsh-plugins 未 public 时会全裂。新增/更新截图时两个仓同步:dsh-plugins 的 `docs/screenshots/` 留档,web-basic 的同名目录是图床,两边文件保持一致。
+
 ## 纪律
 
 - **发布源只认仓库**:不从 /tmp、scratch 或任何一次性目录发;所有改动先入库再发。
-- **版本线跟官方家族走**(官方 rc.6 → 我们 rc.6.x),不自立大版本;`package.json` 里的版本是下一条发布线,发版时才 bump,不按提交 bump。
+- **纯 semver，不跟官方宿主版本号**:rc 后缀时代的"版本线跟官方家族走"自第一波起退役——宿主兼容性由 `dsh.compat`（minHost/verifiedHost）与 README 兼容性段表达，版本号只表达插件自己的演进;`package.json` 里的版本是下一条发布线,发版时才 bump,不按提交 bump。
+- **worktree 不动版本号**:分支/工作区里的 `package.json` 版本保持与 main 一致,版本治理只在 mainline 发版时发生。3080 的日常部署不需要新文件名激励——deploy-3080 的 profile 副本文件名自带构建时间戳(`<名>-<版本>+<yymmddhhmm>.tgz`),同版本反复部署也会被实例吃到。改动不值得发版(测试/内部重构/仓库文档)就攒着随下次;改动值得发版(动 lib/ 或行为)就叫 mainline 发,版本号没有稀缺性。
 - 一次发布只做一次:pack → 验包 → publish → `npm view` 确认 → 完事;不重复发同一版本。
 - 有 `dsh.bundle` 声明的插件,发完顺手验证一次 `dsh plugin --profile web add <包>@<新版本>` 能 reconcile 进 bundles 层。

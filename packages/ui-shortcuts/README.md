@@ -4,7 +4,7 @@
 
 dsh web GUI 的键盘快捷键插件:`Esc` 暂停运行中的回合,`Ctrl/Cmd+S` 插队发送当前草稿,`Ctrl/Cmd+O` 新建会话——每个键位都能在设置里重绑。
 
-<img src="../../docs/screenshots/07-ui-shortcuts.png" width="480" alt="设置中的快捷键卡片">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="480" alt="设置中的快捷键卡片">
 
 ## 特性
 
@@ -24,7 +24,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码。
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -76,3 +76,7 @@ ctx.effect(() => ctx.shortcuts.registerAction({
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/ui-shortcuts`)。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

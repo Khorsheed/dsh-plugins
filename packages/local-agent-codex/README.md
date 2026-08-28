@@ -6,7 +6,7 @@
 
 ## 特性
 
-- **任意 preset 皆可委派**——`subagent_codex_local` 工具挂在 profile 根，无需逐 preset 配置。
+- **任意 preset 皆可委派**——`subagent_codex` 工具挂在 profile 根，无需逐 preset 配置。
 - **作用域目录隔离**——Codex 的全部状态留在 `$DSH_HOME/local-agent/codex`，与你的 `~/.codex` 互不干扰。
 - **会话内登录**——device-code `/codex login`，设置 → 本地 Agent 显示认证状态并提供退出登录按钮。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程。
@@ -40,6 +40,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec 策略:read-only | workspace-write | danger-full-access
+    live: false                # 长驻驱动:每成员常驻一个 codex app-server 进程,按轮发 turn(runtime 级优雅中断、事件推送镜像);关闭或通道不可用即回一次性 exec
+    liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
+    liveMirrorGranularity: event  # live 镜像粒度;token 额外写入 assistant/chunk 增量(写放大,opt-in)
 ```
 
 ## 自定义端点
@@ -59,7 +62,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -73,7 +76,7 @@ model_provider = "dsh-router"
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**bundle 组成。** patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、device-code 登录、rollout 文件会话记录），并把 `subagent_codex_local` 工具挂到 profile 根；`codex-local` 一次性 provider 在该作用域目录下 spawn `codex exec`。设置分区随家族 core 的 `./client` 半提供；core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+**bundle 组成。** patch 注册 `codex` harness（`CODEX_HOME` 作用域目录、device-code 登录、rollout 文件会话记录），并把 `subagent_codex` 工具挂到 profile 根；`codex-local` 一次性 provider 在该作用域目录下 spawn `codex exec`。设置分区随家族 core 的 `./client` 半提供；core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
 **登录与凭据。** `/codex login` 在会话中显示 device-code URL 并在后台轮询；用户授权后凭据写入作用域目录。首次启动写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain，把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效；已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`，之后重新登录即可换账号。
 
@@ -85,7 +88,9 @@ model_provider = "dsh-router"
 
 **模型体验。** 每次委派都是委派 Session 工作区内一个全新的一次性 `codex exec` 进程。父级只提交任务文本、只看到最终回答或精确错误——Codex 的评论、工具活动、工作区 diff 不会跨进父级会话，子会话 token 也永不进入父级上下文。
 
-**委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。
+**长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `codex app-server --stdio` 进程（同 scoped home、同 `-c` 成员桥声明），创建持久线程（`thread/start`，`ephemeral: false`），之后每轮 = 向活着的 runtime 发 `turn/start`；`item/completed` 事件即时折进子会话（与 exec 共享同一 `CodexTranscriptLine` 折叠与 append 核，最后一行留置到 `turn/completed` 以挂用量），`cancel` 落地为 `turn/interrupt`——进程不死、线程可续。审批类 server→client 请求按无人值守策略自动应答（cancel/decline，与 exec 行为一致）。runtime 空闲超时回收（app-server 无 shutdown 方法：stdin EOF → SIGTERM 阶梯），崩溃后下一轮自动重连并 `thread/resume` 盘上线程；握手失败进冷却熔断，逐轮回退 exec。
+
+**委派记账。** provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`——失败或取消（`error`/`aborted`）同样关闭——`subagentTiming` 的时长等于实际 CLI 运行时长；最终 assistant 消息携带从事件流解析的 token 用量。codex 的 `input_tokens` 含缓存命中，所以未缓存桶取 `input_tokens − cached_input_tokens`、`cached_input_tokens` 映射缓存读取、没有缓存写入概念——`tokenUsage` 不会双重计数缓存命中。每个续聊轮在各自递增的轮次号下重复这套记账。**非 completed 终态（aborted/error）的用量回落。** 被中止/失败的轮次永远收不到 `turn.completed`，事件流里没有用量——但 codex 已把本轮真实 token 消耗写进了 scoped home 的 rollout 文件。此时 exec 镜像改读**本次 run 的 rollout 文件末条 `token_count`** 挂用量：文件按线程 id（`session_meta` 头）定位，流在 `thread.started` 之前就被截断时按 spawn 时间窗回落；口径与 `turn.completed` 完全一致（`input − cached` 等桶，共享 `usageFromCodex`）。硬杀到连 `token_count` 都没写出的极端情况仍保持无用量，不猜测。
 
 </details>
 

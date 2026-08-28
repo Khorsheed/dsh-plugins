@@ -256,10 +256,10 @@ describe('FilePreviewService.read', () => {
 })
 
 describe('FilePreviewService.list', () => {
-  it('folds the agent session log', () => {
+  it('folds the agent session log (empty log → no entries)', async () => {
     const session = { events: [] } as unknown as Session
     const service = makeService({})
-    expect(service.list(makeAgent(session))).toEqual({ entries: [], asOfSeq: -1, truncated: false })
+    await expect(service.list(makeAgent(session))).resolves.toEqual({ entries: [], asOfSeq: -1, truncated: false })
   })
 })
 

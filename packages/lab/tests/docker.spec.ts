@@ -81,14 +81,16 @@ describe('DockerProvider.acquire', () => {
 })
 
 describe('DockerProvider.populate / collect', () => {
-  it('populates through the pidfile-wrapped exec, then docker cp into the unit', async () => {
+  it('populates through the pidfile-wrapped exec, then docker cp into the unit, then stamps the activity baseline', async () => {
     const { exec, calls } = fakeExec(() => undefined)
     await makeProvider(exec).populate('dsh-lab-x', { source: '/host/layer', target: '/workspace' })
-    const [wrap, cp] = calls
+    const [wrap, cp, stamp] = calls
     expect(wrap?.slice(0, 4)).toEqual(['exec', 'dsh-lab-x', 'sh', '-c'])
     expect(wrap?.[4]).toContain('echo $$ > /run/dsh-lab/pids/$$.pid')
     expect(wrap?.slice(-3)).toEqual(['mkdir', '-p', '/workspace'])
     expect(cp).toEqual(['cp', '/host/layer/.', 'dsh-lab-x:/workspace'])
+    // docker cp preserves source mtimes; the marker is the lastActivityAt baseline.
+    expect(stamp?.slice(-2)).toEqual(['touch', '/workspace/.lab-materialized'])
   })
 
   it('collects out of the unit with docker cp', async () => {
@@ -230,5 +232,33 @@ describe('DockerProvider.verify', () => {
     expect(result.exitCode).toBe(-1)
     expect(seenTimeout).toBe(100)
     expect(calls[0]?.slice(0, 2)).toEqual(['exec', '--workdir'])
+  })
+})
+
+describe('DockerProvider.activity', () => {
+  it('reads the newest workspace mtime and cgroup v2 cpu usage', async () => {
+    const { exec, calls } = fakeExec((argv) => {
+      const joined = argv.join(' ')
+      if (joined.includes('stat -c')) return { exitCode: 0, stdout: '1750000000\n1749999900\n', stderr: '' }
+      if (joined.includes('cpu.stat')) return { exitCode: 0, stdout: 'usage_usec 98765\nuser_usec 100\n', stderr: '' }
+      return undefined
+    })
+    const facts = await makeProvider(exec).activity('dsh-lab-x', '/workspace')
+    expect(facts).toEqual({ mtime: 1_750_000_000_000, cpuUsageUsec: 98765 })
+    expect(calls[0]?.join(' ')).toContain('find')
+    expect(calls[0]?.join(' ')).toContain('/run/dsh-lab/pids/$$.pid')
+  })
+
+  it('falls back to cgroup v1 cpuacct and tolerates unreadable mtime', async () => {
+    const { exec } = fakeExec((argv) => {
+      const joined = argv.join(' ')
+      if (joined.includes('stat -c')) return { exitCode: 1, stdout: '', stderr: 'stat: unrecognized option' }
+      if (joined.includes('cpu.stat')) return { exitCode: 1, stdout: '', stderr: 'No such file' }
+      if (joined.includes('cpuacct.usage')) return { exitCode: 0, stdout: '5000000\n', stderr: '' }
+      return undefined
+    })
+    const facts = await makeProvider(exec).activity('dsh-lab-x', '/workspace')
+    expect(facts.mtime).toBeUndefined()
+    expect(facts.cpuUsageUsec).toBe(5000)
   })
 })

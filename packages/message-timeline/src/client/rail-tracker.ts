@@ -31,10 +31,15 @@ const IDLE: TimelineRailState = {
 
 /**
  * Measure the panel's viewport box from one scrollport: its rect inset by the
- * panel padding, minus the sticky composer seat at the bottom and the
- * conversation tab strip at the top. The tabs render just above the
- * scrollport, but centering reads against the whole window, so the strip
- * height leaves the box either way — otherwise the list sits visibly high.
+ * panel padding, minus the chat input card at the bottom and the conversation
+ * tab strip at the top. The tabs render just above the scrollport, but
+ * centering reads against the whole window, so the strip height leaves the
+ * box either way — otherwise the list sits visibly high.
+ * The bottom ends at the `[data-composer-card]` top — the chat box — NOT the
+ * whole `[data-composer-seat]` top: dock cards (goal/todo/queue) sit above
+ * the input inside the seat, and counting them would push the timeline up off
+ * the conversation. Falls back to the seat top, then the column bottom, when
+ * the markers are absent.
  * The scrollport's own width rides along for the width-cap fallback when the
  * message-flow probe is unanswered.
  * @param scrollport - the official conversation scrollport element.
@@ -44,8 +49,6 @@ const IDLE: TimelineRailState = {
 export function measureGeometry(scrollport: HTMLElement): { left: number; top: number; height: number; width: number } | null {
   const rect = scrollport.getBoundingClientRect()
   if (rect.width === 0 && rect.height === 0) return null
-  const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-  const composerHeight = composer?.getBoundingClientRect().height ?? 0
   let topInset = RAIL_VERTICAL_PADDING
   for (const tabs of scrollport.ownerDocument.querySelectorAll<HTMLElement>('[role="tablist"]')) {
     const tabsRect = tabs.getBoundingClientRect()
@@ -55,26 +58,45 @@ export function measureGeometry(scrollport: HTMLElement): { left: number; top: n
       break
     }
   }
+  const card = scrollport.querySelector<HTMLElement>('[data-composer-card]')
+  const seat = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
+  const bottom = card !== null
+    ? card.getBoundingClientRect().top - RAIL_VERTICAL_PADDING
+    : seat !== null
+      ? seat.getBoundingClientRect().top - RAIL_VERTICAL_PADDING
+      : rect.bottom - RAIL_VERTICAL_PADDING
   return {
     left: rect.left + RAIL_LEFT_INSET,
     top: rect.top + topInset,
-    height: Math.max(0, rect.height - composerHeight - topInset - RAIL_VERTICAL_PADDING),
+    height: Math.max(0, bottom - rect.top - topInset),
     width: rect.width,
   }
 }
 
 /**
  * The viewport x of the message flow's left edge: the left of the first
- * rendered `[data-chat-flow-kind]` row, which sits flush inside the official
- * centered content column (max 748px, `margin: 0 auto`). Every flow row
- * shares that edge, so the first one found suffices. The panel's right edge
- * stays left of it — the panel may only occupy the scrollport's left gutter.
+ * laid-out `[data-chat-flow-kind]` row, which sits flush inside the official
+ * centered content column (max 748px, `margin: 0 auto`). Laid-out flow rows
+ * share that edge, so the first meaningful one suffices. The panel's right
+ * edge stays left of it — the panel may only occupy the scrollport's left
+ * gutter.
+ *
+ * Rows that are not laid out in the flow are skipped: a message-tools edit
+ * leaves the withdrawn originals in the DOM (hidden, zero-size, or off the
+ * column at x=0), and probing their left edge yields 0 — which would make the
+ * width gate compute a negative left gutter and hide the entire rail. Any
+ * real flow row sits inside the conversation column at a positive x.
  * @param scrollport - the official conversation scrollport element.
- * @returns the flow's left edge, or null while no flow row is rendered.
+ * @returns the flow's left edge, or null while no laid-out flow row is rendered.
  */
 export function flowLeftX(scrollport: HTMLElement): number | null {
-  const row = scrollport.querySelector<HTMLElement>('[data-chat-flow-kind]')
-  return row === null ? null : row.getBoundingClientRect().left
+  for (const row of scrollport.querySelectorAll<HTMLElement>('[data-chat-flow-kind]')) {
+    const rect = row.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) continue
+    if (rect.left <= 0) continue
+    return rect.left
+  }
+  return null
 }
 
 /**

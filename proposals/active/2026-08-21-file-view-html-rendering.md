@@ -1,7 +1,7 @@
 # 文件视图 HTML 渲染能力增强（file-view-html-rendering）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（M0 测试页与 `3d-artifact` skill 已交付，见实现记录）
 - **最后更新**：2026-08-21
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）。`datasets-store` 的「内容预览不自研渲染」是复用官方阅读器（markdown/代码），与 HTML 渲染空白正交；mission/lab 的 artifact 是数据登记，与渲染无关；mobile-access 的离线壳不涉渲染；既有 note `2026-08-18-file-preview-copy-path-and-tab-gestures` 记录的正是现状（静态 sandbox iframe）。无重复，新建。
 - **官方依赖**：纯插件。渲染全链路在 `@khorsheed/dsh-file-preview`（Remote）+ `@khorsheed/dsh-client-ui-file-preview`（client）；产物行入口沿用 S1 既有绕行（turnTail chain + mention 拦截）；零官方改动。

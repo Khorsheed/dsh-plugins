@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 Rename a session right in the dsh web GUI chat header: click the pencil next to the title and the title itself becomes an inline editor. Enter commits, Escape cancels, over-long drafts are blocked with a localized warning — and the model never sees any of it.
 
-<img src="../../docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
 
-<img src="../../docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
 
 ## Features
 
@@ -30,7 +30,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -64,3 +64,7 @@ Nothing changes for the model: the title is a projection-only property, never in
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/session-title-edit`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

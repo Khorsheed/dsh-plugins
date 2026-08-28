@@ -4,7 +4,7 @@
 
 English | [中文](README.md)
 
-The [local-agent family](../local-agent/README.md)'s own delegation tool: each harness bundle mounts it in place of the official `@deepseek-ai/dsh-tool-subagent` row, keeping the same `toolName` (`subagent_kimi`, `subagent_codex_local`, `subagent_claude_code_local`) while adding resumable delegation.
+The [local-agent family](../local-agent/README.md)'s own delegation tool: each harness bundle mounts it in place of the official `@deepseek-ai/dsh-tool-subagent` row, keeping the same `toolName` (`subagent_kimi`, `subagent_codex`, `subagent_claude_code`) while adding resumable delegation.
 
 ## Features
 
@@ -31,7 +31,7 @@ Removing this package alone is not supported — the harness bundles require it.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations

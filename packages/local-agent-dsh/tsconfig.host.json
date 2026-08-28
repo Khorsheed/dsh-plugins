@@ -11,6 +11,8 @@
     "src/records.ts",
     "src/provision.ts",
     "src/dsh-cli-provider.ts",
+    "src/live-driver.ts",
+    "src/live-switch.ts",
     "src/session-mirror.ts"
   ]
 }

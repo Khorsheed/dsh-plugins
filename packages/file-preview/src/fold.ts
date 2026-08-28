@@ -214,11 +214,12 @@ function resultCallFacts(
  * single source of truth. Unlike {@link foldFilePreview}, this does NOT dedupe
  * a path to its last occurrence: a file touched in two turns appears in BOTH
  * turn maps, so each turn's card lists exactly what that turn mutated.
- * write/edit calls register with their own turn; nested Code Mode dispatches
- * borrow the enclosing root call's turn (dispatch events carry none); a
- * `tool/result` whose presentation meta carries diffs registers its paths (the
- * render-intent vocabulary) with the result's turn, and per-turn line deltas
- * are summed from the diffs. A `write` whose result carries no diffs is a
+ * Reads leave no card entry (the card is the mutation vocabulary — write/edit
+ * only), so a pure-read call never registers; write/edit calls register with
+ * their own turn; nested Code Mode dispatches borrow the enclosing root call's
+ * turn (dispatch events carry none); a `tool/result` whose presentation meta
+ * carries diffs registers its paths (the render-intent vocabulary) with the
+ * result's turn, and per-turn line deltas are summed from the diffs. A `write` whose result carries no diffs is a
  * create (the write tool records no diffs when the file had no prior content):
  * its full written content — read from the call arguments, which the log keeps
  * — is the added-line count, once per file per turn.
@@ -302,6 +303,10 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       callSites.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
       const target = pathFromToolCall(event.data.name, event.data.arguments)
       if (target === undefined) continue
+      // The card's vocabulary is mutations only: a read call registers
+      // nothing (it may still anchor a nested code dispatch's location via
+      // callSites above).
+      if (target.op === 'read') continue
       if (target.op === 'write') {
         const content = contentFromWriteCall(event.data.arguments)
         if (content !== undefined) {
@@ -321,6 +326,8 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       if (event.data.isError) continue
       const target = targetFromArguments(event.data.name, event.data.arguments)
       if (target === undefined) continue
+      // Reads leave no card entry here too — only mutations register.
+      if (target.op === 'read') continue
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
       sessionSeen.add(target.path)
       recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)

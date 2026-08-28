@@ -9,6 +9,12 @@
  * keeps exactly the current behavior (official in-process subagent tools) and
  * the model never sees two overlapping delegation tools at once.
  *
+ * The same namespace carries the resident-mode preferences (`live`,
+ * `liveMirrorGranularity`): the YAML config is the composition base, the
+ * settings card's writes are user-layer overrides, and a LiveDriverSwitch
+ * inside each enabled generation hot-swaps driver generations on a change —
+ * no reload, in-flight rounds never interrupted.
+ *
  * The sub-dsh half lives in the sibling bundle
  * `@khorsheed/dsh-local-agent-dsh-headless`: a headless profile under the
  * scoped home that the provider spawns with `--session-id <uuid>` (fresh) or
@@ -26,6 +32,8 @@ import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
 import { DshCliProvider } from './dsh-cli-provider.ts'
+import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
+import { LiveDriverSwitch } from './live-switch.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshSubProfile } from './provision.ts'
 
@@ -48,6 +56,23 @@ export interface LocalAgentDshConfig {
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */
   headlessBundleDir?: string
+  /**
+   * Live driver: keep one resident sub-dsh serve process per member and drive
+   * turns over the family wire (runtime-level interrupt, push-mode mirror)
+   * instead of one process per round. Deployment default only — the settings
+   * namespace carries it as the composition base, so the settings card can
+   * override it live; the exec one-shot stays the fallback whenever the serve
+   * channel cannot come up.
+   */
+  live?: boolean
+  /** Idle lifetime of an unused resident runtime before reclaim. */
+  liveIdleMs?: number
+  /**
+   * Live mirror granularity: `event` mirrors finalized messages;
+   * `token` additionally appends `assistant/chunk` deltas (write amplification
+   * — opt-in). Deployment default; the settings card can override it live.
+   */
+  liveMirrorGranularity?: 'event' | 'token'
 }
 
 /** Runtime schema so the Loader always passes an object, never undefined. */
@@ -56,13 +81,29 @@ export const Config: z<LocalAgentDshConfig> = z.object({
   apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
+  live: z.boolean().default(false),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
 })
 
-/** Settings namespace owning the DeepSeek toggle. */
+/**
+ * Settings namespace owning the DeepSeek toggle and the live preferences. The
+ * Cordis config feeds the composition `base` layer, so a field absent from
+ * the user layer inherits the YAML value — the settings card only ever stores
+ * deliberate overrides.
+ */
 export const DSH_SETTINGS_NAMESPACE = settingsNamespace('local-agent-dsh')
 
-/** The toggle's schema: OFF (default) means the official in-process subagent stays the only delegation path. */
-const DSH_SETTINGS_SCHEMA = z.object({ enabled: z.boolean().default(false) })
+/**
+ * The card's schema: `enabled` OFF (default) means the official in-process
+ * subagent stays the only delegation path; the live fields mirror the YAML
+ * config's deployment defaults through the composition base.
+ */
+const DSH_SETTINGS_SCHEMA = z.object({
+  enabled: z.boolean().default(false),
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+})
 
 /** The delegation tool the toggle mounts while ON. */
 const DSH_TOOL_NAME = 'subagent_dsh'
@@ -81,7 +122,12 @@ async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise
  */
 export function apply(ctx: Context, config: LocalAgentDshConfig): void {
   ctx.effect(() => {
-    const scope = ctx.settings.register(DSH_SETTINGS_NAMESPACE, DSH_SETTINGS_SCHEMA)
+    const scope = ctx.settings.register(DSH_SETTINGS_NAMESPACE, DSH_SETTINGS_SCHEMA, {
+      base: {
+        ...config.live === undefined ? {} : { live: config.live },
+        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+      },
+    })
     const harness: LocalAgentHarness = {
       name: 'dsh',
       displayName: 'dsh',
@@ -99,8 +145,13 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     const homeDir = ctx.localAgent.homeDir('dsh')
 
     let generation = 0
+    let currentEnabled: boolean | undefined
     const disposers: Array<() => void> = []
     const sync = (enabled: boolean): void => {
+      // The watch fires on ANY namespace field change; only an enabled flip
+      // re-registers — the live fields ride the LiveDriverSwitch instead.
+      if (enabled === currentEnabled) return
+      currentEnabled = enabled
       generation += 1
       const gen = generation
       for (const dispose of disposers.splice(0)) dispose()
@@ -108,7 +159,19 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // Idempotent: heals a deleted or drifted sub-profile before each round.
       provisionDshSubProfile(homeDir, config)
       disposers.push(ctx.localAgent.register(harness))
-      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config)))
+      // The live driver is settings-driven WITHIN this enabled generation:
+      // the card's toggle (user layer over the YAML composition base) swaps
+      // driver generations without a reload. Toggling live OFF drains the
+      // retiring generation — new rounds fall back to exec, in-flight rounds
+      // finish on their runtime, idle runtimes are reclaimed at once. A
+      // granularity change needs no new generation: the driver reads it per
+      // round. Toggling ENABLED off keeps the historical hard semantics:
+      // provider unregisters and the switch disposes (disposeAll).
+      const liveSwitch = new LiveDriverSwitch(ctx, scope, config)
+      disposers.push(ctx.subagents.registerProvider(new DshCliProvider(ctx, config, liveSwitch.resolve)))
+      // The switch's disposal runs after the provider unregisters, so no
+      // in-flight round can re-spawn a runtime the teardown already reclaimed.
+      disposers.push(() => { liveSwitch.dispose() })
       // The family delegation tool is mounted dynamically so the toggle owns
       // its lifecycle — while OFF the model never sees `subagent_dsh`.
       void ctx.plugin(toolModule, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }).then(

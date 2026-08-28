@@ -26,7 +26,11 @@ export interface TimelineRailState {
   left: number
   /** Viewport y of the rail's top edge (below the session header). */
   top: number
-  /** Rail height in px (scrollport minus the composer seat). */
+  /**
+   * Rail height in px: the scrollport from below the tab strip down to the
+   * chat input card top — dock cards (goal/todo/queue) above the input never
+   * shorten it, so the timeline stays flush with the chat box.
+   */
   height: number
   /** Scrollport width in px (the degraded width cap when the flow probe fails). */
   scrollportWidth: number

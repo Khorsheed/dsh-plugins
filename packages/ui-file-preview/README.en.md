@@ -4,11 +4,11 @@ English | [中文](README.md)
 
 Preview your session's files right in the dsh web GUI — no IDE needed. A 产物/Produced tab lists everything the session wrote or edited, and selecting one shows its current content and full change history in the page.
 
-<img src="../../docs/screenshots/file-preview1.png" width="480" alt="previewing a markdown file rendered as a document">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="previewing a markdown file rendered as a document">
 
-<img src="../../docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
 
-<img src="../../docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
 
 ## Features
 
@@ -32,7 +32,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -65,3 +65,7 @@ Drawer gestures: the header shows the host-resolved absolute path with "copy pat
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/ui-file-preview`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

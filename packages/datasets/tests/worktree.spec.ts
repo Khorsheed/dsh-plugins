@@ -104,8 +104,9 @@ describe('ensureWorktree', () => {
     expect(a.out.trim()).toBe(b.out.trim())
     // Both sides of the cache key are realpath-canonicalized: /var vs
     // /private/var (macOS) must not fork the cache. No --layers given: the
-    // CLI defaults to every declared layer.
-    const expected = worktreeDirFor(realpathSync(managedRoot()), realpathSync(repo.dir), repo.commit, ['hidden', 'visible'])
+    // CLI defaults to the modelFacing floor (only the dataset's
+    // modelFacing:true layers — the fixture declares `hidden` sensitive).
+    const expected = worktreeDirFor(realpathSync(managedRoot()), realpathSync(repo.dir), repo.commit, ['visible'], [])
     expect(a.out.trim()).toBe(expected)
   }, 60_000)
 })

@@ -1,0 +1,70 @@
+/* The session-header worktree status capsule: repo name + branch + counts in
+   a neutral pill; dirtiness shows in the counts tint, not an outline. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.clean {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* A dirty worktree keeps the neutral capsule; only the counts warm up. */
+.dirty {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.zone:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.repoZone {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.zoneText {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.counts {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.countsDirty {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.sep {
+  flex: none;
+  width: 1px;
+  height: 12px;
+  margin: 0 2px;
+  background: var(--dsw-alias-border-l2);
+}

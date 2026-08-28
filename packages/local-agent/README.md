@@ -4,13 +4,13 @@
 
 从 dsh web GUI 使用本机安装的编码 agent CLI——Kimi Code、Codex、Claude Code。每个 CLI 获得一个隔离的作用域目录、一组登录/会话/状态/退出的斜杠命令，以及设置里的认证分区。
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="设置 → 本地 Agent 分区，展示各 harness 的认证状态">
+<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="设置 → 插件配置里的 Local Agent 卡片，卡头状态点一眼可见各 provider 授权状态">
 
 ## 特性
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现。
-- **设置分区**——设置 → 本地 Agent 展示各 harness 的认证状态、网页登录设备码与退出登录；harness bundle 可以贡献自己的设置行与动作。
+- **每 provider 一张设置卡片**——设置 → 插件 → 插件配置：认证状态点（卡头可见）、网页登录/退出、常驻模式（live）热切开关与输出粒度；卡片直接复用本包 client 面的共享 `ProviderAuthBlock`。
 - **子 agent 委派**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上。
 
 ## 安装
@@ -40,12 +40,12 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：`commands/execute` Remote 新增必填 `images` 参数（rc.6/rc.7 宿主会收到错位的参数）——在旧宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证（纯增量审计，2026-08-21）
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**：`commands/execute` Remote 新增必填 `images` 参数（rc.6/rc.7 宿主会收到错位的参数）——在旧宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证（纯增量审计，2026-08-21）；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
 
-- **登录为抓取式 prompt**——web GUI 没有交互式终端面，device-code URL 通过命令回复呈现、CLI 在后台轮询。
+- **登录为抓取式 prompt 或人工交接**——web GUI 没有交互式终端面：device-code harness（kimi/codex）的 URL 通过命令回复呈现、CLI 在后台轮询；认证只在 TTY 可用的 harness（claude ≥2.1）声明 manual 变体——`/login` 回复用户在自己终端运行的完整命令，registry 监听作用域目录识别登录完成。
 - **homes 根位置**——默认 `$DSH_HOME/local-agent`，待 `var/state` 布局标准化后再议。
 - **委派日志增长**——每个 harness 的 `delegations.jsonl` 只增不减、无轮转。
 - **单样本形状**——harness 契约仅由 Kimi 归纳，尚未冻结。
@@ -55,13 +55,13 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 <details>
 <summary>内部结构（点击展开）</summary>
 
-每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的 device-code 登录命令、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
+每个 harness 向 `ctx.localAgent` 注册：一个作用域目录、一个可选的登录声明（device-code 命令，或 TTY-only CLI 的 manual 交接变体）、一个会话记录适配器，以及可选的认证状态与退出登录探测。glue 供给每个作用域目录并注册 `/<harness> login|sessions|status|logout` 命令族；harness 间差异只剩 `homeEnvVar`、登录调用、records 适配器与认证/退出探测。
 
 **委派不属于这个 seam。** 每个 harness bundle 各自向既有的 `subagent` 能力挂载 subagent-provider 行（讲 stdio ACP 的 harness 用 subagent-acp，Codex 用其 app-server provider），经 `localAgent.homeDir(name)` 读取作用域目录。
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
-**浏览器半身随本包提供。** `./client` 导出是 roster 驱动的设置分区，通过本包的 `dsh.client` manifest 自动挂载——不再需要独立 UI 包，因为 UI 是 provider 无关的（只消费 `/<harness>` 命令族和只读 gateway）。该分区声明了贡献槽（行列表下方的 `local-agent.settings.row` 与每个 harness 行动作区内的 `local-agent.settings.row-action`），harness bundle 可以贡献自己的设置行与按 harness 的动作（如 dsh 的启用/禁用开关）。
+**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的 `settings.plugin.item` 卡片直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 
 ### 新增一个 harness
 
@@ -95,6 +95,10 @@ export function registerCodex(ctx: Context): void {
 ### 委派 registry（resume 载体）
 
 registry 还持有家族的**委派 registry**：每个子会话一条记录，记下该委派用的 provider 与 CLI 会话，以及按 (parent, provider) 分组的委派 intent FIFO。家族工具（`@khorsheed/dsh-local-agent-tool-subagent`，由各 harness bundle 的 patch 挂载）在每次调用 `ctx.subagents.start()` 前恰好 stage 一个 intent，归属 provider 每次 start 恰好消费一个——因此即使并行委派，fresh 轮与 resume 轮也能正确配对。resume 轮的句柄（dsh 子会话 id）经 registry 解析，凡是未知子会话、他人 parent 的会话、或错误 provider 的句柄都会被拒绝；subagent 请求 descriptor 无法携带该目标，因此本服务就是家族内部的载体。映射按 harness 持久化在其作用域目录下的 append-only `delegations.jsonl`（同一子会话最后一行生效），resume 句柄因此能跨宿主重启存活。
+
+### 活跃委派 registry 与 `/local-agent stop`
+
+registry 另持有**活跃委派 registry**（以 dsh 子会话 id 为键的在飞 run 表）：facade 启动的 run（`start`/`resume`——成员 composer、room 等程序化入口）与家族工具直接 `ctx.subagents.start()` 启动的 run（经 `trackDelegationRun` 登记）都落在同一张表里，条目在 run 结果 settle 时自清。`/local-agent stop <childSessionId>` 命令按这张表取消在飞的委派——语义对齐官方 `subagents.interrupt(targetSessionId)`：fire-and-return（发出取消信号即回复），目标缺席（未知子会话或无在飞 run）是显式说明的 accepted no-op，而非报错。这为 taskpilot 等表面提供了停止按钮的落点：对没有 live agent 的一次性子代理行，按钮改发 `/local-agent stop <childSessionId>`，local-agent 缺席时降级为无法停止的明确报错。
 
 ### Model Experience
 

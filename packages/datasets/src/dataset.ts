@@ -84,14 +84,62 @@ export interface DatasetLayerDecl {
   modelFacingDeclared: boolean
 }
 
+export type DescriptorWarningCode = 'MODELFACING_UNDECLARED' | 'FIELD_NAME_SENSITIVE' | 'UNREGISTERED_FILES'
+
 /** A non-fatal validation warning (shape checks fail loud on errors, warn on suspicion). */
 export interface DescriptorWarning {
   /** Stable, greppable code. */
-  code: 'MODELFACING_UNDECLARED'
-  /** The layer the warning is about. */
-  layer: string
+  code: DescriptorWarningCode
   /** Human-readable detail. */
   message: string
+  /** The layer the warning is about (MODELFACING_UNDECLARED). */
+  layer?: string
+  /** The item the warning is about (FIELD_NAME_SENSITIVE). */
+  item?: string
+  /** The item.json field the warning is about (FIELD_NAME_SENSITIVE). */
+  field?: string
+  /** The dataset-relative file the warning is about (UNREGISTERED_FILES). */
+  file?: string
+}
+
+/**
+ * Item-metadata field names that smell like sensitive content misplaced into
+ * the always-visible item.json: cheap literal heuristic (the authoring
+ * protocol's §5), keyed on lowercase substring.
+ */
+export const SENSITIVE_FIELD_ROOTS: readonly string[] = ['note', 'hint', 'answer', 'rubric', 'grading']
+
+/**
+ * Scan one item's metadata for sensitive-looking field names (recursive over
+ * plain objects; arrays of objects included).
+ * @param item - the item id.
+ * @param metadata - the parsed item.json.
+ * @returns one FIELD_NAME_SENSITIVE warning per matching key.
+ */
+export function fieldNameWarnings(item: string, metadata: JsonObject): DescriptorWarning[] {
+  const warnings: DescriptorWarning[] = []
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) walk(entry)
+      return
+    }
+    if (!isPlainObject(value)) return
+    for (const [key, child] of Object.entries(value)) {
+      const lower = key.toLowerCase()
+      if (SENSITIVE_FIELD_ROOTS.some(root => lower.includes(root))) {
+        warnings.push({
+          code: 'FIELD_NAME_SENSITIVE',
+          item,
+          field: key,
+          message: `item ${JSON.stringify(item)} item.json field ${JSON.stringify(key)} looks sensitive `
+            + '(note/hint/answer/rubric/grading); item.json is always visible — move such content into a modelFacing:false layer',
+        })
+      }
+      walk(child)
+    }
+  }
+  walk(metadata)
+  return warnings
 }
 
 /**
@@ -122,8 +170,26 @@ export interface DatasetDescriptor {
   layers: DatasetLayerDecl[]
   /** Declared item-metadata JSON Schema; shape-checked as an object, never interpreted. */
   itemMetaSchema?: Record<string, unknown>
+  /** Explicit path → role mappings (the authoring protocol's register; default []). */
+  register: RegisterEntry[]
   /** The parsed descriptor exactly as committed. */
   raw: JsonObject
+}
+
+/**
+ * One register entry: map item-relative file patterns onto a (item, layer)
+ * role. v1 constraints: paths stay inside the item directory (no absolute
+ * paths, no '..' segments), globs use single-segment '*' only (never '**'),
+ * and `item.json` may not be re-homed. Conflicts with the layout form (a
+ * registered display path colliding with a convention file of the same role)
+ * fail loud when the registry is built against a commit — shape validation
+ * alone cannot see them.
+ */
+export interface RegisterEntry {
+  item: string
+  layer: string
+  /** Item-relative file paths or single-level glob patterns. */
+  files: string[]
 }
 
 /** One item's metadata plus its files, grouped by layer. */
@@ -236,13 +302,90 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
   if (itemMetaSchema !== undefined && !isPlainObject(itemMetaSchema)) {
     throw new DatasetsError(`${origin}: "itemMetaSchema" must be a JSON-Schema object when present`, 'SHAPE_INVALID')
   }
+  const register = validateRegister(value['register'], decls, origin)
   return {
     id,
     ...(name !== undefined ? { name } : {}),
     layers: decls,
     ...(itemMetaSchema !== undefined ? { itemMetaSchema: itemMetaSchema as Record<string, unknown> } : {}),
+    register,
     raw: value as JsonObject,
   }
+}
+
+/** A register glob segment matcher: '*' within a segment, never across '/'. */
+function globSegmentToRegExp(segment: string): RegExp {
+  return new RegExp(`^${segment.replace(/[.*+?^${}()|[\]\\]/g, m => (m === '*' ? '[^/]*' : `\\${m}`))}$`)
+}
+
+/** Whether a register pattern matches an item-relative path (per segment). */
+export function registerPatternMatches(pattern: string, path: string): boolean {
+  const patternSegments = pattern.split('/')
+  const pathSegments = path.split('/')
+  if (patternSegments.length !== pathSegments.length) return false
+  return patternSegments.every((segment, index) =>
+    segment.includes('*') ? globSegmentToRegExp(segment).test(pathSegments[index] ?? '') : segment === pathSegments[index])
+}
+
+/**
+ * Validate the optional `register` array (shape only; see RegisterEntry for
+ * the constraints).
+ * @param value - the candidate register field.
+ * @param layers - the validated layer declarations (register targets them).
+ * @param origin - where it was read from, for error messages.
+ * @returns the validated register entries ([] when absent).
+ */
+function validateRegister(value: unknown, layers: readonly DatasetLayerDecl[], origin: string): RegisterEntry[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    throw new DatasetsError(`${origin}: "register" must be an array of {item, layer, files}`, 'SHAPE_INVALID')
+  }
+  const declared = new Set(layers.map(layer => layer.name))
+  const entries: RegisterEntry[] = []
+  const seen = new Set<string>()
+  for (const entry of value) {
+    if (!isPlainObject(entry)) {
+      throw new DatasetsError(`${origin}: register entries must be {item, layer, files} objects`, 'SHAPE_INVALID')
+    }
+    const item = entry['item']
+    if (typeof item !== 'string' || !NAME_PATTERN.test(item)) {
+      throw new DatasetsError(`${origin}: register entry "item" must be a segment-safe item id`, 'SHAPE_INVALID')
+    }
+    const layer = entry['layer']
+    if (typeof layer !== 'string' || !declared.has(layer)) {
+      throw new DatasetsError(
+        `${origin}: register entry for item ${JSON.stringify(item)} targets undeclared layer ${JSON.stringify(layer)}`,
+        'SHAPE_INVALID',
+      )
+    }
+    const files = entry['files']
+    if (!Array.isArray(files) || files.length === 0 || files.some(file => typeof file !== 'string')) {
+      throw new DatasetsError(`${origin}: register entry for item ${JSON.stringify(item)} needs a non-empty "files" array`, 'SHAPE_INVALID')
+    }
+    for (const file of files as string[]) {
+      const pattern = file as string
+      const bad = pattern.includes('\0') || pattern.startsWith('/') || pattern.startsWith('!')
+        || pattern.split('/').some(segment => segment === '..' || segment === '')
+        || pattern.includes('**')
+      if (bad) {
+        throw new DatasetsError(
+          `${origin}: register pattern ${JSON.stringify(pattern)} must stay inside the item directory `
+          + '(no absolute paths, no ".." segments, no empty segments, no "**", no leading "!")',
+          'SHAPE_INVALID',
+        )
+      }
+      if (pattern === 'item.json') {
+        throw new DatasetsError(`${origin}: register may not re-home item.json`, 'SHAPE_INVALID')
+      }
+      const key = `${item}\0${layer}\0${pattern}`
+      if (seen.has(key)) {
+        throw new DatasetsError(`${origin}: duplicate register pattern ${JSON.stringify(pattern)} for ${item}/${layer}`, 'SHAPE_INVALID')
+      }
+      seen.add(key)
+    }
+    entries.push({ item, layer, files: [...(files as string[])] })
+  }
+  return entries
 }
 
 /**
@@ -266,6 +409,159 @@ export async function loadDescriptor(repo: string, commit: string, datasetId: st
     throw new DatasetsError(`${origin}: invalid JSON — ${String(error)}`, 'SHAPE_INVALID')
   }
   return validateDescriptor(parsed, origin)
+}
+
+/** One registered file: its display path (item-relative) and its git object path (repo-relative). */
+export interface RegisteredFile {
+  /** Item-relative path — what listings and the tree show. */
+  display: string
+  /** Repo-relative path — what `git show` reads. */
+  object: string
+}
+
+/** The role map built from a descriptor's register entries against a commit. */
+export interface DatasetRegistry {
+  /** `${item}\0${layer}` → that role's registered files (sorted by display). */
+  entries: Map<string, RegisteredFile[]>
+  /** Item ids that carry content ONLY through register (no items/<id>/ directory). */
+  registerOnlyItems: string[]
+  /** Every register-claimed git object path — a claimed file must not ALSO
+   * surface under its physical directory as a pseudo-layer. */
+  claimed: Set<string>
+}
+
+function registryKey(item: string, layer: string): string {
+  return `${item}\0${layer}`
+}
+
+/**
+ * Build the role map for one dataset at a commit: expand every register
+ * pattern against the item directory's actual files, then fail loud on
+ * layout conflicts — a registered display path colliding with a convention
+ * file of the same role, or a dangling exact path (a glob may match nothing;
+ * an exact path must exist).
+ * @param repo - repository path.
+ * @param commit - commit to read from.
+ * @param datasetId - the dataset id.
+ * @param descriptor - the validated descriptor (register entries included).
+ * @returns the registry (empty when the descriptor declares no register).
+ */
+export async function buildRegistry(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  descriptor: DatasetDescriptor,
+): Promise<DatasetRegistry> {
+  const entries = new Map<string, RegisteredFile[]>()
+  if (descriptor.register.length === 0) return { entries, registerOnlyItems: [], claimed: new Set() }
+  const prefix = `${datasetDir(datasetId)}/items/`
+  const all = await listFiles(repo, commit, `${datasetDir(datasetId)}/items`)
+  const registerOnly = new Set<string>()
+  const conflicts: string[] = []
+  for (const entry of descriptor.register) {
+    const base = `${prefix}${entry.item}/`
+    const key = registryKey(entry.item, entry.layer)
+    const bucket = entries.get(key) ?? []
+    let touched = bucket.length > 0
+    for (const pattern of entry.files) {
+      if (pattern.includes('*')) {
+        const matches = all
+          .filter(file => file.startsWith(base))
+          .map(file => file.slice(base.length))
+          .filter(rel => registerPatternMatches(pattern, rel))
+        for (const rel of matches) {
+          bucket.push({ display: rel, object: `${base}${rel}` })
+        }
+        touched = true
+      } else {
+        const object = `${base}${pattern}`
+        if (!all.includes(object)) {
+          throw new DatasetsError(
+            `register: ${JSON.stringify(pattern)} does not exist at ${commit.slice(0, 12)} (expected ${object})`,
+            'SHAPE_INVALID',
+          )
+        }
+        bucket.push({ display: pattern, object })
+        touched = true
+      }
+    }
+    if (touched && !all.some(file => file.startsWith(base))) registerOnly.add(entry.item)
+    bucket.sort((left, right) => left.display.localeCompare(right.display))
+    entries.set(key, bucket)
+  }
+  // Conflict with the layout form: the same display path materialized by the
+  // convention layer directory of the same role.
+  for (const [key, bucket] of entries) {
+    const [item = '', layer = ''] = key.split('\0')
+    const conventionBase = `${prefix}${item}/${layer}/`
+    const convention = new Set(
+      all.filter(file => file.startsWith(conventionBase)).map(file => file.slice(conventionBase.length)),
+    )
+    for (const file of bucket) {
+      if (convention.has(file.display)) conflicts.push(`${item}/${layer}/${file.display}`)
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new DatasetsError(
+      `register conflicts with the layout form for: ${conflicts.join(', ')} `
+      + '(a file may not live both in the convention layer directory and in a register entry of the same role)',
+      'SHAPE_INVALID',
+    )
+  }
+  const claimed = new Set<string>()
+  for (const bucket of entries.values()) {
+    for (const file of bucket) claimed.add(file.object)
+  }
+  return { entries, registerOnlyItems: [...registerOnly].sort(), claimed }
+}
+
+/** One role's registered files, or undefined when none. */
+export function registeredFiles(registry: DatasetRegistry, item: string, layer: string): RegisteredFile[] | undefined {
+  return registry.entries.get(registryKey(item, layer))
+}
+
+/**
+ * Compute the passthrough file list of one dataset at a commit: every file
+ * under the dataset directory that is NOT dataset.json, NOT an item.json, NOT
+ * covered by a declared layer directory (either level), and NOT claimed by a
+ * register entry. The passthrough zone is readable by every bound session —
+ * it is the one unprotected area, so it must be enumerable (the tab shows it,
+ * validate warns on it).
+ * @returns dataset-relative paths, sorted.
+ */
+export async function computePassthrough(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  descriptor: DatasetDescriptor,
+  registry: DatasetRegistry,
+): Promise<string[]> {
+  const base = `${datasetDir(datasetId)}/`
+  const all = await listFiles(repo, commit, datasetDir(datasetId))
+  const declared = new Set(descriptor.layers.map(layer => layer.name))
+  const claimed = new Set<string>()
+  for (const bucket of registry.entries.values()) {
+    for (const file of bucket) claimed.add(file.object)
+  }
+  const passthrough: string[] = []
+  for (const file of all) {
+    const rel = file.slice(base.length)
+    if (rel === DATASET_DESCRIPTOR) continue
+    if (claimed.has(file)) continue
+    if (rel.startsWith('items/')) {
+      const rest = rel.slice('items/'.length)
+      const segments = rest.split('/')
+      if (segments.length < 2) continue
+      if (segments[1] === ITEM_METADATA && segments.length === 2) continue
+      if (segments.length >= 3 && declared.has(segments[1] ?? '')) continue // item-level layer content
+      // Item-root strays and undeclared item subdirectories fall through.
+    } else {
+      const top = rel.split('/')[0] ?? ''
+      if (declared.has(top)) continue // dataset-level layer content
+    }
+    passthrough.push(rel)
+  }
+  return passthrough.sort()
 }
 
 /**
@@ -302,6 +598,8 @@ export async function summarizeDataset(repo: string, commit: string, datasetId: 
     const slash = rest.indexOf('/')
     if (slash > 0) items.add(rest.slice(0, slash))
   }
+  // Items may exist purely through register entries (no items/<id>/ directory).
+  for (const entry of descriptor.register) items.add(entry.item)
   return {
     id: descriptor.id,
     ...(descriptor.name !== undefined ? { name: descriptor.name } : {}),
@@ -350,21 +648,38 @@ export async function listDatasetLayers(
  * @param itemId - the item id.
  * @returns the item record.
  */
-export async function loadItem(repo: string, commit: string, datasetId: string, itemId: string): Promise<ItemRecord> {
+export async function loadItem(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  itemId: string,
+  registry?: DatasetRegistry,
+): Promise<ItemRecord> {
   assertValidName('item id', itemId)
   const dir = itemDir(datasetId, itemId)
   const files = await listFiles(repo, commit, dir)
   const owned = files.filter(file => file.startsWith(`${dir}/`)).map(file => file.slice(dir.length + 1))
-  if (owned.length === 0) {
-    throw new DatasetsError(`item ${JSON.stringify(itemId)} not found in dataset ${JSON.stringify(datasetId)} at ${commit.slice(0, 12)}`, 'ITEM_NOT_FOUND')
-  }
   const layers: Record<string, string[]> = {}
   for (const rel of owned) {
     if (rel === ITEM_METADATA) continue
+    if (registry?.claimed.has(`${dir}/${rel}`)) continue // register-claimed: shows under its role, not its physical directory
     const slash = rel.indexOf('/')
     if (slash < 0) continue // stray file at the item root: not a layer, ignored by convention
     const layer = rel.slice(0, slash)
     ;(layers[layer] ??= []).push(rel.slice(slash + 1))
+  }
+  // Registered files join their declared role (display = item-relative path);
+  // the registry build already rejected convention collisions.
+  if (registry !== undefined) {
+    for (const [key, bucket] of registry.entries) {
+      const [item] = key.split('\0')
+      if (item !== itemId) continue
+      const layer = key.split('\0')[1] ?? ''
+      ;(layers[layer] ??= []).push(...bucket.map(file => file.display))
+    }
+  }
+  if (owned.length === 0 && Object.keys(layers).length === 0) {
+    throw new DatasetsError(`item ${JSON.stringify(itemId)} not found in dataset ${JSON.stringify(datasetId)} at ${commit.slice(0, 12)}`, 'ITEM_NOT_FOUND')
   }
   for (const paths of Object.values(layers)) paths.sort()
   let metadata: JsonObject | undefined
@@ -391,7 +706,12 @@ export async function loadItem(repo: string, commit: string, datasetId: string, 
  * @param datasetId - the dataset id.
  * @returns item records sorted by id.
  */
-export async function listItems(repo: string, commit: string, datasetId: string): Promise<ItemRecord[]> {
+export async function listItems(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  registry?: DatasetRegistry,
+): Promise<ItemRecord[]> {
   const files = await listFiles(repo, commit, `${datasetDir(datasetId)}/items`)
   const prefix = `${datasetDir(datasetId)}/items/`
   const ids = new Set<string>()
@@ -400,7 +720,8 @@ export async function listItems(repo: string, commit: string, datasetId: string)
     const slash = rest.indexOf('/')
     if (slash > 0) ids.add(rest.slice(0, slash))
   }
+  for (const id of registry?.registerOnlyItems ?? []) ids.add(id)
   const items: ItemRecord[] = []
-  for (const id of [...ids].sort()) items.push(await loadItem(repo, commit, datasetId, id))
+  for (const id of [...ids].sort()) items.push(await loadItem(repo, commit, datasetId, id, registry))
   return items
 }

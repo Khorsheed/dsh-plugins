@@ -13,7 +13,7 @@ import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
+import { mirrorDshLiveEvent, mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
 
 /** A context whose sessionPersistence is absent (the mirror tolerates it). */
 function fakeCtx(): Context {
@@ -143,6 +143,50 @@ describe('mirrorDshSession', () => {
     expect(JSON.stringify(child.events)).not.toContain('第一轮回答')
   })
 
+  it('mirrors tool/call + tool/result as native events with the sourceEventSeqs remapped', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-tools', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+      userLine('干活', 'user'),
+      {
+        type: 'tool/call',
+        seq: 3,
+        time: 2,
+        data: { turn: 1, step: 1, callId: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' },
+      },
+      {
+        type: 'tool/result',
+        seq: 4,
+        time: 3,
+        sourceEventSeqs: [3],
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            role: 'user',
+            source: { kind: 'tool', callId: 'call_1' },
+            content: [{ type: 'tool-result', toolCallId: 'call_1', content: [{ type: 'text', text: 'a.txt' }], isError: false }],
+          },
+        },
+      },
+      assistantLine(1, '做完了'),
+      { type: 'turn/end', seq: 6, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const child = childWithRounds('child-tools', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-tools')
+
+    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.data).toMatchObject({ callId: 'call_1', name: 'Bash' })
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    // The result's pairing reference points at the CHILD's call event seq
+    // (the source event's own sourceEventSeqs referenced the sub-dsh log's
+    // numbering, which the remap drops).
+    expect(results[0]?.sourceEventSeqs).toEqual([calls[0]!.seq])
+  })
+
   it('is a no-op when the sub-dsh session never materialized', async () => {
     const child = childWithRounds('child-3', 1)
     await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toEqual({ texts: [], total: 0 })
@@ -232,5 +276,110 @@ describe('mirrorDshSession', () => {
     const after = child.events.filter(event => event.type === 'todo/write')
     expect(after).toHaveLength(2)
     expect(after[1]?.data).toEqual(todos2)
+  })
+})
+
+describe('mirrorDshLiveEvent', () => {
+  const chunk = (text: string): object => ({
+    type: 'assistant/chunk',
+    seq: 0,
+    time: 1,
+    data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text } },
+  })
+
+  it('applies the file mirror\'s exact filter and verbatim append to one live event', () => {
+    const child = Session.create(SessionId('child-live-fold'))
+    // The caller task crosses; scaffolding user messages stay behind.
+    expect(mirrorDshLiveEvent(child, userLine('实时任务', 'user') as never)).toBe('实时任务')
+    expect(mirrorDshLiveEvent(child, userLine('脚手架', 'plugin') as never)).toBeUndefined()
+    // Assistant messages cross verbatim, usage included, same as the span loop.
+    const text = mirrorDshLiveEvent(child, assistantLine(1, '实时回复') as never)
+    expect(text).toBe('thinking 1实时回复')
+    const assistant = child.events.find(event => event.type === 'assistant/message')
+    expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 } })
+    // Turn boundaries never cross (the parent's own stay authoritative).
+    expect(mirrorDshLiveEvent(child, { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } } as never)).toBeUndefined()
+    expect(mirrorDshLiveEvent(child, { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } } as never)).toBeUndefined()
+    expect(child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
+  })
+
+  it('crosses assistant/chunk only under the token granularity, returning the delta text', () => {
+    const off = Session.create(SessionId('child-live-fold-off'))
+    expect(mirrorDshLiveEvent(off, chunk('hel') as never)).toBeUndefined()
+    expect(off.events).toHaveLength(0)
+
+    const on = Session.create(SessionId('child-live-fold-on'))
+    expect(mirrorDshLiveEvent(on, chunk('hel') as never, { granularity: 'token' })).toBe('hel')
+    const chunks = on.events.filter(event => event.type === 'assistant/chunk')
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
+    // Non-text chunks append but report no delta text.
+    const blockStart = {
+      type: 'assistant/chunk', seq: 0, time: 1,
+      data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 1, blockType: 'text' } },
+    }
+    expect(mirrorDshLiveEvent(on, blockStart as never, { granularity: 'token' })).toBeUndefined()
+    expect(on.events.filter(event => event.type === 'assistant/chunk')).toHaveLength(2)
+  })
+
+  it('keeps the file mirror\'s offset consistent after live-appended events (no double mirror)', async () => {
+    const home = tempHome()
+    const child = Session.create(SessionId('child-live-parity'))
+    child.append('turn/start', { turn: 1 })
+    // The live transport mirrored the task and the first reply event-by-event.
+    mirrorDshLiveEvent(child, userLine('第一轮任务', 'user') as never)
+    mirrorDshLiveEvent(child, assistantLine(1, '第一条回复') as never)
+    // The settle reconciliation pass over the on-disk log (which additionally
+    // holds a second reply the wire had not pushed) mirrors exactly the delta.
+    writeSubDshSession(home, 'child-live-parity', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('第一轮任务', 'user'),
+      assistantLine(1, '第一条回复'),
+      assistantLine(1, '第二条回复'),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-live-parity')
+    expect(delta).toEqual({ texts: ['thinking 1第二条回复'], total: 3 })
+    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+  })
+})
+
+describe('mirrorDshSession persistence', () => {
+  it('persists only a standalone child session (a live session’s write-behind owns durability)', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-persist', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('任务', 'user'),
+      assistantLine(1, '回复'),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const appends: string[] = []
+    const persistence = { append: async (id: string) => { appends.push(id) } }
+    const standaloneCtx = {
+      get: (name: string) => name === 'sessionPersistence' ? persistence : undefined,
+      logger: { warn: () => undefined },
+    } as unknown as Context
+    const standalone = childWithRounds('child-persist', 1)
+    await mirrorDshSession(standaloneCtx, standalone, home, 'child-persist')
+    expect(appends).toEqual(['child-persist'])
+
+    // A session live in the sessions service must NOT get the redundant
+    // full-list append: its own write-behind pipeline is durable, and the
+    // append would violate the store's contiguous-seq contract.
+    const liveCtx = {
+      get: (name: string) => {
+        if (name === 'sessions') return { get: () => ({}) }
+        if (name === 'sessionPersistence') return persistence
+        return undefined
+      },
+      logger: { warn: () => undefined },
+    } as unknown as Context
+    const live = childWithRounds('child-persist', 1)
+    const delta = await mirrorDshSession(liveCtx, live, home, 'child-persist')
+    expect(delta.texts.length).toBeGreaterThan(0)
+    expect(live.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(appends).toEqual(['child-persist'])
   })
 })

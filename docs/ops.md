@@ -4,6 +4,16 @@
 
 本文只写流程,不记录任何版本状态。当前线上运行版本以 profile 清单(`$DSH_HOME/profiles/web/package.json`)与 `dist-publish/` 为准;每次 `deploy:3080` 会自动维护它们并输出通报。流程本身变化时才改本文。
 
+## 环境拓扑(每个目录/实例是谁、能干嘛)
+
+| 路径 | 角色 | 纪律 |
+|---|---|---|
+| `~/code/dsh-plugins` | 主仓(mainline) | 多 agent 共享,worktree 开发、合并回 main |
+| `~/code/deepseek-harness` | **部署检出**:prod 3080 从这里启动,guard 凭证绑定它的 HEAD | 只准 `reset --hard` 到官方 tag + guard checkpoint 提交;禁止任何其他本地改动 |
+| `~/.dsh-vanilla`(3081) | **纯净官方镜像**:npm 安装的官方宿主,零插件 | `verify:package` 的干净镜像基座,每次验证前自动比对并刷新到 registry latest;不需要任何物理镜像仓(官方最新以 npm registry 为准) |
+| `~/.dsh-acceptance`(3082) | 验收实例:候选 tarball 的人工/agent 实测 | 装了什么以它的 profile 清单为准,随验随换 |
+| `~/.dsh-official`(3080) | prod | 见下文门禁 |
+
 ## 三层环境与交付形态
 
 | 环境 | 用途 | 交付形态 | 规则 |
@@ -29,6 +39,7 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
    - 家族边(local-agent core/companion)在包未发布时需要 profile `pnpm-workspace.yaml` 的 `overrides` 把每个 `@khorsheed/*` 名字指到对应 `file:` tgz,否则 pnpm 去 registry 解析直接 404
    - 行为异常(装了还是软链/旧内容)时:**`rm -rf node_modules pnpm-lock.yaml` 后重装**——残留的 pnpm workspace 状态文件会把 link: 时代的解析行为还魂;同名同版本的 tgz 内容变了也可能吃到解包缓存
    - 打包前对刚改过源码的包做 **clean rebuild**(`rm -rf lib && build`)——tsc/tsdown 的增量残留会让产物引用不存在的文件(pack-dist 的 stale-types 检查只挡一类)
+   - **家族内部 bundle 绝不列为 profile 直接依赖**——reconcilePlugins 会把声明 `dsh.bundle` 的直接依赖自动挂进组合 layer 栈;`@khorsheed/dsh-local-agent-dsh-headless` 这类子 profile 专属 bundle 经其父包传递安装即可(2026-08-23 P0:直接依赖 → 自动挂载 → `code-runtime` 撞 web-app 同名行 → 全实例 boot 失败)
    - 多人并行 install 会把官方包解析出多个 peer 变体,模块增强(SlotMap/LocaleNamespaceMap)挂到不同实例上,报 `constraint 'never'` 类错误——`pnpm dedupe` 收敛即可
 
 ## 变更驱动模型:流程不是审批
@@ -49,11 +60,13 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 三步,做完才算迁移完成——写给所有迁移方(包括未来的我们):
 
-1. **会话里能列出 skill**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见
+1. **会话里能列出 skill,并且真调用一次**:在 3080 开一个会话,确认插件注册的 skill(如 `dsh-self-restart-guard`)在技能目录可见——还要**真的触发一次调用**:宿主在 load 时才校验注册载荷(`source` 等字段),只看目录会漏掉"列出即正常、调用即炸"这一类(0.1.0 的教训)
 2. **check-env 读数正常**:`dsh-ankh-guard check-env --port 3080` 的监督/启动读数无异常(缺能力、降级项要出声,不允许静默)
 3. **跑一次门禁重启**:`deploy:3080` 或 `schedule-exit` 走一遍完整闸,canary PASS 才算闭环
 
 打包产物层面的验证已由工具接管(pack-dist 打包即校验、CI 全包 pack 门禁、`check:plugins` 的 files 覆盖不变量),迁移方不需要手工 `tar -tzf` 抽查——但验收清单这三步是部署后信号,替代不了。
+
+**门禁时效**:preflight 的 PASS 只对"那一刻的组合"负责。preflight 与真实 boot 之间任何对 profile 的改动(`dsh plugin add/remove`、手改 bundles 列表或 cordis.patch.yml、pnpm install 刷新链接)都会使门禁失效——**改动后必须重新过 preflight 再重启**。(2026-08-23 事故:preflight PASS 后 boot 撞 `duplicate loader entry id: code-runtime`,查证是 preflight 与 boot 之间 profile 被改动;已实验证明 preflight 对跨层重复行无盲区——同样的组合在 preflight 里一样炸。)
 
 ## 放行 npm 的标准
 

@@ -12,17 +12,22 @@
 #     `claude auth login` browser flow, project-file session records).
 #   - tool-subagent-claude-code-local: the family-owned delegation tool
 #     (schema description/prompt plus optional resume) over the `claude-local`
-#     provider. The toolName stays `subagent_claude_code_local` — the same
-#     model-facing name the official tool-subagent row used — and deliberately
-#     avoids colliding with the official subagent-claude-code provider
-#     (`claude-code`) and the disabled `subagent_claude_code` row in the
-#     shipped presets, while the family tool adds continuation: a later round
-#     may pass the dsh child session id returned by the first delegation to
-#     continue the same claude conversation.
+#     provider. The toolName is `subagent_claude_code` — the family takes the
+#     model-facing name: the official preset row of that name ships
+#     `disabled: true`, and this patch disables it too (below) so a community
+#     install can never register two `subagent_claude_code` tools. A user who
+#     deliberately re-enables the official row in their own preset layer gets
+#     a loud duplicate-name conflict — by design, they must choose one. The
+#     family tool adds continuation: a later round may pass the dsh child
+#     session id returned by the first delegation to continue the same claude
+#     conversation.
 #
 # The tool mounts at the profile root, so every agent preset can delegate
 # without per-preset variants. The provider starts no claude process until a
 # tool call or /claude-code login.
+
+- id: tool-subagent-claude-code
+  disabled: true
 
 - insert:
     - id: local-agent-claude-code
@@ -32,4 +37,4 @@
       name: '@khorsheed/dsh-local-agent-tool-subagent'
       config:
         provider: claude-local
-        toolName: subagent_claude_code_local
+        toolName: subagent_claude_code

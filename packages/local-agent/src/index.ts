@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -70,6 +71,8 @@ export type {
   RoomMemberMessageReceipt,
 } from './types.ts'
 
+export { delegationEnv } from './env.ts'
+
 /** Per-harness session listing: reads the harness's own records format. */
 export interface LocalAgentRecordsAdapter {
   /**
@@ -97,6 +100,57 @@ export function subagentDelegationLabel(displayName: string, description: string
 }
 
 /**
+ * A harness's login flow. Two variants:
+ *
+ * - **device-code**: spawn the CLI's login command and capture its printed
+ *   prompt (the URL/code) for the reply while the CLI polls in the background.
+ * - **manual handoff**: the CLI's auth is TTY-only, so nothing is spawnable —
+ *   `/login` replies with instructions naming the command for the user's own
+ *   terminal, and the registry watches the scoped home for the credential.
+ */
+export type LocalAgentLogin =
+  | {
+    command: string
+    args: readonly string[]
+    /**
+     * Which stream carries the device-code prompt. Defaults to `stderr`
+     * (kimi's login prints there); harnesses whose CLI prints the prompt to
+     * stdout (codex `login --device-auth`, claude `setup-token`) declare
+     * `stdout` so the reply surfaces the URL instead of timing out.
+     */
+    capture?: 'stderr' | 'stdout'
+  }
+  | {
+    manual: {
+      /** The exact command line the user runs in their own terminal. */
+      commandDisplay: string
+    }
+    /**
+     * Credential probe polled while the handoff is in flight; defaults to the
+     * harness's own `isAuthenticated`.
+     */
+    watch?: (homeDir: string) => Promise<boolean>
+  }
+  | {
+    /**
+     * The CLI's auth needs a TTY but drives the browser itself (claude ≥2.1):
+     * the command is spawned under a pseudo-terminal wrapper so it opens the
+     * user's browser, and its output is watched for an OAuth URL to show as a
+     * fallback. When the CLI prompts for a code, the user pastes it via
+     * `/<name> code <value>`, which the registry writes to the child's stdin.
+     */
+    pty: {
+      command: string
+      args: readonly string[]
+    }
+    /**
+     * Credential probe polled while the login is in flight; defaults to the
+     * harness's own `isAuthenticated`.
+     */
+    watch?: (homeDir: string) => Promise<boolean>
+  }
+
+/**
  * One registered local code-agent harness.
  */
 export interface LocalAgentHarness {
@@ -114,22 +168,17 @@ export interface LocalAgentHarness {
    */
   delegationProvider?: string
   /**
-   * Device-code login invocation; the prompt is captured from stderr. Absent
-   * means the harness has no login flow — it authenticates through the host
-   * instance (e.g. by resolving a credential from the parent's store), so
-   * `/login` reports that instead of guessing a command.
+   * Login flow declaration. The device-code variant spawns the CLI and
+   * captures its printed prompt. The manual variant spawns NOTHING: the CLI's
+   * auth is TTY-only (claude ≥2.1 prints no OAuth URL off a TTY and
+   * `setup-token` needs Ink raw mode — scraping broke twice), so `/login`
+   * replies with instructions naming `manual.commandDisplay` for the user's
+   * own terminal, then watches for the credential to land. Absent means the
+   * harness has no login flow — it authenticates through the host instance
+   * (e.g. by resolving a credential from the parent's store), so `/login`
+   * reports that instead of guessing a command.
    */
-  login?: {
-    command: string
-    args: readonly string[]
-    /**
-     * Which stream carries the device-code prompt. Defaults to `stderr`
-     * (kimi's login prints there); harnesses whose CLI prints the prompt to
-     * stdout (codex `login --device-auth`, claude `setup-token`) declare
-     * `stdout` so the reply surfaces the URL instead of timing out.
-     */
-    capture?: 'stderr' | 'stdout'
-  }
+  login?: LocalAgentLogin
   /** Session records reader for this harness's format. */
   records: LocalAgentRecordsAdapter
   /**
@@ -138,6 +187,16 @@ export interface LocalAgentHarness {
    * runs; the check is per-harness (a credentials directory, an auth file).
    */
   isAuthenticated?: (homeDir: string) => Promise<boolean>
+  /**
+   * The credential marker's modification stamp (epoch ms), undefined when no
+   * credential exists. Two consumers: the manual-login watch requires a stamp
+   * NEWER than the watch start (a stale marker must not read as a fresh
+   * login), and `statusOf` downgrades a presence-true probe when a delegation
+   * reported an auth failure newer than the stamp (presence cannot see a
+   * server-side revocation; the next real login rewrites the marker and
+   * recovers the status).
+   */
+  credentialStamp?: (homeDir: string) => Promise<number | undefined>
   /**
    * Sign out of the scoped account, clearing the stored credentials so a
    * later login authorizes another account. Absent means the harness has no
@@ -170,6 +229,26 @@ export interface Config {
 
 /** Grace between SIGTERM and SIGKILL when replacing an abandoned login child. */
 export const REPLACE_LOGIN_GRACE_MS = 5_000
+
+/**
+ * Strip ANSI escape sequences (colors, OSC-8 hyperlinks) from captured CLI
+ * output. Login prompts are scraped from terminal-targeted output, and a
+ * trailing `ESC[0m` glued onto an OAuth URL corrupts the link the user opens
+ * (a real 3080 incident: codex's device URL ended in `%1B[0m` and the page
+ * reported the session ended).
+ */
+const ANSI_ESCAPE = /\[[0-9;?]*[A-Za-z]|\]8;;[^\ ]*\\/g
+
+/** Remove terminal escape sequences from scraped CLI text. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_ESCAPE, '')
+}
+
+/** Poll interval for a manual-handoff login watch. */
+export const MANUAL_LOGIN_POLL_MS = 2_000
+
+/** How long a manual-handoff login watches before reporting the timeout. */
+export const MANUAL_LOGIN_LIMIT_MS = 5 * 60_000
 
 /** Heartbeat interval for facade-tracked in-flight runs. */
 export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
@@ -250,9 +329,23 @@ export const Config: z<Config> = z.object({
 export const LOCAL_AGENT_SERVICE = 'localAgent'
 
 /** One bounded login attempt: the polling child plus its settle signal. */
+/** One bounded login attempt: the polling child or manual watch, plus its settle signal. */
 interface LoginController {
-  child: ChildProcess
+  /** The device-code variant's CLI child; absent for a manual-handoff watch. */
+  child?: ChildProcess
+  /** The pty variant's terminal; written to when the CLI prompts for a code. */
+  terminal?: SubprocessTerminalHandle
   done: Promise<void>
+  /** Cancel a manual-handoff watch (the device variant cancels by killing its child). */
+  stop?: () => void
+  /**
+   * The pty variant: the CLI runs on a real pseudo-terminal (it auto-opens
+   * the browser itself) and may prompt for an OAuth code on stdin.
+   * `writeCode` delivers the user's pasted code; `awaitingCode` tells the
+   * settings surface to render the paste box.
+   */
+  awaitingCode?: boolean
+  writeCode?: (code: string) => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -311,6 +404,7 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
   return `${harness.name} login exited with ${signal ?? `code ${exitCode ?? 'unknown'}`}; try /${harness.name} login again.`
 }
 
+
 /**
  * Registry of local code-agent harnesses and the per-harness command family.
  * @module @khorsheed/dsh-local-agent
@@ -350,25 +444,45 @@ export class LocalAgentRegistry {
    */
   private readonly kimiMirrorOffsets = new Map<string, number>()
   /**
+   * Delegation-reported auth failures per harness (epoch ms of the report).
+   * Presence probes cannot see a server-side revocation, so a provider
+   * observing a 401/403 reports it here and `statusOf` downgrades the harness
+   * until its credential marker is rewritten by a real re-login (stamp newer
+   * than the mark).
+   */
+  private readonly authFailures = new Map<string, number>()
+  /**
    * In-flight runs registered with the member channel, by per-run token. The
    * bridge MCP server presents its token (and parent pid) on every callback;
    * entries are invalidated on the run's settle path.
    */
   private readonly memberRuns = new Map<string, LocalAgentMemberRun>()
   /**
-   * Facade-tracked in-flight runs by dsh child session id, so
-   * {@link LocalAgentRegistry.cancel} can abort a run started through
-   * {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume} and
-   * the caller's `onProgress` receives the run's reports. Each entry clears
-   * itself (and its heartbeat timer) when the run's result settles (any stop
-   * reason).
+   * The ACTIVE DELEGATION REGISTRY — in-flight local-agent runs by dsh child
+   * session id, the key the `/local-agent stop <childSessionId>` command and
+   * {@link LocalAgentRegistry.cancel} look up. Two registration kinds share
+   * the map:
+   *
+   * - **facade-tracked** ({@link trackRun}): runs started through
+   *   {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume},
+   *   carrying the fused AbortController whose signal reached
+   *   `ctx.subagents.start`; cancel aborts it.
+   * - **tool-registered** ({@link trackDelegationRun}): runs the family tool
+   *   starts directly through `ctx.subagents.start`, carrying an explicit
+   *   cancel lever (its fused controller); cancel calls it.
+   *
+   * Every entry clears itself when the run's result settles (any stop
+   * reason), and facade entries also stop their heartbeat timer then.
    */
   private readonly runs = new Map<string, {
-    controller: AbortController
+    /** Facade-owned controller (start/resume); aborting it cancels the run. */
+    controller?: AbortController
+    /** Caller-supplied cancel lever for tool-registered (non-facade) runs. */
+    cancel?: () => void
     run: SubagentRun
     onProgress: ((event: LocalAgentRunProgress) => void) | undefined
     startedAt: number
-    heartbeat: ReturnType<typeof setInterval>
+    heartbeat?: ReturnType<typeof setInterval>
   }>()
   /**
    * Detach disposers for child sessions the facade reattached into the live
@@ -391,7 +505,9 @@ export class LocalAgentRegistry {
     // Reattached child sessions leave the live store, and in-flight run
     // heartbeats stop, when the plugin unloads.
     ctx.effect(() => () => {
-      for (const entry of this.runs.values()) clearInterval(entry.heartbeat)
+      for (const entry of this.runs.values()) {
+        if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
+      }
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
     })
@@ -468,6 +584,21 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Record a delegation-observed authentication failure (a 401/403 from the
+   * CLI's endpoint). Presence probes cannot see a server-side revocation, so
+   * this mark downgrades the harness's reported status until a real re-login
+   * rewrites the credential marker (see {@link LocalAgentHarness.credentialStamp}).
+   * @param name - the harness whose credential failed.
+   * @param detail - the endpoint's answer, for the log.
+   */
+  reportAuthFailure(name: string, detail: string): void {
+    this.authFailures.set(name, Date.now())
+    this.ctx.logger.warn(
+      `localAgent: ${name} credential rejected by its endpoint (${detail}); the harness reports unauthenticated until a fresh login rewrites the credential marker`,
+    )
+  }
+
+  /**
    * Query one harness's auth status.
    * @param name - the harness name.
    * @returns the status snapshot.
@@ -475,7 +606,15 @@ export class LocalAgentRegistry {
   async statusOf(name: string): Promise<LocalAgentStatus> {
     const harness = this.requireHarness(name)
     const homeDir = this.homeDir(name)
-    const authenticated = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
+    let authenticated = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
+    const failedAt = this.authFailures.get(name)
+    if (authenticated && failedAt !== undefined && harness.credentialStamp !== undefined) {
+      // A delegation reported an auth failure (e.g. a server-side revocation
+      // the presence probe cannot see). Stay unauthenticated until the
+      // credential marker is rewritten by a real re-login.
+      const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+      authenticated = stamp !== undefined && stamp > failedAt
+    }
     return {
       name: harness.name,
       displayName: harness.displayName,
@@ -486,6 +625,7 @@ export class LocalAgentRegistry {
       // neither).
       loginable: harness.login !== undefined,
       logoutable: harness.logout !== undefined,
+      ...this.logins.get(name)?.awaitingCode === true ? { loginAwaitingCode: true } : {},
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
     }
   }
@@ -921,8 +1061,66 @@ export class LocalAgentRegistry {
   cancel(childSessionId: string): boolean {
     const entry = this.runs.get(childSessionId)
     if (entry === undefined) return false
-    entry.controller.abort()
+    if (entry.controller !== undefined) {
+      entry.controller.abort()
+    } else {
+      // Tool-registered run: the caller-supplied cancel lever (its fused
+      // controller), the same abort channel the facade entry aborts.
+      entry.cancel?.()
+    }
     return true
+  }
+
+  /**
+   * Register a NON-facade in-flight delegation run with the active-delegation
+   * registry, keyed by the dsh child session id, so the `/local-agent stop`
+   * command and {@link cancel} can reach it. This is the family TOOL's entry
+   * point: the tool starts its runs through `ctx.subagents.start` directly
+   * (not the facade), so without this registration its in-flight runs would
+   * be invisible to the stop command. The caller owns the cancel lever — a
+   * controller fused with the run's request signal, aborted exactly like the
+   * facade's tracked controller. The entry clears itself when the run's
+   * result settles (any stop reason); an existing facade entry for the same
+   * child session wins (it already owns cancellation and progress).
+   * @param childSessionId - the dsh child session id (the run id).
+   * @param run - the published subagent run.
+   * @param cancel - the lever that aborts the run's request signal.
+   */
+  trackDelegationRun(childSessionId: string, run: SubagentRun, cancel: () => void): void {
+    if (this.runs.has(childSessionId)) return
+    this.runs.set(childSessionId, {
+      cancel,
+      run,
+      onProgress: undefined,
+      startedAt: Date.now(),
+    })
+    const clear = (): void => {
+      const entry = this.runs.get(childSessionId)
+      if (entry?.run !== run) return
+      this.runs.delete(childSessionId)
+    }
+    void run.result.then(clear, clear)
+  }
+
+  /**
+   * Whether the active-delegation registry holds an in-flight run for the
+   * child session — the registry's read side for the `/local-agent stop`
+   * command's miss report (the command cancels through {@link cancel}).
+   * @param childSessionId - the dsh child session id.
+   * @returns whether a run is currently in flight under that id.
+   */
+  isDelegationActive(childSessionId: string): boolean {
+    return this.runs.has(childSessionId)
+  }
+
+  /**
+   * The child session ids with an in-flight delegation run — the gateway's
+   * `activeDelegations` Remote exposes this to the browser so surfaces can
+   * mark one-shot rows as running.
+   * @returns the in-flight child session ids.
+   */
+  activeDelegations(): readonly string[] {
+    return [...this.runs.keys()]
   }
 
   /**
@@ -1131,6 +1329,7 @@ export class LocalAgentRegistry {
   private handle(invocation: CommandInvocation, harness: LocalAgentHarness): Promise<CommandResult> {
     const input = invocation.rawInput.trim()
     if (input === 'login') return this.login(harness)
+    if (input.startsWith('code ')) return Promise.resolve(this.submitLoginCode(harness, input.slice('code '.length).trim()))
     if (input === 'status') {
       return this.statusOf(harness.name).then(status => ({ kind: 'success', text: renderStatus(status) }))
     }
@@ -1159,20 +1358,22 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Start the device-code login in the harness's scoped home. The URL and code
-   * arrive on stderr (verified against kimi-code 0.33.0; other harnesses print
-   * the same prompt shape); the reply surfaces that prompt immediately while
-   * the child keeps polling in the background. A second login while one is
-   * pending terminates the previous login's child and replaces it — a stale or
-   * abandoned login (browser never opened, user gave up) must not hold the
-   * slot forever, and the user's retry should just get a fresh code. An
-   * abandoned login with no retry self-heals when the CLI's own device code
-   * expires and its polling child exits (kimi/codex/claude all do); no
-   * idle timer is added because a too-short one would kill a user who is
-   * genuinely authorizing. A harness without a login flow answers with an
+   * Run one login flow. The device-code variant spawns the CLI in the scoped
+   * home and captures its prompt from stderr/stdout; the reply surfaces that
+   * prompt immediately while the child keeps polling in the background. The
+   * manual variant spawns nothing — the reply carries the terminal
+   * instructions and a watch polls the credential probe. A second login while
+   * one is pending replaces it — a stale or abandoned attempt (browser never
+   * opened, user gave up) must not hold the slot forever, and the user's
+   * retry should just get a fresh start. An abandoned device-code login with
+   * no retry self-heals when the CLI's own device code expires and its
+   * polling child exits (kimi/codex do); no idle timer is added because a
+   * too-short one would kill a user who is genuinely authorizing (the manual
+   * watch is bounded instead). A harness without a login flow answers with an
    * error instead of spawning anything.
-   * @param harness - the harness whose login command runs.
-   * @returns the device-code prompt as the command success text.
+   * @param harness - the harness whose login flow runs.
+   * @returns the command result: the device-code prompt, or the manual
+   *   handoff's terminal instructions.
    */
   private login(harness: LocalAgentHarness): Promise<CommandResult> {
     const login = harness.login
@@ -1184,21 +1385,30 @@ export class LocalAgentRegistry {
     }
     const existing = this.logins.get(harness.name)
     if (existing !== undefined) {
-      // A pending login is replaced, not refused: terminate its child so the
-      // new login gets a clean slot. The old controller's done signal already
-      // cleared the map entry or will (its settle path deletes only when the
-      // map still holds THAT controller, which the new set() below makes false).
+      // A pending login is replaced, not refused: stop its watch / terminate
+      // its child so the new login gets a clean slot. The old controller's
+      // done signal already cleared the map entry or will (its settle path
+      // deletes only when the map still holds THAT controller, which the new
+      // set() below makes false).
+      existing.stop?.()
+      if (existing.terminal !== undefined) void existing.terminal.terminate()
       const stale = existing.child
-      stale.kill()
-      // SIGTERM first, then SIGKILL after a grace period: a CLI that ignores
-      // SIGTERM must not leave a zombie polling process behind (the slot is
-      // already replaced, so this is process hygiene, not a functional lock).
-      const hardKill = setTimeout(() => {
-        if (stale.exitCode === null && stale.signalCode === null) stale.kill('SIGKILL')
-      }, REPLACE_LOGIN_GRACE_MS)
-      stale.once('exit', () => { clearTimeout(hardKill) })
+      if (stale !== undefined) {
+        stale.kill()
+        // SIGTERM first, then SIGKILL after a grace period: a CLI that ignores
+        // SIGTERM must not leave a zombie polling process behind (the slot is
+        // already replaced, so this is process hygiene, not a functional lock).
+        const hardKill = setTimeout(() => {
+          if (stale.exitCode === null && stale.signalCode === null) stale.kill('SIGKILL')
+        }, REPLACE_LOGIN_GRACE_MS)
+        stale.once('exit', () => { clearTimeout(hardKill) })
+      }
     }
-    const controller: LoginController = { child: undefined as unknown as ChildProcess, done: Promise.resolve() }
+    // The manual handoff spawns nothing: reply with the terminal instructions
+    // and watch for the credential.
+    if ('manual' in login) return this.manualLogin(harness, login)
+    if ('pty' in login) return this.ptyLogin(harness, login)
+    const controller: LoginController = { done: Promise.resolve() }
     this.logins.set(harness.name, controller)
     const resultPromise = this.runLogin(harness, login, controller)
     // The settle signal is the real one only after runLogin populated it;
@@ -1209,10 +1419,199 @@ export class LocalAgentRegistry {
     return resultPromise
   }
 
+  /**
+   * The shared credential watch behind the manual and pty login variants:
+   * polls the probe until the credential lands (presence AND, when the
+   * harness exposes a credential stamp, a stamp rewritten after the watch
+   * started — a leftover marker must not conclude a login), the window
+   * expires, or a new login replaces the watch. Outcomes are logged; the
+   * surfaces' own status polling picks the landed credential up.
+   * @param harness - the harness being logged in.
+   * @param probe - the credential probe.
+   * @param controller - the pending login's controller (done resolves here).
+   */
+  private watchCredential(
+    harness: LocalAgentHarness,
+    probe: (homeDir: string) => Promise<boolean>,
+    controller: LoginController,
+  ): void {
+    const homeDir = this.homeDir(harness.name)
+    const deadline = Date.now() + MANUAL_LOGIN_LIMIT_MS
+    const watchStart = Date.now()
+    let stopped = false
+    let timer: ReturnType<typeof setInterval> | undefined
+    controller.done = new Promise<void>((resolve) => {
+      const finish = (message: string, level: 'info' | 'warn'): void => {
+        if (stopped) return
+        stopped = true
+        if (timer !== undefined) clearInterval(timer)
+        this.ctx.logger[level](message)
+        resolve()
+      }
+      controller.stop = () => { finish(`${harness.name} login watch replaced`, 'info') }
+      const tick = async (): Promise<void> => {
+        if (stopped) return
+        try {
+          if (await probe(homeDir)) {
+            // Presence alone must not conclude a login: a stale marker (e.g.
+            // a revoked token's leftover record) would report success without
+            // any new login. When the harness exposes a credential stamp,
+            // require it to be rewritten after this watch started.
+            if (harness.credentialStamp !== undefined) {
+              const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+              if (stamp === undefined || stamp <= watchStart) return
+            }
+            finish(`${harness.name} login detected in the scoped home`, 'info')
+            return
+          }
+        } catch {
+          // A probe failure is a transient read; keep watching.
+        }
+        if (Date.now() >= deadline) {
+          finish(
+            `${harness.name} login watch expired after ${Math.round(MANUAL_LOGIN_LIMIT_MS / 1000)}s with no credential; run /${harness.name} login again to retry`,
+            'warn',
+          )
+        }
+      }
+      timer = setInterval(() => { void tick() }, MANUAL_LOGIN_POLL_MS)
+      timer.unref()
+    })
+  }
+
+  /**
+   * The manual-handoff login: the reply carries the exact command the user
+   * runs in their own terminal, and a bounded watch polls the credential probe
+   * (default: the harness's `isAuthenticated`) until the credential lands, the
+   * window expires, or a new login replaces the watch. The reply cannot carry
+   * the outcome — the command channel has already returned — so success and
+   * timeout are logged, and the surfaces' own status polling (the settings
+   * section re-probes every few seconds) picks the landed credential up.
+   * @param harness - the harness declaring the manual flow.
+   * @param login - the manual variant declaration.
+   * @returns the instructions as the command success text.
+   */
+  private manualLogin(
+    harness: LocalAgentHarness,
+    login: Extract<LocalAgentLogin, { manual: unknown }>,
+  ): Promise<CommandResult> {
+    const controller: LoginController = { done: Promise.resolve() }
+    this.logins.set(harness.name, controller)
+    const probe = login.watch ?? harness.isAuthenticated
+    if (probe !== undefined) this.watchCredential(harness, probe, controller)
+    void controller.done.then(() => {
+      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+    })
+    return Promise.resolve({
+      kind: 'success',
+      text: `${harness.displayName} CLI login needs an interactive terminal. Run this in your own terminal:\n\n  ${login.manual.commandDisplay}\n\nWatching the scoped home for the credential for up to ${Math.round(MANUAL_LOGIN_LIMIT_MS / 60_000)} minutes; this surface picks the login up automatically.`,
+    })
+  }
+
+  /**
+   * The pty login: spawn the CLI under a pseudo-terminal wrapper so its
+   * TTY-only auth flow runs — current claude auto-opens the user's browser
+   * itself. The OAuth URL is captured from the merged output as a fallback,
+   * and when the CLI prompts for a code the user pastes it through
+   * `/<name> code <value>` (written to the child's stdin). Completion is the
+   * shared credential watch. Windows has no script(1) wrapper; there the
+   * reply falls back to the manual instruction.
+   * @param harness - the harness declaring the pty flow.
+   * @param login - the pty variant declaration.
+   * @returns the browser/paste instructions as the command success text.
+   */
+  private async ptyLogin(
+    harness: LocalAgentHarness,
+    login: Extract<LocalAgentLogin, { pty: unknown }>,
+  ): Promise<CommandResult> {
+    const homeDir = this.homeDir(harness.name)
+    const displayCommand = [login.pty.command, ...login.pty.args].join(' ')
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) {
+      // The seam is absent in this composition: degrade to the manual handoff.
+      const controller: LoginController = { done: Promise.resolve() }
+      this.logins.set(harness.name, controller)
+      const probe = login.watch ?? harness.isAuthenticated
+      if (probe !== undefined) this.watchCredential(harness, probe, controller)
+      void controller.done.then(() => {
+        if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+      })
+      return Promise.resolve({
+        kind: 'success',
+        text: `${harness.displayName} CLI login needs an interactive terminal. Run this in your own terminal:\n\n  ${displayCommand}\n\nWatching the scoped home for the credential; this surface picks the login up automatically.`,
+      })
+    }
+    const controller: LoginController = { done: Promise.resolve(), awaitingCode: true }
+    const terminal = await subprocess.spawnTerminal({
+      argv: [login.pty.command, ...login.pty.args],
+      cwd: homeDir,
+      env: { [harness.homeEnvVar]: homeDir },
+      rows: 24,
+      cols: 80,
+      graceMs: REPLACE_LOGIN_GRACE_MS,
+    })
+    controller.terminal = terminal
+    this.logins.set(harness.name, controller)
+    controller.writeCode = (code) => {
+      void terminal.write(`${code}\r`)
+      controller.awaitingCode = false
+    }
+    let url: string | undefined
+    const urlCaptured = new Promise<void>((resolve) => {
+      const promptTimeout = setTimeout(() => { resolve() }, this.loginPromptTimeoutMs)
+      terminal.output.on('data', (chunk: Buffer) => {
+        if (url === undefined) {
+          const match = /https?:\/\/[^\s\]]+/.exec(stripAnsi(chunk.toString()))
+          if (match !== null) {
+            url = match[0]
+            clearTimeout(promptTimeout)
+            resolve()
+          }
+        }
+      })
+      void terminal.done.then(() => { clearTimeout(promptTimeout); resolve() }, () => { clearTimeout(promptTimeout); resolve() })
+    })
+    controller.done = new Promise<void>((resolve) => {
+      void terminal.done.then(() => { resolve() }, () => { resolve() })
+    })
+    const probe = login.watch ?? harness.isAuthenticated
+    if (probe !== undefined) this.watchCredential(harness, probe, controller)
+    void controller.done.then(() => {
+      if (this.logins.get(harness.name) === controller) this.logins.delete(harness.name)
+    })
+    // Give the CLI a bounded moment to print its OAuth URL so the reply can
+    // carry the fallback link; the browser opens on its own either way.
+    return urlCaptured.then(() => ({
+      kind: 'success',
+      text: `${harness.displayName} 授权页应已在浏览器中打开。`
+        + (url !== undefined ? `\n\n若浏览器未打开，请访问：\n  ${url}` : '')
+        + `\n\n授权完成后若页面给出一个 code，请粘贴回来：\n  /${harness.name} code <你的code>`,
+    }))
+  }
+
+  /**
+   * Deliver the user's pasted OAuth code to a pending pty login's stdin.
+   * @param harness - the harness whose login is pending.
+   * @param code - the pasted code.
+   * @returns the command result.
+   */
+  private submitLoginCode(harness: LocalAgentHarness, code: string): CommandResult {
+    const controller = this.logins.get(harness.name)
+    if (controller?.writeCode === undefined || code === '') {
+      return {
+        kind: 'error',
+        text: `${harness.name} 没有等待授权 code 的登录；先运行 /${harness.name} login。`,
+      }
+    }
+    controller.writeCode(code)
+    return { kind: 'success', text: 'code 已提交，等待授权完成…' }
+  }
+
+
   /** Spawn the harness login command and capture its device-code prompt. */
   private runLogin(
     harness: LocalAgentHarness,
-    login: NonNullable<LocalAgentHarness['login']>,
+    login: Extract<LocalAgentLogin, { command: string }>,
     controller: LoginController,
   ): Promise<CommandResult> {
     const child = spawn(login.command, [...login.args], {
@@ -1226,6 +1625,7 @@ export class LocalAgentRegistry {
     })
     const capture = login.capture ?? 'stderr'
     let prompt = ''
+    let answered = false
     return new Promise<CommandResult>((resolve) => {
       const probe = capture === 'stderr' ? child.stderr : child.stdout
       if (capture === 'stdout') {
@@ -1233,8 +1633,15 @@ export class LocalAgentRegistry {
         child.stderr.resume()
       }
       probe.on('data', (chunk: Buffer) => {
-        if (prompt === '') {
-          prompt = chunk.toString()
+        // ANSI escapes ride CLI output even when piped (codex colorizes the
+        // auth URL); strip before the URL check and the reply.
+        prompt += stripAnsi(chunk.toString())
+        // Reply fast only once a URL is in hand — a fast print-and-exit CLI
+        // (kimi's already-logged-in 'Logged in to …') never prints one and
+        // must fall through to the close handler instead of showing a bogus
+        // 'complete the flow in the browser' wrapper.
+        if (!answered && /https?:\/\//.test(prompt)) {
+          answered = true
           resolve({
             kind: 'success',
             text: `Device login started in the scoped home.\n${prompt}\nComplete the flow in the browser; the CLI keeps polling in the background.`,
@@ -1245,20 +1652,33 @@ export class LocalAgentRegistry {
       // final data events are delivered, and a fast print-and-exit CLI would
       // then be misreported as prompt-less. close guarantees stdio drained.
       child.on('close', () => {
-        if (prompt === '') resolve({ kind: 'error', text: loginFailure(harness, child.exitCode, null) })
+        if (answered) return
+        answered = true
+        if (child.exitCode === 0) {
+          // The CLI finished without asking for anything — it considers the
+          // harness already authenticated (kimi's 'Logged in to …').
+          resolve({
+            kind: 'success',
+            text: prompt.trim() === '' ? `${harness.displayName} 已是登录状态。` : prompt.trim(),
+          })
+          return
+        }
+        resolve({ kind: 'error', text: loginFailure(harness, child.exitCode, null) })
       })
       child.on('error', (error) => {
-        if (prompt === '') resolve({ kind: 'error', text: `${harness.name} login failed to start: ${error.message}` })
+        if (answered) return
+        answered = true
+        resolve({ kind: 'error', text: `${harness.name} login failed to start: ${error.message}` })
       })
       // A CLI that prints nothing at all should not hold the reply hostage.
       setTimeout(() => {
-        if (prompt === '') {
-          child.kill('SIGTERM')
-          resolve({
-            kind: 'error',
-            text: `${harness.name} login printed no device-code prompt; is the ${harness.displayName} CLI installed and configured?`,
-          })
-        }
+        if (answered) return
+        answered = true
+        child.kill('SIGTERM')
+        resolve({
+          kind: 'error',
+          text: `${harness.name} login printed no device-code prompt; is the ${harness.displayName} CLI installed and configured?`,
+        })
       }, this.loginPromptTimeoutMs)
     })
   }
@@ -1272,6 +1692,27 @@ function renderRoster(registry: LocalAgentRegistry): string {
     const harness = registry.get(name)
     return `${name}: ${harness?.displayName ?? name}`
   }).join('\n')
+}
+
+/**
+ * The `/local-agent stop <childSessionId>` result: fire-and-return like the
+ * official `subagents.interrupt(targetSessionId)` — the cancel signal is
+ * issued before the reply, and an absent target (unknown child or no
+ * in-flight run) is an accepted no-op, named explicitly rather than a silent
+ * success. The authority is implicit: the dispatching agent's UI initiated
+ * the command, exactly as every other slash command.
+ * @param registry - the active-delegation registry.
+ * @param childSessionId - the dsh child session id of the delegation to stop.
+ * @returns the command result.
+ */
+function stopDelegation(registry: LocalAgentRegistry, childSessionId: string): CommandResult {
+  if (registry.cancel(childSessionId)) {
+    return { kind: 'success', text: `stop requested for child session ${childSessionId}` }
+  }
+  return {
+    kind: 'success',
+    text: `child session ${childSessionId} has no in-flight local-agent run to stop`,
+  }
 }
 
 /**
@@ -1295,16 +1736,29 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => { void memberChannel.dispose() })
   ctx.commands.register({
     name: 'local-agent',
-    description: 'list the registered local code-agent harnesses',
-    input: { hint: 'list' },
+    description: 'list the registered local code-agent harnesses, or stop an in-flight delegation',
+    input: { hint: 'list | stop <childSessionId>' },
     handler: (invocation) => {
       const input = invocation.rawInput.trim()
       if (input === 'list' || input === '') {
         return Promise.resolve({ kind: 'success', text: renderRoster(registry) })
       }
+      if (input.startsWith('stop')) {
+        // /local-agent stop <childSessionId>: cancel the active delegation
+        // keyed by the child session id (semantics aligned with the official
+        // subagents.interrupt — fire-and-return, absent target accepted).
+        const childSessionId = input.slice('stop'.length).trim()
+        if (childSessionId === '') {
+          return Promise.resolve({
+            kind: 'error',
+            text: 'usage: /local-agent stop <childSessionId>',
+          })
+        }
+        return Promise.resolve(stopDelegation(registry, childSessionId))
+      }
       return Promise.resolve({
         kind: 'error',
-        text: 'Unknown /local-agent subcommand; use /local-agent list.',
+        text: 'Unknown /local-agent subcommand; use /local-agent list or /local-agent stop <childSessionId>.',
       })
     },
   })

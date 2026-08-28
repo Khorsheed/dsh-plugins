@@ -4,9 +4,9 @@ English | [中文](README.md)
 
 A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's left edge with one row per user message. Hover to reveal previews, click to scroll the transcript straight to that message.
 
-<img src="../../docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
 
-<img src="../../docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
 
 ## Features
 
@@ -14,7 +14,7 @@ A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's le
 - **Ambient rest state** — only dimmed ticks show until you hover the strip or focus the list.
 - **Reading position tracking** — the current position's tick stays lit blue, anchoring to the user message a long answer is replying to.
 - **Click to jump** — a row scrolls the transcript to that message; the list follows the reading position.
-- **Long-history friendly** — a short list centers vertically; a long one scrolls and pages older history at its top.
+- **Long-history friendly** — a short list centers vertically; a long one scrolls and pages older history at its top, its bottom-most row flush with the chat input box; goal/todo dock cards never push the timeline up.
 
 ## Install
 
@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -73,3 +73,7 @@ The plugin is purely additive and modifies no official code.
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/message-timeline`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

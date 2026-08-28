@@ -59,7 +59,40 @@
 - **退役条件**：守卫包实现 `--gate`。
 - **状态**：待实施（ankh-guard 维护者评估中）。
 
-## 维护约定
+### S8. 官方 SDK JSON-RPC wire 无 turn 级 interrupt/cancel
+
+- **需求**：长驻子实例（`dsh-jsonrpc-agent` / `@deepseek-ai/dsh-sdk-jsonrpc-server`）能被外部优雅中断当前 turn——local-agent live driver 的核心动机就是 runtime 级 cancel（进程不死、会话可续）。官方 wire 只有 `initialize` / `session/prompt` / `shutdown` + 通知流，无 interrupt；`@deepseek-ai/dsh-sdk-client` 注释明确"a timed-out request stays running server-side until the runtime is closed"。
+- **现状绕行**：自家 headless bundle（`@khorsheed/dsh-local-agent-dsh-headless`）的 `--serve` 模式自建一条同形制的 NDJSON JSON-RPC wire（`src/wire.ts`，帧格式对照官方 `JsonRpcLineTransport`），interrupt 走进程内官方 `Agent.cancel({kind:'parent'})`——这是自家 composition 调用官方 in-process API，不是 hack。
+- **退役条件**：官方 SDK wire 增加 turn 级 interrupt 方法（且保持调用方指定 session id 的懒创建语义）。届时 serve 模式整体退役，provider 的 live driver 改挂官方 server。
+- **状态**：绕行中（@khorsheed/dsh-local-agent-dsh live driver + headless serve 模式）。
+
+### S9. `dsh.bundle` 声明把"要被安装"和"要被挂载"绑死
+
+- **需求**：家族内部 bundle（如 `@khorsheed/dsh-local-agent-dsh-headless`）需要声明 patch 供自己的子 profile 引用（app-boot 对 layer 列表里不声明 `dsh.bundle` 的包 fail loud)，但**不能**被 reconcilePlugins 自动挂进交互式组合——reconcile 把声明 `dsh.bundle` 的 profile 直接依赖全部挂进 layer 栈。2026-08-23 P0:headless bundle 作为 prod web profile 直接依赖被自动挂载，其 `code-runtime` insert 行与 web-app 同名行撞 duplicate entry id，全实例 boot 失败。
+- **现状绕行**：纪律 + 哨兵——ops 文档明示"内部 bundle 只作传递依赖"，包内不变量检出 web 组合（`webStartup` 服务存在）即 fail loud,patch 测试钉住撞 id 的行。安装路径不变（传递依赖天然不被挂载）。
+- **退役条件**：官方把声明拆开——例如 `dsh.bundle.autoMount: false`（或 `profileOnly`)，让 reconcilePlugins 跳过这类包；届时内部 bundle 可以放心作直接依赖（例如显式锁定版本），哨兵不变量可留作防御。
+- **状态**：绕行中（@khorsheed/dsh-local-agent-dsh-headless)。
+
+### S9. runtime skill 注册的 `source` 只在加载期校验
+
+- **需求**：`ctx.skills.register()` 在注册期就要求（或默认）`source`——官方 `register()` 默认了 `provider`/`invocation` 但不默认 `source`，而加载路径 `validateDefinition` 强制 `source` 为 string：于是注册成功、catalog 正常列出、调用才炸（8.9 的 `dsh-self-restart-guard` 就是这个炸法）。
+- **现状绕行**：调用方显式传 `source: 'runtime'`（ankh-guard hotfix f38a616）；并用真实 `SkillRegistry` 的 list + get 往返测试守住契约（记录桩测不出加载期校验）。
+- **退役条件**：官方 `register()` 默认 `source: 'runtime'`，或 `validateRuntimeSkill` 在注册期就强制 `source`。落地后调用方的显式字段保留无害，往返测试可保留为行为回归。
+- **状态**：绕行中（@khorsheed/dsh-ankh-guard 的 skill 注册）。
+
+### S10. 会话日志的崩溃恢复会写 seq 分叉，且单文件损坏拖垮 session.list
+
+- **需求**:(a) 重启/崩溃打断在途工具调用时，恢复机制不应向日志写入与真实结果冲突的伪"中断"块——seq 空间不应分叉;(b) `session.list` 等读取路径应把损坏的单文件隔离/跳过并警告，而不是整个列表 500(一个坏会话 = 全 home 侧边栏"暂无会话")。
+- **实证**:2026-08-28 prod 3080。18:40 部署重启打断 turn 47 step 5 的工具调用，恢复逻辑写入伪中断块，与真实工具结果 seq 重叠(408273 写两遍、内容冲突),`scanLog` 报 `seq gap in committed region`;同时该文件曾被修成单帧，触发 `first frame is not exactly one header line`。两层都只对活体可见。
+- **现状绕行**:手工修复(坏文件隔离到 `~/.dsh-official/scratch/quarantine-*/`,删坏分支、保留真实分支、重排帧后放回)。**修复踩坑记录**(下次照此办理):
+  1. 整文件 `fzstd.decompress` 会掩盖帧边界——读取器要求首帧恰好只有头部行、每帧都是完整 JSONL 行，必须**逐帧**验证;
+  2. 我们的 `fzstd` 依赖是 decompress-only 构建，压缩用 `node:zlib` 的 `zstdCompressSync`;
+  3. 验证必须用 harness 自己的 `scanZstdFrames`/`decompressZstdFrame`(`packages/session/session-persistence-jsonl/src/zstd.ts`)跑一遍，只验明文 seq 连续性不够(第一版修复就栽在这:内容对了、帧结构错了);
+  4. `session.list` 是每请求现扫，修复文件**不需要重启实例**即可生效。
+- **退役条件**:官方恢复逻辑在写伪中断块前检测 seq 冲突并和解(或不写);`sessionPersistence` 的 list/read 对单文件损坏降级为跳过 + 警告。落地后删除本条绕行说明， quarantine 目录里的坏文件样本可留作回归素材。
+- **状态**:绕行中(未上报;修复手法已在本条固化)。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。
+
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。

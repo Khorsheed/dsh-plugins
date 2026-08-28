@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DatasetBinding, ListDatasetsResult, ListItemsResult, ReadResult } from '../src/types.ts'
+import type { DatasetBinding, ListDatasetsResult, ListItemsResult, PreviewRepoResult, ReadResult } from '../src/types.ts'
 import type { DatasetsViewProps } from '../src/client/contract.ts'
 import { DatasetsView } from '../src/client/DatasetsView.tsx'
 import { createDatasetsViewStore } from '../src/client/store.ts'
@@ -34,7 +34,9 @@ interface Harness {
   unbindSession: ReturnType<typeof vi.fn>
   listDatasets: ReturnType<typeof vi.fn>
   readFile: ReturnType<typeof vi.fn>
+  readPassthroughFile: ReturnType<typeof vi.fn>
   pickDirectory: ReturnType<typeof vi.fn>
+  previewRepo: ReturnType<typeof vi.fn>
 }
 
 const BINDING: DatasetBinding = { repoPath: '/repo', layers: ['visible'] }
@@ -47,10 +49,27 @@ const DATASETS: ListDatasetsResult = {
   }],
 }
 
+const SENSITIVE_DATASETS: ListDatasetsResult = {
+  kind: 'datasets',
+  datasets: [{
+    id: 'alpha', name: 'Alpha', layers: ['visible', 'grading'], nonModelFacingLayers: ['grading'],
+    itemCount: 1, warnings: [],
+  }],
+}
+
+const PREVIEW: PreviewRepoResult = {
+  repo: '/repo',
+  datasets: [
+    { id: 'alpha', name: 'Alpha', layers: ['visible'], nonModelFacingLayers: [], itemCount: 1, warnings: [] },
+    { id: 'beta', layers: ['visible', 'grading'], nonModelFacingLayers: ['grading'], itemCount: 3, warnings: [] },
+  ],
+}
+
 const ITEMS: ListItemsResult = {
   kind: 'items',
   dataset: DATASETS.datasets[0]!,
   datasetLayers: { visible: ['guide.md'] },
+  passthrough: ['manifest.yml'],
   items: [{
     id: 'i1',
     metadata: { difficulty: 'hard' },
@@ -70,7 +89,9 @@ function makeHarness(binding: DatasetBinding | null = BINDING): Harness {
       { ok: true, value: dataset === undefined ? DATASETS : ITEMS }
     )),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
+    readPassthroughFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Passthrough content\n', commit: 'a4f9c2e0000' } })),
     pickDirectory: vi.fn(async () => '/picked-repo'),
+    previewRepo: vi.fn(async (): Promise<Result<PreviewRepoResult>> => ({ ok: true, value: PREVIEW })),
   }
 }
 
@@ -94,9 +115,11 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
     unbindSession: h.unbindSession,
     listDatasets: h.listDatasets,
     readFile: h.readFile,
+    readPassthroughFile: h.readPassthroughFile,
     isLoopback: canPick,
     useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: canPick })) as never,
     pickDirectory: h.pickDirectory,
+    previewRepo: h.previewRepo,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
@@ -107,6 +130,29 @@ function renderView(h: Harness, opts: { canPick?: boolean } = {}) {
 afterEach(() => { cleanup() })
 
 describe('DatasetsView', () => {
+  it('sensitive layers stay visible to the human with a quiet marker (operator view)', async () => {
+    const h = makeHarness()
+    h.listDatasets.mockImplementation(async (_sid: string, dataset?: string) => ({
+      ok: true as const,
+      value: dataset === undefined ? SENSITIVE_DATASETS : {
+        kind: 'items' as const,
+        dataset: SENSITIVE_DATASETS.datasets[0]!,
+        datasetLayers: {},
+        passthrough: [],
+        items: [{ id: 'i1', layers: { visible: ['task.md'], grading: ['rubric.yml'] } }],
+      },
+    }))
+    renderView(h)
+    fireEvent.click(await screen.findByText('alpha'))
+    fireEvent.click(await screen.findByText('i1'))
+    // The sensitive layer lists with its marker — the operator view never hides it.
+    const grading = await screen.findByText(/grading/)
+    expect(grading.parentElement?.textContent).toContain('tree.sensitive')
+    expect(grading.parentElement?.textContent).not.toContain('tree.agentReadable')
+    // …while the whitelisted visible layer carries the readable marker.
+    expect(screen.getByText(/tree\.agentReadable/)).toBeTruthy()
+  })
+
   it('unbound: shows the empty binding state and never lists', async () => {
     const h = makeHarness(null)
     renderView(h)
@@ -134,6 +180,13 @@ describe('DatasetsView', () => {
     expect(screen.queryByText('difficulty: hard')).toBeNull()
 
     fireEvent.click(screen.getByText('i1'))
+    // item.json is flagged as unprotected at the passthrough zone's footing —
+    // and it reads like any other file (marker = warning, not a gate).
+    fireEvent.click(await screen.findByText(/item\.json · tree\.unprotected/))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'items/i1/item.json' })
+    // The agent-readable marker follows the binding's layers whitelist (the
+    // shared layer and the item's own visible layer both carry it).
+    expect((await screen.findAllByText(/tree\.agentReadable/)).length).toBeGreaterThan(0)
     // The layer header is one quiet phrase: name, middot, count — never a right-floated count
     // (it appears once per layer group: the shared group and the item's own).
     expect((await screen.findAllByText(/· tree\.fileCount/)).length).toBeGreaterThan(0)
@@ -156,6 +209,17 @@ describe('DatasetsView', () => {
     expect(h.readFile).toHaveBeenCalledWith('s1', {
       dataset: 'alpha', layer: 'visible', path: 'guide.md',
     })
+    // The passthrough zone's files list AND read (the operator view blocks no
+    // human) — the unprotected marker is a warning, not a gate.
+    fireEvent.click(screen.getByText(/tree\.passthrough/))
+    fireEvent.click(await screen.findByText('manifest.yml'))
+    expect(h.readPassthroughFile).toHaveBeenCalledWith('s1', { dataset: 'alpha', path: 'manifest.yml' })
+    // The preview renders through the same pipeline as layer files (the header
+    // names the passthrough selection; content highlighting splits tokens, so
+    // assert on the aggregated text instead of one node).
+    await waitFor(() => {
+      expect(document.querySelector('[class*="preview"]')?.textContent).toContain('Passthrough content')
+    })
   })
 
   it('a failed binding fetch settles the bar instead of loading forever', async () => {
@@ -166,21 +230,65 @@ describe('DatasetsView', () => {
     expect(await screen.findByText(/list\.error/)).toBeTruthy()
   })
 
-  it('bind form submits the parsed binding and refreshes', async () => {
+  it('bind form: the live preview drives the chips; confirm submits the picked subsets', async () => {
     const h = makeHarness(null)
     renderView(h)
     fireEvent.click(await screen.findByText('binding.bind'))
-    const repo = screen.getByLabelText('binding.form.repo')
-    const layers = screen.getByLabelText('binding.form.layers')
-    fireEvent.change(repo, { target: { value: '/new-repo' } })
-    fireEvent.change(layers, { target: { value: 'visible, shared' } })
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo/' } })
+    // Live validation verdict (debounced) — and nothing submits on typing.
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    expect(h.bindSession).not.toHaveBeenCalled()
+    // The fold feeds its chips from the preview: nobody types ids or layer names.
+    fireEvent.click(screen.getByText('binding.form.restrict'))
+    expect(await screen.findByText('beta · 3')).toBeTruthy()
+    expect(screen.getByText('grading · binding.form.sensitive')).toBeTruthy()
+    // The task-facing shortcut keeps only the model-facing layers.
+    fireEvent.click(screen.getByText('binding.form.taskFacingOnly'))
     fireEvent.click(screen.getByText('binding.form.submit'))
-
     await waitFor(() => {
-      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/new-repo', layers: ['visible', 'shared'] })
+      // The stored repoPath is the preview's canonical toplevel (trailing slash gone).
+      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/repo', layers: ['visible'] })
     })
+    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
+  })
+
+  it('bind form: the fold opens on the modelFacing floor; unchecking everything disables confirm', async () => {
+    const h = makeHarness(null)
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: '/repo' } })
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    fireEvent.click(screen.getByText('binding.form.restrict'))
+    // The floor: only modelFacing:true layers start checked ('grading' is sensitive).
+    expect((await screen.findByText('visible')).className).toContain('_active_')
+    expect(screen.getByText('grading · binding.form.sensitive').className).not.toContain('_active_')
+    // Unchecking the last picked layer forbids the submit ([] would mean "nothing").
+    fireEvent.click(screen.getByText('visible'))
+    expect(await screen.findByText('binding.form.keepOne')).toBeTruthy()
+    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('bind form: a bad path shows the preview error inline and blocks confirm', async () => {
+    const h = makeHarness(null)
+    h.previewRepo.mockResolvedValue({ ok: false, error: { code: 'NOT_A_REPO', message: 'not-a-repo is not a git repository' } })
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.bind'))
+    fireEvent.change(screen.getByLabelText('binding.form.repo'), { target: { value: 'not-a-repo' } })
+    expect(await screen.findByText('not-a-repo is not a git repository')).toBeTruthy()
+    expect((screen.getByText('binding.form.submit') as HTMLButtonElement).disabled).toBe(true)
+    expect(h.bindSession).not.toHaveBeenCalled()
+  })
+
+  it('edit mode backfills the current whitelists into the fold', async () => {
+    const h = makeHarness({ repoPath: '/repo', layers: ['visible'] })
+    renderView(h)
+    fireEvent.click(await screen.findByText('binding.edit'))
+    // The fold opens on its own; after the preview the current whitelist holds.
+    expect(await screen.findByText('binding.form.titleEdit')).toBeTruthy()
+    expect(await screen.findByText(/binding\.form\.preview\.ok/)).toBeTruthy()
+    fireEvent.click(screen.getByText('binding.form.submit'))
     await waitFor(() => {
-      expect(h.instance.getSnapshot().refreshRev).toBe(1)
+      expect(h.bindSession).toHaveBeenCalledWith('s1', { repoPath: '/repo', layers: ['visible'] })
     })
   })
 
@@ -204,6 +312,7 @@ describe('DatasetsView', () => {
         kind: 'items' as const,
         dataset: DATASETS.datasets[0]!,
         datasetLayers: {},
+        passthrough: [],
         items: [{ id: 'i1', layers: { visible: ['meta.json'] } }],
       },
     }))

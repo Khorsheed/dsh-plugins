@@ -29,6 +29,7 @@ import { en, NS, zh, type TaskPilotLocaleKey } from './locales.ts'
 import { createDrawerStore, type DrawerActions } from './drawer-store.ts'
 import { TaskPilotDock, type TaskPilotDockInjected } from './TaskPilotDock.tsx'
 import { JobDrawer, type JobDrawerInjected, type HistoryPage } from './JobDrawer.tsx'
+import { pollActiveDelegations } from './active-delegations.ts'
 import { renderTaskPilotCommand } from '../types.ts'
 
 /** The dock/drawer copy owns its namespace, merged into the locale map. */
@@ -72,6 +73,10 @@ export function apply(ctx: Context): void {
       },
       openJob: (jobId) => { drawerActions?.openJob(sessionId, jobId) },
       openSession: (id) => { (ctx.sessions as ISessions).open(id) },
+      // Duck-typed read of the local-agent family gateway: resolves [] on an
+      // absent channel or call error, so the dock's second running source is
+      // a no-op when the family is not installed (independent, but compatible).
+      pollActiveDelegations: () => pollActiveDelegations(ctx),
     }),
   }, TaskPilotDock))
 

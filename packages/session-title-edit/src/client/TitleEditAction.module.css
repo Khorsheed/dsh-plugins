@@ -3,10 +3,11 @@
   align-items: center;
   justify-content: center;
   /* Sits right off the title text: the negative margin closes the official
-     titleCluster gap (10px), leaving a ~6px title-to-icon gutter. */
+     titleCluster gap (10px) and part of the actions-row gap, leaving a ~2px
+     title-to-icon gutter. */
   width: 22px;
   height: 22px;
-  margin-left: -8px;
+  margin-left: -12px;
   padding: 0;
   border: 0;
   border-radius: 6px;

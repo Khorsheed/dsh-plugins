@@ -53,9 +53,26 @@ idea → planned → in-progress → verified → done（移入 closed/）
 | `blocked` | 卡住，**必须写原因**（缺前置 / 等 seam / 等上游） | active/ |
 | `verified` | 验收通过（探针 / 实测全绿；补丁流环境可用） | active/ |
 | `done` | **以可插拔插件交付并验收**（零官方改动） | closed/ |
-| `closed` | 放弃 / 被取代 / 官方吸收（注明理由） | closed/ |
+| `closed` | 放弃 / 被取代 / 官方吸收（**理由分类必填**，见下） | closed/ |
 
 **状态变更 = 改文件头部 + 移动文件 + 更新 README 总表，同一 commit。**
+
+**`closed` 的理由必须是这三种之一**，写在状态行括号里——`closed/` 目录同时装着 `done`（做完了）与 `closed`（不做了），理由分类是把后者扫出来的唯一手段：
+
+```
+closed（放弃：<原因>）
+closed（被取代：<接替它的提案>）
+closed（官方吸收：<官方能力>）
+```
+
+于是「哪些是决定不做的」可机械查询：
+
+```sh
+grep -l '状态.*closed（' proposals/closed/*.md          # 全部不做的
+grep -l '状态.*closed（放弃' proposals/closed/*.md      # 只看放弃的
+```
+
+理由分类同样写进总表状态列（`closed（放弃）` 这样的短形），完整原因留在提案文件里。这与 Agent Note 的 `Status: rejected — <why>` 同源：裁决本身就是读者要来看的事实。
 
 **实现后及时关闭**：`verified` 后应在 7 天内转 `done` 并移入 `closed/`；拖着不关会被标 ⚠️ stale。`done` 是"关闭"不是"开始新工作"——能力交付即归档，后续增量走新提案或 note。
 
@@ -108,13 +125,22 @@ idea → planned → in-progress → verified → done（移入 closed/）
 |---|---|---|---|---|---|---|
 | plugin | [通用版本化数据集存储（datasets）](active/2026-08-19-datasets-store.md) | in-progress | 纯插件 | — | M1 已交付；独立可用，与 mission 可选兼容 | 2026-08-19 |
 | plugin | [通用任务管理（mission）](active/2026-08-19-mission-tasks.md) | in-progress | 纯插件 | bench 仓库模板（评测用法） | M1 已交付；独立可用，与 datasets 可选兼容 | 2026-08-19 |
+| plugin | [数据集作者协议与 skill](active/2026-08-23-dataset-authoring-protocol-skill.md) | planned | 纯插件 | — | 协议 + skill + 绑定确认流；skill 公开发行供其他 agent 复用 | 2026-08-24 |
 | plugin | [受控实验单元（lab）](active/2026-08-19-lab-experiment-units.md) | idea | 纯插件 | datasets（`worktree_path`）· mission（`is-releasable`） | 填补 mission/datasets 有意留白的资源生命周期；provider 第一版仅 docker | 2026-08-19 |
-| plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | planned | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | room note 的供给侧立项；M1–M4 代码已落地（未推送），待真实 profile 验收 | 2026-08-19 |
-| plugin | [local-agent 成员双向通道（可写 composer + promptMember + 成员互通知）](active/2026-08-19-local-agent-member-channel.md) | planned | 纯插件 | local-agent-delegation-api（底座 M1–M4） | room 二轮评审立项；替代不可行的 prepareContinuable 路线（§0 存档）；M3 = CLI→CLI 成员互通知（room 高频场景） | 2026-08-19 |
-| plugin | [local-agent provider 长驻驱动模式（live driver）](active/2026-08-20-local-agent-live-driver.md) | planned | 纯插件 | delegation-api M1–M4（对 facade 透明） | exec 驱动保留为 fallback；dsh → codex → kimi → claude 逐家落地；换回优雅中断/steer/审批口/低成本流式 | 2026-08-20 |
-| plugin | [local-agent 成员会话结构化状态（member dock + 任务清单翻译）](active/2026-08-22-local-agent-member-state.md) | planned | 纯插件 | member-channel（宿主）；与 live-driver 并行（顺序约定见其 §3） | member dock 统一投影行 + 任务翻译进共享折叠层；dsh → claude → kimi/codex（各带 spike） | 2026-08-22 |
+| plugin | [local-agent 公开委派 API（start / resume / cancel + 进度事件）](active/2026-08-18-local-agent-delegation-api.md) | verified | 纯插件 | 无（原 codex 持久化 note 第 1 条已吸收进 M4） | M1–M4 全部已交付（门面 / run-progress / 四 provider 实时镜像 / delegations.jsonl 持久化）；各有 implemented note | 2026-08-28 |
+| plugin | [local-agent 成员双向通道（可写 composer + promptMember + 成员互通知）](active/2026-08-19-local-agent-member-channel.md) | verified | 纯插件 | local-agent-delegation-api（底座 M1–M4） | M1 通道 / M2 composer / M3 成员互通知全部落地，kimi·claude-code·codex·dsh 四 provider 全通（后两者 2026-08-20 过真实 CLI 端到端探针）；唯一未完成的验收项「room 复验」移交 room-session-promotion | 2026-08-28 |
+| plugin | [local-agent provider 长驻驱动模式（live driver）](closed/2026-08-20-local-agent-live-driver.md) | done | 纯插件 | delegation-api M1–M4（对 facade 透明） | 四家全落地+验收齐全+真机矩阵+3080 canary PASS；exec 保留为 fallback | 2026-08-23 |
+| plugin | [local-agent 成员会话结构化状态（member dock + 任务清单翻译）](active/2026-08-22-local-agent-member-state.md) | in-progress | 纯插件 | member-channel（宿主）；与 live-driver 并行（顺序约定见其 §3） | M1 member dock / M2 dsh 透传与任务行 / M3 claude 适配器已落地；M3 真实 CLI 探针因 scoped home OAuth 过期未完成，拿到真实捕获后需重钉金样 | 2026-08-28 |
 | plugin | [移动端接入（mobile-access）](active/2026-08-19-mobile-access.md) | planned | 纯插件 | 无 | 随时随地访问完整 Web UI（保留全部插件能力）；M1 网关认证 / M2 PWA+推送 / M3 移动 UI 适配 / M4 bot 通道 | 2026-08-19 |
 | plugin | [撤回可选回滚文件状态（withdraw-file-rollback）](active/2026-08-21-withdraw-file-rollback.md) | planned | 需契约扩展（upstream 候选） | 官方 rc 能力评估（当前 rc.8 无） | 社区 v1 纯插件子集（fs 日志后端 + git 基线 + 覆盖判定护栏）可先行；bash 捕获需上游原语 | 2026-08-21 |
-| plugin | [文件视图 HTML 渲染能力增强（file-view-html-rendering）](active/2026-08-21-file-view-html-rendering.md) | planned | 纯插件 | 无（调研报告见 scratch 2026-08-21） | 文件视图/抽屉/产物行共用通道；Tier0/Tier1 分层 + 大文件分级；M0 3D 测试页已交付并过 playwright | 2026-08-21 |
+| plugin | [文件视图 HTML 渲染能力增强（file-view-html-rendering）](active/2026-08-21-file-view-html-rendering.md) | in-progress | 纯插件 | 无（调研报告见 scratch 2026-08-21） | M0 四个测试页过 playwright；3d-artifact skill 已随 dsh-file-preview 打包交付（提交 0bff9d2）；生成侧只做 skill，常驻规则与预检脚本后置 | 2026-08-28 |
 | plugin | [包管理：分类、整合包形态与发布流程（package-management）](active/2026-08-21-package-management.md) | planned | 形态 A/B 纯插件 + 形态 C 需契约扩展（upstream 候选） | 包盘点（进行中） | 仅 ankh-guard 已发布（0.1.0-rc.8.9）；dsh-eval 首发整合包（形态 B 先行）；dsh-novel 等小说领域插件；薄元包需上游 seam | 2026-08-21 |
+| plugin | [worktree 状态可视化与治理（worktree-governance）](active/2026-08-23-worktree-governance.md) | in-progress | 纯插件 | 无（datasets 的 git.ts 作复用模式参考） | v1 只做 git 状态实况：会话 badge（右上 utilities 空槽，绿/黄）+ 默认折叠抽屉（文件树 + DiffBlock + IDE 风提交记录）；治理层（全局板/违规/review/门禁）整体推迟；M1/M2 已实现待验 | 2026-08-24 |
 | seam | [薄元包一键装全家（upstream-meta-pack-reconcile）](active/2026-08-21-upstream-meta-pack-reconcile.md) | planned | 需契约扩展（upstream 候选） | package-management（形态 C 依赖） | reconcilePlugins 只扫直接依赖（实测）；设计 1 展开式 / 设计 2 闭包+排除表；被拒则登记 seam registry | 2026-08-21 |
+| plugin | [能力目录：skill+tool 全量注册渠道（capability-catalog）](active/2026-08-26-capability-catalog.md) | in-progress | 纯插件 | 无 | skill 渠道官方自带（snapshot/get + standingKeyFor 无 agent seam）；UI 独立 settings.section「工具与技能」：三列预览 + 详情弹窗（统一源码浏览器：文件树/内容 + 虚拟单节点 + 凭据配置）+ 顶部新增；新增 skill = 上传 zip(零依赖)/粘贴 SKILL.md/命令 git-clone/本机目录多选（含 env 解析）；工具归因 = mcp__ 前缀 + 白名单 + 时序差分；npm 分发走方案 C 独立提案 | 2026-08-28 |
+| plugin | [多 agent 房间以「会话内邀请 agent」为入口，而非独立新建（room-session-promotion）](active/2026-08-27-room-session-promotion.md) | planned | 纯插件 | local-agent（家族引擎，探针）· room note（设计设想） | room 能力账本立项：任意会话邀请 agent 即提升为 room；守 local-agent 引擎 + room 表面两层，**不熔合**；会话对话/成员 tab/互召唤/多成员胶囊保留 | 2026-08-27 |
+| plugin | [常态工具结果清理（context-clearing）](active/2026-08-19-context-clearing.md) | idea | 纯插件 | 无（配套分析器 scripts/analyze-clearing-fit.ts 已落地） | 上下文远低于压缩线时把 keep 窗口外的旧工具结果替换为占位符；与官方 compaction / tool-result-pruner 不同生态位，不替代 | 2026-08-19 |
+| plugin | [插件开关管理器（plugin-manager）](closed/2026-08-22-plugin-manager.md) | closed（放弃） | 纯插件 | 无（loader 对 profile 用户 patch 层的 HMR） | 唯一消费方 mode-switcher 已转向 agent preset；官方 0.1.2 的 Plugin list（只读清单）与 Plugin configuration（配置编辑）已覆盖查看需求，剩余的 loader 级开关不足以单独立项。方案与 watchUserPatches 热生效实测留档，需要时可重开 | 2026-08-29 |
+| plugin | [本地文件浏览器（local-files-browser）](closed/2026-08-26-local-files-browser.md) | done | 纯插件 | 无（从 worktrees 拆出） | 已作为 `@khorsheed/dsh-local-files` 独立交付（提交 3df3044）：工作区 tab、懒加载文件树、结构化预览、git 无关、按会话记忆根目录 | 2026-08-28 |
+| plugin | [dsh 接续通道迁官方 SDK client（local-agent-dsh-sdk-resume）](active/2026-08-27-local-agent-dsh-sdk-resume.md) | planned | 纯插件（resume）· live 全退役需契约扩展（upstream 候选，S8） | local-agent-delegation-api（家族门面/锁/持久化，不变） | 只迁 one-shot/resume，live 保留家族自有 wire——0.1.2-alpha.1 实测 SDK 协议零新增、仍无 mid-turn cancel；同时是远程执行（SSH stdio）的前置 | 2026-08-28 |
+| plugin | [工作模式切换（mode-switcher）](active/2026-08-26-mode-switcher.md) | idea | 纯插件 | 官方 agent-presets（底座）· capability-catalog（模式内容展示面）· ui-shortcuts（可选快捷键） | 模式 = 官方 agent preset（会话级组合：工具/prompt/skill/persona），新建会话时选；不重启、多模式可同时在场。**已重写**：放弃原草稿的 profile patch + HMR 行开关路线（profile 级，做不到会话并存），对 plugin-manager 的依赖随之消失 | 2026-08-29 |

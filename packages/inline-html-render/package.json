@@ -1,0 +1,86 @@
+{
+  "name": "@khorsheed/dsh-inline-html-render",
+  "description": "Render agent-authored ```dsh-card HTML as sandboxed interactive iframes inline in the conversation",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "html",
+    "render",
+    "card",
+    "sandbox"
+  ],
+  "version": "0.1.13",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/inline-html-render"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compat": {
+      "minHost": "0.1.0-rc.6",
+      "verifiedHost": "0.1.1-rc.2"
+    }
+  },
+  "scripts": {
+    "bundle": "tsc -p tsconfig.json && tsdown",
+    "watch": "tsdown --watch",
+    "build": "tsc -p tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.1",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "skills/**/*.md",
+    "LICENSE"
+  ]
+}

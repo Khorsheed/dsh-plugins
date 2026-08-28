@@ -37,9 +37,15 @@ function shortHash(text: string, length: number): string {
  * @param layers - the layer set (sorted internally).
  * @returns the worktree directory (whether or not it exists yet).
  */
-export function worktreeDirFor(root: string, repoReal: string, commit: string, layers: readonly string[]): string {
+export function worktreeDirFor(
+  root: string,
+  repoReal: string,
+  commit: string,
+  layers: readonly string[],
+  registerPatterns: readonly string[] = [],
+): string {
   const repoHash = shortHash(repoReal, 16)
-  const layersHash = shortHash([...layers].sort().join('\n'), 12)
+  const layersHash = shortHash([...layers].sort().join('\n') + '\0' + [...registerPatterns].sort().join('\n'), 12)
   return join(root, repoHash, `${commit}-${layersHash}`)
 }
 
@@ -129,6 +135,8 @@ export async function ensureWorktree(
   datasetId: string,
   layers: readonly string[],
   root: string,
+  /** Register-mapped file patterns (repo-relative, non-cone gitignore syntax) of the allowed layers. */
+  registerPatterns: readonly string[] = [],
 ): Promise<ManagedWorktree> {
   // Canonicalize BOTH sides of the cache key: a symlinked path (macOS
   // /var → /private/var) must not fork the cache, and git itself registers
@@ -138,7 +146,8 @@ export async function ensureWorktree(
   const rootReal = realpathSync(root)
   const sha = await resolveCommit(repo, commit)
   const sortedLayers = [...new Set(layers)].sort()
-  const dir = worktreeDirFor(rootReal, repoReal, sha, sortedLayers)
+  const sortedRegister = [...new Set(registerPatterns)].sort()
+  const dir = worktreeDirFor(rootReal, repoReal, sha, sortedLayers, sortedRegister)
   return await withCreationLock(dir, async () => {
     if (existsSync(join(dir, '.git'))) {
       return { path: dir, commit: sha, layers: sortedLayers, reused: true }
@@ -149,7 +158,8 @@ export async function ensureWorktree(
       await git(repo, ['worktree', 'add', '--detach', dir, sha])
       // Sparse-checkout AFTER the add: `set` prunes the working tree down to
       // the allowed layer directories, physically removing everything else.
-      await git(dir, ['sparse-checkout', 'set', '--no-cone', ...layerSparsePatterns(datasetId, sortedLayers)])
+      await git(dir, ['sparse-checkout', 'set', '--no-cone',
+        ...layerSparsePatterns(datasetId, sortedLayers), ...sortedRegister])
       await git(repo, ['worktree', 'lock', dir])
     } catch (error) {
       await git(repo, ['worktree', 'remove', '--force', dir]).catch(() => undefined)

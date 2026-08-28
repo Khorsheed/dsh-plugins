@@ -59,18 +59,20 @@ describe('claude-cli-provider member bridge injection', () => {
     } as unknown as SubagentStartRequest
   }
 
-  function mount(registry: Record<string, unknown>): { ctx: Context; spawned: string[][] } {
+  function mount(registry: Record<string, unknown>): { ctx: Context; spawned: string[][]; envs: Record<string, unknown>[] } {
     const ctx = new Context()
     ctx.provide('localAgent', registry as never)
     const spawned: string[][] = []
+    const envs: Record<string, unknown>[] = []
     ctx.provide('subprocess', {
-      spawn: (spec: { argv: string[] }) => {
+      spawn: (spec: { argv: string[]; env: Record<string, unknown> }) => {
         spawned.push(spec.argv)
+        envs.push(spec.env)
         return stubChild(4242)
       },
     } as never)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
-    return { ctx, spawned }
+    return { ctx, spawned, envs }
   }
 
   /** Assert the injected tail of a spawned argv. */
@@ -88,6 +90,9 @@ describe('claude-cli-provider member bridge injection', () => {
     const toolsIndex = argv.indexOf('--allowedTools')
     expect(toolsIndex).toBeGreaterThan(-1)
     expect(argv[toolsIndex + 1]).toBe('mcp__dsh-member-token-xy__member_message')
+    // `--allowedTools` is variadic: a `--` separator must terminate it, or it
+    // greedily swallows the positional task and the CLI exits 1.
+    expect(argv[toolsIndex + 2]).toBe('--')
   }
 
   it('appends --mcp-config and --allowedTools to the fresh argv, binds the pid, cleans up at settle', async () => {
@@ -158,5 +163,15 @@ describe('claude-cli-provider member bridge injection', () => {
     expect(spawned[0]).toEqual([
       'claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', 'do the task',
     ])
+  })
+  it('tombstones USER in the child env (2.1.236 auth breaks with USER present)', async () => {
+    const registry = memberRegistry()
+    const { ctx, envs } = mount(registry)
+    const provider = new ClaudeCliProvider(ctx, 'skip')
+    await provider.start(request())
+    expect(envs).toHaveLength(1)
+    expect('USER' in envs[0]!).toBe(true)
+    expect(envs[0]!['USER']).toBeUndefined()
+    expect(envs[0]!['CLAUDE_CONFIG_DIR']).toBeTruthy()
   })
 })

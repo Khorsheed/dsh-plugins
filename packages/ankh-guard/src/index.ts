@@ -23,7 +23,13 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the agent package's event merge ('agent/pre-step').
 import type {} from '@deepseek-ai/dsh-agent'
 import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
-import { resolveSessionPreset, type PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
+// Namespace handle for runtime feature detection: the 0.1.2 host replaced
+// the `resolveSessionPreset` free function (and the `PresetBearingSession`
+// type) with the `agentPresetProjectionDefinition` unit, and a STATIC named
+// import of a removed export is a SyntaxError at module load — exactly the
+// failure this dual-host probing exists to survive. The derivation below
+// reads both surfaces through one structural cast.
+import * as agentPresetsHost from '@deepseek-ai/dsh-agent-presets'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -41,6 +47,52 @@ import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
   type GuardState, type VerifyResult,
 } from './state.ts'
+
+/**
+ * The slice of a persisted session the preset derivation reads. Structural
+ * rather than the rc host's `PresetBearingSession`: the 0.1.2 host deleted
+ * that type together with `resolveSessionPreset`.
+ */
+interface PersistedPresetSource {
+  header: { agentPreset?: string | null }
+  events: readonly { type: string; data?: unknown }[]
+}
+
+/**
+ * The two preset-derivation surfaces a host may carry: the rc line exports
+ * `resolveSessionPreset`; the 0.1.2 line replaced it (and the
+ * `PresetBearingSession` type) with the `agentPresetProjectionDefinition`
+ * unit. Probed per call, never from a version string.
+ */
+export interface PresetDerivationSurface {
+  agentPresetProjectionDefinition?: {
+    init(header: { agentPreset?: string | null }): string | null
+    apply(state: string | null, event: { type: string; data?: unknown }): string | null
+  }
+  resolveSessionPreset?: (session: PersistedPresetSource) => string | undefined
+}
+
+/**
+ * Which preset a session actually runs, newest selection winning. The rc host
+ * exports `resolveSessionPreset` for exactly this fold; the 0.1.2 host
+ * replaced it with `agentPresetProjectionDefinition` (init from the header,
+ * fold `agent-preset/selected` events) — same semantics, so the derivation
+ * feature-detects either surface and never touches the version string. A host
+ * with neither yields undefined: the resume falls back to the deployment's
+ * default preset, the same outcome a preset-less session had before.
+ * @param host - the agent-presets module namespace, structurally probed.
+ * @param session - the session's header and event log.
+ * @returns the preset id, or `undefined` when the session names none.
+ */
+export function deriveSessionPreset(host: PresetDerivationSurface, session: PersistedPresetSource): string | undefined {
+  if (host.agentPresetProjectionDefinition !== undefined) {
+    const projection = host.agentPresetProjectionDefinition
+    let state = projection.init(session.header)
+    for (const event of session.events) state = projection.apply(state, event)
+    return state ?? undefined
+  }
+  return host.resolveSessionPreset?.(session)
+}
 
 /** Plugin configuration. */
 export interface SelfRestartGuardConfig {
@@ -173,7 +225,13 @@ export const inject = ['agents']
 
 /** The slice of the skill registry this plugin consumes (optional service). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+  }) => () => void
 }
 
 /**
@@ -208,7 +266,13 @@ function registerRestartSkill(ctx: Context, stateDir: string): void {
       writeSkillRegistration(stateDir, { registered: false, reason: 'shipped SKILL.md malformed', at: Date.now() })
       return
     }
-    ctx.effect(() => skills.register({ name, description, content }))
+    ctx.effect(() => skills.register({
+      name,
+      description,
+      content,
+      source: 'runtime',
+      provider: 'ankh-guard',
+    }))
     writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
   } catch (error) {
     ctx.logger.warn(`ankh-guard: shipped SKILL.md unreadable (${String(error)}) — the restart-protocol skill is not registered`)
@@ -387,11 +451,11 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
         | { resolve(presetId?: string): Promise<{ id: string }>; mount(agentCtx: Context, presetId?: string): Promise<unknown> }
         | undefined
       const persistence = ctx.get('sessionPersistence') as
-        | { inspect(sessionId: string): Promise<{ meta: PresetBearingSession['header']; events: PresetBearingSession['events'] }> }
+        | { inspect(sessionId: string): Promise<{ meta: PersistedPresetSource['header']; events: PersistedPresetSource['events'] }> }
         | undefined
       if (presets !== undefined && persistence !== undefined) {
         const inspected = await persistence.inspect(id)
-        const presetId = resolveSessionPreset({ header: inspected.meta, events: inspected.events })
+        const presetId = deriveSessionPreset(agentPresetsHost as unknown as PresetDerivationSurface, { header: inspected.meta, events: inspected.events })
         setup = async (agentCtx) => { await presets.mount(agentCtx, (await presets.resolve(presetId)).id) }
       }
       return { resumeSessionId: id, agentOptions, ...(setup === undefined ? {} : { setup }) } as ResumeAgentOptions

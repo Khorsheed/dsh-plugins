@@ -6,12 +6,41 @@ interface AgentMock {
   cancel: ReturnType<typeof vi.fn>
 }
 
-/** Build a minimal ctx around the registered interrupt handler. */
-function harness(agent?: AgentMock) {
-  const calls = { interrupt: [] as unknown[][], cancel: [] as string[] }
-  let handler: ((invocation: { rawInput: string; agent: { session: { id: string } } }) => unknown) | undefined
+/** The shape of the result the commands seam would return for a dispatch. */
+interface CommandResultLike {
+  kind: 'success' | 'error'
+  text?: string
+}
+
+/**
+ * Build a minimal ctx around the registered interrupt handler. `execute` is
+ * the commands-seam stub the no-live-agent path dispatches `/local-agent
+ * stop` through; returning undefined simulates an absent local-agent core.
+ */
+function harness(
+  agent?: AgentMock,
+  execute?: (line: string) => CommandResultLike | undefined,
+) {
+  const calls = {
+    interrupt: [] as unknown[][],
+    cancel: [] as string[],
+    execute: [] as string[],
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let handler: ((invocation: any) => unknown) | undefined
+  let definition: { name?: string; input?: { hint?: string } } = {}
   const ctx = {
-    commands: { register: (definition: { name: string; handler: typeof handler }) => { handler = definition.handler } },
+    commands: {
+      register: (def: { name: string; input?: { hint?: string }; handler: typeof handler }) => {
+        definition = def
+        handler = def.handler
+      },
+      execute: async (_agent: unknown, line: string) => {
+        calls.execute.push(line)
+        const result = execute?.(line)
+        return result === undefined ? undefined : { commandId: 'cmd-1', result }
+      },
+    },
     subagents: { interrupt: (...args: unknown[]) => { calls.interrupt.push(args) } },
     agents: { get: () => agent },
     get: () => undefined,
@@ -20,7 +49,15 @@ function harness(agent?: AgentMock) {
   apply(ctx as any)
   return {
     calls,
-    run: (rawInput: string, agentId = 'parent-1') => handler?.({ rawInput, agent: { session: { id: agentId } } }),
+    definition,
+    run: async (rawInput: string, agentId = 'parent-1') => {
+      const out = handler?.({
+        rawInput,
+        agent: { session: { id: agentId } },
+        signal: new AbortController().signal,
+      })
+      return out
+    },
   }
 }
 
@@ -29,40 +66,72 @@ function runningAgent(parent: string): AgentMock {
 }
 
 describe('taskpilot-interrupt host command', () => {
-  it('routes a direct child through subagents.interrupt with the dispatching session as parent', () => {
+  it('declares the input hint so composer intercepts typed args', async () => {
     const h = harness()
-    const result = h.run(' child-1')
+    expect(h.definition.name).toBe('taskpilot-interrupt')
+    expect(h.definition.input).toEqual({ hint: '<child-session-id> [parent-session-id]' })
+  })
+
+  it('routes a direct child through subagents.interrupt with the dispatching session as parent', async () => {
+    const h = harness(undefined, () => ({ kind: 'success', text: 'child session child-1 has no in-flight local-agent run to stop' }))
+    const result = await h.run(' child-1')
     expect(h.calls.interrupt).toEqual([['child-1', { kind: 'user', parentSessionId: 'parent-1' }]])
-    expect(result).toEqual({ kind: 'success', text: 'interrupt requested for subagent child-1' })
+    // No live agent: the stop is routed to the local-agent seam.
+    expect(h.calls.execute).toEqual(['/local-agent stop child-1'])
+    expect(result).toEqual({ kind: 'success', text: 'child session child-1 has no in-flight local-agent run to stop' })
   })
 
-  it('passes an explicit parent id for deep descendants', () => {
-    const h = harness()
-    h.run(' deep-child parent-2')
+  it('passes an explicit parent id for deep descendants', async () => {
+    const h = harness(undefined, () => ({ kind: 'success', text: 'no-op' }))
+    await h.run(' deep-child parent-2')
     expect(h.calls.interrupt).toEqual([['deep-child', { kind: 'user', parentSessionId: 'parent-2' }]])
+    expect(h.calls.execute).toEqual(['/local-agent stop deep-child'])
   })
 
-  it('cancels a one-shot child directly (no continuation activation, interrupt is a no-op)', () => {
+  it('cancels a one-shot child directly (no continuation activation, interrupt is a no-op)', async () => {
     const agent = runningAgent('parent-1')
     const h = harness(agent)
-    h.run(' one-shot-1')
+    await h.run(' one-shot-1')
     // subagents.interrupt was still attempted (silent no-op for one-shot).
     expect(h.calls.interrupt).toHaveLength(1)
-    // The live agent under the matching parent was cancelled.
+    // The live agent under the matching parent was cancelled; no seam dispatch.
     expect(agent.cancel).toHaveBeenCalledWith({ kind: 'user' })
+    expect(h.calls.execute).toEqual([])
   })
 
-  it('refuses to cancel an agent whose parent does not match', () => {
+  it('refuses to cancel an agent whose parent does not match', async () => {
     const agent = runningAgent('other-parent')
     const h = harness(agent)
-    h.run(' rogue')
+    await h.run(' rogue')
     expect(h.calls.interrupt).toHaveLength(1)
     expect(agent.cancel).not.toHaveBeenCalled()
+    // A live agent under another parent is not this session's child to stop.
+    expect(h.calls.execute).toEqual([])
   })
 
-  it('rejects empty input with usage', () => {
+  it('forwards the local-agent stop result for a one-shot row without a live agent', async () => {
+    const h = harness(undefined, line => line === '/local-agent stop one-shot-1'
+      ? { kind: 'success', text: 'stop requested for child session one-shot-1' }
+      : undefined)
+    const result = await h.run(' one-shot-1')
+    expect(h.calls.execute).toEqual(['/local-agent stop one-shot-1'])
+    expect(result).toEqual({ kind: 'success', text: 'stop requested for child session one-shot-1' })
+  })
+
+  it('degrades when the local-agent command does not resolve (core absent)', async () => {
+    const h = harness(undefined, () => undefined)
+    const result = await h.run(' orphan-1')
+    expect(h.calls.execute).toEqual(['/local-agent stop orphan-1'])
+    expect(result).toEqual({
+      kind: 'error',
+      text: 'cannot stop subagent orphan-1: no live agent to cancel and the local-agent integration is not mounted',
+    })
+  })
+
+  it('rejects empty input with usage', async () => {
     const h = harness()
-    expect(h.run('')).toMatchObject({ kind: 'error' })
-    expect(h.run('   ')).toMatchObject({ kind: 'error' })
+    expect(await h.run('')).toMatchObject({ kind: 'error' })
+    expect(await h.run('   ')).toMatchObject({ kind: 'error' })
+    expect(h.calls.execute).toEqual([])
   })
 })

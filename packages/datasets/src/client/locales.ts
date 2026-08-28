@@ -9,16 +9,25 @@ export type DatasetsKey =
   | 'binding.none'
   | 'binding.repo'
   | 'binding.allDatasets'
-  | 'binding.allLayers'
+  | 'binding.agentVisible'
+  | 'binding.agentVisibleFloor'
   | 'binding.bind'
   | 'binding.edit'
   | 'binding.unbind'
   | 'binding.form.title'
+  | 'binding.form.titleEdit'
   | 'binding.form.repo'
-  | 'binding.form.datasets'
-  | 'binding.form.layers'
   | 'binding.form.useWorkspace'
   | 'binding.form.browse'
+  | 'binding.form.restrict'
+  | 'binding.form.restrictDatasets'
+  | 'binding.form.restrictLayers'
+  | 'binding.form.sensitive'
+  | 'binding.form.taskFacingOnly'
+  | 'binding.form.preview.loading'
+  | 'binding.form.preview.ok'
+  | 'binding.form.preview.empty'
+  | 'binding.form.keepOne'
   | 'binding.form.submit'
   | 'binding.form.cancel'
   | 'list.loading'
@@ -31,6 +40,11 @@ export type DatasetsKey =
   | 'preview.error'
   | 'tree.fileCount'
   | 'tree.shared'
+  | 'tree.unprotected'
+  | 'tree.agentReadable'
+  | 'tree.passthrough'
+  | 'tree.passthroughShort'
+  | 'tree.sensitive'
   | 'tree.warnModelFacing'
   | 'tree.moreMeta'
   | 'json.copyValue'
@@ -57,16 +71,25 @@ export const zh: Record<DatasetsKey, string> = {
   'binding.none': '本会话未绑定数据集仓库',
   'binding.repo': '本会话绑定: {repo}',
   'binding.allDatasets': '全部数据集',
-  'binding.allLayers': '全部 layers',
+  'binding.agentVisible': 'agent 可见：{layers}',
+  'binding.agentVisibleFloor': 'agent 可见：可见层（敏感层默认拦截）',
   'binding.bind': '绑定',
   'binding.edit': '改白名单',
   'binding.unbind': '解绑',
   'binding.form.title': '绑定数据集仓库',
+  'binding.form.titleEdit': '修改绑定与白名单',
   'binding.form.repo': '仓库路径（git 仓库）',
-  'binding.form.datasets': '数据集白名单，逗号分隔（留空为全部）',
-  'binding.form.layers': 'layers 白名单，逗号分隔（留空为全部）',
   'binding.form.useWorkspace': '使用当前工作区',
   'binding.form.browse': '浏览…',
+  'binding.form.restrict': 'agent 可见范围',
+  'binding.form.restrictDatasets': 'agent 可见的数据集',
+  'binding.form.restrictLayers': 'agent 可见的层',
+  'binding.form.sensitive': '敏感',
+  'binding.form.taskFacingOnly': '仅题面',
+  'binding.form.preview.loading': '检查仓库…',
+  'binding.form.preview.ok': '✓ 有效仓库 · {count} 个数据集',
+  'binding.form.preview.empty': 'git 仓库有效，但没有数据集（datasets/ 为空）',
+  'binding.form.keepOne': '每组至少保留一项；要全部可见请折叠此区',
   'binding.form.submit': '确认',
   'binding.form.cancel': '取消',
   'list.loading': '加载中…',
@@ -78,7 +101,12 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
   'tree.fileCount': '{count} 个文件',
-  'tree.shared': '共享',
+  'tree.shared': '题集级共享',
+  'tree.unprotected': '不受白名单保护',
+  'tree.agentReadable': 'agent 可读',
+  'tree.passthrough': '透传 · {count} 个文件 · 不受白名单保护',
+  'tree.passthroughShort': '透传',
+  'tree.sensitive': '敏感',
   'tree.warnModelFacing': '层 {layer} 未显式声明 modelFacing，按默认 true 处理；混合敏感度数据集建议逐层表态',
   'tree.moreMeta': '+{count}',
   'json.copyValue': '复制值',
@@ -99,16 +127,25 @@ export const en: Record<DatasetsKey, string> = {
   'binding.none': 'No dataset repository bound to this session',
   'binding.repo': 'Bound: {repo}',
   'binding.allDatasets': 'all datasets',
-  'binding.allLayers': 'all layers',
+  'binding.agentVisible': 'agent-visible: {layers}',
+  'binding.agentVisibleFloor': 'agent-visible: model-facing layers (sensitive blocked by default)',
   'binding.bind': 'Bind',
   'binding.edit': 'Edit whitelist',
   'binding.unbind': 'Unbind',
   'binding.form.title': 'Bind a dataset repository',
+  'binding.form.titleEdit': 'Edit binding & whitelist',
   'binding.form.repo': 'Repository path (a git repository)',
-  'binding.form.datasets': 'Dataset whitelist, comma-separated (empty = all)',
-  'binding.form.layers': 'Layer whitelist, comma-separated (empty = all)',
   'binding.form.useWorkspace': 'Use current workspace',
   'binding.form.browse': 'Browse…',
+  'binding.form.restrict': 'Agent-visible scope',
+  'binding.form.restrictDatasets': 'Agent-visible datasets',
+  'binding.form.restrictLayers': 'Agent-visible layers',
+  'binding.form.sensitive': 'sensitive',
+  'binding.form.taskFacingOnly': 'Model-facing only',
+  'binding.form.preview.loading': 'Checking the repository…',
+  'binding.form.preview.ok': '✓ valid repository · {count} datasets',
+  'binding.form.preview.empty': 'Valid git repository, but no datasets (empty datasets/)',
+  'binding.form.keepOne': 'Keep at least one per group; collapse the section to keep everything visible',
   'binding.form.submit': 'Confirm',
   'binding.form.cancel': 'Cancel',
   'list.loading': 'Loading…',
@@ -120,7 +157,12 @@ export const en: Record<DatasetsKey, string> = {
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
   'tree.fileCount': '{count} files',
-  'tree.shared': 'Shared',
+  'tree.shared': 'Dataset-level shared',
+  'tree.unprotected': 'not whitelist-protected',
+  'tree.agentReadable': 'agent-readable',
+  'tree.passthrough': 'Passthrough · {count} files · not whitelist-protected',
+  'tree.passthroughShort': 'Passthrough',
+  'tree.sensitive': 'sensitive',
   'tree.warnModelFacing': 'Layer {layer} does not declare modelFacing and defaults to true; declare it explicitly in a mixed-sensitivity dataset',
   'tree.moreMeta': '+{count}',
   'json.copyValue': 'Copy value',

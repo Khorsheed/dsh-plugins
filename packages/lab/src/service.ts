@@ -10,8 +10,8 @@ import { join, relative } from 'node:path'
 import {
   DEFAULT_WORKSPACE,
   type AcquireSpec, type ArchiveOptions, type CheckpointOptions, type CollectOptions, type Lab,
-  type MissionFace, type PopulateOptions, type ReleaseOptions, type UnitInfo, type UnitProvider,
-  type UnitStatus, type VerifyOptions, type VerifyResult,
+  type MissionFace, type PopulateOptions, type PopulateResult, type ReleaseOptions, type UnitInfo,
+  type UnitProvider, type UnitStatus, type VerifyOptions, type VerifyResult,
 } from './types.ts'
 
 /** Service wiring. */
@@ -32,6 +32,9 @@ export interface LabServiceOptions {
 
 /** The fixed annotation namespace lab writes verify outcomes into (mission-side convention). */
 export const LAB_ANNOTATION_NS = 'lab'
+
+/** Displayed prefix length of the materialization hash in status rows. */
+const TASK_HASH_PREFIX = 8
 
 /** The `ctx.lab` service. Records, never judges; never fires work. */
 export class LabService implements Lab {
@@ -77,30 +80,33 @@ export class LabService implements Lab {
     return info
   }
 
-  async populate(unitId: string, options: PopulateOptions): Promise<void> {
+  async populate(unitId: string, options: PopulateOptions): Promise<PopulateResult> {
     const { unit, provider } = await this.locate(unitId)
-    await provider.populate(unit.resource, { source: options.source, target: options.target ?? unit.workspace })
+    // Hash the source BEFORE the copy: identical inputs must prove identical
+    // (fairness evidence), and a bad source fails fast here instead of at
+    // the provider. The manifest doubles as the baseline a later collect
+    // diffs against (what was given vs what was produced).
+    const files = hashTree(options.source).map((entry) => ({
+      path: entry.path,
+      sha: entry.sha256 ?? createHash('sha256').update(`symlink:${entry.symlink ?? ''}`).digest('hex'),
+    }))
+    const sha = createHash('sha256').update(files.map((file) => `${file.path}  ${file.sha}`).join('\n')).digest('hex')
+    const target = options.target ?? unit.workspace
+    await provider.populate(unit.resource, { source: options.source, target })
+    const result: PopulateResult = { sha, count: files.length, files }
+    if (options.manifestPath !== undefined) {
+      const manifest = { source: options.source, target, sha, count: files.length, files, populatedAt: this.now() }
+      writeFileSync(options.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+      await this.registerArtifact(unit, options.artifactPath ?? options.manifestPath, 'materialization')
+    }
+    return result
   }
 
   async collect(unitId: string, options: CollectOptions): Promise<void> {
     const { unit, provider } = await this.locate(unitId)
     mkdirSync(options.target, { recursive: true })
     await provider.collect(unit.resource, options)
-    if (unit.missionId === undefined) return
-    const mission = this.options.getMission()
-    if (mission === undefined) {
-      this.options.warn(`lab: collected ${unit.id} but the mission plugin is absent — no artifact was registered`)
-      return
-    }
-    try {
-      await mission.addArtifact(
-        unit.missionId,
-        { path: options.target, kind: options.kind ?? 'collection' },
-        runIdOption(unit),
-      )
-    } catch (error) {
-      this.options.warn(`lab: artifact registration for mission ${unit.missionId} failed: ${String(error)}`)
-    }
+    await this.registerArtifact(unit, options.artifactPath ?? options.target, options.kind ?? 'collection')
   }
 
   async release(unitId: string, options?: ReleaseOptions): Promise<void> {
@@ -177,16 +183,21 @@ export class LabService implements Lab {
       files: hashTree(workspaceOut),
     }
     writeFileSync(join(options.target, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+    await this.registerArtifact(unit, options.artifactPath ?? options.target, options.kind ?? 'archive')
+  }
+
+  /** Artifact registration (collect / populate-manifest / archive): warns and skips, never blocks. */
+  private async registerArtifact(unit: UnitInfo, path: string, kind: string): Promise<void> {
     if (unit.missionId === undefined) return
     const mission = this.options.getMission()
     if (mission === undefined) {
-      this.options.warn(`lab: archived ${unit.id} to ${options.target} but the mission plugin is absent — no artifact was registered`)
+      this.options.warn(`lab: unit ${unit.id} produced a ${kind} artifact but the mission plugin is absent — it was not registered`)
       return
     }
     try {
-      await mission.addArtifact(unit.missionId, { path: options.target, kind: options.kind ?? 'archive' }, runIdOption(unit))
+      await mission.addArtifact(unit.missionId, { path, kind }, runIdOption(unit))
     } catch (error) {
-      this.options.warn(`lab: archive registration for mission ${unit.missionId} failed: ${String(error)}`)
+      this.options.warn(`lab: artifact registration for mission ${unit.missionId} failed: ${String(error)}`)
     }
   }
 
@@ -221,11 +232,50 @@ export class LabService implements Lab {
 
   async status(unitId?: string): Promise<UnitStatus[]> {
     await this.reconcile()
-    const toStatus = (unit: UnitInfo): UnitStatus => ({ ...unit, running: this.runningUnits.has(unit.id) })
-    if (unitId === undefined) return [...this.units.values()].map(toStatus)
-    const unit = this.units.get(unitId)
-    if (unit === undefined) throw new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
-    return [toStatus(unit)]
+    const mission = this.options.getMission()
+    const rows: UnitStatus[] = []
+    for (const unit of this.units.values()) {
+      if (unitId !== undefined && unit.id !== unitId) continue
+      const row: UnitStatus = { ...unit, running: this.runningUnits.has(unit.id) }
+      if (row.running) {
+        const provider = this.options.providers[unit.provider]
+        if (provider !== undefined) {
+          const facts = await provider.activity(unit.resource, unit.workspace)
+          if (facts.mtime !== undefined) row.lastActivityAt = facts.mtime
+          if (facts.cpuUsageUsec !== undefined) row.cpuUsageUsec = facts.cpuUsageUsec
+        }
+      }
+      if (unit.missionId !== undefined && mission !== undefined) {
+        try {
+          const { mission: snapshot } = await mission.get(unit.missionId, unit.runId)
+          const attempt = snapshot.attempts.find((a) => a.attempt === snapshot.currentAttempt)
+          if (attempt !== undefined) {
+            row.missionState = attempt.state
+            row.missionLabels = snapshot.labels
+            // Newest materialization first: retry re-materializes, and a stale
+            // or ghost record (unreadable file) must skip with a warning, not
+            // blank the whole column.
+            for (const artifact of attempt.artifacts.filter((a) => a.kind === 'materialization').reverse()) {
+              try {
+                const parsed = JSON.parse(readFileSync(artifact.path, 'utf8')) as { sha?: string }
+                if (typeof parsed.sha === 'string') {
+                  row.taskHash = parsed.sha.slice(0, TASK_HASH_PREFIX)
+                  break
+                }
+                this.options.warn(`lab: materialization artifact ${artifact.path} has no sha — skipped`)
+              } catch (error) {
+                this.options.warn(`lab: materialization artifact ${artifact.path} unreadable — skipped: ${String(error)}`)
+              }
+            }
+          }
+        } catch (error) {
+          this.options.warn(`lab: status join for mission ${unit.missionId} failed: ${String(error)}`)
+        }
+      }
+      rows.push(row)
+    }
+    if (unitId !== undefined && rows.length === 0) throw new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
+    return rows
   }
 
   /** Registration writes warn-and-skip: they never block the resource verb. */

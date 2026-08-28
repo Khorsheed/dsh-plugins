@@ -4,9 +4,9 @@
 
 dsh web GUI 的历史消息导览:会话左缘的一条悬浮时间轴,每行一条用户消息。悬停显示预览,点击直接把会话滚动到对应消息。
 
-<img src="../../docs/screenshots/message-timeline1.png" width="480" alt="会话左缘的悬浮消息时间轴">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="480" alt="会话左缘的悬浮消息时间轴">
 
-<img src="../../docs/screenshots/message-timeline2.png" width="480" alt="时间轴日常收成一条细线不占视线,悬停才展开">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="480" alt="时间轴日常收成一条细线不占视线,悬停才展开">
 
 ## 特性
 
@@ -14,7 +14,7 @@ dsh web GUI 的历史消息导览:会话左缘的一条悬浮时间轴,每行一
 - **环境化静止态**——只显示压淡的刻度,悬停刻度条或聚焦列表才展开文字。
 - **阅读位置跟踪**——当前位置的刻度保持蓝色高亮,停在超长回复中时锚定在所回答的用户消息上。
 - **点击跳转**——点击行把会话滚动到对应消息;列表跟随阅读位置。
-- **长历史友好**——列表短时垂直居中,长时隐形滚动并在顶部翻页加载更早历史。
+- **长历史友好**——列表短时垂直居中;长时隐形滚动并在顶部翻页加载更早历史,最底部贴着聊天输入框;目标/任务等 dock 卡片不会把时间轴顶上去。
 
 ## 安装
 
@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -73,3 +73,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/message-timeline`)。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

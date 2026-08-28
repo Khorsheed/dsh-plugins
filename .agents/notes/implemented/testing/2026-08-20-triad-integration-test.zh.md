@@ -36,6 +36,8 @@ docker 是软依赖：`probeDocker()` 探测 daemon、以有界超时拉 `alpine
 
 **第二轮（失败路径，5 测试，`runTriadFailures` 驱动，lab ↔ mission 两腿）**：populate 打不存在的源目录——失败报错响亮，单元仍被跟踪（status 可见、容器存活，不静默泄漏），mission 停在 `working` 且 history 无幻影条目；该状态下 release 被 gate 拒绝。绑定到**未知 mission** 的单元——acquire 登记失败 warn，release 在查询异常上 fail closed，且 `force` 不构成绕过。attested 拆除路径——`attest teardown-approved` → 转 `failed`（可释放态）→ release 销毁容器。第二轮同样全绿（docker daemon 28.1.1）。
 
+**第三轮（2026-08-24，lab 的评估刚需四条落地）**：失败模板改为状态链 `working → archived-failed`（attested）`→ failed`（file-check 查 `archive/crash-dump.txt`），套件由此钉死失败路径的「无崩溃转储不得 releasable」——与成功路径同款 gate 形状，用状态链表达而非新增 guard 组合机制。主链 populate 带上物化清单腿（断言返回哈希、登记 kind `materialization` 产物；计数含 worktree 的 `.git` 指针文件）。16 断言全绿。
+
 ## Related
 
 - [datasets M1 Agent Note](../feature/2026-08-19-datasets-store-m1.md)、[mission M1 Agent Note](../feature/2026-08-19-mission-m1.md)、[lab M1 Agent Note](../feature/2026-08-20-lab-m1.md)、[lab M2 动词 Agent Note](../feature/2026-08-20-lab-m2-verbs.md)——本链路集成的各包交付。

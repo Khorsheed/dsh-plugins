@@ -1,0 +1,868 @@
+/* Capability-catalog settings section (工具与技能): heading + intro + tabs in
+   the official PluginsSettingsSection style (dark theme tokens). Re-implements
+   the chrome rather than importing the official one (bundle-purity gate). */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 760px;
+}
+
+/* Official section heading (PluginsSettingsSection.module.css). */
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Tab row: tablist grows, the add-button sits at the right, ghost style. */
+.tabRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.addBtn {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: auto;
+  margin-bottom: 4px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.addBtn::before {
+  content: '＋ ';
+}
+
+.addBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dsw-alias-label-primary);
+}
+
+.intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Official tabs (PluginsSettingsSection.module.css): bottom 2px accent bar. */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.tab {
+  position: relative;
+  border: 0;
+  padding: 7px 1px 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab:hover,
+.tab[data-active='true'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tab[data-active='true']::after,
+.tab:focus-visible::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--dsw-alias-label-primary);
+  content: '';
+}
+
+/* Muted count badge ("技能 5"). */
+.tabCnt {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dsw-alias-label-caption);
+  font-weight: 400;
+}
+
+.tab[data-active='true'] .tabCnt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Skills preview grid: three cards per row. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.pvCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 136px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: #2b2b2e;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.pvCard:hover {
+  background: #303034;
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-2px);
+}
+
+.pvCard:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.pvTitle {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pvDesc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 18px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pvMeta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pvProvider {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Small pill badges (uniform for source + provider so both read as labels). */
+.badge {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.badgeWarn {
+  background: rgba(245, 185, 87, 0.16);
+  color: #f5b957;
+}
+
+.badgeOk {
+  background: rgba(76, 195, 138, 0.16);
+  color: #4cc38a;
+}
+
+/* Collapsible tool card (unchanged chrome). */
+.card {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+}
+
+.cardHead:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.scroll {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+
+.open .scroll {
+  transform: rotate(180deg);
+}
+
+.preview {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  padding: 0 16px 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.open .preview {
+  display: none;
+}
+
+.body {
+  display: none;
+  padding: 0 16px 16px;
+}
+
+.open .body {
+  display: block;
+}
+
+.divider {
+  height: 1px;
+  background: var(--dsw-alias-border-l1);
+  margin: 10px 0 12px;
+}
+
+/* Meta as a key-value group: grid pairs, uniform gaps. */
+.meta {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 8px 24px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.5;
+  align-items: baseline;
+}
+
+.metaKey {
+  color: var(--dsw-alias-label-caption);
+}
+
+.metaVal {
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code, monospace);
+}
+
+/* Modal chrome (detail + add-skill share it). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal {
+  width: 100%;
+  max-width: 660px;
+  max-height: 86vh;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  background: #303034;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 32px 0;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.modalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-right: -6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--dsw-alias-label-tertiary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.modalClose:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modalBody {
+  padding: 16px 32px 28px;
+}
+
+.detailDesc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Credentials config block: boxed (a form-ish group). */
+.conf {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+/* Source section: flat — a section title + divider, not a nested bordered box. */
+.source {
+  margin-bottom: 16px;
+}
+
+.confTitle,
+.sourceTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Divider under the source title (replaces the old outer border). */
+.source[open] .sourceTitle {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 12px;
+}
+
+.confHint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  margin: 8px 0 12px;
+}
+
+.credRow {
+  margin-bottom: 14px;
+}
+
+.credLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  margin-bottom: 8px;
+}
+
+.credInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.credFail {
+  font-size: 12px;
+  color: #e5534b;
+  margin-top: 6px;
+}
+
+/* Code panel: fills its pane, no own border, distinct darker bg, thin scroll. */
+.codeBlk {
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 20px 24px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  overflow: auto;
+  font-family: var(--ds-font-family-code, monospace);
+  scrollbar-width: thin;
+}
+
+.codeBlk::-webkit-scrollbar,
+.tree::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.codeBlk::-webkit-scrollbar-thumb,
+.tree::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.codeBlk::-webkit-scrollbar-thumb:hover,
+.tree::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.codeBlk::-webkit-scrollbar-track,
+.tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Bundle file tree: fills its pane, thin scroll, no outer box. */
+.tree {
+  margin-top: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 6px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.treeRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.treeFile {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.treeSelected {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-primary);
+}
+
+.treeChevron {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.treeGlyph {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.treeName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Source browser split: tree + detail panes, fixed clamp height, equal panels. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  gap: 12px;
+  height: clamp(360px, 52vh, 620px);
+  margin-top: 4px;
+}
+
+.treePane {
+  min-width: 0;
+  height: 100%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.detailPane {
+  min-width: 0;
+  height: 100%;
+  border-radius: 12px;
+  background: #202023;
+  overflow: hidden;
+}
+
+.innerTabs {
+  margin-top: 4px;
+}
+
+/* Add-skill form controls. */
+/* Drag-drop dropzone for the upload tab. */
+.dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 132px;
+  padding: 24px;
+  margin-bottom: 4px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover,
+.dropzone.dragging {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dropTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dropHint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.fileInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fileName {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Command install tab. */
+.command {
+  margin-bottom: 4px;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  margin-bottom: 6px;
+}
+
+/* Directory skill picker. */
+.skillPick {
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pickRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pickRow:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.check {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.checkMark {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.check input:checked + .checkMark {
+  background: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.pickText {
+  min-width: 0;
+}
+
+.pickName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pickDesc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.switchRow,
+.rootRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.enableLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.addMsg {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.addMsgOk {
+  color: #4cc38a;
+  background: rgba(76, 195, 138, 0.12);
+}
+
+.addMsgErr {
+  color: #e5534b;
+  background: rgba(229, 83, 75, 0.12);
+}
+
+/* Buttons. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.actions .spacer {
+  flex: 1;
+}
+
+.btnGhost {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btnGhost:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.btnPrimary {
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btnPrimary:hover {
+  background: var(--dsw-alias-button-info-hover);
+}
+
+.btnPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Switch. */
+.switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--dsw-static-neutral-bluish-300);
+  transition: 0.15s;
+}
+
+.thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary-foreground);
+  transition: 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.switch input:checked + .track {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.switch input:checked + .track + .thumb {
+  left: 16px;
+}
+
+/* Empty / loading. */
+.empty {
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 12px 0;
+}

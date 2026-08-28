@@ -28,9 +28,9 @@ describe('3d-artifact skill registration', () => {
   it('registers the skill when the skills service is present', () => {
     const ctx = new Context()
     Object.assign(ctx, { fs: fsStub })
-    const registrations: Array<{ name: string; description: string; content: string }> = []
+    const registrations: Array<{ name: string; description: string; content: string; source?: string; provider?: string }> = []
     ctx.provide('skills', {
-      register: (skill: { name: string; description: string; content: string }) => {
+      register: (skill: { name: string; description: string; content: string; provider?: string }) => {
         registrations.push(skill)
         return () => {}
       },
@@ -45,6 +45,32 @@ describe('3d-artifact skill registration', () => {
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // Capability-catalog bundle visibility: the skill is content-only (only
+    // SKILL.md, no sibling scripts/assets), so the registration MUST NOT carry
+    // a `resourceBase` — the catalog renders a virtual single-SKILL.md node.
+    // `resourceBase` is added only when the bundle gains real resources.
+    expect(registrations[0]?.provider).toBe('file-preview')
+    expect((registrations[0] as Record<string, unknown>).resourceBase).toBeUndefined()
+    // The registry validates `source` at LOAD time — a registration without
+    // it lists fine in the catalog but explodes on invocation (the published
+    // ankh-guard 8.9 failure). Pin it here.
+    expect(registrations[0]?.source).toBe('runtime')
+  })
+
+  it('the registered skill survives the real registry round-trip (catalog list + body load)', async () => {
+    // The catalog lists registrations even when a required field is missing;
+    // the registry validates at LOAD time. Exercise the real registry so a
+    // payload contract drift cannot pass on a recording stub.
+    const ctx = new Context()
+    Object.assign(ctx, { fs: fsStub })
+    const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
+    const registry = new SkillRegistry(ctx as never)
+    new FilePreviewService(ctx)
+    const cwd = tmpDir('file-preview-skill-')
+    const names = (await registry.list({ cwd })).map((skill: { name: string }) => skill.name)
+    expect(names).toContain('3d-artifact')
+    const loaded = await registry.get('3d-artifact', { cwd })
+    expect(loaded?.content).toContain('GLB')
   })
 
   it('skips registration when the skills service is absent — with a boot-log warning', () => {

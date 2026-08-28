@@ -4,11 +4,11 @@
 
 在 dsh web GUI 里直接预览会话产出的文件——无需打开 IDE。"产物"tab 列出会话写入或编辑过的所有文件，选中即可在页面内查看当前内容与完整改动记录。
 
-<img src="../../docs/screenshots/file-preview1.png" width="480" alt="以文档形态预览 markdown 文件">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="以文档形态预览 markdown 文件">
 
-<img src="../../docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="每个产物的改动记录:逐轮 diff 可翻页回看">
 
-<img src="../../docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="「产物」tab:会话写过的全部文件一览">
 
 ## 特性
 
@@ -32,7 +32,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -65,3 +65,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/ui-file-preview`）。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

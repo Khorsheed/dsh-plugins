@@ -4,14 +4,14 @@ English | [中文](README.md)
 
 Two capsule entries above the composer card — "Background jobs" and "Subagents" — for viewing, stopping, interrupting, and opening a job detail drawer.
 
-<img src="../../docs/screenshots/taskpilot1.png" width="480" alt="the sub-agent pill rides above the composer — open it to inspect or interrupt runs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="480" alt="the sub-agent pill rides above the composer — open it to inspect or interrupt runs">
 
-<img src="../../docs/screenshots/taskpilot2.png" width="480" alt="background-job pills and the job detail drawer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="480" alt="background-job pills and the job detail drawer">
 
 ## Features
 
 - **Jobs capsule** — all background jobs of the current session, ticking once per second, a stop verb on running rows, click-through to the detail drawer; same source as the header list.
-- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows, click-through to the subagent conversation.
+- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows, click-through to the subagent conversation. One-shot external-CLI rows delegated to the local-agent family (which have no live agent) are recognized through the family's read-only delegation poll and carry the interrupt verb while their run is in flight.
 - **Detail drawer** — right-side overlay with command/kind/status/start-end/duration plus an execution trail folded from the session log, collapsed by default. While open on a wide viewport it **pushes the conversation and composer left** by the drawer width so nothing sits underneath it; on narrow viewports (where the remaining chat column would be too cramped) it overlays instead.
 - **Session-scoped visibility** — switching sessions switches data; each capsule renders only when its own data is non-empty.
 - **Zero intrusion** — product extension points only (slots, commands, mirrors, session log); no new RPC, no product files touched.
@@ -30,7 +30,7 @@ Restart the host afterwards; re-running add is safe (deduped by package name).
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21)
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21); re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green
 - source line (deepseek-harness master): ✅
 
 ## Known limitations
@@ -47,7 +47,7 @@ The capsules are pure presentation over the product's existing mirrors and proje
 
 - Jobs: `useSessions(jobsBySession[sessionId])`, same source as the header job list.
 - Subagents: the whole lineage folded from session summaries `byId` (`indexSubagentDescendants` count matches the header tree; four-bucket token sum, `settledMs + active` duration).
-- Stop/interrupt: verbs registered on the `commands` extension point (`/taskpilot-stop <jobId>`, `/taskpilot-interrupt <childId> [parentId]`), authorized through the dispatching session agent (deep subagents pass their direct parent); the UI calls them via `ctx.remote.commands.execute`.
+- Stop/interrupt: verbs registered on the `commands` extension point (`/taskpilot-stop <jobId>`, `/taskpilot-interrupt <childId> [parentId]`), authorized through the dispatching session agent (deep subagents pass their direct parent); the UI calls them via `ctx.remote.commands.execute`. For a one-shot row with NO live agent (most commonly a local-agent family member — its child session is a pure CLI transcript container with no dsh agent), `/taskpilot-interrupt` routes the stop through the commands seam to `/local-agent stop <childSessionId>`, cancelling the family's in-flight delegation for that child; when the local-agent core is absent (the command does not resolve) it degrades to an explicit "cannot stop" error rather than pretending success.
 - Trail: replays the session log through `sessions.history` RPC — never touches the consumptive `jobs.read` output cursor.
 
 No configuration. The capsules register at `conversation.input.dock` order 30 and the drawer at `shell.overlay` order 120, alongside todo/goal/queue. Custom profiles can compose the row by hand:
@@ -67,3 +67,7 @@ Build and test: `pnpm install && pnpm run build && pnpm run typecheck && pnpm te
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/taskpilot`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

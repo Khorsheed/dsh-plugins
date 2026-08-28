@@ -1,8 +1,11 @@
 /* The flat timeline: no frame, no visible scrollbar. The auto-margin spacers
-   split the free space, so a short list centers vertically while an
-   overflowing one starts at the top and scrolls invisibly. The panel itself
-   takes no pointer events: at rest only the narrow tick strip of each row is
-   sensitive, so crossing the list on the way to the sidebar never lights it. */
+   split the free space, so a short list centers vertically; an overflowing
+   one starts at the top and scrolls invisibly, its bottom-most row flush
+   with the chat input card (the panel box bottom is the input card's top, so
+   goal/todo dock cards above it never push the timeline up). The panel
+   itself takes no pointer events: at rest only the narrow tick strip of each
+   row is sensitive, so crossing the list on the way to the sidebar never
+   lights it. */
 .panel {
   position: fixed;
   display: flex;

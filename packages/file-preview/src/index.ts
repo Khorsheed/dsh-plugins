@@ -30,9 +30,20 @@ interface ImageRouteHost {
   register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
 }
 
-/** The slice of the skill registry this package consumes (optional service). */
+/** The slice of the skill registry this package consumes (optional service).
+ * `provider` labels the catalog card. Content-only skills (SKILL.md with no
+ * sibling scripts/assets) deliberately omit `resourceBase` so the catalog
+ * renders a virtual single-SKILL.md node; `resourceBase` is added only when
+ * the bundle actually gains resources beside SKILL.md (capability-catalog
+ * "Plugin skill registration protocol"). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+  }) => () => void
 }
 
 /**
@@ -59,7 +70,8 @@ function registerArtifactSkill(ctx: Context): void {
     return
   }
   try {
-    const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact', 'SKILL.md')
+    const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '3d-artifact')
+    const skillFile = join(skillDir, 'SKILL.md')
     const raw = readFileSync(skillFile, 'utf8')
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
     const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
@@ -69,7 +81,16 @@ function registerArtifactSkill(ctx: Context): void {
       ctx.logger.warn('file-preview: shipped SKILL.md is malformed — the 3d-artifact skill is not registered')
       return
     }
-    ctx.effect(() => skills.register({ name, description, content }))
+    ctx.effect(() => skills.register({
+      name,
+      description,
+      content,
+      source: 'runtime',
+      provider: 'file-preview',
+      // Content-only (only SKILL.md in the bundle): no `resourceBase`, so the
+      // catalog renders a virtual single-SKILL.md node. Add `resourceBase`
+      // only when the bundle later gains scripts/assets beside SKILL.md.
+    }))
   } catch (error) {
     ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
   }
@@ -147,8 +168,9 @@ function readErrorMessage(error: unknown): string {
 
 /**
  * The `filePreview` Remote service: session-scoped read-only file inspection
- * for web surfaces. `list` is a pure fold over the session log (no filesystem
- * access); `read` resolves the path against the session cwd and serves current
+ * for web surfaces. `list` is a fold over the session log, then filtered to the
+ * paths that still exist on disk (resolved against the session cwd and stat-ed
+ * per call); `read` resolves the path against the session cwd and serves current
  * text content through `ctx.fs` (or a browser URL for images), capped by
  * config. Image bytes ride a dedicated host route so the browser loads them
  * natively without bloating the RPC channel.
@@ -305,29 +327,62 @@ export class FilePreviewService extends TypertRemoteService {
     res.end(Buffer.from(bytes))
   }
 
+  /** Resolve the session's recorded display paths against its cwd and keep only
+   *  those that currently exist as a regular file. The products surfaces fold
+   *  the session log (which is history, not disk state): a path the log wrote
+   *  may have been cleaned up since (a temp script the turn deleted), and such
+   *  a path is not a product to list. Existence is checked fresh on every call
+   *  (never cached), so a deletion that lands after a fold is visible on the
+   *  next fetch. Unresolvable/unstat-able paths are treated as absent.
+   * @param agent - owning live agent; its session cwd anchors relative paths.
+   * @param paths - the display paths to probe.
+   * @returns the subset that resolves to an existing regular file.
+   */
+  private async retainExisting(agent: Agent, paths: readonly string[]): Promise<ReadonlySet<string>> {
+    if (paths.length === 0) return new Set()
+    const cwd = agent.session.header.cwd
+    const existing = new Set<string>()
+    for (const path of paths) {
+      if (existing.has(path)) continue
+      try {
+        const target = await this.fs.resolve(path, cwd === undefined ? {} : { cwd })
+        const info = await this.fs.stat(target)
+        if (info?.type === 'file') existing.add(path)
+      } catch {
+        // Unresolvable or stat failed: the path is not present to list.
+      }
+    }
+    return existing
+  }
+
   /**
    * List the files one session wrote or edited: the log fold plus any
    * bash-written files the collector verified (the S2 seam), merged so a
-   * captured path the fold already knows keeps its log-derived entry.
+   * captured path the fold already knows keeps its log-derived entry. Only
+   * paths that currently exist on disk are returned — a file the session
+   * wrote and later deleted is history, not a product.
    * @param agent - owning live agent; its session log is the data source.
-   * @returns first-seen files capped by `maxFiles`, with the log watermark.
+   * @returns existing first-seen files capped by `maxFiles`, with the log watermark.
    */
   @Remote('list')
-  list(agent: Agent): FilePreviewList {
+  async list(agent: Agent): Promise<FilePreviewList> {
     const folded = foldFilePreview(agent.session.events, this.resolved.maxFiles)
     const captured = this.collector?.captured(agent.session.id)
-    if (captured === undefined || captured.size === 0) return folded
-    const seen = new Set(folded.entries.map(entry => entry.path))
-    const extra: FilePreviewEntry[] = []
-    for (const [path, write] of captured) {
-      if (seen.has(path) || folded.entries.length + extra.length >= this.resolved.maxFiles) continue
-      extra.push({ path, op: 'write', seq: write.seq, turn: write.turn, step: write.step, diffs: [] })
+    let entries: readonly FilePreviewEntry[] = folded.entries
+    if (captured !== undefined && captured.size > 0) {
+      const seen = new Set(entries.map(entry => entry.path))
+      const extra: FilePreviewEntry[] = []
+      for (const [path, write] of captured) {
+        if (seen.has(path) || entries.length + extra.length >= this.resolved.maxFiles) continue
+        extra.push({ path, op: 'write', seq: write.seq, turn: write.turn, step: write.step, diffs: [] })
+      }
+      entries = [...entries, ...extra]
     }
-    if (extra.length === 0) return folded
+    const existing = await this.retainExisting(agent, entries.map(entry => entry.path))
     return {
-      entries: [...folded.entries, ...extra],
+      entries: entries.filter(entry => existing.has(entry.path)),
       asOfSeq: folded.asOfSeq,
-      truncated: folded.truncated || folded.entries.length + extra.length >= this.resolved.maxFiles,
+      truncated: folded.truncated || entries.length >= this.resolved.maxFiles,
     }
   }
 
@@ -339,12 +394,15 @@ export class FilePreviewService extends TypertRemoteService {
    * result diff meta) and merging the collector's bash-written captures by
    * their own turn. The fold is cached per session and invalidated by the log
    * watermark, so repeated card fetches do not refold. A path touched in two
-   * turns appears in BOTH turn groups — per-turn attribution is exact.
+   * turns appears in BOTH turn groups — per-turn attribution is exact. Only
+   * paths that currently exist on disk are returned (a deleted temp script is
+   * history, not a product); existence is probed fresh on every call, so the
+   * cached fold is filtered per request rather than cached.
    * @param agent - owning live agent; its session log is the data source.
-   * @returns per-turn file groups plus the scanned watermark.
+   * @returns existing per-turn file groups plus the scanned watermark.
    */
   @Remote('turnFiles')
-  turnFiles(agent: Agent): FilePreviewTurnMap {
+  async turnFiles(agent: Agent): Promise<FilePreviewTurnMap> {
     const session = agent.session
     const events = session.events
     const asOfSeq = events.length === 0 ? -1 : events[events.length - 1]!.seq
@@ -376,7 +434,15 @@ export class FilePreviewService extends TypertRemoteService {
       if (files.length === 0) continue
       turns.push({ turn, files: files.sort((a, b) => a.seq - b.seq) })
     }
-    return { turns, asOfSeq }
+    // Filter the assembled groups to paths that still exist on disk (fresh per
+    // call — the fold cache is by log watermark, existence moves independently).
+    const existing = await this.retainExisting(agent, turns.flatMap(group => group.files.map(file => file.path)))
+    return {
+      turns: turns
+        .map(group => ({ turn: group.turn, files: group.files.filter(file => existing.has(file.path)) }))
+        .filter(group => group.files.length > 0),
+      asOfSeq,
+    }
   }
 
   /**

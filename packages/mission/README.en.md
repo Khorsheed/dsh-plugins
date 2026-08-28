@@ -94,7 +94,7 @@ dsh-mission annotate MISSION_ID --ns NS --payload JSON [--run ID]
 dsh-mission attest MISSION_ID --key K [--note N] [--run ID]
 dsh-mission retry MISSION_ID [--run ID]
 dsh-mission set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
-dsh-mission add-artifact MISSION_ID --path P --kind K [--run ID]
+dsh-mission add-artifact MISSION_ID --path P --kind K [--run ID]   # P must exist under the attempt's run-data dir
 dsh-mission add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
 dsh-mission is-releasable MISSION_ID [--run ID]   # exit 0/1, for teardown scripts
 dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]

@@ -23,19 +23,14 @@
 import { useEffect, useState } from 'react'
 import {
   Button, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconFolderClose16, IconFolderOpen16, Input, Pill,
+  IconFolderClose16, IconFolderOpen16, Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DatasetBinding, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
+import { BindForm } from './BindForm.tsx'
+import type { DatasetBinding, DatasetSummary, ItemRecord, JsonObject, ListItemsResult } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetPreview } from './preview.tsx'
 import type { DatasetSelection } from './store.ts'
 import css from './DatasetsView.module.css'
-
-/** Parse a comma-separated whitelist field; blank means "everything" (absent). */
-function parseList(raw: string): string[] | undefined {
-  const list = raw.split(',').map(entry => entry.trim()).filter(entry => entry !== '')
-  return list.length === 0 ? undefined : list
-}
 
 /** At most this many metadata chips show in the preview header; the rest collapse into +N. */
 const MAX_META_PILLS = 3
@@ -82,89 +77,45 @@ function Chevron(props: { open: boolean }) {
     : <IconChevronRightOutline14 className={css.chevron} />
 }
 
-/**
- * The bind/edit form: repo path plus optional dataset and layer whitelists.
- * Local state only — the submitted binding lands in the store through the
- * Remote round-trip, never directly.
- */
-function BindingForm(props: {
-  initial: DatasetBinding | null
-  onSubmit: (binding: DatasetBinding) => void
-  onCancel: () => void
-  /** The session workspace's directory, when one exists (the one-tap option). */
-  currentCwd: string | undefined
-  /** Whether the host can show its native directory chooser. */
-  canPick: boolean
-  pickDirectory: () => Promise<string | null>
-  /** A bind failure to surface inside the form. */
-  notice: string | null
+
+/** The passthrough zone as a visible group: files are readable like layer
+ * files (the operator view blocks no human) and keep the unprotected marker. */
+function PassthroughNode(props: {
+  dataset: string
+  files: readonly string[]
+  selection: DatasetSelection | null
+  onSelect: (selection: DatasetSelection) => void
   t: DatasetsViewProps['t']
 }) {
-  const { initial, onSubmit, onCancel, currentCwd, canPick, pickDirectory, notice, t } = props
-  const [repo, setRepo] = useState(initial?.repoPath ?? '')
-  const [datasets, setDatasets] = useState(initial?.datasets?.join(', ') ?? '')
-  const [layers, setLayers] = useState(initial?.layers?.join(', ') ?? '')
+  const { dataset, files, selection, onSelect, t } = props
+  const [open, setOpen] = useState(false)
   return (
-    <form
-      className={css.bindForm}
-      onSubmit={(event) => {
-        event.preventDefault()
-        const path = repo.trim()
-        if (path === '') return
-        const datasetList = parseList(datasets)
-        const layerList = parseList(layers)
-        onSubmit({
-          repoPath: path,
-          ...(datasetList !== undefined ? { datasets: datasetList } : {}),
-          ...(layerList !== undefined ? { layers: layerList } : {}),
-        })
-      }}
-    >
-      <div className={css.bindFormTitle}>{t('binding.form.title')}</div>
-      <Input
-        value={repo}
-        onChange={event => { setRepo(event.target.value) }}
-        placeholder={t('binding.form.repo')}
-        aria-label={t('binding.form.repo')}
-      />
-      <div className={css.bindShortcuts}>
-        {currentCwd !== undefined && (
-          <Button type="button" size="sm" onClick={() => { setRepo(currentCwd) }}>
-            {t('binding.form.useWorkspace')}
-          </Button>
-        )}
-        {canPick && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              void pickDirectory().then((picked) => {
-                if (picked !== null) setRepo(picked)
-              })
-            }}
-          >
-            {t('binding.form.browse')}
-          </Button>
-        )}
-      </div>
-      <Input
-        value={datasets}
-        onChange={event => { setDatasets(event.target.value) }}
-        placeholder={t('binding.form.datasets')}
-        aria-label={t('binding.form.datasets')}
-      />
-      <Input
-        value={layers}
-        onChange={event => { setLayers(event.target.value) }}
-        placeholder={t('binding.form.layers')}
-        aria-label={t('binding.form.layers')}
-      />
-      <div className={css.bindFormActions}>
-        <Button type="submit" variant="primary" size="sm">{t('binding.form.submit')}</Button>
-        <Button type="button" size="sm" onClick={onCancel}>{t('binding.form.cancel')}</Button>
-      </div>
-      {notice !== null && <div className={css.notice}>{notice}</div>}
-    </form>
+    <div className={css.layer}>
+      <button type="button" className={css.row} onClick={() => { setOpen(!open) }} aria-expanded={open}>
+        <Chevron open={open} />
+        <span className={css.rowTitle}>{t('tree.passthrough', { count: files.length })}</span>
+      </button>
+      {open && (
+        <div className={css.children}>
+          {files.map((file) => {
+            const selected = selection?.kind === 'passthrough'
+              && selection.dataset === dataset && selection.path === file
+            return (
+              <button
+                key={file}
+                type="button"
+                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
+                title={`${file} · ${t('tree.unprotected')}`}
+                onClick={() => { onSelect({ kind: 'passthrough', dataset, item: null, path: file }) }}
+              >
+                <FileIcon />
+                <span className={css.fileName}>{file}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -177,9 +128,13 @@ function LayerNode(props: {
   paths: readonly string[]
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  /** The dataset's declared sensitive layers (the marker is a human cue only). */
+  sensitiveLayers: ReadonlySet<string>
+  /** Layers the session's agent may read (the binding whitelist, or the modelFacing floor). */
+  agentLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, layer, paths, selection, onSelect, t } = props
+  const { dataset, item, layer, paths, selection, onSelect, sensitiveLayers, agentLayers, t } = props
   const [open, setOpen] = useState(true)
   return (
     <div className={css.layer}>
@@ -188,11 +143,13 @@ function LayerNode(props: {
         {open ? <IconFolderOpen16 className={css.folderIcon} /> : <IconFolderClose16 className={css.folderIcon} />}
         <span className={css.rowTitle}>{layer}</span>
         <span className={css.rowCount}>· {t('tree.fileCount', { count: paths.length })}</span>
+        {sensitiveLayers.has(layer) && <span className={css.sensitiveMark}>· {t('tree.sensitive')}</span>}
+        {agentLayers.has(layer) && <span className={css.agentMark}>· {t('tree.agentReadable')}</span>}
       </button>
       {open && (
         <div className={css.children}>
           {paths.map((path) => {
-            const selected = selection !== null
+            const selected = selection?.kind === 'layer'
               && selection.dataset === dataset && selection.item === item
               && selection.layer === layer && selection.path === path
             return (
@@ -200,7 +157,7 @@ function LayerNode(props: {
                 key={path}
                 type="button"
                 className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
-                onClick={() => { onSelect({ dataset, item, layer, path }) }}
+                onClick={() => { onSelect({ kind: 'layer', dataset, item, layer, path }) }}
               >
                 <FileIcon />
                 <span className={css.fileName}>{path}</span>
@@ -219,9 +176,11 @@ function ItemNode(props: {
   item: ItemRecord
   selection: DatasetSelection | null
   onSelect: (selection: DatasetSelection) => void
+  sensitiveLayers: ReadonlySet<string>
+  agentLayers: ReadonlySet<string>
   t: DatasetsViewProps['t']
 }) {
-  const { dataset, item, selection, onSelect, t } = props
+  const { dataset, item, selection, onSelect, sensitiveLayers, agentLayers, t } = props
   const [open, setOpen] = useState(false)
   return (
     <div className={css.item}>
@@ -231,6 +190,25 @@ function ItemNode(props: {
       </button>
       {open && (
         <div className={css.children}>
+          {item.metadata !== undefined && (() => {
+            // item.json sits at the passthrough zone's footing: always
+            // readable by every bound session — and readable HERE, like any
+            // layer file; the marker says it is unprotected, not unreadable.
+            const selected = selection?.kind === 'passthrough'
+              && selection.dataset === dataset && selection.item === item.id
+              && selection.path === `items/${item.id}/item.json`
+            return (
+              <button
+                type="button"
+                className={selected ? `${css.fileRow} ${css.fileRowSelected}` : css.fileRow}
+                title={t('tree.unprotected')}
+                onClick={() => { onSelect({ kind: 'passthrough', dataset, item: item.id, path: `items/${item.id}/item.json` }) }}
+              >
+                <FileIcon />
+                <span className={css.fileName}>item.json · {t('tree.unprotected')}</span>
+              </button>
+            )
+          })()}
           {Object.entries(item.layers).map(([layer, paths]) => (
             <LayerNode
               key={layer}
@@ -240,6 +218,8 @@ function ItemNode(props: {
               paths={paths}
               selection={selection}
               onSelect={onSelect}
+              sensitiveLayers={sensitiveLayers}
+              agentLayers={agentLayers}
               t={t}
             />
           ))}
@@ -256,8 +236,8 @@ function ItemNode(props: {
 export function DatasetsView(props: DatasetsViewProps) {
   const {
     sessionId, useSessions, useStore, actions, t,
-    fetchBinding, bindSession, unbindSession, listDatasets, readFile,
-    isLoopback, pickDirectory,
+    fetchBinding, bindSession, unbindSession, listDatasets, readFile, readPassthroughFile,
+    isLoopback, pickDirectory, previewRepo,
   } = props
   const { useHostDescription } = props
   const binding = useStore(s => s.binding)
@@ -270,6 +250,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const expandedDataset = useStore(s => s.expandedDataset)
   const items = useStore(s => s.items)
   const sharedLayers = useStore(s => s.sharedLayers)
+  const passthrough = useStore(s => s.passthrough)
   const selection = useStore(s => s.selection)
   const preview = useStore(s => s.preview)
   const previewLoading = useStore(s => s.previewLoading)
@@ -322,10 +303,7 @@ export function DatasetsView(props: DatasetsViewProps) {
     const dataset = expandedDataset
     void listDatasets(sessionId, dataset).then((result) => {
       if (cancelled || !result.ok) return
-      if (result.value.kind === 'items') {
-        const detail = result.value as ListItemsResult
-        actions.setItems(dataset, detail.items, detail.datasetLayers)
-      }
+      if (result.value.kind === 'items') actions.setDetails(dataset, result.value as ListItemsResult)
     })
     return () => { cancelled = true }
   }, [sessionId, expandedDataset, items, actions, listDatasets])
@@ -338,18 +316,21 @@ export function DatasetsView(props: DatasetsViewProps) {
     const target = selection
     actions.setPreviewLoading(true)
     actions.setPreviewError(null)
-    void readFile(sessionId, {
-      dataset: target.dataset,
-      ...(target.item !== null ? { item: target.item } : {}),
-      layer: target.layer, path: target.path,
-    }).then((result) => {
+    const request = target.kind === 'passthrough'
+      ? readPassthroughFile(sessionId, { dataset: target.dataset, path: target.path })
+      : readFile(sessionId, {
+        dataset: target.dataset,
+        ...(target.item !== null ? { item: target.item } : {}),
+        layer: target.layer, path: target.path,
+      })
+    void request.then((result) => {
       if (cancelled) return
       actions.setPreviewLoading(false)
       if (result.ok) actions.setPreview(result.value)
       else actions.setPreviewError(result.error.message)
     })
     return () => { cancelled = true }
-  }, [sessionId, selection, actions, readFile])
+  }, [sessionId, selection, actions, readFile, readPassthroughFile])
 
   const submitBinding = (next: DatasetBinding): void => {
     void bindSession(sessionId, next).then((result) => {
@@ -376,6 +357,15 @@ export function DatasetsView(props: DatasetsViewProps) {
   const selectedItem = selection === null || selection.item === null
     ? undefined
     : items[selection.dataset]?.find(item => item.id === selection.item)
+  // The session's agent-readable layer set per expanded dataset: the binding's
+  // explicit whitelist when written, else the modelFacing floor (sensitive
+  // layers are agent-blocked by default; datasets without any sensitive
+  // declaration read fully). The tree re-renders live when the binding moves.
+  const agentLayersFor = (dataset: DatasetSummary): ReadonlySet<string> => {
+    if (binding?.layers !== undefined) return new Set(binding.layers)
+    if (dataset.nonModelFacingLayers.length === 0) return new Set(dataset.layers)
+    return new Set(dataset.layers.filter(layer => !dataset.nonModelFacingLayers.includes(layer)))
+  }
 
   return (
     <div className={css.view} data-conversation-composer-overlay="">
@@ -389,7 +379,9 @@ export function DatasetsView(props: DatasetsViewProps) {
               <span className={css.bindingScope}>
                 {binding.datasets !== undefined ? binding.datasets.join(', ') : t('binding.allDatasets')}
                 {' · '}
-                {binding.layers !== undefined ? binding.layers.join(', ') : t('binding.allLayers')}
+                {binding.layers !== undefined
+                  ? t('binding.agentVisible', { layers: binding.layers.join(', ') })
+                  : t('binding.agentVisibleFloor')}
               </span>
               <Button size="sm" onClick={() => { setFormOpen(true) }}>
                 {t('binding.edit')}
@@ -411,13 +403,14 @@ export function DatasetsView(props: DatasetsViewProps) {
           )}
         {notice !== null && !formOpen && <div className={css.notice}>{notice}</div>}
         {formOpen && (
-          <BindingForm
+          <BindForm
             initial={binding}
             onSubmit={submitBinding}
             onCancel={() => { setFormOpen(false) }}
             currentCwd={currentCwd}
             canPick={canPick}
             pickDirectory={pickDirectory}
+            previewRepo={(path) => previewRepo(sessionId, path)}
             notice={notice}
             t={t}
           />
@@ -459,6 +452,15 @@ export function DatasetsView(props: DatasetsViewProps) {
                 ))}
                 {expanded && (
                   <div className={css.children}>
+                    {(passthrough[dataset.id] ?? []).length > 0 && (
+                      <PassthroughNode
+                        dataset={dataset.id}
+                        files={passthrough[dataset.id] ?? []}
+                        selection={selection}
+                        onSelect={(next) => { actions.select(next) }}
+                        t={t}
+                      />
+                    )}
                     {Object.keys(sharedLayers[dataset.id] ?? {}).length > 0 && (
                       <div className={css.sharedGroup}>
                         <div className={css.sharedLabel}>{t('tree.shared')}</div>
@@ -471,6 +473,8 @@ export function DatasetsView(props: DatasetsViewProps) {
                             paths={paths}
                             selection={selection}
                             onSelect={(next) => { actions.select(next) }}
+                            sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
+                            agentLayers={agentLayersFor(dataset)}
                             t={t}
                           />
                         ))}
@@ -483,6 +487,8 @@ export function DatasetsView(props: DatasetsViewProps) {
                         item={item}
                         selection={selection}
                         onSelect={(next) => { actions.select(next) }}
+                        sensitiveLayers={new Set(dataset.nonModelFacingLayers)}
+                        agentLayers={agentLayersFor(dataset)}
                         t={t}
                       />
                     ))}
@@ -497,7 +503,9 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.previewHeader}>
               <FileIcon />
               <span className={css.previewPath}>
-                {selection.item ?? t('tree.shared')} / {selection.layer}/{selection.path}
+                {selection.kind === 'passthrough'
+                  ? `${selection.item ?? t('tree.passthroughShort')} / ${selection.path}`
+                  : `${selection.item ?? t('tree.shared')} / ${selection.layer}/${selection.path}`}
               </span>
               {selectedItem?.metadata !== undefined && (
                 <MetaPills metadata={selectedItem.metadata} t={t} />
@@ -516,7 +524,7 @@ export function DatasetsView(props: DatasetsViewProps) {
             <div className={css.previewScroll}>
               <div className={css.previewContent}>
                 <DatasetPreview
-                  key={`${selection.item}/${selection.layer}/${selection.path}`}
+                  key={`${selection.kind}/${selection.item}/${selection.kind === 'layer' ? selection.layer : ''}/${selection.path}`}
                   path={selection.path}
                   content={preview.content}
                   t={t}

@@ -4,13 +4,13 @@ English | [中文](README.md)
 
 Run locally installed coding-agent CLIs — Kimi Code, Codex, Claude Code — from the dsh web GUI. Each CLI gets an isolated home, slash commands for login/sessions/status/logout, and an auth section in Settings.
 
-<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="Settings → 本地 Agent section with per-harness auth status">
+<img src="../../docs/screenshots/08-local-agent.png" width="480" alt="The Local Agent cards under Settings → Plugins, header dots showing each provider's auth state">
 
 ## Features
 
 - **Scoped homes per CLI** — isolated credential/session home under a shared root, created 0700; your native CLI installation is never touched.
 - **Slash commands** — `/<harness> login|sessions|status|logout`, with the device-code login URL in the reply.
-- **Settings section** — per-harness auth status, web-login code, and sign-out under Settings → 本地 Agent; harness bundles can add their own rows and actions.
+- **A settings card per provider** — Settings → Plugins → 可配置插件: the auth status dot (visible on the collapsed header), web login/sign-out, and the hot-swappable resident-mode (live) toggle with mirror granularity; cards compose this package's shared `ProviderAuthBlock`.
 - **Subagent delegation** — hand work to a local CLI and resume it later, even across host restarts.
 
 ## Install
@@ -40,12 +40,12 @@ A custom composition mounts the core once:
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21)
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: the `commands/execute` Remote gained a required `images` argument (rc.6/rc.7 hosts would receive shifted arguments) — stay on the previous build there. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21); re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
 
-- **Login is a captured prompt** — no interactive terminal in the web GUI; the device-code URL arrives in the command reply while the CLI polls in the background.
+- **Login is a captured prompt or a manual handoff** — the web GUI has no interactive terminal: device-code harnesses (kimi/codex) surface the URL in the command reply while the CLI polls in the background; a harness whose auth is TTY-only (claude ≥2.1) declares the manual variant — `/login` replies with the exact command to run in the user's own terminal, and the registry watches the scoped home for the credential.
 - **Homes root placement** — defaults to `$DSH_HOME/local-agent`, pending a standardized `var/state` layout.
 - **Delegation log growth** — each harness's `delegations.jsonl` is append-only with no rotation.
 - **One-sample shape** — the harness contract is induced from Kimi alone; not yet frozen.
@@ -55,13 +55,13 @@ A custom composition mounts the core once:
 <details>
 <summary>Internals (click to expand)</summary>
 
-Each harness registers into `ctx.localAgent`: a scoped home, an optional device-code login command, a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
+Each harness registers into `ctx.localAgent`: a scoped home, an optional login declaration (a device-code command, or the manual-handoff variant for a TTY-only CLI), a session-records adapter, and optional auth-status and sign-out probes. The glue provisions each home and registers the `/<harness> login|sessions|status|logout` command family; per-harness differences are just `homeEnvVar`, the login invocation, the records adapter, and the auth/sign-out probes.
 
 **Delegation stays out of this seam.** Each harness bundle mounts its own subagent-provider row into the existing `subagent` capability (subagent-acp for ACP-over-stdio harnesses, an app-server provider for Codex), reading the scoped home through `localAgent.homeDir(name)`.
 
 **Program queries ride a read-only Remote channel.** A `LocalAgentGateway` (service key `localAgentGateway`, generated `./remote`) exposes roster, per-harness status, and scoped sessions to the browser. It emits no session events, so UI polls leave no command nodes in the session log; login and logout stay on the slash-command channel, where a visible command node is the expected feedback.
 
-**Browser half ships in this package.** The `./client` export is the roster-driven settings section, mounted automatically via the `dsh.client` manifest — no separate UI package, since the UI is provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway). It declares contribution seats (`local-agent.settings.row` below the harness list, `local-agent.settings.row-action` inside each row's action area) so harness bundles can add their own settings rows and per-harness actions (e.g. the dsh enable/disable toggle).
+**Browser half ships in this package.** The `./client` export mounts automatically via the `dsh.client` manifest: the member composer (delegated child sessions stay writable) plus the shared settings-card building blocks (`ProviderAuthBlock`, the auth-status bus, `AuthStatusDot`) — each provider package's `settings.plugin.item` card composes them, keeping the UI provider-neutral (it consumes only the `/<harness>` command family and the read-only gateway).
 
 ### Adding a harness
 
@@ -95,6 +95,10 @@ export function registerCodex(ctx: Context): void {
 ### Delegation registry (resume carrier)
 
 The registry also owns the family's **delegation registry**: a per-child-session record of which provider and CLI session a delegation used, plus a per-(parent, provider) FIFO of delegation intents. The family tool (`@khorsheed/dsh-local-agent-tool-subagent`, mounted by each harness bundle's patch) stages exactly one intent per call before `ctx.subagents.start()`, and the owning provider consumes exactly one per start — so fresh and resume rounds stay paired even under parallel delegation. A resume handle (the dsh child session id) resolves through the registry, which rejects a handle naming an unknown child, another parent's session, or the wrong provider; the subagent request descriptor cannot carry the target, so this service is the family-internal carrier. Mappings persist per harness in an append-only `delegations.jsonl` under the harness's scoped home (last line per child session wins), so a resume handle survives a host restart.
+
+### Active-delegation registry and `/local-agent stop`
+
+The registry also owns the **active-delegation registry**: an in-flight run table keyed by dsh child session id. Facade-started runs (`start`/`resume` — the member composer, room, and other programmatic entry points) and runs the family tool starts directly through `ctx.subagents.start()` (registered via `trackDelegationRun`) all land in the same table, and an entry clears itself when the run's result settles. `/local-agent stop <childSessionId>` cancels the in-flight delegation by this table — semantics aligned with the official `subagents.interrupt(targetSessionId)`: fire-and-return (the cancel signal goes out before the reply), and an absent target (unknown child or no in-flight run) is an explicitly-named accepted no-op, not an error. This gives surfaces like taskpilot a landing point for their stop buttons: for a one-shot subagent row with no live agent, the button dispatches `/local-agent stop <childSessionId>` instead, degrading to an explicit "cannot stop" error when the local-agent core is absent.
 
 ### Model Experience
 

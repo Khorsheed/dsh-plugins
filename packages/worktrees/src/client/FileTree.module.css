@@ -1,0 +1,229 @@
+/* The file tree, high-density developer-tool style: 32px rows, 16px per-level
+   indentation (no guide lines), chevron + file icon in 16px slots, a fixed
+   trailing status/counts cluster, and a full-row tinted selection with a 7px
+   radius. Directory names at 500, file names at 400, neutral icons. */
+
+.tree {
+  font-size: 13px;
+  padding: 6px 4px;
+}
+
+/* A quiet strip: the mode title on the left, expand/collapse actions right. */
+.treeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.treeActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A group label above a segment's rows (未提交 / 已提交) — a quiet secondary
+   caption, not a row, so the change segment is obvious at a glance. */
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.groupCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.treeAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 20px;
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.treeAction > svg {
+  flex: none;
+}
+
+.treeAction:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.collapseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.collapseButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Indentation is conveyed by a fixed 16px step per level — no guide line
+   noise; each expanded group's children just shift right. */
+.children {
+  display: flex;
+  flex-direction: column;
+  margin-left: 16px;
+}
+
+/* A thin loading bar inside a lazy-expanding directory while its children
+   fetch — the local-browser tree only. */
+.lazyLoading {
+  height: 18px;
+  margin: 2px 0 2px 16px;
+  border-radius: 3px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  animation: wt-lazy-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes wt-lazy-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* One tree row: 32px, flush, full-row selection with a 7px radius. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The disclosure slot holds a fixed width so glyphs align across depths. */
+.chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Directory names at 500, file names at 400. */
+.dirName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+/* File rows shift toward the primary tone on hover/selection. */
+.fileRow:hover,
+.fileRow:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.selected,
+.selected:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.fileGlyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The fixed trailing cluster: status 22px, counts 62px — so the numbers never
+   drift as names of different lengths expand. */
+.status {
+  flex: none;
+  width: 22px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Low-saturation status badge tones. */
+.status_A,
+.status_M,
+.status_R {
+  color: var(--dsw-alias-state-warn-secondary);
+}
+
+.status_D {
+  color: var(--dsw-alias-state-error-secondary);
+}
+
+.status_untracked {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.counts {
+  flex: none;
+  width: 62px;
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.counts .add {
+  color: var(--dsw-alias-state-success-secondary);
+}
+
+.counts .del {
+  color: var(--dsw-alias-state-error-secondary);
+}
+
+.empty {
+  padding: 16px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}

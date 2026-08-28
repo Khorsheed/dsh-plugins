@@ -303,6 +303,39 @@ describe('foldFilePreviewByTurn', () => {
     expect(byTurn.get(2)?.get('b.md')).toBeUndefined()
   })
 
+  it('a pure-read call leaves no turn entry (reads are not products)', () => {
+    const events = [
+      toolCall(0, 'read', { file_path: 'notes.md' }, 2, 1),
+      toolCall(1, 'read', { file_path: 'notes.md' }, 3, 1),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(2)?.get('notes.md')).toBeUndefined()
+    expect(byTurn.get(3)?.get('notes.md')).toBeUndefined()
+    expect(byTurn.size).toBe(0)
+  })
+
+  it('a read before a mutation does not seed the card, and does not count as first-touch', () => {
+    const events = [
+      toolCall(0, 'read', { file_path: 'a.md' }, 2, 1),
+      toolCall(1, 'write', { file_path: 'a.md', content: 'x\n' }, 2, 2),
+      writeResult(2, 1, 2, 3),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    // The write is a create (the session never wrote/edited the path before):
+    // its full content counts, the prior read contributes nothing.
+    expect(byTurn.get(2)?.get('a.md')).toMatchObject({ added: 1, removed: 0 })
+  })
+
+  it('a code-mode read dispatch leaves no turn entry', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 1),
+      codeDispatch(1, 'read', { file_path: 'a.md' }, 0),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(3)?.get('a.md')).toBeUndefined()
+    expect(byTurn.size).toBe(0)
+  })
+
   it('registers render-intent paths from result diff meta and sums per-turn deltas', () => {
     const events = [
       toolResult(0, { diffs: [{ path: 'render.html', oldText: null, newText: 'a\nb\n' }] }, 1),

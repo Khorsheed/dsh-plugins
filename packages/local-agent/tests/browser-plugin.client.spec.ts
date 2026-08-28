@@ -18,10 +18,9 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
     .map(entry => entry.options.id)
 }
 
-function settingsSectionIds(ctx: Context): (string | undefined)[] {
-  return ctx.slots
-    .entries('settings.section')
-    .map(entry => entry.options.id)
+/** Whether the member composer is on the conversation composer chain. */
+function composerRegistered(ctx: Context): boolean {
+  return ctx.slots.entries('conversation.composer').length > 0
 }
 
 /** Boot the browser half over a real slot tree that declares the header list. */
@@ -32,7 +31,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
     name: 'root',
     children: {
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
-      'settings.section': { kind: 'list', scope: 'root' },
+      'conversation.composer': { kind: 'chain', scope: 'session' },
     },
   } as never, () => null)
   const execute = vi.fn((_sessionId: string, _line: string) =>
@@ -56,12 +55,12 @@ describe('ui-local-agent browser half', () => {
     expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'locale'])
   })
 
-  it('registers the settings section, and fiber teardown removes it (HMR safety)', async () => {
+  it('registers the member composer on the conversation chain, and fiber teardown removes it (HMR safety)', async () => {
     const { ctx, fiber } = await bench()
     expect(headerEntryIds(ctx)).not.toContain('local-agent')
-    expect(settingsSectionIds(ctx)).toContain('local-agent')
+    expect(composerRegistered(ctx)).toBe(true)
     await fiber.dispose()
-    expect(settingsSectionIds(ctx)).not.toContain('local-agent')
+    expect(composerRegistered(ctx)).toBe(false)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {

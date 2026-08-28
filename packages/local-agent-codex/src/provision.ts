@@ -9,7 +9,7 @@
  * @module @khorsheed/dsh-local-agent-codex/provision
  */
 
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** Credential file inside the scoped home; its presence marks auth. */
@@ -86,6 +86,21 @@ export async function readCodexBaseUrl(homeDir: string): Promise<string | undefi
   // No selection: any single custom provider is the endpoint in effect.
   if (providers.size === 1) return [...providers.values()][0]
   return undefined
+}
+
+/**
+ * The credential file's modification stamp (epoch ms), undefined when absent.
+ * A completed device-code login rewrites `auth.json`, so the stamp
+ * distinguishes a fresh login from a leftover (possibly revoked) credential.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @returns the marker's mtime, or undefined when no credential exists.
+ */
+export async function codexCredentialStamp(homeDir: string): Promise<number | undefined> {
+  try {
+    return (await stat(join(homeDir, AUTH_FILE))).mtimeMs
+  } catch {
+    return undefined
+  }
 }
 
 /**

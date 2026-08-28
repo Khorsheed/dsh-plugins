@@ -4,28 +4,47 @@
  * @module @khorsheed/dsh-local-agent-kimi/records
  */
 
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
+import { guardKimiCredential } from './credential-guard.ts'
 
 /** Credentials live under this directory inside the scoped home. */
 const CREDENTIALS_DIR = 'credentials'
 
 /**
- * Whether the scoped home holds usable login credentials: the `credentials/`
- * directory exists and contains at least one entry. Absent or empty means the
- * device-code flow has not completed.
+ * Whether the scoped home holds usable login credentials, guarded by the
+ * credential sentinel: a VALID credential file (both tokens non-empty) reads
+ * true and refreshes the backup; an empty shell (the kimi CLI's failure-path
+ * wipe) restores the backup when one exists and reads false otherwise. The
+ * pre-sentinel "directory non-empty" check could not tell the empty shell
+ * from a real credential at all.
  * @param homeDir - the `kimi` harness's scoped home.
- * @returns true when credentials are present.
+ * @returns true when usable credentials are present (after any restore).
  */
 export async function kimiAuthenticated(homeDir: string): Promise<boolean> {
+  return guardKimiCredential(homeDir)
+}
+
+/**
+ * The newest credential file's modification stamp (epoch ms), undefined when
+ * no credential exists. A completed device-code login rewrites the
+ * credentials directory, so the stamp distinguishes a fresh login from a
+ * leftover (possibly expired) credential.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns the newest credential mtime, or undefined when none exists.
+ */
+export async function kimiCredentialStamp(homeDir: string): Promise<number | undefined> {
   try {
     const entries = await readdir(join(homeDir, CREDENTIALS_DIR))
-    return entries.length > 0
-  } catch (error) {
-    // No credentials directory yet: not authenticated.
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
+    let newest: number | undefined
+    for (const entry of entries) {
+      const { mtimeMs } = await stat(join(homeDir, CREDENTIALS_DIR, entry))
+      if (newest === undefined || mtimeMs > newest) newest = mtimeMs
+    }
+    return newest
+  } catch {
+    return undefined
   }
 }
 

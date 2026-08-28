@@ -71,9 +71,16 @@ describe.runIf(docker.ok)('datasets → lab → mission integration (first half,
     const { outputProduction, collectedContent, artifactsAfterCollect } = ev()
     expect(outputProduction.exitCode).toBe(0)
     expect(collectedContent).toBe('triad output\n')
-    expect(artifactsAfterCollect).toHaveLength(1)
-    expect(artifactsAfterCollect[0]).toMatchObject({ kind: 'collection' })
-    expect(artifactsAfterCollect[0]?.path).toContain('collected')
+    const collection = artifactsAfterCollect.find(a => a.kind === 'collection')
+    expect(collection?.path).toContain('collected')
+  })
+
+  it('step 3 lab: populate returned the materialization manifest and registered it (kind materialization)', () => {
+    const { materialization, artifactsAfterCollect } = ev()
+    expect(materialization.sha).toMatch(/^[0-9a-f]{64}$/)
+    expect(materialization.count).toBe(2) // visible/task.md + the worktree's .git pointer file
+    const artifact = artifactsAfterCollect.find(a => a.kind === 'materialization')
+    expect(artifact?.path).toContain('materialization.json')
   })
 
   it('step 4 gate: before the archive export, both the transition and the release are refused', () => {
@@ -154,7 +161,7 @@ describe.runIf(docker.ok)('lab ↔ mission failure paths (second contact round)'
 
   it('populate failure fails loud AND the unit stays tracked (no silent leak)', () => {
     const { populateError, unitStillListed, containerPresentAfterPopulateFailure } = ev()
-    expect(populateError).toMatch(/docker cp failed/)
+    expect(populateError).toMatch(/ENOENT|no such file/)
     // The unit is neither lost nor silently destroyed: it remains listed and
     // its container exists — teardown is an orchestrator decision, not lab's.
     expect(unitStillListed).toBe(true)
@@ -180,9 +187,12 @@ describe.runIf(docker.ok)('lab ↔ mission failure paths (second contact round)'
     expect(ghostReleaseForceError).toMatch(/failed closed/)
   })
 
-  it('attested teardown: attest → failed (releasable) → release destroys the container', () => {
+  it('failure recovery loop: the crash scene must be archived before failed is reachable, then release destroys', () => {
     const { teardown } = ev()
-    expect(teardown.stateAfterAttest).toBe('failed')
+    // No gate exception on the failure path: without the dump, file-check refuses.
+    expect(teardown.prematureFailedError).toMatch(/file-check guard failed/)
+    expect(teardown.prematureFailedError).toMatch(/crash-dump\.txt/)
+    expect(teardown.stateAfter).toBe('failed')
     expect(teardown.releasable).toBe(true)
     expect(teardown.containerGone).toBe(true)
   })

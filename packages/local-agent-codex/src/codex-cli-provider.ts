@@ -8,14 +8,15 @@
  * The provider name `codex-local` avoids colliding with the official
  * `subagent-codex` package's provider name `codex` — a composition that
  * mounts both would fail loud with DUPLICATE_PROVIDER. The tool row in this
- * bundle's patch uses `subagent_codex_local` for the same reason (the
- * official presets carry a disabled `subagent_codex` row).
+ * bundle's patch takes the official model-facing name `subagent_codex`
+ * instead: the official preset row ships disabled, and the patch disables
+ * it too (a deliberate user re-enable conflicts loud, by design).
  * @module @khorsheed/dsh-local-agent-codex/codex-cli-provider
  */
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   NO_START_CAPABILITIES,
@@ -30,11 +31,22 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
+import { codexRolloutUsage, usageFromCodex } from './records.ts'
+
+// The host renamed its tool-call id brand between lines (`CallId` on the npm
+// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
+// runtime value is a plain string, so instead of importing either brand
+// factory we extract the field types from the consuming APIs — the same
+// source then compiles against both lines.
+type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
+type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
 
 /** Quote one TOML basic string for the `-c` config override. */
 function tomlString(value: string): string {
@@ -44,70 +56,112 @@ function tomlString(value: string): string {
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/**
+ * Auth-shaped failure signatures in codex's stderr or event stream: the
+ * endpoint rejected the credential. Narrow on purpose — matched against
+ * provider-controlled error output only.
+ */
+export const CODEX_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
 /** Codex sandbox policy values accepted by `codex exec --sandbox`. */
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+/**
+ * Member channel registration for one codex process lifetime: mint the
+ * per-run token and build the bridge MCP declaration as a per-process `-c`
+ * config override (codex takes inline TOML — spike-verified end-to-end
+ * against the real CLI on 2026-08-20, including the model-call leg).
+ * `default_tools_approval_mode="approve"` is required: codex's stable MCP
+ * elicitation gate auto-cancels tools lacking a readOnlyHint in
+ * non-interactive mode ("user cancelled MCP tool call"), and the bridge's
+ * member_message is a write tool. Nothing is written to the scoped home, so
+ * there is nothing to prune at settle; `release` only invalidates the token.
+ * Returns undefined when the mounted core predates the member channel
+ * (declare-and-degrade: the run proceeds unchanged). The exec driver
+ * registers per round; the live driver registers per resident process and
+ * releases on reclaim.
+ */
+export interface CodexMemberRunHandle {
+  readonly token: string
+  readonly configOverride: string
+  bind(pid: number): void
+  release(): void
+}
+
+/** Register one member run with the channel; see {@link CodexMemberRunHandle}. */
+export function registerCodexMemberRun(
+  ctx: Context,
+  childSessionId: string,
+  parentSessionId: string,
+): CodexMemberRunHandle | undefined {
+  const registry = ctx.localAgent
+  if (
+    typeof registry.registerMemberRun !== 'function'
+    || typeof registry.memberBridgeSocketPath !== 'function'
+    || typeof registry.memberBridgeCommand !== 'function'
+  ) return undefined
+  const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: 'codex-local' })
+  // Dashed server names are valid TOML bare keys (spike-verified parse).
+  const serverName = `dsh-member-${token.slice(0, 8)}`
+  const bridge = registry.memberBridgeCommand()
+  const configOverride = `mcp_servers.${serverName}={`
+    + `command=${tomlString(bridge.command)},`
+    + `args=[${bridge.args.map(tomlString).join(',')}],`
+    + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
+    + `default_tools_approval_mode=${tomlString('approve')}`
+    + `}`
+  let released = false
+  return {
+    token,
+    configOverride,
+    bind: pid => registry.bindMemberRunPid(token, pid),
+    release: () => {
+      if (released) return
+      released = true
+      registry.unregisterMemberRun(token)
+    },
+  }
+}
 
 /**
  * One-shot and resumable Codex CLI subagent provider: every accepted FRESH run
  * starts a `codex exec` process in the delegating Session's workspace, under
  * the harness scoped home; a resume round (the family tool's staged resume
  * intent) continues the SAME thread with `codex exec --json resume <thread_id>`
- * inside the SAME dsh child session.
+ * inside the SAME dsh child session. With the live driver configured
+ * (`live: true`), rounds instead go to the resident app-server process (see
+ * live-driver.ts); the exec path below stays the fallback.
  */
 export class CodexCliProvider implements SubagentProvider {
   readonly name = 'codex-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
   constructor(
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
+    private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
   ) {}
 
-  /**
-   * Register one run with the member channel and prepare the bridge MCP
-   * declaration as a per-process `-c` config override (codex takes inline
-   * TOML — spike-verified end-to-end against the real CLI on 2026-08-20,
-   * including the model-call leg). `default_tools_approval_mode="approve"` is
-   * required: codex's stable MCP elicitation gate auto-cancels tools lacking
-   * a readOnlyHint in non-interactive exec mode ("user cancelled MCP tool
-   * call"), and the bridge's member_message is a write tool. Nothing is
-   * written to the scoped home, so there is nothing to prune at settle;
-   * `release` only invalidates the token. Returns undefined when the mounted
-   * core predates the member channel (declare-and-degrade: the run proceeds
-   * unchanged).
-   */
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): CodexLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
+
+  /** Per-round member-channel registration for the exec path (see {@link registerCodexMemberRun}). */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
-  ): { token: string; configOverride: string; bind(pid: number): void; release(): void } | undefined {
-    const registry = this.ctx.localAgent
-    if (
-      typeof registry.registerMemberRun !== 'function'
-      || typeof registry.memberBridgeSocketPath !== 'function'
-      || typeof registry.memberBridgeCommand !== 'function'
-    ) return undefined
-    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
-    // Dashed server names are valid TOML bare keys (spike-verified parse).
-    const serverName = `dsh-member-${token.slice(0, 8)}`
-    const bridge = registry.memberBridgeCommand()
-    const configOverride = `mcp_servers.${serverName}={`
-      + `command=${tomlString(bridge.command)},`
-      + `args=[${bridge.args.map(tomlString).join(',')}],`
-      + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
-      + `default_tools_approval_mode=${tomlString('approve')}`
-      + `}`
-    let released = false
-    return {
-      token,
-      configOverride,
-      bind: pid => registry.bindMemberRunPid(token, pid),
-      release: () => {
-        if (released) return
-        released = true
-        registry.unregisterMemberRun(token)
-      },
-    }
+  ): CodexMemberRunHandle | undefined {
+    return registerCodexMemberRun(this.ctx, childSessionId, parentSessionId)
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -133,9 +187,6 @@ export class CodexCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
-    // Member channel: register this run and carry the bridge declaration on
-    // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -161,14 +212,44 @@ export class CodexCliProvider implements SubagentProvider {
     }
     // Resolve the effective custom endpoint from the scoped config.toml for
     // diagnostics: codex reads it directly (a user manually editing the
-    // config to route through a custom provider is authoritative). Log it so
-    // a failing delegation reports which endpoint it actually used.
+    // config to route through a custom provider is authoritative). Logged
+    // BEFORE the drive-mode branch so live rounds report their endpoint too.
     const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
+    // Live driver: the round goes to the resident app-server process (one per
+    // member). A channel that fails at spawn/handshake falls through to the
+    // exec one-shot below — and stays there until the breaker cools down.
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
+      try {
+        return await live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          parentSessionId: request.parent.session.id,
+          // The thread id arrives with thread/start (server-assigned), far
+          // earlier than the exec path's settle-time parse.
+          onThreadId: (threadId) => {
+            this.ctx.localAgent.recordDelegation({
+              childSessionId: runId,
+              provider: this.name,
+              parentSessionId: request.parent.session.id,
+              cliSessionId: threadId,
+            })
+          },
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+        this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startCodexCliRun(request, {
         cwd: parentCwd,
-        env: { CODEX_HOME: homeDir },
+        env: delegationEnv({ CODEX_HOME: homeDir }),
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -177,6 +258,7 @@ export class CodexCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
         ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
         childSession,
         ctx: this.ctx,
@@ -217,9 +299,6 @@ export class CodexCliProvider implements SubagentProvider {
         `subagent-codex: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -230,23 +309,56 @@ export class CodexCliProvider implements SubagentProvider {
       }
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+      // Logged BEFORE the drive-mode branch so live rounds report their endpoint too.
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
-      const run = await startCodexCliRun(request, {
-        cwd: parentCwd,
-        env: { CODEX_HOME: homeDir },
-        endpointLabel: baseUrl,
-        sandbox: this.sandbox,
-        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-        spawn: spec => this.ctx.subprocess.spawn(spec),
-        onError: (error: unknown, stopReason) => {
-          this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-        },
-        onSpawned: (pid) => { member?.bind(pid) },
-        ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
-        childSession,
-        ctx: this.ctx,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-      })
+      // Live driver: continue the member's resident app-server thread. Channel
+      // spawn/handshake failure falls through to the exec one-shot below.
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
+        try {
+          const liveRun = await live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            parentSessionId: request.parent.session.id,
+            resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+          this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      let run: SubagentRun
+      try {
+        run = await startCodexCliRun(request, {
+          cwd: parentCwd,
+          env: delegationEnv({ CODEX_HOME: homeDir }),
+          endpointLabel: baseUrl,
+          sandbox: this.sandbox,
+          disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+          spawn: spec => this.ctx.subprocess.spawn(spec),
+          onError: (error: unknown, stopReason) => {
+            this.ctx.logger.warn(`subagent-codex: child run failed (${stopReason}) via ${baseUrl ?? 'codex default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+          },
+          onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
+          ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
+          childSession,
+          ctx: this.ctx,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+        })
+      } catch (error) {
+        member?.release()
+        throw error
+      }
       void run.result.then(
         () => {
           this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
@@ -260,7 +372,6 @@ export class CodexCliProvider implements SubagentProvider {
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -271,7 +382,7 @@ export interface CodexCliRunSpec {
   /** Parent Session workspace; also the codex process cwd. */
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */
@@ -282,6 +393,12 @@ export interface CodexCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401 a presence probe cannot see). The provider wires this
+   * to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /**
@@ -340,7 +457,13 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 export type CodexTranscriptLine =
   | { kind: 'think'; text: string }
   | { kind: 'text'; text: string }
-  | { kind: 'tool'; name: string; detail?: string }
+  /**
+   * Tool activity: one call with its (possibly absent) result. `id` is the
+   * stream item's id when present, else a synthesized position-based id —
+   * stable within a run either way, so the child session's
+   * `tool/call`/`tool/result` events pair by it.
+   */
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
@@ -363,7 +486,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   if (line === '') return
   let event: {
     type?: string
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -390,17 +513,24 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     state.text = item.text
   } else if (item.type === 'command_execution') {
     const command = typeof item.command === 'string' ? item.command : undefined
-    const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : undefined
+    const output = typeof item.aggregated_output === 'string' && item.aggregated_output.trim() !== ''
+      ? item.aggregated_output
+      : undefined
     if (command !== undefined || output !== undefined) {
       state.lines.push({
         kind: 'tool',
+        id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
         name: 'Bash',
-        ...command === undefined ? {} : { detail: command },
-        ...command !== undefined && output !== undefined && output.trim() !== '' ? { detail: `${command}\n${output}` } : {},
+        ...command === undefined ? {} : { args: command },
+        ...output === undefined ? {} : { result: output },
       })
     }
   } else if (item.type === 'web_search_call') {
-    state.lines.push({ kind: 'tool', name: 'WebSearch' })
+    state.lines.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+      name: 'WebSearch',
+    })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one
     // is pending (web search or command output).
@@ -410,7 +540,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       if (last !== undefined && last.kind === 'tool') {
         state.lines[state.lines.length - 1] = {
           ...last,
-          detail: last.detail === undefined ? output : `${last.detail}\n${output}`,
+          result: last.result === undefined ? output : `${last.result}\n${output}`,
         }
       }
     }
@@ -470,34 +600,6 @@ export function parseCodexJsonStream(stream: string): {
 }
 
 /**
- * Map codex's token-count payload onto the shared usage contract. Codex's
- * `input_tokens` is the TOTAL input including cache hits (OpenAI-style
- * accounting, confirmed against `total_tokens` in the rollout token_count),
- * and `cached_input_tokens` is the cache-read subset — so the uncached bucket
- * subtracts the cached portion to avoid double counting. There is no
- * cache-write concept, so that bucket is omitted.
- * @param usage - the raw codex usage object from `turn.completed`.
- * @returns the shared usage record.
- */
-function usageFromCodex(usage: unknown): TokenUsage {
-  const raw = usage as { input_tokens?: unknown; cached_input_tokens?: unknown; output_tokens?: unknown }
-  const input = Number(raw.input_tokens)
-  const cached = Number(raw.cached_input_tokens)
-  const output = Number(raw.output_tokens)
-  const uncached = Number.isFinite(input) && Number.isFinite(cached)
-    ? Math.max(0, input - cached)
-    : Number.isFinite(input)
-      ? input
-      : 0
-  const usageRecord: TokenUsage = {
-    inputTokens: uncached,
-    outputTokens: Number.isFinite(output) ? output : 0,
-  }
-  if (Number.isFinite(cached) && cached > 0) usageRecord.cacheReadTokens = cached
-  return usageRecord
-}
-
-/**
  * Start the real `codex exec` child and publish its run. The codex
  * reply arrives as an NDJSON event stream on stdout (`--json`): the final
  * `agent_message` item is the run output and the `turn.completed` usage is
@@ -532,6 +634,11 @@ export function startCodexCliRun(
     env: spec.env,
   })
   spec.onSpawned?.(child.pid)
+  // The spawn moment anchors the rollout-locator time window: the run's
+  // rollout file starts around here (thread creation ≈ turn start ≈ spawn),
+  // so the usage fallback can find it even when a kill truncated the stream
+  // before `thread.started` ever reached stdout.
+  const startedAtMs = Date.now()
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
@@ -595,8 +702,11 @@ export function startCodexCliRun(
   const collectOutput = (): ContentBlock[] => {
     // Parse fresh at call time: stdout 'data' events may still be flushing
     // when the settle callback computes its first output, and the consumer
-    // may poll output again later.
-    const text = parseCodexJsonStream(output).text?.trim()
+    // may poll output again later. Post-exit the seam's collected buffer is
+    // authoritative — a fast-exiting process can settle `done` before the
+    // streamed data events land.
+    const drained = child.collected.stdout?.readFrom(0).text
+    const text = parseCodexJsonStream(drained !== undefined && drained !== '' ? drained : output).text?.trim()
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
@@ -672,7 +782,19 @@ export function startCodexCliRun(
   // the settle chain first (so turn/end is already appended) AND for the
   // process to actually exit (so stdout is drained before parsing).
   void result.then(() => child.done).then(
-    () => mirrorCodexAfterExit(spec, task, turn, output, liveMirror),
+    () => {
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${drainedStderr}\n${drainedStdout}`
+        if (CODEX_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      return mirrorCodexAfterExit(spec, task, turn, output, liveMirror, startedAtMs)
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 
@@ -689,7 +811,80 @@ export function startCodexCliRun(
   }))
 }
 
-/** Fold one transcript line into the child session as one assistant step. */
+/** One assistant-role message event, attributed to the codex route. */
+export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
+  return createAssistantMessage({
+    content: blocks as ContentBlock[],
+    source: { provider: 'codex-local', model: 'codex' },
+  })
+}
+
+/** Mirror behavior switches shared by the exec and live paths. */
+export interface CodexMirrorOptions {
+  /**
+   * Do not fold think/text lines into `assistant/message` events (the
+   * token-granularity live mode streams that content as `assistant/chunk`
+   * instead; the driver completes the stream with one combined final
+   * message). Tool lines still fold, and the round's usage is left to the
+   * caller — it rides the combined final message, not a folded line.
+   */
+  skipAssistantContent?: boolean
+}
+
+/**
+ * Fold one transcript line into the child session as one assistant step.
+ * @returns whether the line folded (false when the options skipped it).
+ */
+export function appendCodexTranscriptLine(
+  childSession: Session,
+  turn: number,
+  step: number,
+  line: CodexTranscriptLine,
+  usage: TokenUsage | undefined,
+  options?: CodexMirrorOptions,
+): boolean {
+  // Token-granularity live mode streams think/text as assistant/chunk; the
+  // driver completes the stream with one combined final message, so the fold
+  // leaves these lines out (their usage rides that final message).
+  if (options?.skipAssistantContent === true && line.kind !== 'tool') return false
+  if (line.kind === 'tool') {
+    // Native tool card: the call event now, the result event when the stream
+    // already carries it. Tool lines never carry the round's usage — the
+    // callers attach usage to the round's final line, which is an agent
+    // message on every well-formed stream.
+    const call = childSession.append('tool/call', {
+      turn,
+      step,
+      callId: line.id as ToolCallEventCallId,
+      name: line.name,
+      arguments: line.args ?? '',
+    })
+    if (line.result !== undefined) {
+      childSession.append('tool/result', {
+        turn,
+        step,
+        message: createToolResultMessage({
+          callId: line.id as ToolResultCallId,
+          content: [{ type: 'text', text: line.result }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    }
+    return true
+  }
+  const blocks = line.kind === 'think'
+    ? [{ type: 'reasoning' as const, text: line.text }]
+    : [{ type: 'text' as const, text: line.text }]
+  childSession.append('assistant/message', {
+    turn,
+    step,
+    message: codexAssistantEvent(blocks),
+    ...usage === undefined ? {} : { usage },
+  }, { surfaceOp: 'append' })
+  return true
+}
+
+/** Fold one transcript line into the run's child session as one assistant step. */
 function appendCodexLine(
   spec: CodexCliRunSpec,
   turn: number,
@@ -697,27 +892,59 @@ function appendCodexLine(
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
-  const blocks = line.kind === 'think'
-    ? [{ type: 'reasoning' as const, text: line.text }]
-    : line.kind === 'tool'
-      ? [{ type: 'text' as const, text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}` }]
-      : [{ type: 'text' as const, text: line.text }]
-  spec.childSession?.append('assistant/message', {
-    turn,
-    step,
-    message: createAssistantMessage({
-      content: blocks,
-      source: { provider: 'codex-local', model: 'codex' },
-    }),
-    ...usage === undefined ? {} : { usage },
-  }, { surfaceOp: 'append' })
+  if (spec.childSession === undefined) return
+  appendCodexTranscriptLine(spec.childSession, turn, step, line, usage)
+}
+
+/**
+ * Book a round's usage when its carrier line (the last non-tool transcript
+ * line) was already mirrored WITHOUT it — a killed run's usage is only
+ * knowable at settle, and the carrier may have gone out through the live
+ * mirror by then. Appends a usage chunk pinned to the carrier's turn/step:
+ * the token projection treats a repeated step sample as a replacement, never
+ * a double count. No-op when the round has no mirrored assistant message.
+ * @param childSession - the run's child session.
+ * @param turn - the round's turn number.
+ * @param usage - the usage to book.
+ * @returns whether the chunk was appended.
+ */
+export function appendCodexUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'assistant/message') continue
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn !== turn || typeof data.step !== 'number') return false
+    childSession.append('assistant/chunk', {
+      turn,
+      step: data.step,
+      chunk: { type: 'usage', usage },
+    })
+    return true
+  }
+  return false
 }
 
 /** The delta-progress text for one transcript line. */
-function codexLineText(line: CodexTranscriptLine): string {
+export function codexLineText(line: CodexTranscriptLine): string {
   return line.kind === 'tool'
-    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}`
+    ? `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}${line.result !== undefined ? `\n${line.result}` : ''}`
     : line.text
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record).
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
 }
 
 /**
@@ -773,15 +1000,30 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             }), { surfaceOp: 'append' })
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
           }
+          // The usage rides the last NON-tool line (tool events carry no
+          // usage slot); a stream ending on a tool line would otherwise drop
+          // the round's accounting. When that carrier was mirrored in an
+          // earlier flush (before the usage was knowable), book it as a usage
+          // chunk pinned to the carrier's step instead.
+          let carrier = -1
+          if (parser.completed && parser.usage !== undefined) {
+            for (let scan = 0; scan < parser.lines.length; scan += 1) {
+              if (parser.lines[scan]?.kind !== 'tool') carrier = scan
+            }
+          }
+          const carrierMirrored = carrier !== -1 && carrier < mirrored
           for (let index = mirrored; index < upto; index += 1) {
             const line = parser.lines[index]
             if (line === undefined) continue
-            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            const usage = index === carrier ? parser.usage : undefined
             appendCodexLine(spec, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
           }
-          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          if (carrierMirrored && parser.usage !== undefined) {
+            appendCodexUsageChunk(childSession, turn, parser.usage)
+          }
+          await persistIfStandalone(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         } catch (error: unknown) {
           ctx.logger.warn(`subagent-codex: live mirror failed: ${thrown(error).message}`)
@@ -826,13 +1068,27 @@ async function appendCodexResponse(
     }), { surfaceOp: 'append' })
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  // The round's usage rides the last NON-tool line: tool activity folds to
+  // `tool/call`/`tool/result` events (which carry no usage slot), and a kill
+  // mid-command ends the transcript with a tool line — exactly the case the
+  // rollout-usage recovery exists for.
+  let usageIndex = -1
+  for (let index = 0; index < parsed.lines.length; index += 1) {
+    if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+  }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendCodexLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    appendCodexLine(spec, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     step += 1
   }
-  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  if (parsed.usage !== undefined && usageIndex !== -1 && usageIndex < fromLines) {
+    // The carrier line went out through the live mirror before the usage was
+    // knowable (a killed run recovers it from the rollout at settle): book it
+    // as a usage chunk pinned to the carrier's step.
+    appendCodexUsageChunk(childSession, turn, parsed.usage)
+  }
+  await persistIfStandalone(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
 }
 
@@ -844,10 +1100,23 @@ async function appendCodexResponse(
  * 'aborted'/'error' at the cancel moment, but codex may have produced content
  * before the kill landed. Also records the thread id (fresh rounds) so a
  * later resume can continue the partial thread.
+ *
+ * **Usage recovery**: a non-completed terminal state never emits
+ * `turn.completed`, so the parsed stream carries no usage even though codex
+ * wrote the run's real token spend to its rollout file. When the stream's
+ * usage is absent, the mirror falls back to the run's rollout file — located
+ * by the thread id (the `session_meta` head id) or by the spawn-time window —
+ * and attaches the file's LAST `token_count` entry (same
+ * `input − cached` caliber as `turn.completed`, via the shared
+ * {@link usageFromCodex}), so a killed or failed run still books its tokens.
+ * The fallback is best-effort and silent: no rollout file, an unreadable
+ * home, or a hard kill that wrote no token_count leaves the child without
+ * usage, exactly as before.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number.
  * @param output - the collected NDJSON stdout.
+ * @param startedAtMs - the spawn moment, anchoring the rollout time window.
  */
 async function mirrorCodexAfterExit(
   spec: CodexCliRunSpec,
@@ -855,6 +1124,7 @@ async function mirrorCodexAfterExit(
   turn: number,
   output: string,
   live: CodexLiveMirror | undefined,
+  startedAtMs: number,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
   const work = async (): Promise<void> => {
@@ -865,10 +1135,24 @@ async function mirrorCodexAfterExit(
     // Nothing streamed at all (e.g. the CLI died before the first item): keep
     // the pre-live-mirror behavior of recording nothing.
     if (parsed.lines.length === 0 && !userMirrored) return
+    // Non-completed terminal states (aborted/error) never emit turn.completed,
+    // so parsed.usage is absent; recover this run's last token_count from its
+    // rollout file (scoped home via the spawn env, located by thread id or
+    // the run's start-time window). A completed run keeps its stream usage.
+    let usage = parsed.usage
+    if (usage === undefined) {
+      const homeDir = spec.env['CODEX_HOME']
+      if (homeDir !== undefined && homeDir !== '') {
+        usage = await codexRolloutUsage(homeDir, {
+          threadId: parsed.threadId,
+          windowStart: startedAtMs,
+        })
+      }
+    }
     await appendCodexResponse(spec, task, turn, {
       lines: parsed.lines,
       output: collectOutputBlocks(parsed.text),
-      ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      ...usage === undefined ? {} : { usage },
     }, fromLines, userMirrored)
   }
   try {

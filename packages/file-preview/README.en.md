@@ -4,11 +4,11 @@ English | [中文](README.md)
 
 Host service for dsh's file-preview surface: lists every file a session's tool calls touched — each write/edit change's diff included — and serves any file's current content for preview. Pair it with `@khorsheed/dsh-client-ui-file-preview` and the web GUI gains a Produced-files tab with inline previews and reveal-in-folder.
 
-<img src="../../docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
 
-<img src="../../docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
 
-<img src="../../docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
 
 ## Features
 
@@ -51,7 +51,7 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -66,10 +66,10 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 `ctx.filePreview` (wire namespace `filePreview`) exposes four generated Remote methods:
 
-- `list(agent)` — a pure fold over `agent.session.events`: `read`/`write`/`edit` `tool/call`s contribute display paths, as do settled nested Code Mode `tool/code-dispatch`es for those tools (failed dispatches record nothing; entries borrow the root call's turn/step). A `write`/`edit` `tool/result` carrying `diffs` meta appends each change to the entry in event order, `lastDiff` kept as the final one. The response carries the entries, the last scanned seq, and whether `maxFiles` was hit. No filesystem access in the fold; with `captureBashWrites` on, entries merge with the collector's verified bash-written paths.
+- `list(agent)` — a pure fold over `agent.session.events`: `read`/`write`/`edit` `tool/call`s contribute display paths, as do settled nested Code Mode `tool/code-dispatch`es for those tools (failed dispatches record nothing; entries borrow the root call's turn/step). A `write`/`edit` `tool/result` carrying `diffs` meta appends each change to the entry in event order, `lastDiff` kept as the final one. The response carries the entries, the last scanned seq, and whether `maxFiles` was hit. No filesystem access in the fold; with `captureBashWrites` on, entries merge with the collector's verified bash-written paths. Before returning, each path is resolved against the session cwd and `stat`-ed, keeping only those that still exist as a regular file — the log fold is history, the product list reflects disk state (a temp script a turn wrote then cleaned up is no longer a product); existence is probed fresh per call (not cached with the log fold).
 - `read(agent, path, signal)` — resolves `path` against the session cwd and serves `kind: 'text'` (capped at `maxReadBytes`, flagged `truncated`), or `kind: 'image'` with a browser-loadable URL on web hosts — bytes ride a dedicated `/file-preview-image/<sessionId>/<path>` route, registered only when the optional `webServer` and `agents` services are composed; headless hosts answer `binary` — or a classified notice: `binary` (binary extension or NUL bytes; never read), `missing`, `too-large`, or `error` (message included).
 - `reveal(agent, path, signal)` — opens the file's folder with the file selected, shell-free through `@deepseek-ai/dsh-native-command`: macOS `open -R`, Windows `explorer /select,<path>`, WSL via `wslpath`, desktop Linux tries `nautilus`/`dolphin`/`nemo --select` in order. Answers `{ revealed: true }`, or `false` with `reason: 'missing'` (no such target) or `'select-failed'` (no capable file manager — the caller then opens the parent folder, so the gesture always lands somewhere visible). Writes nothing.
-- `turnFiles(agent)` — every turn's file mutations for the turn-tail card, the same single source of truth as `list` but NOT deduped: a file touched in two turns appears in both groups, so each card lists exactly what that turn mutated. Line deltas are summed from result diffs; the fold is cached per session and invalidated by the log watermark, which the response carries for the client's own cache.
+- `turnFiles(agent)` — every turn's file mutations for the turn-tail card, the same single source of truth as `list` but NOT deduped: a file touched in two turns appears in both groups, so each card lists exactly what that turn mutated. Line deltas are summed from result diffs; the fold is cached per session and invalidated by the log watermark, which the response carries for the client's own cache. Like `list`, it probes existence against the session cwd before returning and keeps only files that still exist (a cleaned-up temp script does not occupy a card).
 
 Bash-write collector: watches each session's bash `tool/call`/`tool/result` pairs, extracts high-precision write targets (`cat > path` heredocs, single `>` redirects, `tee` non-append, `sed -i`), expands `$VAR`/`~`/relative paths against the host environment and session cwd, and records only paths `fs.stat` confirms as files (a miss beats a false positive). Captures live in a per-session in-memory registry rebuilt by replaying the session's own history on `session/created`, so a restarted host regains them; the session log itself is never mutated (the official `Session.append` cannot mark a plugin event `ignorable` — see the S2 seam in `docs/upstream-seam-registry.md`). Bash-captured files carry no diff history; previews read current content through `read`.
 
@@ -82,3 +82,7 @@ Sharing: a pure host-side addition — one Remote service, mounted by the browse
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/file-preview`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

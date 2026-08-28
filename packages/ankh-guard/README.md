@@ -6,6 +6,8 @@
 
 agent 改完代码想重启的时候，这个插件会先问一句：这次改动，构建和测试都过了吗？过了才放行，没过就拦下来——免得改坏的代码把整个服务、连同正在进行的对话一起带走。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
+
 ## 工作原理
 
 核心就一条规则：**先证明代码是好的，才允许重启。**
@@ -151,7 +153,7 @@ dsh-ankh-guard restart \
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.1 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--repo`、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.2 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--repo`、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master,fork 或上游):✅——门禁通过独立的 `preflight-runner` 运行(从在线 checkout 解析已发布的 `@deepseek-ai/dsh-app-boot` 等),不再需要 fork 补丁。
 
 ## Known Limitations and Deferred Work
@@ -165,3 +167,7 @@ dsh-ankh-guard restart \
 - **checkpoint 提交会扫入整个工作树**——有意为之（检查点就是完整回滚点），但也会带上无关的未提交改动。
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；其他平台需用 `--pid`。
 - **杀进程一律按单 pid + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 的 `free_port` 都针对监听者 pid，并在强制路径（`restart` 的 SIGKILL 升级、watchdog 的端口接管与退出清理）沿 `pgrep -P` 回收后代，而不是杀进程组。被监管实例应在优雅停机时自行管理子进程；后代回收只是强制路径上的尽力而为兜底。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

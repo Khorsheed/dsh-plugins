@@ -4,15 +4,15 @@ English | [中文](README.md)
 
 Edit, withdraw, and restore user messages in the dsh web GUI: every user message grows a copy / edit / withdraw action row. Withdrawals really remove the message (and everything after it) from the model context, collapse it into an expandable divider, and can replay it back at the tail — no core-package edits.
 
-<img src="../../docs/screenshots/message-actions1.png" width="480" alt="copy / edit / withdraw action row on a user message">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions1.png" width="480" alt="copy / edit / withdraw action row on a user message">
 
-<img src="../../docs/screenshots/message-actions2.png" width="480" alt="in-place editing: saving re-sends as a new message; the edited original leaves the model context">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions2.png" width="480" alt="in-place editing: saving re-sends as a new message; the edited original leaves the model context">
 
-<img src="../../docs/screenshots/message-actions3.png" width="480" alt="the confirmation dialog before withdrawing, spelling out the consequences">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions3.png" width="480" alt="the confirmation dialog before withdrawing, spelling out the consequences">
 
-<img src="../../docs/screenshots/message-actions4.png" width="480" alt="withdrawn messages collapse into a divider, restorable to the end of the conversation">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions4.png" width="480" alt="withdrawn messages collapse into a divider, restorable to the end of the conversation">
 
-<img src="../../docs/screenshots/message-actions5.png" width="480" alt="restored messages return to the conversation as they were">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions5.png" width="480" alt="restored messages return to the conversation as they were">
 
 ## Features
 
@@ -36,7 +36,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: chat-node owner props dropped `loadImage` for the required `renderMessageImages` attachment-slot renderer — stay on the previous build on rc.6/rc.7 hosts. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21)
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: chat-node owner props dropped `loadImage` for the required `renderMessageImages` attachment-slot renderer — stay on the previous build on rc.6/rc.7 hosts. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21); re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -76,3 +76,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/message-tools`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

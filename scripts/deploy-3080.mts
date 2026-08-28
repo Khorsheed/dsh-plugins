@@ -28,7 +28,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -111,8 +111,14 @@ try {
   }
 
   // 2. pack-dist + copy to the profile tarball dir (outside the workspace).
+  // The profile copy's FILENAME carries a build timestamp, so every deploy
+  // gets a fresh file: specifier — the profile picks it up without anyone
+  // bumping the package version just to bust pnpm's tarball cache. The
+  // canonical name-version.tgz stays in dist-publish/ for npm publishing;
+  // versions only move at release time (docs/publishing.md).
   mkdirSync(TARBALLS, { recursive: true })
   const outDir = resolve('dist-publish')
+  const buildStamp = new Date().toISOString().replace(/[-:T]/g, '').slice(2, 12) // yymmddhhmm
   for (const m of metas) {
     const family = [...new Set([
       ...Object.keys(m.pkg.dependencies ?? {}),
@@ -121,8 +127,19 @@ try {
     const packArgs = ['scripts/pack-dist.ts', '--package', m.dir, '--scope', '@khorsheed', '--version', m.version, '--out', outDir]
     if (family.length > 0) packArgs.push('--family', family.join(','))
     run('npx', ['tsx', ...packArgs])
-    m.tgzName = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}.tgz`
-    copyFileSync(join(outDir, m.tgzName), join(TARBALLS, m.tgzName))
+    const canonical = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}.tgz`
+    m.tgzName = `${m.name.replace('@khorsheed/', 'khorsheed-')}-${m.version}+${buildStamp}.tgz`
+    copyFileSync(join(outDir, canonical), join(TARBALLS, m.tgzName))
+    // Prune older timestamped copies of the same package — they exist only to
+    // bust the install cache of the moment they were deployed. The name prefix
+    // must end at a VERSION digit: `khorsheed-dsh-local-agent-` is a prefix of
+    // `khorsheed-dsh-local-agent-codex-…`, and a bare startsWith pruned the
+    // family's tarballs alive in the profile (ENOENT at profile install).
+    const base = m.name.replace('@khorsheed/', 'khorsheed-')
+    const prunePattern = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d.*\\+.*\\.tgz$`)
+    for (const f of readdirSync(TARBALLS)) {
+      if (f !== m.tgzName && prunePattern.test(f)) rmSync(join(TARBALLS, f), { force: true })
+    }
     m.tgzPath = join(TARBALLS, m.tgzName)
   }
 

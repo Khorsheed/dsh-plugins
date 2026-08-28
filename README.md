@@ -4,9 +4,13 @@
 
 **dsh**(DeepSeek Harness)生态的社区插件 monorepo:**15 个纯增量插件**。其中 14 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 15 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。14 个 bundle 中除 `@khorsheed/dsh-room`(WIP,未上生产)外的 13 个已经同时跑在生产 profile 上,卸载即精确还原。
 
+**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(0.1.0);local-agent 家族(后 5 行)功能已完整(member-channel M1–M3 四 provider 全通),待验收后作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
+
 本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
 ## 全家桶速览
+
+已发布(第一波,dsh-web-basic 成员):
 
 | 包名(npm) | 面 | 行 id | 一句话特性 |
 | --- | --- | --- | --- |
@@ -15,15 +19,20 @@
 | `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | 聊天区标题**内联编辑重命名**会话 |
 | `@khorsheed/dsh-file-preview` | host | `file-preview` | 宿主侧只读**文件预览 Remote 服务**(列表 + 内容 + diff) |
 | `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 会话「产物」tab、回合变更卡片、文件预览抽屉 |
+| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
+| `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
+| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
+| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
+
+待发布(第二波,local-agent 家族,整体发布):
+
+| 包名(npm) | 面 | 行 id | 一句话特性 |
+| --- | --- | --- | --- |
 | `@khorsheed/dsh-local-agent` | host + client | `local-agent` | 本地编码 Agent 家族**核心**:作用域 home、登录/会话命令族、委派 registry |
 | `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness:`codex exec` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness:`claude -p` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host(工具) | *(随 harness 挂载)* | 家族自有委派工具,带 `resume` 续聊参数 |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
 | `@khorsheed/dsh-room` | host + client | `room` | 多 Agent **群聊会话**(WIP):@ 成员派发、共享黑板、成员名册 tab |
 
 版本为仓库内当前发布线,以 npm 实际发布为准。每个插件的功能介绍与截图见各自目录的 README(点包名进目录即达)。
@@ -43,7 +52,7 @@
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
 # 从 tarball / 源码目录装(开发态)
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
@@ -59,7 +68,7 @@ dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 
-# 本地 Agent 家族(核心 + 你实际用的 harness,成对装)
+# 本地 Agent 家族(第二波,上架前从源码安装)
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
@@ -111,8 +120,6 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 平铺在会话滚动区左缘的悬浮时间轴:一行一条已加载用户消息(含回合中插入的 steering 消息,可配置),静止时只显示压淡刻度,悬停/键盘聚焦展开文字,点击跳转对应消息;跟随阅读位置、顶部翻页加载更早历史、面板宽度可配置,`enabled` 可整体关闭。纯读取会话快照,零事件、零提示词,对模型与 KV 缓存完全无影响。
 
-> **仅源码安装。** `dsh-message-timeline` 标记为 `private`,未发布到 npm——从本仓库安装(`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` 或打包成 tarball)。
-
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`。
 
 #### `dsh-client-session-title-edit` —— 会话标题编辑
@@ -137,11 +144,13 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 ### 三、本地编码 Agent 家族
 
+> **发布状态:第二波。** 家族功能已完整——member-channel 的 M1 通道 / M2 composer / M3 成员互通知四个 provider 全部落地(claude-code 与 codex 于 2026-08-20 通过真实 CLI 端到端探针);待验收后整体上架 npm,上架前从本仓库源码安装。
+
 让 dsh 能把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code——各自独立上下文、独立记账,还能跨轮续聊。
 
-**架构。** `dsh-local-agent`(家族核心)是 harness 注册表 + 作用域目录供给:每个 harness 在自己独立的 scoped home 下运行(`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`,位于 `$DSH_HOME/local-agent/` 下,0700 权限因为它持有凭据),**绝不触碰你用户目录里的私人配置与凭据**。核心注册 `/<harness> login|sessions|status|logout` 命令族,自带 roster 驱动的浏览器设置分区(设置 → 本地 Agent)。每个 harness 包注册一个 harness,并把委派工具挂到 **profile 根**,任意 agent preset 都能委派,无需逐 preset 变体。
+**架构。** `dsh-local-agent`(家族核心)是 harness 注册表 + 作用域目录供给:每个 harness 在自己独立的 scoped home 下运行(`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`,位于 `$DSH_HOME/local-agent/` 下,0700 权限因为它持有凭据),**绝不触碰你用户目录里的私人配置与凭据**。核心注册 `/<harness> login|sessions|status|logout` 命令族;每个 harness 包注册一个 harness,并把委派工具挂到 **profile 根**,任意 agent preset 都能委派,无需逐 preset 变体。每个 provider 在 设置 → 插件 → 插件配置 里自带一张设置卡片:认证状态(卡头状态点一眼可见)+ 登录/登出 + 常驻模式(live)热切开关——YAML 只留部署级默认,卡片覆盖即时生效。
 
-**委派。** `subagent_kimi`(`kimi -p`)、`subagent_codex_local`(`codex exec`)、`subagent_claude_code_local`(`claude -p --output-format json`)。父级只看到最终回答或精确错误;子会话独立上下文、独立 token、独立 KV 缓存,永不进父级。
+**委派。** `subagent_kimi`(`kimi -p`)、`subagent_codex`(`codex exec`)、`subagent_claude_code`(`claude -p --output-format json`)。父级只看到最终回答或精确错误;子会话独立上下文、独立 token、独立 KV 缓存,永不进父级。常驻模式(live)下成员进程常驻:输出实时流入成员会话、取消不杀进程、崩溃自动续会话;关闭则每轮独立进程。
 
 **续聊(resume)。** 家族工具(`dsh-local-agent-tool-subagent`)在官方 `subagent_*` schema 上加了可选 `resume` 参数——首次委派返回的 dsh 子会话 id。传回后就在**同一个** dsh 子会话里继续**同一个** CLI 会话,按轮记账。续聊句柄**绝不进 prompt**:只从参数读取,并经 registry 按 (parent, provider) 校验,伪造句柄在任何 CLI 进程启动前就被拒绝。
 
@@ -154,11 +163,11 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -claude-code
 ```
 
-前置:对应 CLI 已在 `PATH`(与你交互式使用同一个二进制,插件不负责安装)。装完重启,跑一次 `/<name> login`。
+前置:对应 CLI 已在 `PATH`(与你交互式使用同一个二进制,插件不负责安装)。装完重启,在对应 provider 的设置卡片里完成登录。
 
-**卸载(每个 harness)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi`(或 `-codex` / `-claude-code`):注销 harness、命令族、工具行和 UI 行。作用域目录 `$DSH_HOME/local-agent/<name>` **刻意保留**(会话 + 凭据,重装免重新登录);删目录即清全部痕迹。
+**卸载(每个 harness)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi`(或 `-codex` / `-claude-code`):注销 harness、命令族、工具行和设置卡片。作用域目录 `$DSH_HOME/local-agent/<name>` **刻意保留**(会话 + 凭据,重装免重新登录);删目录即清全部痕迹。
 
-**卸载(核心)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent`:卸载 `local-agent` 行与设置分区;仍装着的 harness 保持 pending(绝不崩溃),重装核心即恢复。`$DSH_HOME/local-agent` homes 根目录保留,删除即清。
+**卸载(核心)** —— `dsh plugin --profile web remove @khorsheed/dsh-local-agent`:卸载 `local-agent` 行;仍装着的 harness 保持 pending(绝不崩溃),重装核心即恢复。`$DSH_HOME/local-agent` homes 根目录保留,删除即清。
 
 **`dsh-local-agent-tool-subagent`** 没有自己的 bundle 行——由各 harness 的 patch 以不同工具名各挂一次。卸掉 harness 即卸载其行,pnpm 会作为无用的依赖自动清理。
 

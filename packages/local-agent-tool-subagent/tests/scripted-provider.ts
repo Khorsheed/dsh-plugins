@@ -15,13 +15,20 @@ export interface ScriptedProviderConfig {
   started: Array<{ label?: string; task: string }>
   /** Consumed delegation intents, mirroring how a family provider pops them. */
   taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }>
+  /**
+   * When given, each start() registers the resolver of a still-pending run
+   * instead of settling immediately, so a test can hold the run in flight and
+   * settle it later (the stop/registry suite).
+   */
+  deferred?: Array<(result: SubagentResult) => void>
 }
 
 /**
  * A one-shot provider that publishes an immediate completed run echoing the
- * task. The run id equals a fixed child session id, matching the family
- * providers' session-backed contract, and it consumes one staged delegation
- * intent per start like a real family provider.
+ * task — or, when `deferred` is configured, a run that stays in flight until
+ * the test settles it. The run id equals a fixed child session id, matching
+ * the family providers' session-backed contract, and it consumes one staged
+ * delegation intent per start like a real family provider.
  */
 export function mountScriptedProvider(ctx: Context, config: ScriptedProviderConfig): () => void {
   const provider: SubagentProvider = {
@@ -39,13 +46,15 @@ export function mountScriptedProvider(ctx: Context, config: ScriptedProviderConf
       } | undefined
       const intent = registry?.takeDelegationIntent(request.parent.session.id, config.name)
       if (intent !== undefined) config.taken.push(intent)
-      const result: Promise<SubagentResult> = settleRunResult({
-        attempt: async () => ({ output: [{ type: 'text', text: `done: ${task}` }], stopReason: 'completed' }),
-        collectOutput: () => [],
-        cancelled: () => false,
-        signal: request.signal,
-        onAbort: () => {},
-      })
+      const result: Promise<SubagentResult> = config.deferred === undefined
+        ? settleRunResult({
+          attempt: async () => ({ output: [{ type: 'text', text: `done: ${task}` }], stopReason: 'completed' }),
+          collectOutput: () => [],
+          cancelled: () => false,
+          signal: request.signal,
+          onAbort: () => {},
+        })
+        : new Promise((resolve) => { config.deferred!.push(resolve) })
       return subprocessRunHandle({
         id: SessionId('scripted-child'),
         result,

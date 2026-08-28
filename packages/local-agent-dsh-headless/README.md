@@ -2,12 +2,13 @@
 
 [English](README.en.md) | 中文
 
-local-agent 家族的一次性 headless 子 dsh 运行器：在一个由调用方命名的 dsh 会话里跑一个任务，把最终助手文本打到 stdout，然后进程退出。它是官方 `@deepseek-ai/dsh-headless` bundle 的兄弟版本，唯一区别是会话 id 归谁所有——你永远不需要自己安装或挂载它；父侧 `local-agent-dsh` provider 会在运行时自动 provision。
+local-agent 家族的 headless 子 dsh 运行器，两种模式：一次性（默认）在一个由调用方命名的 dsh 会话里跑一个任务，把最终助手文本打到 stdout，然后进程退出；常驻（`--serve`）驻留进程，经家族内部 stdio JSON-RPC wire 接收 turn 并回推会话事件，支撑父侧 `local-agent-dsh` 的长驻驱动（`live: true`）。它是官方 `@deepseek-ai/dsh-headless` bundle 的兄弟版本，唯一区别是会话 id 归谁所有——你永远不需要自己安装或挂载它；父侧 `local-agent-dsh` provider 会在运行时自动 provision。
 
 ## 特性
 
 - **调用方提供的会话 id**——`--session-id <id>` 用该确切 id 新建会话，`--resume <id>` 续接该会话；id 以调用参数传递，绝不经过 stdout。
 - **一次性语义**——驱动任务、打印最终助手文本，完成轮退出 0、否则退出 1。
+- **常驻 serve 模式**——`--serve` 把 runner 切成长驻循环：`turn/start` 驱动一轮、`session/event` 逐事件推流、`session/idle` 关轮（落盘 flush 之后）、`turn/interrupt` 落地为进程内 `Agent.cancel` 优雅中断（进程不死、会话可续）、`shutdown`/stdin EOF 优雅退出。wire 契约见 `src/wire.ts`。
 - **隔离的会话存储**——子 dsh 会话存在自己的 scoped `$DSH_HOME` 下，绝不会出现在父实例的会话列表里。
 - **零手工挂载**——`headless-local-agent-dsh` 子 profile 由父级 provider 自动 provision，任何地方都不需要手工挂载。
 
@@ -28,18 +29,20 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-dsh
 ```sh
 dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   # fresh
 dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       # resume
+dsh --profile headless-local-agent-dsh --serve                              # 常驻 live-driver 模式（stdio wire）
 ```
 
-两个 flag 都不给时，runner 自生成 `session-<uuid>` id（官方 headless 行为），因此仍是一次性使用的即插即用替代。
+两个 flag 都不给时，runner 自生成 `session-<uuid>` id（官方 headless 行为），因此仍是一次性使用的即插即用替代。`--serve` 不接受 task 与 session flag——turn 与会话 id 全部走 wire。
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.1`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线（deepseek-harness master）：✅
 
 ## 已知限制
 
 - **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。
+- **也绝不要把它列为任何 profile 的直接依赖**——`dsh plugin add` / reconcilePlugins 会把声明 `dsh.bundle` 的直接依赖自动挂进组合的 layer 栈。2026-08-23 P0：它作为 prod web profile 的直接依赖被自动挂载，`code-runtime` 行与 web-app 的同名行撞成 duplicate entry id，全实例 boot 失败。经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可（reconcile 只看直接依赖）；包内不变量对挂进 web 组合（检出 `webStartup` 服务）fail loud。
 - 子 dsh 会话绝不会出现在父实例的会话列表里（独立的 scoped-home 存储）。
 - 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
 - patch 改动落地前必须做启动级验证（`dsh preflight` 或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败。
@@ -64,9 +67,10 @@ local-agent 家族需要在多次委派之间续接**同一个** dsh 对话：�
     task: !!js ctx.localAgentDshHeadlessStartup.task
     sessionId: !!js ctx.localAgentDshHeadlessStartup.sessionId
     resumeSessionId: !!js ctx.localAgentDshHeadlessStartup.resumeSessionId
+    serve: !!js ctx.localAgentDshHeadlessStartup.serve ?? false
 ```
 
-startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume` 并发布调用；runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下，并生成自己的 `package.json`、patch 层与 bundle symlink。
+startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume`（或 `--serve`）并发布调用；一次性模式下 runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出，serve 模式下转入常驻 wire 循环（`src/serve.ts`）。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下，并生成自己的 `package.json`、patch 层与 bundle symlink。
 
 </details>
 

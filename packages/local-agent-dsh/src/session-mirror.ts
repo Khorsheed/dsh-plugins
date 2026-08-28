@@ -33,7 +33,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -116,6 +116,9 @@ export interface DshMirrorDelta {
   total: number
 }
 
+/** How much of the live event stream crosses into the child session. */
+export type DshLiveMirrorGranularity = 'event' | 'token'
+
 /** Flatten a mirrored message event's content to plain text for delta progress. */
 function mirroredEventText(event: SessionEvent): string {
   // user/message carries content directly; assistant/message wraps it in `message`.
@@ -130,9 +133,115 @@ function mirroredEventText(event: SessionEvent): string {
     .join('')
 }
 
+/** The delta-progress text for one mirrored tool event. */
+function mirroredToolText(event: SessionEvent): string {
+  if (event.type === 'tool/call') {
+    return `[工具 ${(event.data as { name?: string }).name ?? 'tool'}]`
+  }
+  const data = event.data as { message?: { content?: readonly { content?: readonly { text?: string }[] }[] } }
+  const result = data.message?.content?.[0]?.content?.map(block => block.text ?? '').join('') ?? ''
+  return result === '' ? '[工具结果]' : `[工具结果] ${result}`
+}
+
+/**
+ * Find the child-session seq of the mirrored `tool/call` carrying `callId`,
+ * so a mirrored `tool/result`'s `sourceEventSeqs` points at the CHILD's call
+ * event — the source event's own seqs reference the sub-dsh session's
+ * numbering and are meaningless here.
+ */
+function findMirroredCallSeq(childSession: Session, callId: string): number | undefined {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'tool/call') continue
+    if ((event.data as { callId?: string }).callId === callId) return event.seq
+  }
+  return undefined
+}
+
+/**
+ * Append one mirrored `tool/call` or `tool/result` event — the native tool
+ * card pair, so the child session renders the sub-dsh's tool activity with
+ * the standard conversation's tool rows instead of not at all. Shared by the
+ * file mirror's span loop and the live driver's per-event mirror.
+ */
+function appendMirroredToolEvent(childSession: Session, event: SessionEvent): string {
+  if (event.type === 'tool/call') {
+    childSession.append('tool/call', event.data as SessionEventMap['tool/call'])
+  } else if (event.type === 'tool/result') {
+    const data = event.data as { message: { source: { callId: string } } }
+    const callSeq = findMirroredCallSeq(childSession, String(data.message.source.callId))
+    childSession.append(
+      'tool/result',
+      event.data as SessionEventMap['tool/result'],
+      {
+        surfaceOp: 'append',
+        ...callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
+      },
+    )
+  }
+  return mirroredToolText(event)
+}
+
+/**
+ * Append one appendable message event verbatim and report its delta text —
+ * the single append path shared by the file mirror's span loop and the live
+ * driver's per-event mirror, so both transports produce identical child
+ * sessions.
+ */
+function appendMirroredMessageEvent(childSession: Session, event: SessionEvent): string {
+  if (event.type === 'user/message') {
+    childSession.append('user/message', event.data, { surfaceOp: 'append' })
+  } else if (event.type === 'assistant/message') {
+    // Verbatim copy: content blocks (text/reasoning) and usage ride the
+    // event's own fields, so the tokenUsage projection counts the round.
+    childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
+  }
+  return mirroredEventText(event)
+}
+
+/**
+ * Mirror ONE live-pushed sub-dsh session event (the serve mode's
+ * `session/event` wire notification) into the child session. This is the
+ * live driver's transport-side entry into the SAME fold the file mirror
+ * owns: the filter (only the caller task's `user/message` and every
+ * `assistant/message` cross; turn boundaries stay the parent's; scaffolding
+ * stays behind) and the verbatim append are exactly `mirrorDshSession`'s
+ * span-loop rules. `assistant/chunk` events cross only under the `token`
+ * granularity opt-in. The caller owns offset/dedupe (the live runtime pushes
+ * each event once) and persistence batching.
+ * @param childSession - the parent-side dsh subagent session.
+ * @param event - the live event from the resident sub-dsh.
+ * @param options - granularity; default `event`.
+ * @returns the mirrored text for delta progress, or undefined when the event
+ *   was filtered out (or carried no text, as non-text chunks do).
+ */
+export function mirrorDshLiveEvent(
+  childSession: Session,
+  event: SessionEvent,
+  options?: { granularity?: DshLiveMirrorGranularity },
+): string | undefined {
+  if (event.type === 'user/message' && event.data.source.kind === 'user') {
+    return appendMirroredMessageEvent(childSession, event)
+  }
+  if (event.type === 'assistant/message') {
+    return appendMirroredMessageEvent(childSession, event)
+  }
+  if (event.type === 'tool/call' || event.type === 'tool/result') {
+    return appendMirroredToolEvent(childSession, event)
+  }
+  if (event.type === 'assistant/chunk' && options?.granularity === 'token') {
+    childSession.append('assistant/chunk', event.data)
+    const chunk = event.data.chunk
+    return chunk.type === 'text-delta' || chunk.type === 'reasoning-delta' ? chunk.text : undefined
+  }
+  return undefined
+}
+
 /**
  * Mirror the current round's events from the sub-dsh session into the child
- * session, then persist. Runs both from the provider's live poll (while the
+ * session, then persist (standalone sessions only — a live session's own
+ * write-behind owns durability; see {@link persistIfStandalone}). Runs both
+ * from the provider's live poll (while the
  * sub-dsh writes its log in batches — a torn final zstd frame is skipped
  * until the next pass) and after the child process exits (the settle pass);
  * the round's already-mirrored prefix in the child session is the offset, so
@@ -186,24 +295,24 @@ export async function mirrorDshSession(
       if (childSession.events[index]?.type === 'turn/start') lastTurnStart = index
     }
     const mirrored = childSession.events.slice(lastTurnStart + 1)
-      .filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+      .filter(event =>
+        event.type === 'user/message' || event.type === 'assistant/message'
+        || event.type === 'tool/call' || event.type === 'tool/result')
       .length
     const span = events.slice(start, end)
       .filter(event =>
         (event.type === 'user/message' && event.data.source.kind === 'user')
-        || event.type === 'assistant/message')
+        || event.type === 'assistant/message'
+        || event.type === 'tool/call'
+        || event.type === 'tool/result')
       .slice(mirrored)
     const texts: string[] = []
     for (const event of span) {
-      if (event.type === 'user/message') {
-        childSession.append('user/message', event.data, { surfaceOp: 'append' })
-        texts.push(mirroredEventText(event))
-      } else if (event.type === 'assistant/message') {
-        // Verbatim copy: content blocks (text/reasoning) and usage ride the
-        // event's own fields, so the tokenUsage projection counts the round.
-        childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
-        texts.push(mirroredEventText(event))
-      }
+      texts.push(
+        event.type === 'tool/call' || event.type === 'tool/result'
+          ? appendMirroredToolEvent(childSession, event)
+          : appendMirroredMessageEvent(childSession, event),
+      )
     }
     // todo/write passthrough, counted independently of the message prefix
     // skip: the snapshot is a standing whole list (last-wins), so a pass
@@ -222,11 +331,26 @@ export async function mirrorDshSession(
       }
     }
     if (texts.length > 0 || todosAppended > 0) {
-      await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+      await persistIfStandalone(ctx, childSession)
     }
     return { texts, total: mirrored + mirroredTodos.length + texts.length + todosAppended }
   } catch (error) {
     ctx.logger.warn(`subagent-dsh: session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
     return empty
   }
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same events (duplicated messages, no usage on the record).
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
 }

@@ -56,8 +56,8 @@ describe('kimi-cli-provider run settlement', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-run-1'))
     const ctx = new Context()
-    const flush = vi.fn(async () => true)
-    ctx.provide('sessions', { flush })
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
     const { handle, done } = stubChild('run-1')
 
     const request = {
@@ -84,7 +84,7 @@ describe('kimi-cli-provider run settlement', () => {
       expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
     })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    expect(flush).toHaveBeenCalledWith(child)
+    expect(append).toHaveBeenCalledWith(child.id, child.events)
     await done
   })
 
@@ -250,6 +250,33 @@ describe('kimi-cli-provider run settlement', () => {
     expect(endData?.reason?.kind).toBe('error')
     expect(endData?.reason?.error?.message).toBeTruthy()
     expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    await done
+  })
+
+  it('reports auth-shaped failures through onAuthFailure', async () => {
+    const done = Promise.resolve({ exitCode: 1, signal: null })
+    const authFailures: string[] = []
+    const handle: SubprocessHandle = {
+      pid: 4246,
+      stdin: undefined,
+      stdout: Readable.from([]),
+      stderr: Readable.from([]),
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: 'Error: 401 Unauthorized\n', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const run = await startKimiCliRun(
+      { prompt: [{ type: 'text', text: 'x' }], parent: { session: { header: { cwd: '/tmp' } } }, signal: new AbortController().signal } as unknown as SubagentStartRequest,
+      { cwd: '/tmp', env: {}, disposeGraceMs: 3_000, spawn: () => handle, onAuthFailure: detail => authFailures.push(detail) },
+    )
+    expect((await run.result).stopReason).toBe('error')
+    // Auth detection runs on the post-exit chain (after streams drain).
+    await vi.waitFor(() => { expect(authFailures).toHaveLength(1) })
+    expect(authFailures[0]).toContain('401')
     await done
   })
 
@@ -433,6 +460,59 @@ describe('kimi-cli-provider resume round', () => {
     expect(turnEnds).toHaveLength(2)
     expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
     expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    await run.dispose()
+  })
+
+  it('does not double-prefix a record id that already carries the ACP directory prefix', async () => {
+    const ctx = new Context()
+    const child = Session.create(SessionId('child-run-legacy'))
+    child.append('subagent/descriptor', {
+      version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: 建个文件',
+    })
+    child.append('turn/start', { turn: 1 })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const sessions = { get: (id: SessionId) => (id === SessionId('child-run-legacy') ? child : undefined) }
+    ctx.provide('sessions', sessions as never)
+    ctx.provide('sessionPersistence', { create: async () => {}, append: vi.fn(async () => {}) })
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/kimi-home',
+      get: () => ({ displayName: 'Kimi Code' }),
+      // A legacy record written by a live round (ACP directory-name form).
+      takeDelegationIntent: () => ({
+        kind: 'resume',
+        childSessionId: 'child-run-legacy',
+        cliSessionId: 'session_run-legacy',
+      }),
+      recordDelegation: () => {},
+      setKimiMirroredLines: () => {},
+      reportRunProgress: () => {},
+      kimiMirroredLines: () => 0,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+    } as never)
+
+    const spawned: string[][] = []
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: string[] }) => {
+        spawned.push(spec.argv)
+        const { handle } = stubChild('run-legacy')
+        return handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new KimiCliProvider(ctx)
+    const request = {
+      label: '继续',
+      prompt: [{ type: 'text', text: '接着做' }],
+      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
+    } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+    const run = await provider.start(request)
+    await run.result
+    expect(spawned[0]).toEqual(['kimi', '-S', 'session_run-legacy', '-p', '接着做'])
     await run.dispose()
   })
 
@@ -652,8 +732,8 @@ describe('kimi-cli-provider abort path', () => {
     const homeDir = wireHome('run-1')
     const child = Session.create(SessionId('child-abort-1'))
     const ctx = new Context()
-    const flush = vi.fn(async () => true)
-    ctx.provide('sessions', { flush })
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
     const hanging = hangingChild('run-1')
 
     const controller = new AbortController()
@@ -703,7 +783,7 @@ describe('kimi-cli-provider abort path', () => {
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '任务完成。' }])
     expect(assistant[0]!.data.usage).toBeUndefined()
-    expect(flush).toHaveBeenCalled()
+    expect(append).toHaveBeenCalled()
     await hanging.done
   })
 

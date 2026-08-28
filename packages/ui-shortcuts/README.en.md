@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 Keyboard shortcuts for the dsh web GUI: `Esc` pauses the running turn, `Ctrl/Cmd+S` steer-sends the draft, `Ctrl/Cmd+O` starts a new session — every key rebindable in Settings.
 
-<img src="../../docs/screenshots/07-ui-shortcuts.png" width="480" alt="keyboard shortcuts card in Settings">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="480" alt="keyboard shortcuts card in Settings">
 
 ## Features
 
@@ -24,7 +24,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master): ✅
 
 ## Known Limitations
@@ -76,3 +76,7 @@ Locale entries stay in the contributing plugin's own namespace. Duplicate ids fa
 ## Development
 
 Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/ui-shortcuts`). Issues and contributions welcome there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

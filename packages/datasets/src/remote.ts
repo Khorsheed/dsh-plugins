@@ -15,7 +15,8 @@ import { validateBinding, type DatasetBinding } from './binding.ts'
 import {
   resolveScope, type DatasetScope, type DatasetsService,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
-  type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
+  type PreviewRepoRequest, type PreviewRepoResult,
+  type ReadPassthroughRequest, type ReadQuery, type ReadResult, type ShowRequest, type ShowResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -56,12 +57,17 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   }
 
   /**
-   * The effective scope of one call: the session binding's whitelists plus the
-   * configured default repo. No binding and no default fails loud inside the
-   * service core (the tab renders the error and offers the bind form).
+   * The effective scope of one call: the OPERATOR view. The binding supplies
+   * the repository path only — the layer/dataset whitelists constrain the
+   * agent (tools + worktree materialization), never the human reading their
+   * own repository through the tab. No binding and no default fails loud
+   * inside the service core (the tab renders the error and offers the bind
+   * form).
    */
   private scope(agent: Agent): DatasetScope {
-    return resolveScope({}, this.datasets.binding(agent.session), this.defaultRepo)
+    const binding = this.datasets.binding(agent.session)
+    const base = resolveScope({}, binding === undefined ? undefined : { repoPath: binding.repoPath }, this.defaultRepo)
+    return { repo: base.repo, operator: true }
   }
 
   /**
@@ -98,6 +104,42 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   unbind(agent: Agent): DatasetBinding | null {
     this.datasets.unbind(agent.session)
     return null
+  }
+
+  /**
+   * Preview a candidate repository BEFORE binding: the canonical path plus
+   * its dataset summaries (declared layers, visibility classes, warnings).
+   * Deliberately ignores the session binding — the binder is choosing the
+   * whitelist, so the preview must show everything. A non-repository path
+   * fails loud (NOT_A_REPO); a repository with no datasets/ answers an
+   * empty list.
+   * @param agent - owning live agent (lookup convention; the session binding is not consulted).
+   * @param request - the candidate path (whitespace/trailing-slash normalized).
+   * @returns the canonical repo path and its dataset summaries.
+   */
+  @Remote('previewRepo')
+  async previewRepo(agent: Agent, request: PreviewRepoRequest): Promise<PreviewRepoResult> {
+    void agent
+    // The binder sees the canonical toplevel (a trailing slash or a nested
+    // path binds what was previewed).
+    const repo = await this.datasets.assertRepository(request.path.trim().replace(/\/+$/, ''))
+    const result = await this.datasets.list({ repo, operator: true })
+    if (result.kind !== 'datasets') throw new Error('previewRepo: list without a dataset selector must list datasets')
+    return { repo, datasets: result.datasets }
+  }
+
+  /**
+   * Read one dataset-relative file from the git object — the operator channel
+   * into the passthrough zone (manifest/docs/item.json). Deliberately NOT a
+   * model tool: agent access to dataset content stays layer-gated through the
+   * datasets_* tools.
+   * @param agent - owning live agent; its session binding resolves the repo.
+   * @param request - dataset id, dataset-relative path, optional commit pin.
+   * @returns the file content and the commit it was read from.
+   */
+  @Remote('readPassthrough')
+  async readPassthrough(agent: Agent, request: ReadPassthroughRequest): Promise<ReadResult> {
+    return await this.datasets.readPassthrough(this.scope(agent), request.dataset, request.path, request.commit)
   }
 
   /**

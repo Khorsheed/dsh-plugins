@@ -2,7 +2,7 @@
 
 - **分类**：plugin
 - **最后更新**：2026-08-19
-- **状态**：planned
+- **状态**：verified（M1–M3 已交付、四 provider 全通；唯一未完成的验收项「room 复验」移交 [room-session-promotion](2026-08-27-room-session-promotion.md)，理由见该提案）
 - **查重结果**：已搜 `proposals/active/`（datasets-mission-bench、local-agent-delegation-api，均非同一意图）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。最近邻是 room note（`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`）的「人直接打开成员会话发消息」与「成员互@」两节诉求，以及本仓库的 `local-agent-delegation-api` 提案（本提案的宿主 API 底座，M1–M4 已落地）。无重复，新建。
 - **官方依赖**：纯插件。composer 侧用官方文档化的 chain 槽 priority 选举机制（`conversation.composer`，ui-slots 升序选举、先中先得；message-tools 遮蔽 `conversation.chat.node` 为同源先例）；发送侧走家族自有 Typert Remote + 已落地的 `ctx.localAgent.resume` 门面；成员互通知走 CLI scoped 配置注入的桥接 MCP server + localhost 回调。零 harness 改动。
 

@@ -1,7 +1,7 @@
 # local-agent 公开委派 API（start / resume / cancel + 进度事件）（local-agent-delegation-api）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：verified（M1–M4 已交付，见实现记录）
 - **最后更新**：2026-08-18
 - **查重结果**：已搜 `proposals/active/`（仅 datasets-mission-bench，无关）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。命中 `.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`——那是**消费方**（room 插件）的设想，其「Requirement for local-agent」一节正是本提案的需求来源，两者为同一能力的供需两侧，不重复；另有 `implemented/feature/2026-08-16-local-agent-resume.md` 等家族 resume 机制的历史 note，为背景而非同一意图；原 `proposed/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md` 第 1 条（委派映射持久化）已**吸收进本提案 M4**，该 note 随之废弃（移入 `rejected/`，其第 2、3 条——双 sandbox 实例、output-schema——一并废弃，需要时另立 note）。无重复，新建。
 - **官方依赖**：纯插件。所需官方契约均已实测存在（见「现状」）：`ctx.subagents.start(provider, request)` 接受调用方持有的 live `Agent` + 自备 `AbortSignal`，且 `start()` 内部不做会话归属校验；全局 `session/event` 事件对根 context 订阅者广播一切会话追加；one-shot run 的取消即 start 时传入的 AbortSignal。零 harness 改动。

@@ -115,16 +115,38 @@ function sandboxGate(verb: string, options: CliOptions, io: CliIo): boolean {
   return false
 }
 
+/**
+ * Whether the pid named by this raw pid/lock-file content is alive. Empty
+ * content reads as NO holder: Number('') is 0 and kill(0, 0) probes our own
+ * process group (always succeeds), which once read as "alive" and refused
+ * every restart forever — the bug that had to be fixed in two copies of this
+ * logic before it was consolidated here.
+ */
+function pidAlive(raw: string): boolean {
+  const pid = Number(raw)
+  if (raw === '' || !Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The live pid named by a pid/lock file (as the raw string), or null when absent/stale. */
+function livePidIn(file: string): string | null {
+  try {
+    const raw = readFileSync(file, 'utf8').trim()
+    return pidAlive(raw) ? raw : null
+  } catch {
+    return null
+  }
+}
+
 /** The live supervising watchdog's pid, or null when none is (pidfile + kill 0). */
 function liveWatchdogPid(stateDir: string): number | null {
-  try {
-    const raw = readFileSync(stateFile(stateDir, 'watchdogPid'), 'utf8').trim()
-    const pid = Number(raw)
-    // raw '' → 0, and kill(0, 0) always succeeds (it probes our own process
-    // group): an empty pidfile must read as NO watchdog, never as alive.
-    if (raw !== '' && Number.isInteger(pid) && pid > 0) { process.kill(pid, 0); return pid }
-  } catch { /* no pidfile or a dead owner */ }
-  return null
+  const raw = livePidIn(stateFile(stateDir, 'watchdogPid'))
+  return raw === null ? null : Number(raw)
 }
 
 /**
@@ -152,13 +174,7 @@ function acquireRestartLock(stateDir: string, holderPid: number = process.pid): 
       } catch (error) {
         return { ok: false, holder: `unreadable (${String(error)})` }
       }
-      const pid = Number(holder)
-      if (holder !== '' && Number.isInteger(pid) && pid > 0) {
-        try {
-          process.kill(pid, 0)
-          return { ok: false, holder }
-        } catch { /* dead holder — reclaim below */ }
-      }
+      if (pidAlive(holder)) return { ok: false, holder }
       try {
         unlinkSync(file)
       } catch (error) {
@@ -426,21 +442,6 @@ function restartMarkerState(stateDir: string): 'none' | 'fresh' | 'stale' {
   } catch {
     return 'stale' // unparseable is stale by definition
   }
-}
-
-/** The restart lock's live holder pid (as a string), or null when free/stale. */
-function liveRestartLockHolder(stateDir: string): string | null {
-  try {
-    const raw = readFileSync(stateFile(stateDir, 'restartLock'), 'utf8').trim()
-    const pid = Number(raw)
-    if (raw !== '' && Number.isInteger(pid) && pid > 0) {
-      try {
-        process.kill(pid, 0)
-        return raw
-      } catch { /* dead holder */ }
-    }
-  } catch { /* no lock file */ }
-  return null
 }
 
 /** Captured preflight output is diagnostics, not a log — cap it before it can grow without bound. */
@@ -1253,65 +1254,74 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       if (liveWatchdogPid(stateDir) === null) {
         io.stderr(NO_WATCHDOG_HINT)
       }
-      // One scheduled restart at a time: the marker carries a single
-      // initiator, so overwriting a FRESH one would silently reassign the
-      // pending report. A marker past the TTL is stale (the watchdog died
-      // mid-flow without clearing it) — overwrite with a warning instead of
-      // refusing forever.
-      const markerFile = stateFile(stateDir, 'restartRequested')
-      const markerState = restartMarkerState(stateDir)
-      if (markerState === 'fresh') {
-        io.stderr('schedule-exit refused: a restart is already scheduled (restart-requested.json still pending); a stale marker expires on its own after 15 minutes\n')
+      // One scheduled restart at a time, and never while a restart is in
+      // flight. Both checks must hold ATOMICALLY with writing the marker and
+      // spawning the exit agent: an earlier version checked without holding
+      // the lock, and the narrow read→write window let a concurrent restart
+      // pass its own checks in between — the scheduled exit agent then
+      // SIGTERMed the instance that restart had just started. Taking the
+      // restart lock here serializes the two verbs on the same primitive
+      // (restart's own marker check stays: it guards against an exit agent
+      // scheduled BEFORE its acquisition, already past this window).
+      const lock = acquireRestartLock(stateDir)
+      if (!lock.ok) {
+        io.stderr(`schedule-exit refused: a restart is in flight (pid ${lock.holder}) — the exit agent would kill the instance it is starting\n`)
         return 1
       }
-      if (markerState === 'stale' && existsSync(markerFile)) {
-        io.stderr('warning: overwriting a stale restart marker (a previous schedule never completed)\n')
+      try {
+        // The marker carries a single initiator, so overwriting a FRESH one
+        // would silently reassign the pending report. A marker past the TTL
+        // is stale (the watchdog died mid-flow without clearing it) —
+        // overwrite with a warning instead of refusing forever.
+        const markerFile = stateFile(stateDir, 'restartRequested')
+        const markerState = restartMarkerState(stateDir)
+        if (markerState === 'fresh') {
+          io.stderr('schedule-exit refused: a restart is already scheduled (restart-requested.json still pending); a stale marker expires on its own after 15 minutes\n')
+          return 1
+        }
+        if (markerState === 'stale' && existsSync(markerFile)) {
+          io.stderr('warning: overwriting a stale restart marker (a previous schedule never completed)\n')
+        }
+        // Intentional-restart marker: the supervising watchdog runs the canary
+        // after the respawn and clears this on pass. The initiator (the session
+        // that requested the exit) rides along so the restart report can return
+        // to that session instead of racing to whichever root agent resumes
+        // first. Everything lands in stateDir directly — the same directory the
+        // plugin reads (see the supervise case for why no home is derived).
+        const initiator = options.initiator ?? process.env.DSH_SESSION_ID
+        mkdirSync(stateDir, { recursive: true })
+        writeFileSync(stateFile(stateDir, 'restartRequested'),
+          `${JSON.stringify({
+            reason: 'scheduled self-restart',
+            requestedAt: Date.now(),
+            ...(initiator !== undefined ? { initiator } : {}),
+          })}\n`)
+        // A DETACHED exit agent (setsid via node spawn): it cannot be reaped by
+        // the sandbox/harness process group, so the scheduled kill actually
+        // lands even after the scheduling turn ends — the fix for "the kill
+        // never happened" seen with `(sleep N; kill) &` from a managed shell.
+        // The agent is a real shipped file (typechecked, linted, unit-tested),
+        // spawned with the same source/built split as guardInvocation().
+        const resultFile = stateFile(stateDir, 'lastRestart')
+        const logPath = options.log ?? stateFile(stateDir, 'scheduleExitLog')
+        mkdirSync(dirname(logPath), { recursive: true })
+        const child = spawn(process.execPath, exitAgentInvocation(), {
+          detached: true,
+          stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
+          env: {
+            ...process.env,
+            WD_PORT: String(port),
+            WD_DELAY_MS: String(delayMs),
+            WD_RESULT_FILE: resultFile,
+            ...(initiator !== undefined ? { WD_INITIATOR: initiator } : {}),
+          },
+        })
+        child.unref()
+        io.stdout(`exit scheduled in ${delayMs} ms (agent pid ${child.pid ?? 'unknown'}) — watchdog will respawn and run the canary\n`)
+        return 0
+      } finally {
+        lock.release()
       }
-      // And the other direction of the same invariant: a restart in flight
-      // (live lock holder) means an instance is being stopped/started right
-      // now — scheduling an exit would SIGTERM the one it just started.
-      const inFlight = liveRestartLockHolder(stateDir)
-      if (inFlight !== null) {
-        io.stderr(`schedule-exit refused: a restart is in flight (pid ${inFlight}) — the exit agent would kill the instance it is starting\n`)
-        return 1
-      }
-      // Intentional-restart marker: the supervising watchdog runs the canary
-      // after the respawn and clears this on pass. The initiator (the session
-      // that requested the exit) rides along so the restart report can return
-      // to that session instead of racing to whichever root agent resumes
-      // first. Everything lands in stateDir directly — the same directory the
-      // plugin reads (see the supervise case for why no home is derived).
-      const initiator = options.initiator ?? process.env.DSH_SESSION_ID
-      mkdirSync(stateDir, { recursive: true })
-      writeFileSync(stateFile(stateDir, 'restartRequested'),
-        `${JSON.stringify({
-          reason: 'scheduled self-restart',
-          requestedAt: Date.now(),
-          ...(initiator !== undefined ? { initiator } : {}),
-        })}\n`)
-      // A DETACHED exit agent (setsid via node spawn): it cannot be reaped by
-      // the sandbox/harness process group, so the scheduled kill actually
-      // lands even after the scheduling turn ends — the fix for "the kill
-      // never happened" seen with `(sleep N; kill) &` from a managed shell.
-      // The agent is a real shipped file (typechecked, linted, unit-tested),
-      // spawned with the same source/built split as guardInvocation().
-      const resultFile = stateFile(stateDir, 'lastRestart')
-      const logPath = options.log ?? stateFile(stateDir, 'scheduleExitLog')
-      mkdirSync(dirname(logPath), { recursive: true })
-      const child = spawn(process.execPath, exitAgentInvocation(), {
-        detached: true,
-        stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-        env: {
-          ...process.env,
-          WD_PORT: String(port),
-          WD_DELAY_MS: String(delayMs),
-          WD_RESULT_FILE: resultFile,
-          ...(initiator !== undefined ? { WD_INITIATOR: initiator } : {}),
-        },
-      })
-      child.unref()
-      io.stdout(`exit scheduled in ${delayMs} ms (agent pid ${child.pid ?? 'unknown'}) — watchdog will respawn and run the canary\n`)
-      return 0
     }
     default:
       io.stderr(`unknown command ${command}\n\n${USAGE}`)

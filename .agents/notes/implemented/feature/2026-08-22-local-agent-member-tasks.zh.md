@@ -18,6 +18,8 @@ dsh 成员的子实例维护真实的任务清单（todo 工具向其会话写�
 
 本 note 独立于 M1 dock note，因为 M2 带来的是新决策（翻译目标词汇与透传的 last-wins 冪等规则），不只是事实更新——M1 note 陈述的事实仍然准确。
 
+**M3 扩展（claude 适配器，2026-08-22）：** claude 的 stream-json 把 `TodoWrite` 作为 assistant 的 `tool_use` 块发出，因此翻译落在 claude provider 的共享折叠层（`foldClaudeStreamLine`，live 增量解析与 settle 全量解析共用）：TodoWrite 块在文本折叠之前被拦截，`todosFromTodoWrite` 翻译 `input.todos`，两条镜像路径都经 `appendTodosIfChanged` 追加——与 dsh 透传相同的全日志 JSON 比较冪等，这让 live 与 settle 两路互相冪等，并在 resume 轮不写 TodoWrite 时保持前轮清单站立。载荷形态须知：原定的真实 CLI 探针受阻（scoped home 的 OAuth 过期、默认 home 未登录；mock API 探针未收敛——该 claude 版本始终未请求 mock），因此适配器以 claude 文档化的 TodoWrite schema 为准（`{todos: [{content, status, activeForm}]}`；status 与 dsh 词汇逐字一致，`activeForm` 仅展示用、丢弃），并带失败软化契约：形态歪斜的输入降级为普通文本折叠并告警，绝不抛错。将来拿到真实 CLI 捕获后应重新钉住金样。非 TodoWrite 的工具块与此前完全一致地折叠为文本。
+
 ## Alternatives considered
 
 - **把 todo/write 并入消息前缀跳过**——否定：前缀计数是流语义；内容重复的快照会被误数（未变的清单会被错跳，变化过的清单需要不存在的位置记账）。最后对最后比较与该事件自身的整表契约一致。
@@ -34,7 +36,7 @@ dsh 成员的子实例维护真实的任务清单（todo 工具向其会话写�
 
 ## Testing
 
-`packages/local-agent-dsh/tests/session-mirror.spec.ts` 新增透传用例：`todo/write` 快照原样过河（计入 `total`，不进 `texts`）、对未变日志的重复趟是纯空转（不复制相同快照）、变化的清单作为新的 last-wins 状态恰好落地一次（中间快照从不进子会话日志）。`packages/local-agent/tests/member-composer.client.spec.tsx`（23 例）：tasks 贡献者在无任务时退出、混合状态时正确汇总、全部完成时去掉进行中段，以及会话携带任务时 dock 在统计行下方渲染任务行（链路的单元级：投影袋 → 贡献者 → 行）。测试套件：local-agent 146/146，local-agent-dsh 38/38，家族回归全绿。
+`packages/local-agent-dsh/tests/session-mirror.spec.ts` 新增透传用例：`todo/write` 快照原样过河（计入 `total`，不进 `texts`）、对未变日志的重复趟是纯空转（不复制相同快照）、变化的清单作为新的 last-wins 状态恰好落地一次（中间快照从不进子会话日志）。`packages/local-agent/tests/member-composer.client.spec.tsx`（23 例）：tasks 贡献者在无任务时退出、混合状态时正确汇总、全部完成时去掉进行中段，以及会话携带任务时 dock 在统计行下方渲染任务行（链路的单元级：投影袋 → 贡献者 → 行）。`packages/local-agent-claude-code/tests/todo-translate.spec.ts`（10 例，M3）：文档形态的翻译（丢 activeForm、未知 status → pending、歪斜 → undefined）、折叠拦截金样（Bash 仍折成文本、TodoWrite 不留行、流内 last-wins、歪斜置旗）、run 级镜像（每个不同状态一条快照、live+settle 互冪等；多轮的替换/保持/不重复；歪斜折成文本并告警）、以及翻译结果驱动 dock 任务行的链路级用例。测试套件：local-agent 146/146，local-agent-dsh 38/38，local-agent-claude-code 38/38，家族回归全绿。
 
 ## Cross-references
 

@@ -83,6 +83,21 @@ const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/worktrees',
+    name: '@khorsheed/dsh-worktrees',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
+    dir: 'packages/local-files',
+    name: '@khorsheed/dsh-local-files',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
+    dir: 'packages/capability-catalog',
+    name: '@khorsheed/dsh-capability-catalog',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/room',
     name: '@khorsheed/dsh-room',
     hostConfigs: ['tsconfig.host.json'],

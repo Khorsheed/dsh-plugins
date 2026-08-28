@@ -46,9 +46,19 @@ base_url = "https://your-router.example/v1"
 
 ⚠️ **OAuth token 暴露**:作用域登录的 OAuth token 会发送给处理请求的端点——`base_url` 只指向你控制或信任的端点。
 
+插件自身配置（可选，写在 profile patch 层）：
+
+```yaml
+- id: local-agent-kimi
+  config:
+    live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
+    liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
+    liveMirrorGranularity: event  # live 镜像粒度;token 额外把 ACP chunk 写成 assistant/chunk(写放大,opt-in)
+```
+
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码。
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过。
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -72,6 +82,8 @@ base_url = "https://your-router.example/v1"
 **续聊(resume)。** 首次委派的结果文本自述句柄(`追问请带 resume="<childSessionId>"`);把它作为工具的可选 `resume` 参数传回,即在同一个 dsh 子会话里继续同一个 kimi 会话(`kimi -S session_<id> -p`)。句柄绝不进 prompt:它只经 `localAgent` 委派 registry 对记录该委派的同一 parent 会话与 provider 解析——伪造的句柄在任何 CLI 进程启动前就被拒绝。
 
 **隔离与记账。** 子会话是委派会话工作区内一个全新会话;父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`,失败或被中止也会关(reason `error`/`aborted`),因此耗时等于真实 CLI 运行时长。用量是该轮 delta 内所有 `usage.record` 之和(每条是一次 LLM 请求的口径、非累计),挂在当轮最后一条镜像的 assistant 消息上;镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对,并增量推进,早期消息绝不重复。中止会让工具结果立即 settle(SIGTERM→grace→SIGKILL),并保留已镜像的部分成果。
+
+**长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `kimi acp` 进程(ACP over stdio;握手要求 `loadSession` 能力,否则熔断回退),`session/new` 建会话(server 分配 id,即委派记录的 `cliSessionId`),之后每轮 = `session/prompt`;`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明(不写 mcp.json)。`session/request_permission` 按无人值守策略自动应答(选第一个 allow,无则 cancelled,与 `kimi -p` 的自动批准一致)。**镜像刻意仍是文件折叠**:ACP 推送的是 token 级 chunk,与 wire.jsonl 行折叠不同构,所以推送只触发节流的 `mirrorKimiDelta` 过一遍,settle 对账仍是权威——单一折叠、单一 offset,两条驱动路径不可能漂移。runtime 空闲超时回收(stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `session/load` 盘上的会话。
 
 </details>
 

@@ -4,9 +4,13 @@ English | [中文](README.md)
 
 Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **15 packages** that extend the official web GUI. 14 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 15th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. Of the 14 bundles, all but `@khorsheed/dsh-room` (WIP, not on production) already run together on the production profile, and nothing about the official UI is patched or replaced.
 
+**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (0.1.0). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
+
 This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
 
 ## What's in the box
+
+Published (wave one, the dsh-web-basic members):
 
 | Package (npm) | Face | Row id | One-line feature |
 | --- | --- | --- | --- |
@@ -15,15 +19,20 @@ This README is the catalog: what each plugin does, how to load it, and exactly h
 | `@khorsheed/dsh-client-session-title-edit` | client | `session-title-edit` | Inline session-title editing in the chat header |
 | `@khorsheed/dsh-file-preview` | host | `file-preview` | Read-only file-preview Remote service (list + content + diffs) |
 | `@khorsheed/dsh-client-ui-file-preview` | client | `ui-file-preview` | 「产物」tab, per-turn "N files changed" card, file-preview drawer |
+| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
+| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
+| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
+| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
+
+Pending release (wave two, the local-agent family, published together):
+
+| Package (npm) | Face | Row id | One-line feature |
+| --- | --- | --- | --- |
 | `@khorsheed/dsh-local-agent` | host + client | `local-agent` | Local coding-agent family **core**: scoped homes, login/session commands, delegation registry |
 | `@khorsheed/dsh-local-agent-kimi` | host | `local-agent-kimi` | **Kimi Code** harness: `kimi -p` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness: `codex exec` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness: `claude -p` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host (tool) | *(mounted by harnesses)* | Family-owned delegation tool with `resume` continuation |
-| `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
-| `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
-| `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
-| `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 | `@khorsheed/dsh-room` | host + client | `room` | Multi-agent **group-conversation sessions** (WIP): @-member dispatch, shared blackboard, members tab |
 
 Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
@@ -42,8 +51,8 @@ Prerequisites: a dsh host ≥ `0.1.0-rc.6` (every bundle declares `minHost`), an
 # one plugin, by npm name
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
-# from a tarball / a source directory (message-timeline is source-only — see below)
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0-rc.5.tgz
+# from a tarball / a source directory
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
@@ -59,7 +68,7 @@ dsh plugin --profile web add @khorsheed/dsh-client-session-title-edit
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
 
-# local-agent family (core + the harnesses you actually use)
+# local-agent family (wave two — install from source until it lands on npm)
 dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
@@ -111,8 +120,6 @@ Model impact (the one significant one in the pack): an edit/withdraw removes the
 
 A flat floating timeline along the left edge of the chat scrollport — one row per loaded user message (steering messages included, configurable), a dimmed tick at rest, text on hover/focus, click to jump. Follows the reading position, pages older history at its top, `enabled` is the master switch. Pure read of the session snapshot: zero events, zero prompts, zero model/KV impact.
 
-> **Source-only package.** `dsh-message-timeline` is `private` and not published to npm — install it from this repo (`dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline` or a packed tarball).
-
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-message-timeline`.
 
 #### `dsh-client-session-title-edit` — inline session-title editing
@@ -137,11 +144,13 @@ A 「产物」 tab in the conversation view ring (beside chat and trajectory) li
 
 ### The local coding-agent family
 
+> **Release status: wave two.** The family is feature-complete — member-channel's M1 channel, M2 composer, and M3 member-to-member notification all landed across the four providers (claude-code and codex passed a real-CLI end-to-end probe on 2026-08-20); it lands on npm as one wave once accepted, and until then installs from this repo's source.
+
 Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
 
-**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family and ships the roster-driven browser settings section (Settings → 本地 Agent). Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants.
+**Architecture.** `dsh-local-agent` (the core) is a harness registry plus scoped-home provisioning: every harness runs under its own scoped home (`KIMI_CODE_HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR` under `$DSH_HOME/local-agent/`, created 0700 because it holds credentials), so your personal config and credentials are never touched. The core registers the `/<harness> login|sessions|status|logout` command family. Each harness bundle registers one harness and mounts its delegation tool at the **profile root**, so every agent preset can delegate without per-preset variants. Every provider ships its own settings card (Settings → Plugins → 可配置插件): auth status at a glance (header dot), login/logout, and a hot-swappable resident-mode (live) toggle — YAML stays the deployment default, card overrides take effect immediately.
 
-**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex_local` (`codex exec`), `subagent_claude_code_local` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context.
+**Delegation.** `subagent_kimi` (`kimi -p`), `subagent_codex` (`codex exec`), `subagent_claude_code` (`claude -p --output-format json`). The parent sees only the final answer or a precise error; the child has an independent context, independent tokens, independent KV cache — it never enters the parent's context. In resident (live) mode the member process stays up: output streams into the member session, cancel never kills the process, and a crash re-attaches the same session; off, every round is an independent process.
 
 **Continuation (resume).** The family tool (`dsh-local-agent-tool-subagent`) extends the official `subagent_*` schema with an optional `resume` parameter — the dsh child session id returned by the first delegation. A resumed call continues the **same** CLI conversation in the **same** dsh child session, accounting per round. The handle never travels inside the prompt: it is read from the parameter and validated against the registry per (parent, provider), so a forged handle is rejected before any CLI process starts.
 
@@ -154,11 +163,11 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # or -codex / -claude-code
 ```
 
-Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and run `/<name> login` once.
+Prerequisite: the corresponding CLI on `PATH` (the same binary you run interactively — the plugin never installs it). Then restart and log in from the provider's settings card.
 
-**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its UI rows. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
+**Uninstall (each harness)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi` (or `-codex` / `-claude-code`): unregisters the harness, its command family, its tool row, and its settings card. The scoped home `$DSH_HOME/local-agent/<name>` is **kept on purpose** (sessions + credentials, so a reinstall needs no fresh login); delete it to remove every trace.
 
-**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row and the settings section; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
+**Uninstall (the core)** — `dsh plugin --profile web remove @khorsheed/dsh-local-agent`: unmounts the `local-agent` row; any harnesses left installed stay pending (never crash). Re-add the core to reactivate. The `$DSH_HOME/local-agent` homes root is left; delete to wipe.
 
 **`dsh-local-agent-tool-subagent`** has no bundle row of its own — it is mounted once per harness with a distinct tool name by the harness patches. Uninstalling the harnesses unmounts its rows and pnpm prunes the package as an unused dependency.
 

@@ -1,7 +1,8 @@
-import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { Readable } from 'node:stream'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -10,6 +11,7 @@ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type { CommandExecution } from '@deepseek-ai/dsh-commands'
+import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 
 /** One temporary directory removed by the OS temp cleaner; tests own its files. */
 function tempDir(prefix: string): string {
@@ -138,6 +140,41 @@ describe('LocalAgentRegistry', () => {
     registry.register(harness({ displayName: 'Fake Agent' }))
     const execution = await ctx.commands.execute(agent, '/local-agent list', [], new AbortController().signal)
     expectSuccess(execution, 'fake: Fake Agent')
+  })
+
+  it('the /local-agent stop command cancels an in-flight delegation by child session id', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('stop-hit-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    let cancelled = 0
+    let settle!: (result: SubagentResult) => void
+    const run: SubagentRun = {
+      id: SessionId('child-1'),
+      localAgent: undefined,
+      result: new Promise((resolve) => { settle = resolve }),
+      dispose: () => Promise.resolve(),
+    }
+    registry.trackDelegationRun('child-1', run, () => { cancelled += 1 })
+    expect(registry.isDelegationActive('child-1')).toBe(true)
+
+    const execution = await ctx.commands.execute(agent, '/local-agent stop child-1', [], new AbortController().signal)
+    expectSuccess(execution, 'stop requested for child session child-1')
+    expect(cancelled).toBe(1)
+    // The run settles afterwards (any stop reason) and clears the registry.
+    settle({ stopReason: 'aborted', output: [] })
+    await run.result
+    await Promise.resolve()
+    expect(registry.isDelegationActive('child-1')).toBe(false)
+  })
+
+  it('the /local-agent stop command accepts an absent target as an explicit no-op', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('stop-miss-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    const execution = await ctx.commands.execute(agent, '/local-agent stop ghost', [], new AbortController().signal)
+    expectSuccess(execution, 'child session ghost has no in-flight local-agent run to stop')
+    const usage = await ctx.commands.execute(agent, '/local-agent stop', [], new AbortController().signal)
+    expectError(usage, 'usage: /local-agent stop <childSessionId>')
+    const unknown = await ctx.commands.execute(agent, '/local-agent bogus', [], new AbortController().signal)
+    expectError(unknown, 'Unknown /local-agent subcommand')
   })
 
   it('reports authenticated status from the harness probe', async () => {
@@ -315,6 +352,212 @@ describe('LocalAgentRegistry', () => {
     registry.register(harness({ login: { command: fakeCli('sleep 30'), args: [] } }))
     const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
     expectError(execution, 'printed no device-code prompt')
+  })
+
+  describe('manual login variant', () => {
+    /** A harness on the manual flow with a controllable credential probe. */
+    function manualHarness(probe: (homeDir: string) => Promise<boolean>): LocalAgentHarness {
+      return harness({
+        login: { manual: { commandDisplay: 'env -u X CLAUDE_CONFIG_DIR=<home> claude auth login' } },
+        isAuthenticated: probe,
+      })
+    }
+
+    it('replies with the terminal instructions and spawns nothing', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const probe = vi.fn(async () => true)
+      registry.register(manualHarness(probe))
+
+      const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+
+      expectSuccess(execution, 'claude auth login')
+      expectSuccess(execution, 'interactive terminal')
+      // The manual declaration carries no spawnable command at all — a
+      // success reply (not a spawn failure) proves nothing was spawned.
+    })
+
+    it('watches the probe and stops when the credential lands', async () => {
+      vi.useFakeTimers()
+      try {
+        const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-ok-') })
+        const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+        let authenticated = false
+        const probe = vi.fn(async () => authenticated)
+        registry.register(manualHarness(probe))
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS)
+        const before = probe.mock.calls.length
+        expect(before).toBeGreaterThan(0)
+        // The credential lands; the watch sees it and stops polling.
+        authenticated = true
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 2)
+        const atSuccess = probe.mock.calls.length
+        expect(atSuccess).toBeGreaterThan(before)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBe(atSuccess)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('stops watching when the login window expires without a credential', async () => {
+      vi.useFakeTimers()
+      try {
+        const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-timeout-') })
+        const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+        const probe = vi.fn(async () => false)
+        registry.register(manualHarness(probe))
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_LIMIT_MS + localAgent.MANUAL_LOGIN_POLL_MS * 2)
+        const atTimeout = probe.mock.calls.length
+        expect(atTimeout).toBeGreaterThan(0)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBe(atTimeout)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('a second login replaces the first watch (single-watch poll rate)', async () => {
+      vi.useFakeTimers()
+      try {
+        const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-replace-') })
+        const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+        const probe = vi.fn(async () => false)
+        registry.register(manualHarness(probe))
+
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 4)
+        const firstWatchCalls = probe.mock.calls.length
+        expect(firstWatchCalls).toBeGreaterThan(0)
+
+        // The retry replaces the watch: polling continues at ONE watch's
+        // rate — two stacked watches would double the calls per window.
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 4)
+        const secondWindow = probe.mock.calls.length - firstWatchCalls
+        expect(secondWindow).toBe(firstWatchCalls)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not conclude success from a stale credential marker', async () => {
+      vi.useFakeTimers()
+      try {
+        const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-manual-stale-') })
+        const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+        const watchStart = Date.now()
+        // A revoked token's leftover marker: presence says true, but the
+        // stamp predates this watch — no fresh login happened.
+        let stamp: number | undefined = watchStart - 60_000
+        const probe = vi.fn(async () => true)
+        registry.register({
+          ...manualHarness(probe),
+          credentialStamp: async () => stamp,
+        })
+        await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        const polling = probe.mock.calls.length
+        expect(polling).toBeGreaterThan(0)
+        // Still polling after several ticks: the stale marker did not finish
+        // the watch. (A concluded watch stops the interval.)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBeGreaterThan(polling)
+
+        // A real re-login rewrites the marker; the watch now concludes.
+        stamp = Date.now()
+        const before = probe.mock.calls.length
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 2)
+        const atSuccess = probe.mock.calls.length
+        expect(atSuccess).toBeGreaterThan(before)
+        await vi.advanceTimersByTimeAsync(localAgent.MANUAL_LOGIN_POLL_MS * 3)
+        expect(probe.mock.calls.length).toBe(atSuccess)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('pty login variant', () => {
+    /** A fake subprocess seam whose spawnTerminal returns a controllable terminal. */
+    function fakeTerminal(output: string, written: string[]): {
+      spawnTerminal: (spec: { argv: readonly string[] }) => unknown
+      finish: () => void
+    } {
+      let finish!: () => void
+      const done = new Promise<{ exitCode: number }>((resolve) => { finish = () => { resolve({ exitCode: 0 }) } })
+      return {
+        finish,
+        spawnTerminal: () => ({
+          pid: 7777,
+          output: Readable.from([output]),
+          done,
+          write: async (data: string) => { written.push(data) },
+          terminate: async () => {},
+        }),
+      }
+    }
+
+    it('spawns the CLI on a pty, surfaces the OAuth URL, and delivers the pasted code', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pty-'), loginPromptTimeoutMs: 5_000 })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const written: string[] = []
+      ctx.provide('subprocess', fakeTerminal('Opening browser to sign in https://example.com/oauth?x=1\r\n', written) as never)
+      registry.register(harness({
+        login: { pty: { command: 'fake-cli', args: ['auth', 'login'] } },
+        records: { listSessions: async () => [] },
+      }))
+
+      const execution = await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+      expectSuccess(execution, 'https://example.com/oauth?x=1')
+      expectSuccess(execution, '/fake code')
+      expect((await registry.statusOf('fake')).loginAwaitingCode).toBe(true)
+
+      const codeResult = await ctx.commands.execute(agent, '/fake code abc123', [], new AbortController().signal)
+      expectSuccess(codeResult, 'code')
+      expect(written).toEqual(['abc123\r'])
+    })
+
+    it('rejects a code submission with no pending pty login', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('login-pty-none-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      registry.register(harness({ records: { listSessions: async () => [] } }))
+      const result = await ctx.commands.execute(agent, '/fake code abc123', [], new AbortController().signal)
+      expectError(result, '没有等待授权 code')
+    })
+  })
+
+  describe('auth failure marks', () => {    /** A harness whose probe and stamp the test controls directly. */
+    function stampedHarness(state: { authenticated: boolean; stamp: number | undefined }): LocalAgentHarness {
+      return harness({
+        isAuthenticated: async () => state.authenticated,
+        credentialStamp: async () => state.stamp,
+      })
+    }
+
+    it('downgrades a present-but-rejected credential until the marker is rewritten', async () => {
+      const { ctx } = await harnessMount({ homesRoot: tempDir('auth-mark-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const state = { authenticated: true, stamp: Date.now() - 60_000 }
+      registry.register(stampedHarness(state))
+
+      expect((await registry.statusOf('fake')).authenticated).toBe(true)
+
+      // A delegation hits a 401 the presence probe cannot see: the status
+      // downgrades even though the credential marker still exists.
+      registry.reportAuthFailure('fake', '401 OAuth access token has been revoked')
+      expect((await registry.statusOf('fake')).authenticated).toBe(false)
+
+      // A real re-login rewrites the marker (stamp newer than the mark): the
+      // status recovers without any explicit clearing.
+      state.stamp = Date.now() + 1_000
+      expect((await registry.statusOf('fake')).authenticated).toBe(true)
+    })
   })
 
   describe('subagentDelegationLabel', () => {

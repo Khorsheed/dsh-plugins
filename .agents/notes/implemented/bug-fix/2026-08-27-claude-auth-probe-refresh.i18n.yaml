@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-27-claude-auth-probe-refresh.md
+.agents/notes/implemented/bug-fix/2026-08-27-claude-auth-probe-refresh.md: 252681f59c405ccb7175e9a3008a145b48b094af
+.agents/notes/implemented/bug-fix/2026-08-27-claude-auth-probe-refresh.zh.md: 9f5749ab8c9c34214b440dd1edaca7aa9689e9b3

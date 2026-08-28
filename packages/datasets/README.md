@@ -27,6 +27,8 @@ git 仓库之上的通用版本化数据集存储：分层 item、从 git 对象
 
 `modelFacing: false` 是数据声明，语义仅一条：该层离开本机的导出必须过人工确认闸（确认闸由导出方实现，不属本插件）。它与会话绑定的层白名单是两层独立机制——白名单管「会话里 agent 能看什么」，导出闸管「什么能离开本机」。
 
+descriptor 还可带可选的 `register` 数组（数据集作者协议 §2）：把 item 目录内的自由文件显式注册进 item/层角色——`register: [{item, layer, files}]`，files 是 item 相对路径或单层 glob（`*` 不跨 `/`）。注册的文件在 list/show/树上归位到声明的层角色（物理位置与角色解耦），worktree 的 sparse 模式覆盖注册路径；路径越界、`**`、与布局形态冲突、精确路径不存在都会 fail loud。完整约定见根目录 `docs/dataset-authoring-protocol.md`。
+
 层缺省 `modelFacing` 为 `true`。因为 descriptor 文件会被当模板抄，形状校验还会**告警**（绝不阻断）：在混合敏感度数据集（存在任何显式 `modelFacing: false` 层）里，每个未显式声明该键的层各产生一条警告（`MODELFACING_UNDECLARED`，逐层）。纯公开数据集（没有任何 false 层）与逐层显式声明（无论 true/false）的数据集不产生警告。警告随数据集摘要走：CLI 在 `list`/`show`/`describe` 时打到 stderr，slash 命令附在输出末尾，web tab 在数据集行下以安静行呈现。
 
 内容以仓库内普通文件的方式进入数据集，走正常 git 流程提交；或由 agent 经 `datasets_put_item` 起草进工作树、人评审后提交。没有 import 动词，也没有复制式物化：单文件从 git 对象直读，整层经托管 worktree 消费。
@@ -56,6 +58,8 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 `datasets` 限定可见的数据集 id；`layers` 是层白名单。缺省字段即「全部」。白名单在**所有**工具读取路径上强制——`list`/`show` 按它过滤，`read` 越界即拒，`worktree_path` 与它求交（交集为空即报错；sparse-checkout 让被拒层目录在 worktree 里物理不存在）。
 
+**默认安全与边界对象**：绑定未显式写 `layers` 时，agent 的读取范围回退为该数据集的全部 `modelFacing:true` 层——敏感层要下发给 agent 必须显式列出；未声明敏感层的数据集行为不变（全部可见）。写路径（`put_item`）与 worktree 缺省跟随同一底线。白名单约束的对象是 **agent 工具与 worktree 物化**两条真边界；web tab 与 CLI 的读取动词是人的视图（operator scope），不受白名单与底线限制——敏感层对人照常展示并带「· 敏感」标记，树上另有「透传」分组把不受保护的内容显眼列出。
+
 **为什么不是 session 事件**：初版把绑定存为 log-only `datasets/binding` session 事件，但 harness 的持久化读路径会拒绝重建「日志含有其生成的已知类型集之外的事件类型、且 envelope 未带 `ignorable: true`」的会话——下游（仓外）插件的事件类型按构造不在该集合内（注册面上游 deferred），而 `Session.append()` 无法设置该标记。本插件追加的任何自定义类型事件都会让会话在重启后不可读，因此绑定迁到插件自管存储（每次调用现读，所以 CLI 写存活会话的绑定也无竞争）。代价：fork 出的会话以未绑定开始；删除会话会留下一条孤儿记录。
 
 绑定**写入**是人的操作：会话存活时用 `/datasets bind`、web tab 的绑定条，或脚本里的 `dsh-datasets bind`。agent 工具只解析绑定——agent 能用哪些数据由人决定。带显式 `repo` 参数的工具调用不依赖绑定（绑定存在时白名单仍然生效）；既无显式 repo 又无绑定又无配置默认时，工具明确报错并提示如何绑定。
@@ -73,6 +77,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 | `datasets_snapshot` | | 固化 `{repoPath, commit, datasetId}`，仓库演进中读稳定版本 |
 | `datasets_worktree_path` | 建托管 worktree | 整层只读视图路径（sparse-checkout 限层、按键去重） |
 | `datasets_put_item` | 写工作树 | 创建/更新 item 元数据与层文件；`git commit` 留给人 |
+| `datasets_validate` | | 作者卫生校验：形状错误 fail loud；三类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区），警告不阻断 |
 
 `worktree_path` 返回托管根下的普通目录，以 (repo, commit, 排序后 layers) 为键、全机按键共享：`git worktree add --detach <commit>` + 限定层目录的 sparse-checkout + `git worktree lock`。消费方只读挂载或直接读取，绝不修改或删除——它是跨消费方缓存。同键并发创建由托管根下的锁目录串行化，后到者复用建好的 worktree。清理走 CLI 的 `worktree prune`。
 
@@ -86,6 +91,7 @@ dsh-datasets show --dataset D [--item I]
 dsh-datasets describe --dataset D
 dsh-datasets read --dataset D --item I --layer L --path P [--commit C]
 dsh-datasets snapshot --dataset D
+dsh-datasets validate [--repo R] [--dataset D] [--commit C]
 dsh-datasets worktree path --dataset D [--layers a,b] [--worktree-root DIR]
 dsh-datasets worktree prune --repo R [--worktree-root DIR]
 dsh-datasets bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
@@ -110,7 +116,7 @@ dsh-datasets binding --session ID [--state-root DIR]
 
 web profile 下插件向会话的视图环贡献 **`datasets` tab**（与 chat、trajectory 并列）——本会话数据集的绑定与浏览。tab 只做导航：顶部绑定条（当前绑定及其数据集/layers 白名单，加绑定 / 改白名单 / 解绑——绑定写入在这里同样只是人的操作，与 slash 路径一致），左侧数据集 →（共享层 →）item → 层 → 文件树（题集级层在 item 列表之前、归于一个安静的「共享」分组），右侧内容预览。预览交给官方阅读器 primitives——markdown 经官方 `MarkdownText` 管线渲染（与 chat 同一个渲染器），其余文件经官方 `CodeBlock` 语法高亮；本包没有任何自研渲染器。
 
-tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `list` / `show` / `read`，每个方法都从调用方 agent 解析会话绑定，因此绑定的层白名单在 Remote 路径上与工具路径同等强制。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace。
+tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`binding` / `bind` / `unbind` / `previewRepo` / `list` / `show` / `read`。读取方法是 operator 视图——绑定只提供仓库路径，白名单与 modelFacing 底线约束的是 agent 边界（工具 + worktree），不是看自己仓库的人。树按角色渲染（register 注册的文件归位到声明的层），空层不显示，透传区单列成组（「透传 · N 个文件 · 不受白名单保护」），敏感层带「· 敏感」标记照常可读。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace。
 
 ## Compatibility
 

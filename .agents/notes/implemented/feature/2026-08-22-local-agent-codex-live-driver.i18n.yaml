@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-local-agent-codex-live-driver.md
+.agents/notes/implemented/feature/2026-08-22-local-agent-codex-live-driver.md: 941a393b455b9a969c059812319b8f36ec6c66a3
+.agents/notes/implemented/feature/2026-08-22-local-agent-codex-live-driver.zh.md: cf13c06eafae06a9aeb679a60a51bcb42051c646

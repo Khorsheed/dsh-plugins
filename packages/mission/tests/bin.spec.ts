@@ -69,6 +69,13 @@ describe.skipIf(!hasLib)('bin smoke (built artifact)', () => {
       await bin(['create', '--id', 'm', '--data-dir', dir])
       const refs = await bin(['set-refs', 'm', '--resource', 'box-1', '--session', 's-1', '--data-dir', dir])
       expect(refs.code, refs.stderr).toBe(0)
+      // A missing path must fail loud through the bin too (no ghost artifacts).
+      const ghostArtifact = await bin(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir])
+      expect(ghostArtifact.code).toBe(1)
+      expect(ghostArtifact.stderr).toMatch(/does not exist/)
+      const attemptDir = join(dir, 'runs', 'default', 'data', 'm', 'attempt-1')
+      mkdirSync(attemptDir, { recursive: true })
+      writeFileSync(join(attemptDir, 'report.json'), '{}\n')
       const artifact = await bin(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir])
       expect(artifact.code, artifact.stderr).toBe(0)
       const checkpoint = await bin(['add-checkpoint', 'm', '--name', 'verify', '--ref', 'tag-9', '--data-dir', dir])

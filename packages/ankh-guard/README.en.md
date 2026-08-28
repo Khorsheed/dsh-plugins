@@ -6,6 +6,8 @@ Let an agent change its own code and restart its own service — without taking 
 
 When the agent wants to restart after editing code, this plugin asks one question first: did the build and tests pass? Yes, go ahead. No, blocked — so broken code can't take the service, and the conversation running inside it, down with it.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="a guarded restart: the agent announces its verification plan beforehand, and the canary reactivates the session afterwards to keep verifying">
+
 ## How it works
 
 One rule at the core: **prove the code is good before you allow a restart.**
@@ -151,7 +153,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.1`): ⚠️ degraded — everything works; the composition-preflight gate runs through the standalone `preflight-runner` (composing through the published `@deepseek-ai/dsh-app-boot` primitives with a drift tripwire, since 0.1.1-rc.1 still does not export `composeProfile`) wherever a dsh app layout resolves — `--repo`, `DSH_HARNESS`, or the default checkout. On a pure npm deployment with no harness checkout the gate reports a notice and proceeds instead; every other capability is intact on the npm line.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ⚠️ degraded — everything works; the composition-preflight gate runs through the standalone `preflight-runner` (composing through the published `@deepseek-ai/dsh-app-boot` primitives with a drift tripwire, since 0.1.1-rc.2 still does not export `composeProfile`) wherever a dsh app layout resolves — `--repo`, `DSH_HARNESS`, or the default checkout. On a pure npm deployment with no harness checkout the gate reports a notice and proceeds instead; every other capability is intact on the npm line; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master, fork or upstream): ✅ — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
 ## Known Limitations and Deferred Work
@@ -165,3 +167,7 @@ None.
 - **Checkpoint commits sweep the whole working tree** — intended (a checkpoint is a full rollback point), but note it also captures unrelated uncommitted work.
 - **`restart`/`supervise` discover the listener via `lsof`** (macOS/Linux with lsof); other platforms need `--pid`.
 - **Kills are per-pid with a descendant sweep, never per process group** — the instance is not setsid'd, so `restart`, `schedule-exit`'s exit agent, and the watchdog's `free_port` target the listener pid and (on the forced paths: the `restart` SIGKILL escalation, the watchdog's port adoption and exit cleanup) walk `pgrep -P` descendants instead of killing a group. The supervised instance is expected to manage its own children on graceful shutdown; the sweep is the best-effort net for the forced paths.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

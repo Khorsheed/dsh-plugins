@@ -1,29 +1,26 @@
 /**
- * @khorsheed/dsh-local-agent-dsh-headless — sub-dsh one-shot direct Agent
- * driver. The bundle patch rides over dsh-base without Host, HTTP, or browser
- * plugins; this runner creates one Agent through the core registry on a
- * caller-supplied session id (or resumes one), drives the task to quiescence,
- * flushes its Session, prints the final assistant text, and exits. The session
- * id comes from the invocation (`--session-id` / `--resume`), never from
+ * @khorsheed/dsh-local-agent-dsh-headless — sub-dsh direct Agent driver with
+ * two modes. One-shot (default): create one Agent through the core registry
+ * on a caller-supplied session id (or resume one), drive the task to
+ * quiescence, flush its Session, print the final assistant text, and exit.
+ * Serve (`--serve`): stay resident and drive turns over the family-internal
+ * live-driver wire (see `./serve.ts` / `./wire.ts`). The session id comes
+ * from the invocation (`--session-id` / `--resume`) or the wire, never from
  * stdout — the parent provider generates one uuid and both sides use it, so
  * stdout carries no parseable session marker.
  *
  * @module @khorsheed/dsh-local-agent-dsh-headless
  */
 
-import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
 // and the cmdline Context merge for the appExit host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import { loadSubDshAgent, summarizeTurn } from './agent-loader.ts'
+import { runServe } from './serve.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'local-agent-dsh-headless-runner'
@@ -31,30 +28,28 @@ export const name = 'local-agent-dsh-headless-runner'
 /** Core services required before the one-shot turn can start. */
 export const inject = ['agentDefaultModel', 'agents', 'sessions']
 
-/** Plugin config: the task and the caller-supplied session identity. */
+/** Plugin config: the one-shot task and caller session identity, or serve mode. */
 export interface Config {
-  /** The prompt text for the single run. */
-  task: string
+  /** The prompt text for the single run; unused in serve mode. */
+  task?: string
   /** Fresh delegation: create a session with exactly this id. */
   sessionId?: string
   /** Continuation: resume the existing session with this id. */
   resumeSessionId?: string
+  /** Resident mode: drive turns over the stdio wire instead of one task. */
+  serve?: boolean
 }
 
 export const Config: z<Config> = z.object({
-  task: z.string().required(),
+  task: z.string(),
   sessionId: z.string(),
   resumeSessionId: z.string(),
+  serve: z.boolean().default(false),
 })
-
-/** Outcome of one owned run interval. */
-interface RunOutcome {
-  text: string
-  reason: SessionEvent<'turn/end'>['data']['reason'] | undefined
-}
 
 /** Process-facing effects of one run: output streams plus the launcher's bounded exit request. */
 interface HeadlessIo {
+  stdin: { on(event: 'data', listener: (chunk: unknown) => void): unknown; on(event: 'end', listener: () => void): unknown }
   stdout: { write(chunk: string): unknown }
   stderr: { write(chunk: string): unknown }
   /** Request process exit with `code` after the tree disposes. */
@@ -62,33 +57,10 @@ interface HeadlessIo {
 }
 
 /** The process streams the runner writes to; tests substitute captures. */
-export const internals: { stdout: HeadlessIo['stdout']; stderr: HeadlessIo['stderr'] } = {
+export const internals: { stdin: HeadlessIo['stdin']; stdout: HeadlessIo['stdout']; stderr: HeadlessIo['stderr'] } = {
+  stdin: process.stdin,
   stdout: process.stdout,
   stderr: process.stderr,
-}
-
-/** Aggregate the last assistant text and turn outcome in one owned interval. */
-function summarize(events: readonly SessionEvent[], firstSeq: number): RunOutcome {
-  let started = false
-  let text = ''
-  let reason: SessionEvent<'turn/end'>['data']['reason'] | undefined
-  for (const event of events) {
-    if (event.seq < firstSeq) continue
-    if (event.type === 'turn/start') {
-      started = true
-      continue
-    }
-    if (!started) continue
-    if (event.type === 'assistant/message') {
-      const joined = event.data.message.content
-        .filter(block => block.type === 'text')
-        .map(block => block.text)
-        .join('')
-      if (joined !== '') text = joined
-    }
-    if (event.type === 'turn/end') reason = event.data.reason
-  }
-  return { text, reason }
 }
 
 /** Report an unexpected direct-driver failure and request a failing exit. */
@@ -107,53 +79,24 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
   // Loader siblings mount concurrently. Await the complete application before
   // creating an Agent so its scoped tools and adapters are not half-composed.
   await ctx.get('loader')?.await()
-  const agents = ctx.get('agents')
-  const defaultModel = ctx.get('agentDefaultModel')
   const sessions = ctx.get('sessions')
   // Early process shutdown can dispose the tree while settlement is pending.
-  if (agents === undefined || defaultModel === undefined || sessions === undefined) return
+  if (ctx.get('agents') === undefined || ctx.get('agentDefaultModel') === undefined || sessions === undefined) return
 
-  const selection = defaultModel.currentSelection()
-  // This bundle composes no preset roster, so the model-facing rows sit in the
-  // host plane and the agent reads them from the global layer. A deployment
-  // that DOES configure one has to join it here first
-  // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
-  const agentOptions = { provider: selection.provider, model: selection.model }
-  const setup = (agentCtx: Context) => {
-    const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-    // The released installModelSelection registers the two scoped waterfall
-    // listeners and returns their disposer; the run owns the whole process
-    // lifetime, so the disposer is deliberately dropped.
-    installModelSelection(agentCtx, selected)
-  }
-  // The caller-supplied id is authoritative for both branches: the parent
-  // provider generated one uuid and passes the same value on every round of
-  // the same delegation, so resume finds exactly the sub-dsh session the
-  // fresh round created.
-  let agent: Agent
-  if (config.resumeSessionId !== undefined) {
-    agent = (await agents.resume({
-      resumeSessionId: SessionId(config.resumeSessionId),
-      agentOptions,
-      setup,
-    })).agent
-  } else {
-    agent = (await agents.create({
-      sessionId: SessionId(config.sessionId ?? `session-${randomUUID()}`),
-      meta: { cwd: process.cwd() },
-      agentOptions,
-      setup,
-    })).agent
-  }
+  const handle = await loadSubDshAgent(ctx, {
+    ...config.sessionId === undefined ? {} : { sessionId: config.sessionId },
+    ...config.resumeSessionId === undefined ? {} : { resumeSessionId: config.resumeSessionId },
+  })
+  const agent = handle.agent
   await agent.whenIdle()
   const firstSeq = agent.session.seq
   agent.followup(createUserMessage({
-    content: [{ type: 'text', text: config.task }],
+    content: [{ type: 'text', text: config.task ?? '' }],
     source: { kind: 'user' },
   }))
   await agent.whenIdle()
   await sessions.flush(agent.session)
-  const outcome = summarize(agent.session.events, firstSeq)
+  const outcome = summarizeTurn(agent.session.events, firstSeq)
   io.stdout.write(outcome.text + '\n')
   if (outcome.reason?.kind === 'error') {
     io.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`)
@@ -162,9 +105,10 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
 }
 
 /**
- * Mount the one-shot direct driver.
+ * Mount the direct driver: one-shot by default, the resident serve loop when
+ * the invocation passed `--serve`.
  * @param ctx - plugin context carrying core services and the launcher-provided exit request.
- * @param config - validated task config.
+ * @param config - validated task/serve config.
  */
 export function apply(ctx: Context, config: Config): void {
   // Read through the global service store, not the property proxy: appExit is
@@ -173,6 +117,13 @@ export function apply(ctx: Context, config: Config): void {
   if (exit === undefined) {
     throw new Error('local-agent-dsh-headless-runner: the launcher must provide ctx.appExit before the tree mounts')
   }
-  const io: HeadlessIo = { stdout: internals.stdout, stderr: internals.stderr, exit }
+  const io: HeadlessIo = { stdin: internals.stdin, stdout: internals.stdout, stderr: internals.stderr, exit }
+  if (config.serve === true) {
+    void runServe(ctx, io).catch((error: unknown) => { fail(io, error) })
+    return
+  }
+  if (config.task === undefined || config.task.trim() === '') {
+    throw new Error('local-agent-dsh-headless-runner: a task is required unless serve mode is on')
+  }
   void run(ctx, config, io).catch((error: unknown) => { fail(io, error) })
 }

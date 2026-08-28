@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorKimiSession } from '../src/session-mirror.ts'
@@ -34,8 +35,8 @@ describe('session-mirror', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))
     const ctx = new Context()
-    const flush = vi.fn(async () => true)
-    ctx.provide('sessions', { flush })
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
 
     await mirrorKimiSession(ctx, child, home)
 
@@ -47,14 +48,59 @@ describe('session-mirror', () => {
     expect(assistant.map(event => event.data.message.content)).toEqual([
       [{ type: 'reasoning', text: 'Simple task.' }],
       [{ type: 'text', text: '我开始了。' }],
-      [{ type: 'text', text: '[工具 Write] → Wrote 10 bytes' }],
       [{ type: 'text', text: '任务完成。' }],
     ])
+    // Tool activity mirrors as a native tool/call + tool/result pair (the
+    // wire line carried no ids, so the callId is the position fallback).
+    const calls = events.filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.data).toMatchObject({ callId: 'kimi-tool-3', name: 'Write', arguments: '' })
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message.content[0]).toMatchObject({
+      type: 'tool-result',
+      toolCallId: 'kimi-tool-3',
+      content: [{ type: 'text', text: 'Wrote 10 bytes' }],
+      isError: false,
+    })
+    expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
     // assistant events attribute the kimi route
     expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'k3' })
-    // durability goes through the session store's flush barrier (the
-    // persistence coordinator buffers every appended event via session/event)
-    expect(flush).toHaveBeenCalledWith(child)
+    // the mirrored batch reaches persistence
+    expect(append).toHaveBeenCalledWith(child.id, events)
+  })
+
+  it('backfills a tool result that lands after its call was mirrored', async () => {
+    const pendingWire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'Write', args: { path: '/tmp/a.txt' } }, toolCallId: 'tc1' } },
+    ]
+    const { home, dir } = wireHome('s1', pendingWire)
+    const child = Session.create(SessionId('child-late'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
+
+    let total = await mirrorKimiSession(ctx, child, home, 's1')
+    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(0)
+
+    // The result lands in the wire later; the next delta pass pairs it with
+    // the already-mirrored call instead of dropping or duplicating it.
+    appendFileSync(
+      join(dir, 'agents', 'main', 'wire.jsonl'),
+      '\n' + JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'Wrote 10 bytes' } } }),
+    )
+    total = await mirrorKimiSession(ctx, child, home, 's1', total)
+    const results = child.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message.content[0]).toMatchObject({
+      type: 'tool-result',
+      toolCallId: 'tc1',
+      content: [{ type: 'text', text: 'Wrote 10 bytes' }],
+    })
+    // A third pass is a no-op (no duplicate result).
+    await mirrorKimiSession(ctx, child, home, 's1', total)
+    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(1)
   })
 
   it('attaches the wire usage record to the final assistant message', async () => {
@@ -102,6 +148,38 @@ describe('session-mirror', () => {
 
     const user = child.events.find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
+  })
+
+  it('resolves a session id that already carries the ACP directory prefix (never double-prefixes)', async () => {
+    const { home } = wireHome('named', fullWire)
+    const child = Session.create(SessionId('child-3p'))
+    await mirrorKimiSession(new Context(), child, home, 'session_named')
+
+    const user = child.events.find(event => event.type === 'user/message')
+    expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
+  })
+
+  it('skips a wire user line the turn already carries (round-start append), but folds a different prompt text', async () => {
+    const { home } = wireHome('dedupe', fullWire)
+    const child = Session.create(SessionId('child-dedupe'))
+    // The live driver's round-start append: same turn, same text.
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '建个文件' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await mirrorKimiSession(new Context(), child, home, 'dedupe')
+    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+
+    // A pre-existing message with DIFFERENT text does not suppress the fold.
+    const child2 = Session.create(SessionId('child-dedupe2'))
+    child2.append('turn/start', { turn: 1 })
+    child2.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '别的问题' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await mirrorKimiSession(new Context(), child2, home, 'dedupe')
+    expect(child2.events.filter(event => event.type === 'user/message')).toHaveLength(2)
   })
 
   it('keeps looking for a named session past earlier empty workspaces', async () => {
@@ -161,8 +239,8 @@ describe('session-mirror resume deltas', () => {
 
     const child = Session.create(SessionId('child-resume'))
     const ctx = new Context()
-    const flush = vi.fn(async () => true)
-    ctx.provide('sessions', { flush })
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
     // Round 1 mirrors what the wire contained then (turn/start already opened
     // by the provider, so the base turn is 1).
     child.append('turn/start', { turn: 1 })
@@ -209,8 +287,8 @@ describe('session-mirror resume deltas', () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-offset'))
     const ctx = new Context()
-    const flush = vi.fn(async () => true)
-    ctx.provide('sessions', { flush })
+    const append = vi.fn(async () => {})
+    ctx.provide('sessionPersistence', { create: async () => {}, append })
 
     const total = await mirrorKimiSession(ctx, child, home, 's1', 0)
     expect(total).toBeGreaterThan(0)

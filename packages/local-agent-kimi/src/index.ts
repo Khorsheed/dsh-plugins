@@ -13,9 +13,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { KimiCliProvider } from './kimi-cli-provider.ts'
-import { kimiAuthenticated, listKimiSessions } from './records.ts'
+import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
+import { LiveDriverSwitch } from './live-switch.ts'
+import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
 import { ensureKimiPermissions, kimiLogout, provisionKimiConfig } from './provision.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
@@ -24,16 +27,47 @@ import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './sess
 export const name = 'local-agent-kimi'
 
 /** Services required before the harness can register. */
-export const inject = ['localAgent', 'subagents', 'subprocess']
+export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
-/** Plugin config: the model a fresh scoped home defaults to. */
+/** Plugin config: the model a fresh scoped home defaults to, plus the live driver. */
 export interface Config {
   /** Kimi-managed model id; used only when no user config exists to mirror. */
   model?: string
+  /**
+   * Live driver: keep one resident `kimi acp` process per member and drive
+   * turns over ACP (runtime-level graceful cancel, push-triggered mirroring)
+   * instead of one `kimi -p` process per round. Default off; the exec
+   * one-shot stays the fallback whenever the channel cannot come up.
+   */
+  live?: boolean
+  /** Idle lifetime of an unused resident runtime before reclaim. */
+  liveIdleMs?: number
+  /**
+   * Live mirror granularity: `event` mirrors the wire.jsonl fold via
+   * throttled passes; `token` additionally appends `assistant/chunk` deltas
+   * (write amplification — opt-in).
+   */
+  liveMirrorGranularity?: 'event' | 'token'
 }
 
 export const Config: z<Config> = z.object({
   model: z.string(),
+  live: z.boolean().default(false),
+  liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+})
+
+/**
+ * Settings namespace for the settings-page card. The Cordis config feeds the
+ * composition `base` layer, so a field absent from the user layer inherits the
+ * YAML value — the card only ever stores deliberate overrides.
+ */
+export const KIMI_SETTINGS_NAMESPACE = settingsNamespace('local-agent-kimi')
+
+/** The card's schema; field defaults are the innermost layer below `base`. */
+const KIMI_SETTINGS_SCHEMA = z.object({
+  live: z.boolean().default(false),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
 })
 
 /**
@@ -91,8 +125,21 @@ export function apply(ctx: Context, config: Config): void {
     void ensureKimiPermissions(homeDir).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-kimi: permission provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    ctx.subagents.registerProvider(new KimiCliProvider(ctx))
-    return ctx.localAgent.register({
+    // The live driver is settings-driven: the settings card's toggle (user
+    // layer over the YAML composition base) swaps driver generations without
+    // a reload. Toggling OFF drains the retiring generation — new rounds fall
+    // back to exec, in-flight rounds finish on their runtime, idle runtimes
+    // are reclaimed at once. A granularity change needs no new generation:
+    // the driver reads it per round.
+    const scope = ctx.settings.register(KIMI_SETTINGS_NAMESPACE, KIMI_SETTINGS_SCHEMA, {
+      base: {
+        ...config.live === undefined ? {} : { live: config.live },
+        ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+      },
+    })
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs)
+    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve))
+    const disposeHarness = ctx.localAgent.register({
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
@@ -100,8 +147,14 @@ export function apply(ctx: Context, config: Config): void {
       login: { command: 'kimi', args: ['login'] },
       records: { listSessions: homeDir => listKimiSessions(homeDir) },
       isAuthenticated: kimiAuthenticated,
+      credentialStamp: kimiCredentialStamp,
       logout: kimiLogout,
       subcommand: handleSubcommand,
     })
+    return () => {
+      disposeProvider()
+      disposeHarness()
+      liveSwitch.dispose()
+    }
   }, 'local-agent-kimi: harness')
 }

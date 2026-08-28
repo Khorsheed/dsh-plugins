@@ -138,7 +138,7 @@ describe('state core', () => {
     const ctx = new Context()
     await ctx.plugin(Loader)
     ctx.provide('agents', { roots: () => [], list: () => [] } as never)
-    const registrations: Array<{ name: string; description: string; content: string }> = []
+    const registrations: Array<{ name: string; description: string; content: string; source?: string }> = []
     let disposed = false
     ctx.provide('skills', {
       register: (skill: { name: string; description: string; content: string }) => {
@@ -154,11 +154,36 @@ describe('state core', () => {
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
+    // The registry validates `source` at LOAD time — a registration without
+    // it lists fine in the catalog but explodes on invocation ("loaded skill
+    // ... source must be a string", published 8.9). Pin it here.
+    expect(registrations[0]?.source).toBe('runtime')
     // The registration outcome is on disk for check-env to surface.
     const marker = JSON.parse(readFileSync(join(stateDir, 'skill-registration.json'), 'utf8'))
     expect(marker.registered).toBe(true)
     await fiber.dispose()
     expect(disposed).toBe(true)
+  })
+
+  it('the registered skill survives the real registry round-trip (catalog list + body load)', async () => {
+    // The catalog lists registrations even when a required field is missing;
+    // the registry validates at LOAD time — published 8.9 failed exactly here
+    // ("loaded skill ... source must be a string"). Exercise the real
+    // registry so a payload contract drift cannot pass on a recording stub.
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const { SkillRegistry } = await import('@deepseek-ai/dsh-skill')
+    const registry = new SkillRegistry(ctx as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    const names = (await registry.list({ cwd: repo })).map((skill: { name: string }) => skill.name)
+    expect(names).toContain('dsh-self-restart-guard')
+    const loaded = await registry.get('dsh-self-restart-guard', { cwd: repo })
+    expect(loaded?.content).toContain('check-env')
+    await fiber.dispose()
   })
 
   it('records the failure loudly when the skills service is absent (host migrations must not lose the skill silently)', async () => {
@@ -1283,6 +1308,9 @@ describe('supervise', () => {
         stale.io,
       )).toBe(0)
       expect(stale.err.join()).toContain('stale restart marker')
+      // schedule-exit holds the restart lock only across its check→write→spawn
+      // critical section: a completed schedule leaves no lock behind.
+      expect(existsSync(join(stateDir, 'restart.lock'))).toBe(false)
       // And the reverse direction: a live restart lock means an instance is
       // being restarted right now — the exit agent would kill the one it starts.
       rmSync(join(stateDir, 'restart-requested.json'), { force: true })
@@ -1472,14 +1500,18 @@ describe('supervise', () => {
     }
     // Up and claimed.
     expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 15_000)).toBe(true)
-    // Deleted underneath → reclaimed by the same pid.
+    // Deleted underneath → reclaimed by the same pid. The reclaim runs once
+    // per supervise-loop iteration (~6s in fake-instance mode: spawn + health
+    // poll + two sleeps), so the window must absorb a couple of SLOW
+    // iterations — a machine running a multi-package deploy gate stretches a
+    // single iteration past a tight one.
     unlinkSync(pidfile)
-    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 10_000)).toBe(true)
+    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 25_000)).toBe(true)
     // A live replacement owner → the watchdog yields (exits) rather than fighting.
     writeFileSync(pidfile, String(process.pid))
     expect(await until(() => {
       try { process.kill(wd.pid ?? 0, 0); return false } catch { return true }
-    }, 10_000)).toBe(true)
+    }, 25_000)).toBe(true)
     // ...and its pidfile claim was NOT stolen back or deleted (it names us).
     expect(readFileSync(pidfile, 'utf8').trim()).toBe(String(process.pid))
   }, 45_000)

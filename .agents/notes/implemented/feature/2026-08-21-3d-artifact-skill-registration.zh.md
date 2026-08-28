@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-skill 随 `@khorsheed/dsh-file-preview` 交付于 `packages/file-preview/skills/3d-artifact/SKILL.md`，被 `files` 的 `skills/**/*.md` glob 收录，并在 `FilePreviewService` 构造器通过可选 `skills` 服务在 apply 时注册——与 ankh-guard 重启 skill 注册完全同款拉取式范式：`ctx.get('skills')` 探测、解析 SKILL.md frontmatter 的 `name`/`description`、`ctx.effect(() => skills.register({ name, description, content }))`。能力缺失或文件损坏只降级为警告——发现辅助绝不能拖垮 boot；pack-smoke 测试（`tests/skill-registration.spec.ts`）负责断言 tarball 内文件存在并校验注册内容。能力缺席路径会打 `skills capability absent — the 3d-artifact skill is not registered`（warn，与 ankh-guard 重启 skill 同口径）——宿主迁移若丢弃/改名 skills 服务，会在 boot 日志里浮出而非静默失败。
+skill 随 `@khorsheed/dsh-file-preview` 交付于 `packages/file-preview/skills/3d-artifact/SKILL.md`，被 `files` 的 `skills/**/*.md` glob 收录，并在 `FilePreviewService` 构造器通过可选 `skills` 服务在 apply 时注册——与 ankh-guard 重启 skill 注册完全同款拉取式范式：`ctx.get('skills')` 探测、解析 SKILL.md frontmatter 的 `name`/`description`、`ctx.effect(() => skills.register({ name, description, content }))`。能力缺失或文件损坏只降级为警告——发现辅助绝不能拖垮 boot；pack-smoke 测试（`tests/skill-registration.spec.ts`）负责断言 tarball 内文件存在并校验注册内容。注册带 `provider: 'file-preview'`；因 bundle 是 content-only（只有 `SKILL.md`，无旁挂脚本/资源），刻意省略 `resourceBase`——capability-catalog 协议把这种 skill 渲染成虚拟单 `SKILL.md` 节点，只有日后 bundle 真加了 SKILL.md 旁的资源才补 `resourceBase`。能力缺席路径会打 `skills capability absent — the 3d-artifact skill is not registered`（warn，与 ankh-guard 重启 skill 同口径）——宿主迁移若丢弃/改名 skills 服务，会在 boot 日志里浮出而非静默失败。
 
 契约内容（硬规则）：单文件自包含（JS/CSS 内联、图片 `data:`）；零运行时网络；模型必须用 GLB base64 + `atob` → `parse(arrayBuffer)`——绝不用 `.gltf` JSON 的 `data:` URI 缓冲（three r152 通过 `fetch` 解析 `data:` URI，会被 CSP 拦截）；库只能来自白名单 CDN（jsdelivr/cdnjs）且经内联 importmap；`<head>` 内嵌 Tier1 meta CSP；体积红线（GLB ≤ 6 MB 原始 ≈ 8 MB base64，整页 ≤ 16 MB）。
 

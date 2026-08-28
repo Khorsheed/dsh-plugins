@@ -53,3 +53,4 @@ wire 类型（`LocalAgentDelegationView`、`LocalAgentPromptResult`）放在 `sr
 - [成员通道提案](../../../proposals/active/2026-08-19-local-agent-member-channel.md)——本 note 实现的里程碑计划（M1+M2）。
 - [委派 facade](2026-08-18-local-agent-delegation-facade.md)——gateway 组合的 resume/cancel facade。
 - [run 进度](2026-08-19-local-agent-run-progress.md)——composer 运行态将消费（M3 实时镜像）的进度通道。
+- **更正（2026-08-23）：有待处理交互时必须让出选举。** 官方 `ApprovalPanel`（提问/审批弹窗）本身就是 `conversation.composer` 链上 priority 1 的条目；本条目在 -20 先选举会把它遮蔽——成员会话里待答的 ask-user-question 永远渲染不出来。`selectCliMember` 现在在 `owner.interactions` 非空时返回 null，让交互 UI 当选。接管 composer 的通用规则（已有测试钉住）：有 pending 交互 → 让出；运行中 Stop → 自己实现（成员走 `stopMember`）。

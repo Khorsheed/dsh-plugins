@@ -27,14 +27,24 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { KimiAcpLiveDriver } from './live-driver.ts'
+import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
-import { mirrorKimiSessionDelta, type KimiMirrorDelta } from './session-mirror.ts'
+import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+/**
+ * Auth-shaped failure signatures in kimi's stderr or output: the endpoint
+ * rejected the credential. Narrow on purpose — matched against
+ * provider-controlled error output only.
+ */
+export const KIMI_AUTH_FAILURE = /401|unauthorized|invalid api key|not authenticated/i
 
 /** Default interval between live transcript-mirror polls during a run. */
 export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
@@ -53,7 +63,23 @@ export class KimiCliProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
+  ) {}
+
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): KimiAcpLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
 
   /**
    * Register one run with the member channel and declare the bridge MCP server
@@ -126,9 +152,6 @@ export class KimiCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
-    // Member channel: register this run and declare the bridge MCP before the
-    // spawn, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id, homeDir)
     let childSession: Session | undefined
     try {
       // Strict global read, never the caller-scope `ctx.sessions` proxy: the
@@ -165,15 +188,51 @@ export class KimiCliProvider implements SubagentProvider {
     // it actually used.
     const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-kimi: delegating via ${baseUrl ?? 'kimi default endpoint'}`)
+    // Live driver: the round goes to the member's resident `kimi acp` process.
+    // A channel that fails at spawn/handshake falls through to the exec
+    // one-shot below — and stays there until the breaker cools down.
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
+      try {
+        return await live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          parentSessionId: request.parent.session.id,
+          // The ACP session id arrives with session/new (server-assigned), far
+          // earlier than the exec path's settle-time stderr parse.
+          onCliSessionId: (cliSessionId) => {
+            this.ctx.localAgent.recordDelegation({
+              childSessionId: runId,
+              provider: this.name,
+              parentSessionId: request.parent.session.id,
+              cliSessionId,
+            })
+          },
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+        this.ctx.logger.warn(`subagent-kimi: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
+    // Member channel: register this run and declare the bridge MCP before the
+    // spawn, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id, homeDir)
     try {
       const run = await startKimiCliRun(request, {
         cwd: parentCwd,
-        env: { KIMI_CODE_HOME: homeDir },
+        env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         endpointLabel: baseUrl,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
           this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+        },
+        onAuthFailure: (detail) => {
+          // The sentinel: an empty-shell wipe restored here makes the
+          // caller's retry (or the next round) succeed.
+          void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
+          this.ctx.localAgent.reportAuthFailure('kimi', detail)
         },
         onSpawned: (pid) => { member?.bind(pid) },
         childSession,
@@ -216,9 +275,6 @@ export class KimiCliProvider implements SubagentProvider {
         `subagent-kimi: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) and declare the bridge MCP before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -229,23 +285,60 @@ export class KimiCliProvider implements SubagentProvider {
       }
       // The next turn follows the rounds already recorded in the child session.
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      // Live driver: continue the member's resident ACP session. Channel
+      // spawn/handshake failure falls through to the exec one-shot below.
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
+        try {
+          const liveRun = await live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            parentSessionId: request.parent.session.id,
+            resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+          this.ctx.logger.warn(`subagent-kimi: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) and declare the bridge MCP before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
       const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
       this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
-      const run = await startKimiCliRun(request, {
-        cwd: parentCwd,
-        env: { KIMI_CODE_HOME: homeDir },
-        endpointLabel: baseUrl,
-        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-        spawn: spec => this.ctx.subprocess.spawn(spec),
-        onError: (error: unknown, stopReason) => {
-          this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-        },
-        onSpawned: (pid) => { member?.bind(pid) },
-        childSession,
-        homeDir,
-        ctx: this.ctx,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-      })
+      let run: SubagentRun
+      try {
+        run = await startKimiCliRun(request, {
+          cwd: parentCwd,
+          env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+          endpointLabel: baseUrl,
+          disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+          spawn: spec => this.ctx.subprocess.spawn(spec),
+          onError: (error: unknown, stopReason) => {
+            this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+          },
+          onAuthFailure: (detail) => {
+            // The sentinel: an empty-shell wipe restored here makes the
+            // caller's retry (or the next round) succeed.
+            void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
+            this.ctx.localAgent.reportAuthFailure('kimi', detail)
+          },
+          onSpawned: (pid) => { member?.bind(pid) },
+          childSession,
+          homeDir,
+          ctx: this.ctx,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+        })
+      } catch (error) {
+        member?.release()
+        throw error
+      }
       void run.result.then(
         () => {
           this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
@@ -259,7 +352,6 @@ export class KimiCliProvider implements SubagentProvider {
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -270,7 +362,7 @@ export interface KimiCliRunSpec {
   /** Parent Session workspace; also the kimi process cwd. */
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -279,6 +371,12 @@ export interface KimiCliRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401 a presence probe cannot see). The provider wires this
+   * to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /** dsh subagent session recording this delegation; its transcript is mirrored after settle. */
@@ -359,18 +457,19 @@ export function textTask(prompt: readonly ContentBlock[]): string {
  * @param kimiSessionId - the kimi session to mirror.
  * @returns the mirror delta (new total + newly mirrored line texts).
  */
-async function mirrorKimiDelta(
+export async function mirrorKimiDelta(
   ctx: Context,
   childSession: Session,
   homeDir: string,
   kimiSessionId: string | undefined,
+  options?: KimiMirrorOptions,
 ): Promise<KimiMirrorDelta> {
   // Degrade without the localAgent service: the transcript still mirrors (the
   // pre-live-mirror behavior for a bare context), only the offset bookkeeping
   // and progress reporting drop out.
   const localAgent = ctx.get('localAgent')
   const fromLines = localAgent?.kimiMirroredLines(childSession.id) ?? 0
-  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines)
+  const delta = await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines, options)
   if (delta.texts.length === 0) return delta
   localAgent?.setKimiMirroredLines(childSession.id, delta.total)
   for (const text of delta.texts) {
@@ -432,10 +531,12 @@ export function startKimiCliRun(
   spec.childSession?.append('turn/start', { turn })
 
   const child = spec.spawn({
-    // -S must precede -p: after -p, kimi parses the id as a command.
+    // -S must precede -p: after -p, kimi parses the id as a command. The
+    // recorded id may already carry the ACP directory prefix (a record
+    // written by a live round): never double-prefix.
     argv: spec.resume === undefined
       ? ['kimi', '-p', task]
-      : ['kimi', '-S', `session_${spec.resume.cliSessionId}`, '-p', task],
+      : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
@@ -537,7 +638,10 @@ export function startKimiCliRun(
   processFailure.catch(() => {})
 
   const collectOutput = (): ContentBlock[] => {
-    const text = output.trim()
+    // Post-exit the seam's collected buffer is authoritative — a fast-exiting
+    // process can settle `done` before the streamed data events land.
+    const drained = child.collected.stdout?.readFrom(0).text
+    const text = (drained !== undefined && drained !== '' ? drained : output).trim()
     return text === '' ? [] : [{ type: 'text', text }]
   }
 
@@ -596,7 +700,21 @@ export function startKimiCliRun(
   // the process to actually exit (so the wire file is complete) before
   // reading it. Enqueued behind any in-flight live poll on the mirror queue.
   void result.then(() => child.done).then(
-    () => { enqueueMirror(() => mirrorKimiAfterExit(spec, stderr)) },
+    () => {
+      // Auth detection runs post-exit: streams are drained by then, so a fast
+      // failure's stderr is complete (a settle-time read could race the flush).
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${drainedStderr}\n${drainedStdout}`
+        if (KIMI_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      enqueueMirror(() => mirrorKimiAfterExit(spec, stderr))
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 

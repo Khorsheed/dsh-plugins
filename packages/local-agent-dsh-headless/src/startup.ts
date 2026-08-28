@@ -25,12 +25,14 @@ export const LOCAL_AGENT_DSH_HEADLESS_STARTUP_SERVICE = 'localAgentDshHeadlessSt
 
 /** What the runner row reads from {@link LOCAL_AGENT_DSH_HEADLESS_STARTUP_SERVICE}. */
 export interface LocalAgentDshHeadlessStartupValues {
-  /** The task text this invocation asked for. */
+  /** The task text this invocation asked for; empty in serve mode. */
   task: string
   /** Fresh delegation: create a session with this exact id. */
   sessionId?: string
   /** Continuation: resume the existing session with this id. */
   resumeSessionId?: string
+  /** Resident mode: drive turns over the stdio wire, never exiting on idle. */
+  serve?: boolean
 }
 
 /**
@@ -44,11 +46,13 @@ function headlessCommand(): Command {
     .helpOption('-h, --help', 'show this help')
     .option('--session-id <id>', 'create a fresh session with exactly this id')
     .option('--resume <id>', 'continue the existing session with this id')
+    .option('--serve', 'stay resident and drive turns over the stdio wire (no task)')
     .argument('[task...]', 'the task text; multiple words are joined by spaces')
     .addHelpText('after', `
 Examples:
   dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   create one session and answer
   dsh --profile headless-local-agent-dsh --resume 6ba7... "run the rest"       continue the same session
+  dsh --profile headless-local-agent-dsh --serve                              resident live-driver mode (stdio wire)
 `)
 }
 
@@ -63,12 +67,25 @@ export function apply(ctx: Context): void {
   const program = headlessCommand()
   program.action(() => {
     const task = program.args.join(' ')
+    // Commander camelizes `--session-id` to `sessionId` but keeps `--resume`
+    // as `resume`; map both onto the service's explicit field names.
+    const options = program.opts<{ sessionId?: string; resume?: string; serve?: boolean }>()
+    if (options.serve === true) {
+      if (options.sessionId !== undefined || options.resume !== undefined) {
+        program.error('error: --serve drives sessions over the wire; --session-id/--resume do not apply')
+      }
+      if (task.trim() !== '') {
+        program.error('error: --serve takes no task; turns arrive over the wire')
+      }
+      ctx.provide(LOCAL_AGENT_DSH_HEADLESS_STARTUP_SERVICE, {
+        task: '',
+        serve: true,
+      } satisfies LocalAgentDshHeadlessStartupValues)
+      return
+    }
     if (task.trim() === '') {
       program.error('error: a task is required, for example: dsh --profile headless-local-agent-dsh --session-id <id> "run the tests"')
     }
-    // Commander camelizes `--session-id` to `sessionId` but keeps `--resume`
-    // as `resume`; map both onto the service's explicit field names.
-    const options = program.opts<{ sessionId?: string; resume?: string }>()
     if (options.sessionId !== undefined && options.resume !== undefined) {
       program.error('error: --session-id and --resume are mutually exclusive')
     }

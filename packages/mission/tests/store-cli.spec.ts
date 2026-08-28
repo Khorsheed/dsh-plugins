@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -129,6 +129,11 @@ describe('registration verbs (lab CLI mode)', () => {
     const service = new MissionService(dir)
     await service.create({ id: 'm' })
     const c = capture()
+    // A missing path is a business failure (exit 1), never a ghost registration.
+    expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir], c.io)).toBe(1)
+    expect(c.err()).toMatch(/does not exist/)
+    mkdirSync(service.store.attemptDataDir('default', 'm', 1), { recursive: true })
+    writeFileSync(join(service.store.attemptDataDir('default', 'm', 1), 'report.json'), '{}\n')
     expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir], c.io)).toBe(0)
     expect(c.out()).toMatch(/artifact indexed/)
     expect(await runCli(['add-artifact', 'm', '--path', 'report.json', '--kind', 'collect', '--data-dir', dir], c.io)).toBe(0)
@@ -164,6 +169,8 @@ describe('registration verbs (lab CLI mode)', () => {
     // Without --run the id is unique here, so the bare form works…
     expect(await runCli(['set-refs', 'm', '--resource', 'box', '--data-dir', dir], c.io)).toBe(0)
     // …and the scoped form writes the same record the service face reads.
+    mkdirSync(service.store.attemptDataDir('r1', 'm', 1), { recursive: true })
+    writeFileSync(join(service.store.attemptDataDir('r1', 'm', 1), 'x'), 'x\n')
     expect(await runCli(['add-artifact', 'm', '--run', 'r1', '--path', 'x', '--kind', 'k', '--data-dir', dir], c.io)).toBe(0)
     const { run, mission } = service.get('m', 'r1')
     expect(run.id).toBe('r1')

@@ -4,15 +4,15 @@
 
 为 dsh Web 界面的用户消息提供编辑、撤回与恢复:每条用户消息都有复制/编辑/撤回操作行。撤回是真撤回——消息及其后内容彻底离开模型上下文,折叠成可展开的分隔线,还能重放回对话末尾——不改动任何核心包。
 
-<img src="../../docs/screenshots/message-actions1.png" width="480" alt="用户消息上的复制/编辑/撤回操作行">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions1.png" width="480" alt="用户消息上的复制/编辑/撤回操作行">
 
-<img src="../../docs/screenshots/message-actions2.png" width="480" alt="原位编辑:保存后以新消息重新发送,被编辑消息不再进入模型上下文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions2.png" width="480" alt="原位编辑:保存后以新消息重新发送,被编辑消息不再进入模型上下文">
 
-<img src="../../docs/screenshots/message-actions3.png" width="480" alt="撤回前的确认弹窗,说明影响范围">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions3.png" width="480" alt="撤回前的确认弹窗,说明影响范围">
 
-<img src="../../docs/screenshots/message-actions4.png" width="480" alt="撤回后折叠成分隔线,可一键恢复到对话末尾">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions4.png" width="480" alt="撤回后折叠成分隔线,可一键恢复到对话末尾">
 
-<img src="../../docs/screenshots/message-actions5.png" width="480" alt="恢复后消息原样回到对话">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-actions5.png" width="480" alt="恢复后消息原样回到对话">
 
 ## 特性
 
@@ -36,7 +36,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.1`):✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**:chat-node owner props 移除了 `loadImage`,改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证(纯增量审计,2026-08-21)
+- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**:chat-node owner props 移除了 `loadImage`,改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证(纯增量审计,2026-08-21)；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过
 - 源码线(deepseek-harness master):✅
 
 ## 已知限制
@@ -76,3 +76,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 ## 开发
 
 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo(`packages/message-tools`)。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

@@ -13,6 +13,9 @@
  *     `read` prints the raw file content, `worktree path` prints the path)
  *   worktree path    — acquire the managed whole-layer view (sparse-checkout-limited)
  *   worktree prune   — unlock + remove every managed worktree of a repository
+ *   validate         — shape + author-hygiene report (errors exit 1, warnings
+ *     never block: mixed-sensitivity undeclared modelFacing, sensitive-looking
+ *     item.json field names, files uncovered by any layer or register entry)
  *   bind / unbind    — write a session's binding (the plugin-owned store is
  *     read per call, so binding a LIVE session is race-free)
  */
@@ -21,7 +24,7 @@ import { pathToFileURL } from 'node:url'
 import { readBinding, validateBinding, writeBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
-import { formatList, formatShow, formatWarnings } from './format.ts'
+import { formatList, formatShow, formatValidate, formatWarnings } from './format.ts'
 import { createDatasetsService, resolveScope, type DatasetScope } from './service.ts'
 import { pruneManagedWorktrees } from './worktree.ts'
 
@@ -39,6 +42,7 @@ commands:
   read --dataset D --item I --layer L --path P [--repo R] [--commit C]
   snapshot --dataset D [--repo R] [--commit C]
   worktree path --dataset D [--repo R] [--commit C] [--layers a,b] [--worktree-root DIR]
+  validate [--repo R] [--dataset D] [--commit C]
   worktree prune --repo R [--worktree-root DIR]
   bind --session ID --repo R [--datasets a,b] [--layers x,y] [--state-root DIR]
   unbind --session ID [--state-root DIR]
@@ -115,11 +119,17 @@ export async function runCli(
   const worktreeRoot = resolveWorktreeRoot(flags['worktree-root'])
   const bindingsRoot = join(resolveStateRoot(flags['state-root']), 'bindings')
   const service = createDatasetsService({ worktreeRoot, bindingsRoot })
-  const scope = (): DatasetScope => resolveScope(
-    flags['repo'] !== undefined ? { repo: flags['repo'] } : {},
-    undefined,
-    env['DSH_DATASETS_REPO'],
-  )
+  // Read verbs run as the operator (a human at their own machine — the
+  // whitelist constrains agent tools and worktree materialization, not this
+  // CLI). worktree path keeps the non-operator scope: it is a boundary.
+  const scope = (operator = true): DatasetScope => ({
+    ...resolveScope(
+      flags['repo'] !== undefined ? { repo: flags['repo'] } : {},
+      undefined,
+      env['DSH_DATASETS_REPO'],
+    ),
+    ...(operator ? { operator: true as const } : {}),
+  })
   const verb = command.join(' ')
 
   try {
@@ -175,12 +185,17 @@ export async function runCli(
       case 'worktree path': {
         const dataset = flags['dataset']
         if (dataset === undefined) return usageError(io, 'worktree path requires --dataset D')
-        const result = await service.worktreePath(scope(), dataset, {
+        const result = await service.worktreePath(scope(false), dataset, {
           ...(flags['commit'] !== undefined ? { commit: flags['commit'] } : {}),
           ...(csv(flags['layers']) !== undefined ? { layers: csv(flags['layers']) ?? [] } : {}),
         })
         io.stdout(`${result.path}\n`)
         return 0
+      }
+      case 'validate': {
+        const result = await service.validate(scope(), flags['dataset'])
+        io.stdout(`${formatValidate(result)}\n`)
+        return result.datasets.some(dataset => dataset.errors.length > 0) ? 1 : 0
       }
       case 'worktree prune': {
         const repo = flags['repo'] ?? env['DSH_DATASETS_REPO']

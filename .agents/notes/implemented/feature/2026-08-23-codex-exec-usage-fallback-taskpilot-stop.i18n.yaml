@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-codex-exec-usage-fallback-taskpilot-stop.md
+.agents/notes/implemented/feature/2026-08-23-codex-exec-usage-fallback-taskpilot-stop.md: 6ebfcdc8277b72efe3a1ca97aa1f2f4bb2e15d26
+.agents/notes/implemented/feature/2026-08-23-codex-exec-usage-fallback-taskpilot-stop.zh.md: fae6b438749465ea8e9f6a5215b12bf32e4dd2a5

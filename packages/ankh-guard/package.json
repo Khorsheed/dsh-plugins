@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-ankh-guard",
   "description": "Hard gate for self-modification restarts: a green-build credential bound to the git HEAD, checked before any restart of the running instance",
-  "version": "0.1.0-rc.8.9",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -64,7 +64,8 @@
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.8"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
@@ -91,7 +92,7 @@
     "compat": {
       "minHost": "0.1.0-rc.6",
       "notes": "composition-preflight gate runs via the standalone preflight-runner (resolves official packages from a live harness checkout, no fork patch); on the npm line without a checkout it degrades to a notice, every other capability intact",
-      "verifiedHost": "0.1.1-rc.1"
+      "verifiedHost": "0.1.1-rc.2"
     }
   }
 }

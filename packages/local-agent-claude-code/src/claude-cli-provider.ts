@@ -8,16 +8,18 @@
  * The provider name `claude-local` avoids colliding with the official
  * `subagent-claude-code` package's provider name `claude-code` — a
  * composition that mounts both would fail loud with DUPLICATE_PROVIDER. The
- * tool row in this bundle's patch uses `subagent_claude_code_local` for the
- * same reason (the official presets carry a disabled
- * `subagent_claude_code` row).
+ * tool row in this bundle's patch takes the official model-facing name
+ * `subagent_claude_code` instead: the official preset row ships disabled,
+ * and the patch disables it too (a deliberate user re-enable conflicts
+ * loud, by design).
  * @module @khorsheed/dsh-local-agent-claude-code/claude-cli-provider
  */
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import {
   NO_START_CAPABILITIES,
   settleRunResult,
@@ -31,80 +33,133 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { LiveChannelUnavailableError } from './live-driver.ts'
+import type { ClaudeLiveDriver } from './live-driver.ts'
+import { syncClaudeCredentialFile } from './records.ts'
+
+// The host renamed its tool-call id brand between lines (`CallId` on the npm
+// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
+// runtime value is a plain string, so instead of importing either brand
+// factory we extract the field types from the consuming APIs — the same
+// source then compiles against both lines.
+type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
+type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+/**
+ * Auth-shaped failure signatures in claude's result error or stderr: the
+ * endpoint rejected the credential (401/403, revoked token). Narrow on
+ * purpose — matched against provider-controlled error strings only.
+ */
+export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token/i
+
+/**
+ * Member channel registration for one claude process lifetime: mint the
+ * per-run token and build the bridge MCP declaration for the spawn argv
+ * (`--mcp-config <json>` — verified end-to-end against the real CLI).
+ * Nothing is written to the scoped home and there is nothing to prune at
+ * settle; `release` only invalidates the token. Returns undefined when the
+ * mounted core predates the member channel (declare-and-degrade). The exec
+ * driver registers per round; the live driver registers per resident
+ * process and releases on reclaim.
+ */
+export interface ClaudeMemberRunHandle {
+  readonly token: string
+  readonly mcpConfig: string
+  readonly allowedTool: string
+  bind(pid: number): void
+  release(): void
+}
+
+/** Register one member run with the channel; see {@link ClaudeMemberRunHandle}. */
+export function registerClaudeMemberRun(
+  ctx: Context,
+  childSessionId: string,
+  parentSessionId: string,
+): ClaudeMemberRunHandle | undefined {
+  const registry = ctx.localAgent
+  if (
+    typeof registry.registerMemberRun !== 'function'
+    || typeof registry.memberBridgeSocketPath !== 'function'
+    || typeof registry.memberBridgeCommand !== 'function'
+  ) return undefined
+  const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: 'claude-local' })
+  const serverName = `dsh-member-${token.slice(0, 8)}`
+  const bridge = registry.memberBridgeCommand()
+  const mcpConfig = JSON.stringify({
+    mcpServers: {
+      [serverName]: {
+        command: bridge.command,
+        args: bridge.args,
+        env: {
+          [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
+          [MEMBER_BRIDGE_TOKEN_ENV]: token,
+        },
+      },
+    },
+  })
+  let released = false
+  return {
+    token,
+    mcpConfig,
+    // The one tool the bridge exposes, pre-allowed so the child (whose
+    // non-interactive mode auto-denies permission prompts) can call it.
+    allowedTool: `mcp__${serverName}__member_message`,
+    bind: pid => registry.bindMemberRunPid(token, pid),
+    release: () => {
+      if (released) return
+      released = true
+      registry.unregisterMemberRun(token)
+    },
+  }
+}
 
 /**
  * One-shot and resumable Claude Code CLI subagent provider: every accepted
  * FRESH run starts a `claude -p` process in the delegating Session's
  * workspace, under the harness scoped home; a resume round (the family tool's
  * staged resume intent) continues the SAME session with `claude -p --resume
- * <session_id>` inside the SAME dsh child session.
+ * <session_id>` inside the SAME dsh child session. With the live driver
+ * configured (`live: true`), rounds instead go to the resident stream-json
+ * process (see live-driver.ts); the exec path below stays the fallback.
  */
 export class ClaudeCliProvider implements SubagentProvider {
   readonly name = 'claude-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
+  /**
+   * @param live - the live driver, or a resolver returning the current
+   *   generation's driver per member (the settings toggle swaps generations;
+   *   a resolver may return undefined to steer one member's round to exec
+   *   while a retiring generation still hosts it).
+   */
   constructor(
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
+    private readonly live?: ClaudeLiveDriver | ((childSessionId: string) => ClaudeLiveDriver | undefined),
   ) {}
 
-  /**
-   * Register one run with the member channel and prepare the bridge MCP
-   * declaration for the spawn argv. Claude Code takes a per-invocation
-   * `--mcp-config <json>` flag (verified end-to-end against the real CLI), so
-   * the declaration is a single JSON string — nothing is written to the
-   * scoped home and there is nothing to prune at settle; `release` only
-   * invalidates the token. Returns undefined when the mounted core predates
-   * the member channel (declare-and-degrade: the run proceeds unchanged).
-   */
+  /** Resolve the live driver for one round's member, if live is on for it. */
+  private liveDriver(childSessionId: string): ClaudeLiveDriver | undefined {
+    const live = this.live
+    if (live === undefined) return undefined
+    return typeof live === 'function' ? live(childSessionId) : live
+  }
+
+  /** Per-round member-channel registration for the exec path (see {@link registerClaudeMemberRun}). */
   private memberRun(
     childSessionId: string,
     parentSessionId: string,
-  ): { token: string; mcpConfig: string; allowedTool: string; bind(pid: number): void; release(): void } | undefined {
-    const registry = this.ctx.localAgent
-    if (
-      typeof registry.registerMemberRun !== 'function'
-      || typeof registry.memberBridgeSocketPath !== 'function'
-      || typeof registry.memberBridgeCommand !== 'function'
-    ) return undefined
-    const token = registry.registerMemberRun({ childSessionId, parentSessionId, provider: this.name })
-    const serverName = `dsh-member-${token.slice(0, 8)}`
-    const bridge = registry.memberBridgeCommand()
-    const mcpConfig = JSON.stringify({
-      mcpServers: {
-        [serverName]: {
-          command: bridge.command,
-          args: bridge.args,
-          env: {
-            [MEMBER_BRIDGE_SOCKET_ENV]: registry.memberBridgeSocketPath(),
-            [MEMBER_BRIDGE_TOKEN_ENV]: token,
-          },
-        },
-      },
-    })
-    let released = false
-    return {
-      token,
-      mcpConfig,
-      // The one tool the bridge exposes, pre-allowed so `claude -p` (whose
-      // non-interactive mode auto-denies permission prompts) can call it.
-      allowedTool: `mcp__${serverName}__member_message`,
-      bind: pid => registry.bindMemberRunPid(token, pid),
-      release: () => {
-        if (released) return
-        released = true
-        registry.unregisterMemberRun(token)
-      },
-    }
+  ): ClaudeMemberRunHandle | undefined {
+    return registerClaudeMemberRun(this.ctx, childSessionId, parentSessionId)
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
@@ -130,9 +185,6 @@ export class ClaudeCliProvider implements SubagentProvider {
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
-    // Member channel: register this run and carry the bridge declaration on
-    // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
     let childSession: Session | undefined
     try {
       const sessions = this.ctx.get('sessions')
@@ -163,13 +215,43 @@ export class ClaudeCliProvider implements SubagentProvider {
     // delegation reports which endpoint it actually used.
     const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
     this.ctx.logger.info(`subagent-claude: delegating via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
+    // Live driver: the round goes to the member's resident stream-json
+    // process. A channel that fails at spawn falls through to the exec
+    // one-shot below — and stays there until the breaker cools down.
+    const live = this.liveDriver(runId)
+    if (live !== undefined && childSession !== undefined && !live.disabled) {
+      try {
+        return await live.startRound(request, {
+          cwd: parentCwd,
+          homeDir,
+          childSession,
+          parentSessionId: request.parent.session.id,
+          // The stream-json session id arrives with the turn's system/init
+          // (server-assigned), far earlier than the exec path's settle parse.
+          onSessionId: (sessionId) => {
+            this.ctx.localAgent.recordDelegation({
+              childSessionId: runId,
+              provider: this.name,
+              parentSessionId: request.parent.session.id,
+              cliSessionId: sessionId,
+            })
+          },
+        })
+      } catch (error) {
+        if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+        this.ctx.logger.warn(`subagent-claude: live driver unavailable, using the exec one-shot: ${error.message}`)
+      }
+    }
+    // Member channel: register this run and carry the bridge declaration on
+    // the spawn argv, so the CLI session starts with member_message available.
+    const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startClaudeCliRun(request, {
         cwd: parentCwd,
-        env: {
+        env: delegationEnv({
           CLAUDE_CONFIG_DIR: homeDir,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-        },
+        }),
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -178,6 +260,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
         ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
@@ -218,9 +301,6 @@ export class ClaudeCliProvider implements SubagentProvider {
         `subagent-claude: 该子会话有进行中的委派，等其完成后再追问 (child session ${intent.childSessionId})`,
       )
     }
-    // Member channel: register the resume round (same child session, fresh
-    // per-run token) before the spawn.
-    const member = this.memberRun(intent.childSessionId, request.parent.session.id)
     try {
       const sessions = this.ctx.get('sessions')
       const childSession = sessions?.get(SessionId(intent.childSessionId))
@@ -230,27 +310,59 @@ export class ClaudeCliProvider implements SubagentProvider {
         )
       }
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      // Live driver: continue the member's resident stream-json session.
+      // Channel failure falls through to the exec one-shot below.
+      const live = this.liveDriver(intent.childSessionId)
+      if (live !== undefined && !live.disabled) {
+        try {
+          const liveRun = await live.startRound(request, {
+            cwd: parentCwd,
+            homeDir,
+            childSession,
+            parentSessionId: request.parent.session.id,
+            resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          })
+          void liveRun.result.then(
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+            () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
+          )
+          return liveRun
+        } catch (error) {
+          if (!(error instanceof LiveChannelUnavailableError) || request.signal.aborted) throw error
+          this.ctx.logger.warn(`subagent-claude: live driver unavailable, using the exec one-shot: ${error.message}`)
+        }
+      }
       const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
       this.ctx.logger.info(`subagent-claude: resuming via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
-      const run = await startClaudeCliRun(request, {
-        cwd: parentCwd,
-        env: {
-          CLAUDE_CONFIG_DIR: homeDir,
-          ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
-        },
-        endpointLabel: effectiveBaseUrl,
-        permissionMode: this.permissionMode,
-        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
-        spawn: spec => this.ctx.subprocess.spawn(spec),
-        onError: (error: unknown, stopReason) => {
-          this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
-        },
-        onSpawned: (pid) => { member?.bind(pid) },
-        ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
-        childSession,
-        ctx: this.ctx,
-        resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
-      })
+      // Member channel: register the resume round (same child session, fresh
+      // per-run token) before the spawn.
+      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      let run: SubagentRun
+      try {
+        run = await startClaudeCliRun(request, {
+          cwd: parentCwd,
+          env: delegationEnv({
+            CLAUDE_CONFIG_DIR: homeDir,
+            ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+          }),
+          endpointLabel: effectiveBaseUrl,
+          permissionMode: this.permissionMode,
+          disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+          spawn: spec => this.ctx.subprocess.spawn(spec),
+          onError: (error: unknown, stopReason) => {
+            this.ctx.logger.warn(`subagent-claude: child run failed (${stopReason}) via ${effectiveBaseUrl ?? 'claude default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
+          },
+          onSpawned: (pid) => { member?.bind(pid) },
+          onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
+          ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
+          childSession,
+          ctx: this.ctx,
+          resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+        })
+      } catch (error) {
+        member?.release()
+        throw error
+      }
       void run.result.then(
         () => {
           this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
@@ -264,7 +376,6 @@ export class ClaudeCliProvider implements SubagentProvider {
       return run
     } catch (error) {
       this.ctx.localAgent.releaseResumeLock(intent.childSessionId)
-      member?.release()
       throw error
     }
   }
@@ -279,7 +390,7 @@ export interface ClaudeCliRunSpec {
    * `undefined` value tombstones an inherited ambient entry, a string
    * restores or overrides it.
    */
-  readonly env: Record<string, string>
+  readonly env: Readonly<NodeJS.ProcessEnv>
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Permission mode passed to `claude -p`. */
@@ -292,6 +403,12 @@ export interface ClaudeCliRunSpec {
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
+  /**
+   * Called when the settled failure is auth-shaped (the endpoint rejected the
+   * credential — a 401/403 a presence probe cannot see). The provider wires
+   * this to the family registry's auth-failure mark.
+   */
+  readonly onAuthFailure?: ((detail: string) => void) | undefined
   /**
    * Member channel: the bridge MCP declaration for this run, injected as
    * `--mcp-config <json>` plus a `--allowedTools` entry for the bridge's one
@@ -349,17 +466,77 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 export type ClaudeTranscriptLine =
   | { kind: 'think'; text: string }
   | { kind: 'text'; text: string }
-  | { kind: 'tool'; name: string; detail?: string; result?: string }
+  /**
+   * Tool activity: one `tool_use` with its (possibly still pending)
+   * `tool_result`. `id` is the stream's tool_use id when present, else a
+   * synthesized position-based id — stable within a run either way, so the
+   * child session's `tool/call`/`tool/result` events pair by it.
+   */
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface ClaudeStreamFoldState {
   readonly lines: ClaudeTranscriptLine[]
+  /** tool_use id → transcript line index, so a result pairs with its own call. */
+  readonly callsById: Map<string, number>
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
   error: string | undefined
   /** Whether the stream's terminal `result` event was folded. */
   completed: boolean
+  /**
+   * The last TodoWrite translation (last-wins within the stream). TodoWrite
+   * blocks are intercepted BEFORE the text fold — the member's task list
+   * crosses as a native `todo/write` snapshot, never a `[工具 TodoWrite]` line.
+   */
+  todos: TodoItem[] | undefined
+  /** A TodoWrite whose input missed the documented shape (degraded to the text fold). */
+  todoSkew: boolean
+}
+
+/**
+ * Translate one TodoWrite tool input into the dsh whole-list snapshot.
+ * Claude's documented schema is `{todos: [{content, status, activeForm}]}`
+ * with status `pending | in_progress | completed` — dsh's TodoItem vocabulary
+ * minus `activeForm` (display-only). Unknown statuses map to `pending`; a
+ * shape-skewed input returns undefined and the caller degrades to the plain
+ * text fold — shape skew must never throw into the mirror.
+ * @param input - the tool_use block's `input` payload.
+ * @returns the dsh todo list, or undefined on shape skew.
+ */
+export function todosFromTodoWrite(input: unknown): TodoItem[] | undefined {
+  if (typeof input !== 'object' || input === null) return undefined
+  const todos = (input as { todos?: unknown }).todos
+  if (!Array.isArray(todos)) return undefined
+  const out: TodoItem[] = []
+  for (const item of todos) {
+    if (typeof item !== 'object' || item === null) return undefined
+    const content = (item as { content?: unknown }).content
+    if (typeof content !== 'string' || content.trim() === '') return undefined
+    const status = (item as { status?: unknown }).status
+    out.push({ content, status: status === 'in_progress' || status === 'completed' ? status : 'pending' })
+  }
+  return out
+}
+
+/**
+ * Append the todo/write snapshot unless the child session's last snapshot is
+ * identical — the M2 dsh mirror's JSON-comparison idempotency: repeated passes
+ * over the same state never duplicate it. The comparison base is the whole
+ * log, not the current round: a standing whole-list snapshot has no round
+ * scope, so a resume round with an unchanged list re-appends nothing and the
+ * earlier round's list keeps standing.
+ * @param childSession - the parent-side dsh subagent session.
+ * @param todos - the translated whole list.
+ * @returns whether a snapshot was appended.
+ */
+function appendTodosIfChanged(childSession: Session, todos: TodoItem[]): boolean {
+  const last = childSession.events.filter(event => event.type === 'todo/write').at(-1)
+  if (last !== undefined && JSON.stringify(last.data) === JSON.stringify({ todos })) return false
+  // todo/write's append takes no surface options (log-only UI state).
+  childSession.append('todo/write', { todos })
+  return true
 }
 
 /**
@@ -392,7 +569,11 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   if (event.type === 'result') {
     state.completed = true
     if (event.is_error === true) {
-      state.error = typeof event.error === 'string' ? event.error : 'claude -p reported an error'
+      // The detail text arrives in `result` on real auth failures (e.g. the
+      // 401's "Failed to authenticate. API Error: ..."), in `error` on others.
+      state.error = typeof event.result === 'string' ? event.result
+        : typeof event.error === 'string' ? event.error
+        : 'claude -p reported an error'
     }
     if (typeof event.session_id === 'string') state.sessionId = event.session_id
     if (event.usage !== undefined) state.usage = usageFromClaude(event.usage)
@@ -412,19 +593,46 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
       state.lines.push({ kind: 'think', text: record['thinking'] as string })
     } else if (kind === 'tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
+      if (name === 'TodoWrite') {
+        const todos = todosFromTodoWrite(record['input'])
+        if (todos !== undefined) {
+          state.todos = todos
+          continue // intercepted before the text fold
+        }
+        // Shape skew: degrade to the plain text fold; the mirror paths warn.
+        state.todoSkew = true
+      }
       const detail = inputDetail(record['input'])
+      const id = typeof record['id'] === 'string' ? record['id'] : undefined
+      if (id !== undefined) state.callsById.set(id, state.lines.length)
       state.lines.push({
         kind: 'tool',
+        id: id ?? `claude-tool-${state.lines.length}`,
         name,
-        ...detail === undefined ? {} : { detail },
+        ...detail === undefined ? {} : { args: detail },
       })
     } else if (kind === 'tool_result') {
       const content = record['content']
       const resultText = toolResultText(content)
       if (resultText !== undefined && resultText.trim() !== '') {
-        const last = state.lines[state.lines.length - 1]
-        if (last !== undefined && last.kind === 'tool') {
-          state.lines[state.lines.length - 1] = { ...last, result: resultText }
+        // Pair by tool_use_id when the stream carries it; fall back to the
+        // most recent tool line so an id-less stream still lands the result
+        // on its call.
+        const useId = typeof record['tool_use_id'] === 'string' ? record['tool_use_id'] : undefined
+        let target = useId === undefined ? undefined : state.callsById.get(useId)
+        if (target === undefined) {
+          for (let index = state.lines.length - 1; index >= 0; index -= 1) {
+            if (state.lines[index]?.kind === 'tool') {
+              target = index
+              break
+            }
+          }
+        }
+        if (target !== undefined) {
+          const last = state.lines[target]
+          if (last !== undefined && last.kind === 'tool') {
+            state.lines[target] = { ...last, result: resultText }
+          }
         }
       }
     }
@@ -441,11 +649,14 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
 export class ClaudeStreamParser implements ClaudeStreamFoldState {
   private buffer = ''
   readonly lines: ClaudeTranscriptLine[] = []
+  readonly callsById: Map<string, number> = new Map()
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
   error: string | undefined
   completed = false
+  todos: TodoItem[] | undefined
+  todoSkew = false
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
   push(chunk: string): void {
@@ -475,14 +686,21 @@ export function parseClaudeStreamJson(output: string): {
   usage?: TokenUsage
   error?: string
   sessionId?: string
+  /** The stream's last TodoWrite translation, when one was folded. */
+  todos?: TodoItem[]
+  /** Whether a shape-skewed TodoWrite degraded to the text fold. */
+  todoSkew?: boolean
 } {
   const state: ClaudeStreamFoldState = {
     lines: [],
+    callsById: new Map(),
     text: undefined,
     usage: undefined,
     sessionId: undefined,
     error: undefined,
     completed: false,
+    todos: undefined,
+    todoSkew: false,
   }
   for (const raw of output.split('\n')) foldClaudeStreamLine(state, raw)
   return {
@@ -491,6 +709,8 @@ export function parseClaudeStreamJson(output: string): {
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.error === undefined ? {} : { error: state.error },
     ...state.sessionId === undefined ? {} : { sessionId: state.sessionId },
+    ...state.todos === undefined ? {} : { todos: state.todos },
+    ...state.todoSkew === false ? {} : { todoSkew: true },
   }
 }
 
@@ -564,7 +784,7 @@ function usageFromClaude(usage: unknown): TokenUsage {
  * @param spec - workspace, environment, process service, and diagnostic policy.
  * @returns the published run after the child starts.
  */
-export function startClaudeCliRun(
+export async function startClaudeCliRun(
   request: SubagentStartRequest,
   spec: ClaudeCliRunSpec,
 ): Promise<SubagentRun> {
@@ -572,13 +792,23 @@ export function startClaudeCliRun(
   if (request.signal.aborted) {
     throw new Error('subagent-claude: request was aborted before the CLI started')
   }
+  // Keychain→file sync before EVERY spawn: claude 2.1.236 reads
+  // .credentials.json at runtime while login/refresh write the keychain, so
+  // the login watch's sync alone leaves a rotated grant stale at spawn time
+  // (the live driver's spawnRuntime does the same). Best-effort: a missing
+  // grant fails the run with the CLI's own auth error, not here.
+  const configDir = spec.env['CLAUDE_CONFIG_DIR']
+  if (configDir !== undefined) await syncClaudeCredentialFile(configDir).catch(() => false)
   const turn = spec.resume?.turn ?? 1
   // The member bridge flags ride every argv variant (skip and normal
   // permission modes alike): --allowedTools is redundant under
   // --dangerously-skip-permissions but keeps the injection uniform.
   const memberArgv = spec.member === undefined
     ? []
-    : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool]
+    // `--allowedTools` is variadic and greedily consumes following argv
+    // entries — without the `--` separator it swallows the task itself and
+    // the CLI exits 1 with "Input must be provided … as a prompt argument".
+    : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool, '--']
   // --verbose is required by the CLI when --print and stream-json combine.
   const argv = spec.resume === undefined
     ? spec.permissionMode === 'skip'
@@ -659,8 +889,11 @@ export function startClaudeCliRun(
   const collectOutput = (): ContentBlock[] => {
     // Parse fresh at call time: stdout 'data' events may still be flushing
     // when the settle callback computes its first output, and the consumer
-    // may poll output again later.
-    const text = parseClaudeStreamJson(output).text?.trim()
+    // may poll output again later. Post-exit the seam's collected buffer is
+    // authoritative — a fast-exiting process can settle `done` before the
+    // streamed data events land.
+    const drained = child.collected.stdout?.readFrom(0).text
+    const text = parseClaudeStreamJson(drained !== undefined && drained !== '' ? drained : output).text?.trim()
     return text === undefined || text === '' ? [] : [{ type: 'text', text }]
   }
 
@@ -729,7 +962,21 @@ export function startClaudeCliRun(
   // resumable. Waits for the settle chain first (so turn/end is already
   // appended) AND for the process to actually exit (so stdout is drained).
   void result.then(() => child.done).then(
-    () => mirrorClaudeAfterExit(spec, task, turn, output, liveMirror),
+    () => {
+      // Auth detection runs post-exit: streams are drained by then, so a fast
+      // failure's output is complete (a settle-time read could race the flush).
+      if (spec.onAuthFailure !== undefined) {
+        // The seam's collected buffers are complete at process exit; the
+        // streamed variables can lag `done` by a tick.
+        const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
+        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
+        const authDetail = `${parseClaudeStreamJson(drainedStdout).error ?? ''}\n${drainedStderr}`
+        if (CLAUDE_AUTH_FAILURE.test(authDetail)) {
+          spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
+        }
+      }
+      return mirrorClaudeAfterExit(spec, task, turn, output, liveMirror)
+    },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
 
@@ -746,7 +993,86 @@ export function startClaudeCliRun(
   }))
 }
 
+/** One assistant-role message event, attributed to the claude route. */
+export function assistantEvent(blocks: readonly ContentBlock[]) {
+  return createAssistantMessage({
+    content: blocks as ContentBlock[],
+    source: { provider: 'claude-local', model: 'claude' },
+  })
+}
+
 /** Fold one transcript line into the child session as one assistant step. */
+export function appendClaudeTranscriptLine(
+  childSession: Session,
+  turn: number,
+  step: number,
+  line: ClaudeTranscriptLine,
+  usage: TokenUsage | undefined,
+): void {
+  if (line.kind === 'tool') {
+    // Native tool card: the call event now, the result event when the stream
+    // already carries it. Tool lines never carry the round's usage — the
+    // callers attach usage to the round's last non-tool line.
+    const call = childSession.append('tool/call', {
+      turn,
+      step,
+      callId: line.id as ToolCallEventCallId,
+      name: line.name,
+      arguments: line.args ?? '',
+    })
+    if (line.result !== undefined) {
+      childSession.append('tool/result', {
+        turn,
+        step,
+        message: createToolResultMessage({
+          callId: line.id as ToolResultCallId,
+          content: [{ type: 'text', text: line.result }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    }
+    return
+  }
+  const blocks = line.kind === 'think'
+    ? [{ type: 'reasoning' as const, text: line.text }]
+    : [{ type: 'text' as const, text: line.text }]
+  childSession.append('assistant/message', {
+    turn,
+    step,
+    message: assistantEvent(blocks),
+    ...usage === undefined ? {} : { usage },
+  }, { surfaceOp: 'append' })
+}
+
+/**
+ * Book a round's usage when its carrier line (the last non-tool transcript
+ * line) was already mirrored WITHOUT it — a killed run's usage is only
+ * knowable at settle, and the carrier may have gone out through the live
+ * mirror by then. Appends a usage chunk pinned to the carrier's turn/step:
+ * the token projection treats a repeated step sample as a replacement, never
+ * a double count. No-op when the round has no mirrored assistant message.
+ * @param childSession - the run's child session.
+ * @param turn - the round's turn number.
+ * @param usage - the usage to book.
+ * @returns whether the chunk was appended.
+ */
+export function appendClaudeUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
+  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
+    const event = childSession.events[index]
+    if (event?.type !== 'assistant/message') continue
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn !== turn || typeof data.step !== 'number') return false
+    childSession.append('assistant/chunk', {
+      turn,
+      step: data.step,
+      chunk: { type: 'usage', usage },
+    })
+    return true
+  }
+  return false
+}
+
+/** Fold one transcript line into the run's child session as one assistant step. */
 function appendClaudeLine(
   spec: ClaudeCliRunSpec,
   turn: number,
@@ -754,29 +1080,14 @@ function appendClaudeLine(
   line: ClaudeTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
-  const blocks = line.kind === 'think'
-    ? [{ type: 'reasoning' as const, text: line.text }]
-    : line.kind === 'tool'
-      ? [{
-        type: 'text' as const,
-        text: `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`,
-      }]
-      : [{ type: 'text' as const, text: line.text }]
-  spec.childSession?.append('assistant/message', {
-    turn,
-    step,
-    message: createAssistantMessage({
-      content: blocks,
-      source: { provider: 'claude-local', model: 'claude' },
-    }),
-    ...usage === undefined ? {} : { usage },
-  }, { surfaceOp: 'append' })
+  if (spec.childSession === undefined) return
+  appendClaudeTranscriptLine(spec.childSession, turn, step, line, usage)
 }
 
 /** The delta-progress text for one transcript line. */
-function claudeLineText(line: ClaudeTranscriptLine): string {
+export function claudeLineText(line: ClaudeTranscriptLine): string {
   return line.kind === 'tool'
-    ? `[工具 ${line.name}]${line.detail !== undefined ? ` ${line.detail}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
+    ? `[工具 ${line.name}]${line.args !== undefined ? ` ${line.args}` : ''}${line.result !== undefined ? ` → ${line.result}` : ''}`
     : line.text
 }
 
@@ -809,6 +1120,8 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
   const ctx = spec.ctx as Context
   let mirrored = 0
   let userMirrored = false
+  let lastTodos: TodoItem[] | undefined
+  let todoSkewWarned = false
   let queue: Promise<void> = Promise.resolve()
 
   const mirror: ClaudeLiveMirror = {
@@ -820,6 +1133,19 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
     },
     push(chunk) {
       parser.push(chunk)
+      // TodoWrite translations cross immediately — they are not text lines, so
+      // the mirrored/upto accounting does not see them. Reference-change is the
+      // per-push trigger; content identity vs the child log is
+      // appendTodosIfChanged's job (repeat passes over the same state do not
+      // duplicate the snapshot).
+      if (parser.todos !== undefined && parser.todos !== lastTodos) {
+        lastTodos = parser.todos
+        appendTodosIfChanged(childSession, parser.todos)
+      }
+      if (parser.todoSkew && !todoSkewWarned) {
+        todoSkewWarned = true
+        ctx.logger.warn('subagent-claude: a TodoWrite call missed the documented input shape; folded as a plain tool line')
+      }
       const upto = parser.completed ? parser.lines.length : parser.lines.length - 1
       if (upto <= mirrored) return
       void mirror.enqueue(async () => {
@@ -833,15 +1159,30 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
             }), { surfaceOp: 'append' })
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
           }
+          // The usage rides the last NON-tool line (tool events carry no
+          // usage slot); a stream ending on a tool line would otherwise drop
+          // the round's accounting. When that carrier was mirrored in an
+          // earlier flush (before the usage was knowable), book it as a usage
+          // chunk pinned to the carrier's step instead.
+          let carrier = -1
+          if (parser.completed && parser.usage !== undefined) {
+            for (let scan = 0; scan < parser.lines.length; scan += 1) {
+              if (parser.lines[scan]?.kind !== 'tool') carrier = scan
+            }
+          }
+          const carrierMirrored = carrier !== -1 && carrier < mirrored
           for (let index = mirrored; index < upto; index += 1) {
             const line = parser.lines[index]
             if (line === undefined) continue
-            const usage = parser.completed && index === parser.lines.length - 1 ? parser.usage : undefined
+            const usage = index === carrier ? parser.usage : undefined
             appendClaudeLine(spec, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
           }
-          await ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+          if (carrierMirrored && parser.usage !== undefined) {
+            appendClaudeUsageChunk(childSession, turn, parser.usage)
+          }
+          await persistIfStandalone(ctx, childSession)
           localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: mirrored })
         } catch (error: unknown) {
           ctx.logger.warn(`subagent-claude: live mirror failed: ${thrown(error).message}`)
@@ -885,14 +1226,43 @@ async function appendClaudeResponse(
     }), { surfaceOp: 'append' })
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
+  // The round's usage rides the last NON-tool line: tool activity folds to
+  // `tool/call`/`tool/result` events (which carry no usage slot), and a kill
+  // mid-tool ends the transcript with a tool line.
+  let usageIndex = -1
+  for (let index = 0; index < parsed.lines.length; index += 1) {
+    if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+  }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendClaudeLine(spec, turn, step, line, step === parsed.lines.length ? parsed.usage : undefined)
+    appendClaudeLine(spec, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
     step += 1
   }
-  await spec.ctx.get('sessionPersistence')?.append(childSession.id, childSession.events)
+  if (parsed.usage !== undefined && usageIndex !== -1 && usageIndex < fromLines) {
+    // The carrier line went out through the live mirror before the usage was
+    // knowable: book it as a usage chunk pinned to the carrier's step.
+    appendClaudeUsageChunk(childSession, turn, parsed.usage)
+  }
+  await persistIfStandalone(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
+}
+
+/**
+ * Persist the session's events ONLY when the session is standalone (tests,
+ * ad-hoc mirrors). A live session's own write-behind pipeline already durably
+ * stores every appended event; re-appending the full list here violates the
+ * store's contiguous-seq contract ('append seq mismatch'), and the throw used
+ * to kill the mirror pass BEFORE the offset advanced — every later pass then
+ * re-folded the same lines (duplicated user messages, no usage, no offset on
+ * the delegation record). Root cause and fix identical to kimi's
+ * session-mirror.ts persistIfStandalone.
+ */
+export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
+  const persistence = ctx.get('sessionPersistence')
+  await persistence?.append(childSession.id, childSession.events)
 }
 
 /**
@@ -916,13 +1286,21 @@ async function mirrorClaudeAfterExit(
   live: ClaudeLiveMirror | undefined,
 ): Promise<void> {
   if (spec.childSession === undefined || spec.ctx === undefined) return
+  const childSession = spec.childSession
   const work = async (): Promise<void> => {
     const parsed = parseClaudeStreamJson(output)
     if (spec.resume === undefined) spec.onSessionId?.(parsed.sessionId)
+    // TodoWrite translations that only the final transcript carries still
+    // cross; idempotency vs the live mirror's appends is appendTodosIfChanged's.
+    if (parsed.todoSkew === true) {
+      spec.ctx?.logger.warn('subagent-claude: a TodoWrite call missed the documented input shape; folded as a plain tool line')
+    }
+    if (parsed.todos !== undefined) appendTodosIfChanged(childSession, parsed.todos)
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
     // Nothing streamed at all (e.g. the CLI died before the first event):
-    // keep the pre-live-mirror behavior of recording nothing.
+    // keep the pre-live-mirror behavior of recording nothing. A todos-only
+    // stream still mirrors its snapshot (handled above).
     if (parsed.lines.length === 0 && !userMirrored) return
     const trimmed = parsed.text?.trim()
     await appendClaudeResponse(spec, task, turn, {
