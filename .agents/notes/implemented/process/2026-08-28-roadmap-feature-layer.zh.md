@@ -20,7 +20,13 @@ Status: implemented
 
 两层的生命周期预期不同，并由此决定投入多少。`base` 是替尚不够好的官方 GUI 补课，因此刻意做薄：官方补上后，AGENTS.md 的 Compatibility labeling 本就要求退役该降级路径，提案按「官方吸收」关闭。`feature` 是上游不会做的领域能力——没有别人会去写 mission、lab 或 room——值得深耕。
 
-domain 落在两个平面而非一个。profile 平面承载插件集合；capability 包按需挂载、探测不到对端即静默降级，因此全装无代价。agent preset 平面承载该 domain 的视图——工具子集、prompt sections、skills 与 persona——由官方 `agent-presets` 包按会话从一个装有单份 `agent.cordis.yml` 的目录组合而成。因此 domain 包交付两个半边：一个 `bundles` 层，以及一个由其 `cordis.yml` 用 `roots` 指向的 `presets/` 目录。同一个实例由此可以并存开发会话与评测会话，无需重启。
+一个 domain 就是一个 profile，切换工作模式即经 `ankh-guard restart` 切换 profile——`dsh-web-basic` 已经上线的那条守卫路径：凭证检查，然后 preflight 在子进程里把目标组合完整 boot 一遍、**起不来就拒绝停止运行中的实例**，接着 watchdog 托管的同端口交接，最后 canary 复检。浏览器刷新原地址即可。
+
+agent preset 不承载 domain。preset 组合的是 tools、prompt sections 与 skills；浏览器 UI 挂在 profile 的 client 槽位上，preset 够不着——因此基于 preset 的 domain 会让每个模式的界面全都在场而工具消失，即「看得见用不了」。要隔离 UI 就得把每个 feature 包拆成 host 与 client 两行。preset 保留在上游为它设计的粒度上：同一 profile 内的 agent 变体（`standard`、只读的 `review`），官方自带的四个 preset 正是如此。
+
+代价是一个实例只跑一个模式。评测因此获得自己的实例（:3082，独立 `$DSH_HOME`），这对它反而更合适——环境隔离是可比性的前提，不是不便。
+
+注册表机制解释了隔离为何必须落在 profile 平面：skill 与 tool 注册表是 host + per-scope 分层的，由 profile 的 bundles 挂载的插件落在所有 preset 都能看见的 global 层。profile 挂载的东西，下游挑不掉。
 
 工作方式的表述按性质分流到这两个平面加第三个：通用实践属于 preset 的 prompt section，某个仓库自身的纪律留在该项目的 `AGENTS.md`，跨项目的个人偏好留在 `$DSH_HOME/AGENTS.md`。三者叠加，互不替代。「不感知某项能力」不需要任何屏蔽机制——未挂载 `worktrees` 的 preset 就没有 worktree 的 prompt section，模型从不见到它。
 
@@ -38,9 +44,11 @@ domain 落在两个平面而非一个。profile 平面承载插件集合；capab
 
 **不设上位文档，让每个提案各自划定范围。** 否决：这正是产生冲突的现状。21 个提案已经在「`mission` 服务 eval 还是 dev」上彼此不一致，且无人仲裁。
 
-**domain 只做成 profile。** 否决：切换 domain 将意味着重启实例，而同一台机器日常同时承担开发与评测两类工作。
+**domain 做成 agent preset。** 追查机制后否决：preset 触及 tools、prompt sections 与 skills，却触及不到 client UI，界面不会随模式改变。两条上游约束叠加其上——会话只能在零产出时切 preset，子 agent 继承父级组合。
 
-**domain 只做成 preset**，把全部插件装进单一 profile。以「不充分」而非「错误」否决：preset 组合的是会话所见，但 profile 中不存在的插件根本无从组合，因此仍需 profile 平面决定「存在什么」。
+**把插件行开关写进 profile 用户 patch 层**（mode-switcher 初稿路线）。否决：它没有 preflight 的对等物。坏掉的 overlay 只在下一次组合时才失败，而那时实例已经停了。守卫重启在停止之前先验证，这是本质区别。
+
+**让两个模式的实例同时开着。** 刻意放弃：它曾是 preset 路线的主要论据，而独立的评测实例更好地满足了它。
 
 **先出 `dsh-eval`**，即 package-management 原定计划。搁置而非否决：eval 的价值要等一轮对比跑完才兑现，而 dev 是已经在日常使用的形态、反馈立即回流。这个选择不改变关键路径——共享的 capability 层同时阻塞两者——所以它是排序偏好，不是结构判断。
 
