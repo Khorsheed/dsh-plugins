@@ -118,6 +118,26 @@
   ```
   目录读 `metadata.credentials[]`，据此展示凭据配置块；未声明则无凭据块。非 npm skill（纯文件 / GitHub 克隆）也能用——比"靠插件 settings 声明"更通用。
 
+### 4.6) skill env 注入：让配置的凭据进入 skill 执行环境（`ctx.shellEnv`，调研后新增）
+
+- **问题**：skill 正文引用 `$<ENV>`（如 `$WEREED_API_KEY`），配置的凭据存在 dsh 官方凭据库（`$DSH_HOME/.credentials.yaml`），但**不会**被写进 `process.env`——launch-env 只是只读快照（process/project-env/user-env），无 credential→env 注入；模型/工具执行时环境里没有它（env 缺口）。
+- **机制（官方、零 host 改动）**：用 harness 的 **`ctx.shellEnv`**（`@deepseek-ai/dsh-shell-env`）注册 contributor：
+  ```ts
+  ctx.shellEnv.register({
+    name: 'capability-catalog',
+    variables: { 'DSH_WEREED_API_KEY': { description: '…' } },
+    resolve(execution) { return envCache },   // 同步返回本次的 DSH_* 值
+  })
+  ```
+  每次 **shell tool 执行**（bash/pwsh 都依赖 `shellEnv`）时 `ctx.shellEnv.collect(exec)` 把内置项 + 当前 contributor 解析值打包，**显式**合并进子进程 env（在 `scrubbedParentEnv()` 之后，因此能穿过对名字含 `KEY/PASSWORD/SECRET/TOKEN` 及所有 `DSH_*` 的父环境清洗）。
+- **约束**（`shell-env/src/index.ts`）：key 必须以 `DSH_` 开头、后缀匹配 `/^[A-Z][A-Z0-9_]*$/`；每 key 一个 owner；内置 key（`DSH_HOME/DSH_SHELL/DSH_SESSION_ID`）保留不可占；`resolve()` **必须同步**返回。
+- **由配置到 env**：读 skill 正文 env 声明（`decodeEnvDecls`）→ 对每个已配置凭据的 key 用 `credentials.readRecord(key)` 取 `ApiKeyRecord.key` → 缓存 `DSH_<KEY>` → `resolve()` 从缓存同步返回。key（如 `WEREED_API_KEY`）就是目录保存凭据所用的 key（`remote.setCredential` 用 `credentials.set(request.key, value)`）。
+- **同步约束的处理**：`readRecord` 是异步、`resolve` 要同步——目录在 apply 时 + 凭据变更（订阅 `credentials/record-updated` / `reference-updated`）+ `setCredential` 后**刷新缓存**，`resolve()` 只读缓存。若 key 集合随 skill 增减变化，dispose 后重注册（或把 `DSH_<KEY>` 声明为当前全量、`resolve` 动态返回空值）。
+- **skill 侧用法**：注入名强制 `DSH_*`，故 skill 文本引用 `$DSH_<ENV>`；第三方 CLI 需原名时，可在 skill 里把 `$DSH_WEREED_API_KEY` 展开映射成该 CLI 期望的变量名（密钥由 shell 展开，模型不接触实际值）。
+- **安全取舍（如实）**：它把值注入到**模型驱动 shell env**，模型可 `echo $DSH_WEREED_API_KEY` 读到原始值——即「secret 对执行可见」，非「对模型隐藏」。这与 dsh「agent 用凭据」的模型一致；若需「原始值绝不到模型手里」，改用目录自有的窄功能 tool（内部解析凭据后 `ctx.shell.run({ env: { KEY } })` 或直接调 API），把 secret 放进显式 env 层。
+- **已被拒**：改全局 `process.env.<KEY>`——官方 subprocess 的 `scrubbedParentEnv()`（`subprocess/src/index.ts:37`）会清洗名字含 `KEY/PASSWORD/SECRET/TOKEN` 的继承变量，该 hack 会被清掉；且它是全局、非 skill 隔离。
+- **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」；非阻塞，本机制已能在官方 seam 内落地。
+
 ### 5) skill 新增入口（列表顶部按钮，已落地）
 
 - 目录「新增 skill」按钮（置于顶部 heading 旁）→ 打开新增弹窗，**不做手填名称/描述**，选来源：
