@@ -53,12 +53,35 @@ export function TimelineRail({
 
   const items = useMemo<TimelineItem[]>(() => {
     const result: TimelineItem[] = []
+    const seen = new Set<string>()
     for (const key of order) {
       const node = nodes.get(key)
       if (node === undefined) continue
       const kind = node.kind
       if (kind !== 'user' && !(includeSteering && kind === 'steering')) continue
       result.push({ key, node })
+      seen.add(key)
+    }
+    // After a message-tools in-place edit the replacement materializes as a
+    // `message-tools-edited` bubble (a restore as `message-tools-restored`)
+    // that the host's visible `order` does not always surface, even though it
+    // renders in the flow — an edit of the first message would drain the rail
+    // to zero rows. Append any such visible bubble the order omitted. Normal
+    // sessions carry no such nodes, so the loop above is unchanged: this
+    // addition never alters the baseline. The append degrades (skips) if the
+    // store read fails, so the primary path still renders an ordinary session.
+    try {
+      for (const node of nodes.values()) {
+        const kind = node.kind
+        if (kind !== 'message-tools-edited' && kind !== 'message-tools-restored') continue
+        if (node.visibility === 'hidden') continue
+        if (seen.has(node.key)) continue
+        result.push({ key: node.key, node })
+        seen.add(node.key)
+      }
+    } catch {
+      // Degrade, don't explode: a failed store read only drops the appended
+      // bubbles, never the rows the host's order already surfaced.
     }
     return result
   }, [order, nodes, includeSteering])
