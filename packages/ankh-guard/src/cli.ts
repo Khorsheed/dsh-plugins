@@ -1056,8 +1056,18 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         })
         io.stdout(`stopped ${pid}${exited ? '' : ' (forced)'}\n`)
         const stoppedAt = Date.now()
+        // The new instance must not inherit this caller's supervision
+        // variables: a restart driven from inside a supervised instance's
+        // agent session carries that instance's WD_* (the watchdog spawns
+        // the instance with its own environment), and forwarding them leaks
+        // them into the new instance's shells — a leaked WD_STATE_DIR
+        // retargets any watchdog script those shells spawn. The watchdog's
+        // own launch_instance applies the same scrub.
         const startEnv = { ...process.env }
         delete startEnv.DSH_ANKH_RESTART_DRIVER
+        for (const key of Object.keys(startEnv)) {
+          if (key.startsWith('WD_')) delete startEnv[key]
+        }
         const child = spawn(start, { shell: true, detached: true, stdio: 'ignore', env: startEnv })
         child.unref()
         io.stdout(`started: ${start}\n`)

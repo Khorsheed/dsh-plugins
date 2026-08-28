@@ -465,6 +465,38 @@ describe('CLI', () => {
     }
   })
 
+  it('restart starts the new instance without forwarding ambient WD_* variables', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
+    const dump = join(stateDir, 'instance-env.txt')
+    const oldServer = spawnServer(port, 'old')
+    // Simulate the caller being an agent shell inside a supervised instance:
+    // it carries that instance's WD_* environment (the watchdog spawns the
+    // instance with its own), and a bare restart must not forward it.
+    const previousProbe = process.env.WD_PROBE_LEAK
+    process.env.WD_PROBE_LEAK = 'must-not-reach-the-instance'
+    try {
+      await waitForPort(port)
+      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      stubPreflight('true')
+      const startCmd = `env > '${dump}'; "${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
+      const restarted = io()
+      expect(await runCli(
+        ['restart', '--sync', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
+        restarted.io,
+      )).toBe(0)
+      expect(restarted.out.join('')).toContain('restart + canary PASS')
+      const leaked = readFileSync(dump, 'utf8').split('\n').filter(line => line.startsWith('WD_'))
+      expect(leaked).toEqual([])
+    } finally {
+      if (previousProbe === undefined) delete process.env.WD_PROBE_LEAK
+      else process.env.WD_PROBE_LEAK = previousProbe
+      await killListener(port)
+      oldServer.kill('SIGKILL')
+    }
+  })
+
   it('restart --delay-ms waits before stopping (graceful self-restart)', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
@@ -1487,6 +1519,37 @@ describe('supervise', () => {
       env.restore()
     }
   })
+
+  it('the supervised instance starts without the watchdog\'s WD_* supervision environment', async () => {
+    // The watchdog spawns the instance with its own environment: every WD_*
+    // (the CLI's explicit WD_PORT/WD_HOME/WD_STATE_DIR/WD_START, plus ambient
+    // leaks from a caller inside another supervised instance) must be scrubbed
+    // at launch, or they land in every shell the instance hosts.
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const port = await freePort()
+    const dump = join(env.home, 'instance-env.txt')
+    const previousProbe = process.env.WD_PROBE_LEAK
+    process.env.WD_PROBE_LEAK = 'must-not-reach-the-instance'
+    try {
+      const startCmd = `env > '${dump}'; "${process.execPath}" -e "require('http').createServer().listen(${port},'127.0.0.1')"`
+      const first = io()
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
+        first.io,
+      )).toBe(0)
+      // The dump is written before the server starts listening.
+      await waitForPort(port)
+      const leaked = readFileSync(dump, 'utf8').split('\n').filter(line => line.startsWith('WD_'))
+      expect(leaked).toEqual([])
+    } finally {
+      if (previousProbe === undefined) delete process.env.WD_PROBE_LEAK
+      else process.env.WD_PROBE_LEAK = previousProbe
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 30_000)
 
   it('reclaims a pidfile deleted underneath it, and yields to a live replacement owner', async () => {
     // The state dir cleaned under a RUNNING watchdog must not fork
