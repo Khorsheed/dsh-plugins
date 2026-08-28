@@ -42,7 +42,15 @@ export function selectCliMember(owner: ComposerChainProps): MemberComposerMatch 
   // Pending interactions (questions/approvals) belong to the official
   // ApprovalPanel — a chain entry at priority 1. Election runs ascending, so
   // this -20 entry would shadow it: decline and let the interaction render.
-  if (owner.interactions.length > 0) return null
+  // The owner prop moved between host lines: rc carries an `interactions`
+  // array, 0.1.2 a singular `pendingInteraction` — probe both (feature
+  // detection, not a version check).
+  const legacy = (owner as { interactions?: readonly unknown[] }).interactions
+  if (legacy !== undefined) {
+    if (legacy.length > 0) return null
+  } else if ((owner as { pendingInteraction?: unknown }).pendingInteraction != null) {
+    return null
+  }
   const session = owner.session
   const subagent = session?.subagent
   if (session === undefined || subagent === undefined || subagent === null) return null
