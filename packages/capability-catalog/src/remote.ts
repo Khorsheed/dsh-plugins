@@ -6,7 +6,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { credentialRef, isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -17,7 +16,7 @@ import type {
   CatalogSkillFileRead,
   CatalogToolRow,
 } from './types.ts'
-import { collectSkills, loadSkillDetail, readSkillFileContent, resolveServices, type CredentialsSlice, type RegistrySlice } from './skills.ts'
+import { collectSkills, loadSkillDetail, readSkillFileContent, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
@@ -105,8 +104,8 @@ export async function catalogSetCredential(
   const { credentials } = resolveServices(ctx)
   if (credentials === undefined) return false
   try {
-    if (!isCredentialRefName(request.key)) return false
-    await credentials.set(credentialRef(request.key), request.value)
+    if (!CREDENTIAL_REF_NAME.test(request.key)) return false
+    await credentials.set(request.key, request.value)
     return true
   } catch {
     return false

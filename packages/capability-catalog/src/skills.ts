@@ -12,7 +12,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { credentialRef, isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import type {
   CapabilityCatalogSnapshot,
   CatalogCredentialDecl,
@@ -27,6 +26,10 @@ export interface CredentialsSlice {
   describe: (ref: unknown) => Promise<{ readonly configured?: boolean; readonly source?: string; readonly writable?: boolean } | undefined>
   set: (ref: unknown, value: string) => Promise<void>
 }
+
+/** POSIX identifier — the minimal shape a credential reference name must match
+ * (the env keys the catalog handles are a strict subset of this). */
+export const CREDENTIAL_REF_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** Minimal SkillSummary shape (invocation-neutral). */
 interface SkillSummaryLike {
@@ -247,8 +250,8 @@ export async function loadSkillDetail(
   let credentialStates: readonly CatalogCredentialState[] = []
   if (decls.length > 0 && credentials !== undefined) {
     credentialStates = await Promise.all(decls.map(async (decl) => {
-      const configured = isCredentialRefName(decl.key)
-        ? (await credentials.describe(credentialRef(decl.key)).catch(() => undefined))?.configured === true
+      const configured = CREDENTIAL_REF_NAME.test(decl.key)
+        ? (await credentials.describe(decl.key).catch(() => undefined))?.configured === true
         : false
       return {
         key: decl.key,

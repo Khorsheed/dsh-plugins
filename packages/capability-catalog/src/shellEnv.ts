@@ -33,7 +33,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-credentials'
-import { credentialRef, isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import { decodeCredentialDecls, decodeEnvDecls, mergeCredentialDecls } from './skills.ts'
 
 const DSH_PREFIX = 'DSH_'
@@ -93,7 +92,14 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
   /** One refresh pass; commits only if still the latest generation and not disposed. */
   const refresh = async (): Promise<void> => {
     if (disposed) return
-    if (inFlight !== undefined) { queued = true; return }
+    if (inFlight !== undefined) {
+      // Bump the generation so the in-flight pass is now stale and will not
+      // commit the value it read before this update arrived (strict
+      // latest-wins); the queued pass re-reads + commits fresh.
+      refreshGen++
+      queued = true
+      return
+    }
     const gen = ++refreshGen
     inFlight = (async () => {
       const scope = await getScope().catch(() => undefined)
@@ -123,8 +129,7 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             const dshKey = `${DSH_PREFIX}${decl.key}`
             if (occupied.has(dshKey)) continue
             keys.add(decl.key)
-            if (!isCredentialRefName(decl.key)) continue
-            const resolved = await credentials.resolve(credentialRef(decl.key)).catch(() => undefined)
+            const resolved = await credentials.resolve(decl.key).catch(() => undefined)
             if (resolved !== undefined && resolved.value.length > 0) values.set(dshKey, resolved.value)
           }
         }
@@ -134,22 +139,31 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
         const keySet = [...keys].sort().join('\n')
         if (keySet !== refreshKey) {
           disposeEnv?.()
+          disposeEnv = undefined
+          refreshKey = undefined
           const variables: Record<string, { description: string }> = {}
           for (const k of keys) {
             variables[`${DSH_PREFIX}${k}`] = { description: `Configured via the capability catalog for skill env \`${k}\`` }
           }
-          disposeEnv = shellEnv.register({
-            name: 'capability-catalog',
-            variables,
-            resolve: () => {
-              const out: Record<string, string> = {}
-              for (const [k, v] of envCache) {
-                if (Object.hasOwn(variables, k)) out[k] = v
-              }
-              return out
-            },
-          })
-          refreshKey = keySet
+          try {
+            disposeEnv = shellEnv.register({
+              name: 'capability-catalog',
+              variables,
+              resolve: () => {
+                const out: Record<string, string> = {}
+                for (const [k, v] of envCache) {
+                  if (Object.hasOwn(variables, k)) out[k] = v
+                }
+                return out
+              },
+            })
+            refreshKey = keySet
+          } catch (err) {
+            // Register failed (e.g. a TOCTOU owner collision). Leave refreshKey
+            // unset so the NEXT refresh retries regardless of the key set even
+            // if the key set later returns to a previously-registered value.
+            ctx.logger.warn(`capability-catalog: skill env contributor register failed (${String(err)})`)
+          }
         }
       } catch (err) {
         ctx.logger.warn(`capability-catalog: skill env injection refresh failed (${String(err)})`)
