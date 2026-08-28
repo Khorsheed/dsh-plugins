@@ -225,7 +225,13 @@ export const inject = ['agents']
 
 /** The slice of the skill registry this plugin consumes (optional service). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string; source: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+  }) => () => void
 }
 
 /**
@@ -260,7 +266,13 @@ function registerRestartSkill(ctx: Context, stateDir: string): void {
       writeSkillRegistration(stateDir, { registered: false, reason: 'shipped SKILL.md malformed', at: Date.now() })
       return
     }
-    ctx.effect(() => skills.register({ name, description, content, source: 'runtime' }))
+    ctx.effect(() => skills.register({
+      name,
+      description,
+      content,
+      source: 'runtime',
+      provider: 'ankh-guard',
+    }))
     writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
   } catch (error) {
     ctx.logger.warn(`ankh-guard: shipped SKILL.md unreadable (${String(error)}) — the restart-protocol skill is not registered`)
