@@ -34,6 +34,11 @@ family 侧（`packages/local-agent-dsh`，已核实）：
 
 官方侧（`deepseek-harness`，只读核实）：
 
+> **2026-08-29 复核（0.1.2-alpha.1，`~/code/deepseek-harness-alpha` @ `dsh-v0.1.2-alpha.1`）**：SDK 协议方法集相对 stable **零新增**——仍是 `initialize` / `session/prompt` / `shutdown` 加四条通知（`session.event` / `session.status` / `subagent.started` / `subagent.finished`）。**mid-turn cancel 仍不存在**，官方在 `packages/sdk/client/README.md` 的已知限制里明列：*"No mid-turn cancel — the wire has no prompt-cancel method; abandoning a turn means closing the runtime"*；同处还记着 client→server 通知与 server→client 请求两端均未实现。因此 S8 缺口未闭合，本提案「只迁 one-shot/resume、live 保留家族 wire」的分层判断维持不变。
+>
+> 另有一条新增关联：远程执行（把任务派给远端 dsh 实例）走 SSH stdio 时，官方 `HarnessClient` 的 `RuntimeProcessOptions`（`command` / `args`）可直接把 `command` 设为 `ssh`，复用官方 handshake、超时与 close 阶梯；但该构造重载未被 `index.ts` 导出、README 也只文档化了 `dshBin`，属未承诺契约，落地时须隔离在单一 adapter 文件内。protocol 包公开导出的 `JsonRpcLineTransport(input, output)` 接受调用方自有 stream，是更稳但更费手的备选。**迁官方 SDK client 因此同时是远程执行的前置。**
+
+
 - **SDK client 支持按 id 续接**：`api.ts:85-89` `session(sessionId?)`——"explicit id to reuse; omitted mints a fresh one"；`client.ts:279-284` `prompt(sessionId, contentBlocks)`——"target session; an unknown id creates it"。这与 `--session-id`/`--resume` 语义同构，是续接原语。
 - **官方 `subagent-dsh-sdk` 是 one-shot**：`start` 每次拉一个全新 child，`inheritsParentContext: false`，且**不实现 `prepareContinuable`**（grep 无命中），无 resume、无常驻。
 - **官方 continuable seam 不适用于 family 外置子进程**：`prepareContinuable`（`subagent/src/types.ts:330`）虽载入 `ContinuableCreateRequest.sessionId`（line 169），但要求**进程内 `AgentHandle`**（types.ts:252-254——continuation manager 直接持有 child 并经由其 inbox 排轮次）；且无任何 shipped 生产组合走该路径（`subagent-fork-in-process` 实现了 `prepareContinuable`，但每个 shipped `cordis.yml` 绑成 `backgroundMode: one-shot`）。

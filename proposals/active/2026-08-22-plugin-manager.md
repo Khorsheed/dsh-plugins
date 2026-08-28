@@ -1,7 +1,7 @@
 # 插件开关管理器(dsh-plugin-manager):组合内插件的运行时开关
 
 - **分类**:plugin(基础层;计划进 dsh-web-basic 整合包)
-- **状态**:proposed
+- **状态**:planned
 - **最后更新**:2026-08-22
 - **查重结果**:已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`——无同意图提案。关联:[package-management](2026-08-21-package-management.md)(整合包成员)、[docs/ops.md](../../docs/ops.md)(验收期组合测试需求)。
 - **官方依赖**:无。全部机制基于现有能力:loader 对 profile 用户 patch 层的 HMR(`watchUserPatches`)。零 harness 改动。

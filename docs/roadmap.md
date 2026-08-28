@@ -94,19 +94,20 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 | `message-timeline` | 0.1.0 | ✅ | 会话左缘悬浮历史消息时间轴，点击跳转 | — |
 | `session-title-edit` | 0.1.0 | ✅ | 标题内联编辑重命名，用户来源标题被钉住 | — |
 | `file-preview` | 0.1.1 | ✅ | 宿主侧只读文件预览 Remote 服务（列表 + 内容 + diff） | — |
-| `ui-file-preview` | 0.1.0 | ✅ | 「产物」tab、回合变更卡片、预览抽屉 | [file-view-html-rendering](../proposals/active/2026-08-21-file-view-html-rendering.md) `planned`<br>[local-files-browser](../proposals/active/2026-08-26-local-files-browser.md) `planned` |
+| `ui-file-preview` | 0.1.0 | ✅ | 「产物」tab、回合变更卡片、预览抽屉 | [file-view-html-rendering](../proposals/active/2026-08-21-file-view-html-rendering.md) `planned`<br>[local-files-browser](../proposals/closed/2026-08-26-local-files-browser.md) `planned` |
 | `taskpilot` | 0.1.0 | ✅ | 后台任务 / 子 Agent 胶囊，停止中断 + 详情抽屉 | — |
 | `whalesong` | 0.1.0 | ✅ | 任务氛围：鲸鱼喷水、favicon 动画、完成提示音 | — |
 | `ui-shortcuts` | 0.1.0 | ✅ | 可自定义键位的快捷键 | — |
 | `context-guard` | 0.1.0 | ✅ | 上下文占用越阈值时出现压缩按钮 | [context-clearing](../proposals/active/2026-08-19-context-clearing.md) `idea` |
 | `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片。**注册 `inline-html-card` skill（拉取式）——base 层仅有的两个 agent 侧成分之一，进 preset** | — |
+| `local-files` | 0.1.0 | 🔶 | 独立工作区 tab：懒加载文件树 + 结构化 HTML/Markdown/JSON/CSV/图片预览，git 无关，按会话记忆根目录（从 worktrees 拆出，提交 `3df3044`） | [local-files-browser](../proposals/closed/2026-08-26-local-files-browser.md) `done` |
 | `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | `capability-catalog` `in-progress` ※ |
 
 ### capability — 能力原语
 
 | 包 | 版本 | 状态 | 功能 | 相关 proposal |
 |---|---|---|---|---|
-| `local-agent` | 0.1.0-rc.6 | 🔶 | 家族核心：harness registry、作用域 home、登录/会话命令族、委派门面 `ctx.localAgent` | [delegation-api](../proposals/active/2026-08-18-local-agent-delegation-api.md) `planned`<br>[member-channel](../proposals/active/2026-08-19-local-agent-member-channel.md) `planned` ← **卡发布**<br>[member-state](../proposals/active/2026-08-22-local-agent-member-state.md) `planned`<br>[live-settings-card](../proposals/active/2026-08-26-local-agent-live-settings-card.md) `in-progress` |
+| `local-agent` | 0.1.0-rc.6 | 🔶 | 家族核心：harness registry、作用域 home、登录/会话命令族、委派门面 `ctx.localAgent` | [delegation-api](../proposals/active/2026-08-18-local-agent-delegation-api.md) `planned`<br>[member-channel](../proposals/active/2026-08-19-local-agent-member-channel.md) `planned` ← **卡发布**<br>[member-state](../proposals/active/2026-08-22-local-agent-member-state.md) `planned` |
 | `local-agent-kimi` | 0.1.0-rc.6 | 🔶 | Kimi Code harness：`kimi -p` 委派、续聊、记账 | — |
 | `local-agent-codex` | 0.1.0-rc.6 | 🔶 | Codex harness：`codex exec` 委派 | — |
 | `local-agent-claude-code` | 0.1.0-rc.5 | 🔶 | Claude Code harness：`claude -p` 委派 | — |
@@ -254,6 +255,8 @@ preset 半边是本阶段的**新工作**——profile 模板已有先例，pres
 - **`mode-switcher` 提案需补一条官方约束**：会话只能在零产出时切 preset，因此 mode 是新建会话时的选择，不是会话内的开关。该提案目前在主工作树未提交，待其进入 main 后补。
 
 - **逐包标注「哪部分进 preset」**：像 `capability-catalog` 既有 `list_capabilities`（进 preset）又有设置 tab（profile 级 UI，不进）。这份标注无法靠 grep 得到——`inline-html-render` 的 skill 注册就不匹配常见关键词——须逐包人工过一遍，否则组装 preset 时只能翻 README。
+
+- **0.1.2 基线迁移未在本文件占位，但已在进行**：`ankh-guard` 的 preset 探测双宿主面（`22e3a4a`）与 local-agent 的 dual-line CallId（`3a405aa`，从 0.1.2 wave cherry-pick）都已落地。发布前置里的「build + test 全绿」需明确针对哪条宿主线，否则阶段一的验收基准是浮动的。相关评估见 `.agents/notes/proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md`。
 
 ## 九、维护规则
 

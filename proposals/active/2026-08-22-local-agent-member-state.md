@@ -1,7 +1,7 @@
 # local-agent 成员会话结构化状态（member dock + 任务清单翻译）（local-agent-member-state）
 
 - **分类**：plugin
-- **状态**：planned
+- **状态**：in-progress（M1–M3 已交付；M3 的真实 CLI 探针因 scoped home OAuth 过期未完成）
 - **最后更新**：2026-08-22
 - **查重结果**：已搜 `proposals/active/`（member-channel、live-driver、delegation-api、datasets 系、context-clearing，均非同一意图）、`proposals/closed/`、`.agents/notes/`（含 archived）。最近邻：member-channel 提案（MemberComposer 宿主，本提案扩展其展示层）与 live-driver 提案（本提案声明与它的顺序关系，不重复立项）。无重复，新建。
 - **官方依赖**：纯插件。数据层写成员子会话的原生 `todo/write` 事件（官方词汇，`core/session/src/types.ts` 的 SessionEventMap），展示层读官方投影（`todos` / `tokenUsage`）。零 harness 改动。
