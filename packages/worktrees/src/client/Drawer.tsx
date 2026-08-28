@@ -127,7 +127,7 @@ export function useTreeWidth(widthKey: string): {
 export function WorktreesDrawer({
   useStore, actions, useSessions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
-  fetchWorktrees, switchWorktree, directAgent,
+  fetchWorktrees, switchWorktree, directAgent, bumpVersion,
   fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, isLoopback, useHostDescription, openExternal, copyBranch,
 }: WorktreesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
@@ -169,6 +169,25 @@ export function WorktreesDrawer({
     onPointerMove: onResizePointerMove,
     onPointerUp: onResizePointerUp,
   } = useDrawerWidth(WIDTH_KEY, DEFAULT_WIDTH, MIN_WIDTH)
+
+  // While open, set a document-level width variable + open mark so the drawer's
+  // own CSS can push the conversation (scroll body + composer seat) left by the
+  // drawer width — the drawer is a right overlay, so the chat would otherwise
+  // sit underneath it (the ui-file-preview drawer's pattern).
+  useEffect(() => {
+    const root = document.documentElement
+    if (open) {
+      root.style.setProperty('--dsh-worktrees-drawer-w', `${drawerWidth}px`)
+      root.dataset.worktreesDrawerOpen = ''
+    } else {
+      root.style.removeProperty('--dsh-worktrees-drawer-w')
+      delete root.dataset.worktreesDrawerOpen
+    }
+    return () => {
+      root.style.removeProperty('--dsh-worktrees-drawer-w')
+      delete document.documentElement.dataset.worktreesDrawerOpen
+    }
+  }, [open, drawerWidth])
 
   // Resolve the selected file's metadata for the detail pane.
   const selectedFile: ChangedFile | undefined = useMemo(() => {
@@ -398,6 +417,7 @@ export function WorktreesDrawer({
     void switchWorktree(sessionId, path).then(result => {
       if (result.ok) {
         actions.setActiveWorktreePath(result.value.path)
+        bumpVersion()
         setWorktreeOpen(false)
         actions.refresh()
       }

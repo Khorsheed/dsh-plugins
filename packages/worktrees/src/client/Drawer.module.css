@@ -52,6 +52,15 @@ body[data-ds-dark-theme] {
   pointer-events: auto;
 }
 
+/* The document mark is set by the drawer's open effect; the push targets the
+   conversation slot's scroll region so only chat moves, leaving the sidebar
+   and details columns untouched. The composer seat lives INSIDE the scroll
+   region (ConversationRoot renders it as a child), so it follows the shrunken
+   container on its own — a seat-level margin would double the push. */
+:global(html[data-worktrees-drawer-open]) :global([data-slot='conversation']) [data-conversation-scroll] {
+  margin-right: var(--dsh-worktrees-drawer-w, min(520px, 100vw));
+}
+
 .header {
   display: flex;
   flex: none;

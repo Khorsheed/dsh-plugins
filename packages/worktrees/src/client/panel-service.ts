@@ -19,6 +19,8 @@ export interface IWorktreesPanel {
 /** Cross-plugin panel-action face (ctx.worktreesPanel). */
 export class WorktreesController implements IWorktreesPanel {
   #drawer: WorktreesActions | undefined
+  #version = 0
+  #listeners = new Set<() => void>()
 
   /**
    * Adopt the root overlay drawer's store actions. Called from that entry's
@@ -33,5 +35,22 @@ export class WorktreesController implements IWorktreesPanel {
   /** Open the drawer in one mode. */
   open(mode: DrawerMode): void {
     this.#drawer?.open(mode)
+  }
+
+  /** Monotonic version, bumped whenever the active worktree changes. */
+  getVersion(): number {
+    return this.#version
+  }
+
+  /** Subscribe to version changes (an active-worktree switch). */
+  subscribeVersion(listener: () => void): () => void {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
+  }
+
+  /** Bump the version — the badge re-fetches its summary (active worktree changed). */
+  bumpVersion(): void {
+    this.#version += 1
+    for (const listener of this.#listeners) listener()
   }
 }

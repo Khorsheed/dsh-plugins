@@ -80,6 +80,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     inject: (): WorktreesBadgeInjected => ({
       summary: (sid: SessionId) => remote.summary(sid),
       open: (mode) => { controller.open(mode) },
+      subscribeVersion: (listener) => controller.subscribeVersion(listener),
+      getVersion: () => controller.getVersion(),
     }),
   }, WorktreesBadge))
 
@@ -99,6 +101,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         fetchCommitFiles: (sid: SessionId, sha: string) => remote.commitFiles(sid, { sha }),
         fetchWorktrees: (sid: SessionId) => remote.listWorktrees(sid),
         switchWorktree: (sid: SessionId, path: string) => remote.switchWorktree(sid, { path }),
+        bumpVersion: () => { controller.bumpVersion() },
         directAgent: (sid: SessionId, path: string, branch: string | null) => remote.directAgent(sid, { path, branch }),
         fetchFileDiff: (sid: SessionId, request: FileDiffRequest) => remote.fileDiff(sid, request),
         fetchReadFile: (sid: SessionId, request: ReadFileRequest) => remote.readFile(sid, request),

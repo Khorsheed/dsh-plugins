@@ -13,7 +13,7 @@ import type { WorktreesBadgeProps } from './contract.ts'
 import css from './Badge.module.css'
 
 /** The badge. */
-export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgeProps): ReactNode {
+export function WorktreesBadge({ sessionId, summary, open, subscribeVersion, getVersion, t }: WorktreesBadgeProps): ReactNode {
   const [data, setData] = useState<SessionSummary | null>(null)
 
   useEffect(() => {
@@ -24,6 +24,22 @@ export function WorktreesBadge({ sessionId, summary, open, t }: WorktreesBadgePr
     })
     return () => { cancelled = true }
   }, [summary, sessionId])
+
+  // Re-fetch the summary whenever the active worktree changes (a drawer
+  // switch bumps the version) — the badge then tracks the switched worktree's
+  // branch instead of staying on the main checkout.
+  useEffect(() => {
+    if (sessionId === undefined || sessionId === '') return
+    const refetch = (): void => {
+      void summary(sessionId).then(result => {
+        if (result.ok) setData(result.value)
+      })
+    }
+    // Immediate read to seed the initial version, then keep it current.
+    void getVersion()
+    const unsubscribe = subscribeVersion(refetch)
+    return unsubscribe
+  }, [sessionId, summary, subscribeVersion, getVersion])
 
   if (data === null || sessionId === undefined || sessionId === '' || !data.isRepo) return null
 

@@ -33,6 +33,10 @@ export interface WorktreesBadgeInjected {
   summary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
   /** Open the drawer in one mode (routes to the root drawer store). */
   open: (mode: DrawerMode) => void
+  /** Subscribe to active-worktree changes (a drawer switch bumps it). */
+  subscribeVersion: (listener: () => void) => () => void
+  /** The current active-worktree version (for re-fetch sequencing). */
+  getVersion: () => number
 }
 
 /** Full props of the session-header badge entry. */
@@ -52,6 +56,8 @@ export interface WorktreesDrawerInjected {
   fetchWorktrees: (sessionId: SessionId) => Promise<RemoteResult<WorktreeInfo[]>>
   /** Point the session's active worktree at another worktree. */
   switchWorktree: (sessionId: SessionId, path: string) => Promise<RemoteResult<WorktreeInfo>>
+  /** Bump the version so the session-header badge re-fetches its summary. */
+  bumpVersion: () => void
   /** Direct the agent to work in the switched worktree (inject, no wake). */
   directAgent: (sessionId: SessionId, path: string, branch: string | null) => Promise<RemoteResult<{ ok: true }>>
   fetchFileDiff: (sessionId: SessionId, request: FileDiffRequest) => Promise<RemoteResult<FileDiffResult>>
