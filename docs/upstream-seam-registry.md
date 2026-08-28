@@ -80,8 +80,19 @@
 - **退役条件**：官方 `register()` 默认 `source: 'runtime'`，或 `validateRuntimeSkill` 在注册期就强制 `source`。落地后调用方的显式字段保留无害，往返测试可保留为行为回归。
 - **状态**：绕行中（@khorsheed/dsh-ankh-guard 的 skill 注册）。
 
+### S10. 会话日志的崩溃恢复会写 seq 分叉，且单文件损坏拖垮 session.list
 
-## 维护约定
+- **需求**:(a) 重启/崩溃打断在途工具调用时，恢复机制不应向日志写入与真实结果冲突的伪"中断"块——seq 空间不应分叉;(b) `session.list` 等读取路径应把损坏的单文件隔离/跳过并警告，而不是整个列表 500(一个坏会话 = 全 home 侧边栏"暂无会话")。
+- **实证**:2026-08-28 prod 3080。18:40 部署重启打断 turn 47 step 5 的工具调用，恢复逻辑写入伪中断块，与真实工具结果 seq 重叠(408273 写两遍、内容冲突),`scanLog` 报 `seq gap in committed region`;同时该文件曾被修成单帧，触发 `first frame is not exactly one header line`。两层都只对活体可见。
+- **现状绕行**:手工修复(坏文件隔离到 `~/.dsh-official/scratch/quarantine-*/`,删坏分支、保留真实分支、重排帧后放回)。**修复踩坑记录**(下次照此办理):
+  1. 整文件 `fzstd.decompress` 会掩盖帧边界——读取器要求首帧恰好只有头部行、每帧都是完整 JSONL 行，必须**逐帧**验证;
+  2. 我们的 `fzstd` 依赖是 decompress-only 构建，压缩用 `node:zlib` 的 `zstdCompressSync`;
+  3. 验证必须用 harness 自己的 `scanZstdFrames`/`decompressZstdFrame`(`packages/session/session-persistence-jsonl/src/zstd.ts`)跑一遍，只验明文 seq 连续性不够(第一版修复就栽在这:内容对了、帧结构错了);
+  4. `session.list` 是每请求现扫，修复文件**不需要重启实例**即可生效。
+- **退役条件**:官方恢复逻辑在写伪中断块前检测 seq 冲突并和解(或不写);`sessionPersistence` 的 list/read 对单文件损坏降级为跳过 + 警告。落地后删除本条绕行说明， quarantine 目录里的坏文件样本可留作回归素材。
+- **状态**:绕行中(未上报;修复手法已在本条固化)。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。
+
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
