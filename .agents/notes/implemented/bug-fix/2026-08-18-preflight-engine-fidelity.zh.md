@@ -16,6 +16,8 @@ Status: implemented
 - `loadHarnessPackage` **源码优先**（`src/index.ts`)，只要运行时可导入 TypeScript(runner 永远经 tsx 启动）且源码存在；源码导入失败就是组合判据（退出码 1)，绝不静默回退到陈旧构建——那正是下一次源码 boot 会撞上的东西。构建产物 `lib/` 只作为"只发产物"宿主的兜底。
 - 手工组装保留（上游没有可导入的导出），改为配警戒线：`tests/preflight-drift.spec.ts` 把 runner 组合出的 entry id 集合与 launcher 自带的 `dsh --dump-config` 输出对同一 profile 对比，上游组合一变，测试先于重启失败。测试只在 harness checkout 与目标 profile 都存在时运行，且 spawn 的 dump 以 harness 为 cwd——否则子进程解析到本仓的已发布包而非宿主的 workspace 包。
 - 组合抽为导出的 `composePreflightPatches`，警戒线对比的是数据而不是 boot 行为。
+- runner 镜像**两代**宿主 API，每次运行从加载到的 app-boot 模块做特性探测。rc 线（到 0.1.1-rc.* 为止）在加载 profile 之前按位置参数同步 heal 模块兜底，并加 launcher 的 agent-presets 内置 root 覆盖层；0.1.2 线在加载 profile 之后走异步 options 对象 heal，去掉了那个覆盖层（preset 包自己携带 root——所以覆盖层跟 `apps/cli/config/agent-presets/` 目录是否存在走，而不是跟版本线走），并经 provideCmdline 发布 `appReady` 服务，runner 提供桩实现并在 boot 落定后 commit。探测标记是 `DEFAULT_PROFILE_PATCH_RELOAD`——只有 0.1.2 的 app-boot 才有的值导出；解析宿主版本号恰恰会在本 runner 存在意义所在的未发布构建上失效。两条线都要支持：0.1.2 上 npm 之前 prod 宿主一直跑 rc 线。
+- runner 像 launcher 的 prepareProfile 一样重写 profile 的空根 `cordis.yml`——没有这一步，全新 home(launcher 从未 boot 过）会在一棵首次真实 boot 本来能组合的树上干跑失败。
 
 ## Alternatives considered
 
@@ -26,3 +28,4 @@ Status: implemented
 
 - 宿主上"改了源码没重建"现在会让 preflight 像 boot 一样失败——对源码启动的 prod 这正是预期行为。
 - 警戒线只覆盖共享层的 entry id 集合；层内配置级漂移（比如新增默认值）仍不可见——可接受，boot 本身是深层检查。
+- 0.1.2-alpha.1 重排组合分层时警戒线按设计报警了：heal 的新 options 签名让 runner 旧的位置参数调用直接崩（tripwire 运行中的 unhandled rejection)，上面的重镜像就是这个闭环在工作。两个种子都验证为绿——ankh-guard 全量测试加全新 home 上的端到端 `preflight PASS`，各跑一遍 rc.2 checkout 和（`DSH_HARNESS` 指向的）alpha tag。
