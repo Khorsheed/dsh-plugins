@@ -34,11 +34,25 @@ function snapshotOf(nodes: readonly ChatConversationViewNode[]): ConversationSna
 }
 
 /** Minimal sessions-service stub: a list store plus per-id session stores. */
-function harness() {
+function harness(opts: { chatSeat?: 'rc' | 'alpha' } = {}) {
   const list = createSnapshotStore<{ current: string | undefined }>({ current: undefined })
   const sessions = new Map<string, ReturnType<typeof createSnapshotStore<ConversationSnapshot>>>()
   const provide = createSnapshotStore({ revision: 0 })
+  // Alpha seat (host 0.1.2): the chat slice leaves the Session snapshot for
+  // the uiConversation binding's chat target.
+  const chatTargets = new Map<string, ReturnType<typeof createSnapshotStore<unknown>>>()
+  const uiConversation = opts.chatSeat === 'alpha'
+    ? {
+      binding: (id: string) => ({
+        target: (name: string) => {
+          if (name !== 'chat' || !chatTargets.has(id)) throw new Error(`uiConversation.binding: unknown session "${id}"`)
+          return chatTargets.get(id)
+        },
+      }),
+    }
+    : undefined
   const ctx = {
+    get: (name: string) => (name === 'uiConversation' ? uiConversation : undefined),
     sessions: {
       list,
       currentProvideInfo: provide,
@@ -48,7 +62,17 @@ function harness() {
       },
     },
   } as unknown as ClientContext
-  return { ctx, list, sessions, provide }
+  /** Register one session; alpha seat takes the bare chat slice, rc the full snapshot. */
+  const addSession = (id: string, snapshot: ConversationSnapshot): void => {
+    if (opts.chatSeat === 'alpha') {
+      const chat = (snapshot as unknown as { chat: unknown }).chat
+      sessions.set(id, createSnapshotStore({ running: false } as unknown as ConversationSnapshot))
+      chatTargets.set(id, createSnapshotStore(chat))
+    } else {
+      sessions.set(id, createSnapshotStore(snapshot))
+    }
+  }
+  return { ctx, list, sessions, provide, addSession }
 }
 
 async function nextFrame(): Promise<void> {
@@ -121,6 +145,23 @@ describe('installDomHider', () => {
       divider(5, 10),
     ]))
     sessions.set('s1', session)
+    const dispose = installDomHider(ctx)
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    const style = document.querySelector('style[data-message-tools-hider]')
+    expect(style?.textContent).toContain('[data-chat-flow-key="4:userA"]')
+    dispose()
+  })
+
+  it('reads the chat slice from the uiConversation binding on hosts where the Session snapshot has no chat (0.1.2)', async () => {
+    const { ctx, list, addSession } = harness({ chatSeat: 'alpha' })
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    addSession('s1', snapshotOf([
+      node('user', '4:userA', 5),
+      divider(5, 10),
+    ]))
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()

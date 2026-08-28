@@ -29,7 +29,8 @@ import messageToolsRemote from '@khorsheed/dsh-client-message-tools/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { installDomHider } from './dom-hider.ts'
 import { mergedDraft } from './backfill.ts'
-import { editInPlace, waitForTurnSettled, withdrawInPlace } from './edit-in-place.ts'
+import { chatSourceOf } from './chat-hook.ts'
+import { editInPlace, waitForTurnSettled, withdrawInPlace, type TurnSettleSnapshot } from './edit-in-place.ts'
 import { en, zh } from './locales.ts'
 import {
   editedMessageDefinition, restoredAssistantMessageDefinition, restoredMessageDefinition, withdrawnDividerDefinition,
@@ -198,8 +199,24 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // turn/end last); a replacement's span must cover all of it, so wait
     // for the turn to actually close. Bounded: a turn that never settles
     // rejects instead of letting the edit/withdraw race the stragglers.
+    // Snapshot seats differ per host line: rc carries the chat slice (and
+    // runningCalls) inside the session snapshot; 0.1.2 split the slice into
+    // the conversation binding's chat target (runningCalls under `legacy`).
+    const settleSnapshot = (): TurnSettleSnapshot | undefined => {
+      const session = ctx.sessions.binding(sessionId)?.session.getSnapshot()
+      if (session === undefined) return undefined
+      const chat = chatSourceOf(ctx, sessionId)?.getSnapshot()
+      if (chat === undefined) return undefined
+      return {
+        running: session.running,
+        runningCalls: (session as { runningCalls?: readonly unknown[] }).runningCalls
+          ?? (chat as { legacy?: { runningCalls?: readonly unknown[] } }).legacy?.runningCalls
+          ?? [],
+        chat,
+      } as TurnSettleSnapshot
+    }
     const waitIdle = (): Promise<void> =>
-      waitForTurnSettled(() => ctx.sessions.binding(sessionId)?.session.getSnapshot())
+      waitForTurnSettled(settleSnapshot)
     return {
       editMessage: (targetSeq, text) => editInPlace({
         cancel: () => conversation.cancel(),

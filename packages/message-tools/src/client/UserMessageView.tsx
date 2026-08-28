@@ -18,6 +18,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconUndoOutline16 } from './icons.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
+import { chatHookOf } from './chat-hook.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'
 import { ModelChip, type ModelChipProps } from './ModelChip.tsx'
 import type { UserMessageViewProps } from './slots.ts'
@@ -27,8 +28,8 @@ type Translate = UserMessageViewProps['t']
 type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
 
 /** Selector identity kept module-level so uSES memoization holds. */
-function selectHiddenRanges(snapshot: ConversationSnapshot): number[] {
-  return foldHiddenRanges(snapshot.chat.nodes.values())
+function selectHiddenRanges(chat: ConversationSnapshot['chat']): number[] {
+  return foldHiddenRanges(chat.nodes.values())
 }
 
 /** Split user content into joined text, images, and leftover blocks. */
@@ -174,10 +175,13 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
-  node, renderMessageImages, t, useSession, editMessage, withdrawMessage, backfillDraft,
+  node, renderMessageImages, t, editMessage, withdrawMessage, backfillDraft,
   useModelDirectory, modelsAvailable, loadModels, selectModel,
+  ...standard
 }: UserMessageViewProps): ReactNode {
-  const ranges = useSession(selectHiddenRanges, shallowEqual)
+  // Chat data moved out of the session snapshot into the `useChat` standard
+  // prop on host 0.1.2; the helper picks whichever seat this host provides.
+  const ranges = chatHookOf(standard as Pick<UserMessageViewProps, 'useSession'>)(selectHiddenRanges, shallowEqual)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [acknowledged, setAcknowledged] = useState(false)
