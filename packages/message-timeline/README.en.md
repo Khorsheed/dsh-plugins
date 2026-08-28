@@ -10,7 +10,7 @@ A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's le
 
 ## Features
 
-- **One row per user message** — tick plus ellipsized one-line preview; steering messages count too (configurable off).
+- **One row per user message** — tick plus ellipsized one-line preview; steering messages count too (configurable off); in-place edited and restore-replayed bubbles keep their rows, so an edit never drains the rail.
 - **Ambient rest state** — only dimmed ticks show until you hover the strip or focus the list.
 - **Reading position tracking** — the current position's tick stays lit blue, anchoring to the user message a long answer is replying to.
 - **Click to jump** — a row scrolls the transcript to that message; the list follows the reading position.

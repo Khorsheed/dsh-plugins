@@ -15,7 +15,7 @@ import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { PANEL_WIDTH_MIN } from './config.ts'
-import type { TimelineItem, TimelineRailProps } from './slots.ts'
+import { isTimelineRowKind, type TimelineItem, type TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import css from './TimelineRail.module.css'
 
@@ -56,8 +56,7 @@ export function TimelineRail({
     for (const key of order) {
       const node = nodes.get(key)
       if (node === undefined) continue
-      const kind = node.kind
-      if (kind !== 'user' && !(includeSteering && kind === 'steering')) continue
+      if (!isTimelineRowKind(node.kind, includeSteering)) continue
       result.push({ key, node })
     }
     return result

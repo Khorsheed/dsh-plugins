@@ -14,7 +14,7 @@
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { TimelineRailState } from './slots.ts'
+import { isTimelineRowKind, type TimelineRailState } from './slots.ts'
 
 /** Horizontal inset of the rail from the scrollport's left edge (px). */
 const RAIL_LEFT_INSET = 6
@@ -103,7 +103,7 @@ export function activeRowKey(scrollport: HTMLElement, includeSteering: boolean):
   let lastAbove: string | null = null
   for (const row of scrollport.querySelectorAll<HTMLElement>('[data-chat-flow-kind]')) {
     const kind = row.dataset.chatFlowKind
-    if (kind !== 'user' && !(includeSteering && kind === 'steering')) continue
+    if (kind === undefined || !isTimelineRowKind(kind, includeSteering)) continue
     if (row.getBoundingClientRect().bottom <= viewTop) {
       lastAbove = row.dataset.chatAnchorKey ?? lastAbove
       continue

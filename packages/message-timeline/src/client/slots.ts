@@ -72,6 +72,26 @@ export interface TimelineItem {
   readonly node: ChatConversationViewNode
 }
 
+/**
+ * Whether a chat node kind produces a timeline row: every visible
+ * user-message bubble in the transcript. Beyond the plain `user`/`steering`
+ * kinds, message-tools' in-place edit replacement (`message-tools-edited`)
+ * and withdraw-then-restore replay (`message-tools-restored`) render as user
+ * bubbles — the rail must keep them, or an edit that replaces the surface
+ * tail (which hides the withdrawn originals out of the chat order) would
+ * drain the whole rail. The edited kind does not record whether its source
+ * was a steering message, so `includeSteering` cannot apply to it.
+ * @param kind - the chat node kind.
+ * @param includeSteering - whether steering messages count as rows.
+ * @returns whether the kind belongs on the rail.
+ */
+export function isTimelineRowKind(kind: string, includeSteering: boolean): boolean {
+  return kind === 'user'
+    || (includeSteering && kind === 'steering')
+    || kind === 'message-tools-edited'
+    || kind === 'message-tools-restored'
+}
+
 /** Full props of the header-utilities entry. */
 export type TimelineRailProps =
   PropsRuntime<'conversation.session.header.utilities'>

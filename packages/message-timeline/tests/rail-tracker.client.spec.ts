@@ -172,6 +172,18 @@ describe('activeRowKey', () => {
     expect(activeRowKey(scrollport, true)).toBe('s1')
   })
 
+  it('anchors to edited and restored bubbles (in-place edit rows)', () => {
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 50, left: 0, width: 400, height: 300 })
+    row(scrollport, 'e1', 'message-tools-edited', 60)
+    row(scrollport, 'r1', 'message-tools-restored', 100)
+
+    // Both are user-message bubbles in the transcript; the reading position
+    // must be able to land on them (includeSteering is irrelevant).
+    expect(activeRowKey(scrollport, false)).toBe('e1')
+    expect(activeRowKey(scrollport, true)).toBe('e1')
+  })
+
   it('returns null with no visible user row', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 0, left: 0, width: 400, height: 300 })
