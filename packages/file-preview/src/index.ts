@@ -31,9 +31,11 @@ interface ImageRouteHost {
 }
 
 /** The slice of the skill registry this package consumes (optional service).
- * `provider`/`resourceBase` are the capability-catalog bundle-visibility
- * contract: registering the shipped skills directory exposes the bundle (file
- * tree + model relative-resource resolution), not just a content block. */
+ * `provider` labels the catalog card. Content-only skills (SKILL.md with no
+ * sibling scripts/assets) deliberately omit `resourceBase` so the catalog
+ * renders a virtual single-SKILL.md node; `resourceBase` is added only when
+ * the bundle actually gains resources beside SKILL.md (capability-catalog
+ * "Plugin skill registration protocol"). */
 interface SkillRegistrySlice {
   register: (skill: {
     name: string
@@ -41,7 +43,6 @@ interface SkillRegistrySlice {
     content: string
     source: string
     provider?: string
-    resourceBase?: { kind: 'directory'; path: string }
   }) => () => void
 }
 
@@ -86,10 +87,9 @@ function registerArtifactSkill(ctx: Context): void {
       content,
       source: 'runtime',
       provider: 'file-preview',
-      // Expose the shipped bundle (capability-catalog protocol): the catalog
-      // walks this directory for the source browser and the model's relative
-      // resource resolution can reach files beside SKILL.md.
-      resourceBase: { kind: 'directory', path: skillDir },
+      // Content-only (only SKILL.md in the bundle): no `resourceBase`, so the
+      // catalog renders a virtual single-SKILL.md node. Add `resourceBase`
+      // only when the bundle later gains scripts/assets beside SKILL.md.
     }))
   } catch (error) {
     ctx.logger.warn(`file-preview: shipped SKILL.md unreadable (${String(error)}) — the 3d-artifact skill is not registered`)
