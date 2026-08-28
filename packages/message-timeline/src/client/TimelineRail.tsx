@@ -46,24 +46,21 @@ export function TimelineRail({
   loadOlder, jumpTo, useRail, t,
 }: TimelineRailProps) {
   const rail = useRail(s => s)
+  const order = useSession(s => s.chat.order)
   const nodes = useSession(s => s.chat.nodes)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
 
-  // Build the rows from the node store directly, not `s.chat.order`: the host
-  // derives its order from `orderedVisible(store.values())`, but a
-  // message-tools in-place edit materializes a `message-tools-edited` bubble
-  // (a restore as `message-tools-restored`) that renders in the flow yet does
-  // not always land in that order — editing the first message would drain the
-  // rail to zero rows. Reading the visible store values (filtered to
-  // user-bubble kinds, ordered like the flow) keeps the rail aligned with
-  // what the transcript shows, whatever the host's order projection does.
   const items = useMemo<TimelineItem[]>(() => {
-    return nodes.values()
-      .filter(node => node.visibility === 'visible' && isTimelineRowKind(node.kind, includeSteering))
-      .sort((left, right) => left.anchorSeq - right.anchorSeq || left.key.localeCompare(right.key))
-      .map(node => ({ key: node.key, node }))
-  }, [nodes, includeSteering])
+    const result: TimelineItem[] = []
+    for (const key of order) {
+      const node = nodes.get(key)
+      if (node === undefined) continue
+      if (!isTimelineRowKind(node.kind, includeSteering)) continue
+      result.push({ key, node })
+    }
+    return result
+  }, [order, nodes, includeSteering])
 
   // The lit row: the hover/arrow preselection while it moves, otherwise the
   // live reading position the tracker publishes, defaulting to the latest
