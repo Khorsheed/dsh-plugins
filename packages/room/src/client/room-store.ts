@@ -144,9 +144,12 @@ export class RoomStore {
     if (this.gateway === undefined) return
     const carried = await this.gateway.getState({ sessionId })
     if (!carried.ok || !carried.value.ok) return
+    const was = this.room.get(sessionId)
     this.room.set(sessionId, true)
     this.states.set(sessionId, carried.value.value)
     this.notify()
+    // A promotion flip (known non-room → room) must re-elect the composer.
+    if (was === false) this.onPromoted?.()
     // A completed pull is also the binding-availability retry point: the
     // runtime may mint the session's binding after the list's current flip.
     this.attachLive()
@@ -212,13 +215,22 @@ export class RoomStore {
     if (this.gateway === undefined) return
     const carried = await this.gateway.isRoom({ sessionId })
     if (!carried.ok || !carried.value) return
-    this.room.set(sessionId, true)
+    // refresh flips the verdict and fires onPromoted on a false → true flip.
     await this.refresh(sessionId)
   }
 
   private notify(): void {
     for (const listener of [...this.listeners]) listener()
   }
+
+  /**
+   * Called when a session's verdict flips false → true (an in-place
+   * promotion): the composer chain elects at RENDER time and nothing
+   * re-renders the outlet for a promotion of an idle session, so the client
+   * wires this to re-register the composer entry (a slot version bump
+   * re-renders — and re-elects — the outlet).
+   */
+  onPromoted: (() => void) | undefined
 
   private adjustPolling(): void {
     const running = this.current !== undefined

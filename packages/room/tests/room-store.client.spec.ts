@@ -191,12 +191,16 @@ describe('RoomStore', () => {
     expect(gateway.getState.mock.calls.length).toBe(stateCalls)
 
     // The promotion lands host-side: the next re-probe flips the cache and
-    // pulls the state.
+    // pulls the state — and the promotion hook fires (the client re-registers
+    // the composer entry off it, re-electing the outlet).
+    const onPromoted = vi.fn()
+    store.onPromoted = onPromoted
     gateway.isRoom.mockResolvedValue({ ok: true, value: true } as never)
     poke(b, 'plain-1' as SessionId)
     await vi.advanceTimersByTimeAsync(ROOM_LIVE_REFRESH_DEBOUNCE_MS * 2)
     expect(store.isRoomCached('plain-1' as SessionId)).toBe(true)
     expect(store.getCached('plain-1' as SessionId)).toEqual(IDLE_ROOM)
+    expect(onPromoted).toHaveBeenCalledTimes(1)
     dispose()
   })
 

@@ -248,29 +248,43 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   // main-agent turn Stop: the takeover renders the dock
   // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
-  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
-    {
-      name: 'conversation.composer',
-      priority: -10,
-      locale: NS,
-      select: (owner): RoomComposerMatch | null =>
-        selectRoomComposer(owner, id => roomStore.isRoomCached(id) === true),
-      inject: (sessionId: SessionId): RoomComposerInjected => ({
-        ...tasksFace(sessionId),
-        ...inviteFace(sessionId),
-        submit,
-        // The hidden official bar's Stop: the runtime session face's cancel
-        // (the same verb ui-conversation's own Stop injects). A torn-down
-        // binding degrades to a no-op.
-        stop: () => {
-          void ctx.sessions.binding(sessionId)?.session.cancel().catch(() => {
-            // Stop failure surfaces via snapshot.promptError; nothing to restore.
-          })
-        },
-      }),
-    },
-    RoomComposer,
-  ))
+  const composerEntry = {
+    name: 'conversation.composer',
+    priority: -10,
+    locale: NS,
+    select: (owner: Parameters<typeof selectRoomComposer>[0]): RoomComposerMatch | null =>
+      selectRoomComposer(owner, id => roomStore.isRoomCached(id) === true),
+    inject: (sessionId: SessionId): RoomComposerInjected => ({
+      ...tasksFace(sessionId),
+      ...inviteFace(sessionId),
+      submit,
+      // The hidden official bar's Stop: the runtime session face's cancel
+      // (the same verb ui-conversation's own Stop injects). A torn-down
+      // binding degrades to a no-op.
+      stop: () => {
+        void ctx.sessions.binding(sessionId)?.session.cancel().catch(() => {
+          // Stop failure surfaces via snapshot.promptError; nothing to restore.
+        })
+      },
+    }),
+  } as const
+  let composerDispose: (() => void) | undefined
+  ctx.slots.inject('conversation.composer', () => {
+    composerDispose = ctx.slots.register(composerEntry, RoomComposer)
+    return () => {
+      composerDispose?.()
+      composerDispose = undefined
+    }
+  })
+  // An in-place promotion of an idle session produces no session frames after
+  // the store's flip, and the chain elects at render time — re-registering
+  // the entry bumps the slot version, re-rendering and re-electing the
+  // outlet.
+  roomStore.onPromoted = () => {
+    if (composerDispose === undefined) return
+    composerDispose()
+    composerDispose = ctx.slots.register(composerEntry, RoomComposer)
+  }
   // Registration-time text (the tab label) reads through the bound translate
   // as a thunk, so it follows the active locale without re-registration.
   ctx.slots.inject('conversation.view', () => ctx.slots.register(
