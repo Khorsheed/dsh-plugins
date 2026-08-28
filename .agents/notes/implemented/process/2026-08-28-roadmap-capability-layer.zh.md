@@ -46,4 +46,6 @@ package-management 的分类落点小节现已过时，需要为 `dsh.category` 
 
 路线图需要维护：新提案在包账本补一行，发布状态变化时更新标记。preset 的分发是新工作：profile 模板形态在 `dsh-web-basic` 已有先例，分发 preset 则没有，因此 `dsh-dev` 从一个最小 preset（工具子集加一段 prompt section）起步以跑通链路。两条官方约束限定其上的任何交互：会话只能在零产出时切换 preset，因此 mode 是新建会话时的选择而非会话内开关；子 agent 加入父级的组合，因此被委派的子会话与父会话同 preset。`capability-catalog` 按 agent preset 的 standing scope 读取注册表，因而正是「某个 domain 有哪些工具与 skill」的可见面。
 
+preset 平面只承载 tools、prompt sections 与 skills；声明 `dsh.client` 的浏览器 UI 包挂在 profile 的 client 槽位上、为所有 domain 共享——这正是基础层之所以「基础」的原因。base 的十一个包里只有两个带 agent 侧成分：`inline-html-render` 注册拉取式的 `inline-html-card` skill，`capability-catalog` 注册 `list_capabilities`，因此 `daily` preset 即官方 `standard` 加这两样。由于 preset 的 skill 集合会改变 agent 的能力，评测必须钉住 preset，条件才可比。
+
 优先级的日常变动记在路线图里，不回写本文件；本文件只拥有分类决策本身。两个提案（`capability-catalog`、`mode-switcher`）在主工作树尚未提交，因此路线图引用它们时不建链接，待其进入 main 后补上。
