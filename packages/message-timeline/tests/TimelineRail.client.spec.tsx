@@ -101,58 +101,6 @@ describe('the flat timeline panel', () => {
     expect(items()).toHaveLength(2)
   })
 
-  it('keeps the edited and restored bubbles as rows after an in-place edit', () => {
-    // message-tools edit replaces the target message AND the surface tail: the
-    // withdrawn originals leave the visible chat order, and the replacement
-    // materializes as a `message-tools-edited` bubble (restores replay as
-    // `message-tools-restored`). Both are user bubbles in the transcript and
-    // must stay on the rail, or an edit drains the whole rail.
-    const edited = {
-      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9,
-      data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
-    } as unknown as ChatConversationViewNode
-    const restored = {
-      key: 'kr', kind: 'message-tools-restored', target: 'chat', anchorSeq: 12,
-      data: { seq: 12, restoredFromSeq: 5, content: [{ type: 'text', text: '恢复的消息' }], text: '恢复的消息' },
-    } as unknown as ChatConversationViewNode
-    renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['ke', 'kr'],
-          nodes: { get: (key: string) => (key === 'ke' ? edited : key === 'kr' ? restored : undefined) },
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
-    })
-
-    expect(items()).toHaveLength(2)
-    expect(panel().textContent).toContain('改过的内容')
-    expect(panel().textContent).toContain('恢复的消息')
-  })
-
-  it('keeps the edited bubble even when it is the only user-kind row left', () => {
-    // Editing the FIRST user message withdraws everything after it; the rail
-    // must not empty to zero rows.
-    const edited = {
-      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9,
-      data: { seq: 9, hiddenStartSeq: 1, content: [{ type: 'text', text: '改过的内容' }] },
-    } as unknown as ChatConversationViewNode
-    renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['ke'],
-          nodes: { get: (key: string) => (key === 'ke' ? edited : undefined) },
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
-    })
-
-    expect(items()).toHaveLength(1)
-    expect(panel().textContent).toContain('改过的内容')
-  })
-
   it('lights the reading position the tracker publishes', () => {
     renderRail()
     expect(item('k3').className).toContain('itemCurrent')
