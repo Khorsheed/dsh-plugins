@@ -266,17 +266,36 @@ if [ "$SUPERVISE" = "1" ]; then
   mkdir -p "$(dirname "$PIDFILE")" 2>/dev/null || true
   claimed=0
   attempt=0
+  empty_reads=0
   while [ "$attempt" -lt 5 ]; do
     attempt=$((attempt + 1))
     if (set -C; echo $$ > "$PIDFILE") 2>/dev/null; then claimed=1; break; fi
     owner=$(cat "$PIDFILE" 2>/dev/null)
-    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
-      echo "[watchdog] already supervised by pid $owner; exiting"
-      exit 0
+    if [ -n "$owner" ]; then
+      if kill -0 "$owner" 2>/dev/null; then
+        echo "[watchdog] already supervised by pid $owner; exiting"
+        exit 0
+      fi
+      # A real but dead claim: safe to drop below.
+      empty_reads=0
+    else
+      # An EMPTY pidfile is a rival's claim mid-write: the noclobber create
+      # and the echo are two disk operations, and a preempted winner sits
+      # between them. Deleting the file here re-opens the race and can
+      # cascade until every racer exhausts its attempts (observed under
+      # deploy-gate load: 8 concurrent racers, zero survivors). Give the
+      # writer a beat to land its pid; only treat the file as abandoned
+      # after several consecutive empty reads.
+      empty_reads=$((empty_reads + 1))
+      if [ "$empty_reads" -le 3 ]; then
+        attempt=$((attempt - 1))
+        sleep 0.2
+        continue
+      fi
     fi
-    # Stale (owner gone) or empty pidfile: drop it and race for the claim
-    # again. Losing that race is correct — the next pass sees a live owner and
-    # exits through the branch above.
+    # Stale (owner gone, or abandoned mid-write): drop it and race for the
+    # claim again. Losing that race is correct — the next pass sees a live
+    # owner and exits through the branch above.
     rm -f "$PIDFILE"
   done
   if [ "$claimed" != "1" ]; then

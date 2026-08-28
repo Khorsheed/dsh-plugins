@@ -1500,14 +1500,18 @@ describe('supervise', () => {
     }
     // Up and claimed.
     expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 15_000)).toBe(true)
-    // Deleted underneath → reclaimed by the same pid.
+    // Deleted underneath → reclaimed by the same pid. The reclaim runs once
+    // per supervise-loop iteration (~6s in fake-instance mode: spawn + health
+    // poll + two sleeps), so the window must absorb a couple of SLOW
+    // iterations — a machine running a multi-package deploy gate stretches a
+    // single iteration past a tight one.
     unlinkSync(pidfile)
-    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 10_000)).toBe(true)
+    expect(await until(() => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() === String(wd.pid), 25_000)).toBe(true)
     // A live replacement owner → the watchdog yields (exits) rather than fighting.
     writeFileSync(pidfile, String(process.pid))
     expect(await until(() => {
       try { process.kill(wd.pid ?? 0, 0); return false } catch { return true }
-    }, 10_000)).toBe(true)
+    }, 25_000)).toBe(true)
     // ...and its pidfile claim was NOT stolen back or deleted (it names us).
     expect(readFileSync(pidfile, 'utf8').trim()).toBe(String(process.pid))
   }, 45_000)
