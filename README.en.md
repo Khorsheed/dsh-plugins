@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **14 packages** that extend the official web GUI. 13 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 14th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. The whole pack already runs together on the production profile, and nothing about the official UI is patched or replaced.
 
-**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (0.1.0). The local-agent family (the last 5 rows) is finishing its member-channel adaptation and publishes as one wave two. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
+**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (0.1.0). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
 
 This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
 
@@ -24,7 +24,7 @@ Published (wave one, the dsh-web-basic members):
 | `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 
-Finishing adaptation (wave two, the local-agent family, published together):
+Pending release (wave two, the local-agent family, published together):
 
 | Package (npm) | Face | Row id | One-line feature |
 | --- | --- | --- | --- |
@@ -143,7 +143,7 @@ A 「产物」 tab in the conversation view ring (beside chat and trajectory) li
 
 ### The local coding-agent family
 
-> **Release status: wave two.** The family is finishing its member-channel adaptation (the claude-code / codex providers) and will land on npm as one wave; until then install from this repo's source.
+> **Release status: wave two.** The family is feature-complete — member-channel's M1 channel, M2 composer, and M3 member-to-member notification all landed across the four providers (claude-code and codex passed a real-CLI end-to-end probe on 2026-08-20); it lands on npm as one wave once accepted, and until then installs from this repo's source.
 
 Let dsh delegate sub-tasks to the coding-agent CLIs on your machine — Kimi Code, Codex, Claude Code — each in its own context, each with its own accounting, each continuable across rounds.
 

@@ -214,7 +214,7 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 
 | 事项 | 类型 | 说明 | 降级 |
 |---|---|---|---|
-| member-channel 解耦决策 | 决策 | 家族核心能力（四 provider 委派、resume、分桶记账、live）已通；member-channel 是 `planned` 的完整增强功能，不是收尾。发布按现有能力走，该功能作为后续版本 | 若不解耦，阶段一到五全部推迟到该功能完成 |
+| room 复验验收项移交 room | 决策 | member-channel 的 M1–M3 已全部落地、四 provider 真实 CLI 端到端探针通过（提案「实现记录」段为准，其 `状态` 字段与 README 表述均已滞后并于本轮修正）。剩余卡点是它验收标准里的一条「room 复验」——room 未合 main 时该路径不可达，且第二波用户手上不会有 room。应把该项移交 room 的 done 判定 | 若坚持在第二波验收该项，阶段一至五全部等 room 归队 |
 | 前置 2–8 逐包过闸 | 施工 | 七包按依赖序，core 先行 | 任一闸不过即停，不绕过 preflight |
 | CLI 版本指纹 | 施工（并行） | acquire 时把四个 harness CLI 的 `--version` 与模型端点标识写进 mission `refs` | 独立项，随时可停；它真正服务的是阶段五 |
 | capability-catalog 的 Agent Note 首节 | 修复 | 首节须为 `## Problem`，当前为 `## Decision`，`verify-agent-note-format` 会红 | 属他人在制品时不代改，只通报 |
@@ -258,6 +258,7 @@ preset 半边是本阶段的**新工作**——profile 模板已有先例，pres
 ## 九、维护规则
 
 - 新 proposal 立项时，在「包账本」对应层补一行相关 proposal；找不到落点先改本文件。
+- **判断提案进度读「实现记录」段，不读 `状态` 字段**：后者会滞后（2026-08-28 审计发现四个提案的状态字段落后其实现记录一到四个里程碑）。
 - 「当前迭代」随阶段推进重写：里程碑达成即划掉该阶段，下一阶段成为重点。发布前置依赖表只在规则本身（ops.md / publishing.md）变化时改。
 - 包发布或状态变化时更新状态标记；版本以 `package.json` 为准，发布事实以 [release-status.md](release-status.md) 为准。
 - 「已定决策」只增不改：结论被推翻时保留原条目并注明失效原因与日期（如决策 8 的形态）。
