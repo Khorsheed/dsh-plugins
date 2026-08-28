@@ -83,6 +83,24 @@ async function freePort(): Promise<number> {
   return port
 }
 
+/**
+ * Env for a directly spawned watchdog script: the test's explicit WD_* over a
+ * process.env SCRUBBED of ambient supervision variables. A shell inside a
+ * supervised dsh instance inherits the watchdog's own WD_* (the instance is
+ * spawned with them), and the script honors a leaked WD_STATE_DIR over the
+ * test's WD_HOME — sending the test watchdog into the PROD state dir, where
+ * the live watchdog holds the pidfile: every racer yields on sight (zero
+ * survivors in ~3s) and no temp pidfile ever appears (reclaim times out at
+ * its initial-claim deadline). Reproduced 2026-08-29 by running the two cases
+ * with WD_STATE_DIR pointed at a live-occupied dir.
+ */
+function watchdogEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  return {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WD_'))),
+    ...overrides,
+  }
+}
+
 describe('state core', () => {
   it('records a credential and verifies it while fresh on the same revision', () => {
     const dir = tmpDir('guard-state-')
@@ -1480,7 +1498,7 @@ describe('supervise', () => {
     const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
     const port = await freePort()
     const wd = spawn('bash', [script, '--supervise'], {
-      env: { ...process.env, WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' },
+      env: watchdogEnv({ WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' }),
       stdio: 'ignore',
       detached: true,
     })
@@ -1541,7 +1559,7 @@ describe('supervise', () => {
     // node staggers them by enough process-setup time that the first racer has
     // already written the pidfile, which hides the very race under test.
     const launcher = spawn('bash', ['-c', 'for _ in 1 2 3 4 5 6 7 8; do bash "$0" --supervise >/dev/null 2>&1 & done; wait', script], {
-      env: { ...process.env, WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' },
+      env: watchdogEnv({ WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' }),
       stdio: 'ignore',
     })
     // unshift for the same reason as `supervisedEnv`: the survivor must die

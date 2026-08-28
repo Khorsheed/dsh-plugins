@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-18-watchdog-port-ownership-and-atomic-claim.md
-.agents/notes/implemented/bug-fix/2026-08-18-watchdog-port-ownership-and-atomic-claim.md: 33592896be23b12e3fba7694a64149f03aa73b19
-.agents/notes/implemented/bug-fix/2026-08-18-watchdog-port-ownership-and-atomic-claim.zh.md: d2d850f97fbadb5d368dc71476fdc85afd5175f0
+.agents/notes/implemented/bug-fix/2026-08-18-watchdog-port-ownership-and-atomic-claim.md: cdba117827c3282121d26ef7c07ae6dd7dcaab17
+.agents/notes/implemented/bug-fix/2026-08-18-watchdog-port-ownership-and-atomic-claim.zh.md: 76960c4ace95042bf7346f137c4fb6f5855ad19c
