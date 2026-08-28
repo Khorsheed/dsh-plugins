@@ -13,26 +13,19 @@
   },
   "files": [
     "src/css-modules.d.ts",
-    "src/git.ts",
     "src/service.ts",
     "src/types.ts",
-    "src/client/Badge.tsx",
-    "src/client/CommitList.tsx",
-    "src/client/CommitDetails.tsx",
     "src/client/contract.ts",
-    "src/client/DetailPane.tsx",
-    "src/client/ImagePreview.tsx",
-    "src/client/HtmlPreview.tsx",
+    "src/client/html-bridge.ts",
     "src/client/html-src-doc.ts",
-    "src/client/DiffView.tsx",
-    "src/client/Drawer.tsx",
-    "src/client/FileTree.tsx",
     "src/client/index.ts",
     "src/client/language.ts",
-    "src/client/structured.tsx",
+    "src/client/local-root.ts",
     "src/client/locales.ts",
-    "src/client/Overview.tsx",
-    "src/client/panel-service.ts",
-    "src/client/store.ts"
+    "src/client/store-local.ts",
+    "src/client/structured.tsx",
+    "src/client/DetailPane.tsx",
+    "src/client/FileTree.tsx",
+    "src/client/WorkspaceView.tsx"
   ]
 }

@@ -1,21 +1,21 @@
 /**
- * Per-session local-files browser root: which directory each session's badge
+ * Per-session local-files browser root: which directory each session's browser
  * points at and the browser opens to. The browser's store is root-scoped
- * (mounted once on the shell overlay) while badges are session-scoped, so a
- * small externally-readable store carries the "current root for this session"
- * that both sides read. It is remembered per session (localStorage key
- * `<base>:<sessionId>`) so each session keeps its own workspace: switching
- * workspace in one session does not move another's badge, and reopening stays
- * where that session left off.
+ * (mounted once on the workspace tab) while each session keeps its own root,
+ * so a small externally-readable store carries the "current root for this
+ * session" that both sides read. It is remembered per session (localStorage
+ * key `<base>:<sessionId>`) so each session keeps its own workspace: switching
+ * workspace in one session does not move another's, and reopening stays where
+ * that session left off.
  *
- * @module @khorsheed/dsh-worktrees/client
+ * @module @khorsheed/dsh-local-files/client
  */
 import { useSyncExternalStore } from 'react'
 
 /** localStorage key base for a session's remembered root. */
-const ROOT_KEY_BASE = 'dsh-worktrees-local-files-root'
+const ROOT_KEY_BASE = 'dsh-local-files-root'
 
-/** In-memory mirror of the last-published root per session (for the live badge). */
+/** In-memory mirror of the last-published root per session (for the live UI). */
 const published = new Map<string, string>()
 
 /** Listeners notified on any publish. */

@@ -1,30 +1,25 @@
 /**
- * The local-files browser's transient store: open state, current path, the
- * listing, and the preview result. Deliberately SEPARATE from the worktrees
- * drawer store — the browser is an independent surface (git-agnostic, its own
- * interaction model), and sharing the drawer's state would entangle two
- * unrelated navigation flows. Module level exports the factory only (same
- * identity discipline as the drawer store).
+ * The local-files workspace view's transient store: open state, current path,
+ * the listing, and the preview result. Independent from the worktrees drawer
+ * store — the workspace tab is a git-agnostic file-browser surface with its own
+ * interaction model. Module level exports the factory only (same identity
+ * discipline as the drawer store).
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ListLocalDirectoryResult, LocalImageResult, ReadLocalFileResult } from '../types.ts'
+import type { ListLocalDirectoryResult, LocalFilesRead } from '../types.ts'
 
-/** The local-files browser's state; fetched results are whole values. */
+/** The local-files view's state; fetched results are whole values. */
 export interface LocalFilesState {
-  /** Whether the browser panel is open. */
-  open: boolean
-  /** The session this browser is currently serving (for per-session memory). */
-  sessionId: string
   /** The directory currently listed (absolute path; null until first fetch). */
   root: string | null
   /** The current listing (null until loaded). */
   listing: ListLocalDirectoryResult | null
+  /** The session this view is currently serving (for per-session memory). */
+  sessionId: string
   /** The selected entry's absolute path, or null. */
   selectedPath: string | null
-  /** The selected entry's preview content (null until a text file is selected). */
-  preview: ReadLocalFileResult | null
-  /** The selected entry's inline image (null until an image is selected). */
-  image: LocalImageResult | null
+  /** The selected entry's preview read (kind-union; null until a file is selected). */
+  preview: LocalFilesRead | null
   /** Whether a fetch is in flight. */
   loading: boolean
   /** Human-readable fetch failure, or null. */
@@ -35,58 +30,48 @@ export interface LocalFilesState {
 
 /** Annotation twin of the actions literal below. */
 export type LocalFilesActions = {
-  open: (draft: LocalFilesState, sessionId: string, start: string) => void
-  close: (draft: LocalFilesState) => void
+  setSession: (draft: LocalFilesState, sessionId: string, start: string) => void
   setRoot: (draft: LocalFilesState, path: string) => void
   setListing: (draft: LocalFilesState, listing: ListLocalDirectoryResult) => void
   select: (draft: LocalFilesState, path: string | null) => void
-  setPreview: (draft: LocalFilesState, preview: ReadLocalFileResult) => void
-  setImage: (draft: LocalFilesState, image: LocalImageResult) => void
+  setPreview: (draft: LocalFilesState, preview: LocalFilesRead) => void
   setLoading: (draft: LocalFilesState, loading: boolean) => void
   setError: (draft: LocalFilesState, error: string | null) => void
   refresh: (draft: LocalFilesState) => void
 }
 
 const INITIAL: LocalFilesState = {
-  open: false,
-  sessionId: '',
   root: null,
   listing: null,
+  sessionId: '',
   selectedPath: null,
   preview: null,
-  image: null,
   loading: false,
   error: null,
   rev: 0,
 }
 
 /**
- * Create the local-files browser store handle.
+ * Create the local-files view store handle.
  * @returns the store handle (spec + type + identity + factory in one).
  */
 export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, LocalFilesActions> {
   return defineStore({
     init: (): LocalFilesState => ({ ...INITIAL }),
     actions: {
-      open: (d, sessionId: string, start: string) => {
-        d.open = true
+      setSession: (d, sessionId: string, start: string) => {
         d.sessionId = sessionId
         d.root = start
         d.listing = null
         d.selectedPath = null
         d.preview = null
-        d.image = null
         d.error = null
-      },
-      close: (d) => {
-        d.open = false
       },
       setRoot: (d, path: string) => {
         d.root = path
         d.listing = null
         d.selectedPath = null
         d.preview = null
-        d.image = null
         d.error = null
       },
       setListing: (d, listing: ListLocalDirectoryResult) => {
@@ -97,17 +82,9 @@ export function createLocalFilesStore(): EngineStoreHandle<LocalFilesState, Loca
       select: (d, path: string | null) => {
         d.selectedPath = path
         d.preview = null
-        d.image = null
       },
-      setPreview: (d, preview: ReadLocalFileResult) => {
+      setPreview: (d, preview: LocalFilesRead) => {
         d.preview = preview
-        d.image = null
-        d.loading = false
-        d.error = null
-      },
-      setImage: (d, image: LocalImageResult) => {
-        d.image = image
-        d.preview = null
         d.loading = false
         d.error = null
       },

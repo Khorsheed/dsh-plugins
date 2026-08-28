@@ -1,10 +1,10 @@
 # 本地文件浏览器（local-files-browser）
 
 - **分类**: plugin
-- **状态**: planned
-- **最后更新**: 2026-08-26
+- **状态**: shipped（已拆分为独立包 `@khorsheed/dsh-local-files`，见下方「更新：拆分为独立包」）
+- **最后更新**: 2026-08-26（拆分方向 2026-08-28 更新）
 - **查重结果**: 已搜 `proposals/active/` + `.agents/notes/`——「本地文件/文件浏览器/目录树」命中：[file-view-html-rendering](2026-08-21-file-view-html-rendering.md)（worktrees 抽屉里的 HTML 渲染，非浏览器）、[withdraw-file-rollback](2026-08-21-withdraw-file-rollback.md)（git 操作，无关）。**无「浏览任意本地文件系统」的同意图提案**。关联：本包 worktrees（宿主半面、`openExternal` 复用）、[mode-switcher](2026-08-26-mode-switcher.md)（同 profile 无关，仅登记避免入口混淆）。
-- **官方依赖**: 纯插件。全部机制基于现有能力：`shell.overlay` 槽位（本地浏览器用独立 overlay 实例）、`conversation.session.header.utilities` 槽位（双胶囊改造）、Typert Remote（worktrees 同款数据面）、`ctx.workspaces`（workspace 枚举 + 当前 session workspace）、官方 `openExternal`/`canOpenPath` 宿主手势（`ui-file-preview` 同款）。**零 harness 改动**。
+- **官方依赖**: 纯插件。全部机制基于现有能力：`conversation.view` 槽位（工作区 tab，与 chat/产物平行）、`shell.overlay` 槽位、`conversation.session.header.utilities` 槽位、Typert Remote（独立 `localFiles` 命名空间）、`ctx.workspaces`（workspace 枚举 + 当前 session workspace）、官方 `openExternal`/`canOpenPath` 宿主手势（`ui-file-preview` 同款）。**零 harness 改动**。
 
 ## 目标
 
@@ -25,7 +25,7 @@
 
 ## 方案
 
-**形态**: 仍在 `@khorsheed/dsh-worktrees` 包内（host 半面加两个数据面方法 + client 半面加独立 overlay + badge 改造），不新建包。零官方改动。
+**形态**: 拆分为独立包 `@khorsheed/dsh-local-files`（host 数据面 `listLocalDirectory`/`readLocalFile`/`readLocalImage` + client 工作区 tab），不再并入 worktrees。worktrees 只保留纯 git 徽标。零官方改动。详见下方「更新：拆分为独立包」。
 
 ### 1) 双胶囊拆分（badge）
 
@@ -91,3 +91,14 @@
 - **超大/二进制文件**：预览截断 + 二进制探测 + 占位，不整读进内存。
 - **非 repo 会话的 badge 语义**：LEFT 常显会让 badge 出现在原本不渲染的会话——这是刻意的（本地浏览器与 git 无关），但需确认不干扰其他插件对 header 槽位的布局（`order` 调优）。
 - **放弃**：文件编辑（增删改）；git 联动（本地浏览器不感知 git）；远程文件系统；把本地浏览器并进现有 drawer 的 tab（用户明确要求独立面板 + 差异交互）。
+
+## 更新：拆分为独立包（2026-08-28 shipped）
+
+用户后续明确：本地文件浏览器**不并入 worktrees**，而是拆成**独立插件 + 独立工作区 tab**。落地为：
+
+- **新包 `@khorsheed/dsh-local-files`**：host 数据面（`listLocalDirectory` / `readLocalFile` / `readLocalImage`，独立 `localFiles` typert 命名空间，纯 `@Remote` 无 agent 参数）+ client 工作区 tab（`conversation.view` 列表项 `id: local-files`，与 chat/产物平行）。浏览任意绝对本地路径，git 无关。内容预览组件（HTML/Markdown/JSON/CSV/图片）从 worktrees 复制进包内（自包含，不跨包依赖；共享预览层抽提是后续可能的优化，不在本批次）。
+- **worktrees 只留纯 git 徽标**：删除 `LocalFilesDrawer`/`store-local`/`local-root`，badge 去掉本地文件胶囊，`service.ts`/`remote.ts` 去掉本地文件方法（保留 git 的 `readRepoImage`）。
+- **file-preview 不动**（产物 tab）。语义边界：file-preview = 当前会话产物；local-files = 任意本地目录浏览。二者不同，故独立成两个包。
+- 会话工作区不可在会话内切换（dsh session cwd 创建后不可变），故**不提供切换按钮**；工作区 tab 默认进入当前会话 workspace 内容。
+
+详见 Agent Note：[.agents/notes/implemented/feature/2026-08-28-local-files-standalone-plugin.md](../.agents/notes/implemented/feature/2026-08-28-local-files-standalone-plugin.md)。
