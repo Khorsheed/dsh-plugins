@@ -26,15 +26,18 @@ interface SkillRegistrySlice {
     content: string
     source: string
     provider?: string
-    resourceBase?: { kind: 'directory'; path: string }
   }) => () => void
 }
 
 /**
  * Read and parse the shipped `inline-html-card` SKILL.md into a registration.
- * Exposes `resourceBase` pointing at the skill's directory so the capability
- * catalog can list its bundle files (at minimum SKILL.md) — without it the
- * catalog treats the skill as content-only and cannot show where its file is.
+ *
+ * This skill is content-only — it ships a single self-contained SKILL.md with
+ * no sibling scripts/assets/references. Per the capability-catalog registration
+ * protocol, a content-only skill OMITS `resourceBase` so the catalog renders it
+ * as a virtual single-SKILL.md node (it does NOT point at a directory that
+ * holds only SKILL.md). Add `resourceBase: { kind: 'directory', path }` only
+ * when a bundle with files beside SKILL.md is introduced later.
  * @param ctx - plugin context (for logging).
  * @returns the parsed skill, or undefined when the file is missing/malformed
  *   (a discovery aid must never take a boot down, so each failure warns).
@@ -47,7 +50,6 @@ function readCardSkill(
   content: string
   source: string
   provider: string
-  resourceBase: { kind: 'directory'; path: string }
 } | undefined {
   try {
     const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'inline-html-card')
@@ -67,7 +69,6 @@ function readCardSkill(
       content,
       source: 'runtime' as const,
       provider: 'inline-html-render',
-      resourceBase: { kind: 'directory', path: skillDir },
     }
   } catch (error) {
     ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the inline-html-card skill is not registered`)

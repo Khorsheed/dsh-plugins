@@ -76,12 +76,13 @@ describe('inline-html-card skill registration', () => {
     expect(reg?.content).toContain('Colors, theme, and fonts are yours to choose')
     // The registry validates `source` at LOAD time — pin it (the ankh-guard 8.9 bug).
     expect(reg?.source).toBe('runtime')
-    // Expose the bundle so the capability catalog can list where the skill's
-    // file is (at minimum SKILL.md); without resourceBase the catalog sees the
-    // skill as content-only.
+    // This skill is content-only (a single self-contained SKILL.md, no sibling
+    // scripts/assets). Per the catalog registration protocol it OMITS
+    // resourceBase so the catalog renders a virtual single-SKILL.md node — it
+    // does NOT point at a directory holding only SKILL.md. Provider is still
+    // reported so the catalog labels the card.
     expect(reg?.provider).toBe('inline-html-render')
-    expect(reg?.resourceBase?.kind).toBe('directory')
-    expect(reg?.resourceBase?.path).toMatch(/skills[/\\]inline-html-card$/)
+    expect(reg?.resourceBase).toBeUndefined()
   })
 
   it('does not crash when the skills service is absent — it stays pending, no warning', () => {
