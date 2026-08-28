@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, type ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { hiddenFlowKeys, installDomHider, renderHiderRules } from '../src/client/dom-hider.ts'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'

@@ -7,9 +7,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import {
-  createSnapshotStore,
-  type ChatConversationViewNode, type ConversationSnapshot,
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {
+  ChatConversationViewNode, ConversationSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { en } from '../src/client/locales.ts'
 import { TimelineRail } from '../src/client/TimelineRail.tsx'

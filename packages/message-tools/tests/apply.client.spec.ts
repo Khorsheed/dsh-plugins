@@ -2,7 +2,8 @@
 /** The browser half's apply: composition shape, injected action faces, teardown. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createSnapshotStore, SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { MessageToolsInjected, WithdrawnDividerInjected } from '../src/client/slots.ts'
