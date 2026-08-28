@@ -9,7 +9,7 @@
  * @module @khorsheed/dsh-worktrees/client
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -47,6 +47,74 @@ export { WorktreesBadge, WorktreesDrawer, LocalFilesDrawer, WorktreesController 
  * `ctx.get` (the ui-file-preview precedent). */
 export const inject = ['slots', 'remote', 'locale', 'sessions', 'workspaces', 'connection']
 
+/** Static absence: no host-facts source on an unrecognized line (never reached on rc or 0.1.2). */
+const ABSENT_HOST_DESCRIPTION: HostDescriptionSource = {
+  getSnapshot: () => undefined,
+  subscribe: () => () => {},
+}
+
+/**
+ * Host-facts source for the drawers' hook, probed per host line: rc hosts
+ * expose `Connection.hostDescription` directly; 0.1.2 folded the facts into
+ * the connection generation's opening frame (upstream e14d354e83), so the
+ * source is derived from `connection.generation` there. The derived snapshot
+ * carries `home` but no `canOpenPath` (that capability became an RPC probe),
+ * which reads as unavailable and hides the external-open affordances — the
+ * intended degrade on 0.1.2.
+ * @param connection - the connection service handle.
+ * @returns an observable HostDescription source on either host line.
+ */
+function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionSource {
+  const probe = connection as unknown as {
+    hostDescription?: HostDescriptionSource
+    generation?: {
+      getSnapshot(): { readonly host: unknown } | undefined
+      subscribe(listener: () => void): () => void
+    }
+  }
+  if (probe.hostDescription !== undefined) return probe.hostDescription
+  const generation = probe.generation
+  if (generation === undefined) return ABSENT_HOST_DESCRIPTION
+  return {
+    getSnapshot: () => generation.getSnapshot()?.host,
+    subscribe: listener => generation.subscribe(listener),
+  } as HostDescriptionSource
+}
+
+/**
+ * Open an absolute path with the host's native handler, probed per host
+ * line: rc hosts expose `workspaces.openPath`; 0.1.2 moved path opens to the
+ * session Remote namespace (`remote.session.openWorkspacePath`). Absence on
+ * both means the surface has no opener — resolve false (callers degrade).
+ * @param ctx - client root context.
+ * @param path - absolute host path.
+ * @returns the opener's completion; failures resolve, never throw.
+ */
+function openHostPath(ctx: ClientContext, path: string): Promise<unknown> {
+  const legacy = (ctx.workspaces as unknown as { openPath?: (path: string) => Promise<unknown> }).openPath
+  if (legacy !== undefined) return legacy.call(ctx.workspaces, path)
+  const session = (ctx.remote as unknown as {
+    session?: { openWorkspacePath(request: { path: string }): Promise<unknown> }
+  }).session
+  if (session === undefined) return Promise.resolve(false)
+  return session.openWorkspacePath({ path })
+}
+
+/**
+ * Open the host's native directory picker, probed per host line: rc hosts
+ * hang it on the workspaces service; 0.1.2 moved it to `uiWorkspace`
+ * (ui-workspace). Absence resolves null — the picker-cancel value.
+ * @param ctx - client root context.
+ * @returns the chosen path, or null on cancel/unavailable.
+ */
+function pickHostDirectory(ctx: ClientContext): Promise<string | null> {
+  const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
+  if (legacy !== undefined) return legacy.call(ctx.workspaces)
+  const getService = ctx.get.bind(ctx) as (name: string) => unknown
+  const uiWorkspace = getService('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
+  return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
+}
+
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the
  * session-header badge, and the frame drawer.
@@ -69,7 +137,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const controller = new WorktreesController()
 
   const openOnHost = (path: string): void => {
-    void ctx.workspaces.openPath(path).catch(() => {
+    void openHostPath(ctx, path).catch(() => {
       // Host/OS open failures stay silent in the drawer; the native app
       // surfaces its own error dialog when the path is unusable.
     })
@@ -86,7 +154,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }
 
   /** Open the host's native directory picker (resolves the chosen path). */
-  const pickWorkspace = (): Promise<string | null> => ctx.workspaces.pickDirectory()
+  const pickWorkspace = (): Promise<string | null> => pickHostDirectory(ctx)
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
@@ -122,7 +190,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         fetchReadFileAtCommit: (sid: SessionId, request: ReadFileAtCommitRequest) => remote.readFileAtCommit(sid, request),
         fetchReadRepoImage: (sid: SessionId, request: ReadRepoImageRequest) => remote.readRepoImage(sid, request),
         isLoopback: connection.isLoopback,
-        hooks: { hostDescription: connection.hostDescription },
+        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
         openExternal: (path) => { openOnHost(path) },
         copyBranch: (branch: string) => writeClipboard(branch),
       }
@@ -144,7 +212,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         listWorkspaces,
         pickWorkspace,
         isLoopback: connection.isLoopback,
-        hooks: { hostDescription: connection.hostDescription },
+        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
         openExternal: (path) => { openOnHost(path) },
       }
     },
