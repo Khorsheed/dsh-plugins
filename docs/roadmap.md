@@ -36,7 +36,7 @@
 
 ## 三、domain 清单
 
-domain 是 **workflow 的组装单位**。一个 domain 在运行时表现为一个或多个 agent preset，用户新建会话时选择的就是它（UI 形态见 `mode-switcher` ※）。内部术语统一用 `domain`，不再与「mode」混用。
+domain 是 **workflow 的组装单位**。一个 domain 在运行时表现为一个或多个 agent preset，用户新建会话时选择的就是它（UI 形态见 [mode-switcher](../proposals/active/2026-08-26-mode-switcher.md)）。内部术语统一用 `domain`，不再与「mode」混用。
 
 | domain | 组成 | 状态 |
 |---|---|---|
@@ -101,7 +101,7 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 | `context-guard` | 0.1.0 | ✅ | 上下文占用越阈值时出现压缩按钮 | [context-clearing](../proposals/active/2026-08-19-context-clearing.md) `idea` |
 | `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片。**注册 `inline-html-card` skill（拉取式）——base 层仅有的两个 agent 侧成分之一，进 preset** | — |
 | `local-files` | 0.1.0 | 🔶 | 独立工作区 tab：懒加载文件树 + 结构化 HTML/Markdown/JSON/CSV/图片预览，git 无关，按会话记忆根目录（从 worktrees 拆出，提交 `3df3044`） | [local-files-browser](../proposals/closed/2026-08-26-local-files-browser.md) `done` |
-| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | `capability-catalog` `in-progress` ※ |
+| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | [capability-catalog](../proposals/active/2026-08-26-capability-catalog.md) `in-progress` |
 
 ### capability — 能力原语
 
@@ -142,10 +142,8 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 |---|---|---|
 | [package-management](../proposals/active/2026-08-21-package-management.md) | `planned` | 分类 → 整合包组合 → 发布流程的可执行链路。**本文件的四层需同步进去** |
 | [upstream-meta-pack-reconcile](../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md) | `planned` | 薄元包一键装全家（形态 C），需上游 seam |
-| `mode-switcher` ※ | `idea` | domain 的 UI 表达：切 mode = 切 workflow 界面重心 |
+| [mode-switcher](../proposals/active/2026-08-26-mode-switcher.md) | `idea` | domain 的入口：新建会话时选 preset。已按决策 9 重写，放弃原 profile-patch 行开关路线 |
 | [mobile-access](../proposals/active/2026-08-19-mobile-access.md) | `planned` | 访问维度。**前提已失效需重写**（见决策 8） |
-
-> ※ 标记的两个提案（`capability-catalog`、`mode-switcher`）目前在主工作树尚未提交（`git status` 显示为未跟踪），因此本文件不对其建立链接。它们进入 main 后应补上链接。
 
 ## 五、已定决策（proposal 的边界条件）
 

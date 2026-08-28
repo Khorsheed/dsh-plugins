@@ -3,7 +3,7 @@
 - **分类**：plugin
 - **状态**：idea
 - **最后更新**：2026-08-29
-- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）——「模式 / 切换 / mode / preset」命中：[plugin-manager](../closed/2026-08-22-plugin-manager.md)（loader 级插件开关，profile 全局，非会话级）、worktree-governance 的「三档切换」、local-agent 的「驱动模式 live/exec」、官方 `agent-presets` 的 preset 选择器（本提案的底座，非竞品）。**无「按 domain 组织的工作模式选择」同意图提案。** 关联：[docs/roadmap.md](../../docs/roadmap.md) 的四层模型与决策 9（domain 在 profile 与 preset 两个平面落地）、`capability-catalog`（提案文件当前不在 main 上，见总表 ⚠️）（模式下工具与 skill 的展示面）、[package-management](2026-08-21-package-management.md)（domain 整合包携带 preset 目录）。
+- **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`（含 archived）——「模式 / 切换 / mode / preset」命中：[plugin-manager](../closed/2026-08-22-plugin-manager.md)（loader 级插件开关，profile 全局，非会话级）、worktree-governance 的「三档切换」、local-agent 的「驱动模式 live/exec」、官方 `agent-presets` 的 preset 选择器（本提案的底座，非竞品）。**无「按 domain 组织的工作模式选择」同意图提案。** 关联：[docs/roadmap.md](../../docs/roadmap.md) 的四层模型与决策 9（domain 在 profile 与 preset 两个平面落地）、[capability-catalog](2026-08-26-capability-catalog.md)（模式下工具与 skill 的展示面）、[package-management](2026-08-21-package-management.md)（domain 整合包携带 preset 目录）。
 - **官方依赖**：纯插件。底座是官方 `@deepseek-ai/dsh-agent-presets`（`ctx.agentPresets`：roster、per-agent 挂载、copy-only authoring、`roots` 接受任意路径）；UI 走 `settings.section` 槽位与新建会话入口；快捷键复用本仓 `@khorsheed/dsh-ui-shortcuts` 的 `ctx.shortcuts.registerAction`。**零 harness 改动。**
 
 需求来源：产品路线图评审（2026-08-28～29）。工作台要同时服务开发、评测、写作等不同 workflow，它们的工具、提示词、skill 与人格都不同。本提案是该模型在用户侧的入口。

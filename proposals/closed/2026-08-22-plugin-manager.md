@@ -3,12 +3,12 @@
 - **分类**:plugin(基础层;计划进 dsh-web-basic 整合包)
 - **状态**:closed（放弃：唯一消费方 mode-switcher 已转向 agent preset 路线，不再需要行-overlay 写入器；官方 0.1.2 的 Plugin list 与 Plugin configuration 两个 tab 已覆盖「查看组合与改配置」，剩余的 loader 级开关价值不足以单独立项）
 - **最后更新**:2026-08-22
-- **查重结果**:已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`——无同意图提案。关联:[package-management](2026-08-21-package-management.md)(整合包成员)、[docs/ops.md](../../docs/ops.md)(验收期组合测试需求)。
+- **查重结果**:已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`——无同意图提案。关联:[package-management](../active/2026-08-21-package-management.md)(整合包成员)、[docs/ops.md](../../docs/ops.md)(验收期组合测试需求)。
 - **官方依赖**:无。全部机制基于现有能力:loader 对 profile 用户 patch 层的 HMR(`watchUserPatches`)。零 harness 改动。
 
 > **2026-08-29 废除。** 判定依据两条：
 >
-> 1. **唯一消费方消失。** [mode-switcher](2026-08-26-mode-switcher.md) 原方案把「模式」建模为插件行的活跃性，依赖本提案的共享行-overlay 写入器；重写后它改走官方 `agent-presets`（会话级组合），不再需要写 profile 用户 patch 层。本提案失去唯一的下游。
+> 1. **唯一消费方消失。** [mode-switcher](../active/2026-08-26-mode-switcher.md) 原方案把「模式」建模为插件行的活跃性，依赖本提案的共享行-overlay 写入器；重写后它改走官方 `agent-presets`（会话级组合），不再需要写 profile 用户 patch 层。本提案失去唯一的下游。
 > 2. **查看需求已被官方覆盖。** 0.1.2-alpha.1 的 Plugins 设置区有两个 tab：`ui-settings-plugin-inventory` 提供只读清单（模块名、effective-enablement 标签、fiber 状态点、entry id 与生效配置），`ui-settings-plugins` 提供逐插件的配置编辑。二者都不能开关插件——`plugin-inventory` 的已知限制明写 *"it cannot enable, disable, add, or remove plugins"*——但「验收期想看清组合装了什么」这个更常见的需求已被满足。
 >
 > 因此**剩下的价值只有 loader 级开关**（写 `disabled: true` + config HMR 热生效，让插件根本不加载，区别于插件自实现的 `enabled` 配置）。该能力仍然真实存在但不足以单独立项；若将来验收流程确实需要，从本文件重开即可——方案与实测（`watchUserPatches` 已验证热生效）原样可用。
