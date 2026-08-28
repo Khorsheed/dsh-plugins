@@ -1,8 +1,8 @@
-# Agent Note: Product roadmap inserts a capability layer between base and domain
+# Agent Note: Product roadmap inserts a feature layer between base and domain
 
 Status: implemented
 
-English | [中文](2026-08-28-roadmap-capability-layer.zh.md)
+English | [中文](2026-08-28-roadmap-feature-layer.zh.md)
 
 ## Problem
 
@@ -14,7 +14,11 @@ The classification in [package-management](../../../../proposals/active/2026-08-
 
 `docs/roadmap.md` is the upper-level document: a proposal says how a capability is built, the roadmap says which layer it sits in, which domain consumes it, and when it happens. It carries a package ledger (every package with version, release state, one-line capability, and its proposals), a decision list that bounds future proposals, and a priority table.
 
-Package categories become four. `capability` sits between `base` and `domain` and holds reusable primitives that carry external dependencies. `base` keeps its original promise — install it and the GUI is nicer, no external setup. `domain` becomes pure composition: `base` plus selected capabilities plus at most a UI package or two, so a new domain costs no new code. `ops` is unchanged.
+Package categories become four. `feature` sits between `base` and `domain`. The test is one question — **does every domain install it?** `base` yes, `feature` no. A cross-check: a feature package usually introduces a new work object (mission's work item, lab's experiment unit, worktrees' worktree/branch/diff) that both the user and the agent must learn, while base improves what dsh already has (messages, files, tasks, context) and introduces no new vocabulary. `domain` becomes pure composition: `base` plus selected features plus at most a UI package or two, so a new domain costs no new code. `ops` is unchanged.
+
+Category membership follows *whether the package is installed*, not *what it displays*. `capability-catalog` is installed by every domain while the tools and skills it lists change with the preset — a mirror hangs in every room and reflects something different in each. `worktrees` also displays repo-varying content yet belongs to `feature`, because someone writing a novel has no reason to install it at all.
+
+The two layers carry different lifecycle expectations, which governs how much to invest. `base` covers for an official GUI that is not yet good enough, so it is deliberately thin: when upstream ships the missing piece, AGENTS.md's Compatibility labeling already requires retiring the degraded path, and the proposal closes as 官方吸收. `feature` is domain capability upstream will not build — nobody else is going to write mission, lab, or room — so it is worth depth.
 
 A domain lands on two planes rather than one. The profile plane carries the plugin set; capability packages mount on demand and degrade silently when a peer is absent, so installing all of them costs nothing. The agent preset plane carries that domain's view — the tool subset, prompt sections, skills, and persona — which the official `agent-presets` package composes per session from a directory holding one `agent.cordis.yml`. A domain pack therefore ships both halves: a `bundles` layer and a `presets/` directory its `cordis.yml` points `roots` at. One instance can then hold a development session and an evaluation session side by side without a restart.
 
@@ -25,6 +29,8 @@ Three domains are named: `dev` (the software workbench in daily use), `eval` (ha
 The roadmap also records eight standing decisions that bound future proposals, among them: dsh is the only workbench shell and AgentOS is frozen as a design asset; local and remote are one execution-target dimension of the local-agent family rather than two workbenches; multi-person collaboration tops out at one instance per person over a shared data plane, because the harness trust model treats any connected caller as the local user; and adjudication stays out of the plugins, so `lab`, `mission`, and `datasets` keep recording facts without scoring them.
 
 ## Alternatives considered
+
+**Name the layer `capability`.** Rejected after use: the word is already taken three ways in this ecosystem — upstream's capability seams, this repo's `capability-catalog` package, and the everyday sense of "what a plugin provides". A layer name colliding with all three reads ambiguously in every sentence that uses it.
 
 **Keep three categories and file the shared packages under `base`.** Rejected: `dsh-web-basic` is the base pack, and adding the local-agent family to it would mean the entry-level pack requires installing external CLIs and logging into them. The base promise and the capability promise are different promises to a user.
 
