@@ -87,6 +87,11 @@ const TYPERT_PACKAGES: readonly TypertPackage[] = [
     name: '@khorsheed/dsh-worktrees',
     hostConfigs: ['tsconfig.host.json'],
   },
+  {
+    dir: 'packages/capability-catalog',
+    name: '@khorsheed/dsh-capability-catalog',
+    hostConfigs: ['tsconfig.host.json'],
+  },
 ]
 
 interface RemoteArtifact {

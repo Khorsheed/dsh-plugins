@@ -225,7 +225,14 @@ export const inject = ['agents']
 
 /** The slice of the skill registry this plugin consumes (optional service). */
 interface SkillRegistrySlice {
-  register: (skill: { name: string; description: string; content: string; source: string }) => () => void
+  register: (skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+    resourceBase?: { kind: 'directory'; path: string }
+  }) => () => void
 }
 
 /**
@@ -250,6 +257,7 @@ function registerRestartSkill(ctx: Context, stateDir: string): void {
   }
   try {
     const skillFile = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dsh-self-restart-guard', 'SKILL.md')
+    const skillDir = dirname(skillFile)
     const raw = readFileSync(skillFile, 'utf8')
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
     const name = /^name: (.+)$/m.exec(match?.[1] ?? '')?.[1]?.trim()
@@ -260,7 +268,14 @@ function registerRestartSkill(ctx: Context, stateDir: string): void {
       writeSkillRegistration(stateDir, { registered: false, reason: 'shipped SKILL.md malformed', at: Date.now() })
       return
     }
-    ctx.effect(() => skills.register({ name, description, content, source: 'runtime' }))
+    ctx.effect(() => skills.register({
+      name,
+      description,
+      content,
+      source: 'runtime',
+      provider: 'ankh-guard',
+      resourceBase: { kind: 'directory', path: skillDir },
+    }))
     writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
   } catch (error) {
     ctx.logger.warn(`ankh-guard: shipped SKILL.md unreadable (${String(error)}) — the restart-protocol skill is not registered`)
