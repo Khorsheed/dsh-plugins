@@ -10,10 +10,18 @@
 import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
+
+// The host renamed its tool-call id brand between lines (`CallId` on the npm
+// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
+// runtime value is a plain string, so instead of importing either brand
+// factory we extract the field types from the consuming APIs — the same
+// source then compiles against both lines.
+type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
+type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
 
 /** One user-role message event. */
 function userEvent(text: string) {
@@ -238,7 +246,7 @@ export async function mirrorKimiSessionDelta(
       turn: call.turn,
       step: call.step,
       message: createToolResultMessage({
-        callId: CallId(line.id),
+        callId: line.id as ToolResultCallId,
         content: [{ type: 'text', text: line.result }],
         isError: false,
       }),
@@ -277,7 +285,7 @@ export async function mirrorKimiSessionDelta(
       const call = childSession.append('tool/call', {
         turn,
         step,
-        callId: CallId(line.id),
+        callId: line.id as ToolCallEventCallId,
         name: line.name,
         arguments: line.args ?? '',
       })
@@ -287,7 +295,7 @@ export async function mirrorKimiSessionDelta(
           turn,
           step,
           message: createToolResultMessage({
-            callId: CallId(line.id),
+            callId: line.id as ToolResultCallId,
             content: [{ type: 'text', text: line.result }],
         isError: false,
           }),

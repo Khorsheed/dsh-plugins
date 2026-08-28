@@ -17,7 +17,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import {
@@ -33,13 +33,21 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
 import { syncClaudeCredentialFile } from './records.ts'
+
+// The host renamed its tool-call id brand between lines (`CallId` on the npm
+// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
+// runtime value is a plain string, so instead of importing either brand
+// factory we extract the field types from the consuming APIs — the same
+// source then compiles against both lines.
+type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
+type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -1008,7 +1016,7 @@ export function appendClaudeTranscriptLine(
     const call = childSession.append('tool/call', {
       turn,
       step,
-      callId: CallId(line.id),
+      callId: line.id as ToolCallEventCallId,
       name: line.name,
       arguments: line.args ?? '',
     })
@@ -1017,7 +1025,7 @@ export function appendClaudeTranscriptLine(
         turn,
         step,
         message: createToolResultMessage({
-          callId: CallId(line.id),
+          callId: line.id as ToolResultCallId,
           content: [{ type: 'text', text: line.result }],
           isError: false,
         }),
