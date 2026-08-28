@@ -11,12 +11,13 @@ Live bug (message-timeline × message-tools, predates the 0.1.2 adaptation branc
 ## Decision
 
 - A shared predicate `isTimelineRowKind(kind, includeSteering)` (`slots.ts`) now drives both the row filter (`TimelineRail.tsx`) and the reading-position resolver (`rail-tracker.ts` `activeRowKey`): a row exists for every visible user-message bubble — `user`, steering, `message-tools-edited`, `message-tools-restored`. The edited bubble's preview shows the edited text (its `data.content`) and clicking it jumps to the edited bubble.
-- **No gray ghosts for withdrawn originals.** The withdrawn messages are hidden by the host (they leave the visible order), and the message-tools divider in the transcript owns that history (expand / replay / 重新编辑). Ghost ticks would jump to nothing and clutter the rail; the edited bubble itself is where "which message did I just edit" lives.
+- **Rows come from the node store, not `s.chat.order`.** A live repro (clean browser, 3-user-message session, edit the first message) showed the rail draining to zero and staying there — and the host's visible `order` did not contain the `message-tools-edited` bubble (its key form is `20:message-tools-edited312`, kind-plus-seq in one segment) even though the flow renders it. The rail now reads `s.chat.nodes.values()`, filters `visibility === 'visible'` plus {@link isTimelineRowKind}, and orders by `anchorSeq` (the same projection the host uses) — so it stays aligned with what the transcript shows whatever the host's `order` projection does. The `order` subscription is gone.
+- **No gray ghosts for withdrawn originals.** Withdrawn messages carry `visibility: 'hidden'` in the store, so the visibility filter drops them — the message-tools divider in the transcript owns that history (expand / replay / 重新编辑). Ghost ticks would jump to nothing and clutter the rail; the edited bubble itself is where "which message did I just edit" lives.
 - `includeSteering` cannot apply to the edited kind — `EditedMessageData` does not record the source kind — so edited/restored rows always count.
 
 ## Verification
 
-Regression tests: the rail renders `message-tools-edited` + `message-tools-restored` rows with their content previews, and stays non-empty when the edited bubble is the only user-kind row left (editing the first message) (`tests/TimelineRail.client.spec.tsx`); `activeRowKey` anchors to edited/restored rows (`tests/rail-tracker.client.spec.ts`). 86 package tests pass; `pnpm build` green. Deployed via deploy:3080 and verified live.
+Regression tests: the rail renders `message-tools-edited` + `message-tools-restored` rows with their content previews; it stays non-empty when the edited bubble is the only user-kind node in the store (editing the first message); and it lists the edited bubble while dropping a withdrawn original that is still in the store with `visibility: 'hidden'` (`tests/TimelineRail.client.spec.tsx`); `activeRowKey` anchors to edited/restored rows (`tests/rail-tracker.client.spec.ts`). 87 package tests pass; `pnpm build` green. Deployed via deploy:3080.
 
 ## Alternatives considered
 

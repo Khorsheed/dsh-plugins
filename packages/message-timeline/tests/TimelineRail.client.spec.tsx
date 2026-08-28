@@ -28,7 +28,7 @@ Element.prototype.scrollIntoView = scrollIntoViewMock as never
 
 function node(key: string, kind: 'user' | 'steering', text: string): ChatConversationViewNode {
   return {
-    key, kind, target: 'chat', anchorSeq: 1,
+    key, kind, target: 'chat', anchorSeq: 1, visibility: 'visible',
     data: { time: 1_700_000_000_000, content: [{ type: 'text', text }] },
   } as unknown as ChatConversationViewNode
 }
@@ -39,11 +39,19 @@ const NODES: Record<string, ChatConversationViewNode> = {
   k3: node('k3', 'user', '谢谢'),
 }
 
+/** A ChatNodeStore stub offering both `get` and `values` (the rail reads values). */
+function nodeStore(...list: ChatConversationViewNode[]): { get: (key: string) => ChatConversationViewNode | undefined; values: () => readonly ChatConversationViewNode[] } {
+  const byKey = new Map(list.map(n => [n.key, n]))
+  return { get: (key: string) => byKey.get(key), values: () => list }
+}
+
+const ALL_NODES = Object.values(NODES)
+
 function sessionSnapshot(overrides: { order?: readonly string[]; hasMore?: boolean; loadingOlder?: boolean } = {}) {
   return {
     chat: {
       order: overrides.order ?? ['k1', 'k2', 'k3'],
-      nodes: { get: (key: string) => NODES[key] },
+      nodes: nodeStore(...ALL_NODES),
     },
     hasMore: overrides.hasMore ?? false,
     loadingOlder: overrides.loadingOlder ?? false,
@@ -108,18 +116,18 @@ describe('the flat timeline panel', () => {
     // `message-tools-restored`). Both are user bubbles in the transcript and
     // must stay on the rail, or an edit drains the whole rail.
     const edited = {
-      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9,
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
       data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
     } as unknown as ChatConversationViewNode
     const restored = {
-      key: 'kr', kind: 'message-tools-restored', target: 'chat', anchorSeq: 12,
+      key: 'kr', kind: 'message-tools-restored', target: 'chat', anchorSeq: 12, visibility: 'visible',
       data: { seq: 12, restoredFromSeq: 5, content: [{ type: 'text', text: '恢复的消息' }], text: '恢复的消息' },
     } as unknown as ChatConversationViewNode
     renderRail({
       useSession: bindSnapshotSelector(createSnapshotStore({
         chat: {
           order: ['ke', 'kr'],
-          nodes: { get: (key: string) => (key === 'ke' ? edited : key === 'kr' ? restored : undefined) },
+          nodes: nodeStore(edited, restored),
         },
         hasMore: false,
         loadingOlder: false,
@@ -135,14 +143,13 @@ describe('the flat timeline panel', () => {
     // Editing the FIRST user message withdraws everything after it; the rail
     // must not empty to zero rows.
     const edited = {
-      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9,
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
       data: { seq: 9, hiddenStartSeq: 1, content: [{ type: 'text', text: '改过的内容' }] },
     } as unknown as ChatConversationViewNode
     renderRail({
       useSession: bindSnapshotSelector(createSnapshotStore({
         chat: {
-          order: ['ke'],
-          nodes: { get: (key: string) => (key === 'ke' ? edited : undefined) },
+          nodes: nodeStore(edited),
         },
         hasMore: false,
         loadingOlder: false,
@@ -151,6 +158,31 @@ describe('the flat timeline panel', () => {
 
     expect(items()).toHaveLength(1)
     expect(panel().textContent).toContain('改过的内容')
+  })
+
+  it('lists the edited bubble but skips withdrawn originals still in the store', () => {
+    // The edited bubble is visible; the withdrawn original stays in the store
+    // with hidden visibility (the host hides the covered span). Only the
+    // visible user bubble should be a row — no gray ghosts for withdrawals.
+    const edited = {
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
+      data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
+    } as unknown as ChatConversationViewNode
+    const withdrawn = {
+      key: 'k2', kind: 'user', target: 'chat', anchorSeq: 5, visibility: 'hidden',
+      data: { content: [{ type: 'text', text: '被撤回的原消息' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: { nodes: nodeStore(edited, withdrawn) },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(1)
+    expect(panel().textContent).toContain('改过的内容')
+    expect(panel().textContent).not.toContain('被撤回的原消息')
   })
 
   it('lights the reading position the tracker publishes', () => {
@@ -290,18 +322,18 @@ describe('the flat timeline panel', () => {
     expect(jumpTo).not.toHaveBeenCalled()
   })
 
-  it('skips nodes that do not resolve', () => {
+  it('lists every visible user-kind node present in the store', () => {
     renderRail({
       useSession: bindSnapshotSelector(createSnapshotStore({
         chat: {
-          order: ['missing', 'k1', 'k3'],
-          nodes: { get: (key: string) => NODES[key] },
+          nodes: nodeStore(NODES.k1, NODES.k3),
         },
         hasMore: false,
         loadingOlder: false,
       } as unknown as ConversationSnapshot)),
     })
-    // 'missing' has no node: only k1 and k3 produce rows.
+    // The rail reads the store's visible values, not an `order` listing: only
+    // the nodes actually present produce rows.
     expect(items()).toHaveLength(2)
   })
 
@@ -311,8 +343,7 @@ describe('the flat timeline panel', () => {
     renderRail({
       useSession: bindSnapshotSelector(createSnapshotStore({
         chat: {
-          order: ['kc'],
-          nodes: { get: (key: string) => (key === 'kc' ? contentless : undefined) },
+          nodes: nodeStore(contentless),
         },
         hasMore: false,
         loadingOlder: false,
@@ -358,12 +389,11 @@ describe('the flat timeline panel', () => {
     // A huge assistant turn can push every user message past the loaded
     // event window: no rows render, but paging must still run.
     const assistant = {
-      key: 'a1', kind: 'assistant', target: 'chat', anchorSeq: 1, data: {},
+      key: 'a1', kind: 'assistant', target: 'chat', anchorSeq: 1, visibility: 'visible', data: {},
     } as unknown as ChatConversationViewNode
     const paged = (withUser: boolean, loading = false) => ({
       chat: {
-        order: withUser ? ['k1', 'a1'] : ['a1'],
-        nodes: { get: (key: string) => (key === 'k1' ? NODES.k1 : assistant) },
+        nodes: nodeStore(withUser ? NODES.k1 : assistant, assistant),
       },
       hasMore: true,
       loadingOlder: loading,
@@ -500,8 +530,15 @@ describe('hidden conditions', () => {
   })
 
   it('renders nothing when the session has no user messages', () => {
+    const assistant = {
+      key: 'a1', kind: 'assistant', target: 'chat', anchorSeq: 1, visibility: 'visible', data: {},
+    } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore(sessionSnapshot({ order: ['a1'] }))),
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: { nodes: nodeStore(assistant) },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
       useRail: bindSnapshotSelector(createSnapshotStore({ ...RAIL, activeKey: null })),
     })
     expect(items()).toHaveLength(0)

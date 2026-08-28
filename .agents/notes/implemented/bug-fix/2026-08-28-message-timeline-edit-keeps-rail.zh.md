@@ -11,7 +11,8 @@ English | [中文](2026-08-28-message-timeline-edit-keeps-rail.zh.md)
 ## Decision
 
 - 共享谓词 `isTimelineRowKind(kind, includeSteering)`(`slots.ts`)统一驱动行过滤(`TimelineRail.tsx`)与阅读位置解析(`rail-tracker.ts` 的 `activeRowKey`):凡是会话里可见的用户消息气泡都占一行——`user`、steering、`message-tools-edited`、`message-tools-restored`。编辑气泡的预览显示编辑后的文本(其 `data.content`),点击跳到编辑气泡。
-- **不给被撤回的原消息留灰显幽灵。** 原消息已被宿主隐藏(不在可见 order 上),会话里的 message-tools 撤回分割线已经拥有这段历史(展开/恢复/重新编辑)。幽灵刻度会跳到不存在的位置、只会弄乱轨道;"我刚才改的是哪条"由编辑气泡本身回答。
+- **行来自节点 store,而非 `s.chat.order`。** 活体复现(干净浏览器、3 条用户消息会话、编辑第一条)显示轨道归零并保持——宿主可见 `order` 里没有 `message-tools-edited` 气泡(其键形如 `20:message-tools-edited312`,kind 与 seq 连在一段)即便流里渲染了它。轨道现在直接读 `s.chat.nodes.values()`,过滤 `visibility === 'visible'` 加 {@link isTimelineRowKind},按 `anchorSeq` 排序(与宿主一致)——不管宿主的 order 投影如何,轨道始终跟会话流对齐。`order` 订阅已移除。
+- **不给被撤回的原消息留灰显幽灵。** 被撤回消息在 store 里带 `visibility:'hidden'`,可见性过滤会把它们滤掉;会话里的 message-tools 撤回分割线已经拥有这段历史(展开/恢复/重新编辑)。幽灵刻度会跳到不存在的位置、只会弄乱轨道;"我刚才改的是哪条"由编辑气泡本身回答。
 - `includeSteering` 无法作用于编辑 kind——`EditedMessageData` 不记录来源 kind——所以编辑/恢复行恒计入。
 
 ## Verification
