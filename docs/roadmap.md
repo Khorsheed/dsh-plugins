@@ -21,18 +21,26 @@
 
 ## 二、分层模型（四层）
 
-| 层 | 判据 | 面向 |
-|---|---|---|
-| `base` | 装了就更好用，无外部依赖，任何 domain 都要 | 所有用户 |
-| `capability` | 可被多个 domain 复用的能力原语，**有外部依赖**（CLI / docker / 文件系统约定） | domain 组装者 |
-| `domain` | 把 base + 若干 capability 组装成一个 workflow 的完整体验，**几乎无新代码** | 特定场景用户 |
-| `ops` | 自托管、守卫、插件管理 | 自托管运维者 |
+| 层 | 判据 | 存在理由 | 理想终局 |
+|---|---|---|---|
+| `base` | **每个 domain 都有** | 官方 GUI 还不够好，我们补缺 | **官方补上即退役** |
+| `feature` | **某些 domain 特有** | 特定 workflow 的领域能力 | 官方不会做，长期存在 |
+| `domain` | 把 base + 若干 feature 组装成一个 workflow，**几乎无新代码** | 让一套 workflow 一条命令装齐 | 随 workflow 存续 |
+| `ops` | 自托管、守卫 | 自托管部署的运维需要 | 随部署形态存续 |
 
-`capability` 层独立的理由：local-agent 家族、mission、lab 这批包既不是「体验」（要装 CLI、要登录、要 docker，塞进 base 会让基础整合包变重），也不专属某个 domain（mission 归 eval 还是 dev？两边都要）。强行按「主标签唯一」归类会产生归属冲突。
+判据就是「每个 domain 都装吗」这一句，可直接判。一个可选的交叉验证：feature 通常**引入新的工作对象**（mission 的「工作项」、lab 的「实验单元」、worktrees 的「worktree / 分支 / diff」），用户和 agent 都得学；base 改善的是 dsh 本来就有的东西（消息、文件、任务、上下文），不引入新词汇。
 
-四层的收益：**domain 包退化成纯组合**，出一个新 domain 不写新代码，只是「base 全体 + 挑几个 capability + 可能一两个专属 UI 包」。
+**层归属看的是「这个包要不要装」，不看「它显示什么」。** `capability-catalog` 每个 domain 都装，但它显示的工具与 skill 随 preset 变——内容会变不改变它属于 base。它是面镜子：镜子每个房间都挂，照出来的东西不同。`taskpilot`、`file-preview` 同理。反过来 `worktrees` 显示的 git 状态也随仓库变，它归 feature 的原因不是内容会变，而是**写小说的人根本不需要装它**。
 
-`package.json` 的 `dsh.category` 增加 `capability` 取值；`domain` 包继续用 `dsh.domain` 备注（`dev` / `eval` / `novel`）。
+**两层的生命周期预期不同，直接影响投入。** base 是替官方补课，因此**不该过度投资**——够用即可，官方补上就按 [AGENTS.md 的 Compatibility labeling](../AGENTS.md) 退役该路径，提案按「官方吸收」转 `closed`。feature 是自己的领域资产，官方不会替你做 mission / lab / room，值得深耕。
+
+`feature` 层独立的理由：local-agent 家族、mission、lab 这批包不是每个 domain 都要（写小说不需要委派编码 CLI，也不需要实验单元），塞进 base 会让基础整合包变重；但它们也不专属某个 domain（mission 归 eval 还是 dev？两边都要）。强行按「主标签唯一」归类会产生归属冲突。
+
+名字取 `feature` 而非 `capability`，是因为后者在 dsh 语境里已被占用三处：官方的 capability seams、本仓的 `capability-catalog` 包、以及泛指插件能力的日常用法。
+
+四层的收益：**domain 包退化成纯组合**，出一个新 domain 不写新代码，只是「base 全体 + 挑几个 feature + 可能一两个专属 UI 包」。
+
+`package.json` 的 `dsh.category` 增加 `feature` 取值；`domain` 包继续用 `dsh.domain` 备注（`dev` / `eval` / `novel`）。
 
 ## 三、domain 清单
 
@@ -45,7 +53,7 @@ domain 是 **workflow 的组装单位**。一个 domain 在运行时表现为一
 | `eval` 评测对比 | base + local-agent + mission + datasets + lab | 组成初稿见 package-management |
 | `novel` 小说创作 | base + ? | 未展开 |
 
-两个 domain 的交集是 **local-agent + mission**——它们是共同前置。**capability 层不收口，任何 domain 包都发不出去。**
+两个 domain 的交集是 **local-agent + mission**——它们是共同前置。**feature 层不收口，任何 domain 包都发不出去。**
 
 ### domain 在两层落地
 
@@ -53,7 +61,7 @@ domain 是 **workflow 的组装单位**。一个 domain 在运行时表现为一
 
 | 层 | 承载 | 切换成本 |
 |---|---|---|
-| profile `bundles` | 插件全集。`capability` 层的包按需挂载、探测不到即静默降级，因此全装无害 | 重启（很少发生） |
+| profile `bundles` | 插件全集。`feature` 层的包按需挂载、探测不到即静默降级，因此全装无害 | 重启（很少发生） |
 | **agent preset** | 该 domain 的视图：工具子集、prompt sections、skills、persona | 新建会话时选 |
 
 同一个实例因此能并存「开发会话」与「评测会话」，不必重启切换。整合包的目录形状：
@@ -86,7 +94,7 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 
 状态标记：✅ 已上架 npm ｜ 🔶 rc，功能通未发布 ｜ 🌿 分支未合流 ｜ ⬜ 未开工
 
-### base — 通用体验
+### base — 每个 domain 都有
 
 | 包 | 版本 | 状态 | 功能 | 相关 proposal |
 |---|---|---|---|---|
@@ -101,9 +109,9 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 | `context-guard` | 0.1.0 | ✅ | 上下文占用越阈值时出现压缩按钮 | [context-clearing](../proposals/active/2026-08-19-context-clearing.md) `idea` |
 | `inline-html-render` | 0.1.11 | 🔶 | `dsh-card` fenced block → 沙箱 iframe，对话内可交互卡片。**注册 `inline-html-card` skill（拉取式）——base 层仅有的两个 agent 侧成分之一，进 preset** | — |
 | `local-files` | 0.1.0 | 🔶 | 独立工作区 tab：懒加载文件树 + 结构化 HTML/Markdown/JSON/CSV/图片预览，git 无关，按会话记忆根目录（从 worktrees 拆出，提交 `3df3044`） | [local-files-browser](../proposals/closed/2026-08-26-local-files-browser.md) `done` |
-| `capability-catalog` | 0.1.24 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | [capability-catalog](../proposals/active/2026-08-26-capability-catalog.md) `in-progress` |
+| `capability-catalog` | 0.1.30 | 🔶 | 技能与工具目录、来源归属、装技能、`list_capabilities` 工具（**base 层仅有的两个 agent 侧成分之一，进 preset**）。按 **agent preset 的 standing scope** 读注册表，因而是 domain/preset 模型的展示面——不同 mode 下有哪些工具与 skill，在这里可见 | [capability-catalog](../proposals/active/2026-08-26-capability-catalog.md) `in-progress` |
 
-### capability — 能力原语
+### feature — 某些 domain 特有
 
 | 包 | 版本 | 状态 | 功能 | 相关 proposal |
 |---|---|---|---|---|
@@ -162,8 +170,8 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 
 | 阶段 | 动作 | 解锁 |
 |---|---|---|
-| **P0** | capability 层收口：local-agent 第二波发布、mission / worktrees 转正式版 | 一切 domain 包 |
-| **P1** | 首发 `dsh-dev`（形态 B：profile 目录模板） | 验证「base + capability 组装成 workflow」形态成立 |
+| **P0** | feature 层收口：local-agent 第二波发布、mission / worktrees 转正式版 | 一切 domain 包 |
+| **P1** | 首发 `dsh-dev`（形态 B：profile 目录模板） | 验证「base + feature 组装成 workflow」形态成立 |
 | **P1** | room 归队 | `dsh-dev` 的协作面（增强，非前提） |
 | **P1** | `eval` pilot：1 维度 × 4 原生组合 × 3 重复 | 验证 bundle 能否支撑可发布结论 |
 | **P2** | 出 `dsh-eval`；mobile-access 重写并落地 | 访问维度 |
@@ -197,11 +205,13 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 
 **第 10 项是时间门，不是工作量**——它把 npm 发布从「能不能做完」变成「什么时候到期」，因此阶段四只能排在最后，且不阻塞其余阶段。
 
+**2026-08-29 实况**：前置 1–7 对 local-agent 家族**已经完成**——六个包在 3080 生产 profile 上运行（`~/.dsh-official/profiles/web/package.json` 为准，tarball 形态，版本后缀 `+2608271440`）。观察期（前置 10）在跑，08-30 14:40 满。因此阶段一已不是关键路径，它在等时间；**阶段二可立即开工**。
+
 ### 阶段
 
 | 阶段 | 目标 | 前置 | 里程碑（可验收） |
 |---|---|---|---|
-| **一** | 家族进 3080 | 无 | local-agent 七包在 3080 跑起来，迁移验收三步通过，**3 天观察期开始计时** |
+| **一** | 家族进 3080 | 无 | **大部分已完成**：家族六包（core + 四 provider + tool-subagent）于 2026-08-27 14:40 部署至 3080，**观察期至 08-30 14:40 满**（前提是期间无家族相关事故）。剩余：确认迁移验收三步、README 截图回填 |
 | 二 | 首个 domain 包 + 两层模型验证 | 阶段一 | `daily` 与 `dev` 两个 preset 并存，下方五条判据全过 |
 | 三 | room 归队 | 阶段一（契约冻结后适配才不是移动靶） | `packages/room` 在今天的 main 上 build+test 绿，合入 main |
 | 四 | npm 第二波 | 阶段一 + 前置 10 到期 + 前置 9、11、13 | 七包上架，一次性目录装得上并 import 通过 |
@@ -214,7 +224,9 @@ preset 的 authoring 是 **copy-only**（复制一个已有 preset 的整个目�
 | 事项 | 类型 | 说明 | 降级 |
 |---|---|---|---|
 | room 复验验收项移交 room | 决策 | member-channel 的 M1–M3 已全部落地、四 provider 真实 CLI 端到端探针通过（提案「实现记录」段为准，其 `状态` 字段与 README 表述均已滞后并于本轮修正）。剩余卡点是它验收标准里的一条「room 复验」——room 未合 main 时该路径不可达，且第二波用户手上不会有 room。应把该项移交 room 的 done 判定 | 若坚持在第二波验收该项，阶段一至五全部等 room 归队 |
-| 前置 2–8 逐包过闸 | 施工 | 七包按依赖序，core 先行 | 任一闸不过即停，不绕过 preflight |
+| ~~前置 2–8 逐包过闸~~ | **已完成** | 家族六包已在 3080 运行（2026-08-27 14:40 部署） | — |
+| 确认迁移验收三步 | 核对 | skill 真调用一次 / `check-env --port 3080` 读数 / 门禁重启 canary PASS——是否已执行需你确认 | 未做则补做，不重启也能核对前两项 |
+| README 截图回填 | 文档 | 验收时逐包拍图替换占位注释，`git add -f` | 缺图不阻塞发布，占位注释必须在 |
 | CLI 版本指纹 | 施工（并行） | acquire 时把四个 harness CLI 的 `--version` 与模型端点标识写进 mission `refs` | 独立项，随时可停；它真正服务的是阶段五 |
 | capability-catalog 的 Agent Note 首节 | 修复 | 首节须为 `## Problem`，当前为 `## Decision`，`verify-agent-note-format` 会红 | 属他人在制品时不代改，只通报 |
 

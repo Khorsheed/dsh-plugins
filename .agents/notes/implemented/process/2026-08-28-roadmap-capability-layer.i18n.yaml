@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record: the git blob hash of each side as of the
-# last confirmed-consistent state. Both languages carry equal authority; after
-# editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-28-roadmap-capability-layer.md
-.agents/notes/implemented/process/2026-08-28-roadmap-capability-layer.md: 92bf9ccad02b44a2802bb270bb32c30440bf45a4
-.agents/notes/implemented/process/2026-08-28-roadmap-capability-layer.zh.md: 6e35d93950791af45d2493651b541d5d5d585d48

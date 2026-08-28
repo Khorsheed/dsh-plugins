@@ -1,8 +1,8 @@
-# Agent Note: Product roadmap inserts a capability layer between base and domain
+# Agent Note: Product roadmap inserts a feature layer between base and domain
 
 Status: implemented
 
-[English](2026-08-28-roadmap-capability-layer.md) | 中文
+[English](2026-08-28-roadmap-feature-layer.md) | 中文
 
 ## Problem
 
@@ -14,7 +14,11 @@ Status: implemented
 
 `docs/roadmap.md` 是上位文档：提案说明一个能力怎么建，路线图说明它落在哪一层、被哪个 domain 消费、什么时候做。它包含包账本（每个包的版本、发布状态、一句话能力、相关提案）、一份约束未来提案的决策清单，以及优先级表。
 
-包分类变为四层。`capability` 位于 `base` 与 `domain` 之间，收纳带外部依赖的可复用原语。`base` 保持原有承诺——装上就更好用，无需外部配置。`domain` 退化为纯组合：`base` 加若干 capability，至多再加一两个 UI 包，因此新增一个 domain 不产生新代码。`ops` 不变。
+包分类变为四层。`feature` 位于 `base` 与 `domain` 之间。判据只有一句——**每个 domain 都装吗？** base 是，feature 否。一个交叉验证：feature 包通常引入一个新的工作对象（mission 的「工作项」、lab 的「实验单元」、worktrees 的「worktree / 分支 / diff」），用户与 agent 都得学；base 改善的是 dsh 本来就有的东西（消息、文件、任务、上下文），不引入新词汇。`domain` 退化为纯组合：`base` 加若干 feature，至多再加一两个 UI 包，因此新增一个 domain 不产生新代码。`ops` 不变。
+
+层归属看的是**这个包要不要装**，不看**它显示什么**。`capability-catalog` 每个 domain 都装，而它列出的工具与 skill 随 preset 变化——镜子每个房间都挂，照出来的东西各不相同。`worktrees` 显示的内容同样随仓库变，它却属于 `feature`，因为写小说的人根本没有理由装它。
+
+两层的生命周期预期不同，并由此决定投入多少。`base` 是替尚不够好的官方 GUI 补课，因此刻意做薄：官方补上后，AGENTS.md 的 Compatibility labeling 本就要求退役该降级路径，提案按「官方吸收」关闭。`feature` 是上游不会做的领域能力——没有别人会去写 mission、lab 或 room——值得深耕。
 
 domain 落在两个平面而非一个。profile 平面承载插件集合；capability 包按需挂载、探测不到对端即静默降级，因此全装无代价。agent preset 平面承载该 domain 的视图——工具子集、prompt sections、skills 与 persona——由官方 `agent-presets` 包按会话从一个装有单份 `agent.cordis.yml` 的目录组合而成。因此 domain 包交付两个半边：一个 `bundles` 层，以及一个由其 `cordis.yml` 用 `roots` 指向的 `presets/` 目录。同一个实例由此可以并存开发会话与评测会话，无需重启。
 
@@ -25,6 +29,8 @@ domain 落在两个平面而非一个。profile 平面承载插件集合；capab
 路线图同时记录八条约束未来提案的既定决策，其中包括：dsh 是唯一工作台外壳、AgentOS 冻结为设计资产；本地与远程是 local-agent 家族的一个执行目标维度，而非两套工作台；多人协作的上限是每人一实例加共享数据面，因为 harness 的信任模型把任何连上的调用方视同本机用户；判定不进插件，`lab` / `mission` / `datasets` 只记录事实、不给分。
 
 ## Alternatives considered
+
+**层名叫 `capability`。** 使用后否决：该词在本生态已有三重占用——上游的 capability seams、本仓的 `capability-catalog` 包，以及「插件提供的能力」这一日常用法。层名与三者相撞，会让每一句用到它的话都产生歧义。
 
 **维持三层，把共享包归入 `base`。** 否决：`dsh-web-basic` 就是基础整合包，把 local-agent 家族加进去意味着入门整合包要求安装外部 CLI 并逐个登录。基础层的承诺和能力层的承诺，对用户是两种不同的承诺。
 
