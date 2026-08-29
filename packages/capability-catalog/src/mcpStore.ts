@@ -189,9 +189,9 @@ export class McpStore {
   }
 }
 
-/** Whether a config value is an unresolved secret marker. */
+/** Whether a config value contains an unresolved secret marker (bare or scheme-prefixed). */
 export function isSecretRef(value: string): boolean {
-  return value.startsWith('secretRef:')
+  return value.includes('secretRef:')
 }
 
 /** Human label for a namespaced ref (strip the `mcp.<server>.` prefix). */

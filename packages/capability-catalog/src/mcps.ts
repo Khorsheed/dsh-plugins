@@ -19,6 +19,9 @@ export const SECRET_REF_PREFIX = 'secretRef:'
 /** Values that look like a credential to prompt for (env/header/query key). */
 const CREDENTIALISH = /(KEY|TOKEN|SECRET|PASSWORD|API_KEY|ACCESS?_?KEY|AUTH)/i
 
+/** Find every `secretRef:<token>` marker in a config value (scheme-prefixed or bare). */
+const SECRET_REF_RE = /secretRef:([A-Za-z0-9_.-]+)/g
+
 /** A parsed server from a pasted mcp.json server entry. */
 export interface ParsedMcpServer {
   readonly serverName: string
@@ -51,7 +54,10 @@ export function parseServerEntry(serverName: string, entry: Record<string, unkno
     if (typeof value !== 'string' || value === '') return value as string ?? ''
     if (CREDENTIALISH.test(label)) {
       credentials.push({ ref, label })
-      return `${SECRET_REF_PREFIX}${ref}`
+      // Preserve a scheme prefix (Bearer/Basic/Token) so the header stays valid;
+      // only the token is replaced by the secret marker.
+      const scheme = /^(Bearer|Basic|Token)\s+/i.exec(value)
+      return scheme !== null ? `${scheme[0]}${SECRET_REF_PREFIX}${ref}` : `${SECRET_REF_PREFIX}${ref}`
     }
     return value
   }
@@ -82,9 +88,10 @@ export function parseServerEntry(serverName: string, entry: Record<string, unkno
   }
 }
 
-/** Flag a config field secret in the read-only display: `secretRef:x → ·secretRef·`. */
+/** Flag a config field secret in the read-only display: `secretRef:x → ·secretRef·`,
+ * preserving any scheme prefix (e.g. `Bearer ·secretRef·`). */
 export function maskSecret(value: string): string {
-  return value.startsWith(SECRET_REF_PREFIX) ? '·secretRef·' : value
+  return value.replace(SECRET_REF_RE, '·secretRef·')
 }
 
 /** Whether the config still has an unfilled credential (= prompts for it). */
@@ -93,28 +100,27 @@ export function hasUnconfiguredCredentials(credentials: readonly CatalogMcpCrede
 }
 
 /** Resolve `secretRef:` markers in a config into plaintext before connecting
- * (v1 path — the catalog resolves via `ctx.credentials` then connects). */
+ * (the catalog resolves via the stored credential values, then connects).
+ * Replaces embedded markers too, so a scheme-prefixed value (`Bearer secretRef:a`)
+ * resolves to `Bearer <value>`. */
 export async function resolveConfigSecrets(
   config: CatalogMcpServerConfig,
   resolve: (ref: string) => Promise<string | undefined>,
 ): Promise<CatalogMcpServerConfig> {
-  const env: [string, string][] = []
-  for (const [k, v] of config.env ?? []) {
-    env.push([k, v.startsWith(SECRET_REF_PREFIX) ? (await resolve(v.slice(SECRET_REF_PREFIX.length)) ?? '') : v])
-  }
-  const headers: [string, string][] = []
-  for (const [k, v] of config.headers ?? []) {
-    headers.push([k, v.startsWith(SECRET_REF_PREFIX) ? (await resolve(v.slice(SECRET_REF_PREFIX.length)) ?? '') : v])
-  }
-  let url = config.url
-  if (url !== undefined) {
-    // Replace embedded query/url secret markers (e.g. `?key=secretRef:amap`).
-    for (const m of url.matchAll(/secretRef:([A-Za-z0-9_.-]+)/g)) {
+  const resolveValue = async (value: string): Promise<string> => {
+    let out = value
+    for (const m of value.matchAll(SECRET_REF_RE)) {
       const ref = m[1] as string
       const resolvedValue = (await resolve(ref)) ?? ''
-      url = url?.replace(`secretRef:${ref}`, resolvedValue)
+      out = out.replace(`secretRef:${ref}`, resolvedValue)
     }
+    return out
   }
+  const env: [string, string][] = []
+  for (const [k, v] of config.env ?? []) env.push([k, await resolveValue(v)])
+  const headers: [string, string][] = []
+  for (const [k, v] of config.headers ?? []) headers.push([k, await resolveValue(v)])
+  const url = config.url !== undefined ? await resolveValue(config.url) : undefined
   return {
     ...config,
     ...(env.length > 0 ? { env } : {}),
@@ -138,11 +144,12 @@ export function finalizeTools(tools: readonly CatalogMcpTool[]): CatalogMcpTool[
  */
 export function credentialStoredRefs(serverName: string, config: CatalogMcpServerConfig): Readonly<Record<string, string>> {
   const out: Record<string, string> = {}
+  const isSecret = (v: string): boolean => /secretRef:/.test(v)
   for (const [k, v] of config.env ?? []) {
-    if (v.startsWith(SECRET_REF_PREFIX)) out[k] = `mcp.${serverName}.env.${k}`
+    if (isSecret(v)) out[k] = `mcp.${serverName}.env.${k}`
   }
   for (const [k, v] of config.headers ?? []) {
-    if (v.startsWith(SECRET_REF_PREFIX)) out[k] = `mcp.${serverName}.header.${k}`
+    if (isSecret(v)) out[k] = `mcp.${serverName}.header.${k}`
   }
   if (config.url !== undefined) {
     for (const m of config.url.matchAll(/secretRef:([A-Za-z0-9_.-]+)/g)) {

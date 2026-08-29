@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseServerEntry, detectTransport, maskSecret, credentialStoredRefs, SECRET_REF_PREFIX } from '../src/mcps.ts'
+import { parseServerEntry, detectTransport, maskSecret, credentialStoredRefs, resolveConfigSecrets, SECRET_REF_PREFIX } from '../src/mcps.ts'
 
 describe('detectTransport', () => {
   it('stdlib via command', () => expect(detectTransport({ command: 'npx' })).toBe('stdio'))
@@ -66,5 +66,19 @@ describe('credentialStoredRefs', () => {
   it('ignores non-secret config values', () => {
     const config = parseServerEntry('s', { command: 'node', env: { LOG_LEVEL: 'debug' } }).config
     expect(credentialStoredRefs('s', config)).toEqual({})
+  })
+})
+
+describe('scheme-prefixed secrets', () => {
+  it('preserves a Bearer/Basic scheme prefix when masking a header', () => {
+    const r = parseServerEntry('s', { url: 'https://x/mcp', headers: { Authorization: 'Bearer abc123' } })
+    expect(r.config.headers?.[0]).toEqual(['Authorization', `Bearer ${SECRET_REF_PREFIX}Authorization`])
+    expect(maskSecret(`Bearer ${SECRET_REF_PREFIX}Authorization`)).toBe('Bearer ·secretRef·')
+  })
+
+  it('resolves a scheme-prefixed marker back to the real value', async () => {
+    const r = parseServerEntry('s', { url: 'https://x/mcp', headers: { Authorization: 'Bearer abc123' } })
+    const resolved = await resolveConfigSecrets(r.config, async (ref) => (ref === 'Authorization' ? 'tok' : undefined))
+    expect(resolved.headers?.[0]).toEqual(['Authorization', 'Bearer tok'])
   })
 })
