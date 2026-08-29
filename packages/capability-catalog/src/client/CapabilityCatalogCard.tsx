@@ -227,22 +227,18 @@ function DeleteSkillConfirm({ name, onCancel, onConfirm, t }: {
     try { await onConfirm() } finally { setBusy(false) }
   }
   return (
-    <div className={css.overlay} role="dialog" aria-modal="true">
-      <div className={`${css.modal} ${css.confirmModal}`}>
-        <div className={css.modalHead}>
-          <h3 className={css.modalTitle}>{t('delete')}</h3>
-          <button type="button" className={css.modalClose} onClick={onCancel} aria-label={t('detailClose')}>×</button>
-        </div>
-        <div className={css.modalBody}>
-          <p className={css.confirmText}>{t('confirmDelete')}「{name}」？</p>
-          <div className={css.actions}>
-            <button type="button" className={css.btnGhost} onClick={onCancel}>{t('cancel')}</button>
-            <span className={css.spacer} />
-            <button type="button" className={`${css.btnPrimary} ${css.btnDanger}`} disabled={busy} onClick={() => void submit()}>{t('delete')}</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open
+      onClose={onCancel}
+      title={t('delete')}
+      description={`${t('confirmDelete')}「${name}」？`}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onCancel}>{t('cancel')}</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void submit()}>{t('delete')}</Button>
+        </>
+      )}
+    />
   )
 }
 

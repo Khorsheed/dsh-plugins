@@ -1355,23 +1355,3 @@
   color: var(--dsw-alias-label-tertiary);
   padding: 12px 0;
 }
-
-/* Compact confirm modal (delete). */
-.confirmModal {
-  width: min(440px, calc(100vw - 64px));
-}
-
-.confirmText {
-  margin: 0;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.btnDanger {
-  background: var(--dsw-alias-state-error-primary);
-}
-
-.btnDanger:hover {
-  background: var(--dsw-alias-state-error-primary);
-}
