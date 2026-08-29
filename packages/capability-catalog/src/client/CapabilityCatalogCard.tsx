@@ -344,12 +344,27 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
   )
 }
 
-/** Tool detail modal (host Modal): description + channel/origin + parameter schema. */
+/** Tool detail modal (host Modal, wider): description (clamped, expandable) +
+ * channel/origin + parameter schema. */
 function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
+  const [descExpanded, setDescExpanded] = useState(false)
+  const longDesc = tool.description.length > 200
   return (
-    <Modal open onClose={onClose} title={tool.name} description={tool.description} footer={(
-      <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
-    )}>
+    <Modal
+      open
+      onClose={onClose}
+      title={tool.name}
+      className={css.toolDetailModal ?? ''}
+      footer={<Button variant="outline" onClick={onClose}>{t('cancel')}</Button>}
+    >
+      <div className={css.toolDetailDesc}>
+        <p className={`${css.toolDesc} ${longDesc && !descExpanded ? css.toolDescClamp : ''}`}>{tool.description}</p>
+        {longDesc ? (
+          <button type="button" className={css.toolDescToggle} onClick={() => setDescExpanded(e => !e)}>
+            {descExpanded ? t('toolCollapse') : t('toolExpand')}
+          </button>
+        ) : null}
+      </div>
       <div className={css.meta}>
         <span className={css.metaKey}>{t('source')}</span>
         <span className={css.metaVal}>{toolTag(tool, t)}</span>

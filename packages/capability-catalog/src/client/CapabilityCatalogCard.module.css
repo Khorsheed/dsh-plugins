@@ -354,7 +354,50 @@
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 45%, transparent);
 }
 
-/* Tool dialog: parameter section title + body. */
+/* Tool dialog: wider dialog + clamped, expandable description. */
+.toolDetailModal {
+  width: min(600px, calc(100vw - 96px));
+}
+
+.toolDetailDesc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolDesc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Clamp the description to a few lines by default; expand for very long docs. */
+.toolDescClamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+
+.toolDescToggle {
+  align-self: flex-start;
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.toolDescToggle:hover {
+  text-decoration: underline;
+}
+
 .toolDetailParamsTitle {
   margin: 16px 0 8px;
   font-size: 12px;

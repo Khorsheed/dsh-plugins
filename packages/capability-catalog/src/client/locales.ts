@@ -48,6 +48,8 @@ export const zh = {
   toolPlugin: '插件',
   toolParams: '参数',
   toolNoParams: '无参数',
+  toolExpand: '展开更多',
+  toolCollapse: '收起',
   toolSearchPlaceholder: '按名称 / 描述 / server 搜索…',
   toolNoMatch: '没有匹配的工具',
 
@@ -136,6 +138,8 @@ export const en = {
   toolPlugin: 'Plugin',
   toolParams: 'Parameters',
   toolNoParams: 'No parameters',
+  toolExpand: 'Expand',
+  toolCollapse: 'Collapse',
   toolSearchPlaceholder: 'Search by name / description / server…',
   toolNoMatch: 'No matching tools',
 
