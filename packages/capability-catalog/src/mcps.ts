@@ -92,9 +92,35 @@ export function hasUnconfiguredCredentials(credentials: readonly CatalogMcpCrede
   return credentials.some(c => !c.configured)
 }
 
-/** v1 connection stub: no real MCP connection yet. */
-export async function connectMcpServer(_config: CatalogMcpServerConfig): Promise<readonly CatalogMcpTool[]> {
-  return []
+/** Resolve `secretRef:` markers in a config into plaintext before connecting
+ * (v1 path — the catalog resolves via `ctx.credentials` then connects). */
+export async function resolveConfigSecrets(
+  config: CatalogMcpServerConfig,
+  resolve: (ref: string) => Promise<string | undefined>,
+): Promise<CatalogMcpServerConfig> {
+  const env: [string, string][] = []
+  for (const [k, v] of config.env ?? []) {
+    env.push([k, v.startsWith(SECRET_REF_PREFIX) ? (await resolve(v.slice(SECRET_REF_PREFIX.length)) ?? '') : v])
+  }
+  const headers: [string, string][] = []
+  for (const [k, v] of config.headers ?? []) {
+    headers.push([k, v.startsWith(SECRET_REF_PREFIX) ? (await resolve(v.slice(SECRET_REF_PREFIX.length)) ?? '') : v])
+  }
+  let url = config.url
+  if (url !== undefined) {
+    // Replace embedded query/url secret markers (e.g. `?key=secretRef:amap`).
+    for (const m of url.matchAll(/secretRef:([A-Za-z0-9_.-]+)/g)) {
+      const ref = m[1] as string
+      const resolvedValue = (await resolve(ref)) ?? ''
+      url = url?.replace(`secretRef:${ref}`, resolvedValue)
+    }
+  }
+  return {
+    ...config,
+    ...(env.length > 0 ? { env } : {}),
+    ...(headers.length > 0 ? { headers } : {}),
+    ...(url !== undefined ? { url } : {}),
+  }
 }
 
 /** Sort tools by name and default each to enabled. */
