@@ -9,7 +9,7 @@
     "catalog",
     "skills"
   ],
-  "version": "0.1.58",
+  "version": "0.1.60",
   "publishConfig": {
     "access": "public"
   },
