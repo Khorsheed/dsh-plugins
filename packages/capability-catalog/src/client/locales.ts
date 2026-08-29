@@ -43,6 +43,14 @@ export const zh = {
   sortUpdated: '最近更新',
   noFilterMatch: '没有匹配的技能',
   updated: '更新于',
+  /* Tool catalog. */
+  toolBuiltin: '内置',
+  toolPlugin: '插件',
+  toolParams: '参数',
+  toolNoParams: '无参数',
+  toolSearchPlaceholder: '按名称 / 描述 / server 搜索…',
+  toolNoMatch: '没有匹配的工具',
+
   credentials: '凭据配置',
   credentialsHint: '该 skill 的 metadata 声明了以下凭据，配置后模型可读取。',
   configured: '已配置',
@@ -123,6 +131,14 @@ export const en = {
   sortUpdated: 'Recently updated',
   noFilterMatch: 'No matching skills',
   updated: 'Updated',
+  /* Tool catalog. */
+  toolBuiltin: 'Built-in',
+  toolPlugin: 'Plugin',
+  toolParams: 'Parameters',
+  toolNoParams: 'No parameters',
+  toolSearchPlaceholder: 'Search by name / description / server…',
+  toolNoMatch: 'No matching tools',
+
   credentials: 'Credential config',
   credentialsHint: 'The skill metadata declares these credentials; configure them so the model can read them.',
   configured: 'Configured',

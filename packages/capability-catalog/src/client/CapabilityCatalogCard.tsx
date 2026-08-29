@@ -30,12 +30,13 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
-import type { CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolChannel, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
 type SortBy = 'name' | 'updated'
+type ToolChannelFilter = 'all' | CatalogToolChannel
 
 /** Built-in / plugin-provided skill sources — never deletable, shown with the 内置 tag. */
 const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
@@ -44,7 +45,6 @@ const isBuiltin = (skill: CatalogSkillRow): boolean => BUILTIN_SOURCES.has(skill
 export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
-  const [openTool, setOpenTool] = useState<string | null>(null)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [claim, setClaim] = useState<DetailClaim>({ status: 'idle', data: undefined })
   const [showAdd, setShowAdd] = useState(false)
@@ -52,6 +52,8 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   // Grid filter / sort state.
   const [query, setQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('name')
+  // Tool channel filter state.
+  const [toolChannel, setToolChannel] = useState<ToolChannelFilter>('all')
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
@@ -67,6 +69,21 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
     return sorted
   }, [skills, query, sortBy])
 
+  /** Visible tools filtered by query + channel, then grouped (builtin/plugin; MCP per server). */
+  const toolGroups = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const matched = tools.filter((tool) => {
+      if (toolChannel !== 'all' && tool.channel !== toolChannel) return false
+      if (q === '') return true
+      return tool.name.toLowerCase().includes(q)
+        || tool.description.toLowerCase().includes(q)
+        || (tool.serverName ?? '').toLowerCase().includes(q)
+        || (tool.owner ?? '').toLowerCase().includes(q)
+    })
+    const sorted = [...matched].sort((a, b) => a.name.localeCompare(b.name))
+    return groupTools(sorted)
+  }, [tools, query, toolChannel])
+
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
     setClaim({ status: 'loading', data: undefined })
@@ -77,11 +94,11 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
     setSelectedName(null)
     setClaim({ status: 'idle', data: undefined })
   }
-  const toggleTool = (name: string): void => setOpenTool((prev) => (prev === name ? null : name))
 
   const resetFilter = (): void => {
     setQuery('')
     setSortBy('name')
+    setToolChannel('all')
   }
 
   return (
@@ -123,6 +140,28 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
         </div>
       ) : null}
 
+      {!loading && kind === 'tools' && tools.length > 0 ? (
+        <div className={css.filterBar} role="search">
+          <div className={css.searchBox}>
+            <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+            <input
+              className={css.searchInput}
+              type="search"
+              value={query}
+              placeholder={t('toolSearchPlaceholder')}
+              aria-label={t('toolSearchPlaceholder')}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <select className={css.select} value={toolChannel} aria-label={t('source')} onChange={(e) => setToolChannel(e.target.value as ToolChannelFilter)}>
+            <option value="all">{t('filterAll')}</option>
+            <option value="builtin">{t('toolBuiltin')}</option>
+            <option value="plugin">{t('toolPlugin')}</option>
+            <option value="mcp">MCP</option>
+          </select>
+        </div>
+      ) : null}
+
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
       {!loading && kind === 'skills' && skills.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
       {!loading && kind === 'tools' && tools.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
@@ -146,9 +185,17 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
           )
       ) : null}
 
-      {!loading && kind === 'tools' ? tools.map((tool) => (
-        <ToolCard key={tool.name} tool={tool} open={openTool === tool.name} onToggle={() => toggleTool(tool.name)} t={t} />
-      )) : null}
+      {!loading && kind === 'tools' && tools.length > 0 ? (
+        toolGroups.length === 0
+          ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+          : (
+            <div className={css.toolGroups}>
+              {toolGroups.map((group) => (
+                <ToolGroup key={group.key} group={group} t={t} />
+              ))}
+            </div>
+          )
+      ) : null}
 
       {selectedName !== null ? (
         <SkillDetailModal
@@ -242,33 +289,100 @@ function DeleteSkillConfirm({ name, onCancel, onConfirm, t }: {
   )
 }
 
-/** Collapsible tool card (name + channel attribution). */
-function ToolCard({ tool, open, onToggle, t }: {
-  tool: CatalogToolRow
-  open: boolean
-  onToggle: () => void
-  t: (key: CapabilityCatalogKey) => string
-}) {
+/** One rendered group of tools (内置 / 插件 / one MCP server). */
+interface ToolGroup {
+  readonly key: string
+  readonly kind: 'builtin' | 'plugin' | 'mcp'
+  readonly serverName?: string
+  readonly tools: readonly CatalogToolRow[]
+  readonly defaultOpen: boolean
+}
+
+/** Group visible tools into 内置 / 插件 / (MCP per-server) sections. */
+function groupTools(tools: readonly CatalogToolRow[]): ToolGroup[] {
+  const out: ToolGroup[] = []
+  const builtin = tools.filter(t => t.channel === 'builtin')
+  const plugin = tools.filter(t => t.channel === 'plugin' || t.channel === 'unknown')
+  const mcp = tools.filter(t => t.channel === 'mcp')
+  if (builtin.length > 0) out.push({ key: 'builtin', kind: 'builtin', tools: builtin, defaultOpen: true })
+  if (plugin.length > 0) out.push({ key: 'plugin', kind: 'plugin', tools: plugin, defaultOpen: true })
+  const byServer = new Map<string, CatalogToolRow[]>()
+  for (const tool of mcp) {
+    const server = tool.serverName ?? '?'
+    byServer.set(server, [...(byServer.get(server) ?? []), tool])
+  }
+  for (const [server, serverTools] of byServer) {
+    out.push({ key: `mcp:${server}`, kind: 'mcp', serverName: server, tools: serverTools, defaultOpen: false })
+  }
+  return out
+}
+
+/** Human label for one tool's channel pill. */
+function toolTag(tool: CatalogToolRow, t: (key: CapabilityCatalogKey) => string): string {
+  if (tool.channel === 'mcp') return tool.serverName !== undefined ? `MCP · ${tool.serverName}` : 'MCP'
+  if (tool.channel === 'plugin') return t('toolPlugin')
+  if (tool.channel === 'builtin') return t('toolBuiltin')
+  return tool.channel
+}
+
+/** Pretty-print a tool's parameter JSON (or a no-params hint). */
+function formatParams(parameters: CatalogToolRow['parameters'], t: (key: CapabilityCatalogKey) => string): string {
+  if (parameters === undefined || parameters === null) return t('toolNoParams')
+  if (typeof parameters !== 'object') return String(parameters)
+  if (Array.isArray(parameters)) return parameters.length === 0 ? t('toolNoParams') : JSON.stringify(parameters, null, 2)
+  if (Object.keys(parameters).length === 0) return t('toolNoParams')
+  try {
+    return JSON.stringify(parameters, null, 2)
+  } catch {
+    return t('toolNoParams')
+  }
+}
+
+/** A collapsible group of tool cards (header: label + count + chevron). */
+function ToolGroup({ group, t }: { group: ToolGroup; t: (key: CapabilityCatalogKey) => string }) {
+  const [open, setOpen] = useState(group.defaultOpen)
+  const title = group.kind === 'mcp'
+    ? `MCP · ${group.serverName ?? ''}`
+    : group.kind === 'builtin' ? t('toolBuiltin') : t('toolPlugin')
   return (
-    <div className={`${css.card} ${open ? css.open : ''}`}>
-      <button type="button" className={css.cardHead} onClick={onToggle}>
-        <span className={css.title}>{tool.name}</span>
-        <span className={css.scroll}><IconChevronDownOutline14 size={16} /></span>
+    <div className={css.toolGroup}>
+      <button type="button" className={css.toolGroupHead} onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className={css.toolGroupTitle}>{title}</span>
+        <span className={css.toolGroupCnt}>{group.tools.length}</span>
+        <span className={css.toolGroupChev}>{open ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
       </button>
-      <div className={css.preview}>{tool.description}</div>
-      <div className={css.body}>
-        <div className={css.divider} />
-        <div className={css.meta}>
-          <span className={css.metaKey}>{t('source')}</span>
-          <span className={css.metaVal}>{tool.channel}</span>
-          {tool.owner !== undefined ? (
-            <>
-              <span className={css.metaKey}>{t('provider')}</span>
-              <span className={css.metaVal}>{tool.owner}</span>
-            </>
-          ) : null}
+      {open ? (
+        <div className={css.grid}>
+          {group.tools.map(tool => <ToolCard key={tool.name} tool={tool} t={t} />)}
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** Tool card (dsh-card anatomy): name + channel pill + one-line description +
+ * provider subtitle, with an inline expandable parameter-schema block. */
+function ToolCard({ tool, t }: { tool: CatalogToolRow; t: (key: CapabilityCatalogKey) => string }) {
+  const [openParams, setOpenParams] = useState(false)
+  const sub = tool.channel === 'mcp'
+    ? (tool.serverName ?? 'MCP')
+    : tool.channel === 'plugin' ? (tool.owner ?? t('toolPlugin')) : t('toolBuiltin')
+  return (
+    <div className={css.pvCard}>
+      <div className={`${css.pvMain} ${css.toolMain}`}>
+        <span className={css.pvHead}>
+          <span className={css.pvName}>{tool.name}</span>
+          <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
+        </span>
+        <span className={`${css.pvDesc} ${css.pvDescOne}`}>{tool.description}</span>
+        <span className={css.pvSub}>{sub}</span>
       </div>
+      <div className={css.toolParamsRow}>
+        <button type="button" className={css.toolParamsBtn} onClick={() => setOpenParams(o => !o)} aria-expanded={openParams}>
+          {t('toolParams')}{openParams ? ' ▴' : ' ▾'}
+        </button>
+      </div>
+      {openParams ? <div className={css.toolParamsBody}>{formatParams(tool.parameters, t)}</div> : null}
     </div>
   )
 }

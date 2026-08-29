@@ -13,6 +13,7 @@ import type {
   CatalogCredentialSetRequest,
   CatalogDeleteSkillResult,
   CatalogDirSkillInfo,
+  CatalogJsonValue,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogToolRow,
@@ -44,15 +45,17 @@ export function projectTools(schemas: readonly ToolSchemaLike[], mcpServers: rea
       confidence: attributed.confidence,
       ...attributed.serverName !== undefined ? { serverName: attributed.serverName } : {},
       ...attributed.owner !== undefined ? { owner: attributed.owner } : {},
+      ...schema.parameters !== undefined ? { parameters: schema.parameters } : {},
     })
   }
   return rows
 }
 
-/** Minimal ToolSchema shape. */
+/** Minimal ToolSchema shape (model-facing name/description/parameters). */
 interface ToolSchemaLike {
   readonly name: string
   readonly description?: string
+  readonly parameters?: CatalogJsonValue
 }
 
 /** Build the full catalog snapshot (skills + tools). */

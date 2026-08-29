@@ -24,6 +24,7 @@ import type {
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
   CatalogDeleteSkillResult,
+  CatalogJsonValue,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
@@ -38,6 +39,7 @@ import { CapabilityCatalogSettingsSchema } from './settings.ts'
 
 export type {
   CapabilityCatalogSnapshot,
+  CatalogJsonValue,
   CatalogSkillRow,
   CatalogToolRow,
   CatalogMcpServerRow,
@@ -67,6 +69,7 @@ interface ToolsSlice {
 interface ToolSchemaLike {
   readonly name: string
   readonly description?: string
+  readonly parameters?: CatalogJsonValue
 }
 
 /** The optional settings service, used to locate the managed root's dshHome. */
@@ -190,12 +193,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
       execute: async (args: { kind?: string }, exec?: { agent?: unknown }): Promise<string> => {
         const { registry } = resolveServicesHelper(this.ctx)
         if (registry === undefined) return 'skills service absent in this composition'
-        const toolsSlice = this.ctx.get?.('tools') as ToolsSlice | undefined
         const snapshot = await catalogSnapshot(
           undefined,
           registry,
-          toolsSlice?.schemas() ?? [],
-          this.mcpServerNames(),
+          await this.toolSchemas(),
+          await this.mcpServerNames(),
           this.appearedAfterApply,
           exec?.agent === undefined ? [undefined] : [exec.agent],
         )
@@ -211,12 +213,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
   async snapshot(workdir?: string): Promise<CapabilityCatalogSnapshot> {
     const { registry } = resolveServicesHelper(this.ctx)
     if (registry === undefined) return { skills: [], tools: [], mcpServers: [], channels: [] }
-    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
     return catalogSnapshot(
       workdir,
       registry,
-      tools?.schemas() ?? [],
-      this.mcpServerNames(),
+      await this.toolSchemas(),
+      await this.mcpServerNames(),
       this.appearedAfterApply,
       await this.catalogScopes(),
     )
@@ -263,11 +264,21 @@ export class CapabilityCatalogService extends TypertRemoteService {
     return catalogPickDirectory(this.ctx)
   }
 
-  /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */
-  private mcpServerNames(): string[] {
+  /** The visible tool schemas in the standing scope (the set the model sees),
+   * or the global layer when no preset standing key resolves. Skills already
+   * enumerate through `catalogScopes()`; tools must use the same scope so the
+   * settings reader sees the official/plugin/MCP tools the model actually has. */
+  private async toolSchemas(): Promise<readonly ToolSchemaLike[]> {
     const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
+    if (tools?.schemas === undefined) return []
+    const scope = await this.catalogScope()
+    return scope === undefined ? tools.schemas() : tools.schemas(scope)
+  }
+
+  /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */
+  private async mcpServerNames(): Promise<string[]> {
     const names: string[] = []
-    for (const schema of tools?.schemas() ?? []) {
+    for (const schema of await this.toolSchemas()) {
       if (!schema.name.startsWith(MCP_TOOL_PREFIX)) continue
       const rest = schema.name.slice(MCP_TOOL_PREFIX.length)
       const sep = rest.indexOf('__')

@@ -6,9 +6,18 @@
  * @module @khorsheed/dsh-capability-catalog/types
  */
 
+/** Arbitrary JSON value — a locally-declared recursive type the typert Remote
+ * boundary accepts (arbitrary tool parameter schemas are unconstrained JSON). */
+export type CatalogJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly CatalogJsonValue[]
+  | { readonly [key: string]: CatalogJsonValue }
+
 /** One skill row in the catalog (summary layer — no body / metadata / rank). */
-export interface CatalogSkillRow {
-  /** Kebab-case skill name. */
+export interface CatalogSkillRow {  /** Kebab-case skill name. */
   readonly name: string
   /** Short routing description. */
   readonly description: string
@@ -57,6 +66,8 @@ export interface CatalogToolRow {
   readonly confidence: 'exact' | 'inferred'
   /** MCP server name when channel === 'mcp' (longest-match resolved). */
   readonly serverName?: string
+  /** Model-facing input parameters (JSON value), for the detail view. */
+  readonly parameters?: CatalogJsonValue
   /** Registrant package/owner when known. */
   readonly owner?: string
 }
