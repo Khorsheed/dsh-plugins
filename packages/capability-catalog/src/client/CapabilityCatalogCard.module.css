@@ -544,7 +544,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-bottom: 28px; /* breathing room between the form and the footer divider */
+  padding-bottom: 32px; /* 安装 → footer divider 32px */
 }
 
 .detailDesc {
@@ -946,7 +946,7 @@
   gap: 24px;
   height: 44px; /* tabs 44px */
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin: 0 0 32px; /* title → tabs tighter (16px modal pad), tabs → content 32px */
+  margin: 10px 0 24px; /* title → tabs 32px (10 + 16 body pad), divider → content 24px */
 }
 
 /* "Updated" date in the card meta, pushed to the right edge. */
@@ -1061,7 +1061,7 @@
   display: block;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .fieldLabelStrong {
@@ -1133,7 +1133,7 @@
 
 /* Directory skill picker. */
 .skillPick {
-  margin: 10px 0 0;
+  margin: 20px 0 0; /* path → "选择要安装的技能" 20px */
   display: flex;
   flex-direction: column;
   gap: 4px;
