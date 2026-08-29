@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseServerEntry, detectTransport, maskSecret, SECRET_REF_PREFIX } from '../src/mcps.ts'
+import { parseServerEntry, detectTransport, maskSecret, credentialStoredRefs, SECRET_REF_PREFIX } from '../src/mcps.ts'
 
 describe('detectTransport', () => {
   it('stdlib via command', () => expect(detectTransport({ command: 'npx' })).toBe('stdio'))
@@ -41,5 +41,30 @@ describe('maskSecret', () => {
   it('masks secretRef values for display', () => {
     expect(maskSecret(`${SECRET_REF_PREFIX}x`)).toBe('·secretRef·')
     expect(maskSecret('plain')).toBe('plain')
+  })
+})
+
+describe('credentialStoredRefs', () => {
+  it('namespaces env, header, and query secret refs by server + kind', () => {
+    const config = parseServerEntry('amap', {
+      command: 'npx',
+      env: { AMAP_KEY: 'sk' },
+      headers: { Authorization: 'Bearer x' },
+    }).config
+    // Inject a header + URL secret, since the sample stdio entry has only env.
+    const withHeader = {
+      ...config,
+      headers: [['Authorization', `${SECRET_REF_PREFIX}Authorization`]],
+      url: 'https://mcp.amap.com?key=secretRef:amap-key',
+    } as typeof config
+    const refs = credentialStoredRefs('amap', withHeader)
+    expect(refs['AMAP_KEY']).toBe('mcp.amap.env.AMAP_KEY')
+    expect(refs['Authorization']).toBe('mcp.amap.header.Authorization')
+    expect(refs['amap-key']).toBe('mcp.amap.query.amap-key')
+  })
+
+  it('ignores non-secret config values', () => {
+    const config = parseServerEntry('s', { command: 'node', env: { LOG_LEVEL: 'debug' } }).config
+    expect(credentialStoredRefs('s', config)).toEqual({})
   })
 })
