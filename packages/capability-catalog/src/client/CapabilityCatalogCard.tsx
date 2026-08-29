@@ -39,7 +39,7 @@ type SortBy = 'name' | 'updated'
 const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
 const isBuiltin = (skill: CatalogSkillRow): boolean => BUILTIN_SOURCES.has(skill.source)
 
-export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
+export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, listSkillRoots, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
   const [openTool, setOpenTool] = useState<string | null>(null)
@@ -160,7 +160,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
       ) : null}
 
       {showAdd ? (
-        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} refresh={refresh} t={t} />
+        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} listSkillRoots={listSkillRoots} refresh={refresh} t={t} />
       ) : null}
 
       {deleteTarget !== null ? (
@@ -434,10 +434,11 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 }
 
 /** Add-skill modal: file upload (drag-drop), clone-from-source, or local dir. */
-function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
+function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refresh, t }: {
   onClose: () => void
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
   listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
+  listSkillRoots: () => Promise<readonly string[]>
   refresh: () => Promise<void>
   t: (key: CapabilityCatalogKey) => string
 }) {
@@ -453,21 +454,42 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
   const [root, setRoot] = useState<'user' | 'project'>('user')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [roots, setRoots] = useState<readonly string[]>([])
+  const [rootsLoaded, setRootsLoaded] = useState(false)
 
-  const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir.trim() !== ''
   const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
+  const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0
 
-  const onListDir = async (): Promise<void> => {
+  // Best-effort skill name for the model-invocable tooltip ("/{name}").
+  const hintName: string = tab === 'localdir' && selectedSkills.length > 0
+    ? (selectedSkills[0] ?? '')
+    : tab === 'upload' && zipName !== ''
+      ? zipName.replace(/\.(zip|md)$/i, '')
+      : ''
+
+  // Tabs are independent: switching clears the previous tab's message so a
+  // warning on one tab never bleeds into another.
+  const switchTab = (next: 'upload' | 'command' | 'localdir'): void => {
+    setTab(next)
     setMsg(null)
-    const skills = await listDirSkills(dir)
-    if (skills.length === 0) {
-      setDirSkills([])
-      setSelectedSkills([])
-      setMsg({ ok: false, text: t('noSkillsFound') })
-      return
-    }
+  }
+
+  const loadRoots = async (): Promise<void> => {
+    if (rootsLoaded) return
+    const r = await listSkillRoots()
+    setRoots(r)
+    setRootsLoaded(true)
+    if (r[0] !== undefined) await autoListRoot(r[0])
+  }
+
+  // Picking a root auto-parses it for skills; no manual path or "list" button.
+  const autoListRoot = async (dirPath: string): Promise<void> => {
+    setDir(dirPath)
+    setMsg(null)
+    const skills = await listDirSkills(dirPath)
     setDirSkills(skills)
     setSelectedSkills(skills.map(s => s.name))
+    if (skills.length === 0) setMsg({ ok: false, text: t('noSkillsFound') })
   }
 
   const toggleSkill = (name: string): void => {
@@ -520,9 +542,9 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
         </div>
         <div className={css.modalBody}>
           <div className={`${css.tabs} ${css.innerTabs}`} role="tablist">
-            <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => setTab('upload')}>{t('addTabUpload')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => setTab('command')}>{t('addTabCommand')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => setTab('localdir')}>{t('addTabDir')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => switchTab('upload')}>{t('addTabUpload')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => switchTab('command')}>{t('addTabCommand')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => { switchTab('localdir'); void loadRoots() }}>{t('addTabDir')}</button>
           </div>
 
           <div className={css.addPanel}>
@@ -552,10 +574,10 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
           {tab === 'localdir' ? (
             <div className={css.command}>
               <label className={css.fieldLabel}>{t('dirLabel')}</label>
-              <div className={css.fieldGroup}>
-                <input className={css.input} value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('dirPlaceholder')} spellCheck={false} />
-                <button type="button" className={css.btnGhost} onClick={() => void onListDir()}>{t('listDir')}</button>
-              </div>
+              <select className={css.select} value={dir} onChange={(e) => void autoListRoot(e.target.value)}>
+                {roots.length === 0 ? <option value="">{t('noSkillRoots')}</option> : null}
+                {roots.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
               <p className={css.confHint}>{t('dirHint')}</p>
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>
@@ -579,13 +601,13 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
 
           <label className={css.switchRow}>
             <span className={css.enableLabel}>{t('addModelInvocable')}</span>
+            <span className={css.infoBtn} data-tip={t('addModelInvocableHint').replace('{name}', hintName || t('skillNamePlaceholder'))}>i</span>
             <span className={css.switch}>
               <input type="checkbox" checked={modelInvocable} onChange={(e) => setModelInvocable(e.target.checked)} />
               <span className={css.track} />
               <span className={css.thumb} />
             </span>
           </label>
-          <p className={css.confHint}>{t('addModelInvocableHint')}</p>
 
           <label className={css.rootRow}>
             <span className={css.enableLabel}>{t('addRoot')}</span>
@@ -593,8 +615,8 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
               <option value="user">{t('rootUser')}</option>
               <option value="project">{t('rootProject')}</option>
             </select>
+            <span className={css.fieldPath}>{rootPath}</span>
           </label>
-          <p className={css.fieldPath}>{rootPath}</p>
 
           {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
           </div>

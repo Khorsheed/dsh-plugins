@@ -6,6 +6,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -97,6 +99,12 @@ export async function catalogReadSkillFile(
   scope: unknown = undefined,
 ): Promise<CatalogSkillFileRead | undefined> {
   return readSkillFileContent(registry, name, filePath, workdir, scope)
+}
+
+/** List the local directory skill roots the user can install from. */
+export async function catalogSkillRoots(dshHome: string): Promise<readonly string[]> {
+  const agentsHome = join(homedir(), '.agents', 'skills')
+  return [join(dshHome, 'skills'), agentsHome]
 }
 
 /** Delete a catalog-owned file skill (rejects built-in / plugin-provided). */
