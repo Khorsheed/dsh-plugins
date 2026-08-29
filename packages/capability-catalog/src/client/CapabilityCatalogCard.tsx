@@ -1,14 +1,18 @@
 /**
  * Capability-catalog settings section (工具与技能): a standalone nav tab.
  *
- * Layout: a heading + intro, an add-skill button, a 技能 / 工具 tab switch.
- * - 技能 tab renders a three-column grid of preview cards (name + description
- *   preview + source/provider). Clicking a card opens a centered modal with the
- *   full detail, the SKILL.md source, the frontmatter metadata, and a config
- *   block for every credential the skill's metadata declares (e.g. an API key).
+ * Layout: a heading + intro, a toolbar (技能 / 工具 tab switch + primary
+ * add-skill button), a filter/sort bar for the skills grid, and the list.
+ * - 技能 tab renders a responsive grid of preview cards (name + description
+ *   preview + source/provider pills). Clicking a card opens a centered modal
+ *   with the full detail, the SKILL.md source, the frontmatter metadata, and a
+ *   config block for every credential the skill's metadata declares. The modal
+ *   keeps its head fixed and scrolls only its body; the source browser's tree
+ *   and code panes scroll independently.
  * - 工具 tab renders collapsible tool cards (name + channel attribution).
  * - The add-skill button opens a modal that installs a skill from an uploaded
- *   zip archive or a pasted SKILL.md, then refreshes the catalog.
+ *   zip archive, a pasted source command, or a local directory, then refreshes
+ *   the catalog.
  */
 import { useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
@@ -16,6 +20,9 @@ import {
   IconChevronRightOutline14,
   IconFolderClose16,
   IconFolderOpen16,
+  IconFolderOpenOutline16,
+  IconSearchOutline16,
+  IconCopyOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
@@ -24,6 +31,7 @@ import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
+type SortBy = 'name' | 'updated'
 
 export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, setCredential, addSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
@@ -32,10 +40,31 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [claim, setClaim] = useState<DetailClaim>({ status: 'idle', data: undefined })
   const [showAdd, setShowAdd] = useState(false)
+  // Grid filter / sort state.
+  const [query, setQuery] = useState('')
+  const [filterSource, setFilterSource] = useState('')
+  const [filterProvider, setFilterProvider] = useState('')
+  const [sortBy, setSortBy] = useState<SortBy>('name')
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
+
+  const sources = useMemo(() => [...new Set(skills.map(s => s.source))].sort(), [skills])
+  const providers = useMemo(() => [...new Set(skills.map(s => s.provider))].sort(), [skills])
+
+  const visibleSkills = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const matched = skills.filter((s) =>
+      (filterSource === '' || s.source === filterSource) &&
+      (filterProvider === '' || s.provider === filterProvider) &&
+      (q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)),
+    )
+    const sorted = [...matched]
+    if (sortBy === 'updated') sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    else sorted.sort((a, b) => a.name.localeCompare(b.name))
+    return sorted
+  }, [skills, query, filterSource, filterProvider, sortBy])
 
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
@@ -49,6 +78,13 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   }
   const toggleTool = (name: string): void => setOpenTool((prev) => (prev === name ? null : name))
 
+  const resetFilter = (): void => {
+    setQuery('')
+    setFilterSource('')
+    setFilterProvider('')
+    setSortBy('name')
+  }
+
   return (
     <div className={css.section}>
       <div className={css.headRow}>
@@ -56,7 +92,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
       </div>
       <p className={css.intro}>{t('intro')}</p>
 
-      <div className={css.tabRow}>
+      <div className={css.toolbar}>
         <div className={css.tabs} role="tablist">
           <button type="button" className={css.tab} data-active={kind === 'skills'} role="tab" onClick={() => setKind('skills')}>
             {t('skillTab')}<span className={css.tabCnt}>{skills.length}</span>
@@ -68,16 +104,48 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
         <button type="button" className={css.addBtn} onClick={() => setShowAdd(true)}>{t('addSkill')}</button>
       </div>
 
+      {!loading && kind === 'skills' && skills.length > 0 ? (
+        <div className={css.filterBar} role="search">
+          <div className={css.searchBox}>
+            <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+            <input
+              className={css.searchInput}
+              type="search"
+              value={query}
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchPlaceholder')}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <select className={css.select} value={filterSource} aria-label={t('source')} onChange={(e) => setFilterSource(e.target.value)}>
+            <option value="">{t('source')}: {t('filterAll')}</option>
+            {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className={css.select} value={filterProvider} aria-label={t('provider')} onChange={(e) => setFilterProvider(e.target.value)}>
+            <option value="">{t('provider')}: {t('filterAll')}</option>
+            {providers.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select className={css.select} value={sortBy} aria-label={t('sortBy')} onChange={(e) => setSortBy(e.target.value as SortBy)}>
+            <option value="name">{t('sortBy')}: {t('sortName')}</option>
+            <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>
+          </select>
+        </div>
+      ) : null}
+
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
       {!loading && kind === 'skills' && skills.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
       {!loading && kind === 'tools' && tools.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
-        <div className={css.grid}>
-          {skills.map((skill) => (
-            <SkillPreviewCard key={skill.name} skill={skill} onOpen={() => void openDetail(skill.name)} t={t} />
-          ))}
-        </div>
+        visibleSkills.length === 0
+          ? <div className={css.empty}>{t('noFilterMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+          : (
+            <div className={css.grid}>
+              {visibleSkills.map((skill) => (
+                <SkillPreviewCard key={skill.name} skill={skill} onOpen={() => void openDetail(skill.name)} t={t} />
+              ))}
+            </div>
+          )
       ) : null}
 
       {!loading && kind === 'tools' ? tools.map((tool) => (
@@ -102,7 +170,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   )
 }
 
-/** Preview card in the skills grid: name + one-line description + source/provider. */
+/** Preview card in the skills grid: name + two-line description + pills. */
 function SkillPreviewCard({ skill, onOpen, t }: {
   skill: CatalogSkillRow
   onOpen: () => void
@@ -114,8 +182,9 @@ function SkillPreviewCard({ skill, onOpen, t }: {
       <div className={css.pvDesc}>{skill.description}</div>
       <div className={css.pvMeta}>
         <span className={css.badge}>{skill.source}</span>
-        <span className={css.pvProvider}>{skill.provider}</span>
+        <span className={css.badge}>{skill.provider}</span>
         {!skill.modelInvocable ? <span className={`${css.badge} ${css.badgeWarn}`}>{t('userOnly')}</span> : null}
+        {skill.updatedAt !== undefined ? <span className={css.pvDate}>{t('updated')} {formatDate(skill.updatedAt)}</span> : null}
       </div>
     </button>
   )
@@ -163,6 +232,8 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 }) {
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
+  const [showCred, setShowCred] = useState<Record<string, boolean>>({})
+  const [copied, setCopied] = useState(false)
   const data = claim.data
   // Source browser: the selected bundle file and its content (right pane).
   const [srcFile, setSrcFile] = useState('')
@@ -175,6 +246,17 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
     setCredState((s) => ({ ...s, [key]: 'saving' }))
     const ok = await setCredential(key, value)
     setCredState((s) => ({ ...s, [key]: ok ? 'ok' : 'fail' }))
+  }
+  const toggleShow = (key: string): void => setShowCred((s) => ({ ...s, [key]: !s[key] }))
+
+  const copySource = async (): Promise<void> => {
+    const text = (srcFile === '' || srcFile === 'SKILL.md') ? data?.content : srcContent
+    if (text === undefined) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { /* clipboard may be blocked */ }
   }
 
   // Select a bundle file for the source pane. SKILL.md's body is already in the
@@ -202,90 +284,102 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
           <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
         </div>
 
-        {claim.status === 'loading' ? <div className={css.empty}>{t('loading')}</div> : null}
-        {claim.status === 'done' && data === undefined ? <div className={css.empty}>{t('loadFailed')}</div> : null}
+        <div className={css.modalBody}>
+          {claim.status === 'loading' ? <div className={css.empty}>{t('loading')}</div> : null}
+          {claim.status === 'done' && data === undefined ? <div className={css.empty}>{t('loadFailed')}</div> : null}
 
-        {claim.status === 'done' && data !== undefined ? (
-          <div className={css.modalBody}>
-            <p className={css.detailDesc}>{data.description}</p>
-            <div className={css.meta}>
-              <span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span>
-              <span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span>
-              <span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span>
-              {data.whenToUse !== undefined ? (<><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></>) : null}
-            </div>
+          {claim.status === 'done' && data !== undefined ? (
+            <>
+              <p className={css.detailDesc}>{data.description}</p>
+              <div className={css.meta}>
+                <span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span>
+                <span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span>
+                <span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span>
+                {data.whenToUse !== undefined ? (<><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></>) : null}
+              </div>
 
-            {data.credentials !== undefined && data.credentials.length > 0 ? (
-              <details className={css.conf} open>
-                <summary className={css.confTitle}>{t('credentials')}</summary>
-                <div className={css.confHint}>{t('credentialsHint')}</div>
-                {data.credentials.map((decl) => {
-                  const key = decl.key
-                  const label = decl.label ?? key
-                  const state = credState[key] ?? 'idle'
-                  const configured = decl.configured || state === 'ok'
-                  return (
-                    <div className={css.credRow} key={key}>
-                      <label className={css.credLabel}>{label}
-                        {configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
-                      </label>
-                      <div className={css.credInputRow}>
-                        <input className={css.input} type="password" value={credValues[key] ?? ''} placeholder={t('credPlaceholder')}
-                          onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))} />
-                        <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
-                          onClick={() => void saveCred(key)}>{t('save')}</button>
+              {data.credentials !== undefined && data.credentials.length > 0 ? (
+                <details className={css.conf} open>
+                  <summary className={css.confTitle}>{t('credentials')}</summary>
+                  <div className={css.confHint}>{t('credentialsHint')}</div>
+                  {data.credentials.map((decl) => {
+                    const key = decl.key
+                    const label = decl.label ?? key
+                    const state = credState[key] ?? 'idle'
+                    const show = showCred[key] === true
+                    const configured = decl.configured || state === 'ok'
+                    return (
+                      <div className={css.credRow} key={key}>
+                        <label className={css.credLabel}>{label}
+                          {configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
+                        </label>
+                        <div className={css.credInputRow}>
+                          <div className={css.inputWrap}>
+                            <input className={css.input} type={show ? 'text' : 'password'} value={credValues[key] ?? ''} placeholder={t('credPlaceholder')}
+                              onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))} />
+                            <button type="button" className={css.eyeBtn} aria-label={show ? t('hide') : t('show')} onClick={() => toggleShow(key)}>
+                              {show ? t('hide') : t('show')}
+                            </button>
+                          </div>
+                          <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
+                            onClick={() => void saveCred(key)}>{t('save')}</button>
+                        </div>
+                        {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
+                        {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
                       </div>
-                      {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
+                    )
+                  })}
+                </details>
+              ) : null}
+
+              <details className={css.source} open>
+                <summary className={css.sourceTitle}>{t('viewSource')}</summary>
+                {/* The source browser is always the split (left tree + right pane).
+                    A skill with a real bundle (resourceBase.kind === 'directory')
+                    lists its files; a content-only skill (no bundle) renders a
+                    single virtual SKILL.md node whose content is the body. The data
+                    contract only reports `files` when a bundle exists — the renderer
+                    never fabricates a disk path for a content-only skill. */}
+                {(() => {
+                  const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
+                  return (
+                    <div className={css.split}>
+                      <div className={css.treePane}>
+                        <BundleFileTree
+                          files={files}
+                          selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
+                          onSelect={selectSource}
+                        />
+                      </div>
+                      <div className={css.detailPane}>
+                        <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
+                          {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                        </button>
+                        {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                          : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                            : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                              : <pre className={css.codeBlk}>{srcContent}</pre>}
+                      </div>
                     </div>
                   )
-                })}
+                })()}
               </details>
-            ) : null}
 
-            <details className={css.source} open>
-              <summary className={css.sourceTitle}>{t('viewSource')}</summary>
-              {/* The source browser is always the split (left tree + right pane).
-                  A skill with a real bundle (resourceBase.kind === 'directory')
-                  lists its files; a content-only skill (no bundle) renders a
-                  single virtual SKILL.md node whose content is the body. The data
-                  contract only reports `files` when a bundle exists — the renderer
-                  never fabricates a disk path for a content-only skill. */}
-              {(() => {
-                const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
-                return (
-                  <div className={css.split}>
-                    <div className={css.treePane}>
-                      <BundleFileTree
-                        files={files}
-                        selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
-                        onSelect={selectSource}
-                      />
-                    </div>
-                    <div className={css.detailPane}>
-                      {srcLoading ? <div className={css.empty}>{t('loading')}</div>
-                        : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
-                          : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
-                            : <pre className={css.codeBlk}>{srcContent}</pre>}
-                    </div>
-                  </div>
-                )
-              })()}
-            </details>
-
-            {data.metadataText !== undefined ? (
-              <details className={css.source}>
-                <summary className={css.sourceTitle}>{t('metadata')}</summary>
-                <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
-              </details>
-            ) : null}
-          </div>
-        ) : null}
+              {data.metadataText !== undefined ? (
+                <details className={css.source}>
+                  <summary className={css.sourceTitle}>{t('metadata')}</summary>
+                  <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
+                </details>
+              ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
     </div>
   )
 }
 
-/** Add-skill modal: file upload (drag-drop) or clone-from-source (command). */
+/** Add-skill modal: file upload (drag-drop), clone-from-source, or local dir. */
 function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
   onClose: () => void
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
@@ -307,6 +401,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir.trim() !== ''
+  const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
 
   const onListDir = async (): Promise<void> => {
     setMsg(null)
@@ -383,6 +478,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
             >
+              <span className={css.dropzoneIcon}><IconFolderOpenOutline16 size={28} /></span>
               <div className={css.dropTitle}>{t('dropTitle')}</div>
               <div className={css.dropHint}>{t('dropHint')}</div>
               <input type="file" accept=".zip,.md" className={css.fileInput} onChange={onFile} />
@@ -441,6 +537,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
               <option value="project">{t('rootProject')}</option>
             </select>
           </label>
+          <p className={css.fieldPath}>{rootPath}</p>
 
           {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
 
@@ -462,6 +559,15 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   const chunk = 0x8000
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
   return btoa(binary)
+}
+
+/** Format an epoch-ms timestamp as a short date (locale-aware). */
+function formatDate(ms: number): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ms))
+  } catch {
+    return String(ms)
+  }
 }
 
 /** Pretty-print a JSON metadata string for display. */

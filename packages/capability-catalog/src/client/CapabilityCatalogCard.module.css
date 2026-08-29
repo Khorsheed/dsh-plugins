@@ -1,12 +1,15 @@
-/* Capability-catalog settings section (工具与技能): heading + intro + tabs in
-   the official PluginsSettingsSection style (dark theme tokens). Re-implements
-   the chrome rather than importing the official one (bundle-purity gate). */
+/* Capability-catalog settings section (工具与技能): heading + intro + toolbar +
+   filter row + skill/tool list. Styled against the host's dark-theme alias
+   tokens exclusively (--dsw-alias-*) so it adapts to any host theme; the
+   section chrome is re-implemented rather than imported (bundle-purity gate).
+   The parent `.options` column already scrolls — this section never creates a
+   nested scroll region of its own. */
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 760px;
+  gap: 12px;
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Official section heading (PluginsSettingsSection.module.css). */
@@ -22,65 +25,46 @@
   gap: 12px;
 }
 
-/* Tab row: tablist grows, the add-button sits at the right, ghost style. */
-.tabRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  margin-top: 4px;
-}
-
-.addBtn {
-  flex: none;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-left: auto;
-  margin-bottom: 4px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.addBtn::before {
-  content: '＋ ';
-}
-
-.addBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--dsw-alias-label-primary);
-}
-
 .intro {
   margin: 0;
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Official tabs (PluginsSettingsSection.module.css): bottom 2px accent bar. */
+/* Toolbar: tabs grow, add-button pinned right, 48px row with bottom hairline. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  margin-top: 4px;
+}
+
+/* Generic tab list (used by the inner add-skill tabs). */
 .tabs {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 4px;
-  margin-bottom: 8px;
+}
+
+/* Toolbar tab list: fill the 48px row, tabs stretch to the hairline. */
+.toolbar .tabs {
+  flex: 1;
+  align-items: stretch;
+  gap: 28px;
+  height: 100%;
 }
 
 .tab {
   position: relative;
   border: 0;
-  padding: 7px 1px 9px;
+  padding: 0 1px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
   font-size: 13px;
-  line-height: 20px;
+  line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -104,13 +88,19 @@
   content: '';
 }
 
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Muted count badge ("技能 5"). */
 .tabCnt {
   font-size: 10px;
   line-height: 1;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-caption);
   font-weight: 400;
 }
@@ -119,22 +109,112 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Skills preview grid: three cards per row. */
+/* Primary "新增 skill" button pins to the toolbar's right edge. */
+.addBtn {
+  flex: none;
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.addBtn::before {
+  content: '＋ ';
+}
+
+.addBtn:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+/* Filter / sort bar: uniform 36px controls, one row (wraps on narrow width). */
+.filterBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.searchBox {
+  position: relative;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 34px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchInput:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Skills preview grid: responsive 2-column (host house pattern), falls to 1. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  align-content: start;
+  padding: 16px 4px 24px 0;
 }
 
 .pvCard {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 136px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: #2b2b2e;
+  min-height: 144px;
+  padding: 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
   text-align: left;
   cursor: pointer;
   font: inherit;
@@ -143,18 +223,19 @@
 }
 
 .pvCard:hover {
-  background: #303034;
-  border-color: rgba(255, 255, 255, 0.22);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  border-color: var(--dsw-alias-border-l1);
   transform: translateY(-2px);
 }
 
 .pvCard:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
 
 .pvTitle {
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 24px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -162,9 +243,9 @@
 }
 
 .pvDesc {
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--dsw-alias-label-secondary);
-  line-height: 18px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -175,38 +256,32 @@
   margin-top: auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
 }
 
-.pvProvider {
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Small pill badges (uniform for source + provider so both read as labels). */
+/* Uniform pill badge for source + provider (both read as labels). */
 .badge {
   flex: none;
-  font-size: 10px;
-  line-height: 1;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 24px;
   white-space: nowrap;
 }
 
 .badgeWarn {
-  background: rgba(245, 185, 87, 0.16);
-  color: #f5b957;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-label) 16%, transparent);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .badgeOk {
-  background: rgba(76, 195, 138, 0.16);
-  color: #4cc38a;
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 /* Collapsible tool card (unchanged chrome). */
@@ -278,15 +353,15 @@
   margin: 10px 0 12px;
 }
 
-/* Meta as a key-value group: grid pairs, uniform gaps. */
+/* Meta as a wrap row: inline key/value groups, uniform gaps. */
 .meta {
-  display: grid;
-  grid-template-columns: auto auto;
-  justify-content: start;
-  gap: 8px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 24px;
+  row-gap: 10px;
   font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
-  line-height: 1.5;
   align-items: baseline;
 }
 
@@ -309,32 +384,36 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
 }
 
 .modal {
-  width: 100%;
-  max-width: 660px;
-  max-height: 86vh;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  flex-direction: column;
+  width: min(880px, calc(100vw - 96px));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 20px;
-  background: #303034;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
+/* Modal head is fixed — only the body scrolls, so the title never leaves. */
 .modalHead {
+  flex: none;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 24px 32px 0;
 }
 
 .modalTitle {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
+  line-height: 30px;
   font-weight: 600;
-  line-height: 1.4;
 }
 
 .modalClose {
@@ -355,24 +434,27 @@
 }
 
 .modalClose:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
   color: var(--dsw-alias-label-primary);
 }
 
 .modalBody {
+  flex: 1;
+  min-height: 0;
   padding: 16px 32px 28px;
+  overflow-y: auto;
 }
 
 .detailDesc {
-  margin: 0 0 16px;
-  font-size: 13px;
-  line-height: 1.65;
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 24px;
   color: var(--dsw-alias-label-secondary);
 }
 
 /* Credentials config block: boxed (a form-ish group). */
 .conf {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   padding: 14px;
   margin-bottom: 16px;
@@ -394,10 +476,9 @@
   gap: 6px;
 }
 
-/* Divider under the source title (replaces the old outer border). */
 .source[open] .sourceTitle {
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
   margin-bottom: 12px;
 }
 
@@ -421,16 +502,73 @@
   margin-bottom: 8px;
 }
 
+/* Credential input + save: one grid row, save never wraps to two lines. */
 .credInputRow {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 12px;
   align-items: center;
 }
 
 .credFail {
   font-size: 12px;
-  color: #e5534b;
+  color: var(--dsw-alias-state-error-primary);
   margin-top: 6px;
+}
+
+.credOk {
+  font-size: 12px;
+  color: var(--dsw-alias-state-success-primary);
+  margin-top: 6px;
+}
+
+.inputWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.inputWrap .input {
+  padding-right: 40px;
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.eyeBtn:hover {
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Code panel: fills its pane, no own border, distinct darker bg, thin scroll. */
@@ -459,13 +597,13 @@
 
 .codeBlk::-webkit-scrollbar-thumb,
 .tree::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--dsw-alias-scrollbar-bg-l2);
   border-radius: 999px;
 }
 
 .codeBlk::-webkit-scrollbar-thumb:hover,
 .tree::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .codeBlk::-webkit-scrollbar-track,
@@ -491,7 +629,9 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px 8px;
+  height: 40px;
+  padding: 0 8px;
+  box-sizing: border-box;
   border: none;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -500,11 +640,16 @@
   line-height: 18px;
   text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .treeRow:hover {
   background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.treeRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
 
 .treeFile {
@@ -512,16 +657,25 @@
   cursor: pointer;
 }
 
+/* Selected file: brighter background + left 3px accent rail (not a focus ring). */
 .treeSelected {
+  position: relative;
   background: var(--dsw-alias-interactive-bg-hover-solid);
   color: var(--dsw-alias-label-primary);
 }
 
-.treeChevron {
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
+.treeSelected::before {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--dsw-alias-state-business-primary);
+  content: '';
 }
 
+.treeChevron,
 .treeGlyph {
   display: inline-flex;
   color: var(--dsw-alias-label-tertiary);
@@ -533,12 +687,14 @@
   white-space: nowrap;
 }
 
-/* Source browser split: tree + detail panes, fixed clamp height, equal panels. */
+/* Source browser split: fixed header (title/desc/meta), tree + code panes
+   scroll independently inside a clamp-height band; the modal body scrolls only
+   when the content above the band is taller than the viewport. */
 .split {
   display: grid;
-  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 12px;
-  height: clamp(360px, 52vh, 620px);
+  height: clamp(360px, 50vh, 540px);
   margin-top: 4px;
 }
 
@@ -546,38 +702,98 @@
   min-width: 0;
   height: 100%;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
   padding: 4px;
 }
 
 .detailPane {
+  position: relative;
   min-width: 0;
   height: 100%;
   border-radius: 12px;
-  background: #202023;
+  background: var(--dsw-alias-bg-module-platform);
   overflow: hidden;
 }
 
+/* Copy affordance overlaid on the source pane. */
+.codeCopy {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.codeCopy:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.codeCopyIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .innerTabs {
-  margin-top: 4px;
+  align-items: stretch;
+  gap: 24px;
+  height: 40px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  margin: 4px 0 16px;
+}
+
+/* "Updated" date in the card meta, pushed to the right edge. */
+.pvDate {
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+/* Inline reset-filter link. */
+.ghostLink {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghostLink:hover {
+  text-decoration: underline;
 }
 
 /* Add-skill form controls. */
-/* Drag-drop dropzone for the upload tab. */
 .dropzone {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 132px;
+  gap: 8px;
+  height: 220px;
   padding: 24px;
+  box-sizing: border-box;
   margin-bottom: 4px;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--dsw-alias-bg-layer-1);
   font-size: 13px;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -585,10 +801,15 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
+.dropzoneIcon {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .dropzone:hover,
 .dropzone.dragging {
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
 .dropTitle {
@@ -616,7 +837,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Command install tab. */
+/* Command / dir install tab. */
 .command {
   margin-bottom: 4px;
 }
@@ -626,6 +847,21 @@
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
   margin-bottom: 6px;
+}
+
+.fieldLabelStrong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  margin-bottom: 2px;
+}
+
+.fieldPath {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  margin: 0 0 8px;
+  font-family: var(--ds-font-family-code, monospace);
 }
 
 /* Directory skill picker. */
@@ -641,13 +877,13 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .pickRow:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--dsw-alias-border-l1);
 }
 
 .check {
@@ -668,9 +904,9 @@
 .checkMark {
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--dsw-alias-bg-layer-1);
   transition: background 0.15s, border-color 0.15s;
 }
 
@@ -711,18 +947,6 @@
   resize: vertical;
 }
 
-.input {
-  width: 100%;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
-}
-
 .switchRow,
 .rootRow {
   display: flex;
@@ -736,17 +960,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.select {
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
-}
-
 .addMsg {
   margin-top: 12px;
   padding: 8px 12px;
@@ -755,13 +968,13 @@
 }
 
 .addMsgOk {
-  color: #4cc38a;
-  background: rgba(76, 195, 138, 0.12);
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
 }
 
 .addMsgErr {
-  color: #e5534b;
-  background: rgba(229, 83, 75, 0.12);
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
 }
 
 /* Buttons. */
@@ -779,14 +992,15 @@
 }
 
 .btnGhost {
-  height: 32px;
-  padding: 0 16px;
+  height: 40px;
+  padding: 0 18px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -795,20 +1009,22 @@
 }
 
 .btnPrimary {
-  height: 32px;
-  padding: 0 16px;
+  height: 40px;
+  min-width: 88px;
+  padding: 0 18px;
   border: none;
-  border-radius: 8px;
-  background: var(--dsw-alias-button-info-fill);
+  border-radius: 10px;
+  background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .btnPrimary:hover {
-  background: var(--dsw-alias-button-info-hover);
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 .btnPrimary:disabled {
