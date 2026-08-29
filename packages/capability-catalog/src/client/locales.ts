@@ -16,9 +16,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export const zh = {
-  title: '能力目录',
+  title: '工具与技能',
   'section.nav': '工具与技能',
-  intro: '当前实例中已注册的技能与工具及其来源。技能以预览卡展示，点击查看详情、源码与凭据配置。',
+  intro: '当前实例中已注册的技能与工具。',
   skillTab: '技能',
   toolTab: '工具',
   addSkill: '新增 Skill',
@@ -104,9 +104,9 @@ export const zh = {
 }
 
 export const en = {
-  title: 'Capability Catalog',
+  title: 'Tools & Skills',
   'section.nav': 'Tools & Skills',
-  intro: 'Skills and tools registered in this instance and their sources. Skills appear as preview cards — click for detail, source, and credential config.',
+  intro: 'Skills and tools registered in this instance.',
   skillTab: 'Skills',
   toolTab: 'Tools',
   addSkill: 'Add Skill',

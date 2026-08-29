@@ -54,6 +54,8 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   const [sortBy, setSortBy] = useState<SortBy>('name')
   // Tool channel filter state.
   const [toolChannel, setToolChannel] = useState<ToolChannelFilter>('all')
+  // Tool detail (click a tool card to view its full detail).
+  const [toolDetail, setToolDetail] = useState<CatalogToolRow | null>(null)
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
@@ -69,8 +71,8 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
     return sorted
   }, [skills, query, sortBy])
 
-  /** Visible tools filtered by query + channel, then grouped (builtin/plugin; MCP per server). */
-  const toolGroups = useMemo(() => {
+  /** Visible tools filtered by query + channel, then sorted (flat, no grouping). */
+  const visibleTools = useMemo(() => {
     const q = query.trim().toLowerCase()
     const matched = tools.filter((tool) => {
       if (toolChannel !== 'all' && tool.channel !== toolChannel) return false
@@ -80,8 +82,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
         || (tool.serverName ?? '').toLowerCase().includes(q)
         || (tool.owner ?? '').toLowerCase().includes(q)
     })
-    const sorted = [...matched].sort((a, b) => a.name.localeCompare(b.name))
-    return groupTools(sorted)
+    return matched.sort((a, b) => a.name.localeCompare(b.name))
   }, [tools, query, toolChannel])
 
   const openDetail = async (name: string): Promise<void> => {
@@ -186,15 +187,19 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
       ) : null}
 
       {!loading && kind === 'tools' && tools.length > 0 ? (
-        toolGroups.length === 0
+        visibleTools.length === 0
           ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
           : (
-            <div className={css.toolGroups}>
-              {toolGroups.map((group) => (
-                <ToolGroup key={group.key} group={group} t={t} />
+            <div className={css.grid}>
+              {visibleTools.map((tool) => (
+                <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
               ))}
             </div>
           )
+      ) : null}
+
+      {toolDetail !== null ? (
+        <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
       ) : null}
 
       {selectedName !== null ? (
@@ -289,40 +294,19 @@ function DeleteSkillConfirm({ name, onCancel, onConfirm, t }: {
   )
 }
 
-/** One rendered group of tools (内置 / 插件 / one MCP server). */
-interface ToolGroup {
-  readonly key: string
-  readonly kind: 'builtin' | 'plugin' | 'mcp'
-  readonly serverName?: string
-  readonly tools: readonly CatalogToolRow[]
-  readonly defaultOpen: boolean
-}
-
-/** Group visible tools into 内置 / 插件 / (MCP per-server) sections. */
-function groupTools(tools: readonly CatalogToolRow[]): ToolGroup[] {
-  const out: ToolGroup[] = []
-  const builtin = tools.filter(t => t.channel === 'builtin')
-  const plugin = tools.filter(t => t.channel === 'plugin' || t.channel === 'unknown')
-  const mcp = tools.filter(t => t.channel === 'mcp')
-  if (builtin.length > 0) out.push({ key: 'builtin', kind: 'builtin', tools: builtin, defaultOpen: true })
-  if (plugin.length > 0) out.push({ key: 'plugin', kind: 'plugin', tools: plugin, defaultOpen: true })
-  const byServer = new Map<string, CatalogToolRow[]>()
-  for (const tool of mcp) {
-    const server = tool.serverName ?? '?'
-    byServer.set(server, [...(byServer.get(server) ?? []), tool])
-  }
-  for (const [server, serverTools] of byServer) {
-    out.push({ key: `mcp:${server}`, kind: 'mcp', serverName: server, tools: serverTools, defaultOpen: false })
-  }
-  return out
-}
-
 /** Human label for one tool's channel pill. */
 function toolTag(tool: CatalogToolRow, t: (key: CapabilityCatalogKey) => string): string {
   if (tool.channel === 'mcp') return tool.serverName !== undefined ? `MCP · ${tool.serverName}` : 'MCP'
   if (tool.channel === 'plugin') return t('toolPlugin')
   if (tool.channel === 'builtin') return t('toolBuiltin')
   return tool.channel
+}
+
+/** Origin / ownership subtitle for a tool card. */
+function toolOrigin(tool: CatalogToolRow, t: (key: CapabilityCatalogKey) => string): string {
+  if (tool.channel === 'mcp') return tool.serverName ?? 'MCP'
+  if (tool.channel === 'plugin') return tool.owner ?? t('toolPlugin')
+  return t('toolBuiltin')
 }
 
 /** Pretty-print a tool's parameter JSON (or a no-params hint). */
@@ -338,52 +322,43 @@ function formatParams(parameters: CatalogToolRow['parameters'], t: (key: Capabil
   }
 }
 
-/** A collapsible group of tool cards (header: label + count + chevron). */
-function ToolGroup({ group, t }: { group: ToolGroup; t: (key: CapabilityCatalogKey) => string }) {
-  const [open, setOpen] = useState(group.defaultOpen)
-  const title = group.kind === 'mcp'
-    ? `MCP · ${group.serverName ?? ''}`
-    : group.kind === 'builtin' ? t('toolBuiltin') : t('toolPlugin')
-  return (
-    <div className={css.toolGroup}>
-      <button type="button" className={css.toolGroupHead} onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className={css.toolGroupTitle}>{title}</span>
-        <span className={css.toolGroupCnt}>{group.tools.length}</span>
-        <span className={css.toolGroupChev}>{open ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
-      </button>
-      {open ? (
-        <div className={css.grid}>
-          {group.tools.map(tool => <ToolCard key={tool.name} tool={tool} t={t} />)}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-/** Tool card (dsh-card anatomy): name + channel pill + one-line description +
- * provider subtitle, with an inline expandable parameter-schema block. */
-function ToolCard({ tool, t }: { tool: CatalogToolRow; t: (key: CapabilityCatalogKey) => string }) {
-  const [openParams, setOpenParams] = useState(false)
-  const sub = tool.channel === 'mcp'
-    ? (tool.serverName ?? 'MCP')
-    : tool.channel === 'plugin' ? (tool.owner ?? t('toolPlugin')) : t('toolBuiltin')
+/** Tool preview card (dsh-card anatomy): name + channel pill + 2-line desc +
+ * origin subtitle; click to open the tool detail modal. */
+function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
   return (
     <div className={css.pvCard}>
-      <div className={`${css.pvMain} ${css.toolMain}`}>
+      <button type="button" className={css.pvMain} onClick={onOpen}>
         <span className={css.pvHead}>
           <span className={css.pvName}>{tool.name}</span>
           <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
         </span>
-        <span className={`${css.pvDesc} ${css.pvDescOne}`}>{tool.description}</span>
-        <span className={css.pvSub}>{sub}</span>
-      </div>
-      <div className={css.toolParamsRow}>
-        <button type="button" className={css.toolParamsBtn} onClick={() => setOpenParams(o => !o)} aria-expanded={openParams}>
-          {t('toolParams')}{openParams ? ' ▴' : ' ▾'}
+        <span className={css.pvDesc}>{tool.description}</span>
+        <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
+      </button>
+      <div className={css.pvFoot}>
+        <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
+          <IconBrowseOutline16 size={16} />
         </button>
       </div>
-      {openParams ? <div className={css.toolParamsBody}>{formatParams(tool.parameters, t)}</div> : null}
     </div>
+  )
+}
+
+/** Tool detail modal (host Modal): description + channel/origin + parameter schema. */
+function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
+  return (
+    <Modal open onClose={onClose} title={tool.name} description={tool.description} footer={(
+      <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
+    )}>
+      <div className={css.meta}>
+        <span className={css.metaKey}>{t('source')}</span>
+        <span className={css.metaVal}>{toolTag(tool, t)}</span>
+        <span className={css.metaKey}>{t('provider')}</span>
+        <span className={css.metaVal}>{toolOrigin(tool, t)}</span>
+      </div>
+      <div className={css.toolDetailParamsTitle}>{t('toolParams')}</div>
+      <div className={css.toolParamsBody}>{formatParams(tool.parameters, t)}</div>
+    </Modal>
   )
 }
 

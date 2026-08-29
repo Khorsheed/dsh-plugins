@@ -343,66 +343,6 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* Tool catalog: grouped sections (builtin / plugin / MCP per-server). */
-.toolGroups {
-  margin-top: 24px; /* filter → groups 24px */
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 0 4px 24px 0;
-}
-
-.toolGroup {
-  display: flex;
-  flex-direction: column;
-}
-
-.toolGroupHead {
-  appearance: none;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 4px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.toolGroupTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
-.toolGroupCnt {
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.toolGroupChev {
-  margin-left: auto;
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.toolGroupHead:hover .toolGroupChev {
-  color: var(--dsw-alias-label-secondary);
-}
-
-/* Tool card main body: non-clickable (no detail modal), one-line description. */
-.toolMain {
-  cursor: default;
-}
-
-.pvDescOne {
-  min-height: 0;
-  -webkit-line-clamp: 1;
-}
-
 /* Channel pill color accents for tool cards. */
 .tagMcp {
   color: var(--dsw-alias-state-business-primary);
@@ -414,30 +354,16 @@
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 45%, transparent);
 }
 
-/* Tool parameter-schema toggle + block. */
-.toolParamsRow {
-  display: flex;
-  align-items: center;
-  padding: 0 20px 12px;
-}
-
-.toolParamsBtn {
-  appearance: none;
-  border: 0;
-  background: none;
-  font: inherit;
+/* Tool dialog: parameter section title + body. */
+.toolDetailParamsTitle {
+  margin: 16px 0 8px;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  padding: 2px 0;
-}
-
-.toolParamsBtn:hover {
-  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .toolParamsBody {
-  margin: 0 20px 16px;
+  margin: 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
@@ -448,9 +374,10 @@
   color: var(--dsw-alias-label-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 200px;
+  max-height: 240px;
   overflow: auto;
 }
+
 
 
 /* Uniform pill badge for credential config (still used in the detail modal). */
