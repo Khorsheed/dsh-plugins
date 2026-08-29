@@ -16,6 +16,8 @@ catalog 提案 v1 的 GUI 原本描述成官方风格折叠卡 + 独立 Markdown
 
 **2. add-skill 解压是零依赖 zip 读取器（`node:zlib`），而非第三方 zip 库。** 原计划 host 半用 adm-zip，但 host 面文件被 typert 生成器针对一个 scratch overlay 分析，而 overlay 只解析 `@deepseek-ai/*` 源码面包与 harness 自身 node_modules——第三方 zip 库不在其中，gen-typert 以 `TS2307: Cannot find module 'adm-zip'` 失败。（`zod`/`@deepseek-ai/schemastery` 能过只是因为它们恰好是 harness 依赖。）既然不允许改 host 且 overlay 按进程生成，修法是 `src/zip.ts`：一个最小读取器，用 `zlib.inflateRawSync` 处理 store(0) 与 raw-deflate(8)，跳过目录并拒绝路径穿越。这使发布包免于 zip 运行时依赖，也让 host 面仅含 node 内置 + `@deepseek-ai/*`（overlay 原生解析）。add-skill 弹窗提供"上传压缩包"与"粘贴 SKILL.md"两个 tab；都装入 `$DSH_HOME/skills/<name>/`（user）或 `.agents/skills/<name>/`（project），由既有 skill-filesystem watcher 发现——无需新注册机制。GitHub 克隆 v1 暂缓（`channel === 'github'` 返回"not wired in v1"）。
 
+**3. 卡片网格后来按宿主 token 重新排版（2026-08-29）：改用 2 列响应式网格（非早先的三列），加筛选/排序栏（搜索、来源/提供者筛选、名称/最近更新排序），并给 `CatalogSkillRow` 加 `updatedAt`（SKILL.md 的 mtime）字段支撑「最近更新」。** 详情弹窗保持头部固定、仅正文滚动；源码浏览器的树与代码窗格各自独立滚动，选中文件用背景 + 左侧主色指示条（焦点环留给键盘 focus）。配色从硬编码 `#2b2b2e`/`#303034`/`#202023` 迁到宿主 `--dsw-alias-*` 主题 token；来源与提供者统一成同款胶囊徽标；凭据用密码输入 + 显示/隐藏切换，`minmax(0,1fr) 88px` 的 grid 让「保存」不再折行。新增 skill 弹窗把上传区缩到 220px，开关文案改成「允许模型自动发现」（关 = 仅 /name）。这些是对决策 1、2 的呈现层打磨——网格 + 弹窗与零依赖源码依然成立。
+
 ## 备选方案
 
 - **host 半用 adm-zip / jszip。** 否决：gen-typert overlay 解析不到第三方 host 依赖，生成即挂。客户端解压（jszip）虽可绕过，但增加客户端 bundle 依赖与更大请求，且违背用户选定的 host 侧 UX。
@@ -24,6 +26,7 @@ catalog 提案 v1 的 GUI 原本描述成官方风格折叠卡 + 独立 Markdown
 ## 影响
 
 - 无新增运行时依赖；host 面仅含 node 内置 + `@deepseek-ai/*`，故 `pnpm check:plugins` 与发布构建均全绿。
+- **样式细节。** 网格改为 2 列响应式（早先固定三列在 ~564px 的设置内容宽度下每张仅 ~180px，2 列更好读）。`updatedAt` 在快照时对每个目录 skill 的 `SKILL.md`（或其目录）做一次 `fs.stat`——对设置列表来说很轻，但目录现在每次快照都要付出。弹窗重构为固定头部 + 滚动正文，标题不再滚走；源码窗格各自保留滚动条，最多同时可见两个。
 - skill 卡按设计只作预览；详情需点击（符合提案"列表绝不全量取正文"的渐进加载规则）。
 - **skill 的 scope 是 agent preset 的 standing key，而非 host-global。** 目录用 `agentPresets.standingKeyFor(defaultId)` 快照——这是官方给 host 无 agent 读取者的 seam——使 host-global 的设置面板看到与模型相同的官方/插件/用户技能（web bundle 把 skill-filesystem 挂在 preset 的 standing scope 而非 global）。`detail`/`get` 走同一 scope key，所以用户技能的完整正文、metadata 与声明的凭据都能加载。当 presets 服务缺失时退化为仅 global 层（最小 profile 无 preset ⇒ 仅 runtime，此处正确）。
 - **bundle 可见性是插件的选择。** skill 的源码分栏只在 registry 暴露 `resourceBase.kind === 'directory'` 时渲染。文件/提供者发现的 skill 总是有；运行时插件 skill 只在插件注册时带 `resourceBase`（或走 `registerProvider`）才有。内容合成型 skill 渲染成**虚拟单节点 `SKILL.md`**（统一源码浏览器），而非裸正文块——不伪造磁盘路径。这条契约写成包 README 里的「插件 skill 注册协议」（并作为上游候选，建议 dsh-skill 显式写明）。
