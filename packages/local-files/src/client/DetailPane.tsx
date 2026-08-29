@@ -25,6 +25,18 @@ import { buildSrcDoc } from './html-src-doc.ts'
 import { attachBridge } from './html-bridge.ts'
 import css from './DetailPane.module.css'
 
+/**
+ * Per-(session,path) content-pane scroll offsets. The workspace view slot
+ * renders only the active view (`only: active.id`), so switching tabs unmounts
+ * this pane and its `scrollTop` (plain DOM state) is lost with it. Reading the
+ * same selection back on a later mount restores the saved offset. A module
+ * level Map survives the unmount and — unlike a store field — never
+ * re-renders the file tree on every scroll event. Keys are absolute paths
+ * namespaced by session, so it stays correct across tab switches and sessions.
+ */
+const scrollMemory = new Map<string, number>()
+const scrollKey = (sessionId: string, path: string): string => `${sessionId}\u0000${path}`
+
 /** Content-search state handed to the text preview body. */
 interface ContentSearch {
   query: string
@@ -132,16 +144,18 @@ function PreviewBody(props: {
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
   frameRef: RefObject<HTMLDivElement>
+  scrollRef: RefObject<HTMLDivElement>
+  onScroll: () => void
   fullscreen: boolean
 }) {
-  const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, fullscreen } = props
+  const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
       const searching = search.query !== '' && search.matches.length > 0
       if (isHtmlPath(read.path)) {
         return (
-          <div className={css.previewScroll}>
+          <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>
             {read.truncated === true && <div className={css.notice}>{t('local.tooLarge')}</div>}
             {searching
               ? <MarkedContent content={content} search={search} />
@@ -158,7 +172,7 @@ function PreviewBody(props: {
       const dot = read.path.lastIndexOf('.')
       const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
-        <div className={css.previewScroll}>
+        <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>
           {read.truncated === true && <div className={css.notice}>{t('local.tooLarge')}</div>}
           {searching
             ? <MarkedContent content={content} search={search} />
@@ -177,7 +191,7 @@ function PreviewBody(props: {
     }
     case 'image':
       return (
-        <div className={css.imageScroll}>
+        <div className={css.imageScroll} ref={scrollRef} onScroll={onScroll}>
           <img className={css.image} src={read.url} alt={read.path} />
           {read.size !== undefined && <div className={css.notice}>{read.size} B</div>}
         </div>
@@ -201,6 +215,8 @@ export type DetailView = 'diff' | 'content'
 export interface DetailPaneProps {
   /** The selected file's path ('' when none). */
   path: string
+  /** The session serving this view — namespaces the scroll-memory cache. */
+  sessionId?: string | undefined
   /** The active detail view (retained for the parent's view-state contract). */
   detailView?: DetailView
   /** The kind-union preview read (null until loaded / no selection). */
@@ -231,7 +247,7 @@ export interface DetailPaneProps {
 
 /** The detail pane. */
 export function DetailPane({
-  path, read, loading, error, displayPath, onCopyPath, canOpenHost,
+  path, sessionId, read, loading, error, displayPath, onCopyPath, canOpenHost,
   onOpenFolder, onOpenIDE, t,
 }: DetailPaneProps): ReactNode {
   // HTML source ⇄ render ⇄ scripted toggle; the sandboxed iframe is default.
@@ -248,9 +264,20 @@ export function DetailPane({
   const [fullscreen, setFullscreen] = useState(false)
   const htmlIframeRef = useRef<HTMLIFrameElement>(null)
   const htmlFrameRef = useRef<HTMLDivElement>(null)
+  // The scrollable preview body (text/image pans); offsets survive the
+  // tab-switch unmount through the module-level scrollMemory cache.
+  const scrollRef = useRef<HTMLDivElement>(null)
   // Watchdog for large/scripted renders.
   const [slow, setSlow] = useState(false)
   const slowTimer = useRef<number | null>(null)
+
+  // Scroll-memory keys: this selection's cache slot and its writer (a plain
+  // Map write — no React state, so scrolling never re-renders the tree).
+  const memKey = scrollKey(sessionId ?? '', path)
+  const captureScroll = (): void => {
+    const el = scrollRef.current
+    if (el !== null) scrollMemory.set(memKey, el.scrollTop)
+  }
 
   // All hooks run unconditionally before the empty-path early return, so the
   // hook order is stable across `path` flipping '' → file (React #310 guard).
@@ -291,6 +318,18 @@ export function DetailPane({
       if (slowTimer.current !== null) { window.clearTimeout(slowTimer.current); slowTimer.current = null }
     }
   }, [html, htmlMode, read])
+
+  // Restore this selection's saved scroll offset once its content is pinned.
+  // Re-runs when `read` lands, so an async re-select (which nulls `read` first)
+  // also re-applies the offset — not only a same-selection remount. A fresh
+  // path has no cache entry and stays at the top.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el === null) return
+    const saved = scrollMemory.get(memKey)
+    if (saved !== undefined) el.scrollTop = saved
+  }, [memKey, read])
+
   const onHtmlLoaded = (): void => {
     setSlow(false)
     if (slowTimer.current !== null) { window.clearTimeout(slowTimer.current); slowTimer.current = null }
@@ -441,7 +480,7 @@ export function DetailPane({
             ? <div className={css.placeholder}>{t('state.error', { message: error })}</div>
             : read === null
               ? <div className={css.placeholder}>{t('detail.noSelection')}</div>
-              : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={htmlScripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}
+              : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={htmlScripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} scrollRef={scrollRef} onScroll={captureScroll} fullscreen={fullscreen} />}
       </div>
     </div>
   )

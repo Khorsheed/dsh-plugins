@@ -191,6 +191,7 @@ export function WorkspaceView({
         <div className={css.detailColumn}>
           <DetailPane
             path={selectedPath ?? ''}
+            sessionId={currentSession}
             read={preview}
             loading={false}
             error={error}
