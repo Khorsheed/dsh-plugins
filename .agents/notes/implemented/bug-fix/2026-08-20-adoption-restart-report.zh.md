@@ -23,3 +23,4 @@ Status: implemented
 
 - 人手工 `supervise`（无 `$DSH_SESSION_ID`）写的记录没有 initiator，由第一个被创建的 root agent 认领——与崩溃恢复记录的信使语义一致。
 - 既有接管测试的"首 boot 不写记录"断言已更新：它把首启和收编混为一谈；两个情形现在各有独立测试（100/100 绿）。
+- 2026-08-29 加固：initiator 默认值是权威，现在有了防线。3080 上一个 agent 调度退出时手填了一个 `--initiator`（从分支名造的 slug)：重启本身成功，但报告被路由到一个不存在的会话，真正的调度者从未被唤醒。skill 不再指示传 `--initiator`（写明"绝不要手传"),CLI 帮助同步修改，`restart` 和 `schedule-exit` 都经 `resolveInitiator` 解析 initiator——显式值与本 shell 的 `$DSH_SESSION_ID` 矛盾时打印响亮警告（只警告不拒绝：代别的会话调度是合法用途）。一个 CLI 测试钉住警告和匹配时静默两种情形。

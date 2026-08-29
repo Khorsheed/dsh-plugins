@@ -80,7 +80,18 @@ launch_instance() {
     exit
   fi
   if [ -z "${WD_START:-}" ]; then echo "[watchdog] WD_START unset — nothing to supervise" >&2; exit 1; fi
-  sh -c "$WD_START"
+  # The instance inherits this process's environment: scrub EVERY WD_* so no
+  # supervision variable can leak into the shells the instance hosts. A leaked
+  # WD_STATE_DIR retargets any watchdog script those shells spawn (observed
+  # 2026-08-29: an agent session inside the supervised deployment ran the test
+  # suite straight into the PROD state dir — racers yielded to the live
+  # pidfile owner, and the reclaim case never saw its temp pidfile). The scrub
+  # is prefix-based, not a name list: the CLI adds WD_* variables over time
+  # (WD_GUARD, WD_WAIT_OWNER, WD_ADOPTION, …) and a list silently goes stale.
+  # WD_START is captured first: the unset would otherwise eat the command
+  # itself. The guard CLI's bare-restart spawn applies the same scrub.
+  local start_cmd=$WD_START
+  ( for v in $(env | sed -n 's/^\(WD_[^=]*\)=.*/\1/p'); do unset "$v"; done; sh -c "$start_cmd" )
 }
 
 healthy() {
