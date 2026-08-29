@@ -32,14 +32,14 @@
 }
 
 /* Toolbar: tabs grow, add-button pinned right, 48px row with bottom hairline.
-   intro → toolbar 32px. */
+   intro → toolbar 12px (match the official Plugins section's compact gap). */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
   height: 48px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin-top: 32px;
+  margin-top: 12px;
 }
 
 /* Generic tab list (used by the inner add-skill tabs). */
@@ -373,11 +373,11 @@
   overflow-wrap: anywhere;
 }
 
-/* Clamp the description to a few lines by default; expand for very long docs. */
+/* Clamp the description to a few lines by default; expand for very long docs.
+   max-height (not -webkit-line-clamp) so scrollHeight reliably reports the full
+   text height for overflow detection. */
 .toolDescClamp {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
+  max-height: 168px;
   overflow: hidden;
 }
 

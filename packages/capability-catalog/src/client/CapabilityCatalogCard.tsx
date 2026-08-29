@@ -14,7 +14,7 @@
  *   zip archive, a pasted source command, or a local directory, then refreshes
  *   the catalog.
  */
-import { useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
   Button,
   IconChevronDownOutline14,
@@ -344,23 +344,30 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
   )
 }
 
-/** Tool detail modal (host Modal, wider): description (clamped, expandable) +
- * channel/origin + parameter schema. */
+/** Tool detail modal (host Modal, wider): description (clamped when it overflows,
+ * expandable) + channel/origin + parameter schema. No footer button — the ×,
+ * Esc, and mask-click close it. */
 function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
   const [descExpanded, setDescExpanded] = useState(false)
-  const longDesc = tool.description.length > 200
+  // Show the expand toggle only when the description actually overflows the clamp.
+  const descRef = useRef<HTMLParagraphElement>(null)
+  const [descOverflow, setDescOverflow] = useState(false)
+  useEffect(() => {
+    const el = descRef.current
+    if (el === null) { setDescOverflow(false); return }
+    setDescOverflow(el.scrollHeight > el.clientHeight + 1)
+  }, [tool.description])
   return (
     <Modal
       open
       onClose={onClose}
       title={tool.name}
       className={css.toolDetailModal ?? ''}
-      footer={<Button variant="outline" onClick={onClose}>{t('cancel')}</Button>}
     >
       <div className={css.toolDetailDesc}>
-        <p className={`${css.toolDesc} ${longDesc && !descExpanded ? css.toolDescClamp : ''}`}>{tool.description}</p>
-        {longDesc ? (
-          <button type="button" className={css.toolDescToggle} onClick={() => setDescExpanded(e => !e)}>
+        <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? '' : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
+        {descOverflow ? (
+          <button type="button" className={css.toolDescToggle ?? ''} onClick={() => setDescExpanded(e => !e)}>
             {descExpanded ? t('toolCollapse') : t('toolExpand')}
           </button>
         ) : null}
