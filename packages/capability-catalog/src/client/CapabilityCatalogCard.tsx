@@ -576,10 +576,11 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
 
           {tab === 'localdir' ? (
             <div className={css.command}>
-              <label className={css.fieldLabel}>{t('dirLabel')}</label>
-              <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
+              <div className={css.dirHintRow}>
+                <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
+                <span className={css.dirHintInline}>{t('dirHint')}</span>
+              </div>
               {dir !== '' ? <p className={css.fieldPath}>{dir}</p> : null}
-              <p className={css.confHint}>{t('dirHint')}</p>
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>
                   <div className={css.fieldLabel}>{t('pickSkills')}</div>
