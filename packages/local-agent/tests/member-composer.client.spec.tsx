@@ -6,7 +6,7 @@ import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-ru
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import {
-  MemberComposer, selectCliMember, type MemberComposerProps,
+  MemberComposer, resetMembershipCache, selectCliMember, type MemberComposerProps,
 } from '../src/client/MemberComposer.tsx'
 import {
   MEMBER_DOCK_CONTRIBUTORS, memberDockLines, statsContributor, tasksContributor,
@@ -15,6 +15,7 @@ import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
+  resetMembershipCache()
   vi.restoreAllMocks()
 })
 
@@ -138,6 +139,45 @@ describe('MemberComposer', () => {
     expect(await screen.findByText(zh['member.title'].replace('{harness}', 'Fake Agent'))).toBeTruthy()
     expect(screen.getByRole('textbox')).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['member.send'] })).toBeTruthy()
+  })
+
+  it('an RPC failure stays on the neutral checking state and retries — never the read-only panel', async () => {
+    const memberOf = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(MEMBER)
+    render(<MemberComposer {...props({ memberOf })} />)
+
+    // The failed probe leaves the neutral checking state, not the one-shot copy.
+    expect(await screen.findByText(zh['member.checking'])).toBeTruthy()
+    expect(screen.queryByText(zh['member.readonly.title'])).toBeNull()
+
+    // The retry (300ms) resolves real membership: writable, no flash.
+    expect(await screen.findByRole('textbox', {}, { timeout: 2000 })).toBeTruthy()
+    expect(screen.queryByText(zh['member.readonly.title'])).toBeNull()
+    expect(memberOf).toHaveBeenCalledTimes(2)
+  })
+
+  it('degrades to the read-only panel only after the RPC retry budget is spent', async () => {
+    const memberOf = vi.fn().mockResolvedValue(undefined)
+    render(<MemberComposer {...props({ memberOf })} />)
+
+    expect(await screen.findByText(zh['member.checking'])).toBeTruthy()
+    expect(await screen.findByText(zh['member.readonly.title'], {}, { timeout: 2000 })).toBeTruthy()
+    // Initial probe + MEMBER_PROBE_RETRIES (2) retries.
+    expect(memberOf).toHaveBeenCalledTimes(3)
+  })
+
+  it('serves a re-entered member session from the cache — first frame writable, no re-probe', async () => {
+    const first = render(<MemberComposer {...props()} />)
+    await screen.findByRole('textbox')
+    first.unmount()
+
+    const memberOf = vi.fn()
+    render(<MemberComposer {...props({ memberOf })} />)
+    // No checking flash, no RPC: the cached answer renders on the first frame.
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(screen.queryByText(zh['member.checking'])).toBeNull()
+    expect(memberOf).not.toHaveBeenCalled()
   })
 
   it('sends the draft through promptMember and clears the draft on success', async () => {
