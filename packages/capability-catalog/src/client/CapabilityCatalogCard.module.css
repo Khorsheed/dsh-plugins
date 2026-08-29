@@ -538,6 +538,12 @@
   height: auto;
 }
 
+/* Add-skill modal: tighten the title → tabs gap only here (the detail modal
+   keeps the default 16px body top pad). */
+.addModal .modalBody {
+  padding-top: 6px;
+}
+
 .addPanel {
   flex: 1;
   min-height: 0;
@@ -946,7 +952,7 @@
   gap: 24px;
   height: 44px; /* tabs 44px */
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin: 10px 0 24px; /* title → tabs 32px (10 + 16 body pad), divider → content 24px */
+  margin: 0 0 24px; /* title → tabs tight (scoped body pad below), divider → content 24px */
 }
 
 /* "Updated" date in the card meta, pushed to the right edge. */
