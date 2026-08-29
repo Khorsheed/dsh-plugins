@@ -1851,6 +1851,49 @@ describe('supervise', () => {
     }
   }, 15_000)
 
+  it('schedule-exit warns when --initiator contradicts this session\'s DSH_SESSION_ID', async () => {
+    // The wake-up report routes to the recorded initiator: an agent that
+    // invents one (observed 2026-08-29: a branch-derived slug) strands its own
+    // resume. The CLI warns loudly instead of refusing — scheduling on behalf
+    // of another session is legitimate.
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
+    const previousSession = process.env.DSH_SESSION_ID
+    process.env.DSH_SESSION_ID = 'session-real'
+    try {
+      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      stubPreflight('true')
+      const out = io()
+      expect(await runCli(
+        ['schedule-exit', '--port', String(port), '--delay-ms', '60000', '--initiator', 'skill-styles-merge',
+          '--state-dir', stateDir, '--repo', repo],
+        out.io,
+      )).toBe(0)
+      const warning = out.err.join('')
+      expect(warning).toContain('does not match')
+      expect(warning).toContain('skill-styles-merge')
+      expect(warning).toContain('session-real')
+      // The marker still records what was asked for (warn, not refuse).
+      const marker = JSON.parse(readFileSync(join(stateDir, 'restart-requested.json'), 'utf8'))
+      expect(marker.initiator).toBe('skill-styles-merge')
+      // A matching (or omitted) --initiator stays silent.
+      const quiet = io()
+      unlinkSync(join(stateDir, 'restart-requested.json'))
+      expect(await runCli(
+        ['schedule-exit', '--port', String(port), '--delay-ms', '60000', '--initiator', 'session-real',
+          '--state-dir', stateDir, '--repo', repo],
+        quiet.io,
+      )).toBe(0)
+      expect(quiet.err.join('')).not.toContain('does not match')
+    } finally {
+      if (previousSession === undefined) delete process.env.DSH_SESSION_ID
+      else process.env.DSH_SESSION_ID = previousSession
+      env.restore()
+    }
+  }, 15_000)
+
   it('rolls back to the deployment-proven boot stamp, leaving HEAD and WIP anchors', async () => {
     const env = supervisedEnv()
     const repo = makeRepo()

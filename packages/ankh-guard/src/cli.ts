@@ -116,6 +116,25 @@ function sandboxGate(verb: string, options: CliOptions, io: CliIo): boolean {
 }
 
 /**
+ * Resolve the restart's initiating session. An explicit --initiator that
+ * contradicts the shell's own DSH_SESSION_ID routes the wake-up report to a
+ * session that is not the caller — observed 2026-08-29: an agent invented a
+ * branch-derived slug ('skill-styles-merge'), the report went to a session
+ * that does not exist, and the actual scheduler was never woken. Warn loudly;
+ * do not refuse — scheduling on behalf of another session is legitimate.
+ * @param explicit - the --initiator flag value, when given.
+ * @param io - CLI streams.
+ * @returns the initiator to record (explicit wins, else the env default).
+ */
+function resolveInitiator(explicit: string | undefined, io: CliIo): string | undefined {
+  const fromEnv = process.env.DSH_SESSION_ID
+  if (explicit !== undefined && explicit !== '' && fromEnv !== undefined && explicit !== fromEnv) {
+    io.stderr(`warning: --initiator ${JSON.stringify(explicit)} does not match this session's DSH_SESSION_ID ${JSON.stringify(fromEnv)} — the restart report will be routed to ${JSON.stringify(explicit)} and THIS session will not be woken. Omit --initiator to route it to the current session.\n`)
+  }
+  return explicit !== undefined && explicit !== '' ? explicit : fromEnv
+}
+
+/**
  * Whether the pid named by this raw pid/lock-file content is alive. Empty
  * content reads as NO holder: Number('') is 0 and kill(0, 0) probes our own
  * process group (always succeeds), which once read as "alive" and refused
@@ -251,7 +270,9 @@ flags:
   --home DIR       supervise: the dsh home the supervised instance boots with (profiles,
                    credentials — default: $DSH_HOME; required when that is unset)
   --initiator ID   schedule-exit: session id that requested the exit (default: $DSH_SESSION_ID);
-                   recorded in last-restart.json so the restart report returns to that session
+                   recorded in last-restart.json so the restart report returns to that session.
+                   Do NOT invent a value: a mismatched id routes the wake-up away from you
+                   (the CLI warns when ID contradicts this shell's $DSH_SESSION_ID)
   --profile NAME   preflight/schedule-exit/restart: the dsh profile to dry-run (default:
                    $DSH_PROFILE, else "web")
   --preflight-timeout-ms MS  schedule-exit/restart: bound on the composition preflight (default 120000)
@@ -1084,7 +1105,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // The restart verb must not be invisible to the report machinery:
         // record the outcome (the exit agent's semantics) so the next boot's
         // pendingRestartRecord delivers the report to its initiator.
-        const initiator = options.initiator ?? process.env.DSH_SESSION_ID
+        const initiator = resolveInitiator(options.initiator, io)
         if (!listening) {
           io.stderr(`new instance not listening on 127.0.0.1:${port} within ${timeoutMs}ms\n`)
           writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `new instance not listening on :${port}`, ...(initiator !== undefined ? { initiator } : {}) })
@@ -1298,7 +1319,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // to that session instead of racing to whichever root agent resumes
         // first. Everything lands in stateDir directly — the same directory the
         // plugin reads (see the supervise case for why no home is derived).
-        const initiator = options.initiator ?? process.env.DSH_SESSION_ID
+        const initiator = resolveInitiator(options.initiator, io)
         mkdirSync(stateDir, { recursive: true })
         writeFileSync(stateFile(stateDir, 'restartRequested'),
           `${JSON.stringify({
