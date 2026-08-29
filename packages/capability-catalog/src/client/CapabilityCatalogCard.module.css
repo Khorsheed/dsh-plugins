@@ -8,7 +8,6 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -23,6 +22,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 12px; /* title → intro 12px */
 }
 
 .intro {
@@ -31,14 +31,15 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Toolbar: tabs grow, add-button pinned right, 48px row with bottom hairline. */
+/* Toolbar: tabs grow, add-button pinned right, 48px row with bottom hairline.
+   intro → toolbar 32px. */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
   height: 48px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin-top: 4px;
+  margin-top: 32px;
 }
 
 /* Generic tab list (used by the inner add-skill tabs). */
@@ -137,18 +138,17 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
-/* Filter / sort bar: uniform 36px controls, one row (wraps on narrow width). */
+/* Filter / sort bar: search fills row 1, source/provider/sort share row 2. */
 .filterBar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px; /* toolbar → filter 20px */
 }
 
 .searchBox {
+  grid-column: 1 / -1; /* search fills the whole first row */
   position: relative;
-  flex: 1 1 200px;
   min-width: 0;
 }
 
@@ -201,9 +201,10 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 12px;
+  gap: 16px; /* card horizontal + vertical 16px */
   align-content: start;
-  padding: 16px 4px 24px 0;
+  margin-top: 24px; /* filter → cards 24px */
+  padding: 0 4px 24px 0;
 }
 
 /* Skill preview card (Agent-preset anatomy): main body + foot actions. */
@@ -231,8 +232,8 @@
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px 12px;
+  gap: 12px; /* title → desc → provider 12px */
+  padding: 20px;
   border-radius: 12px 12px 0 0;
 }
 
@@ -292,9 +293,11 @@
 
 .pvFoot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 16px;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -418,16 +421,21 @@
   margin: 10px 0 12px;
 }
 
-/* Meta as a wrap row: inline key/value groups, uniform gaps. */
+/* Meta as a wrap row: item groups, 8px label→value, 32px between groups. */
 .meta {
   display: flex;
   flex-wrap: wrap;
-  column-gap: 24px;
-  row-gap: 10px;
+  gap: 12px 32px;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
-  align-items: baseline;
+  align-items: center;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .metaKey {
@@ -510,19 +518,34 @@
   overflow-y: auto;
 }
 
+/* Add-skill modal keeps one height across its three tabs (switch, upload,
+   directory) so the dialog never jumps; the footer stays pinned to the bottom. */
+.addModal {
+  height: min(560px, calc(100vh - 96px));
+}
+
+.addPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .detailDesc {
-  margin: 0 0 20px;
+  margin: 2px 0 24px; /* title → desc 20px, desc → meta 24px */
   font-size: 14px;
   line-height: 24px;
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Credentials config block: boxed (a form-ish group). */
+/* Credentials config block: boxed, 20px padding, meta → card 20px, card → source 32px. */
 .conf {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 16px;
+  padding: 20px;
+  margin-top: 20px;
+  margin-bottom: 32px;
 }
 
 /* Source section: flat — a section title + divider, not a nested bordered box. */
@@ -542,9 +565,9 @@
 }
 
 .source[open] .sourceTitle {
-  padding-bottom: 10px;
+  padding-bottom: 12px; /* "view source" → divider 12px */
   border-bottom: 1px solid var(--dsw-alias-border-l1);
-  margin-bottom: 12px;
+  margin-bottom: 16px; /* divider → file panel 16px */
 }
 
 .confHint {
@@ -554,7 +577,7 @@
 }
 
 .credRow {
-  margin-bottom: 14px;
+  margin-bottom: 20px; /* input row → card bottom 20px */
 }
 
 .credLabel {
@@ -564,7 +587,7 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
-  margin-bottom: 8px;
+  margin-bottom: 12px; /* key name+status → input row 12px */
 }
 
 /* Credential input + save: one grid row, save never wraps to two lines. */
@@ -606,7 +629,7 @@
 }
 
 .inputWrap .input {
-  padding-right: 40px;
+  padding-right: 64px; /* clear the 56px show/hide button */
 }
 
 .input:focus-visible {
@@ -617,18 +640,22 @@
 
 .eyeBtn {
   position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 0;
+  top: 0;
+  bottom: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 56px;
+  flex: 0 0 56px;
+  height: 100%;
   border: none;
-  border-radius: 6px;
+  border-radius: 0 10px 10px 0;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -815,9 +842,9 @@
 .innerTabs {
   align-items: stretch;
   gap: 24px;
-  height: 40px;
+  height: 44px; /* tabs 44px */
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin: 4px 0 16px;
+  margin: 16px 0 24px; /* title → tabs 32px (16 modal-body pad + 16), tabs → content 24px */
 }
 
 /* "Updated" date in the card meta, pushed to the right edge. */
@@ -852,7 +879,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 220px;
+  height: 200px;
   padding: 24px;
   box-sizing: border-box;
   margin-bottom: 4px;
@@ -905,6 +932,13 @@
 /* Command / dir install tab. */
 .command {
   margin-bottom: 4px;
+}
+
+/* A field label + its controls stacked as one field group (input → button 12px). */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .fieldLabel {
@@ -1047,8 +1081,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: auto; /* pinned to modal bottom in the flex-stacked add modal */
+  padding-top: 24px; /* divider → buttons 24px */
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 

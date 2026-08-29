@@ -364,10 +364,10 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
             <>
               <p className={css.detailDesc}>{data.description}</p>
               <div className={css.meta}>
-                <span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span>
-                <span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span>
-                <span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span>
-                {data.whenToUse !== undefined ? (<><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></>) : null}
+                <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span></span>
+                <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span></span>
+                <span className={css.metaItem}><span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span></span>
+                {data.whenToUse !== undefined ? <span className={css.metaItem}><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></span> : null}
               </div>
 
               {data.credentials !== undefined && data.credentials.length > 0 ? (
@@ -531,7 +531,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
 
   return (
     <div className={css.overlay} role="dialog" aria-modal="true">
-      <div className={css.modal}>
+      <div className={`${css.modal} ${css.addModal}`}>
         <div className={css.modalHead}>
           <h3 className={css.modalTitle}>{t('addSkill')}</h3>
           <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
@@ -543,6 +543,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
             <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => setTab('localdir')}>{t('addTabDir')}</button>
           </div>
 
+          <div className={css.addPanel}>
           {tab === 'upload' ? (
             <label
               className={`${css.dropzone} ${dragging ? css.dragging : ''}`}
@@ -569,8 +570,10 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
           {tab === 'localdir' ? (
             <div className={css.command}>
               <label className={css.fieldLabel}>{t('dirLabel')}</label>
-              <input className={css.input} value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('dirPlaceholder')} spellCheck={false} />
-              <button type="button" className={css.btnGhost} onClick={() => void onListDir()}>{t('listDir')}</button>
+              <div className={css.fieldGroup}>
+                <input className={css.input} value={dir} onChange={(e) => setDir(e.target.value)} placeholder={t('dirPlaceholder')} spellCheck={false} />
+                <button type="button" className={css.btnGhost} onClick={() => void onListDir()}>{t('listDir')}</button>
+              </div>
               <p className={css.confHint}>{t('dirHint')}</p>
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>
@@ -612,6 +615,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, refresh, t }: {
           <p className={css.fieldPath}>{rootPath}</p>
 
           {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
+          </div>
 
           <div className={css.actions}>
             <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
