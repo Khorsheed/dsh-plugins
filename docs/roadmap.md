@@ -209,84 +209,77 @@ dsh-dev/
 | **P2** | 出 `dsh-eval`；mobile-access 重写并落地 | 访问维度 |
 | **P3** | 多人协作（每人一实例 + 共享数据面） | — |
 
-执行层面的依赖、闸门与里程碑见[当前迭代](#七当前迭代)——那里是唯一维护的一份，本节只排长期次序。
+执行层面的清单见[本期迭代](#七本期迭代两个整合包上-github)——那里是唯一维护的一份，本节只排长期次序。
 
-## 七、当前迭代
+## 七、本期迭代：两个整合包上 GitHub
 
-阶段不绑时间，绑**依赖与里程碑**：前一阶段的里程碑达成，后一阶段才有意义。近期重点是阶段一。
+**目标**：`dsh-web-basic` 更新、`dsh-web-dev` 新建，两者都上 GitHub，并由我们自己充分测试。**本期不发 npm**——推社区是下一期的事。
 
-### 发布前置依赖（local-agent 第二波）
+**形态**：沿用 `dsh-web-basic` 的形态 B（profile 目录模板 + `install.sh` + 守卫重启脚本）。尚未上 npm 的成员按 dsh-plugins README 现有做法处理：README 标注「从源码安装」，本地用 tarball 装配。
 
-一次 npm 发布要过的全部闸，按依赖顺序。`来源`列指向规则的事实源，避免凭记忆施工。
+三条线可并行：**A 轻、先跑通流程为 B 探路**；**B 是主体**；**C 是前置修复，不阻塞 A/B 的文件工作**。
 
-| # | 前置 | 判据 | 来源 |
+### A 线：dsh-web-basic 更新（加两个成员）
+
+| # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
-| 1 | 家族契约冻结 | 「member-channel 不阻塞第二波」的决策入册；家族按现有能力发布 | 本文件决策清单 |
-| 2 | 版本线确认 | `npm view <包名> version`，新版本必须更高（403/409 就是撞这个） | publishing.md ② |
-| 3 | build + test 全绿 | `pnpm --filter <包名> run build && test`，逐包 | publishing.md ③ |
-| 4 | Compatibility 双写同步 | 两个 README 的 `Compatibility` 段 + package.json 的 `dsh.compat`（`minHost`，降级项写 `notes`） | AGENTS.md 包约定 |
-| 5 | pack-dist 出包 | `scripts/pack-dist.ts` 做 scope 重写与 `files` 校验；禁止对源目录直接 `npm publish` | publishing.md ④ |
-| 6 | tarball 内容完整 | `tar -tzf` 确认 `lib/`、`cordis.patch.yml`、`scripts/` 一个不少 | publishing.md ⑤ |
-| 7 | 进 3080 六道闸 | `pnpm deploy:3080` 逐包跑：build+test → pack-dist → 刷新清单 → 录绿色凭证 → **preflight（FAIL 即停，永不绕过）** → 重启 + canary PASS | ops.md 门禁清单 |
-| 8 | 迁移验收三步 | ① 会话里列出 skill 并**真调用一次**（只看目录会漏「列出即正常、调用即炸」）② `check-env --port 3080` 读数无异常 ③ 走一遍门禁重启，canary PASS | ops.md 验收清单 |
-| 9 | README 截图回填 | 验收时逐包拍可见界面，`git add -f` 替换占位注释；缺图不阻塞发布，占位注释必须在 | ops.md |
-| 10 | **3080 连续 3 天无事故** | 崩溃、功能回退、相关 preflight 失败均无 | ops.md 放行标准 |
-| 11 | npm 账号与 scope | `npm whoami` 是 `@khorsheed` 的所有者；`@deepseek-ai` 是官方 org，不要尝试 | publishing.md ①、失败对照表 |
-| 12 | 家族同发、按依赖序 | 七包一次发齐，core 先于 provider（唯一的齐步走例外，其余插件各走独立线） | ops.md 发布节奏 |
-| 13 | 消费者验证 | 一次性目录 `npm install` + `import` 冒烟，30 秒 | publishing.md 发布后验证 |
+| A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号在一个工作日内不再变动 |
+| A2 | `capability-catalog` + `inline-html-render` 打 tarball | A1 | `tar -tzf` 见 `lib/`、`cordis.patch.yml`、`scripts/` |
+| A3 | `profiles/web-basic/package.json` 加两个成员 | A2 | `dsh --profile web-basic --dump-config` 行数 +2 |
+| A4 | README 成员表 10 → 12，补两段插件介绍 | A3 | 中英双语同步 |
+| A5 | **全新 `$DSH_HOME` 装一遍**（不是在现有环境上叠） | A3 | `install.sh` 一次通过，实例起得来 |
+| A6 | 推 GitHub | A4·A5 | 他人 clone 能照 README 装上 |
 
-**第 10 项是时间门，不是工作量**——它把 npm 发布从「能不能做完」变成「什么时候到期」，因此阶段四只能排在最后，且不阻塞其余阶段。
+### B 线：dsh-web-dev 新建
 
-**2026-08-29 实况**：前置 1–7 对 local-agent 家族**已经完成**——六个包在 3080 生产 profile 上运行（`~/.dsh-official/profiles/web/package.json` 为准，tarball 形态，版本后缀 `+2608271440`）。观察期（前置 10）在跑，08-30 14:40 满。因此阶段一已不是关键路径，它在等时间；**阶段二可立即开工**。
+成员 = base 12 + feature 10（local-agent 家族 7 + `worktrees` + `mission` + `room`）。
 
-### 阶段
-
-| 阶段 | 目标 | 前置 | 里程碑（可验收） |
+| # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
-| **一** | 家族进 3080 | 无 | **大部分已完成**：家族六包（core + 四 provider + tool-subagent）于 2026-08-27 14:40 部署至 3080，**观察期至 08-30 14:40 满**（前提是期间无家族相关事故）。剩余：确认迁移验收三步、README 截图回填 |
-| 二 | 首个 domain 包 + 切换验证 | 阶段一 | `dsh-dev` profile 可一条命令装起，`ankh-guard restart` 在 web-basic 与 dsh-dev 之间切得回来，下方判据全过 |
-| 三 | room 归队 | 阶段一（契约冻结后适配才不是移动靶） | `packages/room` 在今天的 main 上 build+test 绿，合入 main |
-| 四 | npm 第二波 | 阶段一 + 前置 10 到期 + 前置 9、11、13 | 七包上架，一次性目录装得上并 import 通过 |
-| 五 | eval pilot | CLI 版本指纹 + 阶段一 | 产出第一个 export bundle，判据与管道得到验证 |
+| B1 | 确认成员清单与各包版本线 | C1 | 清单落纸，每包一个确定版本 |
+| B2 | 建 `profiles/dsh-web-dev/` 目录与 `package.json` | B1 | 成员齐、版本对 |
+| B3 | 写 `cordis.yml`：bundles 层 + `agent-presets` 的 `roots` 指向 `./presets` | B2 | `--dump-config` 组合完整 |
+| B4 | **写 `presets/standard/agent.cordis.yml`**：从官方 `standard` 复制，加开发 workflow 的 prompt section | B3 | 新建会话选得到；**本仓首次分发 preset，无先例** |
+| B5 | 写 `scripts/install.sh` | B2 | 对标 web-basic |
+| B6 | 写 `scripts/restart-into-dsh-web-dev.sh`（`ankh-guard restart --profile dsh-web-dev`） | B5 | 同端口交接成功 |
+| B7 | 13 个未上 npm 的成员打 tarball、本地装配 | A2 | 全部可解析 |
+| B8 | 写 README（对标 web-basic，含给 Agent 的安装指南） | B4·B6 | 中英双语 |
+| B9 | **全新 `$DSH_HOME` 装一遍** | B5·B7 | 一次通过 |
+| B10 | **五条切换判据实测**（见下） | B6·B9 | 五条全过 |
+| B11 | 建 GitHub 仓库并推 | B8·B10 | 他人 clone 能照 README 装上 |
 
-阶段二至五**只依赖阶段一**，彼此不互相阻塞——阶段一是唯一的关键路径。
-
-### 阶段一的内容
-
-| 事项 | 类型 | 说明 | 降级 |
-|---|---|---|---|
-| room 复验验收项移交 room | 决策 | member-channel 的 M1–M3 已全部落地、四 provider 真实 CLI 端到端探针通过（提案「实现记录」段为准，其 `状态` 字段与 README 表述均已滞后并于本轮修正）。剩余卡点是它验收标准里的一条「room 复验」——room 未合 main 时该路径不可达，且第二波用户手上不会有 room。应把该项移交 room 的 done 判定 | 若坚持在第二波验收该项，阶段一至五全部等 room 归队 |
-| ~~前置 2–8 逐包过闸~~ | **已完成** | 家族六包已在 3080 运行（2026-08-27 14:40 部署） | — |
-| 确认迁移验收三步 | 核对 | skill 真调用一次 / `check-env --port 3080` 读数 / 门禁重启 canary PASS——是否已执行需你确认 | 未做则补做，不重启也能核对前两项 |
-| README 截图回填 | 文档 | 验收时逐包拍图替换占位注释，`git add -f` | 缺图不阻塞发布，占位注释必须在 |
-| CLI 版本指纹 | 施工（并行） | acquire 时把四个 harness CLI 的 `--version` 与模型端点标识写进 mission `refs` | 独立项，随时可停；它真正服务的是阶段五 |
-| capability-catalog 的 Agent Note 首节 | 修复 | 首节须为 `## Problem`，当前为 `## Decision`，`verify-agent-note-format` 会红 | 属他人在制品时不代改，只通报 |
-
-### 阶段二的构成
-
-`dsh-dev` 是第一个按决策 9 组装的 domain 包：**一个 profile 目录**，加上它自带的 preset。
-
-| 半边 | 内容 | 验收 |
-|---|---|---|
-| profile | `package.json` 列成员依赖；`cordis.yml` 的 `bundles` 层挂 base 全体 + dev 的 feature（local-agent 家族、worktrees、mission）；`agent-presets` 的 `roots` 指向 `./presets` | 空 `$DSH_HOME` 一条命令装起来并启动 |
-| preset | `presets/standard/agent.cordis.yml`——该 domain 的默认 agent，从官方 `standard` 复制起步 | 新建会话选得到；`capability-catalog` 列出该 profile 的工具与 skill |
-| 切换脚本 | 照 `restart-into-web-basic.sh` 的形态，`ankh-guard restart --profile dsh-dev` | 见下方判据 |
-
-preset 半边是本阶段的**新工作**——profile 模板已有 `dsh-web-basic` 先例，分发 preset 没有。先做一个最小可用的（从 `standard` 复制 + 一段开发 workflow 的 prompt section），persona 与工具子集随后迭代。
-
-#### 里程碑判据：模式切换成立且可逆
+#### B10 的五条判据
 
 | # | 判据 | 验证什么 |
 |---|---|---|
-| 1 | 从 web-basic 切到 dsh-dev：同端口交接，浏览器刷新后是 dev 的界面（多出 worktrees 徽标、mission tab 等） | 切换动作成立，UI 随 profile 走 |
-| 2 | **再切回 web-basic**，界面回到 daily 形态，无残留 | 可逆——这是敢用它的前提 |
-| 3 | 故意坏掉 dsh-dev 的组合（如改坏一行 patch YAML）再切，**preflight 拒绝且当前实例不停** | 安全网真的在 |
-| 4 | 会话数据跨切换存活：切过去再切回来，之前的会话还在、能打开 | 切的是插件组合，不是数据 |
-| 5 | dev profile 下 `capability-catalog` 列出的工具含 mission / 委派工具；web-basic 下不含 | 隔离靠 profile 成立 |
+| 1 | web-basic → dsh-web-dev：同端口交接，刷新后是 dev 界面（worktrees 徽标、mission tab 出现） | 切换成立，UI 随 profile 走 |
+| 2 | **再切回 web-basic**，界面回到 daily 形态，无残留组件、无报错空槽 | 可逆——敢日常使用的前提 |
+| 3 | 故意改坏 dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例不停** | 安全网真的在 |
+| 4 | 会话数据跨切换存活：切过去再切回来，之前的会话仍可打开 | 切的是组合不是数据 |
+| 5 | dev 下 `capability-catalog` 列出的工具含 mission / 委派工具，web-basic 下不含 | 隔离靠 profile 成立 |
 
-第 2、3 条是这组判据的核心：**可逆 + 切不过去不伤当前实例**，这两条成立才敢把它当日常操作。
+### C 线：前置修复（可并行，不阻塞 A/B 的文件工作）
 
-**room 不在阶段一。** 它是 `dsh-dev` 的增强而非前提——不含 room 的 `dsh-dev`（base + local-agent + worktrees + mission）已是完整可用的开发工作台。room 的适配面对的是 175 个提交的契约漂移（main 侧已有 `retire the standalone settings section`、`expose activeDelegations` 等实质变动），工作量不可控，给它独立阶段以免拖垮关键路径。
+| # | 事项 | 为什么要做 | 阻塞谁 |
+|---|---|---|---|
+| C1 | **`room` 推上 3080** | dev 成员里唯一零生产验证的包 | B1 |
+| C2 | 确认迁移验收三步：会话里列出 skill 并**真调用一次** / `check-env --port 3080` 读数 / 门禁重启 canary PASS | ops.md 要求，从未确认执行过 | 下一期 npm 发布 |
+| C3 | 重新生成 `release-status.md`（`pnpm release:status`） | 现版本 08-23 生成，缺 4 个包 | 下一期 |
+| C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐 0.1.2 宿主线 | AGENTS.md 要求；0.1.2 迁移进行中 | 下一期 |
+| C5 | README 截图回填（各包占位注释） | ops.md「验收即截图」 | 下一期 |
+
+### 本期不做
+
+- **npm 发布**（13 个包 × 3 天观察期，下一期）
+- **`mode-switcher` 插件**（本期切换用脚本，UI 入口是后续提案）
+- **`dsh-eval` 整合包**（datasets / lab 不进 dev domain）
+- **room-session-promotion 的 M2 及以后**（M1 已随 room 进 main）
+
+### 已完成（本期开始前）
+
+- local-agent 家族六包在 3080 运行（2026-08-27 14:40 部署），观察期已跑满三天
+- member-channel M1–M3 四 provider 全通；room 已合并进 main 并落地 session-promotion M1
+- 提案总账对齐实现记录；`closed` 理由格式固化
 
 ## 八、待决
 
@@ -303,6 +296,6 @@ preset 半边是本阶段的**新工作**——profile 模板已有 `dsh-web-bas
 
 - 新 proposal 立项时，在「包账本」对应层补一行相关 proposal；找不到落点先改本文件。
 - **判断提案进度读「实现记录」段，不读 `状态` 字段**：后者会滞后（2026-08-28 审计发现四个提案的状态字段落后其实现记录一到四个里程碑）。
-- 「当前迭代」随阶段推进重写：里程碑达成即划掉该阶段，下一阶段成为重点。发布前置依赖表只在规则本身（ops.md / publishing.md）变化时改。
+- 「本期迭代」随迭代滚动重写：本期收口后，把完成项挪进「已完成」并写下一期目标。发布相关的规则事实（ops.md / publishing.md 的闸门）不在这里复述，需要时链过去。
 - 包发布或状态变化时更新状态标记；版本以 `package.json` 为准，发布事实以 [release-status.md](release-status.md) 为准。
 - 「已定决策」只增不改：结论被推翻时保留原条目并注明失效原因与日期（如决策 8 的形态）。
