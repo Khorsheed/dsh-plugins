@@ -36,6 +36,7 @@ import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillF
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
+import type { PersistedMcpState } from './mcpStore.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -105,10 +106,20 @@ export class CapabilityCatalogService extends TypertRemoteService {
     this.mcp = new McpStore()
     // Register the settings namespace so the ConfigurablePluginsTab serves
     // our settings.plugin.item card (it dispatches cards only for Host-served
-    // namespaces). The card reads its data through the Remote, so the schema
-    // is a minimal placeholder. Degrades silently when settings is absent.
+    // namespaces). The card reads its data through the Remote; the namespace
+    // ALSO carries the plugin's persisted MCP state (`mcp`) so servers survive a
+    // restart: seed the in-process store at boot, persist every mutation, and
+    // reload when the config document changes externally. Degrades silently when
+    // settings is absent (in-process store only, resets on restart).
     ctx.inject(['settings'], (settingsCtx) => {
-      settingsCtx.settings.register(settingsNamespace(CAPABILITY_CATALOG_NS), CapabilityCatalogSettingsSchema)
+      const ns = settingsNamespace(CAPABILITY_CATALOG_NS)
+      const scope = settingsCtx.settings.register(ns, CapabilityCatalogSettingsSchema)
+      const persisted = (scope.get() as { mcp?: PersistedMcpState } | undefined)?.mcp
+      if (persisted !== undefined) this.mcp.loadFrom(persisted)
+      this.mcp.onPersist = (): void => {
+        void scope.update({ mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
+      }
+      scope.watch((next) => this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp))
     })
     // Baseline snapshot of the tools visible at apply time; tools that appear
     // later (a tools/change diff) are marked plugin/inferred.

@@ -1,9 +1,9 @@
 /**
  * Host-side MCP server store: keeps the user's configured MCP servers, their
- * discovered tools, credential state, and enable flags. v1 persists in-process
- * (survives page reloads, resets on server restart); the settings-namespace
- * store + model-facing registration are follow-ups. Tool discovery connects via
- * the SDK connector and caches the tool list for display.
+ * discovered tools, credential state, and enable flags. Persistence is a pluggable
+ * seam: the host hands the store an `onPersist` callback (backed by the settings
+ * namespace) and seeds it with `loadFrom` at boot, so servers survive a restart.
+ * Tool discovery connects via the SDK connector and caches the tool list.
  */
 
 import type { CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpTool } from './types.ts'
@@ -19,9 +19,55 @@ interface StoredServer {
   error: string | undefined
 }
 
+/** Wire/persisted form of one stored server (config + enabled + discovered tools). */
+export interface PersistedMcpServer {
+  readonly config: CatalogMcpServerConfig
+  readonly tools: readonly CatalogMcpTool[]
+}
+
+/** The full persisted MCP state block (stored under the settings namespace `mcp` key). */
+export interface PersistedMcpState {
+  readonly servers?: readonly PersistedMcpServer[]
+  /** Namespaced credential ref -> value (the user's own config document). */
+  readonly credentials?: Readonly<Record<string, string>>
+}
+
 /** The catalog's own MCP management store (one per process). */
 export class McpStore {
   private readonly servers = new Map<string, StoredServer>()
+  /** Persistence hook, set by the host after the settings scope is available. */
+  onPersist: (() => void) | undefined = undefined
+
+  /** Seed the store from the persisted state (boot or external config edit). */
+  loadFrom(state: PersistedMcpState | undefined): void {
+    if (state === undefined) return
+    for (const server of state.servers ?? []) {
+      this.servers.set(server.config.serverName, {
+        config: server.config,
+        credentials: new Map(),
+        tools: [...(server.tools ?? [])],
+        error: undefined,
+      })
+    }
+    for (const [ref, value] of Object.entries(state.credentials ?? {})) {
+      const s = this.servers.get(refServer(ref))
+      if (s !== undefined) s.credentials.set(ref, value)
+    }
+  }
+
+  /** Serialize the current state for persistence. */
+  toPersisted(): PersistedMcpState {
+    const servers = [...this.servers.values()]
+      .sort((a, b) => a.config.serverName.localeCompare(b.config.serverName))
+      .map(s => ({ config: s.config, tools: s.tools }))
+    const credentials: Record<string, string> = {}
+    for (const s of this.servers.values()) for (const [ref, value] of s.credentials) credentials[ref] = value
+    return { servers, credentials }
+  }
+
+  private persist(): void {
+    this.onPersist?.()
+  }
 
   list(): CatalogMcpServerConfig[] {
     return [...this.servers.values()].map(s => ({ ...s.config, enabled: s.config.enabled })).sort((a, b) => a.serverName.localeCompare(b.serverName))
@@ -55,10 +101,11 @@ export class McpStore {
       tools: existing?.tools ?? [],
       error: existing?.error,
     })
+    this.persist()
   }
 
   remove(serverName: string): void {
-    this.servers.delete(serverName)
+    if (this.servers.delete(serverName)) this.persist()
   }
 
   /** Set server-level enable flag (discovery/registration is the caller's job). */
@@ -66,6 +113,7 @@ export class McpStore {
     const s = this.servers.get(serverName)
     if (s === undefined) return
     s.config = { ...s.config, enabled }
+    this.persist()
   }
 
   /** Set one credential value (empty clears it). */
@@ -75,6 +123,7 @@ export class McpStore {
     if (s === undefined) return
     if (value === '') s.credentials.delete(ref)
     else s.credentials.set(ref, value)
+    this.persist()
   }
 
   /** Configure a tool's enable flag. */
@@ -82,6 +131,7 @@ export class McpStore {
     const s = this.servers.get(serverName)
     if (s === undefined) return
     s.tools = s.tools.map(t => (t.name === toolName ? { ...t, enabled } : t))
+    this.persist()
   }
 
   /** Connect + discover tools for a server; caches the list (connect errors surface). */
@@ -110,9 +160,11 @@ export class McpStore {
       s.tools = connection.tools.map(t => ({ ...t, enabled: true }))
       s.error = undefined
       await connection.close()
+      this.persist()
       return s.tools
     } catch (error) {
       s.error = String(error)
+      this.persist()
       return s.tools
     }
   }
