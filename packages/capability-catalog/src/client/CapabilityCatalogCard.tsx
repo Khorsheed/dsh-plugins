@@ -658,7 +658,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
         open
         onClose={() => setConfirm(null)}
         title={t('addExistsTitle')}
-        description={`「${confirm.name}」${t('addExists')}`}
+        description={`${t('addExists')}「${confirm.name}」？`}
         footer={(
           <>
             <Button variant="outline" onClick={() => setConfirm(null)}>{t('cancel')}</Button>
