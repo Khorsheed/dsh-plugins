@@ -30,6 +30,7 @@ import type {
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
+import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
@@ -115,6 +116,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
     ctx.inject(['shellEnv', 'credentials', 'skills'], () => {
       installSkillEnvInjection(ctx, () => this.catalogScope())
     })
+    // Runtime companion hint (generic): when the skill tool loads a skill,
+    // tell the model the configured credential env mappings so it uses the
+    // DSH_<KEY> alias without the skill being modified.
+    installSkillEnvHint(ctx, () => this.catalogScope())
   }
 
   /** Record tools that appeared after the apply-time baseline. */

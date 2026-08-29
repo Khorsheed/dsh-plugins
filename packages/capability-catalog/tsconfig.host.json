@@ -17,6 +17,7 @@
     "src/official-tools.ts",
     "src/namespace.ts",
     "src/settings.ts",
-    "src/shellEnv.ts"
+    "src/shellEnv.ts",
+    "src/envHint.ts"
   ]
 }
