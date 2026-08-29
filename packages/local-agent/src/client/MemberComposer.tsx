@@ -7,7 +7,10 @@
  * filters on the session snapshot (one-shot subagent sessions elect), and the
  * component confirms real family membership through the `memberOf` Remote —
  * a session the family never delegated renders the same read-only panel the
- * official composer shows, never a writable box. Send goes to the
+ * official composer shows, never a writable box. The verification window is
+ * a NEUTRAL checking state (no read-only semantics), an RPC failure is never
+ * read as "not a member", and a confirmed membership is cached per session so
+ * a re-enter renders the writable box on the first frame. Send goes to the
  * `promptMember` Remote (the facade resume), never to the official input
  * machine; Stop goes to `stopMember`.
  */
@@ -71,6 +74,25 @@ export type MemberComposerProps =
 /** Membership probe state: undefined = still checking, null = not a member. */
 type Membership = LocalAgentDelegationView | null | undefined
 
+/** RPC-failure retry budget for the membership probe (see the probe effect). */
+const MEMBER_PROBE_RETRIES = 2
+/** Delay between membership probe retries. */
+const MEMBER_PROBE_RETRY_MS = 300
+
+/**
+ * Session-level positive membership cache: a recorded delegation is immutable
+ * for the session's lifetime, so a confirmed member re-enter renders the
+ * writable box on the first frame instead of re-flashing the checking state.
+ * Null answers (not yet delegated) are never cached — the record lands with
+ * the first round's settle, and the probe effect re-checks on running flips.
+ */
+const membershipCache = new Map<string, LocalAgentDelegationView>()
+
+/** Test hook: drop every cached membership answer. */
+export function resetMembershipCache(): void {
+  membershipCache.clear()
+}
+
 /**
  * The member composer: a writable box for family member sessions and the
  * official-looking read-only panel for every other one-shot session. Drafts
@@ -80,11 +102,11 @@ type Membership = LocalAgentDelegationView | null | undefined
  * mirrored transcript events) disables the input and swaps Send for Stop.
  * @param props - selector match, standard slot props, locale seat, and the
  *   injected gateway face.
- * @returns the composer, or the read-only panel while checking / when not a
- *   member.
+ * @returns the composer, the neutral checking state while probing, or the
+ *   read-only panel when not a member.
  */
 export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, t }: MemberComposerProps) {
-  const [membership, setMembership] = useState<Membership>(undefined)
+  const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   /** The last structured promptMember failure, rendered inline. */
@@ -108,9 +130,12 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   useEffect(() => {
     const childId = matched.childSessionId
     if (membershipFor.current !== childId) {
-      // A different child: reset to checking and probe.
+      // A different child: seed from the positive cache (a member re-enter
+      // skips the probe entirely) and reset to checking when uncached.
       membershipFor.current = childId
-      setMembership(undefined)
+      const cached = membershipCache.get(childId)
+      setMembership(cached)
+      if (cached !== undefined) return
     } else if (membershipRef.current !== null && membershipRef.current !== undefined) {
       return // already resolved for this child
     }
@@ -118,12 +143,33 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     // delegation record lands with the first round's settle (exec) or the
     // live handshake, exactly when running changes — so an open panel flips
     // from the one-shot read-only fallback to the writable member box on its
-    // own, without a session re-enter.
+    // own, without a session re-enter. An UNDEFINED answer is an RPC failure,
+    // never membership evidence: it keeps the neutral checking state and
+    // retries within a bounded budget before degrading to the read-only
+    // panel, so a transient failure never flashes "one-shot" at a member.
     let cancelled = false
-    void memberOf(childId).then((view) => {
-      if (!cancelled) setMembership(view ?? null)
-    })
-    return () => { cancelled = true }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const settle = (view: Membership): void => {
+      if (cancelled) return
+      if (view === undefined && attempts < MEMBER_PROBE_RETRIES) {
+        attempts += 1
+        timer = setTimeout(probe, MEMBER_PROBE_RETRY_MS)
+        return
+      }
+      const resolved = view === undefined ? null : view
+      if (resolved !== null) membershipCache.set(childId, resolved)
+      setMembership(resolved)
+    }
+    const probe = (): void => {
+      // A rejected RPC is the same transient failure as an undefined value.
+      void memberOf(childId).then(settle, () => settle(undefined))
+    }
+    probe()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) clearTimeout(timer)
+    }
   }, [memberOf, matched.childSessionId, running])
 
   if (membership === undefined) {
