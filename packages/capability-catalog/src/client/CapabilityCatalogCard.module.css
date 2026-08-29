@@ -1,12 +1,14 @@
-/* Capability-catalog settings section (工具与技能): heading + intro + tabs in
-   the official PluginsSettingsSection style (dark theme tokens). Re-implements
-   the chrome rather than importing the official one (bundle-purity gate). */
+/* Capability-catalog settings section (工具与技能): heading + intro + toolbar +
+   filter row + skill/tool list. Styled against the host's dark-theme alias
+   tokens exclusively (--dsw-alias-*) so it adapts to any host theme; the
+   section chrome is re-implemented rather than imported (bundle-purity gate).
+   The parent `.options` column already scrolls — this section never creates a
+   nested scroll region of its own. */
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 760px;
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Official section heading (PluginsSettingsSection.module.css). */
@@ -20,40 +22,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-/* Tab row: tablist grows, the add-button sits at the right, ghost style. */
-.tabRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  margin-top: 4px;
-}
-
-.addBtn {
-  flex: none;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-left: auto;
-  margin-bottom: 4px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.addBtn::before {
-  content: '＋ ';
-}
-
-.addBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--dsw-alias-label-primary);
+  margin-bottom: 12px; /* title → intro 12px */
 }
 
 .intro {
@@ -62,25 +31,41 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Official tabs (PluginsSettingsSection.module.css): bottom 2px accent bar. */
+/* Toolbar: tabs grow, add-button pinned right, 48px row with bottom hairline.
+   intro → toolbar 32px. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  margin-top: 32px;
+}
+
+/* Generic tab list (used by the inner add-skill tabs). */
 .tabs {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 4px;
-  margin-bottom: 8px;
+}
+
+/* Toolbar tab list: fill the 48px row, tabs stretch to the hairline. */
+.toolbar .tabs {
+  flex: 1;
+  align-items: stretch;
+  gap: 28px;
+  height: 100%;
 }
 
 .tab {
   position: relative;
   border: 0;
-  padding: 7px 1px 9px;
+  padding: 0 1px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
   font-size: 13px;
-  line-height: 20px;
+  line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -104,13 +89,19 @@
   content: '';
 }
 
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Muted count badge ("技能 5"). */
 .tabCnt {
   font-size: 10px;
   line-height: 1;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-caption);
   font-weight: 400;
 }
@@ -119,94 +110,260 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Skills preview grid: three cards per row. */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+/* Primary "新增 skill" button pins to the toolbar's right edge. */
+/* "新增 Skill" button sits quietly like the host ghost button. */
+.addBtn {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
+.addBtn::before {
+  content: '＋ ';
+}
+
+.addBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Filter / sort bar: search grows, sort select fixed, one row. */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px; /* toolbar → filter 20px */
+}
+
+.searchBox {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 34px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchInput:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.select {
+  height: 36px;
+  padding: 0 12px;
+  padding-right: 32px; /* chevron gap matches the left text gap */
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 12px 12px;
+}
+
+.select:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+/* Skills preview grid: responsive 2-column (host house pattern), falls to 1. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 16px; /* card horizontal + vertical 16px */
+  align-content: start;
+  margin-top: 24px; /* filter → cards 24px */
+  padding: 0 4px 24px 0;
+}
+
+/* Skill preview card (Agent-preset anatomy): main body + foot actions. */
 .pvCard {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: 136px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: #2b2b2e;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  color: var(--dsw-alias-label-primary);
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  background: var(--dsw-alias-bg-layer-3);
+  transition: border-color 0.16s, background 0.16s;
 }
 
 .pvCard:hover {
-  background: #303034;
-  border-color: rgba(255, 255, 255, 0.22);
-  transform: translateY(-2px);
+  border-color: var(--dsw-alias-label-dimmed);
 }
 
-.pvCard:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
+.pvMain {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* title → desc → provider 12px */
+  padding: 20px;
+  border-radius: 12px 12px 0 0;
 }
 
-.pvTitle {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.pvMain:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
 }
 
-.pvDesc {
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  line-height: 18px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.pvMeta {
-  margin-top: auto;
+.pvHead {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
-.pvProvider {
+.pvName {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Built-in tag: "内置 · <plugin>" (like the preset "内置" pill). */
+.pvTag {
+  border-radius: 999px;
+  padding: 1px 8px;
   font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+  font-weight: 500;
+  border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
+}
+
+.pvDesc {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-secondary);
+  min-height: 40px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Provider / plugin name on the subtitle line — more prominent than the preset
+   `cardId` (12px/500 secondary instead of 11px dimmed mono). */
+.pvSub {
+  margin-top: auto;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Small pill badges (uniform for source + provider so both read as labels). */
+.pvFoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.iconButton {
+  position: relative;
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+
+.iconDanger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Uniform pill badge for credential config (still used in the detail modal). */
 .badge {
   flex: none;
-  font-size: 10px;
-  line-height: 1;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 24px;
   white-space: nowrap;
 }
 
 .badgeWarn {
-  background: rgba(245, 185, 87, 0.16);
-  color: #f5b957;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-label) 16%, transparent);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .badgeOk {
-  background: rgba(76, 195, 138, 0.16);
-  color: #4cc38a;
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent);
+  color: var(--dsw-alias-state-success-primary);
 }
 
 /* Collapsible tool card (unchanged chrome). */
@@ -278,16 +435,21 @@
   margin: 10px 0 12px;
 }
 
-/* Meta as a key-value group: grid pairs, uniform gaps. */
+/* Meta as a wrap row: item groups, 8px label→value, 32px between groups. */
 .meta {
-  display: grid;
-  grid-template-columns: auto auto;
-  justify-content: start;
-  gap: 8px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
   font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
-  line-height: 1.5;
-  align-items: baseline;
+  align-items: center;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .metaKey {
@@ -309,32 +471,36 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
 }
 
 .modal {
-  width: 100%;
-  max-width: 660px;
-  max-height: 86vh;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  flex-direction: column;
+  width: min(880px, calc(100vw - 96px));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 20px;
-  background: #303034;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
+/* Modal head is fixed — only the body scrolls, so the title never leaves. */
 .modalHead {
+  flex: none;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 24px 32px 0;
 }
 
 .modalTitle {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
+  line-height: 30px;
   font-weight: 600;
-  line-height: 1.4;
 }
 
 .modalClose {
@@ -355,27 +521,52 @@
 }
 
 .modalClose:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
   color: var(--dsw-alias-label-primary);
 }
 
 .modalBody {
+  flex: 1;
+  min-height: 0;
   padding: 16px 32px 28px;
+  overflow-y: auto;
+}
+
+/* Add-skill modal sizes to its content (no internal scroll); its three tabs are
+   independent and naturally the same height. */
+.addModal {
+  height: auto;
+}
+
+/* Add-skill modal: tighten the title → tabs gap only here (the detail modal
+   keeps the default 16px body top pad). */
+.addModal .modalBody {
+  padding-top: 6px;
+}
+
+.addPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 32px; /* 安装 → footer divider 32px */
 }
 
 .detailDesc {
-  margin: 0 0 16px;
-  font-size: 13px;
-  line-height: 1.65;
+  margin: 2px 0 24px; /* title → desc 20px, desc → meta 24px */
+  font-size: 14px;
+  line-height: 24px;
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Credentials config block: boxed (a form-ish group). */
+/* Credentials config block: boxed, 20px padding, meta → card 20px, card → source 32px. */
 .conf {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 16px;
+  padding: 20px;
+  margin-top: 20px;
+  margin-bottom: 32px;
 }
 
 /* Source section: flat — a section title + divider, not a nested bordered box. */
@@ -394,11 +585,96 @@
   gap: 6px;
 }
 
-/* Divider under the source title (replaces the old outer border). */
 .source[open] .sourceTitle {
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 12px;
+  padding-bottom: 12px; /* "view source" → divider 12px */
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  margin-bottom: 16px; /* divider → file panel 16px */
+}
+
+/* Collapsible "view source" section: divider above the header, full-width 48px trigger. */
+.sourceSection {
+  margin-top: 24px; /* meta → divider 24px */
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.sourceTrigger {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px; /* arrow → label 8px */
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sourceTrigger:hover .sourceLabel {
+  color: var(--dsw-alias-label-primary);
+}
+
+.sourceChevron {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s;
+}
+
+.sourceLabel {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Single-file source: no file tree, full-width pane + a top toolbar (name/copy). */
+.sourceSingle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* header → panel 12px */
+  padding-bottom: 8px;
+}
+
+.sourceSingle .detailPane {
+  height: clamp(360px, 50vh, 540px);
+}
+
+.sourceBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sourceBarFile {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sourceCopy:hover {
+  color: var(--dsw-alias-label-primary);
 }
 
 .confHint {
@@ -408,7 +684,7 @@
 }
 
 .credRow {
-  margin-bottom: 14px;
+  margin-bottom: 20px; /* input row → card bottom 20px */
 }
 
 .credLabel {
@@ -418,19 +694,80 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
-  margin-bottom: 8px;
+  margin-bottom: 12px; /* key name+status → input row 12px */
 }
 
+/* Credential input + save: one row; save hides once configured (replace-on-blur). */
 .credInputRow {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
 }
 
 .credFail {
   font-size: 12px;
-  color: #e5534b;
+  color: var(--dsw-alias-state-error-primary);
   margin-top: 6px;
+}
+
+.credOk {
+  font-size: 12px;
+  color: var(--dsw-alias-state-success-primary);
+  margin-top: 6px;
+}
+
+.inputWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.inputWrap .input {
+  padding-right: 64px; /* clear the 56px show/hide button */
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  flex: 0 0 56px;
+  height: 100%;
+  border: none;
+  border-radius: 0 10px 10px 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eyeBtn:hover {
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Code panel: fills its pane, no own border, distinct darker bg, thin scroll. */
@@ -459,13 +796,13 @@
 
 .codeBlk::-webkit-scrollbar-thumb,
 .tree::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--dsw-alias-scrollbar-bg-l2);
   border-radius: 999px;
 }
 
 .codeBlk::-webkit-scrollbar-thumb:hover,
 .tree::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .codeBlk::-webkit-scrollbar-track,
@@ -481,7 +818,7 @@
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 8px 6px;
+  padding: 12px; /* dense file tree: 12px panel padding */
   overflow: auto;
   scrollbar-width: thin;
 }
@@ -489,22 +826,30 @@
 .treeRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   width: 100%;
-  padding: 5px 8px;
+  height: 36px;
+  margin-bottom: 2px;
+  padding: 0 10px;
+  box-sizing: border-box;
   border: none;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 1;
   text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .treeRow:hover {
   background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.treeRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
 }
 
 .treeFile {
@@ -512,16 +857,25 @@
   cursor: pointer;
 }
 
+/* Selected file: brighter background + left 3px accent rail (not a focus ring). */
 .treeSelected {
+  position: relative;
   background: var(--dsw-alias-interactive-bg-hover-solid);
   color: var(--dsw-alias-label-primary);
 }
 
-.treeChevron {
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
+.treeSelected::before {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--dsw-alias-state-business-primary);
+  content: '';
 }
 
+.treeChevron,
 .treeGlyph {
   display: inline-flex;
   color: var(--dsw-alias-label-tertiary);
@@ -533,12 +887,14 @@
   white-space: nowrap;
 }
 
-/* Source browser split: tree + detail panes, fixed clamp height, equal panels. */
+/* Source browser split: fixed header (title/desc/meta), tree + code panes
+   scroll independently inside a clamp-height band; the modal body scrolls only
+   when the content above the band is taller than the viewport. */
 .split {
   display: grid;
-  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 12px;
-  height: clamp(360px, 52vh, 620px);
+  height: clamp(360px, 50vh, 540px);
   margin-top: 4px;
 }
 
@@ -546,38 +902,98 @@
   min-width: 0;
   height: 100%;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
   padding: 4px;
 }
 
 .detailPane {
+  position: relative;
   min-width: 0;
   height: 100%;
   border-radius: 12px;
-  background: #202023;
+  background: var(--dsw-alias-bg-module-platform);
   overflow: hidden;
 }
 
+/* Copy affordance overlaid on the source pane. */
+.codeCopy {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.codeCopy:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.codeCopyIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .innerTabs {
-  margin-top: 4px;
+  align-items: stretch;
+  gap: 24px;
+  height: 44px; /* tabs 44px */
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  margin: 0 0 24px; /* title → tabs tight (scoped body pad below), divider → content 24px */
+}
+
+/* "Updated" date in the card meta, pushed to the right edge. */
+.pvDate {
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+/* Inline reset-filter link. */
+.ghostLink {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  color: var(--dsw-alias-state-business-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghostLink:hover {
+  text-decoration: underline;
 }
 
 /* Add-skill form controls. */
-/* Drag-drop dropzone for the upload tab. */
 .dropzone {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 132px;
+  gap: 8px;
+  height: 200px;
   padding: 24px;
+  box-sizing: border-box;
   margin-bottom: 4px;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--dsw-alias-bg-layer-1);
   font-size: 13px;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -585,10 +1001,15 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
+.dropzoneIcon {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .dropzone:hover,
 .dropzone.dragging {
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
 .dropTitle {
@@ -616,21 +1037,109 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Command install tab. */
+/* Command / dir install tab. */
 .command {
   margin-bottom: 4px;
+}
+
+/* From-directory: browse button + hint share one row. */
+.dirHintRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dirHintInline {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* A field label + its controls stacked as one field group (input → button 12px). */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .fieldLabel {
   display: block;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.fieldLabelStrong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  margin-bottom: 2px;
+}
+
+.fieldPath {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  margin: 0;
+  font-family: var(--ds-font-family-code, monospace);
+}
+
+/* From-directory picked path: block below the browse button + hint row. */
+.dirPath {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, monospace);
+  word-break: break-all;
+}
+
+/* Info button with a hover tooltip (model-invocable explanation). */
+.infoBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  font-style: italic;
+  cursor: help;
+}
+
+.infoBtn::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  z-index: 10;
+}
+
+.infoBtn:hover::after {
+  opacity: 1;
 }
 
 /* Directory skill picker. */
 .skillPick {
-  margin: 10px 0 0;
+  margin: 20px 0 0; /* path → "选择要安装的技能" 20px */
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -641,13 +1150,13 @@
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .pickRow:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--dsw-alias-border-l1);
 }
 
 .check {
@@ -668,9 +1177,9 @@
 .checkMark {
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--dsw-alias-bg-layer-1);
   transition: background 0.15s, border-color 0.15s;
 }
 
@@ -711,18 +1220,6 @@
   resize: vertical;
 }
 
-.input {
-  width: 100%;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
-}
-
 .switchRow,
 .rootRow {
   display: flex;
@@ -736,17 +1233,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.select {
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
-}
-
 .addMsg {
   margin-top: 12px;
   padding: 8px 12px;
@@ -755,13 +1241,13 @@
 }
 
 .addMsgOk {
-  color: #4cc38a;
-  background: rgba(76, 195, 138, 0.12);
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
 }
 
 .addMsgErr {
-  color: #e5534b;
-  background: rgba(229, 83, 75, 0.12);
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
 }
 
 /* Buttons. */
@@ -769,8 +1255,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: auto; /* pinned to modal bottom in the flex-stacked add modal */
+  padding-top: 24px; /* divider → buttons 24px */
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -779,14 +1265,15 @@
 }
 
 .btnGhost {
-  height: 32px;
-  padding: 0 16px;
+  height: 40px;
+  padding: 0 18px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -795,20 +1282,22 @@
 }
 
 .btnPrimary {
-  height: 32px;
-  padding: 0 16px;
+  height: 40px;
+  min-width: 88px;
+  padding: 0 18px;
   border: none;
-  border-radius: 8px;
-  background: var(--dsw-alias-button-info-fill);
+  border-radius: 10px;
+  background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .btnPrimary:hover {
-  background: var(--dsw-alias-button-info-hover);
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 .btnPrimary:disabled {
@@ -865,4 +1354,24 @@
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
   padding: 12px 0;
+}
+
+/* Compact confirm modal (delete). */
+.confirmModal {
+  width: min(440px, calc(100vw - 64px));
+}
+
+.confirmText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.btnDanger {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.btnDanger:hover {
+  background: var(--dsw-alias-state-error-primary);
 }

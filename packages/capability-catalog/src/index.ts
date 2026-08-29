@@ -23,12 +23,15 @@ import type {
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
+  CatalogDeleteSkillResult,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
 } from './types.ts'
-import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
+import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
+import { installSkillEnvInjection } from './shellEnv.ts'
+import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
@@ -44,6 +47,7 @@ export type {
   CatalogCredentialState,
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
+  CatalogDeleteSkillResult,
   CatalogCredentialSetRequest,
 } from './types.ts'
 
@@ -104,6 +108,20 @@ export class CapabilityCatalogService extends TypertRemoteService {
     this.appearedAfterApply = new Set()
     ctx.on('tools/change', () => this.markNewTools(tools))
     this.registerListTool()
+    // Expose each configured skill credential as a trusted per-execution
+    // `DSH_<KEY>` env var so the agent's shell can use it (shell expansion),
+    // without the raw value entering the model's context (default-hide). The
+    // catalog is service-agnostic — it knows nothing about the specific service;
+    // the skill tells the agent how to query. Defer to composition time via
+    // inject so the env-injection runs once shellEnv/credentials/skills are
+    // registered (at the catalog's apply they may not be composed yet).
+    ctx.inject(['shellEnv', 'credentials', 'skills'], () => {
+      installSkillEnvInjection(ctx, () => this.catalogScope())
+    })
+    // Runtime companion hint (generic): when the skill tool loads a skill,
+    // tell the model the configured credential env mappings so it uses the
+    // DSH_<KEY> alias without the skill being modified.
+    installSkillEnvHint(ctx, () => this.catalogScope())
   }
 
   /** Record tools that appeared after the apply-time baseline. */
@@ -231,6 +249,18 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('addSkill')
   async addSkill(request: CatalogAddSkillRequest): Promise<CatalogAddSkillResult> {
     return catalogAddSkill(this.ctx, request, this.dshHome())
+  }
+
+  @Remote('deleteSkill')
+  async deleteSkill(name: string, workdir?: string): Promise<CatalogDeleteSkillResult> {
+    const { registry } = resolveServicesHelper(this.ctx)
+    if (registry === undefined) return { ok: false, error: 'skills service absent in this composition' }
+    return catalogDeleteSkill(registry, name, workdir, await this.catalogScope())
+  }
+
+  @Remote('pickDirectory')
+  async pickDirectory(): Promise<string | null> {
+    return catalogPickDirectory(this.ctx)
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */

@@ -11,12 +11,15 @@ import type {
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
+  CatalogDeleteSkillResult,
   CatalogDirSkillInfo,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogToolRow,
 } from './types.ts'
-import { collectSkills, loadSkillDetail, readSkillFileContent, resolveServices, type CredentialsSlice, type RegistrySlice } from './skills.ts'
+import {
+  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice,
+} from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
@@ -96,6 +99,34 @@ export async function catalogReadSkillFile(
   return readSkillFileContent(registry, name, filePath, workdir, scope)
 }
 
+/** Open the host's native directory chooser (the workspace "add" dialog). */
+export async function catalogPickDirectory(ctx: Context, signal?: AbortSignal): Promise<string | null> {
+  const picker = ctx.get?.('directoryPicker') as
+    | { capability?: () => { kind?: string; pick?: (s: AbortSignal) => Promise<string | null> } }
+    | undefined
+  const cap = picker?.capability?.()
+  if (cap?.kind !== 'native' || cap.pick === undefined) return null
+  try {
+    return await cap.pick(signal ?? new AbortController().signal)
+  } catch {
+    return null
+  }
+}
+
+/** Delete a catalog-owned file skill (rejects built-in / plugin-provided). */
+export async function catalogDeleteSkill(
+  registry: RegistrySlice,
+  name: string,
+  workdir: string | undefined,
+  scope: unknown = undefined,
+): Promise<CatalogDeleteSkillResult> {
+  const base = workdir === undefined ? {} : { cwd: workdir }
+  const lookup = scope === undefined ? base : { ...base, scope }
+  const def = await registry.get(name, lookup)
+  if (def === undefined) return { ok: false, error: 'skill not found' }
+  return deleteSkillDir(def)
+}
+
 /** Set one declared credential value (never returned on the wire). */
 export async function catalogSetCredential(
   ctx: Context,
@@ -104,7 +135,8 @@ export async function catalogSetCredential(
   const { credentials } = resolveServices(ctx)
   if (credentials === undefined) return false
   try {
-    await credentials.set(request.key as never, request.value)
+    if (!CREDENTIAL_REF_NAME.test(request.key)) return false
+    await credentials.set(request.key, request.value)
     return true
   } catch {
     return false

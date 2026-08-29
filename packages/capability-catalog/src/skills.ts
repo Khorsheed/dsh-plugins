@@ -9,7 +9,7 @@
  * @module @khorsheed/dsh-capability-catalog/skills
  */
 
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -21,11 +21,22 @@ import type {
   CatalogSkillRow,
 } from './types.ts'
 
-/** The slice of the credentials service this package reads (optional). */
+/** The slice of the credentials service this package reads (optional; ref space). */
 export interface CredentialsSlice {
-  describeRecord: (key: string) => Promise<{ readonly set?: boolean } | undefined>
-  set: (ref: string, value: string) => Promise<void>
+  describe: (ref: unknown) => Promise<{ readonly configured?: boolean; readonly source?: string; readonly writable?: boolean } | undefined>
+  set: (ref: unknown, value: string) => Promise<void>
 }
+
+/** POSIX identifier — the minimal shape a credential reference name must match
+ * (the env keys the catalog handles are a strict subset of this). */
+export const CREDENTIAL_REF_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** Skill `source` buckets that resolve to a local file the catalog may delete.
+ * Built-in / plugin-provided skills (`runtime`, `bundled`, official `skill-badge`)
+ * have no catalog-owned file and are never deletable. */
+export const DELETABLE_SOURCES: ReadonlySet<string> = new Set([
+  'user-dsh', 'user-agents', 'project-dsh', 'project-agents', 'custom',
+])
 
 /** Minimal SkillSummary shape (invocation-neutral). */
 interface SkillSummaryLike {
@@ -109,7 +120,7 @@ export function mergeCredentialDecls(
 }
 
 /** Project one summary onto a wire skill row. */
-export function skillRowFrom(summary: SkillSummaryLike): CatalogSkillRow {
+export function skillRowFrom(summary: SkillSummaryLike, updatedAt?: number): CatalogSkillRow {
   return {
     name: summary.name,
     description: summary.description,
@@ -118,6 +129,21 @@ export function skillRowFrom(summary: SkillSummaryLike): CatalogSkillRow {
     modelInvocable: summary.invocation.modelInvocable,
     userInvocable: summary.invocation.userInvocable,
     ...summary.whenToUse !== undefined ? { whenToUse: summary.whenToUse } : {},
+    ...updatedAt !== undefined ? { updatedAt } : {},
+  }
+}
+
+/** Last-modified time (epoch ms) of a skill's body: the SKILL.md in its bundle
+ * directory for a directory skill, else the directory itself. Remote
+ * (`url`/`opaque`) skills have no local file and yield `undefined`. */
+async function skillUpdatedAt(summary: SkillSummaryLike): Promise<number | undefined> {
+  const base = summary.resourceBase
+  if (base?.kind !== 'directory' || base.path === undefined) return undefined
+  try {
+    const skillMd = await stat(join(base.path, 'SKILL.md')).catch(() => undefined)
+    return (skillMd ?? await stat(base.path)).mtimeMs
+  } catch {
+    return undefined
   }
 }
 
@@ -149,7 +175,7 @@ export async function collectSkills(
       continue
     }
     for (const summary of snapshot.skills) {
-      const row = skillRowFrom(summary)
+      const row = skillRowFrom(summary, await skillUpdatedAt(summary))
       if (!byName.has(row.name)) byName.set(row.name, row)
     }
   }
@@ -229,6 +255,22 @@ export async function readSkillFileContent(
   }
 }
 
+/** Delete a file skill's directory. Returns an error for built-in / plugin-provided
+ * skills (`runtime`, `bundled`, official `skill-badge`) that have no catalog-owned
+ * file, and for any skill whose bundle directory cannot be resolved. */
+export async function deleteSkillDir(def: SkillDefinitionLike): Promise<{ ok: boolean; error?: string }> {
+  if (!DELETABLE_SOURCES.has(def.source)) return { ok: false, error: 'not a deletable file skill' }
+  const dir = def.resourceBase?.kind === 'directory' ? def.resourceBase.path : undefined
+  if (dir === undefined) return { ok: false, error: 'skill has no bundle directory' }
+  try {
+    await stat(dir)
+    await rm(dir, { recursive: true, force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String(error) }
+  }
+}
+
 /** Load one skill's full detail (content + metadata + credentials state). */
 export async function loadSkillDetail(
   ctx: Context,
@@ -246,11 +288,13 @@ export async function loadSkillDetail(
   let credentialStates: readonly CatalogCredentialState[] = []
   if (decls.length > 0 && credentials !== undefined) {
     credentialStates = await Promise.all(decls.map(async (decl) => {
-      const record = await credentials.describeRecord(decl.key).catch(() => undefined)
+      const configured = CREDENTIAL_REF_NAME.test(decl.key)
+        ? (await credentials.describe(decl.key).catch(() => undefined))?.configured === true
+        : false
       return {
         key: decl.key,
         ...decl.label !== undefined ? { label: decl.label } : {},
-        configured: record?.set === true,
+        configured,
       }
     }))
   }

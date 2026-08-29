@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeCredentialDecls, skillRowFrom } from '../src/skills.ts'
+import { decodeCredentialDecls, skillRowFrom, deleteSkillDir } from '../src/skills.ts'
 
 describe('decodeCredentialDecls', () => {
   it('returns empty for missing / non-array metadata.credentials', () => {
@@ -50,5 +50,22 @@ describe('skillRowFrom', () => {
     expect(row.modelInvocable).toBe(false)
     expect('path' in row).toBe(false)
     expect('rank' in row).toBe(false)
+  })
+
+  it('carries updatedAt when provided', () => {
+    const row = skillRowFrom({ name: 'x', description: 'd', invocation: { modelInvocable: true, userInvocable: true }, source: 'user-dsh', provider: 'filesystem' }, 1700000000000)
+    expect(row.updatedAt).toBe(1700000000000)
+  })
+})
+
+describe('deleteSkillDir', () => {
+  it('rejects built-in / plugin-provided sources before touching the filesystem', async () => {
+    const res = await deleteSkillDir({ source: 'runtime', resourceBase: { kind: 'directory', path: '/x' } } as never)
+    expect(res.ok).toBe(false)
+  })
+
+  it('rejects a skill with no bundle directory', async () => {
+    const res = await deleteSkillDir({ source: 'user-dsh' } as never)
+    expect(res.ok).toBe(false)
   })
 })

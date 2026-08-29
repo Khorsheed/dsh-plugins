@@ -63,6 +63,16 @@ export function inferModelInvocable(content: string): boolean {
   return line !== 'true'
 }
 
+/** Whether a filesystem path exists (dir or file). */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await stat(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** True when a base64 payload decodes to a ZIP archive (magic bytes). */
 export function isZipPayload(payload: string): boolean {
   let bytes: Buffer
@@ -123,6 +133,7 @@ export async function addSkillFromText(request: CatalogAddSkillRequest, dshHome:
   }
   const finalText = finalizeSkillText(text, request.modelInvocable)
   const target = join(managedRoot(request.root, dshHome), parsed.name)
+  if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name: parsed.name }
   try {
     await mkdir(target, { recursive: true })
     await writeFile(join(target, 'SKILL.md'), finalText, 'utf8')
@@ -186,9 +197,11 @@ export async function addSkillFromZip(request: CatalogAddSkillRequest, dshHome: 
   const prefix = skillDirPrefix(skillEntry.path)
   const finalContent = finalizeSkillText(original, request.modelInvocable)
   const target = join(managedRoot(request.root, dshHome), name)
+  if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name }
 
   let wrote = false
   try {
+    if (request.overwrite === true) await rm(target, { recursive: true, force: true })
     await mkdir(target, { recursive: true })
   } catch (error) {
     return { ok: false, error: `failed to create skill dir: ${String(error)}` }
@@ -305,6 +318,7 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
       if (parsed === undefined) return { ok: false, error: 'SKILL.md missing name/description frontmatter' }
       const name = skillName ?? parsed.name
       const target = join(managedRoot(request.root, dshHome), name)
+      if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name }
       try {
         await rm(target, { recursive: true, force: true })
       } catch {
@@ -319,6 +333,8 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
     const children = await listSkillDirs(expanded)
     if (request.skills !== undefined && request.skills.length > 0) {
       const results = await Promise.all(request.skills.map(async (s) => copyInto(join(expanded, s), s)))
+      const existing = results.find(r => !r.ok && r.exists === true)
+      if (existing !== undefined) return existing
       const ok = results.filter(r => r.ok)
       if (ok.length > 0) return { ok: true, name: ok.map(r => r.name).join(', ') }
       const firstBad = results.find(r => !r.ok)
@@ -351,6 +367,10 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
   if (parsed === undefined) return { ok: false, error: 'cloned SKILL.md missing name/description frontmatter' }
   const name = parsed.name
   const target = join(managedRoot(request.root, dshHome), name)
+  if (!request.overwrite && await pathExists(target)) {
+    await rm(dest, { recursive: true, force: true }).catch(() => {})
+    return { ok: false, exists: true, name }
+  }
   try {
     await rm(target, { recursive: true, force: true })
   } catch {
@@ -386,18 +406,26 @@ async function findSkillMd(dir: string, depth = 0): Promise<{ skillDir: string; 
 }
 
 /**
- * List the skills inside a local container dir (each `<name>/SKILL.md`), for
- * the add-skill chooser to present to the user before installing.
+ * List the skills inside a local dir for the add-skill chooser. If the dir is a
+ * **skill container** (a set of `<name>/SKILL.md` sub-dirs) the sub-skills are
+ * listed as `kind:'child'`; if the dir is **itself a single skill bundle** (a
+ * `SKILL.md` at its root) it is listed as one `kind:'self'` entry so the user can
+ * install the directory as-is. Both shapes are returned when a dir has a root
+ * `SKILL.md` AND child skill dirs.
  * @param dirPath - the local directory path (may be `~`-prefixed).
  */
 export async function listDirSkills(dirPath: string): Promise<readonly CatalogDirSkillInfo[]> {
   const expanded = expandHome(dirPath)
-  const names = await listSkillDirs(expanded)
   const out: CatalogDirSkillInfo[] = []
-  for (const name of names) {
+  const selfContent = await readFile(join(expanded, 'SKILL.md'), 'utf8').catch(() => undefined)
+  if (selfContent !== undefined) {
+    const parsed = resolveSkillNameFromContent(selfContent)
+    if (parsed !== undefined) out.push({ name: parsed.name, description: parsed.description, kind: 'self' })
+  }
+  for (const name of await listSkillDirs(expanded)) {
     const content = await readFile(join(expanded, name, 'SKILL.md'), 'utf8').catch(() => '')
     const parsed = resolveSkillNameFromContent(content)
-    out.push({ name, description: parsed?.description ?? '' })
+    out.push({ name, description: parsed?.description ?? '', kind: 'child' })
   }
   return out
 }

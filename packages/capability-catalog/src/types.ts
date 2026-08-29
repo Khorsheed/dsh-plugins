@@ -22,6 +22,8 @@ export interface CatalogSkillRow {
   readonly userInvocable: boolean
   /** Optional extra routing guidance. */
   readonly whenToUse?: string
+  /** Last-modified time (epoch ms) of the skill body, when a local bundle exists. */
+  readonly updatedAt?: number
 }
 
 /** Credential declared by a skill's metadata (the plugin-defined convention). */
@@ -104,10 +106,14 @@ export interface CatalogSkillFileRead {
   readonly content: string
 }
 
-/** One skill found inside a local skill container dir. */
+/** One skill found inside a local skill container dir.
+ * `kind:'self'` is the picked directory itself (a single skill bundle), so it is
+ * installed with `repo=<dir>` and no `skills`; `'child'` is a sub-directory of a
+ * container, installed with `repo=<dir>` + `skills:[name]`. */
 export interface CatalogDirSkillInfo {
   readonly name: string
   readonly description: string
+  readonly kind?: 'self' | 'child'
 }
 
 /** Add-skill channel. */
@@ -126,6 +132,8 @@ export interface CatalogAddSkillRequest {
   readonly modelInvocable: boolean
   /** Target root: user (`$DSH_HOME/skills`) or project (`.agents/skills`). */
   readonly root: 'user' | 'project'
+  /** When true, an existing same-name skill in the target root is replaced instead of prompting. */
+  readonly overwrite?: boolean
 }
 
 /** Add-skill result. */
@@ -133,6 +141,14 @@ export interface CatalogAddSkillResult {
   readonly ok: boolean
   readonly error?: string
   readonly name?: string
+  /** Set on a soft "skill already exists" refusal (ok:false) so the UI can offer overwrite. */
+  readonly exists?: boolean
+}
+
+/** Delete-skill result (delete only applies to catalog-owned file skills). */
+export interface CatalogDeleteSkillResult {
+  readonly ok: boolean
+  readonly error?: string
 }
 
 /** Wire form of one credential's configured state. */
@@ -149,4 +165,6 @@ export interface CapabilityCatalogRemote {
   readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
+  readonly deleteSkill: (name: string, workdir?: string) => Promise<CatalogDeleteSkillResult>
+  readonly pickDirectory: () => Promise<string | null>
 }
