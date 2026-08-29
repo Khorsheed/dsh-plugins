@@ -21,7 +21,6 @@
     "src/envHint.ts",
     "src/mcpStore.ts",
     "src/mcpConnector.ts",
-    "src/mcpTools.ts",
     "src/mcps.ts"
   ]
 }
