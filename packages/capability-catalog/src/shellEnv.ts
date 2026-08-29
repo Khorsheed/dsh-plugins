@@ -131,8 +131,6 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             keys.add(decl.key)
             const resolved = await credentials.resolve(decl.key).catch(() => undefined)
             if (resolved !== undefined && resolved.value.length > 0) values.set(dshKey, resolved.value)
-            if (decl.key === 'WEREAD_API_KEY' || decl.key === 'WEREED_API_KEY') {
-            }
           }
         }
 
