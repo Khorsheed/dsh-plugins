@@ -90,8 +90,8 @@ export const zh = {
   addSuccess: '已添加 skill：',
   addError: '添加失败',
   readFailed: '文件读取失败',
-  addExistsTitle: '已存在',
-  addExists: '该 skill 已存在于目标目录，是否覆盖？',
+  addExistsTitle: '该技能已存在',
+  addExists: '已存在于目标目录，如继续导入将会覆盖原文件，请确认是否要继续。',
   replace: '覆盖',
 }
 
@@ -170,7 +170,7 @@ export const en = {
   addSuccess: 'Added skill: ',
   addError: 'Failed to add',
   readFailed: 'Failed to read file',
-  addExistsTitle: 'Already exists',
-  addExists: 'This skill already exists in the target root. Overwrite it?',
+  addExistsTitle: 'This skill already exists',
+  addExists: 'already exists in the target root. Continuing to import will overwrite the original file. Please confirm and continue.',
   replace: 'Replace',
 }
