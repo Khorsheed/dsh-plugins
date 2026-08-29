@@ -37,6 +37,7 @@ import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
 import type { PersistedMcpState } from './mcpStore.ts'
+import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } from './mcpTools.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -100,6 +101,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private readonly baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
   private readonly mcp: McpStore
+  /** The live `ctx.tools` (traceable proxy) captured from the tools inject. */
+  private mcpToolsRegistry: McpToolRegistry | undefined
+  /** Registered MCP tool disposers, keyed by model-facing public name. */
+  private readonly mcpToolDisposers = new Map<string, () => void>()
 
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
@@ -119,7 +124,13 @@ export class CapabilityCatalogService extends TypertRemoteService {
       this.mcp.onPersist = (): void => {
         void scope.update({ mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
       }
-      scope.watch((next) => this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp))
+      scope.watch((next) => {
+        this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp)
+        this.afterMcpMutation()
+      })
+      // Re-sync after loading persisted state (the tools inject may have fired
+      // before the store was seeded).
+      this.syncRegisteredMcpTools()
     })
     // Baseline snapshot of the tools visible at apply time; tools that appear
     // later (a tools/change diff) are marked plugin/inferred.
@@ -128,6 +139,13 @@ export class CapabilityCatalogService extends TypertRemoteService {
     this.appearedAfterApply = new Set()
     ctx.on('tools/change', () => this.markNewTools(tools))
     this.registerListTool()
+    // Register discovered MCP tools for the model once tools is composed. The
+    // inject keeps the catalog degrading when tools is absent; `toolCtx.tools`
+    // is the traceable proxy, so `register` must stay a MEMBER call on it.
+    ctx.inject(['tools'], (toolCtx) => {
+      this.mcpToolsRegistry = toolCtx.tools as unknown as McpToolRegistry
+      this.syncRegisteredMcpTools()
+    })
     // Expose each configured skill credential as a trusted per-execution
     // `DSH_<KEY>` env var so the agent's shell can use it (shell expansion),
     // without the raw value entering the model's context (default-hide). The
@@ -290,18 +308,21 @@ export class CapabilityCatalogService extends TypertRemoteService {
   async mcpAdd(config: CatalogMcpServerConfig): Promise<boolean> {
     if (config.serverName.trim() === '') return false
     this.mcp.add(config)
+    this.afterMcpMutation()
     return true
   }
 
   @Remote('mcpRemove')
   async mcpRemove(serverName: string): Promise<boolean> {
     this.mcp.remove(serverName)
+    this.afterMcpMutation()
     return true
   }
 
   @Remote('mcpSetEnabled')
   async mcpSetEnabled(serverName: string, enabled: boolean): Promise<void> {
     this.mcp.setEnabled(serverName, enabled)
+    this.afterMcpMutation()
   }
 
   @Remote('mcpSetCredential')
@@ -313,11 +334,14 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('mcpSetToolEnabled')
   async mcpSetToolEnabled(serverName: string, tool: string, enabled: boolean): Promise<void> {
     this.mcp.setToolEnabled(serverName, tool, enabled)
+    this.afterMcpMutation()
   }
 
   @Remote('mcpDiscover')
   async mcpDiscover(serverName: string): Promise<readonly CatalogMcpTool[]> {
-    return this.mcp.discover(serverName)
+    const tools = await this.mcp.discover(serverName)
+    this.afterMcpMutation()
+    return tools
   }
 
   @Remote('mcpSnapshot')
@@ -351,6 +375,28 @@ export class CapabilityCatalogService extends TypertRemoteService {
       if (server.length > 0 && !names.includes(server)) names.push(server)
     }
     return names
+  }
+
+  /**
+   * Reconcile which discovered MCP tools are registered on `ctx.tools` so the
+   * model can call them. `mcpToolsRegistry` is the traceable `ctx.tools` proxy,
+   * so `register` is always invoked as a MEMBER call (`reconcile` calls
+   * `registry.register(...)`) — extracting it to a standalone variable loses the
+   * `this.ctx` binding and breaks the disposal effect.
+   */
+  private syncRegisteredMcpTools(): void {
+    const registry = this.mcpToolsRegistry
+    if (registry === undefined) return
+    const desired = desiredMcpTools(this.mcp.list(), this.mcp.toolsByServer())
+    reconcileRegisteredMcpTools(desired, {
+      register: (definition) => registry.register(definition),
+      onRegisterError: (error) => this.ctx.logger.error(`capability-catalog: MCP tool registration failed: ${String(error)}`),
+    }, this.mcpToolDisposers, (serverName, rawName, args) => this.mcp.callTool(serverName, rawName, args))
+  }
+
+  /** Re-sync registered MCP tools after any MCP store mutation. */
+  private afterMcpMutation(): void {
+    this.syncRegisteredMcpTools()
   }
 }
 
