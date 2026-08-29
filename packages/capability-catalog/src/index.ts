@@ -38,6 +38,7 @@ import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
 import type { PersistedMcpState } from './mcpStore.ts'
 import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } from './mcpTools.ts'
+import { maskConfig } from './mcps.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -301,7 +302,8 @@ export class CapabilityCatalogService extends TypertRemoteService {
 
   @Remote('mcpList')
   async mcpList(): Promise<readonly CatalogMcpServerConfig[]> {
-    return this.mcp.list()
+    // Masked DTO: never surface secretRef markers (or the secret key names) to the browser.
+    return this.mcp.list().map(maskConfig)
   }
 
   @Remote('mcpAdd')
@@ -347,7 +349,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('mcpSnapshot')
   async mcpSnapshot(): Promise<CatalogMcpSnapshot> {
     return {
-      servers: this.mcp.list(),
+      servers: this.mcp.list().map(maskConfig),
       tools: this.mcp.toolsByServer(),
       credentials: this.mcp.credentials(),
     }

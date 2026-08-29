@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseServerEntry, detectTransport, maskSecret, credentialStoredRefs, resolveConfigSecrets, SECRET_REF_PREFIX } from '../src/mcps.ts'
+import { parseServerEntry, detectTransport, maskSecret, maskConfig, credentialStoredRefs, resolveConfigSecrets, SECRET_REF_PREFIX } from '../src/mcps.ts'
 
 describe('detectTransport', () => {
   it('stdlib via command', () => expect(detectTransport({ command: 'npx' })).toBe('stdio'))
@@ -80,5 +80,23 @@ describe('scheme-prefixed secrets', () => {
     const r = parseServerEntry('s', { url: 'https://x/mcp', headers: { Authorization: 'Bearer abc123' } })
     const resolved = await resolveConfigSecrets(r.config, async (ref) => (ref === 'Authorization' ? 'tok' : undefined))
     expect(resolved.headers?.[0]).toEqual(['Authorization', 'Bearer tok'])
+  })
+})
+
+describe('maskConfig', () => {
+  it('masks every secret marker (env/header/url) and preserves scheme prefixes, for the Remote DTO', () => {
+    const r = parseServerEntry('s', {
+      url: 'https://x/mcp?key=secretRef:k',
+      headers: { Authorization: 'Bearer abc123' },
+      env: { API_KEY: 'sk-1' },
+    })
+    // stdio parse ignores headers/url; build a streamable-http config instead.
+    const http = parseServerEntry('s', { url: 'https://x/mcp?key=secretRef:k', headers: { Authorization: 'Bearer abc123' } }).config
+    const masked = maskConfig(http)
+    expect(masked.headers?.[0]).toEqual(['Authorization', 'Bearer ·secretRef·'])
+    expect(masked.url).toBe('https://x/mcp?key=·secretRef·')
+    // A plain (non-secret) field is untouched.
+    const plain = maskConfig(parseServerEntry('s', { command: 'node', env: { LOG_LEVEL: 'debug' } }).config)
+    expect(plain.env?.[0]).toEqual(['LOG_LEVEL', 'debug'])
   })
 })

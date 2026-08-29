@@ -94,6 +94,21 @@ export function maskSecret(value: string): string {
   return value.replace(SECRET_REF_RE, '·secretRef·')
 }
 
+/** Mask a server config for the wire (the Remote DTO): replace every `secretRef:`
+ * marker (bare or scheme-prefixed) with `·secretRef·`, so neither the secret key
+ * name nor the marker is exposed to the browser. */
+export function maskConfig(config: CatalogMcpServerConfig): CatalogMcpServerConfig {
+  const env = (config.env ?? []).map(([k, v]) => [k, maskSecret(v)] as [string, string])
+  const headers = (config.headers ?? []).map(([k, v]) => [k, maskSecret(v)] as [string, string])
+  const url = config.url !== undefined ? maskSecret(config.url) : undefined
+  return {
+    ...config,
+    ...(env.length > 0 ? { env } : {}),
+    ...(headers.length > 0 ? { headers } : {}),
+    ...(url !== undefined ? { url } : {}),
+  }
+}
+
 /** Whether the config still has an unfilled credential (= prompts for it). */
 export function hasUnconfiguredCredentials(credentials: readonly CatalogMcpCredentialDecl[]): boolean {
   return credentials.some(c => !c.configured)
