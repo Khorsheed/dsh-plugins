@@ -7,6 +7,7 @@
  */
 
 import type { CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpTool } from './types.ts'
+import { resolveConfigSecrets } from './mcps.ts'
 
 interface StoredServer {
   config: CatalogMcpServerConfig
@@ -91,7 +92,21 @@ export class McpStore {
       // Dynamic import keeps the SDK-backed connector out of the typert-analyzed
       // host face (third-party SDK types aren't resolvable in the gen-typert overlay).
       const { connectMcpServer } = await import('./mcpConnector.ts')
-      const connection = await connectMcpServer(s.config)
+      // Resolve secretRef markers to the stored credential values before connecting,
+      // so a configured API key is sent as its real value (never the secretRef).
+      const resolved = await resolveConfigSecrets(s.config, async (ref) => {
+        const candidates = [
+          `mcp.${serverName}.env.${ref}`,
+          `mcp.${serverName}.header.${ref}`,
+          `mcp.${serverName}.query.${ref}`,
+        ]
+        for (const candidate of candidates) {
+          const value = s.credentials.get(candidate)
+          if (value !== undefined) return value
+        }
+        return undefined
+      })
+      const connection = await connectMcpServer(resolved)
       s.tools = connection.tools.map(t => ({ ...t, enabled: true }))
       s.error = undefined
       await connection.close()

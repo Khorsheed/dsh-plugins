@@ -20,6 +20,7 @@
     "src/shellEnv.ts",
     "src/envHint.ts",
     "src/mcpStore.ts",
-    "src/mcpConnector.ts"
+    "src/mcpConnector.ts",
+    "src/mcps.ts"
   ]
 }
