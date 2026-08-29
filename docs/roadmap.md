@@ -219,54 +219,68 @@ dsh-dev/
 
 三条线可并行：**A 轻、先跑通流程为 B 探路**；**B 是主体**；**C 是前置修复，不阻塞 A/B 的文件工作**。
 
-### A 线：dsh-web-basic 更新（加两个成员）
+### A 线：镜像化 + dsh-web-basic 更新
+
+整合包源迁进 monorepo 的 `packs/` 目录，用同步脚本推镜像仓——**monorepo 是单一事实源，镜像仓是「clone 即装」的门面**。web-basic 这次正好要加成员，当第一个验证案例。
+
+> **目录命名**：外层 `packs/` 是分发单位，内层 `profile/` 是运行配置。整合包**包含**一个 profile 但不等于它——它还带安装脚本、双语 README、CHANGELOG 与截图，那些是为了把 profile 送到别人手上而存在的配套。`bundles/` 则会撞插件的 `dsh.bundle` 字段。原仓库维护者提出 `packs/`，已采纳。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
-| A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号在一个工作日内不再变动 |
-| A2 | `capability-catalog` + `inline-html-render` 打 tarball | A1 | `tar -tzf` 见 `lib/`、`cordis.patch.yml`、`scripts/` |
-| A3 | `profiles/web-basic/package.json` 加两个成员 | A2 | `dsh --profile web-basic --dump-config` 行数 +2 |
-| A4 | README 成员表 10 → 12，补两段插件介绍 | A3 | 中英双语同步 |
-| A5 | **全新 `$DSH_HOME` 装一遍**（不是在现有环境上叠） | A3 | `install.sh` 一次通过，实例起得来 |
-| A6 | 推 GitHub | A4·A5 | 他人 clone 能照 README 装上 |
+| A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号一个工作日内不变 |
+| A2 | 建 `packs/web-basic/`：`profile/`（待拷贝的 profile 内容）+ `scripts/` + 双语 README + CHANGELOG | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
+| A3 | **逐字节搬**现有 README 双指南与 restart 脚本 | A2 | 与镜像仓 diff 为空——**不许顺手优化**，那些是多轮事故打磨的（watchdog 交接、`$DSH_SESSION_ID` 寻址、不硬编码 `--initiator`） |
+| A4 | 补 `README.i18n.yaml` sidecar | A3 | 配对门禁认得它 |
+| A5 | 扩翻译配对 glob 到 `{packages,packs,.agents}` | A4 | 门禁扫得到 packs/ |
+| A6 | 写 `scripts/sync-pack-mirror.mts`（照 `sync-ankh-guard-mirror.mts` 改） | A2 | 只拷整合包自身文件 + **被引用的**截图，不拖 monorepo 的 `docs/` |
+| A7 | **同步脚本加 `--check` 模式并进 CI** | A6 | 镜像落后于 monorepo 即红——防「单一事实源」漂成两个真相 |
+| A8 | 加两个成员（capability-catalog、inline-html-render），版本 bump 走 **minor** | A1·A2 | `--dump-config` 行数 +2 |
+| A9 | **`install.sh` 增量安装路径**：已装过旧版的实例能升级（已装跳过、只补新的） | A8 | 现在是「目录已存在就报错退出」，无升级路径 |
+| A10 | A9 的验收步骤（测试或手写清单） | A9 | 旧实例升级、全新安装两条路径都过 |
+| A11 | 全新 `$DSH_HOME` 装一遍 | A8·A9 | 一次通过 |
+| A12 | 同步推镜像仓 | A6·A11 | 镜像仓 clone 能照 README 装上 |
 
 ### B 线：dsh-web-dev 新建
 
-成员 = base 12 + feature 10（local-agent 家族 7 + `worktrees` + `mission` + `room`）。
+成员清单以**「已合 main 且 3080 验收过」**为准，在途包不写进整合包。截至 2026-08-30，3080 上 21 个成员均已就位（`room` 08-29 18:55 上线，观察期刚起算）。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
-| B1 | 确认成员清单与各包版本线 | C1 | 清单落纸，每包一个确定版本 |
-| B2 | 建 `profiles/dsh-web-dev/` 目录与 `package.json` | B1 | 成员齐、版本对 |
-| B3 | 写 `cordis.yml`：bundles 层 + `agent-presets` 的 `roots` 指向 `./presets` | B2 | `--dump-config` 组合完整 |
-| B4 | **写 `presets/standard/agent.cordis.yml`**：从官方 `standard` 复制，加开发 workflow 的 prompt section | B3 | 新建会话选得到；**本仓首次分发 preset，无先例** |
-| B5 | 写 `scripts/install.sh` | B2 | 对标 web-basic |
-| B6 | 写 `scripts/restart-into-dsh-web-dev.sh`（`ankh-guard restart --profile dsh-web-dev`） | B5 | 同端口交接成功 |
-| B7 | 13 个未上 npm 的成员打 tarball、本地装配 | A2 | 全部可解析 |
-| B8 | 写 README（对标 web-basic，含给 Agent 的安装指南） | B4·B6 | 中英双语 |
-| B9 | **全新 `$DSH_HOME` 装一遍** | B5·B7 | 一次通过 |
-| B10 | **五条切换判据实测**（见下） | B6·B9 | 五条全过 |
-| B11 | 建 GitHub 仓库并推 | B8·B10 | 他人 clone 能照 README 装上 |
-
-#### B10 的五条判据
-
-| # | 判据 | 验证什么 |
-|---|---|---|
-| 1 | web-basic → dsh-web-dev：同端口交接，刷新后是 dev 界面（worktrees 徽标、mission tab 出现） | 切换成立，UI 随 profile 走 |
-| 2 | **再切回 web-basic**，界面回到 daily 形态，无残留组件、无报错空槽 | 可逆——敢日常使用的前提 |
-| 3 | 故意改坏 dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例不停** | 安全网真的在 |
-| 4 | 会话数据跨切换存活：切过去再切回来，之前的会话仍可打开 | 切的是组合不是数据 |
-| 5 | dev 下 `capability-catalog` 列出的工具含 mission / 委派工具，web-basic 下不含 | 隔离靠 profile 成立 |
+| B1 | 确认成员清单与各包版本线 | A 线机制就位 | 每包一个确定版本，无在途包 |
+| B2 | 建 `packs/web-dev/profile/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` | B1·A2 | 自带 hoisted linker |
+| B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
+| B4 | **写 `profile/presets/standard/agent.cordis.yml`** | B3 | 本仓首次分发 preset，无先例 |
+| B5 | 写 `scripts/install.sh`（含增量路径，复用 A9 的做法） | B2·A9 | 全新与增量两条路径 |
+| B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
+| B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
+| B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
+| B9 | **五条切换判据实测** | B6·B8 | 见下 |
+| B10 | 借 **3091 alpha 实例**做 0.1.2 线的首版验证 | B8 | 与 3080 线结果对照 |
+| B11 | 建镜像仓并首次同步 | B7·B9·A6 | clone 能照 README 装上 |
 
 ### C 线：前置修复（可并行，不阻塞 A/B 的文件工作）
 
 | # | 事项 | 为什么要做 | 阻塞谁 |
 |---|---|---|---|
-| C1 | **`room` 推上 3080** | dev 成员里唯一零生产验证的包 | B1 |
+| ~~C1~~ | ~~`room` 推上 3080~~ | **已完成**：2026-08-29 18:55 部署，分支已合并删除 | — |
 | C2 | 确认迁移验收三步：会话里列出 skill 并**真调用一次** / `check-env --port 3080` 读数 / 门禁重启 canary PASS | ops.md 要求，从未确认执行过 | 下一期 npm 发布 |
-| C3 | 重新生成 `release-status.md`（`pnpm release:status`） | 现版本 08-23 生成，缺 4 个包 | 下一期 |
-| C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐 0.1.2 宿主线 | AGENTS.md 要求；0.1.2 迁移进行中 | 下一期 |
+| C3 | 重新生成 `release-status.md`（`pnpm release:status`） | 现版本 08-23 生成，缺 5 个包 | 下一期 |
+| C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐 0.1.2 宿主线 | AGENTS.md 要求；0.1.2 适配分支待命中 | B10 |
 | C5 | README 截图回填（各包占位注释） | ops.md「验收即截图」 | 下一期 |
+
+### 观察期实况（2026-08-30）
+
+3080 上 21 个成员。**重新部署会重置计时**，因此各包观察期不同步：
+
+| 包 | 最近部署 | 三天期满 |
+|---|---|---|
+| `local-agent` / `-kimi` | 08-29 18:47 | 09-01 18:47 |
+| `room` | 08-29 18:55 | 09-01 18:55 |
+| `ankh-guard` | 08-29 15:14 | 09-01 15:14 |
+| `capability-catalog` | 08-29 14:46 | 09-01 14:46（且需先冻结，见 A1） |
+| `worktrees` / `file-preview` / `inline-html-render` | 08-28 | 08-31 |
+
+本期不发 npm，所以观察期不阻塞 A/B——它是下一期的入场券。
 
 ### 本期不做
 
