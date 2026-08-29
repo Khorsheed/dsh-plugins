@@ -49,29 +49,21 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   // Grid filter / sort state.
   const [query, setQuery] = useState('')
-  const [filterSource, setFilterSource] = useState('')
-  const [filterProvider, setFilterProvider] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('name')
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
 
-  const sources = useMemo(() => [...new Set(skills.map(s => s.source))].sort(), [skills])
-  const providers = useMemo(() => [...new Set(skills.map(s => s.provider))].sort(), [skills])
-
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
     const matched = skills.filter((s) =>
-      (filterSource === '' || s.source === filterSource) &&
-      (filterProvider === '' || s.provider === filterProvider) &&
-      (q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)),
-    )
+      q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
     const sorted = [...matched]
     if (sortBy === 'updated') sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     else sorted.sort((a, b) => a.name.localeCompare(b.name))
     return sorted
-  }, [skills, query, filterSource, filterProvider, sortBy])
+  }, [skills, query, sortBy])
 
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
@@ -87,8 +79,6 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
 
   const resetFilter = (): void => {
     setQuery('')
-    setFilterSource('')
-    setFilterProvider('')
     setSortBy('name')
   }
 
@@ -124,14 +114,6 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          <select className={css.select} value={filterSource} aria-label={t('source')} onChange={(e) => setFilterSource(e.target.value)}>
-            <option value="">{t('source')}: {t('filterAll')}</option>
-            {sources.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select className={css.select} value={filterProvider} aria-label={t('provider')} onChange={(e) => setFilterProvider(e.target.value)}>
-            <option value="">{t('provider')}: {t('filterAll')}</option>
-            {providers.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
           <select className={css.select} value={sortBy} aria-label={t('sortBy')} onChange={(e) => setSortBy(e.target.value as SortBy)}>
             <option value="name">{t('sortBy')}: {t('sortName')}</option>
             <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>

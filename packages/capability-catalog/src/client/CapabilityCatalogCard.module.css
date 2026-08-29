@@ -113,8 +113,8 @@
 /* Primary "新增 skill" button pins to the toolbar's right edge. */
 .addBtn {
   flex: none;
-  height: 38px;
-  padding: 0 18px;
+  height: 34px;
+  padding: 0 14px;
   border: none;
   border-radius: 10px;
   background: var(--dsw-alias-button-primary-fill);
@@ -138,18 +138,18 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
-/* Filter / sort bar: search fills row 1, source/provider/sort share row 2. */
+/* Filter / sort bar: search grows, sort select fixed, one row. */
 .filterBar {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
   gap: 12px;
   margin-top: 20px; /* toolbar → filter 20px */
 }
 
 .searchBox {
-  grid-column: 1 / -1; /* search fills the whole first row */
-  position: relative;
+  flex: 1;
   min-width: 0;
+  position: relative;
 }
 
 .searchIcon {
