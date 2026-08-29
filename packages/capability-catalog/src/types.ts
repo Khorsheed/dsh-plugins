@@ -73,6 +73,53 @@ export interface CatalogToolRow {
 }
 
 /** One MCP server observed in the profile patch layers. */
+
+/** MCP transport kind (matches dsh-mcp-client). */
+export type McpTransport = 'stdio' | 'streamable-http'
+
+/** One detected credential declared by an MCP server config (env/header/query). */
+export interface CatalogMcpCredentialDecl {
+  /** Config key that holds the secret (env var name, header name, or 'query:key'). */
+  readonly ref: string
+  /** Human label (e.g. the env var / header / query param name). */
+  readonly label: string
+  /** Whether the credential has been configured (never the value). */
+  readonly configured: boolean
+}
+
+/** A configured MCP server (the catalog's persisted form). */
+export interface CatalogMcpServerConfig {
+  readonly serverName: string
+  readonly transport: McpTransport
+  /** stdio */
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly cwd?: string
+  /** streamable-http */
+  readonly url?: string
+  readonly headers?: readonly [string, string][]
+  /** env (value is a secretRef marker if it came from a secret). */
+  readonly env?: readonly [string, string][]
+  /** Whether the server is enabled (connected + injected). */
+  readonly enabled: boolean
+}
+
+/** One discovered tool of an MCP server. */
+export interface CatalogMcpTool {
+  readonly name: string
+  readonly description: string
+  readonly parameters?: CatalogJsonValue
+  /** Per-tool enable/disable. */
+  readonly enabled: boolean
+}
+
+/** The catalog's own MCP server management snapshot. */
+export interface CatalogMcpSnapshot {
+  readonly servers: readonly CatalogMcpServerConfig[]
+  readonly tools: Readonly<Record<string, readonly CatalogMcpTool[]>>
+  readonly credentials: readonly CatalogMcpCredentialDecl[]
+}
+
 export interface CatalogMcpServerRow {
   readonly name: string
   readonly toolCount: number
