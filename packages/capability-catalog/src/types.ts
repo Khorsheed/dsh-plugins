@@ -106,10 +106,14 @@ export interface CatalogSkillFileRead {
   readonly content: string
 }
 
-/** One skill found inside a local skill container dir. */
+/** One skill found inside a local skill container dir.
+ * `kind:'self'` is the picked directory itself (a single skill bundle), so it is
+ * installed with `repo=<dir>` and no `skills`; `'child'` is a sub-directory of a
+ * container, installed with `repo=<dir>` + `skills:[name]`. */
 export interface CatalogDirSkillInfo {
   readonly name: string
   readonly description: string
+  readonly kind?: 'self' | 'child'
 }
 
 /** Add-skill channel. */

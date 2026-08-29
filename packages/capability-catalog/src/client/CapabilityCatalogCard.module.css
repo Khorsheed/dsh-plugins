@@ -1079,6 +1079,15 @@
   font-family: var(--ds-font-family-code, monospace);
 }
 
+/* From-directory picked path: block below the browse button + hint row. */
+.dirPath {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code, monospace);
+  word-break: break-all;
+}
+
 /* Info button with a hover tooltip (model-invocable explanation). */
 .infoBtn {
   position: relative;

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateRawSync } from 'node:zlib'
@@ -10,6 +10,7 @@ import {
   commandInstall,
   inferModelInvocable,
   isZipPayload,
+  listDirSkills,
   managedRoot,
   resolveSkillNameFromContent,
 } from '../src/import.ts'
@@ -280,5 +281,36 @@ describe('dedup: same-name skill in the target root', () => {
     await commandInstall(req, home)
     const res = await commandInstall(req, home)
     expect(res).toEqual({ ok: false, exists: true, name: 'wechat-reading' })
+  })
+})
+
+describe('listDirSkills self vs child', () => {
+  it('lists a single-skill dir itself as one self entry', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cap-skill-'))
+    await writeFile(join(dir, 'SKILL.md'), SKILL, 'utf8')
+    const list = await listDirSkills(dir)
+    expect(list).toEqual([{ name: 'wechat-reading', description: 'Read WeChat Reading shelf', kind: 'self' }])
+  })
+
+  it('lists a container dir as child entries', async () => {
+    const home = await tmpHome()
+    const dir = join(home, 'container')
+    await mkdir(join(dir, 'a'), { recursive: true })
+    await mkdir(join(dir, 'b'), { recursive: true })
+    await writeFile(join(dir, 'a', 'SKILL.md'), SKILL, 'utf8')
+    await writeFile(join(dir, 'b', 'SKILL.md'), SKILL, 'utf8')
+    const list = await listDirSkills(dir)
+    expect(list.length).toBe(2)
+    expect(list.every(s => s.kind === 'child')).toBe(true)
+  })
+
+  it('installs a single skill dir picked directly (repo=dir, no skills)', async () => {
+    const home = await tmpHome()
+    const src = await mkdtemp(join(tmpdir(), 'cap-skill-'))
+    await writeFile(join(src, 'SKILL.md'), SKILL, 'utf8')
+    const req: CatalogAddSkillRequest = { channel: 'command', payload: '', repo: src, modelInvocable: true, root: 'user' }
+    const res = await commandInstall(req, home)
+    expect(res).toEqual({ ok: true, name: 'wechat-reading' })
+    expect(await readFile(join(home, 'skills', 'wechat-reading', 'SKILL.md'), 'utf8')).toContain('# body')
   })
 })

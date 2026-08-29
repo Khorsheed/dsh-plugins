@@ -406,18 +406,26 @@ async function findSkillMd(dir: string, depth = 0): Promise<{ skillDir: string; 
 }
 
 /**
- * List the skills inside a local container dir (each `<name>/SKILL.md`), for
- * the add-skill chooser to present to the user before installing.
+ * List the skills inside a local dir for the add-skill chooser. If the dir is a
+ * **skill container** (a set of `<name>/SKILL.md` sub-dirs) the sub-skills are
+ * listed as `kind:'child'`; if the dir is **itself a single skill bundle** (a
+ * `SKILL.md` at its root) it is listed as one `kind:'self'` entry so the user can
+ * install the directory as-is. Both shapes are returned when a dir has a root
+ * `SKILL.md` AND child skill dirs.
  * @param dirPath - the local directory path (may be `~`-prefixed).
  */
 export async function listDirSkills(dirPath: string): Promise<readonly CatalogDirSkillInfo[]> {
   const expanded = expandHome(dirPath)
-  const names = await listSkillDirs(expanded)
   const out: CatalogDirSkillInfo[] = []
-  for (const name of names) {
+  const selfContent = await readFile(join(expanded, 'SKILL.md'), 'utf8').catch(() => undefined)
+  if (selfContent !== undefined) {
+    const parsed = resolveSkillNameFromContent(selfContent)
+    if (parsed !== undefined) out.push({ name: parsed.name, description: parsed.description, kind: 'self' })
+  }
+  for (const name of await listSkillDirs(expanded)) {
     const content = await readFile(join(expanded, name, 'SKILL.md'), 'utf8').catch(() => '')
     const parsed = resolveSkillNameFromContent(content)
-    out.push({ name, description: parsed?.description ?? '' })
+    out.push({ name, description: parsed?.description ?? '', kind: 'child' })
   }
   return out
 }

@@ -476,7 +476,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
   const [confirm, setConfirm] = useState<{ name: string; req: CatalogAddSkillRequest } | null>(null)
 
   const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
-  const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0
+  const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0 && selectedSkills.length > 0
 
   // Tabs are independent: switching clears the previous tab's message so a
   // warning on one tab never bleeds into another.
@@ -524,11 +524,19 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
     if (!canSubmit || busy) return
     setBusy(true)
     setMsg(null)
-    const req = tab === 'upload'
-      ? { channel: 'zip' as const, payload: zipBase64 as string, modelInvocable, root }
-      : tab === 'command'
-        ? { channel: 'command' as const, payload: '', repo: command, modelInvocable, root }
-        : { channel: 'command' as const, payload: '', repo: dir, modelInvocable, root, ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}) }
+    const req = (() => {
+      if (tab === 'upload') return { channel: 'zip' as const, payload: zipBase64 as string, modelInvocable, root }
+      if (tab === 'command') return { channel: 'command' as const, payload: '', repo: command, modelInvocable, root }
+      // From-directory: a `kind:'self'` entry is the picked dir itself (a single
+      // skill bundle) and is installed with repo=<dir> and no `skills`. Child
+      // entries are sub-dir skills of a container and go in `skills:[name]`.
+      const selfNames = dirSkills.filter(s => s.kind === 'self').map(s => s.name)
+      const childSkills = selectedSkills.filter(n => !selfNames.includes(n))
+      const selfOnly = selfNames.some(n => selectedSkills.includes(n)) && childSkills.length === 0
+      return selfOnly
+        ? { channel: 'command' as const, payload: '', repo: dir, modelInvocable, root }
+        : { channel: 'command' as const, payload: '', repo: dir, modelInvocable, root, ...(childSkills.length > 0 ? { skills: childSkills } : {}) }
+    })()
     const res = await addSkill(req)
     if (res.ok) {
       await refresh()
@@ -603,7 +611,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
                 <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
                 <span className={css.dirHintInline}>{t('dirHint')}</span>
               </div>
-              {dir !== '' ? <p className={css.fieldPath}>{dir}</p> : null}
+              {dir !== '' ? <p className={css.dirPath}>{dir}</p> : null}
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>
                   <div className={css.fieldLabel}>{t('pickSkills')}</div>

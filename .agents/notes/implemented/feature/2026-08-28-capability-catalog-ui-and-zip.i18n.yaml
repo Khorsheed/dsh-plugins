@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-28-capability-catalog-ui-and-zip.md
-.agents/notes/implemented/feature/2026-08-28-capability-catalog-ui-and-zip.md: d0c9ce79c4fe955386a5a74929685a7fa4952dcb
-.agents/notes/implemented/feature/2026-08-28-capability-catalog-ui-and-zip.zh.md: 32a175d6b7afb0af57d3c0bb1c1d97e02a1b7909
+.agents/notes/implemented/feature/2026-08-28-capability-catalog-ui-and-zip.md: 7e924a52ac8a3cebb1f845c9c39b91ada3ec4914
+.agents/notes/implemented/feature/2026-08-28-capability-catalog-ui-and-zip.zh.md: 0a0a0bc92a99afd20c516daec1b7e7ed21e797b3
