@@ -109,8 +109,12 @@ export class CapabilityCatalogService extends TypertRemoteService {
     // `DSH_<KEY>` env var so the agent's shell can use it (shell expansion),
     // without the raw value entering the model's context (default-hide). The
     // catalog is service-agnostic — it knows nothing about the specific service;
-    // the skill tells the agent how to query. Degrades silently when absent.
-    installSkillEnvInjection(ctx, () => this.catalogScope())
+    // the skill tells the agent how to query. Defer to composition time via
+    // inject so the env-injection runs once shellEnv/credentials/skills are
+    // registered (at the catalog's apply they may not be composed yet).
+    ctx.inject(['shellEnv', 'credentials', 'skills'], () => {
+      installSkillEnvInjection(ctx, () => this.catalogScope())
+    })
   }
 
   /** Record tools that appeared after the apply-time baseline. */

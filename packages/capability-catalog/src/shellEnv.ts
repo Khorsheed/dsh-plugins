@@ -131,6 +131,8 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             keys.add(decl.key)
             const resolved = await credentials.resolve(decl.key).catch(() => undefined)
             if (resolved !== undefined && resolved.value.length > 0) values.set(dshKey, resolved.value)
+            if (decl.key === 'WEREAD_API_KEY' || decl.key === 'WEREED_API_KEY') {
+            }
           }
         }
 
@@ -162,11 +164,11 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             // Register failed (e.g. a TOCTOU owner collision). Leave refreshKey
             // unset so the NEXT refresh retries regardless of the key set even
             // if the key set later returns to a previously-registered value.
-            ctx.logger.warn(`capability-catalog: skill env contributor register failed (${String(err)})`)
+            process.stderr.write(`capability-catalog: skill env contributor register failed (${String(err)})`)
           }
         }
       } catch (err) {
-        ctx.logger.warn(`capability-catalog: skill env injection refresh failed (${String(err)})`)
+        process.stderr.write(`capability-catalog: skill env injection refresh failed (${String(err)})`)
       } finally {
         inFlight = undefined
         if (queued && !disposed) { queued = false; void refresh() }
