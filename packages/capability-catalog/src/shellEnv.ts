@@ -58,7 +58,7 @@ interface CredentialStoreSlice {
 /** The skills-registry slice this module reads (optional). */
 interface SkillRegistrySlice {
   snapshot: (options?: { cwd?: string; scope?: unknown; signal?: AbortSignal }) => Promise<{
-    readonly skills: readonly { readonly name: string }[]
+    readonly skills: readonly { readonly name: string; readonly invocation?: { readonly modelInvocable: boolean } }[]
     readonly complete: boolean
   }>
   get: (name: string, options?: { cwd?: string; scope?: unknown; signal?: AbortSignal }) => Promise<{
@@ -113,6 +113,10 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
         const keys = new Set<string>()
         const values = new Map<string, string>()
         for (const row of snapshot.skills) {
+          // Only skills the model may invoke get their credentials injected —
+          // a model-disabled (user-only) skill cannot be used by the model, so
+          // putting its secret in the model shell would be pure exposure.
+          if (row.invocation?.modelInvocable === false) continue
           let def
           try {
             def = await skills.get(row.name, snapshotOptions)
