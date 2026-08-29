@@ -10,7 +10,7 @@ import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-se
 import type { SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentMemberMessage, RoomMemberMessageResult } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentMemberMessage, RoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent'
 import { MemberChannel } from '../src/member-channel.ts'
 
 const PROVIDER = 'fake-cli'
@@ -38,7 +38,7 @@ interface ChannelHarness {
   /** A's registered member run token. */
   tokenA: string
   enterParent(id: string): void
-  provideRoom(gate: (message: LocalAgentMemberMessage) => Promise<RoomMemberMessageResult>): ReturnType<typeof vi.fn>
+  provideRoom(gate: (message: LocalAgentMemberMessage) => Promise<RoomMemberMessageReceipt>): ReturnType<typeof vi.fn>
 }
 
 /**
@@ -172,7 +172,7 @@ describe('MemberChannel delivery chain', () => {
   it('hands the notification to a claiming room and passes its receipt verbatim', async () => {
     const h = await mountChannel()
     h.enterParent(PARENT)
-    const gate = h.provideRoom(async () => ({ claimed: true, receipt: 'pending-confirm' }))
+    const gate = h.provideRoom(async () => 'pending-confirm')
 
     const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'X 已完成' })
 
@@ -180,22 +180,23 @@ describe('MemberChannel delivery chain', () => {
     // Room claimed the dispatch: the family does NOT send.
     expect(h.requests).toHaveLength(0)
     expect(gate).toHaveBeenCalledWith({
-      from: {
+      from: CHILD_A,
+      to: CHILD_B,
+      content: 'X 已完成',
+      parentSessionId: PARENT,
+      provenance: {
         childSessionId: CHILD_A,
         provider: PROVIDER,
         parentSessionId: PARENT,
         harnessDisplayName: 'Fake Agent',
       },
-      to: CHILD_B,
-      content: 'X 已完成',
-      parentSessionId: PARENT,
     })
   })
 
   it('direct-sends when room is present but declines (parent not its room)', async () => {
     const h = await mountChannel()
     h.enterParent(PARENT)
-    const gate = h.provideRoom(async () => ({ claimed: false }))
+    const gate = h.provideRoom(async () => { throw new Error('room: not a room session (not-a-room)') })
 
     const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: CHILD_B, text: 'hi' })
 
@@ -206,7 +207,7 @@ describe('MemberChannel delivery chain', () => {
 
   it('lets room resolve a member name the family registry cannot', async () => {
     const h = await mountChannel()
-    const gate = h.provideRoom(async () => ({ claimed: true, receipt: 'sent' }))
+    const gate = h.provideRoom(async () => 'sent')
 
     const outcome = await h.channel.handle({ token: h.tokenA, pid: PID_A, to: 'coder-B', text: 'hi' })
 

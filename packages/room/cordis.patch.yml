@@ -1,0 +1,6 @@
+# room bundle patch: inserts the plugin row into the composing profile.
+# The client half is discovered through the package.json dsh.client block; this
+# row activates the host half (the room Remote service).
+- insert:
+    - id: room
+      name: '@khorsheed/dsh-room'

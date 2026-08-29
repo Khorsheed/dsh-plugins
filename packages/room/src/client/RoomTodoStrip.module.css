@@ -1,0 +1,137 @@
+/* Room todo strip: the official TodoPanel skin (harness ui-conversation
+   skeleton/TodoPanel.module.css, figma 1236:32276) re-seated inside the
+   RoomComposer dock column — tip surface card, 12px radius, collapsed 36px
+   header row, status glyphs. The width follows the RoomDockCapsules dock
+   convention (card minus 4 × dock inset, centered); every token reference
+   carries the light-theme literal as fallback. */
+
+.root {
+  box-sizing: border-box;
+  flex: none;
+  overflow: hidden;
+  margin: 0 auto var(--dsh-composer-stack-gap, 6px);
+  width: calc(100% - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width: calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--dsw-specific-tip, var(--dsw-alias-bg-layer-1, #ffffff));
+  /* Elevated surface: `.list` scrolls inside this card, so the thumb takes
+     the l2 elevation tokens (see ui-theme styles/scrollbar.css). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.4));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.title {
+  flex: none;
+  font-size: 13px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.75));
+}
+
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.glyphCompleted {
+  color: var(--dsw-alias-state-success-primary, rgb(52, 168, 83));
+}
+
+.glyphPending {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+}
+
+.glyphProgress {
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  animation: room-todo-progress-spin 1s linear infinite;
+}
+
+@keyframes room-todo-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The strip is single-line; long items ellipsize with no inline expand. */
+.content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.header:focus:not(:focus-visible) {
+  outline: none;
+}

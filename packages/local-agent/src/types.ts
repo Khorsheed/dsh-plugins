@@ -108,13 +108,17 @@ export interface LocalAgentDelegationView {
 export type LocalAgentPromptResult = { ok: true } | { ok: false; error: string }
 
 /**
- * One member-to-member notification handed to the room gate (and recorded as
- * the delivery's provenance). `from` carries the sender's delegation view —
- * never the CLI-session resume handle.
+ * One member-to-member notification handed to the room gate — the frozen
+ * contract (`proposals/active/2026-08-19-local-agent-member-channel.md` §3):
+ * `{ from, to, content, parentSessionId, provenance }`. The bridge cannot
+ * speak roster names for the SENDER (only room owns the roster), so `from`
+ * is the sender's dsh child session id and the full delegation view rides
+ * as `provenance`; room resolves both endpoints to roster names. The
+ * CLI-session resume handle never crosses.
  */
 export interface LocalAgentMemberMessage {
-  /** The sending member's delegation view (resolved from its run token). */
-  from: LocalAgentDelegationView
+  /** The sending member's dsh child session id (resolved from its run token). */
+  from: string
   /**
    * The raw `to` argument: a member's dsh child session id, or — only
    * meaningful to a claiming room — a member name from the room roster.
@@ -124,18 +128,18 @@ export interface LocalAgentMemberMessage {
   content: string
   /** The parent session both members belong to. */
   parentSessionId: string
+  /** The sender's delegation view, recorded as the delivery's provenance. */
+  provenance: Record<string, string>
 }
 
 /**
- * The room gate's answer to a member notification: `claimed: true` means room
- * owns the delivery (pending-confirm card, auto-dispatch, or refusal) and the
- * receipt passes back to the sender verbatim; `claimed: false` declines (the
- * parent session is not a room this instance manages) and the family
- * direct-sends.
+ * The room gate's answer to a member notification, passed back to the sender
+ * verbatim. Phase 1's gate is always human confirmation
+ * ('pending-confirm'); 'sent'/'busy' belong to the phase-2 auto gate. A
+ * DECLINE is not a value: the gate throws (the parent session is not a room
+ * this instance manages) and the family direct-sends.
  */
-export type RoomMemberMessageResult =
-  | { readonly claimed: true; readonly receipt: string }
-  | { readonly claimed: false }
+export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
 
 /**
  * Duck-typed shape of the room service's member-message gate, probed via
@@ -145,7 +149,7 @@ export type RoomMemberMessageResult =
  * family path. Room implements this shape to own the dispatch gate.
  */
 export interface RoomMemberMessageGate {
-  receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageResult>
+  receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
 }
 
 /**

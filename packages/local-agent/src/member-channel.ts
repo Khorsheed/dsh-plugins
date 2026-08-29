@@ -26,6 +26,7 @@ import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentRegistry } from './index.ts'
 import type {
+  LocalAgentDelegationView,
   LocalAgentMemberMessage,
   MemberMessageOutcome,
   RoomMemberMessageGate,
@@ -185,28 +186,37 @@ export class MemberChannel {
   }
 
   /**
-   * Offer the notification to the room gate. A claim returns the receipt
-   * verbatim (room owns the dispatch); a decline returns undefined and the
-   * family path continues.
+   * Offer the notification to the room gate. A returned receipt means room
+   * owns the dispatch (passed back verbatim); a THROW declines (the parent
+   * session is not a room this instance manages) and the family path
+   * continues. The message is the frozen contract: `from`/`to` as plain
+   * strings (the sender's child session id; room resolves roster names),
+   * the delegation view as provenance.
    */
   private async handToGate(
     room: RoomMemberMessageGate,
-    from: LocalAgentMemberMessage['from'],
+    from: LocalAgentDelegationView,
     request: MemberBridgeRequest,
   ): Promise<MemberMessageOutcome | undefined> {
     const message: LocalAgentMemberMessage = {
-      from,
+      from: from.childSessionId,
       to: request.to,
       content: request.text,
       parentSessionId: from.parentSessionId,
+      provenance: {
+        childSessionId: from.childSessionId,
+        provider: from.provider,
+        parentSessionId: from.parentSessionId,
+        ...from.harnessDisplayName === undefined ? {} : { harnessDisplayName: from.harnessDisplayName },
+      },
     }
     try {
-      const result = await room.receiveMemberMessage(message)
-      if (result.claimed) return { ok: true, receipt: result.receipt }
-      return undefined
+      const receipt = await room.receiveMemberMessage(message)
+      return { ok: true, receipt }
     } catch (error: unknown) {
-      // A throwing gate must not break the channel; the family direct-sends.
-      this.ctx.logger.warn(`localAgent: room gate failed (${error instanceof Error ? error.message : String(error)}); direct-sending the member message`)
+      // A declining (or broken) gate must not break the channel; the family
+      // direct-sends.
+      this.ctx.logger.warn(`localAgent: room gate declined (${error instanceof Error ? error.message : String(error)}); direct-sending the member message`)
       return undefined
     }
   }

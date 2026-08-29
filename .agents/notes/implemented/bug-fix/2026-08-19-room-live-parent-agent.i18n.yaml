@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-room-live-parent-agent.md
+.agents/notes/implemented/bug-fix/2026-08-19-room-live-parent-agent.md: d5be5396cb34428d925a1653cf2f040c53aa350a
+.agents/notes/implemented/bug-fix/2026-08-19-room-live-parent-agent.zh.md: 2336f66fc67a00b810fff4110daa6b681eedd8db

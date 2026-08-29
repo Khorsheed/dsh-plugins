@@ -1,0 +1,95 @@
+/* Room queue strip: a read-only echo of the official QueueDock (harness
+   ui-conversation queue/QueueDock.module.css, figma .FileContainerText
+   1:791) re-seated inside the RoomComposer dock column — tip surface panel,
+   count header + preview rows. Read-only by design: per-row mutations
+   (edit/remove/steer) stay with the official dock, which the composer
+   takeover hides; the strip only proves the queue is alive. Width follows
+   the RoomDockCapsules dock convention; every token carries a fallback. */
+
+.root {
+  box-sizing: border-box;
+  flex: none;
+  overflow: hidden;
+  margin: 0 auto var(--dsh-composer-stack-gap, 6px);
+  width: calc(100% - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width: calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--dsw-specific-tip, var(--dsw-alias-bg-layer-1, #ffffff));
+}
+
+.header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.count {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.chevron {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.list {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 12px 6px;
+  list-style: none;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgba(127, 127, 127, 0.4));
+}
+
+.row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 28px;
+}
+
+.preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-dimmed, rgba(31, 35, 41, 0.62));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-word;
+}
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.header:focus:not(:focus-visible) {
+  outline: none;
+}

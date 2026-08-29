@@ -73,6 +73,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   ],
   'local-agent-tool-subagent': ['@khorsheed/dsh-local-agent'],
   'ui-file-preview': ['@khorsheed/dsh-file-preview'],
+  // room consumes the local-agent delegation facade as an OPTIONAL capability:
+  // type-only imports, an optional peer dep, a runtime probe, and tested
+  // degradation when the family is absent (the room works with the main agent
+  // as its only member). Sanctioned per the declare-and-degrade pattern.
+  'room': ['@khorsheed/dsh-local-agent'],
 }
 
 /**

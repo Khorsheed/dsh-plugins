@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-room-run-hidden-not-withdrawn.md
+.agents/notes/implemented/bug-fix/2026-08-19-room-run-hidden-not-withdrawn.md: 1e6527e3a964f5ef5893aa65266449a7d1eb04cc
+.agents/notes/implemented/bug-fix/2026-08-19-room-run-hidden-not-withdrawn.zh.md: 5dcac4ba921ec32461344c605ce2516795567864

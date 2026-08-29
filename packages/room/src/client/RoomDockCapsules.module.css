@@ -1,0 +1,633 @@
+/* Dock capsules: one collapsed row of two capsules (goal + tasks) plus the
+   quick-add button, seated on the card-width axis inside the side clearance
+   (the RoomComposer `.dock` wrapper; official dock insets: card minus 4 × 8).
+   The row is anchored just above the input card — an expanded panel renders
+   ABOVE the row in the same flex column (top-to-bottom: panel → capsules →
+   input card) and grows upward only, so toggling never shifts the row.
+   The capsules ride the official chip register (28px, r24, transparent rest,
+   interactive hover fill, 13/20/500 secondary label) with a visible outline
+   (the InputBar card's l2-darkmode-thin pair, firming to l3 on
+   hover/expand); the goal capsule's
+   single visual focus is its progress ring. The expanded cards are the
+   official Menu surface (--dsw-specific-menu, r12, inverted hairline,
+   shadow-lv3) — the same material the room's @-completion card and the model
+   selector's dropdown already use. The task capsule sweeps a restrained glare
+   band while tasks run (the ToolRow pattern, reduced-motion safe). Every
+   token reference carries the light-theme literal as fallback; no divider
+   lines anywhere. */
+
+.root {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 auto var(--dsh-composer-stack-gap, 6px);
+  width: calc(100% - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width: calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+}
+
+.capsules {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The capsule: the official chip register (model-selector trigger language)
+   — 28px r24 chip, transparent rest, interactive hover fill, 13/20/500
+   secondary label — plus a visible outline (the InputBar card's
+   l2-darkmode-thin pair) so the collapsed row reads as clickable pills; the
+   hover/expanded state firms the stroke up to l3. */
+.capsule {
+  box-sizing: border-box;
+  position: relative; /* running-sweep overlay anchor */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 60%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
+  border-radius: 24px;
+  overflow: hidden;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
+}
+
+.capsule:hover,
+.capsule[aria-expanded='true'] {
+  border-color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+/* The expanded capsule raises its label to the primary tone. */
+.capsule[aria-expanded='true'] {
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+}
+
+/* The goal capsule's progress ring: tertiary track, business-primary arc —
+   the collapsed row's single visual focus. */
+.ring {
+  flex: none;
+}
+
+.ringTrack {
+  stroke: var(--dsw-alias-fill-l2, rgba(0, 0, 0, 0.1));
+}
+
+.ringFill {
+  stroke: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  transition: stroke-dasharray 0.2s ease;
+}
+
+.capsulePercent {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  white-space: nowrap;
+}
+
+.capsuleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.capsuleGuide {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+/* The task capsule: checklist icon + done/total count + running members. */
+.checklistIcon {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.capsule:hover .checklistIcon,
+.capsule[aria-expanded='true'] .checklistIcon {
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.capsuleCount {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+}
+
+.runners {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.runner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.runnerSuffix {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* Running sweep (the ToolRow pattern): a fixed-width glare band — theme
+   background at 60% — glides over the task capsule from off-left to
+   off-right while tasks run. ease-out with a 10% end hold gives each pass a
+   beat before the next. */
+.capsule[data-running]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 120px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base, rgb(255, 255, 255)) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: room-capsule-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes room-capsule-sweep {
+  0% { left: -120px; }
+  90%, 100% { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule[data-running]::after {
+    animation: none;
+    display: none;
+  }
+
+  .ringFill {
+    transition: none;
+  }
+}
+
+.addCapsule {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.addCapsule:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+/* Expanded card: the official Menu surface (menu background, r12, inverted
+   hairline, shadow-lv3). */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0));
+  border-radius: 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  box-shadow:
+    var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08));
+  /* Elevated surface, same contract as the official card: `.groups` scrolls
+     inside it, so the thumb takes the l2 elevation pair (rebinding contract:
+     ui-theme styles/scrollbar.css). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgb(229, 229, 229));
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2, rgb(212, 212, 212));
+}
+
+/* Goal card. */
+.goalRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.goalText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.goalEditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressTrack {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  transition: width 0.2s ease;
+}
+
+.progressMeta {
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.recentLabel {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.advanceRow {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Task panel top bar: the member filter chips left, the ＋添加 trigger at
+   the right end. */
+.panelBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Member filter chips: color-dot capsules; the selected one takes a tinted
+   fill of its color (--room-chip-color, inline per member) — no outline. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.chip[data-active] {
+  background: color-mix(
+    in srgb,
+    var(--room-chip-color, var(--dsw-alias-label-primary, rgb(15, 17, 21))) 14%,
+    transparent
+  );
+  color: var(--room-chip-color, var(--dsw-alias-label-primary, rgb(15, 17, 21)));
+  font-weight: 500;
+}
+
+.addTrigger {
+  flex: none;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.addTrigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.memberDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* The official `.list` scroll region (180px cap) wraps the member groups.
+   The 6px horizontal padding absorbs the rows' negative margins inside the
+   scrollport (a bare negative margin overflows `overflow-y: auto` and raises
+   a horizontal scrollbar); the countering negative margin keeps the region's
+   own box — and so the glyph alignment and the hover-fill bleed — exactly
+   where they were. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 180px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow-y: auto;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Group header: Linear's small-caps register — tertiary, letter-spaced,
+   uppercase. */
+.head {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Task row: hover takes the interactive fill; the negative horizontal margin
+   keeps the glyph/title optically aligned with the card padding. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.glyphDone {
+  color: var(--dsw-alias-state-success-primary, rgb(34, 197, 94));
+  animation: room-glyph-pop 240ms ease-out;
+}
+
+@keyframes room-glyph-pop {
+  from { transform: scale(0.6); }
+  to { transform: scale(1); }
+}
+
+.glyphPending {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.glyphCancelled {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+}
+
+/* Failed: the error tone (no spin, no strike — a terminal loud state). */
+.glyphFailed {
+  color: var(--dsw-alias-state-error-primary, rgb(236, 19, 19));
+}
+
+.glyphProgress {
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  animation: room-task-progress-spin 1s linear infinite;
+}
+
+@keyframes room-task-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Figma strip is single-line; long items ellipsize with no inline expand. */
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Done rows: the title dims and its strike draws in (the completion beat,
+   replayed by the id:status row remount). The line rides a background
+   gradient on the inner inline span so it spans the text, not the row. */
+.item[data-status='done'] .title {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 55%;
+  background-size: 100% 1px;
+  animation: room-task-strike 240ms ease-out;
+}
+
+@keyframes room-task-strike {
+  from {
+    background-size: 0 1px;
+    opacity: 0.5;
+  }
+  to {
+    background-size: 100% 1px;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyphDone {
+    animation: none;
+  }
+
+  .item[data-status='done'] .title {
+    animation: none;
+  }
+}
+
+/* Cancelled rows read as closed noise: the content drops to tertiary (no
+   strike — that belongs to the done state). */
+.item[data-status='cancelled'] .title {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* Blocked rows ("等 ada") grey out until the wait clears. */
+.item[data-blocked] .title {
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* The row's member chip: color dot + name on a subtle fill capsule. */
+.memberChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  white-space: nowrap;
+}
+
+.blockedTag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-l1, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+/* Right-aligned tertiary grey status/time. */
+.meta {
+  flex: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  white-space: nowrap;
+}
+
+/* Row-level text action (the room's close button): tertiary 12/18, hover
+   takes the standard interactive hover fill. */
+.action {
+  flex: none;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Add row: same rhythm as a task row; the controls take the aligned input
+   skin (RoomComposer: transparent field, caption placeholder, business-blue
+   caret). */
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memberSelect {
+  flex: none;
+  max-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary, rgb(15, 17, 21));
+  caret-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption, rgb(173, 178, 184));
+  user-select: none;
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary, rgb(236, 19, 19));
+}
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.capsule:focus:not(:focus-visible),
+.addCapsule:focus:not(:focus-visible),
+.chip:focus:not(:focus-visible),
+.addTrigger:focus:not(:focus-visible),
+.action:focus:not(:focus-visible) {
+  outline: none;
+}

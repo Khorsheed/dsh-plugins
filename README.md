@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**14 个纯增量插件**。其中 13 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 14 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。整套 13 个 bundle 已经同时跑在生产 profile 上,卸载即精确还原。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**15 个纯增量插件**。其中 14 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 15 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。14 个 bundle 中除 `@khorsheed/dsh-room`(WIP,未上生产)外的 13 个已经同时跑在生产 profile 上,卸载即精确还原。
 
 **发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(0.1.0);local-agent 家族(后 5 行)功能已完整(member-channel M1–M3 四 provider 全通),待验收后作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
 
@@ -33,6 +33,7 @@
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness:`codex exec` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness:`claude -p` 委派、续聊、记账 |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host(工具) | *(随 harness 挂载)* | 家族自有委派工具,带 `resume` 续聊参数 |
+| `@khorsheed/dsh-room` | host + client | `room` | 多 Agent **群聊会话**(WIP):@ 成员派发、共享黑板、成员名册 tab |
 
 版本为仓库内当前发布线,以 npm 实际发布为准。每个插件的功能介绍与截图见各自目录的 README(点包名进目录即达)。
 

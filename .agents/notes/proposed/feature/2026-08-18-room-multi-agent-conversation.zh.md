@@ -8,7 +8,7 @@ Status: proposed
 
 如今让多个 agent 协作完成一个任务，没有好的形态。主 agent 是强制中转：人对 local-agent CLI 成员（kimi / claude-code / codex）说的每句话都要经过主 agent 的 subagent 工具，每个回答也原路返回。另一条路是人在多个独立会话之间来回穿梭、手工搬运上下文。两种形态里，协调——谁知道什么、谁在等谁——都发生在人脑里，而不是产品里。
 
-宿主已经暴露了所需的全部原语（`ctx.sessions` 原生 `parentSession`、`ctx.subagents.start`、local-agent 家族的 resume 注册表、`agent.followup`/`inject`、可合并扩展的自定义会话事件，以及客户端的 `conversation.composer` / `conversationEvents` / `conversation.chat.node` slot）。缺的只是把它们组合成群聊形态。约束是硬性的：不动上游（`deepseek-harness`）——room 必须完全用官方能力加我们自己包的改动来构建。
+宿主已经暴露了所需的全部原语（`ctx.sessions` 原生 `parentSession`、`ctx.subagents.start`、local-agent 家族的 resume 注册表、`agent.followup`/`inject`、可合并扩展的自定义会话事件，以及客户端的 `conversation.composer` / `conversationEvents` / `conversation.chat.node` / `conversation.input.dock` slot）。缺的只是把它们组合成群聊形态。约束是硬性的：不动上游（`deepseek-harness`）——room 必须完全用官方能力加我们自己包的改动来构建。
 
 ## Proposal
 
@@ -16,55 +16,78 @@ Status: proposed
 
 ### 会话与成员模型
 
-- 创建 room（`+ 新会话` 旁边加 `+ 新 room`）就是创建一个普通会话并 append 一条 `room/created` 自定义事件。该事件是 room 的身份标记，也是其日志的根——名册、派发记录、黑板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的。
-- 成员一律平等；**@ 是唯一触发器**。会话自己的主 agent 也是无特权成员——不被 @ 就什么都不感知、什么都不说。
-- 外部成员（如 `@ada`）是 local-agent 家族 CLI provider 的委派：一个 dsh 子会话（`parentSession = room 会话`），通过家族 resume 注册表跨轮延续（`kimi -S` / `claude --resume` / `codex exec resume`）。每个成员保持自己私有的 CLI 上下文；子会话里的镜像 transcript 是完整轨迹，官方 UI 可直接查看。
+- **入口模型（2026-08-29 重写，room-session-promotion 提案）**：room 从不脱离会话单独创建——「邀请 agent」动作挂在每个会话的头部（`conversation.session.header.actions`，成员 tab 的引导态是它的孪生入口），把 agent 请进任意会话即原地提升：`ensureRoom` 幂等地补写 `room/created` 标记并让主 agent 入座，并发由事件日志收敛（首个 `room/created` 定身份）。`room_invite`/`room_message` 同样提升（它们的门控就是 ensureRoom——普通会话的主 agent 被叫"把 kimi 拉进来"时先提升自己所在的会话）；其余写入路径仍要求已是 room。提升翻转经实时流到达 client：缓存为非 room 的会话在去抖通知后重新探测 `isRoom`（store 的实时订阅原本只对已知 room 生效）。但翻转本身不会带动 composer：chain 在渲染时选举，而空闲会话翻转后不再产生会话帧，所以 store 的 `onPromoted` 钩子会重注册 composer 条目——槽位版本号一 bump，outlet 重新渲染并重新选举。更早的「+ 新建 Room」创建流整体退役——`NewRoomAction`、`createRoom` Remote、BlankRoomRegistry（reuse-or-create 记账，2026-08-26）全部移除：不会再有"先建一个空 room 再忘掉"，邀请就发生在你正在用的会话里。room = journal 上带 `room/created` 的普通会话；名册、派发记录、发言投影、任务板都是这个会话上的自定义会话事件，持久化和重开 replay 都是免费的（事件类型在 apply 时登记进持久化目录——目录问题的来龙去脉见已实现的那篇 bug-fix note）。
+- 会话自己的主 agent 是无特权成员。**不带 @ 的消息就是跟主 agent 的正常对话**（composer 放行给官方提交路径）；**@ 是派发触发器**。主 agent 因此天然感知人的全部消息——裸消息与 @ 派发文本都是普通 `user/message` 事件（@ 派发由 host 侧 append，不唤醒主 agent，但进它的模型可见历史，主 agent 能据此推测名册与任务），对成员回复零感知。
+- 外部成员（如 `@ada`）是 local-agent 家族 CLI provider 的委派：一个 dsh 子会话（`parentSession = room 会话`），通过家族 resume 注册表跨轮延续。每个成员保持自己私有的 CLI 上下文；子会话里的镜像 transcript 是完整轨迹。
+- **成员级 `cwd`**：成员合法地可能与 room 会话在不同工作目录干活（主 agent 在仓库 A，CLI 成员在仓库 B）。邀请弹窗带 cwd 字段（缺省继承 room 会话的 cwd）；投递需要门面层的覆盖参数（下方需求 R2）。
 
 ### 派发与路由
 
-- 一个 `conversation.composer` chain 贡献解析输入：`@名字 ...` 派发给该成员（多个 @ 各自分发）；裸消息只记录到黑板、不触发任何 agent（UI 给轻提示）；主 agent 也只能像其他成员一样被 @ 才响应。composer 的 @ 菜单**只列已有成员**——纯寻址，不承担邀请。
-- 向 CLI 成员派发走 local-agent 委派门面（`ctx.localAgent.start` / `.resume` / `.cancel`，由 `proposals/active/2026-08-18-local-agent-delegation-api.md` 交付）；room 的 CLI 成员路径收敛在一个 adapter 接口后面，门面落地 main 之前整体缺席——`ctx.get('localAgent')` 探针加方法存在性检查，保证 room 的任何中间 commit 在没有门面的 main 上也是绿的。主 agent 不在环路里。运行是异步的：一个成员在跑时人可以 @ 另一个；同一成员的派发串行（家族 resume 锁保证每个子会话同时只有一个 in-flight resume），不同成员天然并行。
+- 一个 `conversation.composer` chain 贡献解析输入：以 `@名字` token 开头的文本派发给这些成员（多个 @ 各自分发）；**其余原样放行给官方 composer 行为**（正常的主 agent 回合）。composer 的 @ 菜单只列已有成员——纯寻址，不承担邀请。**菜单任意位置寻址（2026-08-26）**：菜单在光标前的 `@` 位于行首或空白之后即触发（不再只认行首；粘连的 `a@b` 不触发；K酱 这类 CJK 名正常匹配），菜单点选即显式寻址——无论 `@名字` 在句中什么位置，点选记入 postMessage 的 `targets`，host 侧与行首解析出的 token 求并集（点选了已被移除的成员按 unknown-targets 拒绝），文本原文派发；手打的句中提及没点菜单就谁也不寻址。takeover 穿官方 InputBar 的皮（`packages/room/src/client/RoomComposer.module.css`）：同样的居中列宽约束（`--dsh-composer-side-clearance` / `--dsh-composer-card-max-width`）、卡片几何（22px 圆角、`--dsw-alias-border-l2-darkmode-thin` 描边、`--dsw-specific-input-major` 填充、shadow-lv2）、textarea 度量（16/24、`4px 12px 0 16px` 内边距、caption 色 placeholder、business-primary 光标），以及 34px info-fill 圆形发送钮配官方上箭头字形——每个 token 都带 fallback 链。@ 菜单对齐 ui-primitives 的 Menu 卡片（menu 表面、r12、inverted 发丝边框、shadow-lv3、dense 单元格）。
+- 向 CLI 成员派发走 local-agent 委派门面（`ctx.localAgent.start` / `.resume` / `.cancel`）；room 的 CLI 成员路径收敛在一个 adapter 接口后面，门面缺席时整体降级——`ctx.get('localAgent')` 探针加方法存在性检查，room 只带主 agent 成员也能装能跑。主 agent 不在派发环路里。运行是异步的：同一成员的派发串行（家族 resume 锁保证每个子会话同时只有一个 in-flight resume），不同成员天然并行。
 
-### 黑板——共享层
+### 成员上下文：名册 + 通知（无环境流水账，无全景）
 
-- room 维护一份共享对话记录（黑板），作为 room 会话上的自定义事件：人类消息、派发记录、成员的最终回复。
-- 每次向成员派发时，在 prompt 文本里携带黑板（一阶段：自该成员上次被派发以来的条目；之后做窗口/摘要策略）。这就是 `@bill 基于 ada 的 API 出方案` 不需要人搬运上下文就能工作的原因——共享视野的所有者是 room，不是人。
-- 黑板对人可见、派发时带给成员，但**默认对主 agent 的模型视角不可见**（自定义事件不进 `deriveMessages()`）。主 agent 能从它看得到的人类消息里的 @ 提及推断名册，但看不到成员回复。如果实际使用中这种"失忆"太严重，合规的升级路径是可 opt-in 的 `agent.inject` 静默旁听（不唤醒）——绝不把成员产出写成模型可见的 `user/message` 事件。
+没有黑板，成员也不感知 room 全文。早期草案每次派发都携带滚动流水账摘要，已砍——上下文成本随成员数二次方膨胀，而且机械搬运一切不如发送方写的一封精准通知。每次派发的 prompt 只携带三样：
+
+1. **名册**：成员名、provider、一句话角色——成员能 @ 谁的前提仅仅是知道谁存在，不需要知道别人在干什么。
+2. **通知**：寻址到该成员的待收通知（见下）。
+3. 本次派发文本。
+
+协调知识不靠注入，靠消息本身携带："@ada 设计 API，做完告诉 bill" 里"做完告诉 bill"是任务文本的一部分，ada 把它记进**自己的**行动清单（子会话里它自己的 todo，R3 镜像），做完后按通知协议输出；room 的机制只负责送达。成员自己的私有 CLI 上下文（resume 链）持有它的工作记忆；room 绝不重发它已见过的历史。
+
+### 目标与任务——dock 双胶囊
+
+- room 维护一块**持久任务板**：每成员的任务及状态（`pending` / `in_progress` / `done` / `cancelled`），由 journal 驱动（`room/task-*` 自定义事件），与其他一切一样跨重载 replay 恢复；另外每个任务记录其最新事件的 `updatedAt`，供推进记录排序与相对时间。任务可带可选 `blockedBy`（见下）。
+- **房间目标**：一条 `room/goal` 事件（journal 折叠出当前 goal，最新一条获胜，空文本即清除；无 goal = 未设定）。goal 出现在**每个成员 prompt 的名册区顶部**（"本房间的目标：…"，未设定则省略）——成员无需感知 room 全景，但知道房间在奔向什么；任务板本身仍不进任何成员 prompt。
+- **人的管理面是输入卡片上方的一行双胶囊**（RoomDockCapsules，由 RoomComposer 自己渲染——官方 `conversation.input.dock` 坑位被 composer 接管隐藏，会话统计行 RoomStatsLine 同理内嵌在卡片下方）：
+  - *goal 胶囊*：折叠态 `◐ 目标文本（截断） · 完成/总数`（进度 = done/(总数-cancelled)，cancelled 不计入分母）；点击展开 goal 卡：目标全文（[编辑] 行内编辑）、进度条、最近几条推进记录（谁完成了什么 · 相对时间，按 updatedAt 倒序）。无 goal 时胶囊是「＋ 设定目标」引导态，点开直接进编辑。
+  - *任务胶囊*：折叠态 `▦ 任务 n待办·m进行中`；点击展开任务面板：成员筛选 chips（[全部] [●ada] [●bill]…，全部=按成员分组、单人=平铺）、任务行（三态字形 ○待办/◔进行中/●完成 + 标题 + 成员名 + 状态/相对时间 + 行尾[完成]）、行内添加（＋ 展开：成员选择 + 标题 + 可选"等谁"下拉）。胶囊行尾还有一个 ＋ 快捷钮，直接展开任务面板并打开添加表单。展开面板无遮罩：再点胶囊或点外部收起。
+  - *新 room 初始态*（2026-08-25）：无 goal 且无任务（不看成员——主 agent 永远在）时双胶囊是噪音，胶囊行改渲染单个「＋ 邀请成员」胶囊（同族 chip 样式），点击直接打开邀请弹窗——邀请能力因此接到 dock（与成员 tab 共用同一个 RoomInviteInjected 注入面和 InviteDialog 组件，composer 与成员 tab 的注入面互不污染）。一旦设定 goal 或出现任务，恢复双胶囊，邀请入口退场（成员 tab 与弹窗已可达）。
+- **blockedBy（纯展示）**：`blockedBy` 是成员名（与人话"等 ada"一致）。被阻塞任务灰色显示「等 ada」；阻塞者名下没有未完成任务后变亮。不产生任何自动派发。
+- **推进线**：任务闭环（done）时在聊天流落一条 dim 推进线：`✓ ada 完成了「API 定稿」── 目标进度 2/5`（room-task-line 节点从 task-added/task-updated 事件折叠，隐藏至 done 才显形，锚在完成事件的位置；进度后缀由渲染器从 room store 实时推导，取消的任务不进分母）。
+- **不用 `todo/write`**：官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板不能寄生这个语义。任务进板来自派发（@ 派发开任务；成员的完成发言闭任务）和人的显式编辑。
+- **成员自己的 todo 留在各自会话里**：CLI 成员内部的 todo 清单由家族镜像进其子会话（需求 R3），在那里的官方 todo 条上原生渲染，互不干扰。
+
+### 通知：成员间转派（一阶段：人工确认）
+
+- **主通道（桥接）**：local-agent 家族的 member-channel 提案（`proposals/active/2026-08-19-local-agent-member-channel.md`）给成员 CLI 注入桥接 MCP 工具 `member_message(to, text)`（每 run 一次性 token 鉴权、host 侧同父校验）——结构化工具调用，run 中途即可发，身份不可伪造。
+- **闸门交接**：家族 bridge 投递前探测 `ctx.get('room')`；父会话是 room 时不直发，调 room 的接收方法 `room.receiveMemberMessage({ from, to, content, parentSessionId, provenance })`，由 room 判定归属并按闸门配置决定**待确认卡**还是**自动派发**；room 缺席或父会话非 room，家族直发。闸门所有权单一归于 room。
+- **回执透传**：闸门结果（`sent` / `pending-confirm` / `busy`）经桥接返回给发送方成员，让它的结论诚实（"已通知，待房间主人确认" ≠ "已送达"）。
+- **降级通道（文本解析）**：桥接缺席时（旧版本家族、非家族成员），room 检出成员回复**末尾独占行**的 `@名字 <内容>` 作为待转派（该格式写进名册注入，行文中"提到"与"通知"机械可区分）。
+- 待转派记录进 journal（`from`、`to`、`content`、出处），聊天流渲染为确认行（`[确认派发] [忽略]`）；确认后投递为收件人续轮的 prompt（`ada 给你的通知: …`）。
+- 二期把闸门调成 `auto` 并加级联预算（每条人类消息最多 N 轮转派、禁止无正文变化的往复、预算耗尽降级回确认）。二期另加**接力图（relay view）**：按时间横轴的成员泳道图，实线箭头=真实交接（relay 事件）、灰箭头=声明的等待（blockedBy），对照呈现声明的依赖与实际的交接。用户的担忧记录在案：任务持续增长之下时间轴的可读性待观察，边做边看。
 
 ### UI：成员发言、运行中状态、边界事件
 
-官方聊天设计语言（已对 harness 的 `ui-conversation` 核实）：assistant 发言**没有气泡也没有卡片**——纯全列宽 markdown；元信息走 14px 三级灰 hover 行（`MessageIconActions`）；非对话节点（工具调用、命令、思考、compaction 标记）收敛为 24px `DisclosureRow`；且不画硬分隔线。room 留在这套语言之内——**多角色身份由身份行承载，而不是卡片**。
+官方聊天设计语言（已对 harness 的 `ui-conversation` 核实）：assistant 发言**没有气泡也没有卡片**——纯全列宽 markdown；元信息走 14px 三级灰 hover 行（`MessageIconActions`）；非对话节点收敛为 24px `DisclosureRow`；且不画硬分隔线。room 留在这套语言之内——**多角色身份由身份行承载，而不是卡片**。
 
 - **成员发言节点** = 身份行 + 无框正文 + 操作行：
   - *身份行*：16px 成员色圆点 + 成员名胶囊（复用官方 `.refChip` 造型——用户气泡里 `@subagent` 提及就渲染成它）+ provider 名三级灰字。色点是唯一的新视觉词汇，每个成员一个固定色。
   - *正文*：官方 `MarkdownText` 全列宽 markdown，与主 agent 发言排版完全同构。
-  - *操作行*：用 CSS Modules 复刻 `MessageIconActions` 的 chrome，图标用 `dsh-client-ui-primitives` 里同一批 16px 图标——**复制**、**会话跳转**（进成员子会话）、诚实的**耗时**（派发→settle）、hover 淡入的**时间戳**。刻意缺席：**分支/fork**（`forkAt` fork 的是 *room* 会话——对名册、黑板、resume 锁的语义未定义）和 **TPS/TTFT**（CLI 进程一轮没有令牌流，假造数字不如没有）。核实的 harness 版本里官方集合是 复制/分支/runMs/TTFT/TPS/hover 时间戳——没有点赞/点踩。
-- **运行中状态** = 与 ToolRow 同构的 24px disclosure 行（StateDot + `ada 正在工作… · 12s` + 扫光动画，带 `prefers-reduced-motion` 兜底；M3 的 transcript 增量落地后行尾跟截断摘要）。**整行是跳转子会话的链接**，行尾停止按钮接 `localAgent.cancel`。M3 之前跳过去只能看到 descriptor/turn-start（无害）；增量镜像落地后跳过去就是实时施工现场——这个动线一阶段就上，体验随里程碑自动变好。
-- **边界事件**（成员加入/离开、邀请记录）= compaction 标记式 dim 单行。message-tools 的 `WithdrawnDividerView` 是验证过的社区模板。
-- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费，零 JS 主题逻辑），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。早期草案里的"引用"按钮砍掉——黑板已经会把成员产出带给下一个被 @ 的人，人自己的指代需求复制粘贴就够。
+  - *操作行*：用 CSS Modules 复刻 `MessageIconActions` 的 chrome，图标用 `dsh-client-ui-primitives` 里同一批 16px 图标——**复制**、**会话跳转**（进成员子会话）、诚实的**耗时**（派发→settle）、hover 淡入的**时间戳**。刻意缺席：**分支/fork**（`forkAt` fork 的是 *room* 会话——对名册与 resume 锁的语义未定义）和 **TPS/TTFT**（CLI 进程一轮没有令牌流，假造数字不如没有）。核实的 harness 版本里官方集合是 复制/分支/runMs/TTFT/TPS/hover 时间戳——没有点赞/点踩。
+- **运行中状态** = 与 ToolRow 同构的 24px disclosure 行（StateDot + `ada 正在工作… · 12s` + 扫光动画，带 `prefers-reduced-motion` 兜底；家族的实时 transcript 镜像给行尾跟截断摘要）。**整行是跳转子会话的链接**，行尾停止按钮接 `localAgent.cancel`。
+- **边界事件**（成员加入/离开、转派记录）= compaction 标记式 dim 单行。message-tools 的 `WithdrawnDividerView` 是验证过的社区模板。
+- **工程约定**：CSS Modules + 只用 `--dsw-alias-*` 语义 token（每个 var 带 fallback 链；暗色免费），primitives 用 `dsh-client-ui-primitives`，节点布局交给官方 `.flowItem` 的 16px 列节奏，不自加背景、边框、分隔线。官方坑位是被 composer 接管隐藏的 dock slot 的面（双胶囊、统计行），一律由 RoomComposer 自己渲染，不再注册进 `conversation.input.dock` / `conversation.composer.dock`。**接管 = 继承全部环境职责**（member-channel note 的 Consequences 更正，2026-08-23）：pending 交互（审批/提问弹窗是 chain 上 priority 1 的条目，选举升序，-10 会遮蔽它）必须让出——selector 在 `owner.interactions` 非空时返回 null；主 agent 回合的 Stop 自持（运行中 send 圆钮换 Stop，走 runtime session face 的 `cancel()`，与成员 CLI 运行的停止互不干扰）；官方 todo 条与排队消息条（`conversation.input.dock` 的官方住户）随 fallback 一起消失，由 RoomComposer 自绘——todo 条读 `todos` 投影（官方 TodoPanel 同款视觉），queue 条读会话快照的 `queue`（忙时发送本就经官方 input 机排队，条只是让它重新可见，只读；逐条 edit/remove/steer 留在被隐藏的官方 dock，未回迁）。
 
 ### 成员管理：成员 tab 与邀请
 
-- room 会话的视图导航（对话/轨迹那一排）上用 `conversation.view` slot 增加**成员 tab**，标题 `成员 (N)`。成员相关的一切收在这里：名册行（色点、名字、provider、状态 + 耗时，行级 `[编辑]` `[轨迹→]`，运行中显示 `[中断]`）和邀请入口。这取代了早期的两个草案——header 头像叠放和 composer-@ 邀请都砍掉；名册一处管到底。
-- **邀请弹窗**（从 tab 的 `＋ 邀请成员` 进入）：provider 选择（候选来自 `ctx.localAgent.roster()`，未登录的置灰并给登录引导）、显示名、角色指令、可选的首个任务。确认即写名册事件——填了首个任务则立即发 fresh 委派（角色指令拼在 prompt 前）；留空则成员入列待命。
+- room 会话的视图导航（对话/轨迹那一排）上用 `conversation.view` slot 增加**成员 tab**。它是纯成员管理：**成员卡网格**（宽时两列、窄时一列）加一张虚线「＋ 邀请成员」卡。每张卡：色点 + 名字头部、成员色块头像区（大写名字，color-mix 加深的纯色，无渐变）、provider/kind、角色指令（多行截断 + 行内展开/收起；未设置显示「未设置角色」占位）、状态 chip（运行中 = 品牌蓝，带克制的呼吸动画、reduced-motion 兜底；失败 = 错误色；空闲 = 灰），以及操作 `[轨迹→]`（无子会话时置灰）`[编辑]` `[移除]`。**运行中 chip 本身就是"去看看它在干什么"的跳转**，点了进成员子会话。**中断刻意不在这里**——中断属于运行现场（聊天流运行中行的停止钮、成员会话自己的 Stop）。主 agent 卡不显示角色指令行、无操作——它就是 room 本身。任务不在这里——任务在输入卡片上方的 dock 双胶囊。
+- **邀请弹窗**：provider 选择（候选来自 `ctx.localAgent.roster()`，未登录的置灰并给登录引导）、显示名、角色指令（可选）、**cwd**（缺省继承 room 会话的）、可选的首个任务。确认即写名册事件——填了首个任务则立即发 fresh 委派（角色指令拼在 prompt 前）；留空则成员入列待命。
+  - *cwd 字段*（2026-08-25）：只读展示框 + 「浏览…」按钮，按钮走官方 `workspaces.pickDirectory` 线原语（与 ui-directory-picker-native 的 flow 驱动的是同一个 host 调用；官方选择器 UI 本身不可复用——ui-workspace 的两个 directory-flow 坑位把选中路径领养为工作区，服务不了"纯选路径"）。主机无 native 选择能力时按钮报行内提示，字段保持原值；选中后可 ✕ 清除回继承态。
+  - *角色指令文案*（2026-08-25）：标签仍叫「角色指令」（不是系统提示词——机制如实写明：拼在给它的第一条任务消息最前面，之后可编辑；留空则不带预设，成员入列后可随时 @ 它安排任务），带示例 placeholder。留空时客户端直接省略该字段（host 拒绝"存在但空白"的角色指令），所以角色指令从必填降为可选。
 - **角色指令机制，实话实说**：家族 CLI provider 是 `cli -p` 一次性进程，没有 system prompt 通道。room 把角色指令拼进首轮派发的 prompt 最前面——经 resume 链留在成员自己的 CLI 会话里，效果等价——后续编辑则作为一条上下文更新随下一次派发带入（`你的角色指令更新为：…`）。主 agent 成员不配角色指令，它保持会话自己的设定。
-- **主 agent 邀请**：room 在 room 会话里注册模型工具 `room_invite({ provider, name, instructions, firstTask? })`。人用自然语言交代（"请个后端工程师进来负责 API"），主 agent 自己定 provider、自己写角色指令、自己起名字（ada/bill/cathy 风格）；调用落到与弹窗相同的 room 服务 invite 函数，产出完全一样的成员记录。命名规则：room 内唯一、不含空白和 `@`（composer 的 @ 解析必须可工作）、显示名与 provider 解耦（`ada (kimi-cli)`），同一个 provider 的两个实例可以共存。成员行可标注来源（由你邀请 / 由主 agent 邀请）；成员 tab 的"编辑"对人写的和 agent 写的指令一视同仁。
+- **主 agent 邀请**：room 在 room 会话里注册模型工具 `room_invite({ provider, name, instructions, firstTask?, cwd? })`。人用自然语言交代（"请个后端工程师进来负责 API"），主 agent 自己定 provider、自己写角色指令、自己起名字（ada/bill/cathy 风格）；调用落到与弹窗相同的 room 服务 invite 函数，产出完全一样的成员记录。命名规则：room 内唯一、不含空白和 `@`（composer 的 @ 解析必须可工作）、显示名与 provider 解耦（`ada (kimi-cli)`），同一个 provider 的两个实例可以共存。**`room_message`（2026-08-26）**：第三个模型工具，`{ member, text }`——主 agent 的派发通道（真机事故：让它"找K酱问问"，它翻了约 20 步会话日志和 harness 源码也没找到递消息的通道）。落到与人的 `@member text` 相同的派发内部路径，但不落 user/message 气泡（调用方是 room 自己的 agent，source 为 user 会错归因）；dispatch 记录与自动开启的任务照常落 journal；成员名不在名册时带实时名册拒绝。成员编辑同步扩展（2026-08-26）：成员 tab 的编辑弹窗现在覆盖**改名**（`room/member-updated` 加 `rename`；replay fold 迁移所有以名字为键的投影——名册键、tasks 的 member/blockedBy、relays 的 from/to、runs 键——childSessionId 不变）、**cwd 覆盖**（null 清除回继承 room cwd；在家族 R2 按调用覆盖落地前仍只记名册）与**指令清空**（null/空白即清除，`pendingInstructions` 复位，之后派发不再注入）。主 agent 自己不可改名（`main-member`——它就是 room 本身）。
 
-### 成员互 @（一阶段：人工确认）
+### 对 local-agent 的需求
 
-- 成员回复里出现 `@其他成员` 时在投影路径上检测，作为待派发卡片呈现在黑板上（`[确认] [忽略]`）；只有人确认才触发转派。带轮次预算的自动级联推迟到用法验证之后。这个接缝就是日后真正的 agent 对 agent 对话（比如 room 所有者直接向受邀进 room 的 local-agent 管理员成员提需求）在人不再是枢纽之后的落点。
+委派门面（`start` / `resume` / `cancel`、reattach 配方、进度事件、`delegations.jsonl` 持久化——提案 `proposals/active/2026-08-18-local-agent-delegation-api.md`，M1–M4）**已交付并验收**。三条新需求，已提交家族评估：
 
-### 对 local-agent 的需求（已提交；已被 `proposals/active/2026-08-18-local-agent-delegation-api.md` 接受立项）
-
-> **场景**：room 插件让人**直接**跟 local-agent CLI 成员对话，不经主 agent 中转。目前代表用户行事的插件想延续某个成员的 CLI 会话，只能重新实现家族的内部 intent staging 协议。
+> **R1——双向成员通道**：~~实现官方 continuable 接口~~——经家族评审否决（`prepareContinuable` 只返回种子数据，continuation manager 自行创建进程内 dsh Agent，与 CLI 无关；官方 README 亦留白 host-user continuation），**已由 member-channel 提案承接**：可写 composer（chain priority 遮蔽只读接管）+ `promptMember`/`stopMember` Remote + 桥接 MCP 成员互通知。room 侧配合点：暴露 `receiveMemberMessage` 闸门入口（见「通知」一节）；R1 不再向 continuable 方向提需求。
 >
-> **请求**：(1) `ctx.localAgent` 上的公开 continue API，封装归属校验、resume intent staging、每子会话 resume 锁——家族提案按 room 侧评审意见定名 `resume`（避开 `continue` 保留字）；(2) 运行进度可见性（先心跳，后 transcript 增量）；(3) 非工具调用方可用的中断入口。
+> **R2——单次调用 cwd 覆盖**：`DelegationCallOptions` 加 `cwd?: string`，provider 优先于 `parent.session.header.cwd` 使用。room 成员合法地在不同目录工作。
 >
-> **需要保持的约束**：父会话归属校验、resume 句柄绝不进 prompt 文本、每子会话同时只有一个 in-flight resume。
->
-> **远期**：人等价于中央枢纽的模式跑顺之后，agent 对 agent 对话建立在同一套 API 之上。
-
-里程碑耦合（room 侧）：门面的 **M1** 解锁 CLI 成员派发（此前 room 在自己 worktree 里做脚手架、黑板、UI、主 agent 成员路径，零依赖）；**M2** 心跳把"已派发"升级为"工作中…计时"；**M3** 让运行中行的跳转能看到实时输出；**M4**（委派映射持久化）解锁跨重启续跑。
+> **R3——todo 状态镜像**：CLI 成员使用自己的 todo/计划功能时，把状态镜像为子会话的 `todo/write` 事件，成员自己的会话里官方 todo 条原生呈现其计划。
 
 ## Alternatives considered
 
@@ -74,11 +97,19 @@ Status: proposed
 
 ### Why not 官方 continuable subagent API（`startContinuable` / `followup` / `reportFrom`）？
 
-语义上它几乎就是 room 的成员模型，但没有任何生产 provider 实现 `prepareContinuable`——所有 shipped provider 都是 `backgroundMode: one-shot`，家族 CLI provider 跑的是自己的 resume 机制。依赖它等于在一条没被踩过的接缝上盖楼；家族 resume 注册表才是经过实战的路径。
+语义上它几乎就是 room 的成员模型，但没有任何生产 provider 实现 `prepareContinuable`——所有 shipped provider 都是 `backgroundMode: one-shot`，家族 CLI provider 跑的是自己的 resume 机制。resume 注册表是经过实战的路径；家族采纳 continuable 接口（需求 R1）作为升级跟踪，不作依赖。
+
+### Why not 黑板（每次派发注入滚动流水账摘要）？
+
+第一版设计。评审后砍掉：上下文成本随成员数二次方膨胀；一切延迟到接收方下次被叫醒；且决定性的一点——发送方知道接收方需要什么，它写的通知胜过机械搬运一切。名册注入保住了寻址的唯一前提（知道谁存在），定向通知负责带内容；任务板只是人的管理视图，不进成员 prompt。journal 事件保留作 UI 投影与 replay——没有删任何东西，只删了一种消费方式。
+
+### Why not 任务板建在官方 `todo/write` 机制上？
+
+官方 todo 面板是 agent 的每轮工作计划，下一个 `turn/start` 即清空——持久的多成员任务板会被主 agent 的下一回合抹掉，且与平铺单会话语义相抵。任务板复用同一**坑位形态**（输入框上方的一条，就座在官方 todo 条的位置）但用自己的 journal 驱动数据。成员自己的 todo 仍以真 `todo/write` 镜像进子会话（需求 R3），官方条原生渲染。
 
 ### Why not 用独立 room 视图（`conversation.view` tab）做合并时间线？
 
-早期草案在自定义 view tab 里渲染合并时间线。时间线方案已否决：room 就是这个会话本身，标准聊天界面已经提供输入框、markdown 渲染和滚动回溯；投影事件 + `conversation.chat.node` 渲染器能在它内部实现多 agent 合并展示，表面积小得多，也不 fork UI。自定义输入框同理被否，改用官方 `conversation.composer` chain slot。（这个 slot 仍然被使用——给成员 tab，那是管理界面，不是第二条时间线。）
+room 就是这个会话本身；标准聊天界面已经提供输入框、markdown 渲染和滚动回溯；投影事件 + `conversation.chat.node` 渲染器在它内部实现多 agent 合并展示，表面积小得多，也不 fork UI。（view slot 仍然被使用——给成员 tab，那是管理界面，不是第二条时间线。）
 
 ### Why not 成员发言用带边框的卡片？
 
@@ -86,11 +117,15 @@ Status: proposed
 
 ### Why not 通过 composer 的 @ 菜单邀请？
 
-邀请需要填名字和角色指令——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在成员 tab 的弹窗和主 agent 的 `room_invite` 工具里。
+邀请需要填名字，角色指令和 cwd 可选——这是表单的活，不是一个按键。composer 的 @ 菜单保持纯寻址（只列已有成员）；邀请收在会话头部「邀请 agent」动作（所有会话可见，2026-08-29）、成员 tab 的弹窗、新 room 初始态 dock 的邀请胶囊和主 agent 的 `room_invite` 工具里。
 
 ### Why not 把成员产出写成 room 会话里模型可见的事件？
 
-那样主 agent 能"免费"感知成员活动，但代价是被迫全程旁听：上下文灌水，而且主 agent 可能对成员产出自作主张接话。默认必须是零感知；真需要时 `agent.inject` 才是有分寸的升级。
+那样主 agent 能"免费"感知成员活动，但代价是被迫全程旁听：上下文灌水，而且主 agent 可能对成员产出自作主张接话。成员发言保持模型不可见；主 agent 天然看得到人的全部消息（裸消息作为正常回合放行，@ 派发文本作为 `user/message` 进历史但不唤醒），这恰好是合适的感知下限。
+
+### Why not @ 派发消息标 plugin source（message-tools 先例）？
+
+初稿如此（`source: { kind: 'plugin', plugin: '@khorsheed/dsh-room' }`）。核实官方 messageDefinition 后否决：append 面 `user/message` 只要 `source.kind !== 'user'` 就一律归类为 **context 节点**——渲染成折叠的注入披露行，不是用户气泡；message-tools 的 restore 气泡是它自己的 Definition 加 DOM hider 掩盖重影的产物，不是 plugin source 的默认待遇。而派发文本确实是人在 composer 里敲的，`kind: 'user'` 是实话（apiproxy 的 user-rpc 同样是 kind 'user' 挂额外字段），官方分类器据此给出用户气泡，零自绘。append 本身不唤醒主 agent——回合只由 prompt/followup 驱动，agent 是日志的写者而非监听者；附带效应仅有两处且都如实：会话列表按最近人类发言排序（人确实说话了）、首条消息触发标题生成（与普通会话首发一致）。
 
 ### Why not 在 session-store 层面做新的会话类型？
 
@@ -98,20 +133,21 @@ Status: proposed
 
 ## Acceptance criteria
 
-- `+ 新 room` 创建流程产出一个以 room 形态打开的会话（重开时从 `room/created` 事件恢复身份）；视图导航出现 `成员 (N)` tab。
-- 邀请弹窗：provider 列表反映 `localAgent.roster()` 的登录态；填首个任务确认即开工，留空则入列待命；角色指令可在子会话首轮里验证确实拼在最前。
-- 主 agent 的 `room_invite` 工具产出完全相同的成员记录（agent 自选名字与指令）；重名或含 `@`/空白的名字以工具错误拒绝。
-- `@ada <任务>` 跨轮延续同一条 CLI 会话（子会话 transcript 验证 resume）；裸消息只记黑板、不触发任何 agent；两个成员并行运行，对同一成员的两次派发串行。
-- 成员发言渲染为身份行（色点 + 名胶囊 + provider）+ 无框 markdown + 操作行（复制、会话跳转、耗时、hover 时间戳）；无分支、无 TPS；运行中行可跳转子会话、行尾停止按钮可中断；进出事件渲染为 dim 单行。仅靠 alias token 即暗色正确。
-- 向成员派发时携带自该成员上次派发以来的黑板条目；主 agent 的 `deriveMessages()` 历史里没有任何成员产出。
-- 重开 room 会话后，身份、名册、黑板从事件 replay 恢复。
-- 包可独立安装、运行、卸载；未挂载 local-agent provider 时 room 仍可用（主 agent 是唯一成员）；任何中间 commit 在没有 local-agent 门面的 main 上也是绿的（adapter 探针）。
+- 在任意会话里邀请 agent 即把它提升为 room（重开时从 `room/created` 事件恢复身份）；视图导航有成员 tab；dock 出现 goal/任务双胶囊。
+- 不带 @ 的消息产生正常的主 agent 回合；`@ada <任务>` 派发（首轮 fresh、之后 resume——子会话 transcript 验证），且 @ 消息本身作为标准 `user/message` 渲染为官方用户气泡、进入主 agent 的模型可见历史但不唤醒它；未知成员结构化拒绝；两个成员并行、同一成员串行。
+- 每次派发的 prompt 含名册、该成员的待收通知、本次文本——**且无滚动流水账、无任务板摘要**（绝不重发成员已见过的内容，成员也不感知 room 全景）。
+- 邀请弹窗：provider 列表反映 `localAgent.roster()` 登录态；cwd 缺省继承 room 会话且按成员生效（门面 R2）；角色指令可在子会话首轮验证拼在最前。主 agent 的 `room_invite` 工具产出完全相同的成员记录；重名或含 `@`/空白的名字以工具错误拒绝。
+- 成员的 `member_message` 桥接调用（桥接缺席时为回复末尾独占行的 `@名字 <内容>`）到达 room 闸门；人确认即把通知派发给收件人；忽略即丢弃。未确认的转派不触达任何人，且发送方收到的回执是 `pending-confirm` 而非 `sent`。
+- 任务板：派发开任务、完成发言闭任务（聊天流落 dim 推进线）；人可在 dock 任务胶囊里筛选、增删、关闭任务，可声明"等谁"（纯展示）；goal 胶囊承载目标与进度；重开后任务板与目标经 journal replay 恢复。
+- 成员发言渲染为身份行 + 无框 markdown + 操作行（复制、会话跳转、耗时、hover 时间戳）；无分支、无 TPS；运行中行可跳转子会话、行尾停止按钮可中断；边界事件渲染为 dim 单行。仅靠 alias token 即暗色正确。
+- 重开 room 会话后，身份、名册、任务板、发言历史从事件 replay 恢复（room 事件类型已登记进持久化目录）。
+- 包可独立安装、运行、卸载；未挂载 local-agent provider 时 room 仍可用（主 agent 是唯一成员）。
 
 ## Risks
 
-- **轮次延迟、无流式**：成员每轮是一个完整 CLI 进程生命周期；进度渲染搭 local-agent 里程碑的车（M2 心跳、M3 增量），此前降级为朴素运行中行。
-- **上下文成本随成员数放大**：每次派发都把黑板复制进每个成员的私有 CLI 上下文；长 room、多成员会成倍放大 token 成本。后续需要窗口/摘要策略。
-- **未验证的接缝**：非 agent 调用方传 `ctx.subagents.start` 的 `parent` 形态（已吸收进 local-agent 门面，经 `ctx.agents.get` 解析）；`conversation.composer` chain 语义；`conversation.chat.node` 对我们节点类型的覆盖度；`conversation.view` tab 注册。动工前先写 spike 验证。
-- **复刻内部 chrome**：`.refChip`、`MessageIconActions`、`DisclosureRow` 不是导出的插件 API，我们复刻其样式。上游视觉漂移是维护税——属装饰层、可接受，但用截图文档钉住现状。
-- **成员互 @ 的歧义**：行文中提到 vs 真正的派发请求无法机械区分；一阶段人工确认能兜住，但解析规则需要打磨。
-- **跨包依赖**：room 的 CLI 成员路径依赖 local-agent 门面（M1）；adapter 保证 room 没有它也是绿的，但招牌能力要等 M1 合并才能交付。
+- **轮次延迟、无流式**：成员每轮是一个完整 CLI 进程生命周期；实时镜像（家族 M3）与运行中行承担进度呈现。
+- **通知格式漂移（仅降级通道）**：桥接在场时通知是结构化工具调用，无解析问题；桥接缺席的降级通道要求成员按"末尾独占行 @名字"约定输出，模型偶尔会"提到而非通知"（正确忽略）或"在行文中通知"（漏检）。一阶段人工确认闸门兜住误报；漏报由人直接 @ 兜底。
+- **任务板一致性**：任务板是 room（派发开闭）与人（编辑）共同写入的派生状态；成员一阶段不能直接汇报进度到板上（只能发通知）。可接受：任务板是人的管理视图，不是成员的草稿纸。
+- **未验证的接缝**：composer 接管组件内裸消息放行官方提交路径；`conversation.input.dock` 与官方 todo 条的多条目共存。动工前先写 spike 验证。
+- **复刻内部 chrome**：`.refChip`、`MessageIconActions`、`DisclosureRow` 不是导出的插件 API，我们复刻其样式。上游视觉漂移是维护税——属装饰层、可接受。
+- **跨包依赖**：CLI 成员依赖 local-agent 门面；R1/R2/R3 是家族侧工作，走家族自己的提案管道跟踪。

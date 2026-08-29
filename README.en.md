@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **14 packages** that extend the official web GUI. 13 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 14th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. The whole pack already runs together on the production profile, and nothing about the official UI is patched or replaced.
+Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **15 packages** that extend the official web GUI. 14 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 15th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. Of the 14 bundles, all but `@khorsheed/dsh-room` (WIP, not on production) already run together on the production profile, and nothing about the official UI is patched or replaced.
 
 **Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (0.1.0). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
 
@@ -33,6 +33,7 @@ Pending release (wave two, the local-agent family, published together):
 | `@khorsheed/dsh-local-agent-codex` | host | `local-agent-codex` | **Codex** harness: `codex exec` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-claude-code` | host | `local-agent-claude-code` | **Claude Code** harness: `claude -p` delegation, resume, usage accounting |
 | `@khorsheed/dsh-local-agent-tool-subagent` | host (tool) | *(mounted by harnesses)* | Family-owned delegation tool with `resume` continuation |
+| `@khorsheed/dsh-room` | host + client | `room` | Multi-agent **group-conversation sessions** (WIP): @-member dispatch, shared blackboard, members tab |
 
 Versions are the current workspace lines; the npm registry may have newer ones. Each plugin’s feature tour and screenshots live in its own directory README — follow the package name.
 

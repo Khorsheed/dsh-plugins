@@ -1,0 +1,164 @@
+/* Invite/edit dialog: transparent overlay (no dimming — the conversation
+   stays readable behind it) + centered card; Esc/overlay-click closes. Alias
+   tokens with fallbacks. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  z-index: 100;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 380px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  /* The card carries the whole separation now that the overlay does not dim. */
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+.title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 510;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+.input,
+.select,
+.textarea {
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  outline: none;
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--dsw-alias-border-accent, #3370ff);
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* The cwd row: the read-only picked-path display plus the 浏览… trigger (and
+   the reset ✕ once a path is picked). The display keeps the field skin but
+   never takes a caret. */
+.cwdRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cwdRow .input {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: default;
+}
+
+.browse {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  cursor: pointer;
+}
+
+.browse:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.browse:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.browse:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-text-error, #d9363e);
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.button,
+.primary {
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.button {
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.primary {
+  border: none;
+  color: var(--dsw-alias-label-on-accent, #ffffff);
+  background: var(--dsw-alias-bg-accent, #3370ff);
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. (The text fields carry no outline at all — their focus cue is
+   the accent border.) */
+.button:focus:not(:focus-visible),
+.primary:focus:not(:focus-visible) {
+  outline: none;
+}
