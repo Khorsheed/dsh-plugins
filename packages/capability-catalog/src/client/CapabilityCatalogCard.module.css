@@ -354,6 +354,17 @@
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 45%, transparent);
 }
 
+/* MCP transport pills. */
+.tagStdio {
+  color: var(--dsw-alias-state-success-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 45%, transparent);
+}
+
+.tagHttp {
+  color: var(--dsw-alias-state-business-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+}
+
 /* Tool dialog: wider dialog + clamped, expandable description. */
 .toolDetailModal {
   width: min(600px, calc(100vw - 96px));
@@ -1434,4 +1445,243 @@
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
   padding: 12px 0;
+}
+
+/* ---------------------------------------------------------------------------
+   MCP management.
+   --------------------------------------------------------------------------- */
+
+/* MCP section: title + stacked server groups, set apart from the tool grid by
+   a divider. */
+.mcpSection {
+  margin-top: 20px; /* grid → divider 20px */
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  padding-top: 16px;
+}
+
+.mcpSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpSectionTitle .tabCnt {
+  margin-left: 0;
+}
+
+/* A folded server group (card). */
+.mcpGroup {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.mcpGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+/* The expandable part of the group head (chevron + name + pills). */
+.mcpExpand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcpChevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.18s;
+}
+
+.mcpGroup.open .mcpChevron {
+  transform: rotate(90deg);
+}
+
+.mcpName {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcpPills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.mcpCount {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.mcpBody {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Config block label (muted, above the JSON). */
+.mcpBlockLabel {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mcpConfig {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow: auto;
+}
+
+/* Row of small action buttons (discover / remove, etc.). */
+.mcpActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mcpActionBtn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mcpActionBtn:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpActionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcpActionBtn.primary {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.mcpActionBtn.danger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Per-tool toggle row. */
+.mcpTools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcpToolRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.mcpToolMain {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcpToolName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpToolDesc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcpToolToggle {
+  margin-left: auto;
+  flex: none;
+}
+
+.mcpToolSchema {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.mcpToolSchemaWrap {
+  grid-column: 1 / -1;
+}
+
+/* "已停用" server group dims its head. */
+.mcpGroup.disabled .mcpName {
+  color: var(--dsw-alias-label-tertiary);
 }

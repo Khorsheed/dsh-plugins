@@ -30,7 +30,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
-import type { CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolChannel, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolChannel, CatalogToolRow, McpTransport } from '@khorsheed/dsh-capability-catalog/types'
+import { parseServerEntry, maskSecret, credentialStoredRefs, SECRET_REF_PREFIX } from '../mcps.ts'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
@@ -42,12 +43,17 @@ type ToolChannelFilter = 'all' | CatalogToolChannel
 const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
 const isBuiltin = (skill: CatalogSkillRow): boolean => BUILTIN_SOURCES.has(skill.source)
 
-export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
+export function CapabilityCatalogCard({
+  useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh,
+  mcpSnapshot, mcpAdd, mcpRemove, mcpSetEnabled, mcpSetCredential, mcpSetToolEnabled, mcpDiscover,
+  t,
+}: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [claim, setClaim] = useState<DetailClaim>({ status: 'idle', data: undefined })
   const [showAdd, setShowAdd] = useState(false)
+  const [showAddMcp, setShowAddMcp] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   // Grid filter / sort state.
   const [query, setQuery] = useState('')
@@ -56,10 +62,22 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
   const [toolChannel, setToolChannel] = useState<ToolChannelFilter>('all')
   // Tool detail (click a tool card to view its full detail).
   const [toolDetail, setToolDetail] = useState<CatalogToolRow | null>(null)
+  // MCP management state: the snapshot, the open add-dialog, expanded servers,
+  // and the set currently mid-discover.
+  const [mcps, setMcps] = useState<CatalogMcpSnapshot | null>(null)
+  const [expandedMcp, setExpandedMcp] = useState<ReadonlySet<string>>(() => new Set())
+  const [discoveringMcp, setDiscoveringMcp] = useState<ReadonlySet<string>>(() => new Set())
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
+
+  /** Re-fetch the MCP management snapshot (after any MCP mutation). */
+  const refreshMcp = async (): Promise<void> => {
+    const s = await mcpSnapshot()
+    setMcps(s)
+  }
+  useEffect(() => { void refreshMcp() }, [])
 
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -71,10 +89,13 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
     return sorted
   }, [skills, query, sortBy])
 
-  /** Visible tools filtered by query + channel, then sorted (flat, no grouping). */
+  /** Visible tools filtered by query + channel, then sorted (flat, no grouping).
+   * MCP tools are excluded here — they render folded-by-server in the MCP
+   * section below the grid. */
+  const flatTools = useMemo(() => tools.filter((tool) => tool.channel !== 'mcp'), [tools])
   const visibleTools = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const matched = tools.filter((tool) => {
+    const matched = flatTools.filter((tool) => {
       if (toolChannel !== 'all' && tool.channel !== toolChannel) return false
       if (q === '') return true
       return tool.name.toLowerCase().includes(q)
@@ -83,7 +104,43 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
         || (tool.owner ?? '').toLowerCase().includes(q)
     })
     return matched.sort((a, b) => a.name.localeCompare(b.name))
-  }, [tools, query, toolChannel])
+  }, [flatTools, query, toolChannel])
+
+  /** Merged MCP server groups: catalog-managed servers + any live-registered
+   * (mcp-serverName-prefixed) tools folded by server, so MCP never renders as
+   * flat cards. */
+  const mcpGroups = useMemo(() => buildMcpGroups(snapshot, mcps, query), [snapshot, mcps, query])
+
+  /** Toggle one server's expand state. */
+  const toggleMcp = (serverName: string): void => {
+    setExpandedMcp((prev) => {
+      const next = new Set(prev)
+      if (next.has(serverName)) next.delete(serverName)
+      else next.add(serverName)
+      return next
+    })
+  }
+  const removeMcp = async (serverName: string): Promise<void> => {
+    await mcpRemove(serverName)
+    await refreshMcp()
+  }
+  const setMcpEnabled = async (serverName: string, enabled: boolean): Promise<void> => {
+    await mcpSetEnabled(serverName, enabled)
+    await refreshMcp()
+  }
+  const setMcpToolEnabled = async (serverName: string, tool: string, enabled: boolean): Promise<void> => {
+    await mcpSetToolEnabled(serverName, tool, enabled)
+    await refreshMcp()
+  }
+  const discoverMcp = async (serverName: string): Promise<void> => {
+    setDiscoveringMcp((prev) => new Set(prev).add(serverName))
+    try {
+      await mcpDiscover(serverName)
+    } finally {
+      setDiscoveringMcp((prev) => { const n = new Set(prev); n.delete(serverName); return n })
+      await refreshMcp()
+    }
+  }
 
   const openDetail = async (name: string): Promise<void> => {
     setSelectedName(name)
@@ -118,7 +175,13 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
             {t('toolTab')}<span className={css.tabCnt}>{tools.length}</span>
           </button>
         </div>
-        <button type="button" className={css.addBtn} onClick={() => setShowAdd(true)}>{t('addSkill')}</button>
+        <button
+          type="button"
+          className={css.addBtn}
+          onClick={() => (kind === 'skills' ? setShowAdd(true) : setShowAddMcp(true))}
+        >
+          {kind === 'skills' ? t('addSkill') : t('addMcp')}
+        </button>
       </div>
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
@@ -158,14 +221,16 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
             <option value="all">{t('filterAll')}</option>
             <option value="builtin">{t('toolBuiltin')}</option>
             <option value="plugin">{t('toolPlugin')}</option>
-            <option value="mcp">MCP</option>
           </select>
         </div>
       ) : null}
 
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
       {!loading && kind === 'skills' && skills.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
-      {!loading && kind === 'tools' && tools.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
+      {!loading && kind === 'tools' && flatTools.length === 0 && mcpGroups.length === 0 ? <div className={css.empty}>{t('toolNoMatch')}</div> : null}
+      {!loading && kind === 'tools' && flatTools.length > 0 && visibleTools.length === 0 ? (
+        <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+      ) : null}
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
         visibleSkills.length === 0
@@ -186,16 +251,27 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
           )
       ) : null}
 
-      {!loading && kind === 'tools' && tools.length > 0 ? (
-        visibleTools.length === 0
-          ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
-          : (
-            <div className={css.grid}>
-              {visibleTools.map((tool) => (
-                <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
-              ))}
-            </div>
-          )
+      {!loading && kind === 'tools' && flatTools.length > 0 ? (
+        <div className={css.grid}>
+          {visibleTools.map((tool) => (
+            <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
+          ))}
+        </div>
+      ) : null}
+
+      {!loading && kind === 'tools' ? (
+        <McpSection
+          groups={mcpGroups}
+          expanded={expandedMcp}
+          discovering={discoveringMcp}
+          onToggle={toggleMcp}
+          onRemove={removeMcp}
+          onSetEnabled={setMcpEnabled}
+          onSetCredential={mcpSetCredential}
+          onSetToolEnabled={setMcpToolEnabled}
+          onDiscover={discoverMcp}
+          t={t}
+        />
       ) : null}
 
       {toolDetail !== null ? (
@@ -215,6 +291,17 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
 
       {showAdd ? (
         <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} pickDirectory={pickDirectory} refresh={refresh} t={t} />
+      ) : null}
+
+      {showAddMcp ? (
+        <AddMcpDialog
+          onClose={() => setShowAddMcp(false)}
+          mcpAdd={mcpAdd}
+          mcpSetCredential={mcpSetCredential}
+          mcpDiscover={mcpDiscover}
+          refreshMcp={refreshMcp}
+          t={t}
+        />
       ) : null}
 
       {deleteTarget !== null ? (
@@ -802,6 +889,511 @@ function formatMetadata(metadataText: string): string {
   } catch {
     return metadataText
   }
+}
+
+/* ---------------------------------------------------------------------------
+   MCP management UI.
+   --------------------------------------------------------------------------- */
+
+/** One merged MCP server group shown in the MCP section. `managed` servers are
+ * catalog-controlled (config + credentials + per-tool toggles); live-only ones
+ * are read-only snapshots of already-registered MCP tools. */
+interface McpGroup {
+  readonly serverName: string
+  readonly transport: McpTransport | undefined
+  readonly enabled: boolean
+  readonly managed: boolean
+  readonly config: CatalogMcpServerConfig | undefined
+  readonly tools: readonly CatalogMcpTool[]
+  readonly liveTools: readonly CatalogToolRow[]
+  readonly credentials: readonly CatalogMcpCredentialDecl[]
+  readonly toolCount: number
+}
+
+/** Fold the tool-graph MCP entries + the catalog's managed servers into one
+ * server-grouped list (catalog-managed wins over a same-name live group). */
+function buildMcpGroups(
+  snapshot: CapabilityCatalogSnapshot | undefined,
+  mcps: CatalogMcpSnapshot | null,
+  query: string,
+): McpGroup[] {
+  const q = query.trim().toLowerCase()
+  const groups: McpGroup[] = []
+  const seen = new Set<string>()
+
+  for (const server of mcps?.servers ?? []) {
+    if (q !== '' && !server.serverName.toLowerCase().includes(q)) continue
+    const creds = (mcps?.credentials ?? []).filter((c) => c.ref.startsWith(`mcp.${server.serverName}.`))
+    const tools = mcps?.tools[server.serverName] ?? []
+    groups.push({
+      serverName: server.serverName,
+      transport: server.transport,
+      enabled: server.enabled,
+      managed: true,
+      config: server,
+      tools,
+      liveTools: [],
+      credentials: creds,
+      toolCount: tools.length,
+    })
+    seen.add(server.serverName)
+  }
+
+  // Live-registered MCP tools (already in `ctx.tools`) folded by server. These
+  // are not catalog-managed, so they are read-only in the section.
+  const byServer = new Map<string, CatalogToolRow[]>()
+  for (const tool of snapshot?.tools ?? []) {
+    if (tool.channel !== 'mcp') continue
+    const s = tool.serverName ?? 'MCP'
+    const list = byServer.get(s)
+    if (list !== undefined) list.push(tool)
+    else byServer.set(s, [tool])
+  }
+  for (const [serverName, live] of byServer) {
+    if (seen.has(serverName)) continue
+    if (q !== '' && !serverName.toLowerCase().includes(q)) continue
+    groups.push({
+      serverName,
+      transport: undefined,
+      enabled: true,
+      managed: false,
+      config: undefined,
+      tools: [],
+      liveTools: live,
+      credentials: [],
+      toolCount: live.length,
+    })
+  }
+
+  return groups.sort((a, b) => a.serverName.localeCompare(b.serverName))
+}
+
+/** Human label for a transport kind. */
+function transportLabel(t: (key: CapabilityCatalogKey) => string, transport: McpTransport): string {
+  if (transport === 'stdio') return 'stdio'
+  if (transport === 'streamable-http') return 'streamable-http'
+  return t('mcpUnknown')
+}
+
+/** Mask any `secretRef:` markers in a URL for read-only display. */
+function maskUrl(url: string): string {
+  return url.replace(new RegExp(`${SECRET_REF_PREFIX}[A-Za-z0-9_.-]+`, 'g'), '·secretRef·')
+}
+
+/** Read-only JSON view of a server config, with secret values masked. */
+function configDisplay(config: CatalogMcpServerConfig): string {
+  const env = (config.env ?? []).map(([k, v]) => [k, maskSecret(v)])
+  const headers = (config.headers ?? []).map(([k, v]) => [k, maskSecret(v)])
+  const url = config.url !== undefined ? maskUrl(config.url) : undefined
+  const masked: Record<string, unknown> = {
+    serverName: config.serverName,
+    transport: config.transport,
+    enabled: config.enabled,
+    ...(config.command !== undefined ? { command: config.command } : {}),
+    ...(config.args !== undefined ? { args: config.args } : {}),
+    ...(config.cwd !== undefined ? { cwd: config.cwd } : {}),
+    ...(url !== undefined ? { url } : {}),
+    ...(headers.length > 0 ? { headers } : {}),
+    ...(env.length > 0 ? { env } : {}),
+  }
+  return JSON.stringify(masked, null, 2)
+}
+
+/** Extract a single server entry from a pasted snippet, plus its suggested
+ * name. Accepts a bare entry (`command`/`url`), the `mcpServers` wrapper, or a
+ * bare `{name: entry}` map; picks the first entry. */
+function extractServerPreamble(raw: string): { entry: Record<string, unknown>; suggestedName: string } | null {
+  let json: unknown
+  try { json = JSON.parse(raw) } catch { return null }
+  if (typeof json !== 'object' || json === null) return null
+  const obj = json as Record<string, unknown>
+  if (typeof obj['command'] === 'string' || typeof obj['url'] === 'string') {
+    return { entry: obj, suggestedName: '' }
+  }
+  const container = (obj['mcpServers'] ?? obj) as Record<string, unknown>
+  const firstKey = Object.keys(container).find((k) => typeof container[k] === 'object' && container[k] !== null)
+  if (firstKey === undefined) return null
+  return { entry: container[firstKey] as Record<string, unknown>, suggestedName: firstKey }
+}
+
+/** The MCP section: title + a stack of folded server groups. */
+function McpSection({ groups, expanded, discovering, onToggle, onRemove, onSetEnabled, onSetCredential, onSetToolEnabled, onDiscover, t }: {
+  groups: readonly McpGroup[]
+  expanded: ReadonlySet<string>
+  discovering: ReadonlySet<string>
+  onToggle: (serverName: string) => void
+  onRemove: (serverName: string) => Promise<void>
+  onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
+  onSetCredential: (ref: string, value: string) => Promise<boolean>
+  onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
+  onDiscover: (serverName: string) => Promise<void>
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  return (
+    <div className={css.mcpSection}>
+      <div className={css.mcpSectionTitle}>{t('mcpSection')}<span className={css.tabCnt}>{groups.length}</span></div>
+      {groups.length === 0 ? (
+        <div className={css.empty}>{t('mcpServerEmpty')}</div>
+      ) : groups.map((g) => (
+        <McpGroupCard
+          key={g.serverName}
+          group={g}
+          expanded={expanded.has(g.serverName)}
+          discovering={discovering.has(g.serverName)}
+          onToggle={() => onToggle(g.serverName)}
+          onRemove={onRemove}
+          onSetEnabled={onSetEnabled}
+          onSetCredential={onSetCredential}
+          onSetToolEnabled={onSetToolEnabled}
+          onDiscover={onDiscover}
+          t={t}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** One folded MCP server group; expand its body to manage config/credentials/tools. */
+function McpGroupCard({ group, expanded, discovering, onToggle, onRemove, onSetEnabled, onSetCredential, onSetToolEnabled, onDiscover, t }: {
+  group: McpGroup
+  expanded: boolean
+  discovering: boolean
+  onToggle: () => void
+  onRemove: (serverName: string) => Promise<void>
+  onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
+  onSetCredential: (ref: string, value: string) => Promise<boolean>
+  onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
+  onDiscover: (serverName: string) => Promise<void>
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const [credValues, setCredValues] = useState<Record<string, string>>({})
+  const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
+  const [schemaFor, setSchemaFor] = useState<string | null>(null)
+
+  const saveCred = async (ref: string): Promise<void> => {
+    const value = credValues[ref] ?? ''
+    if (value === '') return
+    setCredState((s) => ({ ...s, [ref]: 'saving' }))
+    const ok = await onSetCredential(ref, value)
+    setCredState((s) => ({ ...s, [ref]: ok ? 'ok' : 'fail' }))
+    if (ok) setCredValues((s) => ({ ...s, [ref]: '' }))
+  }
+
+  const runDiscover = async (): Promise<void> => {
+    setSchemaFor(null)
+    await onDiscover(group.serverName)
+  }
+
+  const live = group.managed ? group.tools : group.liveTools
+  const transportText = transportLabel(t, group.transport ?? 'stdio')
+
+  return (
+    <div className={`${css.mcpGroup} ${expanded ? css.open : ''} ${group.managed && !group.enabled ? css.disabled : ''}`}>
+      <div className={css.mcpGroupHead}>
+        <button type="button" className={css.mcpExpand} onClick={onToggle} aria-expanded={expanded}>
+          <span className={css.mcpChevron}>{expanded ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
+          <span className={css.mcpName}>{group.serverName}</span>
+          <span className={css.mcpPills}>
+            <span className={`${css.pvTag} ${group.transport === 'stdio' ? css.tagStdio : group.transport === 'streamable-http' ? css.tagHttp : ''}`}>{transportText}</span>
+            <span className={`${css.badge} ${group.enabled ? css.badgeOk : ''}`}>{group.enabled ? t('mcpEnabled') : t('mcpDisabled')}</span>
+          </span>
+        </button>
+        <span className={css.mcpCount}>{group.toolCount > 0 ? `${group.toolCount}` : t('mcpNoTools')}</span>
+        {group.managed ? (
+          <label className={css.switch} onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={group.enabled}
+              onChange={(e) => void onSetEnabled(group.serverName, e.target.checked)}
+              aria-label={t('mcpEnabled')}
+            />
+            <span className={css.track} />
+            <span className={css.thumb} />
+          </label>
+        ) : null}
+        {group.managed ? (
+          <button type="button" className={css.iconButton} onClick={() => void onRemove(group.serverName)} aria-label={t('mcpRemove')} title={t('mcpRemove')}>
+            <IconTrashOutline16 size={16} />
+          </button>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div className={css.mcpBody}>
+          {group.managed && group.config !== undefined ? (
+            <>
+              <div>
+                <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
+                <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
+              </div>
+
+              {group.credentials.length > 0 ? (
+                <div>
+                  <div className={css.mcpBlockLabel}>{t('credentials')}</div>
+                  <div className={css.confHint}>{t('mcpNeedsCred')}</div>
+                  {group.credentials.map((decl) => {
+                    const ref = decl.ref
+                    const state = credState[ref] ?? 'idle'
+                    return (
+                      <div className={css.credRow} key={ref}>
+                        <label className={css.credLabel}>{decl.label}
+                          {decl.configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
+                        </label>
+                        <div className={css.credInputRow}>
+                          <div className={css.inputWrap}>
+                            <input
+                              className={css.input}
+                              type="password"
+                              value={credValues[ref] ?? ''}
+                              placeholder={decl.configured ? t('configuredReplace') : t('credPlaceholder')}
+                              onChange={(e) => setCredValues((s) => ({ ...s, [ref]: e.target.value }))}
+                              onBlur={() => { if ((credValues[ref] ?? '') !== '') void saveCred(ref) }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(ref) }}
+                            />
+                          </div>
+                          {!decl.configured ? (
+                            <button
+                              type="button"
+                              className={css.btnPrimary}
+                              disabled={state === 'saving' || (credValues[ref] ?? '') === ''}
+                              onClick={() => void saveCred(ref)}
+                            >{t('save')}</button>
+                          ) : null}
+                        </div>
+                        {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
+                        {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className={css.confHint}>{t('mcpNoCreds')}</div>
+              )}
+            </>
+          ) : null}
+
+          <div>
+            <div className={css.mcpBlockLabel}>{t('mcpTools')}</div>
+            {live.length === 0 ? (
+              <div className={css.empty}>{t('mcpEmptyTools')}</div>
+            ) : (
+              <div className={css.mcpTools}>
+                {live.map((tool) => (
+                  <McpToolRow
+                    key={tool.name}
+                    tool={tool}
+                    managed={group.managed}
+                    serverName={group.serverName}
+                    schemaFor={schemaFor}
+                    setSchemaFor={setSchemaFor}
+                    onSetToolEnabled={group.managed ? onSetToolEnabled : undefined}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {group.managed ? (
+            <div className={css.mcpActions}>
+              {!group.enabled ? (
+                <span className={css.confHint}>{t('mcpNotEnabled')}</span>
+              ) : (
+                <button type="button" className={`${css.mcpActionBtn} ${css.primary}`} disabled={discovering} onClick={() => void runDiscover()}>
+                  {discovering ? t('mcpDiscovering') : t('mcpDiscover')}
+                </button>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** One tool row inside a MCP server group: name/desc (click to toggle schema) +
+ * a per-tool enable switch (managed servers only). */
+function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetToolEnabled, t }: {
+  tool: CatalogMcpTool | CatalogToolRow
+  managed: boolean
+  serverName: string
+  schemaFor: string | null
+  setSchemaFor: (name: string | null) => void
+  onSetToolEnabled: ((serverName: string, tool: string, enabled: boolean) => Promise<void>) | undefined
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const isMcp = managed && 'enabled' in tool
+  const enabled = isMcp ? (tool as CatalogMcpTool).enabled : true
+  const open = schemaFor === tool.name
+  return (
+    <div key={tool.name}>
+      <div className={css.mcpToolRow}>
+        <button type="button" className={css.mcpToolMain} onClick={() => setSchemaFor(open ? null : tool.name)} aria-expanded={open}>
+          <span className={css.mcpToolName}>{tool.name}</span>
+          <span className={css.mcpToolDesc}>{tool.description}</span>
+        </button>
+        {isMcp ? (
+          <label
+            className={`${css.switch} ${css.mcpToolToggle}`}
+            onClick={(e) => e.stopPropagation()}
+            title={t('mcpToolToggleHint')}
+          >
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => void onSetToolEnabled?.(serverName, tool.name, e.target.checked)}
+              aria-label={t('mcpEnabled')}
+            />
+            <span className={css.track} />
+            <span className={css.thumb} />
+          </label>
+        ) : null}
+      </div>
+      {open ? <pre className={css.mcpToolSchema}>{formatParams(tool.parameters, t)}</pre> : null}
+    </div>
+  )
+}
+
+/** Add-MCP dialog: paste a server config → parse it into a server card →
+ * configure credentials + enable → add. One server per add. */
+function AddMcpDialog({ onClose, mcpAdd, mcpSetCredential, mcpDiscover, refreshMcp, t }: {
+  onClose: () => void
+  mcpAdd: (config: CatalogMcpServerConfig) => Promise<boolean>
+  mcpSetCredential: (ref: string, value: string) => Promise<boolean>
+  mcpDiscover: (serverName: string) => Promise<readonly CatalogMcpTool[]>
+  refreshMcp: () => Promise<void>
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const [raw, setRaw] = useState('')
+  const [serverName, setServerName] = useState('')
+  const [credValues, setCredValues] = useState<Record<string, string>>({})
+  const [enabled, setEnabled] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const preamble = useMemo(() => (raw.trim() === '' ? null : extractServerPreamble(raw)), [raw])
+  const parseError = raw.trim() !== '' && preamble === null
+  const finalName = serverName.trim() !== '' ? serverName.trim() : (preamble?.suggestedName ?? '')
+  const parsed = useMemo(() => {
+    if (preamble === null || finalName === '') return null
+    return parseServerEntry(finalName, preamble.entry)
+  }, [preamble, finalName])
+
+  // Seed the name field once a suggestion appears (does not overwrite edits).
+  useEffect(() => {
+    if (serverName === '' && preamble !== null && preamble.suggestedName !== '') {
+      setServerName(preamble.suggestedName)
+    }
+  }, [preamble, serverName])
+
+  const canSubmit = parsed !== null && finalName !== ''
+
+  const submit = async (): Promise<void> => {
+    if (parsed === null || busy) return
+    setBusy(true)
+    setMsg(null)
+    const config: CatalogMcpServerConfig = { ...parsed.config, enabled }
+    const ok = await mcpAdd(config)
+    if (!ok) {
+      setMsg({ ok: false, text: t('addError') })
+      setBusy(false)
+      return
+    }
+    const refs = credentialStoredRefs(config.serverName, config)
+    for (const cred of parsed.credentials) {
+      const value = credValues[cred.ref] ?? ''
+      if (value === '') continue
+      await mcpSetCredential(refs[cred.ref] ?? cred.ref, value)
+    }
+    if (enabled) await mcpDiscover(config.serverName)
+    await refreshMcp()
+    onClose()
+  }
+
+  return (
+    <div className={css.overlay} role="dialog" aria-modal="true">
+      <div className={`${css.modal} ${css.addModal}`}>
+        <div className={css.modalHead}>
+          <h3 className={css.modalTitle}>{t('mcpAddTitled')}</h3>
+          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
+        </div>
+        <div className={css.modalBody}>
+          <p className={css.confHint}>{t('mcpAddHint')}</p>
+          <textarea
+            className={css.textarea}
+            rows={6}
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            placeholder={t('mcpPastePlaceholder')}
+            spellCheck={false}
+          />
+
+          {parseError ? <div className={`${css.addMsg} ${css.addMsgErr}`}>{t('mcpParseFailed')}</div> : null}
+          {parsed === null ? null : (
+            <div className={css.addPanel}>
+              <label className={css.fieldLabel}>{t('mcpServerName')}</label>
+              <input
+                className={css.input}
+                value={serverName}
+                onChange={(e) => setServerName(e.target.value)}
+                placeholder={preamble?.suggestedName !== '' && preamble?.suggestedName !== undefined ? preamble.suggestedName : t('mcpServerNamePlaceholder')}
+                spellCheck={false}
+              />
+
+              <div className={css.meta}>
+                <span className={css.metaKey}>{t('mcpTransport')}</span>
+                <span className={css.metaVal}>{transportLabel(t, parsed.config.transport)}</span>
+              </div>
+
+              <div>
+                <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
+                <pre className={css.mcpConfig}>{configDisplay({ ...parsed.config, enabled })}</pre>
+              </div>
+
+              {parsed.credentials.length > 0 ? (
+                <div>
+                  <div className={css.confHint}>{t('mcpNeedsCred')}</div>
+                  {parsed.credentials.map((cred) => (
+                    <div className={css.credRow} key={cred.ref}>
+                      <label className={css.credLabel}>{cred.label}<span className={`${css.badge} ${css.badgeWarn}`}>{t('mcpCredBadge')}</span></label>
+                      <div className={css.credInputRow}>
+                        <div className={css.inputWrap}>
+                          <input
+                            className={css.input}
+                            type="password"
+                            value={credValues[cred.ref] ?? ''}
+                            placeholder={t('credPlaceholder')}
+                            onChange={(e) => setCredValues((s) => ({ ...s, [cred.ref]: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <label className={css.switchRow}>
+                <span className={css.enableLabel}>{t('mcpEnabled')}</span>
+                <span className={css.switch}>
+                  <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+                  <span className={css.track} />
+                  <span className={css.thumb} />
+                </span>
+              </label>
+
+              {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
+            </div>
+          )}
+
+          <div className={css.actions}>
+            <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
+            <span className={css.spacer} />
+            <button type="button" className={css.btnPrimary} disabled={!canSubmit || busy} onClick={() => void submit()}>{t('mcpAdd')}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** One node of the bundle file tree. */

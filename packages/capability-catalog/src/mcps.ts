@@ -66,7 +66,7 @@ export function parseServerEntry(serverName: string, entry: Record<string, unkno
     for (const [k, v] of Object.entries(rawEnv)) env.push([k, extract(v, k, k)])
     return {
       serverName,
-      config: { serverName, transport, command: cmd, ...(args !== undefined ? { args } : {}), ...(cwd !== undefined ? { cwd } : {}), ...(env.length > 0 ? { env } : {}), enabled: false },
+      config: { serverName, transport, ...(cmd !== undefined ? { command: cmd } : {}), ...(args !== undefined ? { args } : {}), ...(cwd !== undefined ? { cwd } : {}), ...(env.length > 0 ? { env } : {}), enabled: false },
       credentials,
     }
   }
@@ -126,6 +126,30 @@ export async function resolveConfigSecrets(
 /** Sort tools by name and default each to enabled. */
 export function finalizeTools(tools: readonly CatalogMcpTool[]): CatalogMcpTool[] {
   return [...tools].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Map each bare secret config key (env/header name, or a query param) to its
+ * catalog-stored, namespaced credential ref (`mcp.<server>.<kind>.<key>`). The
+ * host store namespaces refs by server so multiple servers with the same env
+ * key don't collide. Mirrors the store's `credentialRefsOf` scan — the client
+ * needs the same mapping to write values for a freshly-added server before the
+ * next snapshot round-trips the namespaced refs.
+ */
+export function credentialStoredRefs(serverName: string, config: CatalogMcpServerConfig): Readonly<Record<string, string>> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of config.env ?? []) {
+    if (v.startsWith(SECRET_REF_PREFIX)) out[k] = `mcp.${serverName}.env.${k}`
+  }
+  for (const [k, v] of config.headers ?? []) {
+    if (v.startsWith(SECRET_REF_PREFIX)) out[k] = `mcp.${serverName}.header.${k}`
+  }
+  if (config.url !== undefined) {
+    for (const m of config.url.matchAll(/secretRef:([A-Za-z0-9_.-]+)/g)) {
+      out[m[1] as string] = `mcp.${serverName}.query.${m[1] as string}`
+    }
+  }
+  return out
 }
 
 export { SECRET_REF_PREFIX as _SECRET_REF_PREFIX } // re-export for tests if needed
