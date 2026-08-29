@@ -45,6 +45,36 @@ Zero host edits. If `ctx.skills` / `ctx.tools` / `ctx.credentials` /
 `ctx.agentPresets` are absent it degrades to an empty state rather than failing
 boot.
 
+## Skill credential env injection
+
+A configured credential for a skill's declared env var is exposed to the model's
+shell so the skill can query. Two pieces, both service-agnostic and generic
+(derived from each skill's own env-decl keys — no hardcoded key):
+
+- **`ctx.shellEnv`** injects each configured credential as a trusted,
+  per-execution **`DSH_<KEY>`** variable. The model uses it by shell expansion
+  (`KEY="$DSH_KEY" <cmd>`), so the raw value never enters the model's context by
+  default (it only becomes visible if the model actively echoes it — a
+  *default-hide*, not a hard secret boundary). If `ctx.shellEnv` /
+  `ctx.credentials` / `ctx.skills` are absent, or a session has no skill, this is
+  a no-op.
+- **Runtime companion hint** — the model won't derive the `KEY → DSH_<KEY>`
+  alias on its own. When the `skill` tool loads a skill that has configured
+  credentials, the catalog appends a per-skill note (`tools/post-execute` +
+  `additionalContexts`) listing each mapping and how to use it. It never touches
+  the user's `SKILL.md`.
+
+The credential store is the dsh credential store (`.credentials.yaml`, ref
+space); reads use `credentials.resolve(decl.key)` / `describe(decl.key).configured`
+(presence only, never the value) and writes `set(request.key, value)`, validated
+with a local POSIX ref-name check (no runtime `@deepseek-ai/dsh-credentials`
+import keeps graceful degradation when it is absent).
+
+Security trade-off (honest): this is *default-hide*, not a secret boundary — a
+prompt can still make the model `echo $DSH_KEY`. For "the model never holds the
+raw value", a catalog-owned narrow tool (`ctx.shell.run({ env })`) or the future
+masked-credential-proxy design is the harder edge; see the proposal §4.6.
+
 ## Plugin skill registration protocol
 
 This is the contract the catalog relies on to render a skill's file tree.

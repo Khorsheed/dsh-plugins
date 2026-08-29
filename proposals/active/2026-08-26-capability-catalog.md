@@ -118,19 +118,27 @@
   ```
   目录读 `metadata.credentials[]`，据此展示凭据配置块；未声明则无凭据块。非 npm skill（纯文件 / GitHub 克隆）也能用——比"靠插件 settings 声明"更通用。
 
-### 4.6) skill 凭据到达执行（最终：`ctx.shellEnv` 注入 DSH_\*，default-hide + 服务无关；未来：假 key 代理）
+### 4.6) skill 凭据到达执行（最终：`ctx.shellEnv` 注入 DSH_\* + 通用 companion hint；未来：假 key 代理）
 
-- **问题**：skill 正文引用 `$<ENV>`（如 `$WEREED_API_KEY`），配置的凭据存在 dsh 官方凭据库（`$DSH_HOME/.credentials.yaml`），但**不会**被写进 `process.env`——launch-env 只是只读快照（process/project-env/user-env），无 credential→env 注入；模型/工具执行时环境里没有它（env 缺口）。
+- **问题**：skill 正文引用 `$<ENV>`（如 `$WEREAD_API_KEY`），配置的凭据存在 dsh 官方凭据库（`$DSH_HOME/.credentials.yaml`），但**不会**被写进 `process.env`——launch-env 只是只读快照（process/project-env/user-env），无 credential→env 注入；模型/工具执行时环境里没有它（env 缺口）。
 - **最终方案（服务无关 + default-hide）**：用 harness **`ctx.shellEnv`** 注册 contributor，把每个**已配置**的 skill 凭据作为 `DSH_<KEY>` 注入到**模型 shell 环境**：
-  - agent 用**shell 展开**引用它（`--key="$DSH_WEREED_API_KEY"`），值由 shell 展开进子进程、**默认不进模型上下文**；模型只在**主动 echo/命令输出泄漏**时才看到明文——「default-hide」，不是硬密码边界。
-  - 目录**不感知具体服务**：它只把已配置凭据注入 env，skill 指引告诉 agent 怎么查；weread 或任何服务都一样。
-- **关键约束与实现要点**（`src/shellEnv.ts`，已修）：
+  - agent 用**shell 展开**引用它（`--key="$DSH_WEREED_API_KEY"`），值由 shell 展开进子进程、**默认不进模型上下文**；模型只在**主动 echo/命令输出泄漏**时才看到明文——「default-hide」，不是硬密码边界。目录**不感知具体服务**。
+- **时序修复（UNSET）**：目录在 apply 时 `ctx.get('shellEnv'/'credentials'/'skills')` 尚未注册 → 降级跳过 → `DSH_<KEY>` 不出现。修法：`ctx.inject(['shellEnv','credentials','skills'], cb)` 延迟到三服务可用再挂注入。
+- **通用 companion hint（关键）**：**模型不会自动推导** `WEREAD_API_KEY`→`DSH_WEREAD_API_KEY` 别名——它照 skill 文本只查原始名。目录用 **`tools/post-execute` + `additionalContexts`**，在 `skill` 工具加载该 skill 时附一段**通用、按 skill 生成**的说明（**不改用户的 SKILL.md**）：
+  ```
+  Runtime credential mapping for <skill>:
+  - <KEY> is configured; in the model shell it is available as DSH_<KEY>.
+    Use it as <KEY>="DSH_<KEY>" <command>.
+  Do not search dotenv or ask the user. Do not print either variable.
+  ```
+  由该 skill 的 env-decl（`decodeEnvDecls`）+ 凭据 `describe`(configured，不含值) 动态生成 → **未来任何 skill/任何 key 都通用**（无硬编码）。
+- **关键约束与实现要点**（`src/shellEnv.ts`）：
   - key 强制 `DSH_*` + 后缀 `/^[A-Z][A-Z0-9_]*$/`、每 key 一个 owner、内置 `DSH_HOME/DSH_SHELL/DSH_SESSION_ID` 保留不可占。
-  - 排除会映射到保留/已占用 key 的 env（`HOME/SHELL/SESSION_ID`；`shellEnv.list()` 里已由他人占有的如 `DSH_SESSION_JSONL`）——单个坏 key 不再拖垮整次注册，跳过 + 告警。
-  - 读凭据走 **ref 空间**：`credentialRef(key)` + `credentials.resolve(ref)`（取 `{value, source}`），**不用** `readRecord`/`describeRecord`；写也统一 `credentials.set(credentialRef(key), value)`、「已配置」判定用 `describes(ref).configured`。官方要求每次 operation 重新 resolve，轮换立即生效。
-  - `resolve()` 同步 → 值放**缓存**，apply 时 + `credentials/*-updated` 时异步刷新；**声明超集**（注册全量合法 key 集合，删除只让 resolve 返回空，避免 delete-then-register）；refresh **串行 + generation + disposed 检查**（旧任务不能覆盖/失效后重注册）。
-- **安全取舍（如实）**：default-hide 挡「默认/无意泄露」，**挡不住恶意诱导主动 `echo`**（用户仍可让模型打印）。若需「模型压根不持有真值」，见未来方案 **masked-credential-proxy**（`proposals/active/2026-08-29-masked-credential-proxy.md`）：给模型一个**假 key / 句柄**，由一个可信组件在落地前用真 key 替换——模型不掌握真 secret，套取无从谈起。此为后续加固，本迭代先跑通 default-hide 注入。
-- **已否决：catalog 自有窄工具（B）**：会让 catalog **认识具体服务**（配 weread 接口/固定命令），与「目录=服务无关、只给文件+key、agent 自己查」的定位相悖；且模型不掌握 key 才能做到「模型读不到」。该方向归档进 masked-credential-proxy proposal 作为更硬边界。
+  - 排除会映射到保留/已占用 key 的 env（`HOME/SHELL/SESSION_ID`；`shellEnv.list()` 里已由他人占有的如 `DSH_SESSION_JSONL`）——单个坏 key 不再拖垮整次注册。
+  - 读凭据走 **ref 空间**：`credentials.resolve(decl.key)`（取 `{value, source}`）+ `credentials.describe(decl.key).configured`（presence-only）+ `set(request.key, value)`；**不做运行时 import** `@deepseek-ai/dsh-credentials`（它是 optional peer，静态 import 会在缺失时 module-not-found）→ 用本地 POSIX 校验（`CREDENTIAL_REF_NAME`）+ 直接传 key，保留优雅降级。
+  - `resolve()` 同步 → 值放**缓存**，apply 时 + `credentials/*-updated` 时异步刷新；**声明超集**（删除只让 resolve 返回空，避免 delete-then-register）；refresh **串行 + generation + disposed 检查**；注册失败清 `refreshKey`/`disposeEnv` 强制下次重试。
+- **安全取舍（如实）**：default-hide 挡「默认/无意泄露」，**挡不住恶意诱导主动 `echo`**（模型可 echo 出明文，已在会话实测）。若需「模型压根不持有真值」，见未来方案 **masked-credential-proxy**（`proposals/active/2026-08-29-masked-credential-proxy.md`）：给模型一个**假 key / 句柄**，由可信组件在落地前用真 key 替换。此为后续加固，本迭代先跑通 default-hide 注入。
+- **已否决：catalog 自有窄工具（B）**：会让 catalog **认识具体服务**（配 weread 接口/固定命令），与「目录=服务无关、只给文件+key、agent 自己查」的定位相悖；该方向归档进 masked-credential-proxy proposal 作为更硬边界（窄工具用 `ctx.shell.run({ env })` 才能让原始名可用）。
 - **upstream 候选**：dsh-skill 显式声明「skill 需要哪些 env/凭据」；非阻塞。
 
 ### 5) skill 新增入口（列表顶部按钮，已落地）

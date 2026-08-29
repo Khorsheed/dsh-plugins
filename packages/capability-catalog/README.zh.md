@@ -19,6 +19,17 @@
 
 零 host 改动。`ctx.skills` / `ctx.tools` / `ctx.credentials` / `ctx.agentPresets` 缺失时降级为空态，不拖垮 boot。
 
+## skill 凭据 env 注入
+
+把某 skill 声明 env 变量对应的「已配置凭据」暴露给模型 shell，让 skill 能查询。两块，都**服务无关且通用**（从每个 skill 自己的 env-decl 动态推导，无硬编码 key）：
+
+- **`ctx.shellEnv`** 把每个已配置凭据作为可信、逐执行的 **`DSH_<KEY>`** 变量注入。模型用 shell 展开引用（`KEY="$DSH_KEY" <cmd>`），所以原始值**默认不进模型上下文**（只有模型主动 echo 时才可见——是 **default-hide**，不是硬密码边界）。`ctx.shellEnv`/`ctx.credentials`/`ctx.skills` 缺失或会话无 skill 时是 no-op。
+- **运行时 companion 提示**——模型不会自己推导 `KEY → DSH_<KEY>` 别名。当 `skill` 工具加载某个有已配置凭据的 skill 时，目录通过 `tools/post-execute` + `additionalContexts` 附加按 skill 生成的说明，列出每个映射与用法。**从不改用户的 SKILL.md**。
+
+凭据库是 dsh 官方 store（`.credentials.yaml`，ref 空间）；读用 `credentials.resolve(decl.key)` / `describe(decl.key).configured`（仅 presence，绝无值），写 `set(request.key, value)`，用本地 POSIX ref-name 校验（**不**做运行时 `@deepseek-ai/dsh-credentials` import，保持缺失时优雅降级）。
+
+安全取舍（如实）：这是 **default-hide**，不是秘密边界——提示仍可让模型 `echo $DSH_KEY`。若需「模型永不持有原始值」，catalog 自有窄工具（`ctx.shell.run({ env })`）或未来 masked-credential-proxy 设计是更硬的边界；见提案 §4.6。
+
 ## 插件 skill 注册协议
 
 这是目录渲染 skill 文件树所依赖的契约。
