@@ -221,24 +221,30 @@ dsh-dev/
 
 ### A 线：镜像化 + dsh-web-basic 更新
 
-整合包源迁进 monorepo 的 `packs/` 目录，用同步脚本推镜像仓——**monorepo 是单一事实源，镜像仓是「clone 即装」的门面**。web-basic 这次正好要加成员，当第一个验证案例。
+整合包源迁进 monorepo 的 `profiles/` 目录，用同步脚本推镜像仓——**monorepo 是单一事实源，镜像仓是「clone 即装」的门面**。web-basic 这次正好要加成员，当第一个验证案例。
 
-> **目录命名**：外层 `packs/` 是分发单位，内层 `profile/` 是运行配置。整合包**包含**一个 profile 但不等于它——它还带安装脚本、双语 README、CHANGELOG 与截图，那些是为了把 profile 送到别人手上而存在的配套。`bundles/` 则会撞插件的 `dsh.bundle` 字段。原仓库维护者提出 `packs/`，已采纳。
+> **定位**：整合包 = **一个可分发的 profile**（不是「插件集合」）。`dsh-plugins/profiles/web-basic/` 对应用户机器上的 `~/.dsh/profiles/web-basic/`——同名是对应关系而非撞车。由此得到三个原生语义：
+>
+> - **自由装卸载是官方动词**：`dsh --profile web-basic plugin rm @khorsheed/dsh-taskpilot` 即卸载。不需要自造开关（`plugin-manager` 因此废得更彻底），且是宿主背书的方式。
+> - **会话跨 profile 共享**：会话存 `$DSH_HOME/sessions/`，home 级、不属任何 profile。在纯净 `web` 与 `web-basic` 之间切换，历史会话都在。
+> - **与官方方向一致**：0.1.2 把 Python SDK / ACP 等启动模式都收敛到 `dsh --profile`，profile 是官方押注的分发单元。
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号一个工作日内不变 |
-| A2 | 建 `packs/web-basic/`：`profile/`（待拷贝的 profile 内容）+ `scripts/` + 双语 README + CHANGELOG | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
+| A2 | 建 `profiles/web-basic/`：profile 内容 + `scripts/` + 双语 README + CHANGELOG（结构与镜像仓一致，同步即纯拷贝） | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
 | A3 | **逐字节搬**现有 README 双指南与 restart 脚本 | A2 | 与镜像仓 diff 为空——**不许顺手优化**，那些是多轮事故打磨的（watchdog 交接、`$DSH_SESSION_ID` 寻址、不硬编码 `--initiator`） |
 | A4 | 补 `README.i18n.yaml` sidecar | A3 | 配对门禁认得它 |
-| A5 | 扩翻译配对 glob 到 `{packages,packs,.agents}` | A4 | 门禁扫得到 packs/ |
-| A6 | 写 `scripts/sync-pack-mirror.mts`（照 `sync-ankh-guard-mirror.mts` 改） | A2 | 只拷整合包自身文件 + **被引用的**截图，不拖 monorepo 的 `docs/` |
+| A5 | 扩翻译配对 glob 到 `{packages,profiles,.agents}` | A4 | 门禁扫得到 profiles/ |
+| A6 | 写 `scripts/sync-profile-mirror.mts`（照 `sync-ankh-guard-mirror.mts` 改） | A2 | 只拷整合包自身文件 + **被引用的**截图，不拖 monorepo 的 `docs/` |
 | A7 | **同步脚本加 `--check` 模式并进 CI** | A6 | 镜像落后于 monorepo 即红——防「单一事实源」漂成两个真相 |
 | A8 | 加两个成员（capability-catalog、inline-html-render），版本 bump 走 **minor** | A1·A2 | `--dump-config` 行数 +2 |
-| A9 | **`install.sh` 增量安装路径**：已装过旧版的实例能升级（已装跳过、只补新的） | A8 | 现在是「目录已存在就报错退出」，无升级路径 |
-| A10 | A9 的验收步骤（测试或手写清单） | A9 | 旧实例升级、全新安装两条路径都过 |
-| A11 | 全新 `$DSH_HOME` 装一遍 | A8·A9 | 一次通过 |
-| A12 | 同步推镜像仓 | A6·A11 | 镜像仓 clone 能照 README 装上 |
+| A9 | **模板保持最小**：只含 `package.json` + bundles 清单 + lockfile；用户个性化引导到 `cordis.patch.yml` 的 user 层（官方分层天然支持） | A2 | 模板里没有用户会改的东西 |
+| A10 | **ship `pnpm-lock.yaml`** | A9 | profile 是应用不是库——可复现安装优先于依赖新鲜度 |
+| A11 | **`install.sh` 升级路径**：已装过旧版的实例能升级（三路合并或明确的覆盖策略，二选一并写明） | A8·A9 | 现在是「目录已存在就报错退出」，无升级路径 |
+| A12 | A11 的验收步骤（测试或手写清单） | A11 | 全新安装、旧实例升级两条路径都过 |
+| A13 | 全新 `$DSH_HOME` 装一遍 | A8·A11 | 一次通过 |
+| A14 | 同步推镜像仓 | A6·A13 | 镜像仓 clone 能照 README 装上 |
 
 ### B 线：dsh-web-dev 新建
 
@@ -247,10 +253,10 @@ dsh-dev/
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | B1 | 确认成员清单与各包版本线 | A 线机制就位 | 每包一个确定版本，无在途包 |
-| B2 | 建 `packs/web-dev/profile/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` | B1·A2 | 自带 hoisted linker |
+| B2 | 建 `profiles/web-dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
 | B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
-| B4 | **写 `profile/presets/standard/agent.cordis.yml`** | B3 | 本仓首次分发 preset，无先例 |
-| B5 | 写 `scripts/install.sh`（含增量路径，复用 A9 的做法） | B2·A9 | 全新与增量两条路径 |
+| B4 | **写 `presets/standard/agent.cordis.yml`** | B3 | 本仓首次分发 preset，无先例 |
+| B5 | 写 `scripts/install.sh`（复用 A11 的升级策略） | B2·A11 | 全新与升级两条路径 |
 | B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
 | B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
