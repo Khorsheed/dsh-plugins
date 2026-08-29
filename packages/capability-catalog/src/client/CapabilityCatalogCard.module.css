@@ -111,14 +111,15 @@
 }
 
 /* Primary "新增 skill" button pins to the toolbar's right edge. */
+/* "新增 Skill" button sits quietly like the host ghost button. */
 .addBtn {
   flex: none;
   height: 34px;
   padding: 0 14px;
-  border: none;
-  border-radius: 10px;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-foreground);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -127,7 +128,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .addBtn::before {
@@ -135,7 +136,8 @@
 }
 
 .addBtn:hover {
-  background: var(--dsw-alias-button-primary-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Filter / sort bar: search grows, sort select fixed, one row. */
@@ -570,6 +572,92 @@
   margin-bottom: 16px; /* divider → file panel 16px */
 }
 
+/* Collapsible "view source" section: divider above the header, full-width 48px trigger. */
+.sourceSection {
+  margin-top: 24px; /* meta → divider 24px */
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.sourceTrigger {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px; /* arrow → label 8px */
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sourceTrigger:hover .sourceLabel {
+  color: var(--dsw-alias-label-primary);
+}
+
+.sourceChevron {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s;
+}
+
+.sourceLabel {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Single-file source: no file tree, full-width pane + a top toolbar (name/copy). */
+.sourceSingle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* header → panel 12px */
+  padding-bottom: 8px;
+}
+
+.sourceSingle .detailPane {
+  height: clamp(360px, 50vh, 540px);
+}
+
+.sourceBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sourceBarFile {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sourceCopy:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
 .confHint {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
@@ -590,10 +678,9 @@
   margin-bottom: 12px; /* key name+status → input row 12px */
 }
 
-/* Credential input + save: one grid row, save never wraps to two lines. */
+/* Credential input + save: one row; save hides once configured (replace-on-blur). */
 .credInputRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px;
+  display: flex;
   gap: 12px;
   align-items: center;
 }
@@ -612,6 +699,7 @@
 
 .inputWrap {
   position: relative;
+  flex: 1;
   min-width: 0;
 }
 
@@ -711,7 +799,7 @@
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 8px 6px;
+  padding: 12px; /* dense file tree: 12px panel padding */
   overflow: auto;
   scrollbar-width: thin;
 }
@@ -719,17 +807,18 @@
 .treeRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   width: 100%;
-  height: 40px;
-  padding: 0 8px;
+  height: 36px;
+  margin-bottom: 2px;
+  padding: 0 10px;
   box-sizing: border-box;
   border: none;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 1;
   text-align: left;
   cursor: pointer;
   border-radius: 8px;
@@ -759,8 +848,8 @@
 .treeSelected::before {
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: 6px;
+  bottom: 6px;
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--dsw-alias-state-business-primary);
@@ -844,7 +933,7 @@
   gap: 24px;
   height: 44px; /* tabs 44px */
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  margin: 16px 0 24px; /* title → tabs 32px (16 modal-body pad + 16), tabs → content 24px */
+  margin: 0 0 32px; /* title → tabs tighter (16px modal pad), tabs → content 32px */
 }
 
 /* "Updated" date in the card meta, pushed to the right edge. */
@@ -1211,7 +1300,7 @@
 }
 
 .switch input:checked + .track {
-  background: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-success-primary);
 }
 
 .switch input:checked + .track + .thumb {

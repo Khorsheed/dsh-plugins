@@ -286,8 +286,8 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 }) {
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
-  const [showCred, setShowCred] = useState<Record<string, boolean>>({})
   const [copied, setCopied] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(true)
   const data = claim.data
   // Source browser: the selected bundle file and its content (right pane).
   const [srcFile, setSrcFile] = useState('')
@@ -301,7 +301,6 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
     const ok = await setCredential(key, value)
     setCredState((s) => ({ ...s, [key]: ok ? 'ok' : 'fail' }))
   }
-  const toggleShow = (key: string): void => setShowCred((s) => ({ ...s, [key]: !s[key] }))
 
   const copySource = async (): Promise<void> => {
     const text = (srcFile === '' || srcFile === 'SKILL.md') ? data?.content : srcContent
@@ -360,7 +359,6 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
                     const key = decl.key
                     const label = decl.label ?? key
                     const state = credState[key] ?? 'idle'
-                    const show = showCred[key] === true
                     const configured = decl.configured || state === 'ok'
                     return (
                       <div className={css.credRow} key={key}>
@@ -369,14 +367,16 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
                         </label>
                         <div className={css.credInputRow}>
                           <div className={css.inputWrap}>
-                            <input className={css.input} type={show ? 'text' : 'password'} value={credValues[key] ?? ''} placeholder={t('credPlaceholder')}
-                              onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))} />
-                            <button type="button" className={css.eyeBtn} aria-label={show ? t('hide') : t('show')} onClick={() => toggleShow(key)}>
-                              {show ? t('hide') : t('show')}
-                            </button>
+                            <input className={css.input} type="password" value={credValues[key] ?? ''}
+                              placeholder={configured ? t('configuredReplace') : t('credPlaceholder')}
+                              onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))}
+                              onBlur={() => { if ((credValues[key] ?? '') !== '') void saveCred(key) }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(key) }} />
                           </div>
-                          <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
-                            onClick={() => void saveCred(key)}>{t('save')}</button>
+                          {!configured ? (
+                            <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
+                              onClick={() => void saveCred(key)}>{t('save')}</button>
+                          ) : null}
                         </div>
                         {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
                         {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
@@ -386,38 +386,55 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
                 </details>
               ) : null}
 
-              <details className={css.source} open>
-                <summary className={css.sourceTitle}>{t('viewSource')}</summary>
-                {/* The source browser is always the split (left tree + right pane).
-                    A skill with a real bundle (resourceBase.kind === 'directory')
-                    lists its files; a content-only skill (no bundle) renders a
-                    single virtual SKILL.md node whose content is the body. The data
-                    contract only reports `files` when a bundle exists — the renderer
-                    never fabricates a disk path for a content-only skill. */}
-                {(() => {
-                  const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
-                  return (
-                    <div className={css.split}>
-                      <div className={css.treePane}>
-                        <BundleFileTree
-                          files={files}
-                          selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
-                          onSelect={selectSource}
-                        />
-                      </div>
-                      <div className={css.detailPane}>
-                        <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
-                          {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
-                        </button>
-                        {srcLoading ? <div className={css.empty}>{t('loading')}</div>
-                          : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
-                            : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
-                              : <pre className={css.codeBlk}>{srcContent}</pre>}
-                      </div>
-                    </div>
-                  )
-                })()}
-              </details>
+              {(() => {
+                const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
+                const single = files.length <= 1
+                return (
+                  <section className={css.sourceSection}>
+                    <button type="button" className={css.sourceTrigger} onClick={() => setSourceOpen((o) => !o)} aria-expanded={sourceOpen}>
+                      <span className={css.sourceChevron}>{sourceOpen ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
+                      <span className={css.sourceLabel}>{t('viewSource')}</span>
+                    </button>
+                    {sourceOpen ? (
+                      single ? (
+                        <div className={css.sourceSingle}>
+                          <div className={css.sourceBar}>
+                            <span className={css.sourceBarFile}>{srcFile === '' || srcFile === 'SKILL.md' ? 'SKILL.md' : srcFile}</span>
+                            <button type="button" className={css.sourceCopy} onClick={() => void copySource()} aria-label={t('copy')}>
+                              {copied ? t('copied') : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                            </button>
+                          </div>
+                          <div className={css.detailPane}>
+                            {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                              : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                                : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                                  : <pre className={css.codeBlk}>{srcContent}</pre>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={css.split}>
+                          <div className={css.treePane}>
+                            <BundleFileTree
+                              files={files}
+                              selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
+                              onSelect={selectSource}
+                            />
+                          </div>
+                          <div className={css.detailPane}>
+                            <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
+                              {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                            </button>
+                            {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                              : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                                : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                                  : <pre className={css.codeBlk}>{srcContent}</pre>}
+                          </div>
+                        </div>
+                      )
+                    ) : null}
+                  </section>
+                )
+              })()}
 
               {data.metadataText !== undefined ? (
                 <details className={css.source}>
@@ -456,16 +473,10 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [roots, setRoots] = useState<readonly string[]>([])
   const [rootsLoaded, setRootsLoaded] = useState(false)
+  const [customDir, setCustomDir] = useState('')
 
   const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
   const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0
-
-  // Best-effort skill name for the model-invocable tooltip ("/{name}").
-  const hintName: string = tab === 'localdir' && selectedSkills.length > 0
-    ? (selectedSkills[0] ?? '')
-    : tab === 'upload' && zipName !== ''
-      ? zipName.replace(/\.(zip|md)$/i, '')
-      : ''
 
   // Tabs are independent: switching clears the previous tab's message so a
   // warning on one tab never bleeds into another.
@@ -578,6 +589,13 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
                 {roots.length === 0 ? <option value="">{t('noSkillRoots')}</option> : null}
                 {roots.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
+              <div className={css.fieldGroup}>
+                <label className={css.fieldLabel}>{t('dirCustomLabel')}</label>
+                <input className={css.input} value={customDir} placeholder={t('dirCustomPlaceholder')} spellCheck={false}
+                  onChange={(e) => setCustomDir(e.target.value)}
+                  onBlur={() => { if (customDir.trim() !== '') void autoListRoot(customDir) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void autoListRoot(customDir) }} />
+              </div>
               <p className={css.confHint}>{t('dirHint')}</p>
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>
@@ -601,7 +619,6 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
 
           <label className={css.switchRow}>
             <span className={css.enableLabel}>{t('addModelInvocable')}</span>
-            <span className={css.infoBtn} data-tip={t('addModelInvocableHint').replace('{name}', hintName || t('skillNamePlaceholder'))}>i</span>
             <span className={css.switch}>
               <input type="checkbox" checked={modelInvocable} onChange={(e) => setModelInvocable(e.target.checked)} />
               <span className={css.track} />
