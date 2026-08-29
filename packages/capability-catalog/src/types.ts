@@ -137,6 +137,12 @@ export interface CatalogAddSkillResult {
   readonly name?: string
 }
 
+/** Delete-skill result (delete only applies to catalog-owned file skills). */
+export interface CatalogDeleteSkillResult {
+  readonly ok: boolean
+  readonly error?: string
+}
+
 /** Wire form of one credential's configured state. */
 export interface CatalogCredentialSetRequest {
   readonly key: string
@@ -151,4 +157,5 @@ export interface CapabilityCatalogRemote {
   readonly listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
+  readonly deleteSkill: (name: string, workdir?: string) => Promise<CatalogDeleteSkillResult>
 }

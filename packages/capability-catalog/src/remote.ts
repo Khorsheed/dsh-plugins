@@ -11,12 +11,15 @@ import type {
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
+  CatalogDeleteSkillResult,
   CatalogDirSkillInfo,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogToolRow,
 } from './types.ts'
-import { collectSkills, loadSkillDetail, readSkillFileContent, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice } from './skills.ts'
+import {
+  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice,
+} from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
@@ -94,6 +97,20 @@ export async function catalogReadSkillFile(
   scope: unknown = undefined,
 ): Promise<CatalogSkillFileRead | undefined> {
   return readSkillFileContent(registry, name, filePath, workdir, scope)
+}
+
+/** Delete a catalog-owned file skill (rejects built-in / plugin-provided). */
+export async function catalogDeleteSkill(
+  registry: RegistrySlice,
+  name: string,
+  workdir: string | undefined,
+  scope: unknown = undefined,
+): Promise<CatalogDeleteSkillResult> {
+  const base = workdir === undefined ? {} : { cwd: workdir }
+  const lookup = scope === undefined ? base : { ...base, scope }
+  const def = await registry.get(name, lookup)
+  if (def === undefined) return { ok: false, error: 'skill not found' }
+  return deleteSkillDir(def)
 }
 
 /** Set one declared credential value (never returned on the wire). */

@@ -23,6 +23,8 @@ import {
   IconFolderOpenOutline16,
   IconSearchOutline16,
   IconCopyOutline16,
+  IconBrowseOutline16,
+  IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
@@ -33,13 +35,18 @@ type Kind = 'skills' | 'tools'
 type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
 type SortBy = 'name' | 'updated'
 
-export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, setCredential, addSkill, refresh, t }: CapabilityCatalogCardProps) {
+/** Built-in / plugin-provided skill sources — never deletable, shown with the 内置 tag. */
+const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
+const isBuiltin = (skill: CatalogSkillRow): boolean => BUILTIN_SOURCES.has(skill.source)
+
+export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
   const [openTool, setOpenTool] = useState<string | null>(null)
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [claim, setClaim] = useState<DetailClaim>({ status: 'idle', data: undefined })
   const [showAdd, setShowAdd] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   // Grid filter / sort state.
   const [query, setQuery] = useState('')
   const [filterSource, setFilterSource] = useState('')
@@ -142,7 +149,14 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
           : (
             <div className={css.grid}>
               {visibleSkills.map((skill) => (
-                <SkillPreviewCard key={skill.name} skill={skill} onOpen={() => void openDetail(skill.name)} t={t} />
+                <SkillPreviewCard
+                  key={skill.name}
+                  skill={skill}
+                  builtin={isBuiltin(skill)}
+                  onOpen={() => void openDetail(skill.name)}
+                  onDelete={() => setDeleteTarget(skill.name)}
+                  t={t}
+                />
               ))}
             </div>
           )
@@ -166,27 +180,85 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
       {showAdd ? (
         <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} refresh={refresh} t={t} />
       ) : null}
+
+      {deleteTarget !== null ? (
+        <DeleteSkillConfirm
+          name={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            const res = await deleteSkill(deleteTarget)
+            if (res.ok) await refresh()
+            setDeleteTarget(null)
+          }}
+          t={t}
+        />
+      ) : null}
     </div>
   )
 }
 
-/** Preview card in the skills grid: name + two-line description + pills. */
-function SkillPreviewCard({ skill, onOpen, t }: {
+/** Preview card in the skills grid (Agent-preset anatomy): name + built-in tag,
+ * two-line description, provider subtitle, foot actions. */
+function SkillPreviewCard({ skill, builtin, onOpen, onDelete, t }: {
   skill: CatalogSkillRow
+  builtin: boolean
   onOpen: () => void
+  onDelete: () => void
   t: (key: CapabilityCatalogKey) => string
 }) {
   return (
-    <button type="button" className={css.pvCard} onClick={onOpen}>
-      <div className={css.pvTitle}>{skill.name}</div>
-      <div className={css.pvDesc}>{skill.description}</div>
-      <div className={css.pvMeta}>
-        <span className={css.badge}>{skill.source}</span>
-        <span className={css.badge}>{skill.provider}</span>
-        {!skill.modelInvocable ? <span className={`${css.badge} ${css.badgeWarn}`}>{t('userOnly')}</span> : null}
-        {skill.updatedAt !== undefined ? <span className={css.pvDate}>{t('updated')} {formatDate(skill.updatedAt)}</span> : null}
+    <div className={css.pvCard}>
+      <button type="button" className={css.pvMain} onClick={onOpen}>
+        <span className={css.pvHead}>
+          <span className={css.pvName}>{skill.name}</span>
+          {builtin ? <span className={css.pvTag}>{t('builtin')} · {skill.provider}</span> : null}
+        </span>
+        <span className={css.pvDesc}>{skill.description}</span>
+        <span className={css.pvSub}>{skill.provider}</span>
+      </button>
+      <div className={css.pvFoot}>
+        <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
+          <IconBrowseOutline16 size={16} />
+        </button>
+        {!builtin ? (
+          <button type="button" className={`${css.iconButton} ${css.iconDanger}`} onClick={onDelete} aria-label={t('delete')} title={t('delete')}>
+            <IconTrashOutline16 size={16} />
+          </button>
+        ) : null}
       </div>
-    </button>
+    </div>
+  )
+}
+
+/** Second-step modal confirming a destructive skill delete. */
+function DeleteSkillConfirm({ name, onCancel, onConfirm, t }: {
+  name: string
+  onCancel: () => void
+  onConfirm: () => void | Promise<void>
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const [busy, setBusy] = useState(false)
+  const submit = async (): Promise<void> => {
+    setBusy(true)
+    try { await onConfirm() } finally { setBusy(false) }
+  }
+  return (
+    <div className={css.overlay} role="dialog" aria-modal="true">
+      <div className={`${css.modal} ${css.confirmModal}`}>
+        <div className={css.modalHead}>
+          <h3 className={css.modalTitle}>{t('delete')}</h3>
+          <button type="button" className={css.modalClose} onClick={onCancel} aria-label={t('detailClose')}>×</button>
+        </div>
+        <div className={css.modalBody}>
+          <p className={css.confirmText}>{t('confirmDelete')}「{name}」？</p>
+          <div className={css.actions}>
+            <button type="button" className={css.btnGhost} onClick={onCancel}>{t('cancel')}</button>
+            <span className={css.spacer} />
+            <button type="button" className={`${css.btnPrimary} ${css.btnDanger}`} disabled={busy} onClick={() => void submit()}>{t('delete')}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -559,15 +631,6 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   const chunk = 0x8000
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
   return btoa(binary)
-}
-
-/** Format an epoch-ms timestamp as a short date (locale-aware). */
-function formatDate(ms: number): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ms))
-  } catch {
-    return String(ms)
-  }
 }
 
 /** Pretty-print a JSON metadata string for display. */

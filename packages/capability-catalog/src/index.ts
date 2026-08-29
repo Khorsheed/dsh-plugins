@@ -23,11 +23,12 @@ import type {
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
+  CatalogDeleteSkillResult,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
 } from './types.ts'
-import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot } from './remote.ts'
+import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { installSkillEnvHint } from './envHint.ts'
@@ -46,6 +47,7 @@ export type {
   CatalogCredentialState,
   CatalogAddSkillRequest,
   CatalogAddSkillResult,
+  CatalogDeleteSkillResult,
   CatalogCredentialSetRequest,
 } from './types.ts'
 
@@ -247,6 +249,13 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('addSkill')
   async addSkill(request: CatalogAddSkillRequest): Promise<CatalogAddSkillResult> {
     return catalogAddSkill(this.ctx, request, this.dshHome())
+  }
+
+  @Remote('deleteSkill')
+  async deleteSkill(name: string, workdir?: string): Promise<CatalogDeleteSkillResult> {
+    const { registry } = resolveServicesHelper(this.ctx)
+    if (registry === undefined) return { ok: false, error: 'skills service absent in this composition' }
+    return catalogDeleteSkill(registry, name, workdir, await this.catalogScope())
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */

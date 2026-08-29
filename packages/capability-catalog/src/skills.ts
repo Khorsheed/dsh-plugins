@@ -9,7 +9,7 @@
  * @module @khorsheed/dsh-capability-catalog/skills
  */
 
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -30,6 +30,13 @@ export interface CredentialsSlice {
 /** POSIX identifier — the minimal shape a credential reference name must match
  * (the env keys the catalog handles are a strict subset of this). */
 export const CREDENTIAL_REF_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** Skill `source` buckets that resolve to a local file the catalog may delete.
+ * Built-in / plugin-provided skills (`runtime`, `bundled`, official `skill-badge`)
+ * have no catalog-owned file and are never deletable. */
+export const DELETABLE_SOURCES: ReadonlySet<string> = new Set([
+  'user-dsh', 'user-agents', 'project-dsh', 'project-agents', 'custom',
+])
 
 /** Minimal SkillSummary shape (invocation-neutral). */
 interface SkillSummaryLike {
@@ -245,6 +252,22 @@ export async function readSkillFileContent(
     return { content: buf.toString('utf8') }
   } catch {
     return undefined
+  }
+}
+
+/** Delete a file skill's directory. Returns an error for built-in / plugin-provided
+ * skills (`runtime`, `bundled`, official `skill-badge`) that have no catalog-owned
+ * file, and for any skill whose bundle directory cannot be resolved. */
+export async function deleteSkillDir(def: SkillDefinitionLike): Promise<{ ok: boolean; error?: string }> {
+  if (!DELETABLE_SOURCES.has(def.source)) return { ok: false, error: 'not a deletable file skill' }
+  const dir = def.resourceBase?.kind === 'directory' ? def.resourceBase.path : undefined
+  if (dir === undefined) return { ok: false, error: 'skill has no bundle directory' }
+  try {
+    await stat(dir)
+    await rm(dir, { recursive: true, force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String(error) }
   }
 }
 

@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the generated Remote namespace merge.
 import type {} from '@khorsheed/dsh-capability-catalog/remote'
-import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogDeleteSkillResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
 
 /** A tiny external store holding the last catalog snapshot (re-created on change). */
 export interface CatalogHook {
@@ -34,6 +34,8 @@ export interface CapabilityCatalogInjected {
   setCredential: (key: string, value: string) => Promise<boolean>
   /** Add a skill via a full request (upload zip/text or clone-from-source). */
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
+  /** Delete a catalog-owned file skill (rejects built-in/plugin-provided). */
+  deleteSkill: (name: string) => Promise<CatalogDeleteSkillResult>
 }
 
 /** Full props of the settings.section entry (a standalone nav tab). */
