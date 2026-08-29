@@ -174,6 +174,31 @@ export class McpStore {
     return this.servers.get(serverName)?.error
   }
 
+  /** Forward one tool call to a server (connect → call → close). Resolves secrets. */
+  async callTool(serverName: string, rawName: string, args: Record<string, unknown>): Promise<unknown> {
+    const s = this.servers.get(serverName)
+    if (s === undefined) throw new Error(`unknown MCP server: ${serverName}`)
+    const resolved = await resolveConfigSecrets(s.config, async (ref) => {
+      const candidates = [
+        `mcp.${serverName}.env.${ref}`,
+        `mcp.${serverName}.header.${ref}`,
+        `mcp.${serverName}.query.${ref}`,
+      ]
+      for (const candidate of candidates) {
+        const value = s.credentials.get(candidate)
+        if (value !== undefined) return value
+      }
+      return undefined
+    })
+    const { connectMcpServer } = await import('./mcpConnector.ts')
+    const connection = await connectMcpServer(resolved)
+    try {
+      return await connection.call(rawName, args)
+    } finally {
+      await connection.close()
+    }
+  }
+
   /** Extract credential reference paths from a config (env/header/url-query).
    * Namespaced `mcp.<serverName>.env.<KEY>` so multiple servers don't collide. */
   private credentialRefsOf(config: CatalogMcpServerConfig): string[] {

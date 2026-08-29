@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {
   CapabilityCatalogSnapshot,
@@ -37,6 +38,7 @@ import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { McpStore } from './mcpStore.ts'
 import type { PersistedMcpState } from './mcpStore.ts'
+import { reconcileRegisteredMcpTools, desiredMcpTools } from './mcpTools.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -100,6 +102,8 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private readonly baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
   private readonly mcp: McpStore
+  /** Registered MCP tool disposers, keyed by model-facing public name. */
+  private readonly mcpToolDisposers = new Map<string, () => void>()
 
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
@@ -119,7 +123,12 @@ export class CapabilityCatalogService extends TypertRemoteService {
       this.mcp.onPersist = (): void => {
         void scope.update({ mcp: this.mcp.toPersisted() }).catch((error: unknown) => this.ctx.logger.error(error))
       }
-      scope.watch((next) => this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp))
+      scope.watch((next) => {
+        this.mcp.loadFrom((next as { mcp?: PersistedMcpState } | undefined)?.mcp)
+        this.afterMcpMutation()
+      })
+      // Register any persisted, enabled MCP tools for the model once tools is composed.
+      this.scheduleMcpToolSync()
     })
     // Baseline snapshot of the tools visible at apply time; tools that appear
     // later (a tools/change diff) are marked plugin/inferred.
@@ -290,18 +299,21 @@ export class CapabilityCatalogService extends TypertRemoteService {
   async mcpAdd(config: CatalogMcpServerConfig): Promise<boolean> {
     if (config.serverName.trim() === '') return false
     this.mcp.add(config)
+    this.afterMcpMutation()
     return true
   }
 
   @Remote('mcpRemove')
   async mcpRemove(serverName: string): Promise<boolean> {
     this.mcp.remove(serverName)
+    this.afterMcpMutation()
     return true
   }
 
   @Remote('mcpSetEnabled')
   async mcpSetEnabled(serverName: string, enabled: boolean): Promise<void> {
     this.mcp.setEnabled(serverName, enabled)
+    this.afterMcpMutation()
   }
 
   @Remote('mcpSetCredential')
@@ -313,11 +325,14 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('mcpSetToolEnabled')
   async mcpSetToolEnabled(serverName: string, tool: string, enabled: boolean): Promise<void> {
     this.mcp.setToolEnabled(serverName, tool, enabled)
+    this.afterMcpMutation()
   }
 
   @Remote('mcpDiscover')
   async mcpDiscover(serverName: string): Promise<readonly CatalogMcpTool[]> {
-    return this.mcp.discover(serverName)
+    const tools = await this.mcp.discover(serverName)
+    this.afterMcpMutation()
+    return tools
   }
 
   @Remote('mcpSnapshot')
@@ -351,6 +366,42 @@ export class CapabilityCatalogService extends TypertRemoteService {
       if (server.length > 0 && !names.includes(server)) names.push(server)
     }
     return names
+  }
+
+  /** The live `ctx.tools.register`, or undefined when tools is not composed. */
+  private toolsRegister(): ((definition: ToolDefinition) => () => void) | undefined {
+    const tools = this.ctx.get?.('tools') as { register?: (definition: ToolDefinition) => () => void } | undefined
+    return tools?.register
+  }
+
+  /**
+   * Reconcile which discovered MCP tools are registered on `ctx.tools` so the
+   * model can call them. Registers tools of enabled servers with enabled tools;
+   * disposes the rest. Idempotent. Returns false when tools is not composed yet
+   * (so the caller can retry).
+   */
+  private syncRegisteredMcpTools(): boolean {
+    const register = this.toolsRegister()
+    if (register === undefined) return false
+    const desired = desiredMcpTools(this.mcp.list(), this.mcp.toolsByServer())
+    reconcileRegisteredMcpTools(desired, {
+      register,
+      onRegisterError: (error) => this.ctx.logger.error(`capability-catalog: MCP tool registration failed: ${String(error)}`),
+    }, this.mcpToolDisposers, async (serverName, rawName, args) => this.mcp.callTool(serverName, rawName, args))
+    return true
+  }
+
+  /** Register persisted MCP tools once tools is composed, retrying briefly. */
+  private scheduleMcpToolSync(): void {
+    const retry = (): void => {
+      if (!this.syncRegisteredMcpTools()) setTimeout(retry, 150)
+    }
+    retry()
+  }
+
+  /** Re-sync registered MCP tools after any MCP store mutation. */
+  private afterMcpMutation(): void {
+    this.syncRegisteredMcpTools()
   }
 }
 
