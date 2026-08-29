@@ -91,7 +91,7 @@ export const zh = {
   addError: '添加失败',
   readFailed: '文件读取失败',
   addExistsTitle: '已存在',
-  addExists: '该 skill 已存在于目标目录，是否覆盖？',
+  addExists: '是否覆盖？',
   replace: '覆盖',
 }
 
@@ -171,6 +171,6 @@ export const en = {
   addError: 'Failed to add',
   readFailed: 'Failed to read file',
   addExistsTitle: 'Already exists',
-  addExists: 'This skill already exists in the target root. Overwrite it?',
+  addExists: 'Overwrite it?',
   replace: 'Replace',
 }

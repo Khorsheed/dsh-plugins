@@ -16,6 +16,7 @@
  */
 import { useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
+  Button,
   IconChevronDownOutline14,
   IconChevronRightOutline14,
   IconFolderClose16,
@@ -25,6 +26,7 @@ import {
   IconCopyOutline16,
   IconBrowseOutline16,
   IconTrashOutline16,
+  Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
@@ -652,22 +654,18 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
       </div>
     </div>
     {confirm !== null ? (
-      <div className={css.overlay} role="dialog" aria-modal="true">
-        <div className={`${css.modal} ${css.confirmModal}`}>
-          <div className={css.modalHead}>
-            <h3 className={css.modalTitle}>{t('addExistsTitle')}</h3>
-            <button type="button" className={css.modalClose} onClick={() => setConfirm(null)} aria-label={t('detailClose')}>×</button>
-          </div>
-          <div className={css.modalBody}>
-            <p className={css.confirmText}>{t('addExists')}「{confirm.name}」？</p>
-            <div className={css.actions}>
-              <button type="button" className={css.btnGhost} onClick={() => setConfirm(null)}>{t('cancel')}</button>
-              <span className={css.spacer} />
-              <button type="button" className={css.btnPrimary} disabled={busy} onClick={() => void overwrite()}>{t('replace')}</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Modal
+        open
+        onClose={() => setConfirm(null)}
+        title={t('addExistsTitle')}
+        description={`「${confirm.name}」${t('addExists')}`}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => setConfirm(null)}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={busy} onClick={() => void overwrite()}>{t('replace')}</Button>
+          </>
+        )}
+      />
     ) : null}
     </>
   )
