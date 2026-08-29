@@ -18,6 +18,8 @@ catalog 提案 v1 的 GUI 原本描述成官方风格折叠卡 + 独立 Markdown
 
 **3. 卡片网格后来按宿主 token 重新排版（2026-08-29）：改用 2 列响应式网格（非早先的三列），加筛选/排序栏（搜索、来源/提供者筛选、名称/最近更新排序），并给 `CatalogSkillRow` 加 `updatedAt`（SKILL.md 的 mtime）字段支撑「最近更新」。** 详情弹窗保持头部固定、仅正文滚动；源码浏览器的树与代码窗格各自独立滚动，选中文件用背景 + 左侧主色指示条（焦点环留给键盘 focus）。配色从硬编码 `#2b2b2e`/`#303034`/`#202023` 迁到宿主 `--dsw-alias-*` 主题 token；来源与提供者统一成同款胶囊徽标；凭据用密码输入 + 显示/隐藏切换，`minmax(0,1fr) 88px` 的 grid 让「保存」不再折行。新增 skill 弹窗把上传区缩到 220px，开关文案改成「允许模型自动发现」（关 = 仅 /name）。这些是对决策 1、2 的呈现层打磨——网格 + 弹窗与零依赖源码依然成立。
 
+**4. 列表分类后来收敛成二分（2026-08-29）：skill 要么是「内置」（`runtime`/`bundled`/官方 `skill-badge`，插件或官方内置提供——显示「内置 · <provider>」标签、永不可删），要么是文件 skill（`user-dsh`/`user-agents`/`project-dsh`/`project-agents`/`custom`，含 GUI 导入与 Agent 创建——无标签、可删）。** 卡片改为 Agent preset 结构（可点 main 主体：名称+内置标签、两行描述、显著的 provider 副标题；`.foot` 放「查看详情」icon + 对文件 skill 的「删除」icon，删除走二次确认弹窗）。`CatalogDeleteSkillResult`/`deleteSkill` Remote 删除 skill 的 bundle 目录；它校验 source 是文件类，拒绝内置/插件提供的 skill（它们没有目录可拥有的文件）。删除能力纯靠 `source` 判定，不写任何标记文件。
+
 ## 备选方案
 
 - **host 半用 adm-zip / jszip。** 否决：gen-typert overlay 解析不到第三方 host 依赖，生成即挂。客户端解压（jszip）虽可绕过，但增加客户端 bundle 依赖与更大请求，且违背用户选定的 host 侧 UX。
