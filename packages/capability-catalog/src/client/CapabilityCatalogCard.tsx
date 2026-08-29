@@ -211,7 +211,7 @@ function SkillPreviewCard({ skill, builtin, onOpen, onDelete, t }: {
       <button type="button" className={css.pvMain} onClick={onOpen}>
         <span className={css.pvHead}>
           <span className={css.pvName}>{skill.name}</span>
-          {builtin ? <span className={css.pvTag}>{t('builtin')} · {skill.provider}</span> : null}
+          {builtin ? <span className={css.pvTag}>{t('builtin')}</span> : null}
         </span>
         <span className={css.pvDesc}>{skill.description}</span>
         <span className={css.pvSub}>{skill.provider}</span>
