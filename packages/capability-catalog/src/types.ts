@@ -22,6 +22,8 @@ export interface CatalogSkillRow {
   readonly userInvocable: boolean
   /** Optional extra routing guidance. */
   readonly whenToUse?: string
+  /** Last-modified time (epoch ms) of the skill body, when a local bundle exists. */
+  readonly updatedAt?: number
 }
 
 /** Credential declared by a skill's metadata (the plugin-defined convention). */

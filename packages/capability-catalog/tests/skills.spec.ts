@@ -51,4 +51,9 @@ describe('skillRowFrom', () => {
     expect('path' in row).toBe(false)
     expect('rank' in row).toBe(false)
   })
+
+  it('carries updatedAt when provided', () => {
+    const row = skillRowFrom({ name: 'x', description: 'd', invocation: { modelInvocable: true, userInvocable: true }, source: 'user-dsh', provider: 'filesystem' }, 1700000000000)
+    expect(row.updatedAt).toBe(1700000000000)
+  })
 })

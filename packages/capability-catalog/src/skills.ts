@@ -9,7 +9,7 @@
  * @module @khorsheed/dsh-capability-catalog/skills
  */
 
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
@@ -113,7 +113,7 @@ export function mergeCredentialDecls(
 }
 
 /** Project one summary onto a wire skill row. */
-export function skillRowFrom(summary: SkillSummaryLike): CatalogSkillRow {
+export function skillRowFrom(summary: SkillSummaryLike, updatedAt?: number): CatalogSkillRow {
   return {
     name: summary.name,
     description: summary.description,
@@ -122,6 +122,21 @@ export function skillRowFrom(summary: SkillSummaryLike): CatalogSkillRow {
     modelInvocable: summary.invocation.modelInvocable,
     userInvocable: summary.invocation.userInvocable,
     ...summary.whenToUse !== undefined ? { whenToUse: summary.whenToUse } : {},
+    ...updatedAt !== undefined ? { updatedAt } : {},
+  }
+}
+
+/** Last-modified time (epoch ms) of a skill's body: the SKILL.md in its bundle
+ * directory for a directory skill, else the directory itself. Remote
+ * (`url`/`opaque`) skills have no local file and yield `undefined`. */
+async function skillUpdatedAt(summary: SkillSummaryLike): Promise<number | undefined> {
+  const base = summary.resourceBase
+  if (base?.kind !== 'directory' || base.path === undefined) return undefined
+  try {
+    const skillMd = await stat(join(base.path, 'SKILL.md')).catch(() => undefined)
+    return (skillMd ?? await stat(base.path)).mtimeMs
+  } catch {
+    return undefined
   }
 }
 
@@ -153,7 +168,7 @@ export async function collectSkills(
       continue
     }
     for (const summary of snapshot.skills) {
-      const row = skillRowFrom(summary)
+      const row = skillRowFrom(summary, await skillUpdatedAt(summary))
       if (!byName.has(row.name)) byName.set(row.name, row)
     }
   }
