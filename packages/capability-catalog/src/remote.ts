@@ -6,8 +6,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -101,10 +99,18 @@ export async function catalogReadSkillFile(
   return readSkillFileContent(registry, name, filePath, workdir, scope)
 }
 
-/** List the local directory skill roots the user can install from. */
-export async function catalogSkillRoots(dshHome: string): Promise<readonly string[]> {
-  const agentsHome = join(homedir(), '.agents', 'skills')
-  return [join(dshHome, 'skills'), agentsHome]
+/** Open the host's native directory chooser (the workspace "add" dialog). */
+export async function catalogPickDirectory(ctx: Context, signal?: AbortSignal): Promise<string | null> {
+  const picker = ctx.get?.('directoryPicker') as
+    | { capability?: () => { kind?: string; pick?: (s: AbortSignal) => Promise<string | null> } }
+    | undefined
+  const cap = picker?.capability?.()
+  if (cap?.kind !== 'native' || cap.pick === undefined) return null
+  try {
+    return await cap.pick(signal ?? new AbortController().signal)
+  } catch {
+    return null
+  }
 }
 
 /** Delete a catalog-owned file skill (rejects built-in / plugin-provided). */

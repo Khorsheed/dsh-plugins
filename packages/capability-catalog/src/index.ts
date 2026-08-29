@@ -28,7 +28,7 @@ import type {
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
 } from './types.ts'
-import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogSkillRoots } from './remote.ts'
+import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
 import { installSkillEnvHint } from './envHint.ts'
@@ -258,9 +258,9 @@ export class CapabilityCatalogService extends TypertRemoteService {
     return catalogDeleteSkill(registry, name, workdir, await this.catalogScope())
   }
 
-  @Remote('listSkillRoots')
-  async listSkillRoots(): Promise<readonly string[]> {
-    return catalogSkillRoots(this.dshHome())
+  @Remote('pickDirectory')
+  async pickDirectory(): Promise<string | null> {
+    return catalogPickDirectory(this.ctx)
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */

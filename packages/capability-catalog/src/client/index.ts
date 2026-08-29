@@ -101,9 +101,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       const carried = await remote?.deleteSkill(name, undefined)
       return carried !== undefined && carried.ok ? carried.value : { ok: false, error: 'remote absent' }
     },
-    listSkillRoots: async () => {
-      const carried = await remote?.listSkillRoots()
-      return carried !== undefined && carried.ok ? carried.value : []
+    pickDirectory: async () => {
+      const carried = await remote?.pickDirectory()
+      return carried !== undefined && carried.ok ? carried.value : null
     },
   }
 

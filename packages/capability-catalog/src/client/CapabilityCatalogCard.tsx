@@ -39,7 +39,7 @@ type SortBy = 'name' | 'updated'
 const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
 const isBuiltin = (skill: CatalogSkillRow): boolean => BUILTIN_SOURCES.has(skill.source)
 
-export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, listSkillRoots, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
+export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh, t }: CapabilityCatalogCardProps) {
   const snapshot = useCatalog((s) => s)
   const [kind, setKind] = useState<Kind>('skills')
   const [openTool, setOpenTool] = useState<string | null>(null)
@@ -160,7 +160,7 @@ export function CapabilityCatalogCard({ useCatalog, detail, readSkillFile, listD
       ) : null}
 
       {showAdd ? (
-        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} listSkillRoots={listSkillRoots} refresh={refresh} t={t} />
+        <AddSkillModal onClose={() => setShowAdd(false)} addSkill={addSkill} listDirSkills={listDirSkills} pickDirectory={pickDirectory} refresh={refresh} t={t} />
       ) : null}
 
       {deleteTarget !== null ? (
@@ -451,11 +451,11 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 }
 
 /** Add-skill modal: file upload (drag-drop), clone-from-source, or local dir. */
-function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refresh, t }: {
+function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refresh, t }: {
   onClose: () => void
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
   listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
-  listSkillRoots: () => Promise<readonly string[]>
+  pickDirectory: () => Promise<string | null>
   refresh: () => Promise<void>
   t: (key: CapabilityCatalogKey) => string
 }) {
@@ -471,9 +471,6 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
   const [root, setRoot] = useState<'user' | 'project'>('user')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [roots, setRoots] = useState<readonly string[]>([])
-  const [rootsLoaded, setRootsLoaded] = useState(false)
-  const [customDir, setCustomDir] = useState('')
 
   const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
   const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0
@@ -485,19 +482,14 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
     setMsg(null)
   }
 
-  const loadRoots = async (): Promise<void> => {
-    if (rootsLoaded) return
-    const r = await listSkillRoots()
-    setRoots(r)
-    setRootsLoaded(true)
-    if (r[0] !== undefined) await autoListRoot(r[0])
-  }
-
-  // Picking a root auto-parses it for skills; no manual path or "list" button.
-  const autoListRoot = async (dirPath: string): Promise<void> => {
-    setDir(dirPath)
+  // One picker: open the host's native directory chooser, then auto-parse the
+  // chosen directory for skills (list, or report none found).
+  const browseDir = async (): Promise<void> => {
     setMsg(null)
-    const skills = await listDirSkills(dirPath)
+    const path = await pickDirectory()
+    if (path === null || path === '') return
+    setDir(path)
+    const skills = await listDirSkills(path)
     setDirSkills(skills)
     setSelectedSkills(skills.map(s => s.name))
     if (skills.length === 0) setMsg({ ok: false, text: t('noSkillsFound') })
@@ -555,7 +547,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
           <div className={`${css.tabs} ${css.innerTabs}`} role="tablist">
             <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => switchTab('upload')}>{t('addTabUpload')}</button>
             <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => switchTab('command')}>{t('addTabCommand')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => { switchTab('localdir'); void loadRoots() }}>{t('addTabDir')}</button>
+            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => switchTab('localdir')}>{t('addTabDir')}</button>
           </div>
 
           <div className={css.addPanel}>
@@ -585,17 +577,8 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, listSkillRoots, refre
           {tab === 'localdir' ? (
             <div className={css.command}>
               <label className={css.fieldLabel}>{t('dirLabel')}</label>
-              <select className={css.select} value={dir} onChange={(e) => void autoListRoot(e.target.value)}>
-                {roots.length === 0 ? <option value="">{t('noSkillRoots')}</option> : null}
-                {roots.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>{t('dirCustomLabel')}</label>
-                <input className={css.input} value={customDir} placeholder={t('dirCustomPlaceholder')} spellCheck={false}
-                  onChange={(e) => setCustomDir(e.target.value)}
-                  onBlur={() => { if (customDir.trim() !== '') void autoListRoot(customDir) }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void autoListRoot(customDir) }} />
-              </div>
+              <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
+              {dir !== '' ? <p className={css.fieldPath}>{dir}</p> : null}
               <p className={css.confHint}>{t('dirHint')}</p>
               {dirSkills.length > 0 ? (
                 <div className={css.skillPick}>

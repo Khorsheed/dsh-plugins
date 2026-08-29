@@ -36,8 +36,8 @@ export interface CapabilityCatalogInjected {
   addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
   /** Delete a catalog-owned file skill (rejects built-in/plugin-provided). */
   deleteSkill: (name: string) => Promise<CatalogDeleteSkillResult>
-  /** List the local directory skill roots the user can install from. */
-  listSkillRoots: () => Promise<readonly string[]>
+  /** Open the host's native directory chooser (the workspace "add" dialog). */
+  pickDirectory: () => Promise<string | null>
 }
 
 /** Full props of the settings.section entry (a standalone nav tab). */

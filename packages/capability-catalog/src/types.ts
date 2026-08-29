@@ -158,5 +158,5 @@ export interface CapabilityCatalogRemote {
   readonly setCredential: (request: CatalogCredentialSetRequest) => Promise<boolean>
   readonly addSkill: (request: CatalogAddSkillRequest) => Promise<CatalogAddSkillResult>
   readonly deleteSkill: (name: string, workdir?: string) => Promise<CatalogDeleteSkillResult>
-  readonly listSkillRoots: () => Promise<readonly string[]>
+  readonly pickDirectory: () => Promise<string | null>
 }
