@@ -63,6 +63,16 @@ export function inferModelInvocable(content: string): boolean {
   return line !== 'true'
 }
 
+/** Whether a filesystem path exists (dir or file). */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await stat(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** True when a base64 payload decodes to a ZIP archive (magic bytes). */
 export function isZipPayload(payload: string): boolean {
   let bytes: Buffer
@@ -123,6 +133,7 @@ export async function addSkillFromText(request: CatalogAddSkillRequest, dshHome:
   }
   const finalText = finalizeSkillText(text, request.modelInvocable)
   const target = join(managedRoot(request.root, dshHome), parsed.name)
+  if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name: parsed.name }
   try {
     await mkdir(target, { recursive: true })
     await writeFile(join(target, 'SKILL.md'), finalText, 'utf8')
@@ -186,9 +197,11 @@ export async function addSkillFromZip(request: CatalogAddSkillRequest, dshHome: 
   const prefix = skillDirPrefix(skillEntry.path)
   const finalContent = finalizeSkillText(original, request.modelInvocable)
   const target = join(managedRoot(request.root, dshHome), name)
+  if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name }
 
   let wrote = false
   try {
+    if (request.overwrite === true) await rm(target, { recursive: true, force: true })
     await mkdir(target, { recursive: true })
   } catch (error) {
     return { ok: false, error: `failed to create skill dir: ${String(error)}` }
@@ -305,6 +318,7 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
       if (parsed === undefined) return { ok: false, error: 'SKILL.md missing name/description frontmatter' }
       const name = skillName ?? parsed.name
       const target = join(managedRoot(request.root, dshHome), name)
+      if (!request.overwrite && await pathExists(target)) return { ok: false, exists: true, name }
       try {
         await rm(target, { recursive: true, force: true })
       } catch {
@@ -319,6 +333,8 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
     const children = await listSkillDirs(expanded)
     if (request.skills !== undefined && request.skills.length > 0) {
       const results = await Promise.all(request.skills.map(async (s) => copyInto(join(expanded, s), s)))
+      const existing = results.find(r => !r.ok && r.exists === true)
+      if (existing !== undefined) return existing
       const ok = results.filter(r => r.ok)
       if (ok.length > 0) return { ok: true, name: ok.map(r => r.name).join(', ') }
       const firstBad = results.find(r => !r.ok)
@@ -351,6 +367,10 @@ export async function commandInstall(request: CatalogAddSkillRequest, dshHome: s
   if (parsed === undefined) return { ok: false, error: 'cloned SKILL.md missing name/description frontmatter' }
   const name = parsed.name
   const target = join(managedRoot(request.root, dshHome), name)
+  if (!request.overwrite && await pathExists(target)) {
+    await rm(dest, { recursive: true, force: true }).catch(() => {})
+    return { ok: false, exists: true, name }
+  }
   try {
     await rm(target, { recursive: true, force: true })
   } catch {

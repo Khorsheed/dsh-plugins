@@ -128,6 +128,8 @@ export interface CatalogAddSkillRequest {
   readonly modelInvocable: boolean
   /** Target root: user (`$DSH_HOME/skills`) or project (`.agents/skills`). */
   readonly root: 'user' | 'project'
+  /** When true, an existing same-name skill in the target root is replaced instead of prompting. */
+  readonly overwrite?: boolean
 }
 
 /** Add-skill result. */
@@ -135,6 +137,8 @@ export interface CatalogAddSkillResult {
   readonly ok: boolean
   readonly error?: string
   readonly name?: string
+  /** Set on a soft "skill already exists" refusal (ok:false) so the UI can offer overwrite. */
+  readonly exists?: boolean
 }
 
 /** Delete-skill result (delete only applies to catalog-owned file skills). */

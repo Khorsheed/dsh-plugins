@@ -453,7 +453,7 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 /** Add-skill modal: file upload (drag-drop), clone-from-source, or local dir. */
 function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refresh, t }: {
   onClose: () => void
-  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
+  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string; exists?: boolean }>
   listDirSkills: (dirPath: string) => Promise<readonly CatalogDirSkillInfo[]>
   pickDirectory: () => Promise<string | null>
   refresh: () => Promise<void>
@@ -471,6 +471,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
   const [root, setRoot] = useState<'user' | 'project'>('user')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ name: string; req: CatalogAddSkillRequest } | null>(null)
 
   const rootPath = root === 'user' ? t('rootUserPath') : t('rootProjectPath')
   const canSubmit = tab === 'upload' ? zipBase64 !== null : tab === 'command' ? command.trim() !== '' : dir !== '' && dirSkills.length > 0
@@ -530,6 +531,25 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
     if (res.ok) {
       await refresh()
       setMsg({ ok: true, text: `${t('addSuccess')}${res.name ?? ''}` })
+    } else if (res.exists === true) {
+      // Soft refusal: a same-name skill already lives in the target root. Offer overwrite.
+      setConfirm({ name: res.name ?? '', req })
+    } else {
+      setMsg({ ok: false, text: res.error ?? t('addError') })
+    }
+    setBusy(false)
+  }
+
+  const overwrite = async (): Promise<void> => {
+    if (confirm === null || busy) return
+    const req = confirm.req
+    setConfirm(null)
+    setBusy(true)
+    setMsg(null)
+    const res = await addSkill({ ...req, overwrite: true })
+    if (res.ok) {
+      await refresh()
+      setMsg({ ok: true, text: `${t('addSuccess')}${res.name ?? ''}` })
     } else {
       setMsg({ ok: false, text: res.error ?? t('addError') })
     }
@@ -537,6 +557,7 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
   }
 
   return (
+    <>
     <div className={css.overlay} role="dialog" aria-modal="true">
       <div className={`${css.modal} ${css.addModal}`}>
         <div className={css.modalHead}>
@@ -630,6 +651,25 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
         </div>
       </div>
     </div>
+    {confirm !== null ? (
+      <div className={css.overlay} role="dialog" aria-modal="true">
+        <div className={`${css.modal} ${css.confirmModal}`}>
+          <div className={css.modalHead}>
+            <h3 className={css.modalTitle}>{t('addExistsTitle')}</h3>
+            <button type="button" className={css.modalClose} onClick={() => setConfirm(null)} aria-label={t('detailClose')}>×</button>
+          </div>
+          <div className={css.modalBody}>
+            <p className={css.confirmText}>{t('addExists')}「{confirm.name}」？</p>
+            <div className={css.actions}>
+              <button type="button" className={css.btnGhost} onClick={() => setConfirm(null)}>{t('cancel')}</button>
+              <span className={css.spacer} />
+              <button type="button" className={css.btnPrimary} disabled={busy} onClick={() => void overwrite()}>{t('replace')}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   )
 }
 

@@ -33,7 +33,7 @@ export interface CapabilityCatalogInjected {
   /** Set one declared credential value. */
   setCredential: (key: string, value: string) => Promise<boolean>
   /** Add a skill via a full request (upload zip/text or clone-from-source). */
-  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string }>
+  addSkill: (request: CatalogAddSkillRequest) => Promise<{ ok: boolean; error?: string; name?: string; exists?: boolean }>
   /** Delete a catalog-owned file skill (rejects built-in/plugin-provided). */
   deleteSkill: (name: string) => Promise<CatalogDeleteSkillResult>
   /** Open the host's native directory chooser (the workspace "add" dialog). */
