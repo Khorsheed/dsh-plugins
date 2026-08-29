@@ -25,6 +25,9 @@ import type {
   CatalogCredentialSetRequest,
   CatalogDeleteSkillResult,
   CatalogJsonValue,
+  CatalogMcpServerConfig,
+  CatalogMcpSnapshot,
+  CatalogMcpTool,
   CatalogSkillDetail,
   CatalogSkillFileRead,
   CatalogDirSkillInfo,
@@ -32,6 +35,7 @@ import type {
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice } from './skills.ts'
 import { installSkillEnvInjection } from './shellEnv.ts'
+import { McpStore } from './mcpStore.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
@@ -94,9 +98,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
 
   private readonly baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
+  private readonly mcp: McpStore
 
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
+    this.mcp = new McpStore()
     // Register the settings namespace so the ConfigurablePluginsTab serves
     // our settings.plugin.item card (it dispatches cards only for Host-served
     // namespaces). The card reads its data through the Remote, so the schema
@@ -262,6 +268,54 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('pickDirectory')
   async pickDirectory(): Promise<string | null> {
     return catalogPickDirectory(this.ctx)
+  }
+
+  @Remote('mcpList')
+  async mcpList(): Promise<readonly CatalogMcpServerConfig[]> {
+    return this.mcp.list()
+  }
+
+  @Remote('mcpAdd')
+  async mcpAdd(config: CatalogMcpServerConfig): Promise<boolean> {
+    if (config.serverName.trim() === '') return false
+    this.mcp.add(config)
+    return true
+  }
+
+  @Remote('mcpRemove')
+  async mcpRemove(serverName: string): Promise<boolean> {
+    this.mcp.remove(serverName)
+    return true
+  }
+
+  @Remote('mcpSetEnabled')
+  async mcpSetEnabled(serverName: string, enabled: boolean): Promise<void> {
+    this.mcp.setEnabled(serverName, enabled)
+  }
+
+  @Remote('mcpSetCredential')
+  async mcpSetCredential(ref: string, value: string): Promise<boolean> {
+    this.mcp.setCredential(ref, value)
+    return true
+  }
+
+  @Remote('mcpSetToolEnabled')
+  async mcpSetToolEnabled(serverName: string, tool: string, enabled: boolean): Promise<void> {
+    this.mcp.setToolEnabled(serverName, tool, enabled)
+  }
+
+  @Remote('mcpDiscover')
+  async mcpDiscover(serverName: string): Promise<readonly CatalogMcpTool[]> {
+    return this.mcp.discover(serverName)
+  }
+
+  @Remote('mcpSnapshot')
+  async mcpSnapshot(): Promise<CatalogMcpSnapshot> {
+    return {
+      servers: this.mcp.list(),
+      tools: this.mcp.toolsByServer(),
+      credentials: this.mcp.credentials(),
+    }
   }
 
   /** The visible tool schemas in the standing scope (the set the model sees),

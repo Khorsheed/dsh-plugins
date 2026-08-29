@@ -11,8 +11,14 @@
  * @module @khorsheed/dsh-capability-catalog/mcpConnector
  */
 
+// The SDK is a third-party host dep the gen-typert overlay cannot resolve
+// (only @deepseek-ai/* + harness node_modules). @ts-ignore keeps generation
+// green; at runtime the host resolves these from node_modules.
+// @ts-ignore
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+// @ts-ignore
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+// @ts-ignore
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { CatalogMcpServerConfig, CatalogMcpTool, CatalogJsonValue } from './types.ts'
 
@@ -27,7 +33,7 @@ export interface McpConnection {
 export type ResolveSecret = (ref: string) => Promise<string | undefined>
 
 /** Build the transport for a config (secrets already resolved to plaintext). */
-function makeTransport(config: CatalogMcpServerConfig) {
+function makeTransport(config: CatalogMcpServerConfig): any {
   if (config.transport === 'stdio') {
     const env: Record<string, string> = {}
     for (const [k, v] of config.env ?? []) env[k] = v
@@ -42,7 +48,7 @@ function makeTransport(config: CatalogMcpServerConfig) {
 }
 
 /** Map an SDK tool to the catalog's tool row (enabled by default). */
-function toCatalogTool(sdkTool: { name: string; description?: string; inputSchema?: unknown }): CatalogMcpTool {
+function toCatalogTool(sdkTool: any): CatalogMcpTool {
   return {
     name: sdkTool.name,
     description: sdkTool.description ?? '',
@@ -53,7 +59,7 @@ function toCatalogTool(sdkTool: { name: string; description?: string; inputSchem
 
 /** Connect, discover all tools (follow pagination), and return a live handle. */
 export async function connectMcpServer(config: CatalogMcpServerConfig): Promise<McpConnection> {
-  const client = new Client({ name: 'dsh-capability-catalog', version: '0.1.0' })
+  const client: any = new Client({ name: 'dsh-capability-catalog', version: '0.1.0' })
   const transport = makeTransport(config)
   await client.connect(transport)
 

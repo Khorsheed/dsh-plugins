@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the generated Remote namespace merge.
 import type {} from '@khorsheed/dsh-capability-catalog/remote'
-import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogDeleteSkillResult, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogDeleteSkillResult, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead } from '@khorsheed/dsh-capability-catalog/types'
 
 /** A tiny external store holding the last catalog snapshot (re-created on change). */
 export interface CatalogHook {
@@ -38,6 +38,20 @@ export interface CapabilityCatalogInjected {
   deleteSkill: (name: string) => Promise<CatalogDeleteSkillResult>
   /** Open the host's native directory chooser (the workspace "add" dialog). */
   pickDirectory: () => Promise<string | null>
+  /** MCP: full management snapshot (servers + tools + credential state). */
+  mcpSnapshot: () => Promise<CatalogMcpSnapshot>
+  /** MCP: add/replace a server config. */
+  mcpAdd: (config: CatalogMcpServerConfig) => Promise<boolean>
+  /** MCP: remove a server. */
+  mcpRemove: (serverName: string) => Promise<boolean>
+  /** MCP: set server-level enable flag. */
+  mcpSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
+  /** MCP: set one credential value. */
+  mcpSetCredential: (ref: string, value: string) => Promise<boolean>
+  /** MCP: set one tool's enable flag. */
+  mcpSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
+  /** MCP: connect + discover a server's tools. */
+  mcpDiscover: (serverName: string) => Promise<readonly CatalogMcpTool[]>
 }
 
 /** Full props of the settings.section entry (a standalone nav tab). */

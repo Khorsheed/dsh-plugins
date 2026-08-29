@@ -105,6 +105,34 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       const carried = await remote?.pickDirectory()
       return carried !== undefined && carried.ok ? carried.value : null
     },
+    mcpSnapshot: async () => {
+      const carried = await remote?.mcpSnapshot()
+      return carried !== undefined && carried.ok ? carried.value : { servers: [], tools: {}, credentials: [] }
+    },
+    mcpAdd: async (config) => {
+      const carried = await remote?.mcpAdd(config)
+      return carried !== undefined && carried.ok ? carried.value : false
+    },
+    mcpRemove: async (serverName) => {
+      const carried = await remote?.mcpRemove(serverName)
+      return carried !== undefined && carried.ok ? carried.value : false
+    },
+    mcpSetEnabled: async (serverName, enabled) => {
+      const carried = await remote?.mcpSetEnabled(serverName, enabled)
+      return carried !== undefined && carried.ok ? carried.value : undefined
+    },
+    mcpSetCredential: async (ref, value) => {
+      const carried = await remote?.mcpSetCredential(ref, value)
+      return carried !== undefined && carried.ok ? carried.value : false
+    },
+    mcpSetToolEnabled: async (serverName, tool, enabled) => {
+      const carried = await remote?.mcpSetToolEnabled(serverName, tool, enabled)
+      return carried !== undefined && carried.ok ? carried.value : undefined
+    },
+    mcpDiscover: async (serverName) => {
+      const carried = await remote?.mcpDiscover(serverName)
+      return carried !== undefined && carried.ok ? carried.value : []
+    },
   }
 
   void refresh()
