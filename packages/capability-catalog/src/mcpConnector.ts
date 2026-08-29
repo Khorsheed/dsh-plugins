@@ -44,6 +44,15 @@ function makeTransport(config: CatalogMcpServerConfig): any {
       ...(config.cwd ? { cwd: config.cwd } : {}),
     })
   }
+  // streamable-http: the SDK transport takes headers via `requestInit` — without
+  // them an auth-bearing server (e.g. `Authorization`, `x-api-key`) is never
+  // authenticated. Plaintext header values arrive here after secret resolution.
+  const headers = config.headers ?? []
+  if (headers.length > 0) {
+    return new StreamableHTTPClientTransport(new URL(config.url ?? ''), {
+      requestInit: { headers: Object.fromEntries(headers) },
+    })
+  }
   return new StreamableHTTPClientTransport(new URL(config.url ?? ''))
 }
 
