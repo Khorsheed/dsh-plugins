@@ -145,7 +145,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 20px; /* toolbar → filter 20px */
+  margin-top: 12px; /* toolbar → filter 12px */
 }
 
 .searchBox {
@@ -217,7 +217,7 @@
   grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
   gap: 16px; /* card horizontal + vertical 16px */
   align-content: start;
-  margin-top: 24px; /* filter → cards 24px */
+  margin-top: 12px; /* filter → cards 12px */
   padding: 0 4px 24px 0;
 }
 
@@ -309,7 +309,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px; /* foot icon buttons tight (match preset card actions) */
   min-height: 44px;
   padding: 0 16px;
   border-top: 1px solid var(--dsw-alias-border-l2);
