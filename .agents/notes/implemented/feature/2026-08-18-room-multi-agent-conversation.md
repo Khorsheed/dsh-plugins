@@ -1,6 +1,6 @@
 # Agent Note: Room——多 agent 群聊会话
 
-Status: proposed
+Status: implemented
 
 English | [中文](2026-08-18-room-multi-agent-conversation.zh.md)
 
@@ -10,9 +10,9 @@ Working with several agents on one task today has no good shape. The main agent 
 
 The host already exposes every primitive needed (`ctx.sessions` with native `parentSession`, `ctx.subagents.start`, the local-agent family's resume registry, `agent.followup`/`inject`, merge-extensible custom session events, and the `conversation.composer` / `conversationEvents` / `conversation.chat.node` / `conversation.input.dock` client slots). Nothing composes them into a group-conversation shape. The constraint is firm: no upstream (`deepseek-harness`) changes — the room must be buildable from official capabilities plus changes to our own packages only.
 
-## Proposal
+## Decision
 
-A new package (working name `@khorsheed/dsh-room`). **A room is a normal dsh session marked as a room, whose standard chat UI hosts several peer agents addressed by @-mention.** The human is the central hub in phase 1; agent-to-agent conversation without the human relay is a later phase once the hub model runs smoothly.
+The package ships as `@khorsheed/dsh-room`. **A room is a normal dsh session marked as a room, whose standard chat UI hosts several peer agents addressed by @-mention.** The human is the central hub in the shipped phase 1; agent-to-agent conversation without the human relay is deferred (see ## Deferred).
 
 ### Session and member model
 
@@ -56,7 +56,7 @@ Coordination knowledge travels inside messages, not injections: in "@ada 设计 
 - **Receipt pass-through**: the gate outcome (`sent` / `pending-confirm` / `busy`) travels back through the bridge to the sending member, keeping its conclusion honest ("notified, awaiting the room owner's confirm" ≠ "delivered").
 - **Fallback channel (text parsing)**: without the bridge (older family builds, non-family members), the room detects an own-line `@name <content>` at the end of a member's reply as a pending relay (the format is stated in the roster injection, so "mentioning" in prose is mechanically distinguishable from "notifying").
 - A pending relay is journaled (`from`, `to`, `content`, provenance) and rendered as a confirmation row (`[确认派发] [忽略]`); confirming dispatches it as the addressee's next-round prompt (`ada 给你的通知: …`).
-- Phase 2 turns the gate to `auto` with a cascade budget (max N relayed rounds per human message, no empty-content ping-pong, exhaustion degrades back to confirm). Phase 2 also adds the **relay view**: a member swim-lane diagram on a time axis where solid arrows are real handoffs (relay events) and grey arrows are declared waits (blockedBy) — declared dependencies and actual handoffs side by side. The user's concern is on record: timeline readability under a steadily growing task count remains to be seen; we will watch it as we build.
+- Phase 2 (gate `auto` with a cascade budget, plus the relay view) is not built — see ## Deferred.
 
 ### UI: member speech, running state, boundary events
 
@@ -88,6 +88,12 @@ The delegation facade (`start` / `resume` / `cancel`, reattach recipe, progress 
 > **R2 — Per-call cwd override**: add `cwd?: string` to `DelegationCallOptions`; providers prefer it over `parent.session.header.cwd`. Room members legitimately work in different directories than the room session.
 >
 > **R3 — Todo state mirroring**: when a CLI member uses its own todo/plan feature, mirror the state into the child session as `todo/write` events so the member's own session shows its plan in the official todo strip.
+
+## Deferred
+
+- **Phase 2 — gate `auto` with a cascade budget**: max N relayed rounds per human message, no empty-content ping-pong, exhaustion degrades back to confirm. Phase 1 ships with the human-confirmed gate only.
+- **Phase 2 — relay view**: a member swim-lane diagram on a time axis where solid arrows are real handoffs (relay events) and grey arrows are declared waits (blockedBy) — declared dependencies and actual handoffs side by side. The user's concern is on record: timeline readability under a steadily growing task count remains to be seen; we will watch it as we build.
+- **R2/R3 (family-side)**: per-call `cwd` override and todo-state mirroring are local-agent family work, tracked in the family's own proposal pipeline; the room records the roster-level cwd override and degrades until the facade lands it.
 
 ## Alternatives considered
 
@@ -131,23 +137,23 @@ The first draft did (`source: { kind: 'plugin', plugin: '@khorsheed/dsh-room' }`
 
 Session header schema is official and fixed; a `room/created` custom event delivers the same identity and replay semantics without host changes.
 
-## Acceptance criteria
+## Testing
 
-- Inviting an agent into any session promotes it into a room (identity recovered from the `room/created` event on reload); the view navigation gains a members tab; the dock shows the goal/task capsules.
-- A message without @ produces a normal main-agent turn; `@ada <task>` dispatches (fresh first, resume after — verified in the child session transcript), and the @-message itself lands as a standard `user/message` — rendered as the official user bubble, model-visible to the main agent without waking it; unknown members are rejected with a structured error; two members run in parallel while two dispatches to the same member serialize.
-- Every dispatch prompt contains the roster, pending notifications for that member, and the dispatch text — and **no rolling transcript, no task-board digest** (a member is never re-sent what it already saw, and never sees the room's global view).
-- Invitation dialog: provider list reflects `localAgent.roster()` login state; cwd defaults to the room session's and is honored per member (facade R2); role instructions are verifiably prepended in the child session's first turn. The main agent's `room_invite` tool produces an identical member record; duplicate or `@`/whitespace-containing names are rejected with a tool error.
-- A member's `member_message` bridge call (or, without the bridge, a directed own-line `@name <content>`) reaches the room's gate; human confirmation dispatches the notification to the addressee; dismissal drops it. Unconfirmed relays never reach anyone, and the sending member's receipt says `pending-confirm`, not `sent`.
-- Task board: a dispatch opens a task under the member, a finished speech closes it (dropping a dim advance line into the chat flow); the human filters, adds, and closes tasks in the dock's task capsule and declares "waiting on" (display only); the goal capsule carries the goal and the progress; the board and the goal survive reload via journal replay.
-- Member speech renders as identity row + unframed markdown + action row (copy, session jump, duration, hover timestamp); no branch, no TPS; running rows jump to the child session and their stop button cancels; boundary events render as dim single lines. Dark mode correct via alias tokens only.
-- Reloading the room session restores identity, roster, task board, and speech history from event replay (room event types registered in the persistence catalog).
-- The package installs, runs, and uninstalls alone; without local-agent providers mounted, the room still works with the main agent as its only member.
+The package's vitest suite pins the shipped behavior end to end:
 
-## Risks
+- Host specs (`tests/service.host.spec.ts`, `dispatch.host.spec.ts`, `journal.host.spec.ts`, `persistence.host.spec.ts`, `tool.host.spec.ts`): `ensureRoom` promotion and idempotence (identity recovered from the `room/created` event on replay), dispatch lifecycle (fresh first, resume after; same-member FIFO, cross-member parallel; unknown-target rejection with the live roster), relay gate journaling and confirm/dismiss, task open on dispatch and close on finished speech, `room_invite`/`room_message` validation (duplicate and `@`/whitespace names rejected), and reload replay restoring identity, roster, task board, and speech projections (room event types registered in the persistence catalog).
+- Client specs (`tests/room-composer.client.spec.tsx`, `room-store.client.spec.ts`, `room-dock-capsules.client.spec.tsx`, `members.client.spec.tsx`, `nodes.client.spec.tsx`, `slots.client.spec.tsx`): the composer chain (@-dispatch vs bare-message pass-through, menu addressing anywhere, pending-interaction yield), the store's live subscription and `onPromoted` composer re-registration, the dual capsules and fresh-room invite capsule, the members tab grid, the member-speech/run/boundary nodes, and the header 邀请 agent action on every session.
+- Verified live on the prod profile: any session's header carries「邀请 agent」, inviting promotes the session in place, dispatch prompts carry roster + pending notifications + text and nothing else, and the package installs, runs, and uninstalls alone (with the local-agent facade absent it runs with the main agent as its only member).
+
+## Consequences
+
+What the decision bought: direct human-to-member addressing with no main-agent relay; a persistent goal/task board and member roster that survive reload for free (plain session events); member speech inside the official chat language with zero upstream changes; and a package that installs, runs, and uninstalls alone, degrading to a main-agent-only room when the local-agent family is absent.
+
+What it costs:
 
 - **Turn latency, no streaming**: each member turn is a full CLI process lifetime; live mirroring (family M3) and the running row carry the progress story.
-- **Notification-format drift (fallback channel only)**: with the bridge present, notifications are structured tool calls — nothing to parse; the bridge-absent fallback relies on the own-line `@name` convention, and models will occasionally mention-without-notifying (correctly ignored) or notify in prose (missed). Phase 1's human-confirm gate contains the false positives; false negatives are recovered by the human @-ing directly.
-- **Task-board coherence**: the board is derived state written by both the room (dispatch open/close) and the human (edits); a member reporting progress cannot update it directly in phase 1 (it can only notify). Acceptable: the board is the human's management view, not the members' scratchpad.
-- **Unverified seams**: `conversation.composer` pass-through of bare messages to the official submit path inside a takeover component; `conversation.input.dock` multi-entry coexistence with the official todo strip. Day-one spikes before building on them.
-- **Replicated internal chrome**: `.refChip`, `MessageIconActions`, and `DisclosureRow` are not exported plugin API; we replicate their styles. Upstream visual drift is a maintenance tax — cosmetic, acceptable.
-- **Cross-package dependency**: CLI members depend on the local-agent facade; R1/R2/R3 are family-side work tracked in the family's own proposal pipeline.
+- **Notification-format drift (fallback channel only)**: with the bridge present, notifications are structured tool calls — nothing to parse; the bridge-absent fallback relies on the own-line `@name` convention, and models will occasionally mention-without-notifying (correctly ignored) or notify in prose (missed). The human-confirm gate contains the false positives; false negatives are recovered by the human @-ing directly.
+- **Task-board coherence**: the board is derived state written by both the room (dispatch open/close) and the human (edits); a member cannot report progress to it directly (it can only notify). Accepted: the board is the human's management view, not the members' scratchpad.
+- **Composer takeover owns the environment duties**: the takeover re-renders the official todo strip and queued-messages strip itself and yields to pending interactions — an incomplete takeover would silently hide official surface.
+- **Replicated internal chrome**: `.refChip`, `MessageIconActions`, and `DisclosureRow` are not exported plugin API; we replicate their styles. Upstream visual drift is a maintenance tax — cosmetic, accepted.
+- **Cross-package dependency**: CLI members depend on the local-agent facade as an optional capability (probe-and-degrade); the family-side R2/R3 items remain open (see ## Deferred).

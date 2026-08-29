@@ -1,6 +1,6 @@
 # Agent Note: Room——多 agent 群聊会话
 
-Status: proposed
+Status: implemented
 
 [English](2026-08-18-room-multi-agent-conversation.md) | 中文
 
@@ -10,9 +10,9 @@ Status: proposed
 
 宿主已经暴露了所需的全部原语（`ctx.sessions` 原生 `parentSession`、`ctx.subagents.start`、local-agent 家族的 resume 注册表、`agent.followup`/`inject`、可合并扩展的自定义会话事件，以及客户端的 `conversation.composer` / `conversationEvents` / `conversation.chat.node` / `conversation.input.dock` slot）。缺的只是把它们组合成群聊形态。约束是硬性的：不动上游（`deepseek-harness`）——room 必须完全用官方能力加我们自己包的改动来构建。
 
-## Proposal
+## Decision
 
-新包（暂名 `@khorsheed/dsh-room`）。**room 是一个被标记为 room 的普通 dsh 会话，它的标准聊天界面承载若干平等 agent，用 @ 提及来寻址。** 一阶段人是中央枢纽；人等价于中介拿掉之后的 agent 对 agent 对话是后续阶段，等枢纽模式跑顺再做。
+包以 `@khorsheed/dsh-room` 落地。**room 是一个被标记为 room 的普通 dsh 会话，它的标准聊天界面承载若干平等 agent，用 @ 提及来寻址。** 已交付的一阶段人是中央枢纽；人等价于中介拿掉之后的 agent 对 agent 对话推迟（见 ## Deferred）。
 
 ### 会话与成员模型
 
@@ -56,7 +56,7 @@ Status: proposed
 - **回执透传**：闸门结果（`sent` / `pending-confirm` / `busy`）经桥接返回给发送方成员，让它的结论诚实（"已通知，待房间主人确认" ≠ "已送达"）。
 - **降级通道（文本解析）**：桥接缺席时（旧版本家族、非家族成员），room 检出成员回复**末尾独占行**的 `@名字 <内容>` 作为待转派（该格式写进名册注入，行文中"提到"与"通知"机械可区分）。
 - 待转派记录进 journal（`from`、`to`、`content`、出处），聊天流渲染为确认行（`[确认派发] [忽略]`）；确认后投递为收件人续轮的 prompt（`ada 给你的通知: …`）。
-- 二期把闸门调成 `auto` 并加级联预算（每条人类消息最多 N 轮转派、禁止无正文变化的往复、预算耗尽降级回确认）。二期另加**接力图（relay view）**：按时间横轴的成员泳道图，实线箭头=真实交接（relay 事件）、灰箭头=声明的等待（blockedBy），对照呈现声明的依赖与实际的交接。用户的担忧记录在案：任务持续增长之下时间轴的可读性待观察，边做边看。
+- 二期（闸门 `auto` + 级联预算、接力图）未实现——见 ## Deferred。
 
 ### UI：成员发言、运行中状态、边界事件
 
@@ -88,6 +88,12 @@ Status: proposed
 > **R2——单次调用 cwd 覆盖**：`DelegationCallOptions` 加 `cwd?: string`，provider 优先于 `parent.session.header.cwd` 使用。room 成员合法地在不同目录工作。
 >
 > **R3——todo 状态镜像**：CLI 成员使用自己的 todo/计划功能时，把状态镜像为子会话的 `todo/write` 事件，成员自己的会话里官方 todo 条原生呈现其计划。
+
+## Deferred
+
+- **二期——闸门 `auto` + 级联预算**：每条人类消息最多 N 轮转派、禁止无正文变化的往复、预算耗尽降级回确认。一阶段只交付人工确认闸门。
+- **二期——接力图（relay view）**：按时间横轴的成员泳道图，实线箭头=真实交接（relay 事件）、灰箭头=声明的等待（blockedBy），对照呈现声明的依赖与实际的交接。用户的担忧记录在案：任务持续增长之下时间轴的可读性待观察，边做边看。
+- **R2/R3（家族侧）**：单次调用 cwd 覆盖与 todo 状态镜像是 local-agent 家族侧工作，走家族自己的提案管道跟踪；room 侧先记录名册级 cwd 覆盖，门面落地前保持降级。
 
 ## Alternatives considered
 
@@ -131,23 +137,23 @@ room 就是这个会话本身；标准聊天界面已经提供输入框、markdo
 
 会话 header schema 是官方且固定的；一条 `room/created` 自定义事件就能提供同等身份与 replay 语义，无需改动宿主。
 
-## Acceptance criteria
+## Testing
 
-- 在任意会话里邀请 agent 即把它提升为 room（重开时从 `room/created` 事件恢复身份）；视图导航有成员 tab；dock 出现 goal/任务双胶囊。
-- 不带 @ 的消息产生正常的主 agent 回合；`@ada <任务>` 派发（首轮 fresh、之后 resume——子会话 transcript 验证），且 @ 消息本身作为标准 `user/message` 渲染为官方用户气泡、进入主 agent 的模型可见历史但不唤醒它；未知成员结构化拒绝；两个成员并行、同一成员串行。
-- 每次派发的 prompt 含名册、该成员的待收通知、本次文本——**且无滚动流水账、无任务板摘要**（绝不重发成员已见过的内容，成员也不感知 room 全景）。
-- 邀请弹窗：provider 列表反映 `localAgent.roster()` 登录态；cwd 缺省继承 room 会话且按成员生效（门面 R2）；角色指令可在子会话首轮验证拼在最前。主 agent 的 `room_invite` 工具产出完全相同的成员记录；重名或含 `@`/空白的名字以工具错误拒绝。
-- 成员的 `member_message` 桥接调用（桥接缺席时为回复末尾独占行的 `@名字 <内容>`）到达 room 闸门；人确认即把通知派发给收件人；忽略即丢弃。未确认的转派不触达任何人，且发送方收到的回执是 `pending-confirm` 而非 `sent`。
-- 任务板：派发开任务、完成发言闭任务（聊天流落 dim 推进线）；人可在 dock 任务胶囊里筛选、增删、关闭任务，可声明"等谁"（纯展示）；goal 胶囊承载目标与进度；重开后任务板与目标经 journal replay 恢复。
-- 成员发言渲染为身份行 + 无框 markdown + 操作行（复制、会话跳转、耗时、hover 时间戳）；无分支、无 TPS；运行中行可跳转子会话、行尾停止按钮可中断；边界事件渲染为 dim 单行。仅靠 alias token 即暗色正确。
-- 重开 room 会话后，身份、名册、任务板、发言历史从事件 replay 恢复（room 事件类型已登记进持久化目录）。
-- 包可独立安装、运行、卸载；未挂载 local-agent provider 时 room 仍可用（主 agent 是唯一成员）。
+包的 vitest 套件端到端钉住已交付行为：
 
-## Risks
+- Host 侧（`tests/service.host.spec.ts`、`dispatch.host.spec.ts`、`journal.host.spec.ts`、`persistence.host.spec.ts`、`tool.host.spec.ts`）：`ensureRoom` 提升与幂等（重开时从 `room/created` 事件 replay 恢复身份）、派发生命周期（首轮 fresh、之后 resume；同成员串行、跨成员并行；未知成员带实时名册拒绝）、转派闸门落 journal 与确认/忽略、派发开任务与完成发言闭任务、`room_invite`/`room_message` 校验（重名与含 `@`/空白名拒绝），以及重开后身份、名册、任务板、发言投影全部从事件 replay 恢复（room 事件类型已登记进持久化目录）。
+- Client 侧（`tests/room-composer.client.spec.tsx`、`room-store.client.spec.ts`、`room-dock-capsules.client.spec.tsx`、`members.client.spec.tsx`、`nodes.client.spec.tsx`、`slots.client.spec.tsx`）：composer 链（@ 派发 vs 裸消息放行、菜单任意位置寻址、pending 交互让出）、store 的实时订阅与 `onPromoted` composer 重注册、dock 双胶囊与新 room 邀请胶囊、成员 tab 卡片网格、成员发言/运行中/边界节点，以及每个会话头部的「邀请 agent」动作。
+- prod profile 真机验证：任意会话头部有「邀请 agent」，邀请即原地提升；派发 prompt 只含名册 + 待收通知 + 本次文本；包可独立安装、运行、卸载（local-agent 门面缺席时退为主 agent 单成员 room）。
+
+## Consequences
+
+这个决策买到的：人到成员的直接寻址，不再有主 agent 中转；跨重载免费恢复的持久目标/任务板与成员名册（普通会话事件）；零上游改动、落在官方聊天语言内的成员发言；以及可独立安装、运行、卸载的包——local-agent 家族缺席时降级为主 agent 单成员 room。
+
+付出的代价：
 
 - **轮次延迟、无流式**：成员每轮是一个完整 CLI 进程生命周期；实时镜像（家族 M3）与运行中行承担进度呈现。
-- **通知格式漂移（仅降级通道）**：桥接在场时通知是结构化工具调用，无解析问题；桥接缺席的降级通道要求成员按"末尾独占行 @名字"约定输出，模型偶尔会"提到而非通知"（正确忽略）或"在行文中通知"（漏检）。一阶段人工确认闸门兜住误报；漏报由人直接 @ 兜底。
-- **任务板一致性**：任务板是 room（派发开闭）与人（编辑）共同写入的派生状态；成员一阶段不能直接汇报进度到板上（只能发通知）。可接受：任务板是人的管理视图，不是成员的草稿纸。
-- **未验证的接缝**：composer 接管组件内裸消息放行官方提交路径；`conversation.input.dock` 与官方 todo 条的多条目共存。动工前先写 spike 验证。
+- **通知格式漂移（仅降级通道）**：桥接在场时通知是结构化工具调用，无解析问题；桥接缺席的降级通道要求成员按"末尾独占行 @名字"约定输出，模型偶尔会"提到而非通知"（正确忽略）或"在行文中通知"（漏检）。人工确认闸门兜住误报；漏报由人直接 @ 兜底。
+- **任务板一致性**：任务板是 room（派发开闭）与人（编辑）共同写入的派生状态；成员不能直接汇报进度到板上（只能发通知）。已接受：任务板是人的管理视图，不是成员的草稿纸。
+- **composer 接管 = 继承全部环境职责**：接管方要自绘官方 todo 条与排队消息条，并对 pending 交互让出——不完整的接管会静默藏掉官方面。
 - **复刻内部 chrome**：`.refChip`、`MessageIconActions`、`DisclosureRow` 不是导出的插件 API，我们复刻其样式。上游视觉漂移是维护税——属装饰层、可接受。
-- **跨包依赖**：CLI 成员依赖 local-agent 门面；R1/R2/R3 是家族侧工作，走家族自己的提案管道跟踪。
+- **跨包依赖**：CLI 成员把 local-agent 门面作为可选能力依赖（探针 + 降级）；家族侧 R2/R3 仍未落地（见 ## Deferred）。

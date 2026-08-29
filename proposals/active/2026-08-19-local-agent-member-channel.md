@@ -3,7 +3,7 @@
 - **分类**：plugin
 - **最后更新**：2026-08-19
 - **状态**：verified（M1–M3 已交付、四 provider 全通；唯一未完成的验收项「room 复验」移交 [room-session-promotion](2026-08-27-room-session-promotion.md)，理由见该提案）
-- **查重结果**：已搜 `proposals/active/`（datasets-mission-bench、local-agent-delegation-api，均非同一意图）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。最近邻是 room note（`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`）的「人直接打开成员会话发消息」与「成员互@」两节诉求，以及本仓库的 `local-agent-delegation-api` 提案（本提案的宿主 API 底座，M1–M4 已落地）。无重复，新建。
+- **查重结果**：已搜 `proposals/active/`（datasets-mission-bench、local-agent-delegation-api，均非同一意图）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。最近邻是 room note（`.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`）的「人直接打开成员会话发消息」与「成员互@」两节诉求，以及本仓库的 `local-agent-delegation-api` 提案（本提案的宿主 API 底座，M1–M4 已落地）。无重复，新建。
 - **官方依赖**：纯插件。composer 侧用官方文档化的 chain 槽 priority 选举机制（`conversation.composer`，ui-slots 升序选举、先中先得；message-tools 遮蔽 `conversation.chat.node` 为同源先例）；发送侧走家族自有 Typert Remote + 已落地的 `ctx.localAgent.resume` 门面；成员互通知走 CLI scoped 配置注入的桥接 MCP server + localhost 回调。零 harness 改动。
 
 需求来源：room 第二轮评审——成员子会话成为双向通道：人直接打开成员会话发消息 = 续一轮，不经 room 转派；**成员互通知（CLI 成员 A 干完活通知成员 B）是 room 预期更高频的场景**，与本通道同属「成员会话双向化」一个能力意图，一并立项。room 原提议的手段（给 CLI provider 实现官方 `prepareContinuable`）经评估不可行（见「方案 §0」），本提案是替代路线。
@@ -126,7 +126,7 @@ ctx.slots.inject('conversation.composer', () =>
 - M3 成员互通知已落地（kimi 先行）：桥接 MCP server（无依赖 stdio JSON-RPC，`member_message(to, text)`）、宿主 loopback listener、每 run token + CLI pid 交叉校验、同父校验、闸门交接（鸭子类型 `room.receiveMemberMessage` 探针，零 room 依赖、checker 无需新 sanction）、家族直发（busy 回执 + 出处标注 prompt）。kimi 注入走 `$KIMI_CODE_HOME/mcp.json` 每 run 条目（`dsh-member-<token8>`，settle 剪除）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-member-notification.md`。**provider 状态**：kimi ✅（mcp.json 每 run 条目）；claude-code ✅（`--mcp-config` JSON + `--allowedTools`，真实 CLI 端到端探针通过）；codex ✅（`-c` 内联 TOML 覆盖，含 exec 模式必需的 `default_tools_approval_mode="approve"`；2026-08-20 真实 CLI 端到端探针通过）；dsh ✅（headless bundle 的 `cordis.patch.yml` 加 `@deepseek-ai/dsh-mcp-client` stdio 行，`!!js` 读每 run env；该包自 rc.6 minHost 起在 dsh 安装闭包内，可解析）。room 侧 `receiveMemberMessage` 由 room 提案自行实现（非本提案交付物）。
 - 评审记录：room 第二轮评审（2026-08-19）提出双向通道诉求；其 `prepareContinuable` 手段经 harness 源码核实不可行（§0），本提案为替代路线。2026-08-19 增补：room 明确成员互通知（CLI → CLI）为更高频场景，并入 M3。room 第三轮评审指出原 §3 直发与验收标准的闸门条款矛盾，修正为闸门交接（room 在场 → 交给 room 闸门；缺席/非 room → 直发），闸门所有权单一归于 room。
 - 协议约定（room 评审确认）：通知协议说明保持双轨表述——「优先用 `member_message` 工具，没工具时用名册注入约定的独占行格式」。codex/claude/dsh 桥接落地后该表述不变，桥接只是让工具轨可用，独占行轨作为永久降级保留。
-- 背景 note：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方）。
+- 背景 note：`.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`（消费方）。
 
 ## 验收标准（done 判定，绑定可插拔交付）
 

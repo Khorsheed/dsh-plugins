@@ -3,7 +3,7 @@
 - **分类**：plugin
 - **状态**：planned
 - **最后更新**：2026-08-27
-- **查重结果**：已搜 `proposals/active/`（local-agent-delegation-api、local-agent-member-channel、local-agent-member-state 等均为 local-agent 家族**供给侧**，非本意图；datasets/mission 等无关）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。最邻近是 `.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`——那是 room 的能力设想与需求来源（设计 note，原始设想）；本提案是该能力在 room 插件侧的**能力账本立项**，两者关系是「设计 note（设想）+ 提案（能力意图总账）」；delegation-api / member-channel 两条提案是它们的供给侧（local-agent 门面 / 成员互通知），与本意图不同面。无重复，新建。
+- **查重结果**：已搜 `proposals/active/`（local-agent-delegation-api、local-agent-member-channel、local-agent-member-state 等均为 local-agent 家族**供给侧**，非本意图；datasets/mission 等无关）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。最邻近是 `.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`——那是 room 的能力设想与需求来源（设计 note，原始设想）；本提案是该能力在 room 插件侧的**能力账本立项**，两者关系是「设计 note（设想）+ 提案（能力意图总账）」；delegation-api / member-channel 两条提案是它们的供给侧（local-agent 门面 / 成员互通知），与本意图不同面。无重复，新建。
 - **官方依赖**：纯插件。所需官方契约均已实测存在（见「现状」）：会话自定义事件（`room/created` 等）、客户端 `conversation.view` / `conversation.chat.node` / `conversation.composer` 槽位、`ctx.sessions` / `ctx.subagents`，以及家族委派门面（`ctx.get('localAgent')` 探针）。零 harness 改动。
 
 需求来源：与用户的架构评审（2026-08-27）——把「room」从与会话并列的独立创建物，重定义为「一个被 agent 进入后自然具备多 agent 能力的会话」，并明确保留 local-agent（引擎/家族）与 room（表面）两层、不熔合为一个包。

@@ -3,10 +3,10 @@
 - **分类**：plugin
 - **状态**：verified（M1–M4 已交付，见实现记录）
 - **最后更新**：2026-08-18
-- **查重结果**：已搜 `proposals/active/`（仅 datasets-mission-bench，无关）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。命中 `.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`——那是**消费方**（room 插件）的设想，其「Requirement for local-agent」一节正是本提案的需求来源，两者为同一能力的供需两侧，不重复；另有 `implemented/feature/2026-08-16-local-agent-resume.md` 等家族 resume 机制的历史 note，为背景而非同一意图；原 `proposed/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md` 第 1 条（委派映射持久化）已**吸收进本提案 M4**，该 note 随之废弃（移入 `rejected/`，其第 2、3 条——双 sandbox 实例、output-schema——一并废弃，需要时另立 note）。无重复，新建。
+- **查重结果**：已搜 `proposals/active/`（仅 datasets-mission-bench，无关）、`proposals/closed/`（空）、`.agents/notes/`（含 archived）。命中 `.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`——那是**消费方**（room 插件）的设想，其「Requirement for local-agent」一节正是本提案的需求来源，两者为同一能力的供需两侧，不重复；另有 `implemented/feature/2026-08-16-local-agent-resume.md` 等家族 resume 机制的历史 note，为背景而非同一意图；原 `proposed/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md` 第 1 条（委派映射持久化）已**吸收进本提案 M4**，该 note 随之废弃（移入 `rejected/`，其第 2、3 条——双 sandbox 实例、output-schema——一并废弃，需要时另立 note）。无重复，新建。
 - **官方依赖**：纯插件。所需官方契约均已实测存在（见「现状」）：`ctx.subagents.start(provider, request)` 接受调用方持有的 live `Agent` + 自备 `AbortSignal`，且 `start()` 内部不做会话归属校验；全局 `session/event` 事件对根 context 订阅者广播一切会话追加；one-shot run 的取消即 start 时传入的 AbortSignal。零 harness 改动。
 
-需求来源：room note 的「Requirement for local-agent」一节（`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`）。本提案是该需求在 local-agent 家族侧的立项，可行性已评估通过（评估结论已同用户确认）。
+需求来源：room note 的「Requirement for local-agent」一节（`.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`）。本提案是该需求在 local-agent 家族侧的立项，可行性已评估通过（评估结论已同用户确认）。
 
 ## 目标
 
@@ -135,7 +135,7 @@ room 插件 `inject: ['localAgent']` 可选化（缺席则 CLI 成员能力降�
 - **M2 已落地**（2026-08-19）：`reportRunProgress` provider 上报通道 + `localAgent/run-progress` cordis 事件 + 门面心跳（5s、unref、settle/卸载即停，不携带 provider 数据）+ `opts.onProgress` 路由 + `opts.reattach` 开关；kimi provider 在 settle 后镜像处上报 `{ kind: 'mirror', mirroredLines }`。设计修正（评审）：心跳不读 `kimiMirroredLines`，进度一律 provider 上报、门面只转发。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-run-progress.md`（含 zh 对照与 sidecar）。
 - **M3 已落地**（2026-08-19）：四个 provider 全部实现运行中实时镜像，无一停留 settle-only——kimi（2s 轮询 wire.jsonl，共享折叠 `mirrorKimiSessionDelta`，usage 按 `(fromLines, newTotal]` 区间恰好一次）、codex 与 claude-code（NDJSON 增量解析器共享逐行折叠，扣留末行至终止事件以保留 usage 载体）、dsh（子 dsh 会话日志运行中可读，`mirrorDshSession` 以子会话已镜像前缀为 offset，构造性幂等）。settle 末次镜像全部保留且幂等。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-live-mirror.md`（含 zh 对照与 sidecar）。
 - **M4 已落地**（2026-08-19）：委派映射按 harness 持久化为 append-only `delegations.jsonl`——`recordDelegation`/`setKimiMirroredLines` 同步追加、`register` 时同步加载（末行生效、坏行/外来行跳过并 warn）、`resolveDelegation` 与归属校验逐字不变。跨重启链路闭合：映射加载 → 归属校验 → reattach（M1）→ provider resume → 镜像从持久化 offset 续走（M3）。Agent Note：`.agents/notes/implemented/feature/2026-08-19-local-agent-delegation-persistence.md`（含 zh 对照与 sidecar）。
-- 需求来源：`.agents/notes/proposed/feature/2026-08-18-room-multi-agent-conversation.md`（消费方设想；本提案交付后更新该 note 的 Requirement 一节为已满足）。
+- 需求来源：`.agents/notes/implemented/feature/2026-08-18-room-multi-agent-conversation.md`（消费方设想；本提案交付后更新该 note 的 Requirement 一节为已满足）。
 - 评审记录：room 侧第一轮评审（2026-08-18）指出跨重启续跑链路的两个断点（映射未持久化、子会话不在场），已吸收——现状一节补充核实结论，M1 增加 reattach 配方，M4 吸收原 codex 持久化 note 第 1 条；方法名经评审定为 `resume`（沿用家族既有术语），不引入 `continue`。
 - 废弃：`.agents/notes/rejected/feature/2026-08-17-codex-resume-persistence-sandbox-instances-output-schema.md`——第 1 条并入本提案 M4，第 2、3 条（双 sandbox 实例、output-schema）随之废弃，需要时另立 note。
 - 背景 note：`implemented/feature/2026-08-16-local-agent-resume.md`、`implemented/feature/2026-08-18-local-agent-dsh-session-mirror.md`。
