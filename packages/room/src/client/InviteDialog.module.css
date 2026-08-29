@@ -1,4 +1,6 @@
-/* Invite/edit dialog: overlay + centered card, alias tokens with fallbacks. */
+/* Invite/edit dialog: transparent overlay (no dimming — the conversation
+   stays readable behind it) + centered card; Esc/overlay-click closes. Alias
+   tokens with fallbacks. */
 
 .overlay {
   position: fixed;
@@ -6,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--dsw-alias-bg-overlay, rgba(0, 0, 0, 0.36));
+  background: transparent;
   z-index: 100;
 }
 
@@ -22,7 +24,8 @@
   border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  /* The card carries the whole separation now that the overlay does not dim. */
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
 }
 
 .title {
