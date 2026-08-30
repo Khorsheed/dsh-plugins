@@ -14,7 +14,7 @@
  *   zip archive, a pasted source command, or a local directory, then refreshes
  *   the catalog.
  */
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
   Button,
   IconChevronDownOutline14,
@@ -30,7 +30,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
-import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow, McpTransport } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogJsonValue, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow, McpTransport } from '@khorsheed/dsh-capability-catalog/types'
 import { parseServerEntry, maskSecret, credentialStoredRefs, SECRET_REF_PREFIX } from '../mcps.ts'
 import css from './CapabilityCatalogCard.module.css'
 
@@ -434,37 +434,113 @@ function formatParams(parameters: CatalogToolRow['parameters'], t: (key: Capabil
   }
 }
 
-/** One flattened top-level parameter row for the table view. */
-interface ParamRow {
-  readonly name: string
-  readonly type: string
-  readonly description: string
-  readonly required: boolean
+/** The candidate child schema for a property (array items object, or object with
+ * properties) — used to render an expandable nested table. */
+function nestedSchemaOf(schema: CatalogJsonValue): CatalogJsonValue | undefined {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return undefined
+  const s = schema as Record<string, unknown>
+  if (s['type'] === 'array') {
+    const items = s['items']
+    if (items !== null && typeof items === 'object' && typeof (items as Record<string, unknown>)['properties'] === 'object') {
+      return items as CatalogJsonValue
+    }
+    return undefined
+  }
+  if (typeof s['properties'] === 'object' && s['properties'] !== null) return schema
+  return undefined
 }
 
-/** Flatten a JSON Schema `parameters` object's top-level properties into rows.
- * Returns null when the value is not a tabular object schema (falls back to JSON). */
-function paramRows(parameters: CatalogToolRow['parameters']): ParamRow[] | null {
-  if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)) return null
-  const obj = parameters as Record<string, unknown>
-  const props = obj['properties']
+/** The property entries of an object schema (or null when not tabular). */
+function schemaProps(schema: CatalogJsonValue): [string, Record<string, unknown>][] | null {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return null
+  const props = (schema as Record<string, unknown>)['properties']
   if (typeof props !== 'object' || props === null) return null
-  const required = new Set<string>(Array.isArray(obj['required']) ? (obj['required'] as string[]) : [])
-  const rows: ParamRow[] = []
-  for (const [name, raw] of Object.entries(props)) {
-    const schema = (raw ?? {}) as Record<string, unknown>
-    const t = schema['type']
-    const type = typeof t === 'string'
-      ? t
-      : Array.isArray(t) ? (t as string[]).join('|') : (typeof schema['properties'] === 'object' ? 'object' : '')
-    rows.push({
-      name,
-      type,
-      description: typeof schema['description'] === 'string' ? schema['description'] : '',
-      required: required.has(name),
-    })
+  const entries = Object.entries(props) as [string, Record<string, unknown>][]
+  return entries.length > 0 ? entries : null
+}
+
+/** The required-name set of an object schema. */
+function requiredNames(schema: CatalogJsonValue): Set<string> {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return new Set()
+  const required = (schema as Record<string, unknown>)['required']
+  return new Set<string>(Array.isArray(required) ? (required as string[]) : [])
+}
+
+/** A compact type label (array<itemType> / object / string / …). */
+function typeLabel(schema: Record<string, unknown>): string {
+  const t = schema['type']
+  if (Array.isArray(t)) return (t as string[]).join('|')
+  if (t === 'array') {
+    const items = schema['items']
+    if (items !== null && typeof items === 'object') {
+      const it = (items as Record<string, unknown>)['type']
+      if (typeof it === 'string') return `array<${it}>`
+      if (typeof (items as Record<string, unknown>)['properties'] === 'object') return 'array<object>'
+    }
+    return 'array'
   }
-  return rows.length > 0 ? rows : null
+  if (t === undefined && typeof schema['properties'] === 'object') return 'object'
+  return typeof t === 'string' ? t : ''
+}
+
+/** Recursive parameter table. Each row that carries a nested object/array-of-object
+ * schema is expandable, revealing the item's properties as an indented sub-table. */
+function ParamTable({ schema, path, expanded, onToggle, depth, t }: {
+  schema: CatalogJsonValue
+  path: string
+  expanded: ReadonlySet<string>
+  onToggle: (key: string) => void
+  depth: number
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const props = schemaProps(schema)
+  if (props === null) return <div className={css.empty}>{t('toolNoParams')}</div>
+  const required = requiredNames(schema)
+  return (
+    <table className={css.toolParamsTable}>
+      <thead>
+        <tr>
+          <th className={css.toolParamsName}>{t('paramName')}</th>
+          <th className={css.toolParamsType}>{t('paramType')}</th>
+          <th>{t('paramDesc')}</th>
+          <th className={css.toolParamsReq}>{t('paramRequired')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.map(([name, p]) => {
+          const key = path === '' ? name : `${path}.${name}`
+          const nested = nestedSchemaOf(p as CatalogJsonValue)
+          const open = expanded.has(key)
+          return (
+            <Fragment key={key}>
+              <tr>
+                <td className={css.toolParamsName} style={{ paddingLeft: `${8 + depth * 16}px` }}>
+                  {nested !== undefined ? (
+                    <button type="button" className={css.toolParamsExpand} onClick={() => onToggle(key)} aria-expanded={open}>
+                      {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+                    </button>
+                  ) : null}
+                  <span>{name}</span>
+                </td>
+                <td className={css.toolParamsType}>{typeLabel(p)}</td>
+                <td className={css.toolParamsDesc}>{typeof p['description'] === 'string' ? p['description'] : '—'}</td>
+                <td className={css.toolParamsReq}>{required.has(name) ? t('yes') : ''}</td>
+              </tr>
+              {nested !== undefined && open ? (
+                <tr>
+                  <td colSpan={4} className={css.toolParamsNestedCell}>
+                    <div className={css.toolParamsNestedBox}>
+                      <ParamTable schema={nested} path={key} expanded={expanded} onToggle={onToggle} depth={depth + 1} t={t} />
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
+          )
+        })}
+      </tbody>
+    </table>
+  )
 }
 
 /** Tool preview card (dsh-card anatomy): name + channel pill + 2-line desc +
@@ -502,13 +578,21 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
     if (el === null) { setDescOverflow(false); return }
     setDescOverflow(el.scrollHeight > el.clientHeight + 1)
   }, [tool.description])
-  // Params: flatten to a table when the schema is tabular; JSON otherwise. The
-  // view defaults to table, and the full schema is always one click away (copy).
-  const rows = useMemo(() => paramRows(tool.parameters), [tool.parameters])
-  const hasTable = rows !== null && rows.length > 0
+  // Params: render recursively as an expandable table when tabular; JSON
+  // otherwise. The full schema is always one click away (copy button).
+  const hasTable = tool.parameters !== undefined && tool.parameters !== null && schemaProps(tool.parameters) !== null
   const [paramsView, setParamsView] = useState<'table' | 'json'>('table')
   const [copied, setCopied] = useState(false)
+  const [expandedParams, setExpandedParams] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => { if (!hasTable) setParamsView('json') }, [hasTable])
+  const toggleParam = (key: string): void => {
+    setExpandedParams((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
   const paramsJson = useMemo(() => formatParams(tool.parameters, t), [tool.parameters, t])
   const copyJson = async (): Promise<void> => {
     if (tool.parameters === undefined || tool.parameters === null) return
@@ -559,26 +643,7 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
           <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
         ) : hasTable && paramsView === 'table' ? (
           <div className={css.toolParamsTableWrap}>
-            <table className={css.toolParamsTable}>
-              <thead>
-                <tr>
-                  <th className={css.toolParamsName}>{t('paramName')}</th>
-                  <th className={css.toolParamsType}>{t('paramType')}</th>
-                  <th>{t('paramDesc')}</th>
-                  <th className={css.toolParamsReq}>{t('paramRequired')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(rows ?? []).map((r) => (
-                  <tr key={r.name}>
-                    <td className={css.toolParamsName}>{r.name}</td>
-                    <td className={css.toolParamsType}>{r.type || '—'}</td>
-                    <td className={css.toolParamsDesc}>{r.description || '—'}</td>
-                    <td className={css.toolParamsReq}>{r.required ? t('yes') : ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ParamTable schema={tool.parameters as CatalogJsonValue} path="" expanded={expandedParams} onToggle={toggleParam} depth={0} t={t} />
           </div>
         ) : (
           <div className={css.toolParamsBody}>{paramsJson}</div>

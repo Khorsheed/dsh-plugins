@@ -622,6 +622,47 @@
   font-size: 11px;
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Chevron that expands a nested object/array-of-object property row. */
+.toolParamsExpand {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px;
+  margin-right: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.toolParamsExpand:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolParamsExpand:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* Expanded nested schema: a full-width cell holding an indented sub-table. */
+.toolParamsNestedCell {
+  padding: 0 8px 8px 8px;
+}
+
+.toolParamsNestedBox {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  padding: 6px;
+  max-height: min(34vh, 280px);
+  overflow: auto;
 }
 
 .toolParamsType {
