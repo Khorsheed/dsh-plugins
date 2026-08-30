@@ -36,7 +36,6 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -197,8 +196,10 @@ function findSessionToken(homeDir) {
   })
   for (const file of logs) {
     try {
-      const match = /[?&]token=([A-Za-z0-9_-]+)/.exec(readFileSync(file, 'utf8'))
-      if (match) return match[1]
+      // LAST match wins: host logs append across restarts, and only the latest
+      // boot's token is valid.
+      const matches = [...readFileSync(file, 'utf8').matchAll(/[?&]token=([A-Za-z0-9_-]+)/g)]
+      if (matches.length > 0) return matches[matches.length - 1][1]
     } catch {
       /* unreadable */
     }
@@ -507,7 +508,9 @@ async function assertCmd(opts) {
 
   // Linked fleet: the served bundle must match the CURRENT source checkout's
   // built file — proves the agent's rebuild actually reached the new host
-  // (a stale bundle would mean the fix never landed).
+  // (a stale bundle would mean the fix never landed). The 0.1.2 batch URL
+  // concatenates module bodies verbatim minus the sourcemap comment, so the
+  // check is containment of the comment-stripped file, not a whole-body hash.
   for (const [name, dir] of Object.entries(env.linkedPackages ?? {})) {
     const clientFile = join(dir, 'lib', 'client.js')
     if (!existsSync(clientFile)) continue
@@ -515,8 +518,8 @@ async function assertCmd(opts) {
     checks[`linksFresh:${short}`] = async () => {
       const body = await fetchBundle(`/plugins/${name}/client.js`, `${short}\\/client\\.js`)
       if (body === undefined) return false
-      const current = createHash('sha1').update(readFileSync(clientFile)).digest('hex')
-      return createHash('sha1').update(body).digest('hex') === current
+      const current = readFileSync(clientFile, 'utf8').replace(/\n?\/\/# sourceMappingURL=.*$/s, '').trim()
+      return current.length > 0 && body.includes(current)
     }
   }
 
@@ -550,8 +553,11 @@ async function assertCmd(opts) {
         }
       }
       walk(sessionsRoot, 0)
-      if (logs.length < 2) return false
-      return logs.every((f) => statSync(f).size > 2000)
+      // At least two substantive session logs survive (the upgrade session and
+      // the "user keeps working" session). Empty auto-created shells (the
+      // restart machinery may register a zero-turn session) don't count.
+      const substantive = logs.filter((f) => statSync(f).size > 2000)
+      return substantive.length >= 2
     }
   }
 
