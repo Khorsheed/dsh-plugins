@@ -36,12 +36,15 @@ export interface ToolAttribution {
  * @param officialTools - official-tools whitelist (Set).
  * @param mcpServerNames - configured MCP serverNames (longest first).
  * @param appearedAfterApply - whether the tool appeared after apply-time baseline.
+ * @param communityTools - tool name → community module that declared it (from the
+ * composition's `@khorsheed/*` rows), so community plugin tools attribute to `plugin`.
  */
 export function attributeToolChannel(
   name: string,
   officialTools: ReadonlySet<string>,
   mcpServerNames: readonly string[],
   appearedAfterApply: boolean,
+  communityTools: ReadonlyMap<string, string> = new Map(),
 ): ToolAttribution {
   if (name.startsWith(MCP_TOOL_PREFIX)) {
     const serverName = resolveMcpServerName(name, mcpServerNames)
@@ -49,6 +52,10 @@ export function attributeToolChannel(
   }
   if ((SELF_TOOL_NAMES as readonly string[]).includes(name)) {
     return { channel: 'plugin', confidence: 'exact', owner: '@khorsheed/dsh-capability-catalog' }
+  }
+  const communityOwner = communityTools.get(name)
+  if (communityOwner !== undefined) {
+    return { channel: 'plugin', confidence: 'exact', owner: communityOwner }
   }
   if (officialTools.has(name)) {
     return { channel: 'builtin', confidence: 'exact' }
