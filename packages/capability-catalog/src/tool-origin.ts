@@ -33,3 +33,8 @@ export function setToolOrigin<T extends object>(definition: T, origin: ToolOrigi
 export function toolOrigin(definition: object): ToolOrigin | undefined {
   return (definition as { [TOOL_ORIGIN]?: ToolOrigin })[TOOL_ORIGIN]
 }
+
+/** Whether an origin's `channel` is one the catalog can honor (plugin/builtin/mcp). */
+export function isValidOrigin(origin: ToolOrigin): boolean {
+  return origin?.channel === 'plugin' || origin?.channel === 'builtin' || origin?.channel === 'mcp'
+}

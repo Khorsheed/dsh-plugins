@@ -41,7 +41,7 @@ import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } fr
 import { maskConfig } from './mcps.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
-import { toolOrigin, type ToolOrigin } from './tool-origin.ts'
+import { toolOrigin, isValidOrigin, type ToolOrigin } from './tool-origin.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
 
@@ -390,8 +390,20 @@ export class CapabilityCatalogService extends TypertRemoteService {
     const out = new Map<string, ToolOrigin>()
     for (const schema of schemas) {
       const def = scope === undefined ? tools.get(schema.name) : tools.get(schema.name, scope)
-      const origin = def === undefined ? undefined : toolOrigin(def)
-      if (origin !== undefined) out.set(schema.name, origin)
+      if (def === undefined) {
+        // `schemas()` and `get()` disagree for this scope — the author's origin
+        // tag (if any) cannot be read, so the tool falls back to heuristics.
+        this.ctx.logger.warn(`capability-catalog: tool "${schema.name}" is visible but ctx.tools.get() is undefined in this scope — its origin tag cannot be read; it will be classified by heuristics`)
+        continue
+      }
+      const origin = toolOrigin(def)
+      if (origin !== undefined) {
+        if (!isValidOrigin(origin)) {
+          this.ctx.logger.warn(`capability-catalog: tool "${schema.name}" origin channel "${String(origin.channel)}" is not a known channel (plugin/builtin/mcp) — ignoring the tag, falling back to heuristics`)
+          continue
+        }
+        out.set(schema.name, origin)
+      }
     }
     return out
   }

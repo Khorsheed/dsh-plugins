@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { attributeToolChannel, resolveMcpServerName, skillChannelLabel, MCP_TOOL_PREFIX } from '../src/channels.ts'
-import { setToolOrigin, toolOrigin, TOOL_ORIGIN } from '../src/tool-origin.ts'
+import { setToolOrigin, toolOrigin, isValidOrigin, TOOL_ORIGIN } from '../src/tool-origin.ts'
 
 const OFFICIAL = new Set(['bash', 'write', 'edit', 'read', 'glob', 'web_search'])
 
@@ -69,5 +69,23 @@ describe('tool origin tag', () => {
     expect(def[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-local-agent-dsh' })
     // an untagged definition reads undefined
     expect(toolOrigin({ name: 'bash' })).toBeUndefined()
+  })
+
+  it('attributes a tagged worktrees tool to plugin (the admin-reported case)', () => {
+    const origins = new Map([['worktrees', { channel: 'plugin' as const, owner: '@khorsheed/dsh-worktrees' }]])
+    const r = attributeToolChannel('worktrees', OFFICIAL, [], false, origins)
+    expect(r).toMatchObject({ channel: 'plugin', confidence: 'exact', owner: '@khorsheed/dsh-worktrees' })
+    // An untagged worktrees falls back to baseline-inferred builtin, never "neither"/unknown.
+    const untagged = attributeToolChannel('worktrees', OFFICIAL, [], false)
+    expect(['builtin', 'plugin']).toContain(untagged.channel)
+  })
+})
+
+describe('isValidOrigin', () => {
+  it('accepts known channels and rejects anything else', () => {
+    expect(isValidOrigin({ channel: 'plugin' })).toBe(true)
+    expect(isValidOrigin({ channel: 'builtin' })).toBe(true)
+    expect(isValidOrigin({ channel: 'mcp' })).toBe(true)
+    expect(isValidOrigin({ channel: 'whatever' as never })).toBe(false)
   })
 })
