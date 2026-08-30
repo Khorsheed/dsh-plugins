@@ -324,6 +324,9 @@ dsh-dev/
 
 - **0.1.2 基线迁移未在本文件占位，但已在进行**：`ankh-guard` 的 preset 探测双宿主面（`22e3a4a`）与 local-agent 的 dual-line CallId（`3a405aa`，从 0.1.2 wave cherry-pick）都已落地。发布前置里的「build + test 全绿」需明确针对哪条宿主线，否则阶段一的验收基准是浮动的。相关评估见 `.agents/notes/proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md`。
 
+- **多 domain pack 的 base 成员重复**：base 层 12 个包在每个 domain pack 里各列一份。**不是「dev 引用 basic」**——`web-basic` 只是「恰好只含 base 层的那个 domain」，它不拥有那些包；装 dev 的用户不该感知 basic 存在。要减少重复，正确形态是 **base 层的薄元包**，两个 domain pack 都引用它，这需要上游 `reconcilePlugins` 支持依赖闭包（[upstream-meta-pack-reconcile](../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md)）。在那之前重复不可规避，代价是：更新要每个 profile 各跑一次；磁盘上 tarball 安装不走 pnpm store 共享（实测 19M/profile，链接数=1），npm 语义版本才共享。
+- **并存运行有并发风险**：会话按 cwd 分组存 `$DSH_HOME/sessions/`，home 级共享；持久化协调器是进程内序列化，跨进程无保护。同一 `$DSH_HOME` 上不应并行两个实例；需要隔离就给独立 `$DSH_HOME`（评测实例即属此类）。
+
 ## 九、维护规则
 
 - 新 proposal 立项时，在「包账本」对应层补一行相关 proposal；找不到落点先改本文件。

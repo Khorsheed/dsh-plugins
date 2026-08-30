@@ -73,20 +73,17 @@ sh scripts/restart-into-web-dev.sh 3090     # 指定端口
 
 切回其它 profile，用它自己仓库里的同名脚本。切换是同端口交接，浏览器刷新原地址即可。
 
-同时装多个 profile：各自 clone、各自 `install.sh`，互不干扰。要并存运行就起在不同端口：
+同时装多个 profile：各自 clone、各自 `install.sh`，互不干扰；**用各自的 restart 脚本在同一端口切换**，不用记端口。装了多个时，成员更新要在每个 profile 各跑一次 `update.sh`。
 
-```sh
-dsh --profile web-basic --port 3080 &
-dsh --profile web-dev   --port 3090 &
-```
+会话数据在 `$DSH_HOME/sessions/`、凭据与快捷键在 `$DSH_HOME` 下，**所有 profile 共享**——在一个 profile 里登录过 Kimi，切到另一个不用再登。
 
-会话数据在 `$DSH_HOME/sessions/`，所有 profile 共享。
+> 不建议在同一个 `$DSH_HOME` 上并行跑两个实例：会话数据共享且跨进程无写保护。需要长期隔离的实例（例如评测）请给它独立的 `$DSH_HOME`。
 
 ## 包含什么
 
 21 个成员，三层：
 
-**基础体验**（与 dsh-web-basic 相同的 12 个）：消息编辑/撤回/恢复、历史消息时间轴、会话标题内联编辑、文件预览（服务 + 界面）、本地文件浏览器、后台任务胶囊、上下文压缩提醒、内联 HTML 卡片、能力目录、快捷键、任务氛围。逐个介绍见 [dsh-web-basic 的 README](https://github.com/Khorsheed/dsh-web-basic#功能展示)。
+**基础体验**（与 dsh-web-basic 相同的 12 个）：消息编辑/撤回/恢复、历史消息时间轴、会话标题内联编辑、文件预览（服务 + 界面）、本地文件浏览器、后台任务胶囊、上下文压缩提醒、内联 HTML 卡片、能力目录、快捷键、任务氛围。逐个介绍见[基础成员说明](https://github.com/Khorsheed/dsh-web-basic#功能展示)。
 
 **开发能力**（本 profile 独有的 8 个）：见下方[功能展示](#功能展示)。
 
@@ -141,7 +138,7 @@ rm -rf "$DSH_HOME/profiles/web-dev"
 
 | 整合包 | 定位 |
 |---|---|
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | 日常模式：把 dsh 的 Web GUI 补完整，本 profile 的 12 个基础成员即来自它 |
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | 日常模式：只含基础体验，不带开发能力 |
 
 ## 许可
 
