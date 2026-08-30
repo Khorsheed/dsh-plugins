@@ -19,7 +19,8 @@ scratch-*
 .pnpm-store/
 
 # Debug screenshots are scratch and stay untracked; doc-referenced images in
-# docs/screenshots/ are the deliberate exception (git add -f).
+# docs/screenshots/ and profiles/*/docs/screenshots/ are the deliberate
+# exception (git add -f).
 *.png
 *.jpg
 *.jpeg

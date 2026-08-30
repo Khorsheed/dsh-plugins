@@ -47,7 +47,7 @@ function parseRecord(meta: string): Map<string, string> {
   return record
 }
 
-const pairs: Pair[] = globSync('{packages,.agents}/**/*.i18n.yaml', { cwd: root })
+const pairs: Pair[] = globSync('{packages,profiles,.agents}/**/*.i18n.yaml', { cwd: root })
   .filter((meta) => !meta.includes('/archived/'))
   .map((meta) => {
     const base = meta.replace(/\.i18n\.yaml$/, '')
