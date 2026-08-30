@@ -425,10 +425,6 @@
 }
 
 /* Tool dialog: wider dialog + clamped, expandable description. */
-.toolDetailModal {
-  width: min(600px, calc(100vw - 96px));
-}
-
 .toolDetailDesc {
   display: flex;
   flex-direction: column;
@@ -504,14 +500,6 @@
   justify-content: space-between;
   gap: 12px;
   margin: 16px 0 8px;
-}
-
-.toolParamsHeadCompact {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 8px 0 6px;
 }
 
 .toolParamsActions {
@@ -593,12 +581,6 @@
   padding: 6px 12px;
 }
 
-/* Inside an MCP tool card the schema body already carries the layer-1 band, so
-   the tree stays transparent and tight there. */
-.schemaTreeCompact {
-  padding: 2px 0;
-}
-
 .schemaNode {
   min-width: 0;
 }
@@ -678,12 +660,17 @@
 }
 
 .schemaDesc {
-  margin-left: 24px; /* chevron 16 + gap 8: aligns with the name column */
   padding-bottom: 3px;
   font-size: 12px;
   line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+
+/* With a chevron gutter at this level, align the description with the name
+   column (chevron 16 + gap 8); flat levels have no gutter and start at 0. */
+.schemaDesc[data-gutter] {
+  margin-left: 24px;
 }
 
 /* Nested level: one vertical guide line at the parent chevron's center; child
@@ -1546,10 +1533,9 @@
    MCP management.
    --------------------------------------------------------------------------- */
 
-/* MCP manage modal (opened from a server tile) body. */
+/* MCP manage modal (opened from a server tile) body — the shared ModalShell
+   body provides the padding; this only stacks the blocks. */
 .mcpBody {
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1645,11 +1631,6 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
-.mcpActionBtn.danger:hover {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
-}
-
 /* Tool list: a bounded, independently-scrolling column so a server with many
    tools does not balloon the modal page. */
 .mcpToolBar {
@@ -1720,15 +1701,19 @@
   padding-right: 2px;
 }
 
-/* One bordered card per MCP tool: head row + (when expanded) the schema body grow
-   together inside the same card, so the params are not a detached table below.
-   flex:none stops the flex-column tool list from shrinking the card below its
-   content (which would clip the expanded schema). */
+/* One bordered card per MCP tool: name/desc + enable toggle; clicking opens the
+   shared tool detail modal for the parameter schema. flex:none stops the
+   flex-column tool list from shrinking the card. */
 .mcpToolCard {
   flex: none;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.mcpToolCard:hover {
+  border-color: var(--dsw-alias-border-l1);
 }
 
 .mcpToolRow {
@@ -1736,12 +1721,6 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-}
-
-.mcpToolSchemaBody {
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  padding: 10px 12px 12px;
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 .mcpToolMain {

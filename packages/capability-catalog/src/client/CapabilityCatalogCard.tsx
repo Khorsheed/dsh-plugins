@@ -278,10 +278,6 @@ export function CapabilityCatalogCard({
         />
       ) : null}
 
-      {toolDetail !== null ? (
-        <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
-      ) : null}
-
       {mcpDetail !== null ? (
         <McpServerManageModal
           group={mcpDetail}
@@ -290,8 +286,14 @@ export function CapabilityCatalogCard({
           onSetCredential={mcpSetCredential}
           onSetToolEnabled={setMcpToolEnabled}
           onDiscover={discoverMcp}
+          onOpenTool={(tool) => setToolDetail(tool)}
           t={t}
         />
+      ) : null}
+
+      {/* Renders AFTER the manage modal so a stacked tool detail lands on top. */}
+      {toolDetail !== null ? (
+        <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
       ) : null}
 
       {selectedName !== null ? (
@@ -474,15 +476,25 @@ function typeLabel(schema: Record<string, unknown>): string {
   return typeof t === 'string' ? t : ''
 }
 
+/** True when a property schema carries visible nested children (array-of-object
+ * items or object properties). Drives both the chevron and the level gutter. */
+function hasNestedKids(schema: Record<string, unknown>): boolean {
+  const nested = nestedSchemaOf(schema as CatalogJsonValue)
+  return nested !== undefined && schemaProps(nested) !== null
+}
+
 /** One property node in the schema tree: a head row (chevron + mono name +
  * required `*` + type chip) with the description on a second line aligned to
  * the name, and nested children inside a guide-lined indent. A parent node's
- * whole head row is the toggle button (big hit target, one focus stop). */
-function SchemaNode({ name, schema, required, path, collapsed, onToggle, t }: {
+ * whole head row is the toggle button (big hit target, one focus stop). Levels
+ * where NO sibling is expandable drop the chevron gutter entirely, so flat
+ * schemas are not indented for nothing. */
+function SchemaNode({ name, schema, required, path, gutter, collapsed, onToggle, t }: {
   name: string
   schema: Record<string, unknown>
   required: boolean
   path: string
+  gutter: boolean
   collapsed: ReadonlySet<string>
   onToggle: (key: string) => void
   t: (key: CapabilityCatalogKey) => string
@@ -511,11 +523,11 @@ function SchemaNode({ name, schema, required, path, collapsed, onToggle, t }: {
         </button>
       ) : (
         <div className={css.schemaHead}>
-          <span className={css.schemaChevronSpacer} />
+          {gutter ? <span className={css.schemaChevronSpacer} /> : null}
           {head}
         </div>
       )}
-      {desc !== undefined ? <div className={css.schemaDesc}>{desc}</div> : null}
+      {desc !== undefined ? <div className={css.schemaDesc} data-gutter={gutter || undefined}>{desc}</div> : null}
       {kids !== null && open ? (
         <div className={css.schemaKids}>
           {kids.map(([kidName, kidSchema]) => {
@@ -527,6 +539,7 @@ function SchemaNode({ name, schema, required, path, collapsed, onToggle, t }: {
                 schema={kidSchema}
                 required={kidRequired?.has(kidName) ?? false}
                 path={kidPath}
+                gutter={kids.some(([, k]) => hasNestedKids(k))}
                 collapsed={collapsed}
                 onToggle={onToggle}
                 t={t}
@@ -542,9 +555,8 @@ function SchemaNode({ name, schema, required, path, collapsed, onToggle, t }: {
 /** The schema tree: one SchemaNode per top-level property. All levels start
  * EXPANDED (state tracks the collapsed set) — the guide lines keep the full
  * hierarchy readable at a glance, and deep MCP schemas collapse per node. */
-function SchemaTree({ schema, compact, t }: {
+function SchemaTree({ schema, t }: {
   schema: CatalogJsonValue
-  compact?: boolean | undefined
   t: (key: CapabilityCatalogKey) => string
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
@@ -560,9 +572,19 @@ function SchemaTree({ schema, compact, t }: {
   if (props === null) return null
   const required = requiredNames(schema)
   return (
-    <div className={compact === true ? css.schemaTreeCompact : css.schemaTree}>
+    <div className={css.schemaTree}>
       {props.map(([name, p]) => (
-        <SchemaNode key={name} name={name} schema={p} required={required.has(name)} path={name} collapsed={collapsed} onToggle={toggle} t={t} />
+        <SchemaNode
+          key={name}
+          name={name}
+          schema={p}
+          required={required.has(name)}
+          path={name}
+          gutter={props.some(([, prop]) => hasNestedKids(prop))}
+          collapsed={collapsed}
+          onToggle={toggle}
+          t={t}
+        />
       ))}
     </div>
   )
@@ -570,12 +592,10 @@ function SchemaTree({ schema, compact, t }: {
 
 /** Reusable parameter view: a schema tree with a 结构/JSON toggle and a
  * one-click 复制 JSON, falling back to the raw JSON block when the schema is not
- * an object with properties. Used by the tool detail modal and the MCP tool
- * rows' schema. */
-function SchemaView({ parameters, title, compact, t }: {
+ * an object with properties. Used by the (shared) tool detail modal. */
+function SchemaView({ parameters, title, t }: {
   parameters: CatalogJsonValue | undefined
   title?: string
-  compact?: boolean
   t: (key: CapabilityCatalogKey) => string
 }) {
   const hasTree = parameters !== undefined && parameters !== null && schemaProps(parameters) !== null
@@ -593,7 +613,7 @@ function SchemaView({ parameters, title, compact, t }: {
   }
   return (
     <div>
-      <div className={compact === true ? css.toolParamsHeadCompact : css.toolParamsHead}>
+      <div className={css.toolParamsHead}>
         {title !== undefined ? <span className={css.toolDetailParamsTitle}>{title}</span> : <span />}
         <span className={css.toolParamsActions}>
           {hasTree ? (
@@ -613,7 +633,7 @@ function SchemaView({ parameters, title, compact, t }: {
       {parameters === undefined || parameters === null ? (
         <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
       ) : hasTree && view === 'tree' ? (
-        <SchemaTree schema={parameters} compact={compact} t={t} />
+        <SchemaTree schema={parameters} t={t} />
       ) : (
         <div className={css.toolParamsBody}>{paramsJson}</div>
       )}
@@ -679,9 +699,54 @@ function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOp
   )
 }
 
-/** Tool detail modal (host Modal, wider): description (clamped when it overflows,
- * expandable) + channel/origin + parameter schema. No footer button — the ×,
- * Esc, and mask-click close it. */
+/** Shared modal chrome for every content dialog in the section (tool detail,
+ * skill detail, MCP manage, the two add forms): a centered overlay with a fixed
+ * head (title + ×) and a scrolling body. Esc and (optionally) mask-click close
+ * it — but only when it is the TOPMOST dialog in the DOM, so a stacked modal
+ * (tool detail over the MCP manage modal) never collapses the one beneath it. */
+function ModalShell({ title, onClose, children, className, closeOnMask = true, t }: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  className?: string | undefined
+  closeOnMask?: boolean
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      const me = overlayRef.current
+      if (me === null) return
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+      if (dialogs[dialogs.length - 1] === me) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div
+      ref={overlayRef}
+      className={css.overlay}
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => { if (closeOnMask && e.target === e.currentTarget) onClose() }}
+    >
+      <div className={className === undefined ? css.modal : `${css.modal} ${className}`}>
+        <div className={css.modalHead}>
+          <h3 className={css.modalTitle}>{title}</h3>
+          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
+        </div>
+        <div className={css.modalBody}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+/** Tool detail modal: description (clamped when it overflows, expandable) +
+ * channel/origin + parameter schema tree. Also serves MCP tools opened from the
+ * server manage modal — one detail view for every tool. No footer button — the
+ * ×, Esc, and mask-click close it (ModalShell). */
 function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
   const [descExpanded, setDescExpanded] = useState(false)
   // Show the expand toggle only when the description actually overflows the clamp.
@@ -692,37 +757,22 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
     if (el === null) { setDescOverflow(false); return }
     setDescOverflow(el.scrollHeight > el.clientHeight + 1)
   }, [tool.description])
-  // Esc + mask-click close (the shared .overlay/.modal chrome has no host-Modal
-  // behavior).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   return (
-    <div className={css.overlay} role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={css.modal}>
-        <div className={css.modalHead}>
-          <h3 className={css.modalTitle}>{tool.name}</h3>
-          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
-        </div>
-        <div className={css.modalBody}>
-          <div className={css.meta}>
-            <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
-            <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
-          </div>
-          <div className={css.toolDetailDesc}>
-            <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? (css.toolDescExpanded ?? '') : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
-            {descOverflow ? (
-              <button type="button" className={css.toolDescToggle ?? ''} onClick={() => setDescExpanded(e => !e)}>
-                {descExpanded ? t('toolCollapse') : t('toolExpand')}
-              </button>
-            ) : null}
-          </div>
-          <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} title={t('toolParams')} t={t} />
-        </div>
+    <ModalShell title={tool.name} onClose={onClose} t={t}>
+      <div className={css.meta}>
+        <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
+        <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
       </div>
-    </div>
+      <div className={css.toolDetailDesc}>
+        <p ref={descRef} className={`${css.toolDesc} ${descExpanded ? css.toolDescExpanded : css.toolDescClamp}`}>{tool.description}</p>
+        {descOverflow ? (
+          <button type="button" className={css.toolDescToggle} onClick={() => setDescExpanded(e => !e)}>
+            {descExpanded ? t('toolCollapse') : t('toolExpand')}
+          </button>
+        ) : null}
+      </div>
+      <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} title={t('toolParams')} t={t} />
+    </ModalShell>
   )
 }
 
@@ -781,123 +831,114 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
   }
 
   return (
-    <div className={css.overlay} role="dialog" aria-modal="true">
-      <div className={css.modal}>
-        <div className={css.modalHead}>
-          <h3 className={css.modalTitle}>{name}</h3>
-          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
-        </div>
+    <ModalShell title={name} onClose={onClose} t={t}>
+  {claim.status === 'loading' ? <div className={css.empty}>{t('loading')}</div> : null}
+      {claim.status === 'done' && data === undefined ? <div className={css.empty}>{t('loadFailed')}</div> : null}
 
-        <div className={css.modalBody}>
-          {claim.status === 'loading' ? <div className={css.empty}>{t('loading')}</div> : null}
-          {claim.status === 'done' && data === undefined ? <div className={css.empty}>{t('loadFailed')}</div> : null}
+      {claim.status === 'done' && data !== undefined ? (
+        <>
+          <div className={css.meta}>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span></span>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span></span>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span></span>
+            {data.whenToUse !== undefined ? <span className={css.metaItem}><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></span> : null}
+          </div>
+          <p className={css.detailDesc}>{data.description}</p>
 
-          {claim.status === 'done' && data !== undefined ? (
-            <>
-              <div className={css.meta}>
-                <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span></span>
-                <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span></span>
-                <span className={css.metaItem}><span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span></span>
-                {data.whenToUse !== undefined ? <span className={css.metaItem}><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></span> : null}
-              </div>
-              <p className={css.detailDesc}>{data.description}</p>
-
-              {data.credentials !== undefined && data.credentials.length > 0 ? (
-                <details className={css.conf} open>
-                  <summary className={css.confTitle}>{t('credentials')}</summary>
-                  <div className={css.confHint}>{t('credentialsHint')}</div>
-                  {data.credentials.map((decl) => {
-                    const key = decl.key
-                    const label = decl.label ?? key
-                    const state = credState[key] ?? 'idle'
-                    const configured = decl.configured || state === 'ok'
-                    return (
-                      <div className={css.credRow} key={key}>
-                        <label className={css.credLabel}>{label}
-                          {configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
-                        </label>
-                        <div className={css.credInputRow}>
-                          <div className={css.inputWrap}>
-                            <input className={css.input} type="password" value={credValues[key] ?? ''}
-                              placeholder={configured ? t('configuredReplace') : t('credPlaceholder')}
-                              onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))}
-                              onBlur={() => { if ((credValues[key] ?? '') !== '') void saveCred(key) }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(key) }} />
-                          </div>
-                          {!configured ? (
-                            <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
-                              onClick={() => void saveCred(key)}>{t('save')}</button>
-                          ) : null}
-                        </div>
-                        {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
-                        {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
-                      </div>
-                    )
-                  })}
-                </details>
-              ) : null}
-
-              {(() => {
-                const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
-                const single = files.length <= 1
+          {data.credentials !== undefined && data.credentials.length > 0 ? (
+            <details className={css.conf} open>
+              <summary className={css.confTitle}>{t('credentials')}</summary>
+              <div className={css.confHint}>{t('credentialsHint')}</div>
+              {data.credentials.map((decl) => {
+                const key = decl.key
+                const label = decl.label ?? key
+                const state = credState[key] ?? 'idle'
+                const configured = decl.configured || state === 'ok'
                 return (
-                  <section className={css.sourceSection}>
-                    <button type="button" className={css.sourceTrigger} onClick={() => setSourceOpen((o) => !o)} aria-expanded={sourceOpen}>
-                      <span className={css.sourceChevron}>{sourceOpen ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
-                      <span className={css.sourceLabel}>{t('viewSource')}</span>
-                    </button>
-                    {sourceOpen ? (
-                      single ? (
-                        <div className={css.sourceSingle}>
-                          <div className={css.sourceBar}>
-                            <span className={css.sourceBarFile}>{srcFile === '' || srcFile === 'SKILL.md' ? 'SKILL.md' : srcFile}</span>
-                            <button type="button" className={css.sourceCopy} onClick={() => void copySource()} aria-label={t('copy')}>
-                              {copied ? t('copied') : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
-                            </button>
-                          </div>
-                          <div className={css.detailPane}>
-                            {srcLoading ? <div className={css.empty}>{t('loading')}</div>
-                              : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
-                                : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
-                                  : <pre className={css.codeBlk}>{srcContent}</pre>}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className={css.split}>
-                          <div className={css.treePane}>
-                            <BundleFileTree
-                              files={files}
-                              selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
-                              onSelect={selectSource}
-                            />
-                          </div>
-                          <div className={css.detailPane}>
-                            <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
-                              {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
-                            </button>
-                            {srcLoading ? <div className={css.empty}>{t('loading')}</div>
-                              : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
-                                : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
-                                  : <pre className={css.codeBlk}>{srcContent}</pre>}
-                          </div>
-                        </div>
-                      )
-                    ) : null}
-                  </section>
+                  <div className={css.credRow} key={key}>
+                    <label className={css.credLabel}>{label}
+                      {configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
+                    </label>
+                    <div className={css.credInputRow}>
+                      <div className={css.inputWrap}>
+                        <input className={css.input} type="password" value={credValues[key] ?? ''}
+                          placeholder={configured ? t('configuredReplace') : t('credPlaceholder')}
+                          onChange={(e) => setCredValues((s) => ({ ...s, [key]: e.target.value }))}
+                          onBlur={() => { if ((credValues[key] ?? '') !== '') void saveCred(key) }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(key) }} />
+                      </div>
+                      {!configured ? (
+                        <button type="button" className={css.btnPrimary} disabled={state === 'saving' || (credValues[key] ?? '') === ''}
+                          onClick={() => void saveCred(key)}>{t('save')}</button>
+                      ) : null}
+                    </div>
+                    {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
+                    {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
+                  </div>
                 )
-              })()}
-
-              {data.metadataText !== undefined ? (
-                <details className={css.source}>
-                  <summary className={css.sourceTitle}>{t('metadata')}</summary>
-                  <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
-                </details>
-              ) : null}
-            </>
+              })}
+            </details>
           ) : null}
-        </div>
-      </div>
-    </div>
+
+          {(() => {
+            const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
+            const single = files.length <= 1
+            return (
+              <section className={css.sourceSection}>
+                <button type="button" className={css.sourceTrigger} onClick={() => setSourceOpen((o) => !o)} aria-expanded={sourceOpen}>
+                  <span className={css.sourceChevron}>{sourceOpen ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
+                  <span className={css.sourceLabel}>{t('viewSource')}</span>
+                </button>
+                {sourceOpen ? (
+                  single ? (
+                    <div className={css.sourceSingle}>
+                      <div className={css.sourceBar}>
+                        <span className={css.sourceBarFile}>{srcFile === '' || srcFile === 'SKILL.md' ? 'SKILL.md' : srcFile}</span>
+                        <button type="button" className={css.sourceCopy} onClick={() => void copySource()} aria-label={t('copy')}>
+                          {copied ? t('copied') : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                        </button>
+                      </div>
+                      <div className={css.detailPane}>
+                        {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                          : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                            : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                              : <pre className={css.codeBlk}>{srcContent}</pre>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={css.split}>
+                      <div className={css.treePane}>
+                        <BundleFileTree
+                          files={files}
+                          selectedPath={srcFile === '' ? 'SKILL.md' : srcFile}
+                          onSelect={selectSource}
+                        />
+                      </div>
+                      <div className={css.detailPane}>
+                        <button type="button" className={css.codeCopy} onClick={() => void copySource()} aria-label={t('copy')}>
+                          {copied ? <span>{t('copied')}</span> : <span className={css.codeCopyIcon}><IconCopyOutline16 size={16} /> {t('copy')}</span>}
+                        </button>
+                        {srcLoading ? <div className={css.empty}>{t('loading')}</div>
+                          : (srcFile === '' || srcFile === 'SKILL.md') ? <pre className={css.codeBlk}>{data.content}</pre>
+                            : srcContent === undefined ? <div className={css.empty}>{t('loadFailed')}</div>
+                              : <pre className={css.codeBlk}>{srcContent}</pre>}
+                      </div>
+                    </div>
+                  )
+                ) : null}
+              </section>
+            )
+          })()}
+
+          {data.metadataText !== undefined ? (
+            <details className={css.source}>
+              <summary className={css.sourceTitle}>{t('metadata')}</summary>
+              <pre className={css.codeBlk}>{formatMetadata(data.metadataText)}</pre>
+            </details>
+          ) : null}
+        </>
+      ) : null}
+    </ModalShell>
   )
 }
 
@@ -1017,99 +1058,91 @@ function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory, refres
 
   return (
     <>
-    <div className={css.overlay} role="dialog" aria-modal="true">
-      <div className={`${css.modal} ${css.addModal}`}>
-        <div className={css.modalHead}>
-          <h3 className={css.modalTitle}>{t('addSkill')}</h3>
-          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
-        </div>
-        <div className={css.modalBody}>
-          <div className={`${css.tabs} ${css.innerTabs}`} role="tablist">
-            <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => switchTab('upload')}>{t('addTabUpload')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => switchTab('command')}>{t('addTabCommand')}</button>
-            <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => switchTab('localdir')}>{t('addTabDir')}</button>
-          </div>
-
-          <div className={css.addPanel}>
-          {tab === 'upload' ? (
-            <label
-              className={`${css.dropzone} ${dragging ? css.dragging : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-            >
-              <span className={css.dropzoneIcon}><IconFolderOpenOutline16 size={28} /></span>
-              <div className={css.dropTitle}>{t('dropTitle')}</div>
-              <div className={css.dropHint}>{t('dropHint')}</div>
-              <input type="file" accept=".zip,.md" className={css.fileInput} onChange={onFile} />
-              {zipName !== '' ? <div className={css.fileName}>{zipName}</div> : null}
-            </label>
-          ) : null}
-
-          {tab === 'command' ? (
-            <div className={css.command}>
-              <label className={css.fieldLabel}>{t('commandLabel')}</label>
-              <input className={css.input} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('commandPlaceholder')} spellCheck={false} />
-              <p className={css.confHint}>{t('commandHint')}</p>
-            </div>
-          ) : null}
-
-          {tab === 'localdir' ? (
-            <div className={css.command}>
-              <div className={css.dirHintRow}>
-                <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
-                <span className={css.dirHintInline}>{t('dirHint')}</span>
-              </div>
-              {dir !== '' ? <p className={css.dirPath}>{dir}</p> : null}
-              {dirSkills.length > 0 ? (
-                <div className={css.skillPick}>
-                  <div className={css.fieldLabel}>{t('pickSkills')}</div>
-                  {dirSkills.map((s) => (
-                    <label className={css.pickRow} key={s.name}>
-                      <span className={css.check}>
-                        <input type="checkbox" checked={selectedSkills.includes(s.name)} onChange={() => toggleSkill(s.name)} />
-                        <span className={css.checkMark} />
-                      </span>
-                      <div className={css.pickText}>
-                        <div className={css.pickName}>{s.name}</div>
-                        <div className={css.pickDesc}>{s.description}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <label className={css.switchRow}>
-            <span className={css.enableLabel}>{t('addModelInvocable')}</span>
-            <span className={css.switch}>
-              <input type="checkbox" checked={modelInvocable} onChange={(e) => setModelInvocable(e.target.checked)} />
-              <span className={css.track} />
-              <span className={css.thumb} />
-            </span>
-          </label>
-
-          <label className={css.rootRow}>
-            <span className={css.enableLabel}>{t('addRoot')}</span>
-            <select className={css.select} value={root} onChange={(e) => setRoot(e.target.value as 'user' | 'project')}>
-              <option value="user">{t('rootUser')}</option>
-              <option value="project">{t('rootProject')}</option>
-            </select>
-            <span className={css.fieldPath}>{rootPath}</span>
-          </label>
-
-          {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
-          </div>
-
-          <div className={css.actions}>
-            <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
-            <span className={css.spacer} />
-            <button type="button" className={css.btnPrimary} disabled={!canSubmit || busy} onClick={() => void submit()}>{t('addSubmit')}</button>
-          </div>
-        </div>
+    <ModalShell title={t('addSkill')} onClose={onClose} className={css.addModal} closeOnMask={false} t={t}>
+      <div className={`${css.tabs} ${css.innerTabs}`} role="tablist">
+        <button type="button" className={css.tab} data-active={tab === 'upload'} role="tab" onClick={() => switchTab('upload')}>{t('addTabUpload')}</button>
+        <button type="button" className={css.tab} data-active={tab === 'command'} role="tab" onClick={() => switchTab('command')}>{t('addTabCommand')}</button>
+        <button type="button" className={css.tab} data-active={tab === 'localdir'} role="tab" onClick={() => switchTab('localdir')}>{t('addTabDir')}</button>
       </div>
-    </div>
+
+      <div className={css.addPanel}>
+      {tab === 'upload' ? (
+        <label
+          className={`${css.dropzone} ${dragging ? css.dragging : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
+          <span className={css.dropzoneIcon}><IconFolderOpenOutline16 size={28} /></span>
+          <div className={css.dropTitle}>{t('dropTitle')}</div>
+          <div className={css.dropHint}>{t('dropHint')}</div>
+          <input type="file" accept=".zip,.md" className={css.fileInput} onChange={onFile} />
+          {zipName !== '' ? <div className={css.fileName}>{zipName}</div> : null}
+        </label>
+      ) : null}
+
+      {tab === 'command' ? (
+        <div className={css.command}>
+          <label className={css.fieldLabel}>{t('commandLabel')}</label>
+          <input className={css.input} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('commandPlaceholder')} spellCheck={false} />
+          <p className={css.confHint}>{t('commandHint')}</p>
+        </div>
+      ) : null}
+
+      {tab === 'localdir' ? (
+        <div className={css.command}>
+          <div className={css.dirHintRow}>
+            <button type="button" className={css.btnGhost} onClick={() => void browseDir()}>{t('browseDir')}</button>
+            <span className={css.dirHintInline}>{t('dirHint')}</span>
+          </div>
+          {dir !== '' ? <p className={css.dirPath}>{dir}</p> : null}
+          {dirSkills.length > 0 ? (
+            <div className={css.skillPick}>
+              <div className={css.fieldLabel}>{t('pickSkills')}</div>
+              {dirSkills.map((s) => (
+                <label className={css.pickRow} key={s.name}>
+                  <span className={css.check}>
+                    <input type="checkbox" checked={selectedSkills.includes(s.name)} onChange={() => toggleSkill(s.name)} />
+                    <span className={css.checkMark} />
+                  </span>
+                  <div className={css.pickText}>
+                    <div className={css.pickName}>{s.name}</div>
+                    <div className={css.pickDesc}>{s.description}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <label className={css.switchRow}>
+        <span className={css.enableLabel}>{t('addModelInvocable')}</span>
+        <span className={css.switch}>
+          <input type="checkbox" checked={modelInvocable} onChange={(e) => setModelInvocable(e.target.checked)} />
+          <span className={css.track} />
+          <span className={css.thumb} />
+        </span>
+      </label>
+
+      <label className={css.rootRow}>
+        <span className={css.enableLabel}>{t('addRoot')}</span>
+        <select className={css.select} value={root} onChange={(e) => setRoot(e.target.value as 'user' | 'project')}>
+          <option value="user">{t('rootUser')}</option>
+          <option value="project">{t('rootProject')}</option>
+        </select>
+        <span className={css.fieldPath}>{rootPath}</span>
+      </label>
+
+      {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
+      </div>
+
+      <div className={css.actions}>
+        <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
+        <span className={css.spacer} />
+        <button type="button" className={css.btnPrimary} disabled={!canSubmit || busy} onClick={() => void submit()}>{t('addSubmit')}</button>
+      </div>
+    </ModalShell>
     {confirm !== null ? (
       <Modal
         open
@@ -1321,22 +1354,36 @@ function McpCard({ group, onOpen, onSetEnabled, onRemove, t }: {
   )
 }
 
+/** The CatalogToolRow the shared tool detail modal needs for one MCP tool row —
+ * live rows pass through; managed rows are synthesized with the server attribution. */
+function mcpToolRowFor(tool: CatalogMcpTool | CatalogToolRow, serverName: string): CatalogToolRow {
+  if ('channel' in tool) return tool
+  return {
+    name: tool.name,
+    description: tool.description,
+    channel: 'mcp',
+    confidence: 'exact',
+    serverName,
+    ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
+  }
+}
+
 /** Manage-modal for one MCP server (opened from the tile): config JSON,
- * credential inputs, per-tool enable toggles, and discover. The inner view
- * deliberately differs from the builtin/plugin detail modal (desc/params only)
- * because MCP servers are configurable, not just inspectable. */
-function McpServerManageModal({ group, discovering, onClose, onSetCredential, onSetToolEnabled, onDiscover, t }: {
+ * credential inputs, per-tool enable toggles, and discover. Clicking a tool row
+ * opens the SHARED tool detail modal (stacked on top) for its parameter schema —
+ * the manage modal stays server-level. */
+function McpServerManageModal({ group, discovering, onClose, onSetCredential, onSetToolEnabled, onDiscover, onOpenTool, t }: {
   group: McpGroup
   discovering: boolean
   onClose: () => void
   onSetCredential: (ref: string, value: string) => Promise<boolean>
   onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
   onDiscover: (serverName: string) => Promise<void>
+  onOpenTool: (tool: CatalogToolRow) => void
   t: (key: CapabilityCatalogKey) => string
 }) {
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
-  const [schemaFor, setSchemaFor] = useState<string | null>(null)
   const [toolQuery, setToolQuery] = useState('')
 
   const saveCred = async (ref: string): Promise<void> => {
@@ -1349,7 +1396,6 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
   }
 
   const runDiscover = async (): Promise<void> => {
-    setSchemaFor(null)
     await onDiscover(group.serverName)
   }
 
@@ -1363,7 +1409,7 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
   const enabledCount = group.managed ? group.tools.filter((tool) => tool.enabled).length : live.length
 
   return (
-    <Modal open onClose={onClose} title={group.serverName} className={css.toolDetailModal ?? ''}>
+    <ModalShell title={group.serverName} onClose={onClose} t={t}>
       <div className={css.mcpBody}>
         {group.managed && group.config !== undefined ? (
           <>
@@ -1449,8 +1495,7 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
                   tool={tool}
                   managed={group.managed}
                   serverName={group.serverName}
-                  schemaFor={schemaFor}
-                  setSchemaFor={setSchemaFor}
+                  onOpen={(row) => onOpenTool(mcpToolRowFor(row, group.serverName))}
                   onSetToolEnabled={group.managed ? onSetToolEnabled : undefined}
                   t={t}
                 />
@@ -1471,28 +1516,26 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
           </div>
         ) : null}
       </div>
-    </Modal>
+    </ModalShell>
   )
 }
 
-/** One tool row inside a MCP server group: name/desc (click to toggle schema) +
- * a per-tool enable switch (managed servers only). */
-function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetToolEnabled, t }: {
+/** One tool row inside a MCP server group: name/desc (click to open the shared
+ * tool detail modal) + a per-tool enable switch (managed servers only). */
+function McpToolRow({ tool, managed, serverName, onOpen, onSetToolEnabled, t }: {
   tool: CatalogMcpTool | CatalogToolRow
   managed: boolean
   serverName: string
-  schemaFor: string | null
-  setSchemaFor: (name: string | null) => void
+  onOpen: (tool: CatalogMcpTool | CatalogToolRow) => void
   onSetToolEnabled: ((serverName: string, tool: string, enabled: boolean) => Promise<void>) | undefined
   t: (key: CapabilityCatalogKey) => string
 }) {
   const isMcp = managed && 'enabled' in tool
   const enabled = isMcp ? (tool as CatalogMcpTool).enabled : true
-  const open = schemaFor === tool.name
   return (
     <div key={tool.name} className={css.mcpToolCard}>
       <div className={css.mcpToolRow}>
-        <button type="button" className={css.mcpToolMain} onClick={() => setSchemaFor(open ? null : tool.name)} aria-expanded={open}>
+        <button type="button" className={css.mcpToolMain} onClick={() => onOpen(tool)}>
           <span className={css.mcpToolName}>{tool.name}</span>
           <span className={css.mcpToolDesc}>{tool.description}</span>
         </button>
@@ -1513,11 +1556,6 @@ function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetT
           </label>
         ) : null}
       </div>
-      {open ? (
-        <div className={css.mcpToolSchemaBody}>
-          <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} compact t={t} />
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -1579,88 +1617,80 @@ function AddMcpDialog({ onClose, mcpAdd, mcpSetCredential, mcpDiscover, refreshM
   }
 
   return (
-    <div className={css.overlay} role="dialog" aria-modal="true">
-      <div className={`${css.modal} ${css.addModal}`}>
-        <div className={css.modalHead}>
-          <h3 className={css.modalTitle}>{t('mcpAddTitled')}</h3>
-          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
-        </div>
-        <div className={css.modalBody}>
-          <p className={css.confHint}>{t('mcpAddHint')}</p>
-          <textarea
-            className={css.textarea}
-            rows={6}
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            placeholder={t('mcpPastePlaceholder')}
+    <ModalShell title={t('mcpAddTitled')} onClose={onClose} className={css.addModal} closeOnMask={false} t={t}>
+      <p className={css.confHint}>{t('mcpAddHint')}</p>
+      <textarea
+        className={css.textarea}
+        rows={6}
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        placeholder={t('mcpPastePlaceholder')}
+        spellCheck={false}
+      />
+
+      {parseError ? <div className={`${css.addMsg} ${css.addMsgErr}`}>{t('mcpParseFailed')}</div> : null}
+      {parsed === null ? null : (
+        <div className={css.addPanel}>
+          <label className={css.fieldLabel}>{t('mcpServerName')}</label>
+          <input
+            className={css.input}
+            value={serverName}
+            onChange={(e) => setServerName(e.target.value)}
+            placeholder={preamble?.suggestedName !== '' && preamble?.suggestedName !== undefined ? preamble.suggestedName : t('mcpServerNamePlaceholder')}
             spellCheck={false}
           />
 
-          {parseError ? <div className={`${css.addMsg} ${css.addMsgErr}`}>{t('mcpParseFailed')}</div> : null}
-          {parsed === null ? null : (
-            <div className={css.addPanel}>
-              <label className={css.fieldLabel}>{t('mcpServerName')}</label>
-              <input
-                className={css.input}
-                value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
-                placeholder={preamble?.suggestedName !== '' && preamble?.suggestedName !== undefined ? preamble.suggestedName : t('mcpServerNamePlaceholder')}
-                spellCheck={false}
-              />
-
-              <div className={css.meta}>
-                <span className={css.metaKey}>{t('mcpTransport')}</span>
-                <span className={css.metaVal}>{transportLabel(t, parsed.config.transport)}</span>
-              </div>
-
-              <div>
-                <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
-                <pre className={css.mcpConfig}>{configDisplay({ ...parsed.config, enabled })}</pre>
-              </div>
-
-              {parsed.credentials.length > 0 ? (
-                <div>
-                  <div className={css.confHint}>{t('mcpNeedsCred')}</div>
-                  {parsed.credentials.map((cred) => (
-                    <div className={css.credRow} key={cred.ref}>
-                      <label className={css.credLabel}>{cred.label}<span className={`${css.badge} ${css.badgeWarn}`}>{t('mcpCredBadge')}</span></label>
-                      <div className={css.credInputRow}>
-                        <div className={css.inputWrap}>
-                          <input
-                            className={css.input}
-                            type="password"
-                            value={credValues[cred.ref] ?? ''}
-                            placeholder={t('credPlaceholder')}
-                            onChange={(e) => setCredValues((s) => ({ ...s, [cred.ref]: e.target.value }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <label className={css.switchRow}>
-                <span className={css.enableLabel}>{t('mcpEnabled')}</span>
-                <span className={css.switch}>
-                  <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-                  <span className={css.track} />
-                  <span className={css.thumb} />
-                </span>
-              </label>
-
-              {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
-            </div>
-          )}
-
-          <div className={css.actions}>
-            <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
-            <span className={css.spacer} />
-            <button type="button" className={css.btnPrimary} disabled={!canSubmit || busy} onClick={() => void submit()}>{t('mcpAdd')}</button>
+          <div className={css.meta}>
+            <span className={css.metaKey}>{t('mcpTransport')}</span>
+            <span className={css.metaVal}>{transportLabel(t, parsed.config.transport)}</span>
           </div>
+
+          <div>
+            <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
+            <pre className={css.mcpConfig}>{configDisplay({ ...parsed.config, enabled })}</pre>
+          </div>
+
+          {parsed.credentials.length > 0 ? (
+            <div>
+              <div className={css.confHint}>{t('mcpNeedsCred')}</div>
+              {parsed.credentials.map((cred) => (
+                <div className={css.credRow} key={cred.ref}>
+                  <label className={css.credLabel}>{cred.label}<span className={`${css.badge} ${css.badgeWarn}`}>{t('mcpCredBadge')}</span></label>
+                  <div className={css.credInputRow}>
+                    <div className={css.inputWrap}>
+                      <input
+                        className={css.input}
+                        type="password"
+                        value={credValues[cred.ref] ?? ''}
+                        placeholder={t('credPlaceholder')}
+                        onChange={(e) => setCredValues((s) => ({ ...s, [cred.ref]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <label className={css.switchRow}>
+            <span className={css.enableLabel}>{t('mcpEnabled')}</span>
+            <span className={css.switch}>
+              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+              <span className={css.track} />
+              <span className={css.thumb} />
+            </span>
+          </label>
+
+          {msg !== null ? <div className={`${css.addMsg} ${msg.ok ? css.addMsgOk : css.addMsgErr}`}>{msg.text}</div> : null}
         </div>
+      )}
+
+      <div className={css.actions}>
+        <button type="button" className={css.btnGhost} onClick={onClose}>{t('cancel')}</button>
+        <span className={css.spacer} />
+        <button type="button" className={css.btnPrimary} disabled={!canSubmit || busy} onClick={() => void submit()}>{t('mcpAdd')}</button>
       </div>
-    </div>
+    </ModalShell>
   )
 }
 
