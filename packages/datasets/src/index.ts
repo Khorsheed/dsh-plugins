@@ -19,6 +19,17 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
+
+/**
+ * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
+ * seam S12): the catalog reads this `Symbol.for`-keyed tag back through
+ * `ctx.tools.get()`. The tag is host-side only — the model-facing schema is
+ * rebuilt by `schemaOf()` and never carries it.
+ */
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: '@khorsheed/dsh-datasets' },
+  })
 import { resolveStateRoot, resolveWorktreeRoot } from './defaults.ts'
 import { formatList, formatShow, formatWarnings } from './format.ts'
 import {
@@ -110,7 +121,7 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     return error instanceof Error ? error : new Error(String(error))
   }
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_list',
     description:
       'List the datasets in the session\'s bound dataset repository, or one dataset\'s items with their '
@@ -131,9 +142,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_show',
     description:
       'Show one dataset (or one item of it) at a commit: summary, the full descriptor passthrough, and the '
@@ -154,9 +165,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_describe',
     description:
       'Pass one dataset\'s descriptor (dataset.json) through verbatim. The plugin validates its shape but '
@@ -176,9 +187,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_read',
     description:
       'Read one file of one item layer, straight from the git object at the pinned commit (`git show '
@@ -218,9 +229,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_snapshot',
     description:
       'Pin a dataset to its current commit: returns {repoPath, commit, datasetId}. Pass the commit back to '
@@ -240,9 +251,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_worktree_path',
     description:
       'Materialize a whole-layer read-only view: a managed git worktree at the pinned commit, sparse-checkout-'
@@ -273,9 +284,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_put_item',
     description:
       'Create or update one item IN THE WORKING TREE: write its metadata (item.json) and/or layer files. '
@@ -317,9 +328,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
-  ctx.tools.register(defineTool({
+  ctx.tools.register(definePluginTool(defineTool({
     name: 'datasets_validate',
     description:
       'Validate a dataset repository (or one dataset of it) for authoring hygiene: descriptor shape errors '
@@ -342,7 +353,7 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  }))
+  })))
 
   ctx.commands.register({
     name: 'datasets',
