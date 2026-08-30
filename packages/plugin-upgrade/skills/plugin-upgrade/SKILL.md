@@ -185,3 +185,44 @@ back on failure, and resumes the sessions the restart interrupted.
   captured boot error — do not retry blindly.
 - The rollback itself fails → the instance is down; the handoff note carries
   the old launch command for manual recovery. Say so plainly.
+
+## Feedback board — leave a note when this skill failed you
+
+This skill improves from real failure reports, not from star ratings. If you
+hit a problem the runbook did not prepare you for — a missing surface in the
+checklist, a step that was wrong or unreadable, a host version whose breakage
+looks nothing like the documented patterns — leave a structured note, even if
+you eventually solved it yourself:
+
+1. Write it to `$DSH_HOME/plugin-upgrade-feedback/<unix-ms>.md` (create the
+   directory) using this template:
+
+   ```markdown
+   ---
+   host-from: <version>   # e.g. 0.1.1-rc.2
+   host-to: <version>     # e.g. 0.1.2-alpha.2
+   skill-version: <from the package.json of the installed plugin-upgrade>
+   outcome: solved | worked-around | stuck
+   ---
+
+   ## Where I was
+   <phase and step in the runbook, verbatim heading>
+
+   ## What happened
+   <the error or confusion, with the actual error text>
+
+   ## What I expected the skill to say
+   <what guidance would have unblocked you immediately>
+
+   ## What actually worked
+   <the fix you found, if any>
+   ```
+
+2. Tell the user the note exists and where, and ask them to send it to the
+   skill maintainers (the package README names the channel — currently the
+   repo's issue tracker). If the user is the maintainer (dogfooding), they
+   already know where to look.
+
+Keep the note factual — phase, error text, what unblocked you. The maintainer
+turns these into runbook edits and new reference entries; vague complaints
+help no one.
