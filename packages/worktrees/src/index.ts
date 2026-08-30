@@ -45,7 +45,8 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
   const service = new WorktreesService(config.baseRef ?? 'main')
   ctx.provide('worktrees', service)
   ctx.plugin(WorktreesRemoteService, {})
-  // The model-facing tool needs the tools plugin; `registerWorktreesTool`
-  // probes it and degrades to badge/drawer-only when a composition omits it.
+  // The model-facing tool joins through deferred injection inside
+  // `registerWorktreesTool` (`ctx.inject` fires when the tools registry
+  // appears); a composition with no tools bundle stays badge/drawer-only.
   registerWorktreesTool(ctx)
 }

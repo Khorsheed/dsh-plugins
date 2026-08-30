@@ -43,77 +43,80 @@ const description = 'Manage the session\'s git worktrees. '
 /**
  * Register the model-facing `worktrees` tool.
  * @param ctx - the Cordis context (must already carry `ctx.worktrees`).
- * @returns whether the tool was registered (false when the tools registry is
- *   absent — a badge/drawer-only degrade).
  */
-export function registerWorktreesTool(ctx: Context): boolean {
-  // Probe the tools registry via ctx.get (property access `ctx.tools` requires
-  // the plugin to declare `inject: ['tools']`, which would make a composition
-  // without the tools bundle pend the WHOLE plugin). Probing lets the tool be
-  // skipped while the badge/drawer still mount.
-  const tools = ctx.get?.('tools') as { register: (definition: ReturnType<typeof defineTool>) => unknown } | undefined
-  if (tools === undefined) return false
-  tools.register(definePluginTool(defineTool({
-    name: 'worktrees',
-    description,
-    parameters: {
-      action: {
-        type: 'string',
-        required: true,
-        enum: ['list', 'switch', 'create', 'remove'],
-        description: 'What to do: list, switch, create, or remove a worktree.',
-      },
-      path: {
-        type: 'string',
-        description: 'Worktree directory. Required for switch/create/remove; ignored for list.',
-      },
-      branch: {
-        type: 'string',
-        description: 'Branch to create for `create`. Omit to checkout the base branch.',
-      },
-      confirm: {
-        type: 'boolean',
-        description: 'Must be true for `remove` (the caller confirmed with the user).',
-      },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args, value) => [{ type: 'text', text: String(value) }],
-    },
-    async execute(args: WorktreesToolArgs, exec): Promise<string> {
-      if (exec.agent === undefined) return JSON.stringify({ error: 'worktrees: no session agent' })
-      const service = ctx.worktrees
-      const sessionId = exec.agent.id
-      const cwd = exec.agent.session.header.cwd ?? ''
-      if (cwd === '') return JSON.stringify({ error: 'worktrees: session has no working directory' })
-      try {
-        switch (args.action) {
-          case 'list': {
-            const worktrees = await service.listWorktrees(cwd)
-            return JSON.stringify({ ok: true, worktrees })
+export function registerWorktreesTool(ctx: Context): void {
+  // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
+  // tools registry's own mount order on the real composition tree and loses,
+  // silently never registering the tool (the badge/drawer still mount, so the
+  // absence is invisible). `ctx.inject` fires when the registry appears and
+  // never fires in a composition without one — so a composition with no tools
+  // bundle stays badge/drawer-only and never fails boot. Same fix room already
+  // shipped (packages/room/src/index.ts:136-139).
+  ctx.inject(['tools'], (toolsCtx) => {
+    toolsCtx.effect(
+      () => toolsCtx.tools.register(definePluginTool(defineTool({
+        name: 'worktrees',
+        description,
+        parameters: {
+          action: {
+            type: 'string',
+            required: true,
+            enum: ['list', 'switch', 'create', 'remove'],
+            description: 'What to do: list, switch, create, or remove a worktree.',
+          },
+          path: {
+            type: 'string',
+            description: 'Worktree directory. Required for switch/create/remove; ignored for list.',
+          },
+          branch: {
+            type: 'string',
+            description: 'Branch to create for `create`. Omit to checkout the base branch.',
+          },
+          confirm: {
+            type: 'boolean',
+            description: 'Must be true for `remove` (the caller confirmed with the user).',
+          },
+        },
+        output: {
+          schema: { type: 'string' },
+          render: (_args, value) => [{ type: 'text', text: String(value) }],
+        },
+        async execute(args: WorktreesToolArgs, exec): Promise<string> {
+          if (exec.agent === undefined) return JSON.stringify({ error: 'worktrees: no session agent' })
+          const service = ctx.worktrees
+          const sessionId = exec.agent.id
+          const cwd = exec.agent.session.header.cwd ?? ''
+          if (cwd === '') return JSON.stringify({ error: 'worktrees: session has no working directory' })
+          try {
+            switch (args.action) {
+              case 'list': {
+                const worktrees = await service.listWorktrees(cwd)
+                return JSON.stringify({ ok: true, worktrees })
+              }
+              case 'switch': {
+                if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: switch requires a path' })
+                const info = await service.switchWorktree(sessionId, cwd, args.path)
+                return JSON.stringify({ ok: true, active: info })
+              }
+              case 'create': {
+                if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: create requires a path' })
+                const info = await service.createWorktree(sessionId, cwd, args.path, args.branch)
+                return JSON.stringify({ ok: true, created: info })
+              }
+              case 'remove': {
+                if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: remove requires a path' })
+                const result = await service.removeWorktree(sessionId, cwd, args.path, args.confirm === true)
+                return JSON.stringify({ ok: true, removed: args.path, switchedTo: result.switchedTo })
+              }
+              default:
+                return JSON.stringify({ error: `worktrees: unknown action ${String(args.action)}` })
+            }
+          } catch (error) {
+            return JSON.stringify({ error: `worktrees: ${error instanceof Error ? error.message : String(error)}` })
           }
-          case 'switch': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: switch requires a path' })
-            const info = await service.switchWorktree(sessionId, cwd, args.path)
-            return JSON.stringify({ ok: true, active: info })
-          }
-          case 'create': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: create requires a path' })
-            const info = await service.createWorktree(sessionId, cwd, args.path, args.branch)
-            return JSON.stringify({ ok: true, created: info })
-          }
-          case 'remove': {
-            if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: remove requires a path' })
-            const result = await service.removeWorktree(sessionId, cwd, args.path, args.confirm === true)
-            return JSON.stringify({ ok: true, removed: args.path, switchedTo: result.switchedTo })
-          }
-          default:
-            return JSON.stringify({ error: `worktrees: unknown action ${String(args.action)}` })
-        }
-      } catch (error) {
-        return JSON.stringify({ error: `worktrees: ${error instanceof Error ? error.message : String(error)}` })
-      }
-    },
-  })))
-  return true
+        },
+      }))),
+      'worktrees: worktrees tool',
+    )
+  })
 }
