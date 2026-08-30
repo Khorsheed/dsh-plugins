@@ -194,8 +194,11 @@ checklist, a step that was wrong or unreadable, a host version whose breakage
 looks nothing like the documented patterns — leave a structured note, even if
 you eventually solved it yourself:
 
-1. Write it to `$DSH_HOME/plugin-upgrade-feedback/<unix-ms>.md` (create the
-   directory) using this template:
+1. Write it to `$DSH_HOME/skill-feedback/plugin-upgrade/<unix-ms>.md` — the
+   shared board root is `skill-feedback/`, one subdirectory per skill, so any
+   skill that adopts this convention lands in the same place and attribution
+   is the subdir name plus the frontmatter (create the directory) using this
+   template:
 
    ```markdown
    ---
