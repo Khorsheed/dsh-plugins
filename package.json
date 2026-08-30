@@ -15,6 +15,7 @@
     "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts",
     "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
+    "sync:profile": "tsx scripts/sync-profile-mirror.mts",
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
     "hooks:install": "node scripts/setup-hooks.mjs",
     "deploy:3080": "tsx scripts/deploy-3080.mts",

@@ -78,6 +78,9 @@ jobs:
       - name: Script tests (checkers' own specs)
         run: pnpm run test:scripts
 
+      - name: Profile mirror check
+        run: pnpm run sync:profile web-basic --check
+
       - name: Doc gates
         run: |
           pnpm run verify-agent-note-format
