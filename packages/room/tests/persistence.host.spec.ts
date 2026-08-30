@@ -62,9 +62,15 @@ async function makeFixture(mountRoom: boolean): Promise<Fixture> {
 }
 
 describe('room journal persistence', () => {
-  // ORDER MATTERS: this control must run before any RoomService mount in this
-  // process — registration mutates the process-global catalog.
+  // Registration happens at module load (not service construction), so this
+  // process's catalog already holds the room vocabulary: the "not mounted"
+  // control simulates a build without room by temporarily removing it.
   it('refuses a room log when room is not mounted (the guard works)', async () => {
+    const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
+    const removed: string[] = []
+    for (const type of ROOM_EVENT_TYPES) {
+      if (catalog.delete(type)) removed.push(type)
+    }
     const fix = await makeFixture(false)
     try {
       const id = SessionId('foreign-room')
@@ -76,6 +82,7 @@ describe('room journal persistence', () => {
       expect(failure?.name).toBe('SessionFormatUnsupportedError')
       expect(failure?.message).toMatch(/not marked ignorable/)
     } finally {
+      for (const type of removed) catalog.add(type)
       await fix.cleanup()
     }
   })

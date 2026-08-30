@@ -101,6 +101,19 @@ function taskTitle(text: string): string {
  * CREATED apart from a session — inviting an agent into any session promotes
  * it (see ensureRoom; the room-session-promotion proposal).
  */
+
+// Join the persistence catalog at MODULE LOAD, not in the RoomService
+// constructor: cordis constructs the service lazily on first use, so a
+// constructor-time registration arrives too late — opening a persisted room
+// before any room Remote call hit SessionFormatUnsupportedError (verified on
+// prod 3080: the open failed until a room Remote forced construction). The
+// read path refuses logs with out-of-catalog types, so the vocabulary must be
+// registered when the plugin module is imported, before any session loads.
+{
+  const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
+  for (const type of ROOM_EVENT_TYPES) catalog.add(type)
+}
+
 export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
@@ -115,11 +128,6 @@ export class RoomService extends TypertRemoteService {
    */
   constructor(ctx: Context) {
     super(ctx, 'room')
-    // Join the persistence catalog BEFORE any room event can be appended:
-    // the read path refuses logs with out-of-catalog types, so a room written
-    // by this build reloads only because the vocabulary is registered here.
-    const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
-    for (const type of ROOM_EVENT_TYPES) catalog.add(type)
     this.engine = new DispatchEngine(ctx)
     // The tools registry joins through DEFERRED injection, not a constructor
     // probe: an apply-time ctx.get races the registry's own mount order (the
