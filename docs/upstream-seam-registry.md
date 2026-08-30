@@ -100,6 +100,15 @@
 - **退役条件**：官方提供能保留原始 provenance、又投影成 assistant-role（或至少明确的"历史引用"语义）的持久化事件/投影机制——例如插件可 append 一个带 `source`/`op` 标记、模型侧投影为 context-引用而非新指令的事件；或提供"重放历史助手内容 seam"。落地后 `restore` 改走该 seam，`RESTORED_ASSISTANT_NOTICE` 前缀与 `restore-assistant` 用户消息退场，UI 保持。
 - **状态**：绕行中（@khorsheed/dsh-client-message-tools；未上报官方，等官方 rc 评估是否已有可用机制）。
 
+### S12. 工具注册表不暴露来源（ToolSchema 无 source/owner）
+
+- **需求**：`ctx.tools.schemas()` 只投影 `{ name, description, parameters }`，不携带「官方内置 / 插件 / MCP / 哪个插件注册的」来源。任何下游（能力目录、审计、UI 分组）都无法归因工具来源。
+- **为什么 catalog 拿不到**：`ToolSchema`（`@deepseek-ai/dsh-llm`）只有三字段；`ToolsRegistry.schemaOf()`（`packages/core/tools/src/index.ts:1256`）白名单化时硬编码这三个字段。catalog 只能靠 `mcp__` 前缀 / 官方白名单 / 启动时基线差分猜测 channel，于是**启动时已注册的插件工具（`subagent_kimi` / `subagent_dsh`、message-tools 等）全被误判为「内置（推断）」**，插件分段恒为 0。
+- **建议的官方改动**：`ToolSchema` 加可选 `source`（`'official' | 'plugin' | 'mcp'`）与可选 `owner`（模块/插件 id）。`register()` 已经过 Cordis `this.ctx` effect（`index.ts:1057`），**layer/模块身份就在作用域内**——host 无需注册方额外传参即可自动捕获来源；`schemaOf()` 把新字段带出即可。全可选 + 缺省 `builtin`，现有契约零破坏。
+- **现状绕行**：启发式归因（catalog 侧），不精确；调研后有两条**无需上游改动**的社区路径（`docs/upstream-proposals/2026-08-30-tool-origin-provenance.codex-findings.md`）：①社区自持 `ToolDefinition[Symbol.for('dsh.tool.origin')]` 元数据，经 `ctx.tools.get()` 读回（精确、长期）；②扫已装插件 `dsh.bundle.patch` 的 `toolName` × `ctx.loader.entries()` 活跃条目求交（即时修复已装 self-mounting 插件）。
+- **退役条件**：`ToolSchema` 带 `source`/`owner` 后，catalog 的 `attributeToolChannel` 首选读真实来源，启发式退为兜底。详见提案 `docs/upstream-proposals/tool-origin-provenance.md`。
+- **状态**：绕行中（@khorsheed/dsh-capability-catalog；提案已写，官方落地即退役）。
+
 
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
