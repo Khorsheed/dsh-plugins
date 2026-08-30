@@ -15,7 +15,7 @@ codex 折叠层获得与 kimi 镜像相同的 skip 开关，按本包惯例命�
 driver（`live-driver.ts`）对照 kimi 的 token 模式机制：
 
 - delta 累积进 `roundThink` / `roundText`，每个流式 chunk 的 seq 记入 `chunkSeqs`。chunk 块布局固定——`reasoning-delta` 在 index 0、`text-delta` 在 index 1——与最终消息的内容序一致（取代原先按 itemId 分配 index 的映射）；chunk 固定打在 `(turn, step: 1)` 而不再是 `mirrored + 1`，流式中途的 tool 折叠不会再挪动流的合并键。
-- 折叠的 tool 行排在流式 step 1 之后（token 模式下 `index + 2`），tool 开头的轮次里 tool 卡片不会与最终消息的 `(turn, step 1)` 合并键相撞。
+- 折叠的 tool 行排在流式 step 之后（token 模式下 `index + 2`），tool 开头的轮次里 tool 卡片不会与最终消息的 `(turn, step)` 合并键相撞。**2026-08-30 修订**：流式 step 不再固定为 1——固定会把整个回答抬到 tool 开头轮次的所有工具卡之上；现在改为首个 delta 时惰性保留、越过当时已完成的所有项，折叠只在达到保留值时偏移。见[惰性流式 step 笔记](../bug-fix/2026-08-30-live-token-lazy-stream-step.md)。
 - settle 链追加**一条**合成 `assistant/message`，打在同一个 `(turn, step: 1)` 上：内容 `[reasoning, text]`（经新的 `codexAssistantEvent` helper——把折叠处内联的 `createAssistantMessage` 调用导出共用）、观察到的 `thread/tokenUsage/updated` 用量、`{ surfaceOp: 'append', sourceEventSeqs: chunkSeqs }`；非 completed 轮带 `interrupted: true`，被中止的轮次合法地读作已停止。
 - 内容兜底：delta 是流的内容，但若服务端完成 item 时从未流任何 delta，skip 会把答案弄丢——此时最终消息的内容块改从折叠行推导（think 行拼成 reasoning，text 行拼成 text）。
 
@@ -30,7 +30,7 @@ event 粒度（默认）逐字不变：不 skip，用量仍挂在最后一条折
 
 ## Consequences
 
-- token 粒度 live 轮的答案只渲染一次：流活在 `(turn, step 1)`，settle 的单条合成最终消息原位替换它并带上该轮用量；被中止轮次的最终消息带 `interrupted: true`，保留合法的已停止读法。
+- token 粒度 live 轮的答案只渲染一次：流活在保留的 `(turn, step)`（仅当首个 delta 前没有任何完成项时才为 step 1——见上方 2026-08-30 修订），settle 的单条合成最终消息原位替换它并带上该轮用量；被中止轮次的最终消息带 `interrupted: true`，保留合法的已停止读法。
 - exec 路径与 event 粒度保持原折叠不变（options 参数默认关闭；`appendCodexTranscriptLine` 只是新增了调用方可忽略的返回值）。
 - kimi 笔记留下的 M2 跟进项（"re-check codex/claude-code settle mirrors"）在 codex 的流式收尾上已答复；codex 没有文件折叠方面的同类问题（它的折叠来自通知而非文件）。
 

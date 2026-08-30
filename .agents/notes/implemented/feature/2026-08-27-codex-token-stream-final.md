@@ -15,7 +15,7 @@ The codex fold gains the same skip switch kimi's mirror owns, named per the pack
 The driver (`live-driver.ts`) mirrors kimi's token-mode mechanics:
 
 - Deltas accumulate into `roundThink` / `roundText`, and every streamed chunk's seq lands in `chunkSeqs`. The chunk block layout is FIXED — `reasoning-delta` at index 0, `text-delta` at index 1 — matching the final message's content order (replacing the earlier per-item-id index map), and chunks pin to `(turn, step: 1)` instead of `mirrored + 1`, so a mid-stream tool fold cannot move the stream's merge key.
-- Folded tool lines continue AFTER the stream's step 1 (`index + 2` in token mode), so a tool-first round's tool card never collides with the final message's `(turn, step 1)` merge key.
+- Folded tool lines continue AFTER the stream's step (`index + 2` in token mode), so a tool-first round's tool card never collides with the final message's `(turn, step)` merge key. **Amended 2026-08-30:** the stream step is no longer pinned to 1 — pinning hoisted the whole answer above a tool-first round's cards. It is now reserved lazily at the first delta, past every completed item, and folds shift only at or past the reservation. See [the lazy-stream-step note](../bug-fix/2026-08-30-live-token-lazy-stream-step.md).
 - The settle chain appends ONE combined `assistant/message` at the SAME `(turn, step: 1)`: content `[reasoning, text]` via the new `codexAssistantEvent` helper (the fold's inline `createAssistantMessage` call, exported and shared), the observed `thread/tokenUsage/updated` usage, `{ surfaceOp: 'append', sourceEventSeqs: chunkSeqs }`, and `interrupted: true` on any non-completed round so a cancelled turn reads 已停止 legitimately.
 - Content fallback: deltas are the stream's content, but a server that completes items without streaming any delta would otherwise lose the answer to the skip — the final message then derives its blocks from the folded lines (think lines joined as reasoning, text lines as text).
 
@@ -30,7 +30,7 @@ Event granularity (the default) is byte-for-byte unchanged: no skip, the usage s
 
 ## Consequences
 
-- Token-granularity live rounds render the answer exactly once: the stream lives at `(turn, step 1)` and the settle's single combined final replaces it in place, carrying the round's usage; a cancelled round's final carries `interrupted: true` and keeps the legitimate 已停止 reading.
+- Token-granularity live rounds render the answer exactly once: the stream lives at its reserved `(turn, step)` (step 1 only when nothing had completed before the first delta — see the 2026-08-30 amendment above) and the settle's single combined final replaces it in place, carrying the round's usage; a cancelled round's final carries `interrupted: true` and keeps the legitimate 已停止 reading.
 - The exec path and the event granularity keep the previous fold untouched (the options parameter defaults off; `appendCodexTranscriptLine` only gained a return value callers may ignore).
 - The kimi note's M2 follow-up ("re-check codex/claude-code settle mirrors") is now answered for codex's stream completion; codex's file-fold concerns do not apply (its fold is notification-sourced, not file-sourced).
 

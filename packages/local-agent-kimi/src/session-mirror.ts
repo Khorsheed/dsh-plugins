@@ -37,6 +37,25 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
 }
 
 /**
+ * The step the next fold pass would assign in one turn (the max existing
+ * step + 1, assistant/chunk events included). The token-granularity live
+ * driver reserves its stream merge key here LAZILY at the first delta, so
+ * tool cards folded before the stream started keep their chronological
+ * place below it instead of the stream squatting on step 1.
+ * @param childSession - the run's child session.
+ * @param turn - the round's turn number.
+ * @returns the next free step in the turn.
+ */
+export function nextKimiSessionStep(childSession: Session, turn: number): number {
+  let next = 1
+  for (const event of childSession.events) {
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn === turn && typeof data.step === 'number') next = Math.max(next, data.step + 1)
+  }
+  return next
+}
+
+/**
  * Fold one non-tool transcript line into message blocks. Thinking maps to
  * the native `reasoning` block so the standard conversation renders it as
  * thinking rather than a `[思考]` text prefix; reply text stays text (content

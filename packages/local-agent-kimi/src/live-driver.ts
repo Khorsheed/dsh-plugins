@@ -52,7 +52,7 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
-import { assistantEvent } from './session-mirror.ts'
+import { assistantEvent, nextKimiSessionStep } from './session-mirror.ts'
 import type { KimiMirrorOptions } from './session-mirror.ts'
 import { guardKimiCredential } from './credential-guard.ts'
 
@@ -752,6 +752,15 @@ export class KimiAcpLiveDriver {
     let roundThink = ''
     /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
     const chunkSeqs: number[] = []
+    /**
+     * The stream's (turn, step) merge key, reserved LAZILY at the first
+     * think/text delta from the session's step ledger: every line folded
+     * before that moment stays below it, everything after folds above it —
+     * the projection renders the round's chronological order. (Pinning the
+     * stream to step 1 put the whole answer above every tool card in a
+     * tool-first round — or collided with a tool already at step 1.)
+     */
+    let streamStep: number | undefined
     /** The usage the settle fold computed for this round (rides the combined final in token mode). */
     let settleUsage: TokenUsage | undefined
     let lastMirrorAt = 0
@@ -799,10 +808,13 @@ export class KimiAcpLiveDriver {
           roundText += text
           if (granularity === 'token') {
             // The stream's block layout matches the combined final message:
-            // reasoning at index 0, reply text at index 1.
+            // reasoning at index 0, reply text at index 1. The merge key is
+            // reserved past everything folded so far, so a tool-first round
+            // renders the answer after its tool cards, not above them.
+            if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
             const event = childSession.append('assistant/chunk', {
               turn,
-              step: 1,
+              step: streamStep,
               chunk: { type: 'text-delta', index: 1, text },
             })
             chunkSeqs.push(event.seq)
@@ -814,9 +826,10 @@ export class KimiAcpLiveDriver {
         const text = content?.text ?? ''
         if (text !== '') {
           roundThink += text
+          if (streamStep === undefined) streamStep = nextKimiSessionStep(childSession, turn)
           const event = childSession.append('assistant/chunk', {
             turn,
-            step: 1,
+            step: streamStep,
             chunk: { type: 'reasoning-delta', index: 0, text },
           })
           chunkSeqs.push(event.seq)
@@ -976,8 +989,8 @@ export class KimiAcpLiveDriver {
             if (Date.now() >= deadline) break
             await delay(SETTLE_MIRROR_POLL_MS)
           }
-          // Token granularity: complete the step-1 stream with ONE combined
-          // final message at the SAME (turn, step) — the official projection
+          // Token granularity: complete the stream with ONE combined final
+          // message at the SAME (turn, step) — the official projection
           // replaces the stream with it (no duplicated content, no dangling
           // '已停止' badge) and surfaces the usage. A non-completed round is
           // marked interrupted, so a cancelled turn reads 已停止 legitimately.
@@ -988,7 +1001,9 @@ export class KimiAcpLiveDriver {
             if (blocks.length > 0) {
               childSession.append('assistant/message', {
                 turn,
-                step: 1,
+                // The stream's reserved step; a stream-less round (no deltas)
+                // puts the fallback answer past every folded line instead.
+                step: streamStep ?? nextKimiSessionStep(childSession, turn),
                 message: assistantEvent(blocks),
                 ...settleUsage !== undefined ? { usage: settleUsage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },

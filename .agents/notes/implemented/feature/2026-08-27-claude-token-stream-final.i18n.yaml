@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-claude-token-stream-final.md
-.agents/notes/implemented/feature/2026-08-27-claude-token-stream-final.md: c2848ebaeef8b63e1915dd918acb883af7b06532
-.agents/notes/implemented/feature/2026-08-27-claude-token-stream-final.zh.md: 1c5a5f2a9467ca17ad690fe3bf3de41e9a3b380d
+.agents/notes/implemented/feature/2026-08-27-claude-token-stream-final.md: 6962f533daad8e350c6dc7b7293c96512e8d5d1c
+.agents/notes/implemented/feature/2026-08-27-claude-token-stream-final.zh.md: 90062c4c5d64252b82da9e352b203af5cd887fcb
