@@ -6,19 +6,35 @@
 
 ## 环境拓扑(每个目录/实例是谁、能干嘛)
 
+先立三维正交模型(2026-08-30 定):**宿主版本**由启动用哪个检出/工具链决定,**状态**(settings/sessions/凭据)由 `DSH_HOME` 决定,**插件组合**由 `--profile` 决定。三者独立取值,环境数量 = 要同时支持的宿主版本数,而不是测试主题数——测试主题用同一 HOME 下的 `<主题>-test` profile 解决。
+
+第一条原则:**能让工具自动清的,绝不靠人记。** 一次性环境用 `$(mktemp -d)`(测完即弃,探针脚本也写在里面,不写进仓库);常驻环境只有下表这几行,其余都是僵尸的培养基。
+
 | 路径 | 角色 | 纪律 |
 |---|---|---|
 | `~/code/dsh-plugins` | 主仓(mainline) | 多 agent 共享,worktree 开发、合并回 main |
 | `~/code/deepseek-harness` | **部署检出**:prod 3080 从这里启动,guard 凭证绑定它的 HEAD | 只准 `reset --hard` 到官方 tag + guard checkpoint 提交;禁止任何其他本地改动 |
-| `~/.dsh-vanilla`(3081) | **纯净官方镜像**:npm 安装的官方宿主,零插件 | `verify:package` 的干净镜像基座,每次验证前自动比对并刷新到 registry latest;不需要任何物理镜像仓(官方最新以 npm registry 为准) |
-| `~/.dsh-acceptance`(3082) | 验收实例:候选 tarball 的人工/agent 实测 | 装了什么以它的 profile 清单为准,随验随换 |
-| `~/.dsh-official`(3080) | prod | 见下文门禁 |
+| `~/code/deepseek-harness-alpha` | 0.1.2-alpha 源码检出(3091 的宿主) | 只读使用,停在 tag |
+| `~/.dsh-official`(3080) | **prod 专用**:稳定线宿主的常驻环境,3080 是我们的稳定部署(非社区 prod) | 只有 `profiles/web`;**测试 profile 一律不许建在这里**——`settings.yaml` 是全 HOME 共享的,测试 profile 改插件配置会漏进 3080 |
+| `~/.dsh-lab` | 稳定线(rc 线)的全部测试 | 所有 `<主题>-test` profile + `web-candidate`(原 3082 验收实例);凭据软链回 official(注意:并发刷新 token 有写竞争,凭据刷新失败先怀疑这里),settings/state/sessions 与 official 隔离 |
+| `~/.dsh-alpha-check`(3091) | 0.1.2 线的提前兼容验收 | 宿主用 `deepseek-harness-alpha` 检出启动;跑的是分支 tarball,合并后换回正式产物 |
+| `~/.dsh-toolchains/stable` | 官方 npm 宿主的缓存工具链(**无状态**) | 测"社区同款体验"的基座;由 mainline 在官方发新版时主动刷新( playbook 第 4 步)。用法:`DSH_HOME=$(mktemp -d) ~/.dsh-toolchains/stable/node_modules/.bin/dsh web --port <port>` |
+| `$(mktemp -d)` | 一次性 HOME:纯净安装测试、历史兼容测试 | "纯净"是会衰减的性质,只配一次性;历史兼容用 `npx @deepseek-ai/dsh@<minHost>` 起对应版本 |
+
+已退役:`~/.dsh-vanilla`(3081)——常驻纯净 HOME 与"纯净即一次性"矛盾,由工具链缓存 + mktemp HOME 取代;`~/.dsh-acceptance`(3082)——并入 lab 的 `web-candidate`。
+
+配套约定:
+
+- **测试 profile 命名** `<主题>-test`,用完 `rm -rf $DSH_HOME/profiles/<name>`;**僵尸判据:14 天没动且无对应活跃分支/worktree**,清理前群里点名、24 小时无人认领再删(`settings.yaml.bak-*` 之类遗迹同规则)。
+- **历史兼容覆盖:floor + current + 标记中点。** 每次发布验两条:成员包声明的最低 `minHost` 和当前稳定线;中间 rc 只在某包 `dsh.compat.notes` 点名特定降级项时补验。
+- **发布前测试矩阵**(包级 build+test 之后、生产六道闸之前的中间三层,原为空白):组合级 preflight(全装配组合过一次门禁)→ 交付级全新安装与升级(mktemp HOME 从零装 + 已装实例走升级路径)→ 体验级(agent 照 README 安装 + 逐个成员装卸载,整合包必做)。
+- **prod 检出与 npm 工具链的分工**:验证 prod 配置用 `~/code/deepseek-harness` 检出;验证"用户拿到手什么样"用 toolchains 缓存的 npm 线。
 
 ## 三层环境与交付形态
 
 | 环境 | 用途 | 交付形态 | 规则 |
 |---|---|---|---|
-| 临时实例(自建 profile,如 `~/.dsh-vanilla` 或一次性 home) | 开发调试 | `link:` 仓库包目录 | 随手起、随手扔;允许带着在制品跑 |
+| 临时实例(lab 的测试 profile,或 `$(mktemp -d)` 一次性 home) | 开发调试 | `link:` 仓库包目录 | 随手起、随手扔;允许带着在制品跑 |
 | **3080(prod,`~/.dsh-official/profiles/web`)** | 统一部署 / 验收 | **只收 tarball**(`file:` tgz) | 进入 3080 = 一个显式的版本决定;不允许 link 在制品 |
 | npm | 社区验证 | `scripts/pack-dist.ts` 产物 | 3080 跑顺之后(见"放行标准"),版本必须超过已发布线 |
 
