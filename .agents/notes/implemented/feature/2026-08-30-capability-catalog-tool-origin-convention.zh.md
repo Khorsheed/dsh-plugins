@@ -16,8 +16,8 @@ Status: implemented
 
 - `tool-origin.ts`：`TOOL_ORIGIN = Symbol.for('dsh.tool.origin')`、`setToolOrigin(def, origin)`、`toolOrigin(def)`、`ToolOrigin { channel: 'plugin'|'builtin'|'mcp'; owner? }`。从包主入口再导出，插件可 `import { setToolOrigin }`；也可直接写 `def[Symbol.for('dsh.tool.origin')]`（零新增依赖）。
 - 归因：`index.ts` 用 `ctx.tools.get(name)` + `toolOrigin(def)` 构建 `toolOriginsMap(scope)`，经 `catalogSnapshot`/`projectTools`/`attributeToolChannel` 传递，后者在官方白名单/基线兜底之前优先尊重作者声明的 `channel`（精确）。未标记工具退化到既有启发式。
-- 引导 UI：工具分段栏旁一个安静的「为什么我的插件工具不在这里？」链接，弹窗解释原因并给出**规范文档路径**（`docs/tool-origin-guide.md`，可复制）让用户的可编程 agent 去读后按规范标记。
-- skill 来源标签：卡片按真实 `source` 标注（bundled→内置、runtime→插件、project-*/custom/user-* → 项目/自定义/用户），删除按钮改用 `DELETABLE_SOURCES` 驱动，不再复用「内置」标签（此前把插件 runtime 与内置混在一起）。
+- 引导 UI：工具分段栏旁一个安静且**居左**的「为什么我的插件工具不在这里？」链接，弹窗解释原因、展示规范文档路径（`docs/tool-origin-guide.md`），并复制**一整段可直接发出的说明**（引用该文档）给用户的可编程 agent。
+- skill 来源标签 + 分段过滤：卡片按真实 `source` 标注（bundled→内置、runtime→插件、project-*/custom/user-* → 项目/自定义/用户），删除按钮改用 `DELETABLE_SOURCES` 驱动（不再复用「内置」标签），技能 tab 也加了与工具一致的 `SegmentBar`（全部/内置/插件/其他 —— other = 项目/用户/自定义），共用同一 `SegmentBar` 组件与 `.segBar`/`.segBtn` 样式。
 
 ## 备选方案
 

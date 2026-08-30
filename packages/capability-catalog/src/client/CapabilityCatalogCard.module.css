@@ -261,8 +261,9 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
-/* Tool-origin guidance: a quiet link beside the segment bar + the doc-path modal. */
+/* Tool-origin guidance: a quiet left-aligned link beside the segment bar + the modal. */
 .guideLink {
+  display: block;
   border: none;
   background: transparent;
   padding: 0;
@@ -270,6 +271,7 @@
   color: var(--dsw-alias-label-tertiary);
   font: inherit;
   font-size: 12px;
+  text-align: left;
   cursor: pointer;
 }
 

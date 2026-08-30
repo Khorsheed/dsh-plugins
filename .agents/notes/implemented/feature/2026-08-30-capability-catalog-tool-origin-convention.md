@@ -16,8 +16,8 @@ This note records the community tool-origin tagging convention, its catalog-side
 
 - `tool-origin.ts`: `TOOL_ORIGIN = Symbol.for('dsh.tool.origin')`, `setToolOrigin(def, origin)`, `toolOrigin(def)`, `ToolOrigin { channel: 'plugin'|'builtin'|'mcp'; owner? }`. Re-exported from the package main so plugins can `import { setToolOrigin }`; plugins may also write `def[Symbol.for('dsh.tool.origin')]` directly (zero new dependency).
 - Attribution: `index.ts` builds `toolOriginsMap(scope)` by reading each visible tool via `ctx.tools.get(name)` + `toolOrigin(def)`; threads it through `catalogSnapshot`/`projectTools`/`attributeToolChannel`, which honors an author-declared `channel` (exact) before the whitelist/baseline fallback. Untagged tools degrade to the existing heuristics.
-- Guidance UI: a quiet 「为什么我的插件工具不在这里？」 link beside the tools segment bar opens a modal explaining the cause and offering the guideline doc path (`docs/tool-origin-guide.md`, copyable) for the user's agent to read and apply.
-- Skill source tags: the skill card now labels by the real `source` (bundled→内置, runtime→插件, project-*/custom/user-* → project/custom/user), and the delete button is driven by `DELETABLE_SOURCES` instead of reusing the 内置 tag (which conflated plugin-runtime with builtin).
+- Guidance UI: a quiet, left-aligned 「为什么我的插件工具不在这里？」 link beside the tools segment bar opens a modal explaining the cause, showing the guideline doc path (`docs/tool-origin-guide.md`) and copying a complete ready-to-send instruction (referencing that doc) for the user's agent.
+- Skill source tags + segment filter: the skill card labels by the real `source` (bundled→内置, runtime→插件, project-*/custom/user-* → project/custom/user), the delete button is driven by `DELETABLE_SOURCES` (no longer reusing the 内置 tag), and the skills tab gained a shared `SegmentBar` (全部/内置/插件/其他 — other = project/user/custom) mirroring the tools segment filter (one shared `SegmentBar` component, one `.segBar`/`.segBtn` style).
 
 ## Alternatives considered
 

@@ -21,6 +21,11 @@ import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type SortBy = 'name' | 'updated'
+/** Skills-tab segment: builtin=bundled, plugin=runtime, other=project/user/custom. */
+type SkillSegment = 'all' | 'builtin' | 'plugin' | 'other'
+/** Bucket a skill source into a segment (bundled→内置, runtime→插件, else→其他). */
+const skillBucket = (source: string): SkillSegment =>
+  source === 'bundled' ? 'builtin' : source === 'runtime' ? 'plugin' : 'other'
 
 export function CapabilityCatalogCard({
   useCatalog, detail, readSkillFile, listDirSkills, pickDirectory, setCredential, addSkill, deleteSkill, refresh,
@@ -39,6 +44,8 @@ export function CapabilityCatalogCard({
   const [sortBy, setSortBy] = useState<SortBy>('name')
   // Tool grid segment (builtin / plugin / mcp).
   const [toolSegment, setToolSegment] = useState<ToolSegment>('all')
+  // Skill grid segment (builtin=bundled / plugin=runtime / other=project+user+custom).
+  const [skillSegment, setSkillSegment] = useState<SkillSegment>('all')
   // Tool detail (click a tool card to view its full detail).
   const [toolDetail, setToolDetail] = useState<CatalogToolRow | null>(null)
   // MCP management state: the snapshot, the open add-dialog, expanded servers,
@@ -68,12 +75,18 @@ export function CapabilityCatalogCard({
   const visibleSkills = useMemo(() => {
     const q = query.trim().toLowerCase()
     const matched = skills.filter((s) =>
-      q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+      (q === '' || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+      && (skillSegment === 'all' || skillBucket(s.source) === skillSegment))
     const sorted = [...matched]
     if (sortBy === 'updated') sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     else sorted.sort((a, b) => a.name.localeCompare(b.name))
     return sorted
-  }, [skills, query, sortBy])
+  }, [skills, query, skillSegment, sortBy])
+
+  /** Per-segment counts for the skills grid. */
+  const skillBuiltinCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'builtin').length, [skills])
+  const skillPluginCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'plugin').length, [skills])
+  const skillOtherCount = useMemo(() => skills.filter((s) => skillBucket(s.source) === 'other').length, [skills])
 
   /** Per-segment counts for the three grid filters. */
   const builtinCount = useMemo(() => tools.filter((tool) => tool.channel === 'builtin').length, [tools])
@@ -168,23 +181,36 @@ export function CapabilityCatalogCard({
       </div>
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
-        <div className={css.filterBar} role="search">
-          <div className={css.searchBox}>
-            <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
-            <input
-              className={css.searchInput}
-              type="search"
-              value={query}
-              placeholder={t('searchPlaceholder')}
-              aria-label={t('searchPlaceholder')}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+        <>
+          <div className={css.filterBar} role="search">
+            <div className={css.searchBox}>
+              <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+              <input
+                className={css.searchInput}
+                type="search"
+                value={query}
+                placeholder={t('searchPlaceholder')}
+                aria-label={t('searchPlaceholder')}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <select className={css.select} value={sortBy} aria-label={t('sortBy')} onChange={(e) => setSortBy(e.target.value as SortBy)}>
+              <option value="name">{t('sortBy')}: {t('sortName')}</option>
+              <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>
+            </select>
           </div>
-          <select className={css.select} value={sortBy} aria-label={t('sortBy')} onChange={(e) => setSortBy(e.target.value as SortBy)}>
-            <option value="name">{t('sortBy')}: {t('sortName')}</option>
-            <option value="updated">{t('sortBy')}: {t('sortUpdated')}</option>
-          </select>
-        </div>
+          <SegmentBar
+            segments={[
+              { id: 'all', label: t('filterAll'), count: skills.length },
+              { id: 'builtin', label: t('builtin'), count: skillBuiltinCount },
+              { id: 'plugin', label: t('toolPlugin'), count: skillPluginCount },
+              { id: 'other', label: t('skillOther'), count: skillOtherCount },
+            ]}
+            active={skillSegment}
+            onSelect={(id) => setSkillSegment(id as SkillSegment)}
+            t={t}
+          />
+        </>
       ) : null}
 
       {!loading && kind === 'tools' && tools.length > 0 ? (
@@ -202,20 +228,17 @@ export function CapabilityCatalogCard({
               />
             </div>
           </div>
-          <div className={css.segBar} role="group" aria-label={t('source')}>
-            <button type="button" className={css.segBtn} data-active={toolSegment === 'all'} onClick={() => setToolSegment('all')}>
-              {t('filterAll')}<span className={css.tabCnt}>{tools.length}</span>
-            </button>
-            <button type="button" className={css.segBtn} data-active={toolSegment === 'builtin'} onClick={() => setToolSegment('builtin')}>
-              {t('toolBuiltin')}<span className={css.tabCnt}>{builtinCount}</span>
-            </button>
-            <button type="button" className={css.segBtn} data-active={toolSegment === 'plugin'} onClick={() => setToolSegment('plugin')}>
-              {t('toolPlugin')}<span className={css.tabCnt}>{pluginCount}</span>
-            </button>
-            <button type="button" className={css.segBtn} data-active={toolSegment === 'mcp'} onClick={() => setToolSegment('mcp')}>
-              {t('toolOther')}<span className={css.tabCnt}>{mcpGroups.length}</span>
-            </button>
-          </div>
+          <SegmentBar
+            segments={[
+              { id: 'all', label: t('filterAll'), count: tools.length },
+              { id: 'builtin', label: t('toolBuiltin'), count: builtinCount },
+              { id: 'plugin', label: t('toolPlugin'), count: pluginCount },
+              { id: 'mcp', label: t('toolOther'), count: mcpGroups.length },
+            ]}
+            active={toolSegment}
+            onSelect={(id) => setToolSegment(id as ToolSegment)}
+            t={t}
+          />
           <button type="button" className={css.guideLink} onClick={() => setToolOriginHelp(true)}>
             {t('toolOriginGuideLink')}
           </button>
@@ -320,14 +343,35 @@ export function CapabilityCatalogCard({
   )
 }
 
+/** Shared segment filter bar (tools + skills tabs): a labelled group of pill
+ * buttons each with a count, one active. One style, one markup. */
+interface SegmentDef { readonly id: string; readonly label: string; readonly count: number }
+function SegmentBar({ segments, active, onSelect, t }: {
+  segments: readonly SegmentDef[]
+  active: string
+  onSelect: (id: string) => void
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  return (
+    <div className={css.segBar} role="group" aria-label={t('source')}>
+      {segments.map((s) => (
+        <button key={s.id} type="button" className={css.segBtn} data-active={active === s.id} onClick={() => onSelect(s.id)}>
+          {s.label}<span className={css.tabCnt}>{s.count}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** Tool-origin guidance modal: explains why a plugin tool may show as builtin and
- * points the user's agent at the convention doc to tag it. */
+ * copies a ready-to-send instruction (referencing the convention doc) for the
+ * user's agent to read and apply. */
 function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
   const [copied, setCopied] = useState(false)
   const doc = 'docs/tool-origin-guide.md'
   const copyDoc = async (): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(doc)
+      await navigator.clipboard.writeText(t('toolOriginGuideCopy'))
       setCopied(true)
       setTimeout(() => setCopied(false), 1200)
     } catch { /* clipboard may be blocked */ }
