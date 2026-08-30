@@ -1434,6 +1434,111 @@ describe('supervise', () => {
     expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
   })
 
+  it('record-composition-recovery carries the detail and merges over a bare exit record', async () => {
+    const stateDir = tmpDir('guard-cli-')
+    const first = io()
+    expect(await runCli(['record-composition-recovery', '--state-dir', stateDir, '--detail', '卸载挂载行: @demo/x'], first.io)).toBe(0)
+    expect(first.out.join('')).toContain('composition rollback recovery')
+    const record = JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))
+    expect(record.compositionRecovered).toBe(true)
+    expect(record.detail).toBe('卸载挂载行: @demo/x')
+    expect(record.unexpected).toBeUndefined()
+    const second = io()
+    expect(await runCli(['record-composition-recovery', '--state-dir', stateDir], second.io)).toBe(0)
+    expect(second.out.join('')).toContain('still pending')
+    expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))).toEqual(record)
+  })
+
+  it('record-composition-recovery merges over a bare exit outcome, inheriting its initiator', async () => {
+    const stateDir = tmpDir('guard-cli-')
+    // The exit agent's bare outcome (no diagnostics) is pending; the watchdog
+    // then recovers via composition rollback — its record is the truthful one.
+    writeFileSync(join(stateDir, 'last-restart.json'), `${JSON.stringify({ exitAt: NOW, pid: 4242, initiator: 'session-owner' })}\n`)
+    const out = io()
+    expect(await runCli(['record-composition-recovery', '--state-dir', stateDir, '--detail', 'd'], out.io)).toBe(0)
+    const record = JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8'))
+    expect(record.compositionRecovered).toBe(true)
+    expect(record.initiator).toBe('session-owner')
+    // …but a pending record WITH diagnostics (a crash report) is never clobbered.
+    acknowledgeRestartRecord(stateDir, JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8')), NOW)
+    const crash = io()
+    expect(await runCli(['record-unexpected-exit', '--state-dir', stateDir], crash.io)).toBe(0)
+    expect(crash.out.join('')).toContain('left a report record')
+    const blocked = io()
+    expect(await runCli(['record-composition-recovery', '--state-dir', stateDir], blocked.io)).toBe(0)
+    expect(blocked.out.join('')).toContain('still pending')
+    expect(JSON.parse(readFileSync(join(stateDir, 'last-restart.json'), 'utf8')).unexpected).toBe(true)
+  })
+
+  it('the report text describes a composition-rollback recovery', () => {
+    const text = restartContextText({ exitAt: NOW, compositionRecovered: true }, false)
+    expect(text).toContain('回滚到上次健康的 profile 组合')
+    expect(text).toContain('composition-backup-*')
+  })
+
+  it('the watchdog snapshots the healthy composition and restores it over a boot-killing profile change', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    // A fake profile whose composition input decides whether the "instance"
+    // boots: the fixture start command fails (with an error subject OUTSIDE
+    // the repo, like a plugin in the profile's node_modules) when the patch
+    // layer carries the bad row.
+    const profileDir = join(env.home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '# good composition\n')
+    writeFileSync(join(profileDir, 'package.json'), '{"name":"profile-web"}\n')
+    const startCmd = `"${process.execPath}" -e "const fs=require('fs');const c=fs.readFileSync('${profileDir}/cordis.patch.yml','utf8');if(c.includes('bad-plugin')){console.error('Error: apply failed at ${profileDir}/node_modules/bad-plugin/index.js');process.exit(1)}require('http').createServer((q,s)=>s.end('ok')).listen(${port},'127.0.0.1')"`
+    try {
+      expect(await runCli(
+        ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', stateDir, '--repo', repo],
+        io().io,
+      )).toBe(0)
+      await waitForPort(port)
+      // Healthy boot snapshotted the composition.
+      const snap = join(stateDir, 'last-good-composition', 'cordis.patch.yml')
+      const snapDeadline = Date.now() + 5000
+      while (!existsSync(snap) && Date.now() < snapDeadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 100) })
+      }
+      expect(readFileSync(snap, 'utf8')).toContain('good composition')
+      // A plugin install lands a bad row, then the instance stops (any cause).
+      writeFileSync(join(profileDir, 'cordis.patch.yml'), '# good composition\n# + bad-plugin row\n')
+      await killListener(port)
+      // The watchdog fails to boot the bad composition, rolls the composition
+      // back to the snapshot, and comes up — service recovered, plugin unmounted.
+      const upDeadline = Date.now() + 30_000
+      let recovered = false
+      while (Date.now() < upDeadline) {
+        if ((await portListening(port)) && readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8').includes('bad-plugin') === false) {
+          recovered = true
+          break
+        }
+        await new Promise((resolve) => { setTimeout(resolve, 500) })
+      }
+      expect(recovered, 'the watchdog restored the healthy composition and the instance came up').toBe(true)
+      expect(await fetchBody(port)).toBe('ok')
+      // The failing inputs were backed up, and the recovery left a report record.
+      const backups = readdirSync(stateDir).filter(name => name.startsWith('composition-backup-'))
+      expect(backups.length).toBe(1)
+      expect(readFileSync(join(stateDir, backups[0]!, 'cordis.patch.yml'), 'utf8')).toContain('bad-plugin')
+      // The record write trails the port by the CLI spawn — wait for it.
+      const recordFile = join(stateDir, 'last-restart.json')
+      const recordDeadline = Date.now() + 5000
+      while (!existsSync(recordFile) && Date.now() < recordDeadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      const record = JSON.parse(readFileSync(recordFile, 'utf8'))
+      expect(record.compositionRecovered).toBe(true)
+      expect(record.detail).toContain('回滚 profile patch 层变更')
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 45_000)
+
   it('record-adoption carries the initiator and never overwrites a pending record', async () => {
     const stateDir = tmpDir('guard-cli-')
     const first = io()
