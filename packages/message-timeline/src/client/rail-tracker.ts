@@ -15,6 +15,7 @@
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TimelineRailState } from './slots.ts'
+import { isTimelineRowKind } from './timeline-kinds.ts'
 
 /** Horizontal inset of the rail from the scrollport's left edge (px). */
 const RAIL_LEFT_INSET = 6
@@ -115,7 +116,7 @@ export function activeRowKey(scrollport: HTMLElement, includeSteering: boolean):
   let lastAbove: string | null = null
   for (const row of scrollport.querySelectorAll<HTMLElement>('[data-chat-flow-kind]')) {
     const kind = row.dataset.chatFlowKind
-    if (kind !== 'user' && !(includeSteering && kind === 'steering')) continue
+    if (kind === undefined || !isTimelineRowKind(kind, includeSteering)) continue
     if (row.getBoundingClientRect().bottom <= viewTop) {
       lastAbove = row.dataset.chatAnchorKey ?? lastAbove
       continue
@@ -167,6 +168,12 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
   let resizeObserver: ResizeObserver | undefined
   let rafPending = false
   let warned = false
+  // Bind-generation token: every teardown (a rebind or a dispose) bumps it, so
+  // a still-pending bind frame that closed over an older token becomes stale
+  // and bails. Without this, a bind scheduled before a dispose/rebind would
+  // run afterward — binding the global scrollport under a stale session or,
+  // worse, re-adding listeners and a ResizeObserver to a disposed tracker.
+  let bindToken = 0
 
   const nextFrame = typeof requestAnimationFrame === 'function'
     ? requestAnimationFrame
@@ -215,6 +222,7 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
   const onScroll = (): void => { scheduleUpdate() }
 
   const teardownBind = (): void => {
+    bindToken++
     if (scrollport !== null) scrollport.removeEventListener('scroll', onScroll)
     scrollport = null
     resizeObserver?.disconnect()
@@ -230,7 +238,13 @@ export function installRailTracker(ctx: ClientContext, includeSteering: boolean)
       publish(IDLE)
       return
     }
+    const token = bindToken
     nextFrame(() => {
+      // This frame was scheduled by an earlier bind whose generation has since
+      // been superseded by a rebind or a dispose: ignore it entirely rather
+      // than binding the scrollport under a stale session or binding into a
+      // disposed tracker.
+      if (token !== bindToken) return
       const found = document.querySelector<HTMLElement>('[data-conversation-scroll]')
       if (found === null) {
         if (!warned) {
