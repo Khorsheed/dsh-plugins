@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.md
+.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.md: 22ed4ad6394576780da6650d842ad1a27f07a76a
+.agents/notes/implemented/feature/2026-08-30-plugin-upgrade-skill.zh.md: f39bee4ae63319fca869a9d6aad0f4b5e1beded6
