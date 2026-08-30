@@ -239,9 +239,11 @@ export function CapabilityCatalogCard({
             onSelect={(id) => setToolSegment(id as ToolSegment)}
             t={t}
           />
-          <button type="button" className={css.guideLink} onClick={() => setToolOriginHelp(true)}>
-            {t('toolOriginGuideLink')}
-          </button>
+          {toolSegment === 'plugin' ? (
+            <button type="button" className={css.guideLink} onClick={() => setToolOriginHelp(true)}>
+              {t('toolOriginGuideLink')}
+            </button>
+          ) : null}
         </>
       ) : null}
 
@@ -368,7 +370,6 @@ function SegmentBar({ segments, active, onSelect, t }: {
  * user's agent to read and apply. */
 function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
   const [copied, setCopied] = useState(false)
-  const doc = 'docs/tool-origin-guide.md'
   const copyDoc = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(t('toolOriginGuideCopy'))
@@ -380,7 +381,7 @@ function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: Ca
     <ModalShell title={t('toolOriginGuideTitle')} onClose={onClose} t={t}>
       <div className={css.confHint}>{t('toolOriginGuideIntro')}</div>
       <div className={css.guideDocRow}>
-        <code className={css.guideDocPath}>{doc}</code>
+        <code className={css.guideDocPath}>{t('toolOriginGuideCopy')}</code>
         <button type="button" className={css.btnPrimary} onClick={() => void copyDoc()}>
           {copied ? t('copied') : t('copy')}
         </button>

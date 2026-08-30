@@ -290,7 +290,8 @@
 .guideDocPath {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
   font-family: var(--cc-font-code);
   font-size: 12px;
   color: var(--dsw-alias-label-primary);
