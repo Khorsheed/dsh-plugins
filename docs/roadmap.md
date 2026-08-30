@@ -256,10 +256,10 @@ dsh-dev/
 
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
-| B1 | 确认成员清单与各包版本线 | A 线机制就位 | 每包一个确定版本，无在途包 |
+| B1 | 确认成员清单与各包版本线 | A 线机制就位 | **21 个成员**（= 3080 现有全集）。`mission` 不在 3080，按标准排除在首版之外 |
 | B2 | 建 `profiles/web-dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
 | B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
-| B4 | **写 `presets/standard/agent.cordis.yml`** | B3 | 本仓首次分发 preset，无先例 |
+| B4 | ~~自带 preset~~ **首版不做**：用官方 `standard` | B3 | preset **无 patch 语义**，复制即快照、官方演进后不跟（官方 README：*A copy is a snapshot that drifts*）。`standard` 是 257 行 / 30 个插件行，为一段委派判据背这份漂移债不划算。隔离已由 profile 完成；差异化需求（review 变体、纯调度 agent）明确后再做 |
 | B5 | 写 `scripts/install.sh`（复用 A11 的升级策略） | B2·A11 | 全新与升级两条路径 |
 | B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
