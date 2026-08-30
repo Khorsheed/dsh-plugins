@@ -571,6 +571,57 @@ describe('codex live driver rounds', () => {
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
     await m.driver.disposeAll()
   })
+
+  it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-codex-token-toolfirst'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Two tool items complete before any text streams.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't2', type: 'commandExecution', command: 'pwd', aggregatedOutput: '/x', status: 'completed' } })
+    // Text streams after the tools, then one more tool completes, then the
+    // answer's completion item lands (the run's output source).
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'm1', delta: '结论' })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't3', type: 'commandExecution', command: 'cat a', aggregatedOutput: 'x', status: 'completed' } })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm1', type: 'agentMessage', text: '结论', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: { last: { inputTokens: 5, cachedInputTokens: 0, outputTokens: 2, reasoningOutputTokens: 0, totalTokens: 0 }, total: {} },
+    })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+
+    // Chronological steps: t1=1, t2=2, the stream=3, the late tool shifts to 4.
+    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    expect(toolSteps).toEqual([1, 2, 4])
+    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+      expect((chunk.data as { step: number }).step).toBe(3)
+    }
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
+    await m.driver.disposeAll()
+  })
+
+  it('token granularity: a stream-less round puts the fallback final past every folded line', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-codex-token-nostream'))
+    // Items only, no deltas: reasoning + tool + final answer.
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('静默答案') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+
+    // The tool card folds at its positional step (2); the fallback final
+    // lands past every line (lines.length + 1 = 4), never above the tool.
+    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    expect(toolSteps).toEqual([2])
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect((final.data as { step: number }).step).toBe(4)
+    await m.driver.disposeAll()
+  })
 })
 
 describe('codex live driver lifecycle', () => {

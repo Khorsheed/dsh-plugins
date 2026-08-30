@@ -14,8 +14,8 @@ claude-code live driver 的 token 粒度现在照 kimi 样板（commit 13f0c62�
 
 - **折叠层 skip，契约同 kimi 的 `skipAssistantContent`。** `mirrorUpTo`（live 折叠循环）新增 token 模式跳过：think/text 行不再折叠成 `assistant/message` 事件（工具行照常折叠为原生 `tool/call`/`tool/result` 对），本轮 usage 改挂到 driver 的 `settleUsage` 而不再挂到被折叠的载体行——包括载体行已被提前镜像的情形，同样改写 `settleUsage` 而不是补一条 usage `assistant/chunk`。
 - **usage 来源：result 事件，走折叠自身的计算。** live driver 此前拦截 `result` 事件、从不喂给 parser，所以这条路径上 `parser.usage` 恒为 undefined。token 粒度现在把 result 事件本身推进折叠（`usageFromClaude`，既有计算）；event 粒度保持历史 flush 逐字不变。
-- **流式块布局与最终消息一致。** chunk 打在 `(turn, step 1)`，`reasoning-delta` 块 index 0、`text-delta` 块 index 1（claude 流的 `thinking_delta`/`text_delta` 词汇），同时累积 `roundThink`/`roundText` 与 chunk seq。token 模式下折叠的工具行 step 偏移为 `index + 2`，使投影的 `(turn, step)` 合并键永远不与流式的 step 1 相撞。
-- **settle 用一条合成最终消息完成流。** result 事件 flush 之后，settle 链在流式的同一个 `(turn, step 1)` 上追加**一条**合成 `assistant/message`——内容 `[reasoning, text]`、折叠算出的 usage、`{ surfaceOp: 'append', sourceEventSeqs: chunkSeqs }`、非 completed 轮带 `interrupted: true`。官方投影用它整块替换流：内容不重复、悬挂的「已停止」徽标消失，被取消的轮名正言顺显示「已停止」。
+- **流式块布局与最终消息一致。** chunk 打在保留的 `(turn, step)`，`reasoning-delta` 块 index 0、`text-delta` 块 index 1（claude 流的 `thinking_delta`/`text_delta` 词汇），同时累积 `roundThink`/`roundText` 与 chunk seq。token 模式下达到或超过保留 step 的折叠工具行偏移为 `index + 2`，使投影的 `(turn, step)` 合并键永远不与流式相撞。**2026-08-30 修订**：流式 step 改为首个 delta 时惰性保留（越过当时已完成的每一行），不再固定为 1——固定会把回答抬到 tool 开头轮次的工具卡之上。见[惰性流式 step 笔记](../bug-fix/2026-08-30-live-token-lazy-stream-step.md)。
+- **settle 用一条合成最终消息完成流。** result 事件 flush 之后，settle 链在流式的同一个保留 `(turn, step)` 上追加**一条**合成 `assistant/message`——内容 `[reasoning, text]`、折叠算出的 usage、`{ surfaceOp: 'append', sourceEventSeqs: chunkSeqs }`、非 completed 轮带 `interrupted: true`。官方投影用它整块替换流：内容不重复、悬挂的「已停止」徽标消失，被取消的轮名正言顺显示「已停止」。
 - **归因助手。** `assistantEvent(blocks)`（从 `claude-cli-provider.ts` 导出，kimi 同名助手）是 `claude-local` 消息归因的唯一来源，行折叠与合成最终消息共用。
 
 ## Alternatives considered

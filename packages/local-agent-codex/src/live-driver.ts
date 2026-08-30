@@ -738,6 +738,14 @@ export class CodexLiveDriver {
     let roundThink = ''
     /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
     const chunkSeqs: number[] = []
+    /**
+     * The stream's (turn, step) merge key, reserved LAZILY at the first
+     * think/text delta: every item completed before that moment folds below
+     * it, everything after folds above it — the projection renders the
+     * round's chronological order. (Pinning the stream to step 1 put the
+     * whole answer above every tool card in a tool-first round.)
+     */
+    let streamStep: number | undefined
     /** Items/completions that arrived before the turn id was known. */
     const earlyNotifications: { method: string; params: JsonObject }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -795,10 +803,12 @@ export class CodexLiveDriver {
         const line = lines[index]
         if (line === undefined) continue
         const lineUsage = attachUsage && index === usageIndex ? usage : undefined
-        // Token mode: the stream owns (turn, step 1) — folded tool lines
-        // continue AFTER it, so the final message's merge key never collides
-        // with a tool card.
-        const step = index + 1 + (options?.skipAssistantContent === true ? 1 : 0)
+        // Token mode: a fold at or past the reserved stream step shifts one
+        // slot up, so tool cards keep their chronological side of the stream
+        // and never take its merge key.
+        const step = index + 1 + (
+          options?.skipAssistantContent === true && streamStep !== undefined && index + 1 >= streamStep ? 1 : 0
+        )
         const folded = appendCodexTranscriptLine(childSession, turn, step, line, lineUsage, options)
         mirrored = index + 1
         if (folded) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
@@ -853,9 +863,13 @@ export class CodexLiveDriver {
         const reasoning = method === 'item/reasoning/textDelta'
         if (reasoning) roundThink += text
         else roundText += text
+        // Reserve the stream's step past every item completed so far
+        // (including the held-back carrier line), so a tool-first round
+        // renders the answer after its tool cards, not above them.
+        if (streamStep === undefined) streamStep = lines.length + 1
         const event = childSession.append('assistant/chunk', {
           turn,
-          step: 1,
+          step: streamStep,
           chunk: { type: reasoning ? 'reasoning-delta' : 'text-delta', index: reasoning ? 0 : 1, text },
         })
         chunkSeqs.push(event.seq)
@@ -1050,8 +1064,8 @@ export class CodexLiveDriver {
       try {
         if (turnOpened) {
           await persistQueue.catch(() => {})
-          // Token granularity: complete the step-1 stream with ONE combined
-          // final message at the SAME (turn, step) — the official projection
+          // Token granularity: complete the stream with ONE combined final
+          // message at the SAME (turn, step) — the official projection
           // replaces the stream with it (no duplicated content, no dangling
           // '已停止' badge) and surfaces the usage. A non-completed round is
           // marked interrupted, so a cancelled turn reads 已停止 legitimately.
@@ -1071,7 +1085,9 @@ export class CodexLiveDriver {
             if (blocks.length > 0) {
               childSession.append('assistant/message', {
                 turn,
-                step: 1,
+                // The stream's reserved step; a stream-less round (no deltas)
+                // puts the fallback answer past every folded line instead.
+                step: streamStep ?? lines.length + 1,
                 message: codexAssistantEvent(blocks),
                 ...usage !== undefined ? { usage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },

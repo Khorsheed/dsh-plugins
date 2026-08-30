@@ -549,6 +549,45 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
+    const m = mount({
+      config: { liveMirrorGranularity: 'token' },
+      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0 },
+    })
+    const child = Session.create(SessionId('child-kimi-token-toolfirst'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        // The wire already carries a completed tool call when the turn starts.
+        writeFileSync(join(wireDir, 'wire.jsonl'), [
+          JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } }),
+          JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, toolCallId: 'call-1', toolCall: { name: 'Bash', args: { command: 'ls' } } } }),
+        ].join('\n') + '\n')
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // A mid-run update triggers a mirror pass that folds the tool card FIRST.
+    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', content: {} })
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1) })
+    // Text streams after the tool card folded.
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+
+    // The tool card folded at step 1; the stream reserved the step after it.
+    expect((child.events.find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
+    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+      expect((chunk.data as { step: number }).step).toBe(2)
+    }
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect((final.data as { step: number }).step).toBe(2)
+    await m.driver.disposeAll()
+  })
+
   it('settles error when session/new fails (auth) and reclaims the runtime', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-9'))

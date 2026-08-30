@@ -450,6 +450,34 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
+    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-claude-token-toolfirst'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Two tool uses land before any text streams.
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] } })
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'pwd' } }] } })
+    // Text streams after the tools, then one more tool use, then the answer.
+    fake.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '结论' } } })
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash', input: { command: 'cat a' } }] } })
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '结论' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 5, cache_read_input_tokens: 0, output_tokens: 2 } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+
+    // Chronological steps: tool=1, tool=2, the stream=3, the late tool shifts to 4.
+    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    expect(toolSteps).toEqual([1, 2, 4])
+    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+      expect((chunk.data as { step: number }).step).toBe(3)
+    }
+    const final = child.events.find(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
+    await m.driver.disposeAll()
+  })
+
   it('respects the configured base URL override and nothing more in env', async () => {
     const m = mount({ config: { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' } })
     const child = Session.create(SessionId('child-claude-8'))

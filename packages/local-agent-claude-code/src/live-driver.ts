@@ -529,6 +529,14 @@ export class ClaudeLiveDriver {
     let roundThink = ''
     /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
     const chunkSeqs: number[] = []
+    /**
+     * The stream's (turn, step) merge key, reserved LAZILY at the first
+     * think/text delta: every line completed before that moment folds below
+     * it, everything after folds above it — the projection renders the
+     * round's chronological order. (Pinning the stream to step 1 put the
+     * whole answer above every tool card in a tool-first round.)
+     */
+    let streamStep: number | undefined
     /** The usage the settle fold computed for this round (rides the combined final in token mode). */
     let settleUsage: TokenUsage | undefined
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -565,8 +573,9 @@ export class ClaudeLiveDriver {
       // Token granularity streams think/text as assistant/chunk; the settle
       // completes the stream with one combined final message, so the fold
       // leaves those lines out (their usage rides `settleUsage`). Tool lines
-      // still fold — offset past the stream's step 1 so the projection's
-      // (turn, step) merge key never collides with the chunk stream.
+      // still fold — a fold at or past the reserved stream step shifts one
+      // slot up, so tool cards keep their chronological side of the stream
+      // and never take its merge key.
       const skipContent = granularity === 'token'
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot); a carrier mirrored in an earlier flush gets the accounting as
@@ -587,7 +596,8 @@ export class ClaudeLiveDriver {
           mirrored = index + 1
           continue
         }
-        appendClaudeTranscriptLine(childSession, turn, skipContent ? index + 2 : index + 1, line, lineUsage)
+        const step = skipContent && streamStep !== undefined && index + 1 >= streamStep ? index + 2 : index + 1
+        appendClaudeTranscriptLine(childSession, turn, step, line, lineUsage)
         mirrored = index + 1
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
       }
@@ -644,9 +654,13 @@ export class ClaudeLiveDriver {
           }
           // The stream's block layout matches the combined final message:
           // reasoning at index 0, reply text at index 1.
+          // Reserve the stream's step past every line completed so far
+          // (including the held-back carrier line), so a tool-first round
+          // renders the answer after its tool cards, not above them.
+          if (streamStep === undefined) streamStep = parser.lines.length + 1
           const chunk = childSession.append('assistant/chunk', {
             turn,
-            step: 1,
+            step: streamStep,
             chunk: {
               type: deltaType === 'text_delta' ? 'text-delta' : 'reasoning-delta',
               index: deltaType === 'text_delta' ? 1 : 0,
@@ -812,7 +826,9 @@ export class ClaudeLiveDriver {
             if (blocks.length > 0) {
               childSession.append('assistant/message', {
                 turn,
-                step: 1,
+                // The stream's reserved step (set whenever content exists —
+                // content implies at least one delta arrived).
+                step: streamStep ?? 1,
                 message: assistantEvent(blocks),
                 ...settleUsage !== undefined ? { usage: settleUsage } : {},
                 ...settled.stopReason === 'completed' ? {} : { interrupted: true },
