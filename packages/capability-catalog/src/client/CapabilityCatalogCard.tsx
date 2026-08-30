@@ -1128,6 +1128,9 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
   const visibleLive = toolQ === ''
     ? live
     : live.filter((tool) => tool.name.toLowerCase().includes(toolQ) || tool.description.toLowerCase().includes(toolQ))
+  // How many of this server's tools are enabled (live-only groups have no
+  // per-tool toggle, so all are treated as enabled).
+  const enabledCount = group.managed ? group.tools.filter((tool) => tool.enabled).length : live.length
 
   return (
     <Modal open onClose={onClose} title={group.serverName} className={css.toolDetailModal ?? ''}>
@@ -1186,7 +1189,10 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
 
         <div>
           <div className={css.mcpToolBar}>
-            <div className={css.mcpBlockLabel}>{t('mcpTools')}<span className={css.tabCnt}>{live.length}</span></div>
+            <div className={css.mcpToolLabelRow}>
+              <div className={css.mcpBlockLabel}>{t('mcpTools')}<span className={css.tabCnt}>{live.length}</span></div>
+              {live.length > 0 ? <span className={css.mcpEnabledCount}>{enabledCount}/{live.length} {t('mcpEnabledOf')}</span> : null}
+            </div>
             {live.length > 0 ? (
               <div className={css.mcpToolSearchBox}>
                 <span className={css.searchIcon}><IconSearchOutline16 size={14} /></span>
