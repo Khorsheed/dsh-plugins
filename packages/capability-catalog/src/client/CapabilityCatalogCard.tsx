@@ -434,6 +434,39 @@ function formatParams(parameters: CatalogToolRow['parameters'], t: (key: Capabil
   }
 }
 
+/** One flattened top-level parameter row for the table view. */
+interface ParamRow {
+  readonly name: string
+  readonly type: string
+  readonly description: string
+  readonly required: boolean
+}
+
+/** Flatten a JSON Schema `parameters` object's top-level properties into rows.
+ * Returns null when the value is not a tabular object schema (falls back to JSON). */
+function paramRows(parameters: CatalogToolRow['parameters']): ParamRow[] | null {
+  if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)) return null
+  const obj = parameters as Record<string, unknown>
+  const props = obj['properties']
+  if (typeof props !== 'object' || props === null) return null
+  const required = new Set<string>(Array.isArray(obj['required']) ? (obj['required'] as string[]) : [])
+  const rows: ParamRow[] = []
+  for (const [name, raw] of Object.entries(props)) {
+    const schema = (raw ?? {}) as Record<string, unknown>
+    const t = schema['type']
+    const type = typeof t === 'string'
+      ? t
+      : Array.isArray(t) ? (t as string[]).join('|') : (typeof schema['properties'] === 'object' ? 'object' : '')
+    rows.push({
+      name,
+      type,
+      description: typeof schema['description'] === 'string' ? schema['description'] : '',
+      required: required.has(name),
+    })
+  }
+  return rows.length > 0 ? rows : null
+}
+
 /** Tool preview card (dsh-card anatomy): name + channel pill + 2-line desc +
  * origin subtitle; click to open the tool detail modal. */
 function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
@@ -469,6 +502,22 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
     if (el === null) { setDescOverflow(false); return }
     setDescOverflow(el.scrollHeight > el.clientHeight + 1)
   }, [tool.description])
+  // Params: flatten to a table when the schema is tabular; JSON otherwise. The
+  // view defaults to table, and the full schema is always one click away (copy).
+  const rows = useMemo(() => paramRows(tool.parameters), [tool.parameters])
+  const hasTable = rows !== null && rows.length > 0
+  const [paramsView, setParamsView] = useState<'table' | 'json'>('table')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => { if (!hasTable) setParamsView('json') }, [hasTable])
+  const paramsJson = useMemo(() => formatParams(tool.parameters, t), [tool.parameters, t])
+  const copyJson = async (): Promise<void> => {
+    if (tool.parameters === undefined || tool.parameters === null) return
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(tool.parameters, null, 2))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { /* clipboard may be blocked */ }
+  }
   return (
     <Modal
       open
@@ -477,7 +526,7 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
       className={css.toolDetailModal ?? ''}
     >
       <div className={css.toolDetailDesc}>
-        <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? '' : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
+        <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? (css.toolDescExpanded ?? '') : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
         {descOverflow ? (
           <button type="button" className={css.toolDescToggle ?? ''} onClick={() => setDescExpanded(e => !e)}>
             {descExpanded ? t('toolCollapse') : t('toolExpand')}
@@ -485,13 +534,56 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
         ) : null}
       </div>
       <div className={css.meta}>
-        <span className={css.metaKey}>{t('source')}</span>
-        <span className={css.metaVal}>{toolTag(tool, t)}</span>
-        <span className={css.metaKey}>{t('provider')}</span>
-        <span className={css.metaVal}>{toolOrigin(tool, t)}</span>
+        <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
+        <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
       </div>
-      <div className={css.toolDetailParamsTitle}>{t('toolParams')}</div>
-      <div className={css.toolParamsBody}>{formatParams(tool.parameters, t)}</div>
+      <div>
+        <div className={css.toolParamsHead}>
+          <span className={css.toolDetailParamsTitle}>{t('toolParams')}</span>
+          <span className={css.toolParamsActions}>
+            {hasTable ? (
+              <span className={css.toolParamsTabs}>
+                <button type="button" className={css.toolParamsTab} data-active={paramsView === 'table'} onClick={() => setParamsView('table')}>{t('paramsTable')}</button>
+                <button type="button" className={css.toolParamsTab} data-active={paramsView === 'json'} onClick={() => setParamsView('json')}>{t('paramsJson')}</button>
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className={css.toolCopyBtn}
+              disabled={tool.parameters === undefined || tool.parameters === null}
+              onClick={() => void copyJson()}
+            >{copied ? t('copied') : t('copyJson')}</button>
+          </span>
+        </div>
+        {tool.parameters === undefined || tool.parameters === null ? (
+          <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
+        ) : hasTable && paramsView === 'table' ? (
+          <div className={css.toolParamsTableWrap}>
+            <table className={css.toolParamsTable}>
+              <thead>
+                <tr>
+                  <th className={css.toolParamsName}>{t('paramName')}</th>
+                  <th className={css.toolParamsType}>{t('paramType')}</th>
+                  <th>{t('paramDesc')}</th>
+                  <th className={css.toolParamsReq}>{t('paramRequired')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(rows ?? []).map((r) => (
+                  <tr key={r.name}>
+                    <td className={css.toolParamsName}>{r.name}</td>
+                    <td className={css.toolParamsType}>{r.type || '—'}</td>
+                    <td className={css.toolParamsDesc}>{r.description || '—'}</td>
+                    <td className={css.toolParamsReq}>{r.required ? t('yes') : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={css.toolParamsBody}>{paramsJson}</div>
+        )}
+      </div>
     </Modal>
   )
 }
