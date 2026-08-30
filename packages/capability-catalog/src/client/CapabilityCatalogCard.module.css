@@ -267,80 +267,6 @@
   padding: 0 4px 24px 0;
 }
 
-/* Tool list: ONE outer frame; rows separated by dividers (no per-item rounded
-   card borders). Hover/focus shows the selected indicator. */
-.toolList {
-  margin-top: 12px; /* filter → list 12px */
-  padding: 0 4px 24px 0;
-}
-
-.toolListItem {
-  width: 100%;
-  appearance: none;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-top-width: 0;
-  border-radius: 0;
-  background: var(--dsw-alias-bg-layer-2);
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  position: relative;
-  transition: background 0.15s;
-}
-
-.toolListItem:first-child {
-  border-top-width: 1px;
-  border-radius: 12px 12px 0 0;
-}
-
-.toolListItem:last-child {
-  border-radius: 0 0 12px 12px;
-}
-
-.toolListItem:hover,
-.toolListItem:focus-visible {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
-}
-
-.toolListItem:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: -2px;
-}
-
-/* Selected indicator: a 2px left rail appears on hover/focus. */
-.toolListItem::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: transparent;
-  transition: background 0.15s;
-}
-
-.toolListItem:hover::before,
-.toolListItem:focus-visible::before {
-  background: var(--dsw-alias-brand-primary);
-}
-
-.toolListItemHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.toolListItemChevron {
-  margin-left: auto;
-  display: inline-flex;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* Skill preview card (Agent-preset anatomy): main body + foot actions. */
 .pvCard {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -1947,13 +1873,28 @@
   padding-right: 2px;
 }
 
+/* One bordered card per MCP tool: head row + (when expanded) the schema body grow
+   together inside the same card, so the params are not a detached table below.
+   flex:none stops the flex-column tool list from shrinking the card below its
+   content (which would clip the expanded schema). */
+.mcpToolCard {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
 .mcpToolRow {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+}
+
+.mcpToolSchemaBody {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  padding: 10px 12px 12px;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .mcpToolMain {
@@ -1987,25 +1928,4 @@
 .mcpToolToggle {
   margin-left: auto;
   flex: none;
-}
-
-.mcpToolSchema {
-  grid-column: 1 / -1;
-  margin: 0 0 4px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l2);
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 180px;
-  overflow: auto;
-}
-
-.mcpToolSchemaWrap {
-  grid-column: 1 / -1;
 }

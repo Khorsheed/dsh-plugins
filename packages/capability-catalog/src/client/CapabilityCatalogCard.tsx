@@ -260,9 +260,9 @@ export function CapabilityCatalogCard({
         visibleTools.length === 0
           ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
           : (
-            <div className={css.toolList}>
+            <div className={css.grid}>
               {visibleTools.map((tool) => (
-                <ToolListItem key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
+                <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
               ))}
             </div>
           )
@@ -618,20 +618,25 @@ function SchemaView({ parameters, title, compact, t }: {
   )
 }
 
-/** Tool list row (single-frame list with dividers, not individual rounded cards):
- * name + channel pill + 2-line desc + origin. Hover/focus shows the selected
- * indicator (left 2px rail + light background). Click opens the detail modal. */
-function ToolListItem({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
+/** Tool preview card — same anatomy as the skill cards (shared .pvCard / .grid),
+ * so tools and skills carry ONE style that can be optimized together. */
+function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
   return (
-    <button type="button" className={css.toolListItem} onClick={onOpen}>
-      <span className={css.toolListItemHead}>
-        <span className={css.pvName}>{tool.name}</span>
-        <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
-        <span className={css.toolListItemChevron}><IconChevronRightOutline14 size={14} /></span>
-      </span>
-      <span className={css.pvDesc}>{tool.description}</span>
-      <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
-    </button>
+    <div className={css.pvCard}>
+      <button type="button" className={css.pvMain} onClick={onOpen}>
+        <span className={css.pvHead}>
+          <span className={css.pvName}>{tool.name}</span>
+          <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
+        </span>
+        <span className={css.pvDesc}>{tool.description}</span>
+        <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
+      </button>
+      <div className={css.pvFoot}>
+        <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
+          <IconBrowseOutline16 size={16} />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1446,7 +1451,7 @@ function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetT
   const enabled = isMcp ? (tool as CatalogMcpTool).enabled : true
   const open = schemaFor === tool.name
   return (
-    <div key={tool.name}>
+    <div key={tool.name} className={css.mcpToolCard}>
       <div className={css.mcpToolRow}>
         <button type="button" className={css.mcpToolMain} onClick={() => setSchemaFor(open ? null : tool.name)} aria-expanded={open}>
           <span className={css.mcpToolName}>{tool.name}</span>
@@ -1469,7 +1474,11 @@ function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetT
           </label>
         ) : null}
       </div>
-      {open ? <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} compact t={t} /> : null}
+      {open ? (
+        <div className={css.mcpToolSchemaBody}>
+          <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} compact t={t} />
+        </div>
+      ) : null}
     </div>
   )
 }
