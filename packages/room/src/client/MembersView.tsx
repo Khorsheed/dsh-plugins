@@ -12,6 +12,7 @@
  * removed — it is the room itself.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RoomMember, RoomMemberRun } from '../types.ts'
 import { formatDurationMs } from './format.ts'
 import { memberColor } from './member-color.ts'
@@ -209,17 +210,21 @@ export function MembersView({
     />
   )
 
-  // A plain session gets the guide state instead of the bare "not a room":
-  // inviting an agent IS the promotion (the header action is its twin entry).
+  // A plain session gets the centered guide state (the official empty-state
+  // shape: glyph → title → one-line explainer → primary action) instead of
+  // the bare "not a room": inviting an agent IS the promotion (the header
+  // action is its twin entry).
   if (roomStore.isRoomCached(sessionId) === false) {
     return (
-      <div className={css.members}>
-        <div className={css.empty}>
-          <p>{t('members.notRoom')}</p>
-          <button type="button" className={css.invite} onClick={openInvite}>
-            {t('members.notRoomAction')}
-          </button>
-        </div>
+      <div className={css.guide}>
+        <span className={css.guideIcon} aria-hidden>
+          <IconAgentPresetOutline16 size={30} />
+        </span>
+        <p className={css.guideTitle}>{t('members.notRoomTitle')}</p>
+        <p className={css.guideHint}>{t('members.notRoom')}</p>
+        <Button variant="primary" onClick={openInvite}>
+          {t('members.notRoomAction')}
+        </Button>
         {dialogNode}
       </div>
     )
