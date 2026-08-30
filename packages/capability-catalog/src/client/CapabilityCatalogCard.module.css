@@ -1567,19 +1567,23 @@
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .mcpConfigSummary::-webkit-details-marker {
   display: none;
 }
 
-.mcpConfigSummary::before {
-  content: '▸ ';
-  display: inline-block;
+/* Official chevron icon; rotates when the config <details> is open. */
+.mcpConfigChevron {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
   transition: transform 0.15s;
 }
 
-.mcpConfigDetails[open] .mcpConfigSummary::before {
+.mcpConfigDetails[open] .mcpConfigChevron {
   transform: rotate(90deg);
 }
 

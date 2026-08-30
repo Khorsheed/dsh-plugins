@@ -1414,7 +1414,10 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
         {group.managed && group.config !== undefined ? (
           <>
             <details className={css.mcpConfigDetails}>
-              <summary className={css.mcpConfigSummary}>{t('mcpConfig')}</summary>
+              <summary className={css.mcpConfigSummary}>
+                <span className={css.mcpConfigChevron}><IconChevronRightOutline14 size={14} /></span>
+                {t('mcpConfig')}
+              </summary>
               <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
             </details>
 
@@ -1457,9 +1460,7 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
                   )
                 })}
               </div>
-            ) : (
-              <div className={css.confHint}>{t('mcpNoCreds')}</div>
-            )}
+            ) : null}
           </>
         ) : null}
 
