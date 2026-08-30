@@ -380,13 +380,13 @@ function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: Ca
   return (
     <ModalShell title={t('toolOriginGuideTitle')} onClose={onClose} t={t}>
       <div className={css.confHint}>{t('toolOriginGuideIntro')}</div>
-      <div className={css.guideDocRow}>
-        <code className={css.guideDocPath}>{t('toolOriginGuideCopy')}</code>
+      <code className={css.guideDocPath}>{t('toolOriginGuideCopy')}</code>
+      <div className={css.guideFooter}>
+        <span className={css.confHint}>{t('toolOriginGuideFooter')}</span>
         <button type="button" className={css.btnPrimary} onClick={() => void copyDoc()}>
           {copied ? t('copied') : t('copy')}
         </button>
       </div>
-      <div className={css.confHint}>{t('toolOriginGuideFooter')}</div>
     </ModalShell>
   )
 }

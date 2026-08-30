@@ -280,16 +280,8 @@
   text-decoration: underline;
 }
 
-.guideDocRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 12px;
-}
-
 .guideDocPath {
-  flex: 1;
-  min-width: 0;
+  display: block;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--cc-font-code);
@@ -299,6 +291,15 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+/* Guidance modal footer: hint on the left, copy action on the bottom-right. */
+.guideFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 /* Skills preview grid: responsive 2-column (host house pattern), falls to 1. */
