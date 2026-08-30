@@ -260,9 +260,9 @@ export function CapabilityCatalogCard({
         visibleTools.length === 0
           ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
           : (
-            <div className={css.grid}>
+            <div className={css.toolList}>
               {visibleTools.map((tool) => (
-                <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
+                <ToolListItem key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
               ))}
             </div>
           )
@@ -618,25 +618,20 @@ function SchemaView({ parameters, title, compact, t }: {
   )
 }
 
-/** Tool preview card (dsh-card anatomy): name + channel pill + 2-line desc +
- * origin subtitle; click to open the tool detail modal. */
-function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
+/** Tool list row (single-frame list with dividers, not individual rounded cards):
+ * name + channel pill + 2-line desc + origin. Hover/focus shows the selected
+ * indicator (left 2px rail + light background). Click opens the detail modal. */
+function ToolListItem({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => void; t: (key: CapabilityCatalogKey) => string }) {
   return (
-    <div className={css.pvCard}>
-      <button type="button" className={css.pvMain} onClick={onOpen}>
-        <span className={css.pvHead}>
-          <span className={css.pvName}>{tool.name}</span>
-          <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
-        </span>
-        <span className={css.pvDesc}>{tool.description}</span>
-        <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
-      </button>
-      <div className={css.pvFoot}>
-        <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
-          <IconBrowseOutline16 size={16} />
-        </button>
-      </div>
-    </div>
+    <button type="button" className={css.toolListItem} onClick={onOpen}>
+      <span className={css.toolListItemHead}>
+        <span className={css.pvName}>{tool.name}</span>
+        <span className={`${css.pvTag} ${tool.channel === 'mcp' ? css.tagMcp : tool.channel === 'plugin' ? css.tagPlugin : ''}`}>{toolTag(tool, t)}</span>
+        <span className={css.toolListItemChevron}><IconChevronRightOutline14 size={14} /></span>
+      </span>
+      <span className={css.pvDesc}>{tool.description}</span>
+      <span className={css.pvSub}>{toolOrigin(tool, t)}</span>
+    </button>
   )
 }
 
@@ -668,6 +663,10 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
           <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
         </div>
         <div className={css.modalBody}>
+          <div className={css.meta}>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
+          </div>
           <div className={css.toolDetailDesc}>
             <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? (css.toolDescExpanded ?? '') : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
             {descOverflow ? (
@@ -675,10 +674,6 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
                 {descExpanded ? t('toolCollapse') : t('toolExpand')}
               </button>
             ) : null}
-          </div>
-          <div className={css.meta}>
-            <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
-            <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
           </div>
           <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} title={t('toolParams')} t={t} />
         </div>
@@ -755,13 +750,13 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
 
           {claim.status === 'done' && data !== undefined ? (
             <>
-              <p className={css.detailDesc}>{data.description}</p>
               <div className={css.meta}>
                 <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{data.source}</span></span>
                 <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{data.provider}</span></span>
                 <span className={css.metaItem}><span className={css.metaKey}>{t('modelInvocable')}</span><span className={css.metaVal}>{data.modelInvocable ? t('yes') : t('no')}</span></span>
                 {data.whenToUse !== undefined ? <span className={css.metaItem}><span className={css.metaKey}>{t('whenToUse')}</span><span className={css.metaVal}>{data.whenToUse}</span></span> : null}
               </div>
+              <p className={css.detailDesc}>{data.description}</p>
 
               {data.credentials !== undefined && data.credentials.length > 0 ? (
                 <details className={css.conf} open>
