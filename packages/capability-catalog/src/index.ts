@@ -41,7 +41,6 @@ import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } fr
 import { maskConfig } from './mcps.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
-import { collectCommunityToolOwners, type CompositionLoader } from './community-tools.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
 
@@ -102,9 +101,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
 
   private readonly baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
-  /** tool name → community module that declared it (from the composition's
-   * `@khorsheed/*` rows), so community plugin tools attribute to `plugin`. */
-  private readonly communityToolOwners: ReadonlyMap<string, string>
   private readonly mcp: McpStore
   /** The live `ctx.tools` (traceable proxy) captured from the tools inject. */
   private mcpToolsRegistry: McpToolRegistry | undefined
@@ -114,7 +110,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
     this.mcp = new McpStore()
-    this.communityToolOwners = collectCommunityToolOwners(ctx.get?.('loader') as CompositionLoader | undefined)
     // Register the settings namespace so the ConfigurablePluginsTab serves
     // our settings.plugin.item card (it dispatches cards only for Host-served
     // namespaces). The card reads its data through the Remote; the namespace
@@ -246,7 +241,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
           await this.mcpServerNames(),
           this.appearedAfterApply,
           exec?.agent === undefined ? [undefined] : [exec.agent],
-          this.communityToolOwners,
         )
         const filter = args?.kind
         const skills = filter === undefined || filter === 'skill' ? snapshot.skills : []
@@ -267,7 +261,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
       await this.mcpServerNames(),
       this.appearedAfterApply,
       await this.catalogScopes(),
-      this.communityToolOwners,
     )
   }
 

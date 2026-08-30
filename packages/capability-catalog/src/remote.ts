@@ -33,16 +33,11 @@ function officialToolsSet(): ReadonlySet<string> {
 }
 
 /** Project visible tools onto catalog rows with channel attribution. */
-export function projectTools(
-  schemas: readonly ToolSchemaLike[],
-  mcpServers: readonly string[],
-  appearedAfterApply: Set<string>,
-  communityTools: ReadonlyMap<string, string> = new Map(),
-): CatalogToolRow[] {
+export function projectTools(schemas: readonly ToolSchemaLike[], mcpServers: readonly string[], appearedAfterApply: Set<string>): CatalogToolRow[] {
   const official = officialToolsSet()
   const rows: CatalogToolRow[] = []
   for (const schema of schemas) {
-    const attributed = attributeToolChannel(schema.name, official, mcpServers, appearedAfterApply.has(schema.name), communityTools)
+    const attributed = attributeToolChannel(schema.name, official, mcpServers, appearedAfterApply.has(schema.name))
     rows.push({
       name: schema.name,
       description: schema.description ?? '',
@@ -71,10 +66,9 @@ export async function catalogSnapshot(
   mcpServers: readonly string[],
   appearedAfterApply: ReadonlySet<string>,
   scopes: readonly unknown[] = [undefined],
-  communityTools: ReadonlyMap<string, string> = new Map(),
 ): Promise<CapabilityCatalogSnapshot> {
   const base = await collectSkills(registry, workdir, scopes)
-  const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>, communityTools)
+  const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>)
   return {
     skills: base.skills,
     tools,
