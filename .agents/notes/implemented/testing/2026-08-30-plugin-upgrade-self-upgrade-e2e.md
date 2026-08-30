@@ -66,10 +66,15 @@ only gets delivered after that nudge.
 
 ## Consequences
 
-- SKILL.md improvement candidates from this run (token-gated health checks,
-  batch-URL client assets, macOS `setsid` absence, guard-less resume
-  semantics) are tracked in the worktree branch report; the skill itself is
-  unchanged by this commit.
+- The run's six improvement candidates were backfilled into the skill in the
+  follow-up change: any-HTTP-answer health checks (Phase 5 +
+  `restart-resume.sh`'s `healthy()`), a Node `restart-resume.mjs` for
+  set-sid-less platforms (macOS), a browser-asset-URL contract item in the
+  breakage checklist, the `~`-vs-instance-HOME caution in Phase 0, and the
+  trial boot collected as `assets/trial-boot.mjs` referenced from Phase 4.
+  (The sixth — guard-less resume semantics — landed separately in the main
+  line's Phase 5–7 rework.) `tests/e2e/run-report.template.json` freezes the
+  metric schema; `run-report.v1.baseline.json` holds this run's numbers.
 - The fixture must stay broken on `main`-ward merges; "fixing" it outside an
   upgrade run destroys the rig.
 

@@ -26,7 +26,7 @@ Status: implemented
 
 ## 后果
 
-- 本次跑出的 SKILL.md 改进候选(token 门禁下的健康检查、批量 URL 的 client 资产、macOS 无 `setsid`、无守卫重启的恢复语义)记录在 worktree 分支报告中;本提交不改 skill 本体。
+- 本次跑出的六条改进候选已在后续改动中回填进 skill:任意 HTTP 应答即活的健康检查(Phase 5 + `restart-resume.sh` 的 `healthy()`)、面向无 setsid 平台（macOS）的 Node 版 `restart-resume.mjs`、breakage 清单新增浏览器资产 URL 契约条目、Phase 0 的 `~` 与实例 HOME 歧义提醒、试启动收编为 `assets/trial-boot.mjs` 并在 Phase 4 引用。（第六条——无守卫重启的恢复语义——由主线的 Phase 5-7 改写单独落地。)`tests/e2e/run-report.template.json` 冻结了指标口径，本轮数据存于 `run-report.v1.baseline.json`。
 - fixture 往 `main` 方向合并时必须保持损坏状态;在升级跑之外"修好"它就毁了这套装置。
 
 ## 否决的替代方案
