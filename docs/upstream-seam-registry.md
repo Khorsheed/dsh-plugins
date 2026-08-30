@@ -110,6 +110,18 @@
 - **状态**：绕行中（@khorsheed/dsh-capability-catalog；提案已写，官方落地即退役）。
 
 
+### S13. `AgentStatus` 是二元的，无法区分「在跑」与「泊着等用户输入」
+
+- **需求**：任何需要判断「agent 真在干活，还是在等人回话」的插件都拿不到这个事实。`AgentStatus` 只有 `'idle' | 'running'`，而回合阻塞在等待用户输入时（`ask_user_question` 未答、审批未决）状态**仍是 `running`**。
+- **为什么拿不到**：`UserQuestionService` 是 provider 注册表，不是 pending-state store，**不存在可查询的待答状态**；SIGTERM 处理器也无法 await，即使有查询也用不上（见 `.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.md` 的 Alternatives）。
+- **真实代价**：ankh-guard 的重启恢复把「泊在提问卡片上的会话」当成「被中断的工作」批量续跑。3080 实证（2026-08-23 升级日三次非计划退出）：每次恢复都唤醒这些会话、重放报告、重复提问、白烧 token，用户视角是「非活跃会话集体被叫醒」。
+- **建议的官方改动**：`AgentStatus` 增加一个表达「阻塞在人类输入上」的取值（如 `'awaiting-input'`），或提供可查询的 pending-interaction 投影。二元状态无法承载「运行中」的两种截然不同的语义。
+- **现状绕行**：过滤移到 resume/deliver 路径（SIGTERM 快照本身不动，它 await 不了），在那里判定并跳过泊着的会话；同一处也捕获「快照之后才泊住」的竞态。见 `packages/ankh-guard/src/restart-context.ts`。
+- **退役条件**：官方能区分两种 `running` 后，ankh-guard 改为直接读状态，删掉 resume 路径上的过滤。
+- **影响面不止 guard**：taskpilot 的任务胶囊、room 的成员状态、mission 的 attempt 判活，凡是要显示「这个 agent 在忙还是在等你」的地方都会撞同一堵墙。
+- **状态**：绕行中（@khorsheed/dsh-ankh-guard）。
+
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
