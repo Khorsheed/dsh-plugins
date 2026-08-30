@@ -483,8 +483,52 @@ function typeLabel(schema: Record<string, unknown>): string {
   return typeof t === 'string' ? t : ''
 }
 
-/** Recursive parameter table. Each row that carries a nested object/array-of-object
- * schema is expandable, revealing the item's properties as an indented sub-table. */
+/** Recursive rows for one schema level. Emits flat `<tr>`s so nested object /
+ * array-of-object properties stay in the SAME table (no nested-table alignment
+ * issues), indented by depth; a chevron expands a nested level. */
+function ParamRows({ schema, path, expanded, onToggle, depth, t }: {
+  schema: CatalogJsonValue
+  path: string
+  expanded: ReadonlySet<string>
+  onToggle: (key: string) => void
+  depth: number
+  t: (key: CapabilityCatalogKey) => string
+}): ReactNode {
+  const props = schemaProps(schema)
+  if (props === null) return null
+  const required = requiredNames(schema)
+  return (
+    <>
+      {props.map(([name, p]) => {
+        const key = path === '' ? name : `${path}.${name}`
+        const nested = nestedSchemaOf(p as CatalogJsonValue)
+        const open = expanded.has(key)
+        return (
+          <Fragment key={key}>
+            <tr className={depth > 0 ? css.toolParamsNestedRow : undefined}>
+              <td className={css.toolParamsName} style={{ paddingLeft: `${8 + depth * 18}px` }}>
+                {nested !== undefined ? (
+                  <button type="button" className={css.toolParamsExpand} onClick={() => onToggle(key)} aria-expanded={open}>
+                    {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+                  </button>
+                ) : null}
+                <span>{name}</span>
+              </td>
+              <td className={css.toolParamsType}>{typeLabel(p)}</td>
+              <td className={css.toolParamsDesc}>{typeof p['description'] === 'string' ? p['description'] : '—'}</td>
+              <td className={css.toolParamsReq}>{required.has(name) ? t('yes') : ''}</td>
+            </tr>
+            {nested !== undefined && open ? (
+              <ParamRows schema={nested} path={key} expanded={expanded} onToggle={onToggle} depth={depth + 1} t={t} />
+            ) : null}
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
+
+/** The wrap table for one schema level (header + recursive rows). */
 function ParamTable({ schema, path, expanded, onToggle, depth, t }: {
   schema: CatalogJsonValue
   path: string
@@ -493,9 +537,7 @@ function ParamTable({ schema, path, expanded, onToggle, depth, t }: {
   depth: number
   t: (key: CapabilityCatalogKey) => string
 }) {
-  const props = schemaProps(schema)
-  if (props === null) return <div className={css.empty}>{t('toolNoParams')}</div>
-  const required = requiredNames(schema)
+  if (schemaProps(schema) === null) return <div className={css.empty}>{t('toolNoParams')}</div>
   return (
     <table className={css.toolParamsTable}>
       <thead>
@@ -507,39 +549,72 @@ function ParamTable({ schema, path, expanded, onToggle, depth, t }: {
         </tr>
       </thead>
       <tbody>
-        {props.map(([name, p]) => {
-          const key = path === '' ? name : `${path}.${name}`
-          const nested = nestedSchemaOf(p as CatalogJsonValue)
-          const open = expanded.has(key)
-          return (
-            <Fragment key={key}>
-              <tr>
-                <td className={css.toolParamsName} style={{ paddingLeft: `${8 + depth * 16}px` }}>
-                  {nested !== undefined ? (
-                    <button type="button" className={css.toolParamsExpand} onClick={() => onToggle(key)} aria-expanded={open}>
-                      {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
-                    </button>
-                  ) : null}
-                  <span>{name}</span>
-                </td>
-                <td className={css.toolParamsType}>{typeLabel(p)}</td>
-                <td className={css.toolParamsDesc}>{typeof p['description'] === 'string' ? p['description'] : '—'}</td>
-                <td className={css.toolParamsReq}>{required.has(name) ? t('yes') : ''}</td>
-              </tr>
-              {nested !== undefined && open ? (
-                <tr>
-                  <td colSpan={4} className={css.toolParamsNestedCell}>
-                    <div className={css.toolParamsNestedBox}>
-                      <ParamTable schema={nested} path={key} expanded={expanded} onToggle={onToggle} depth={depth + 1} t={t} />
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </Fragment>
-          )
-        })}
+        <ParamRows schema={schema} path={path} expanded={expanded} onToggle={onToggle} depth={depth} t={t} />
       </tbody>
     </table>
+  )
+}
+
+/** Reusable parameter view: a recursive table with a 表格/JSON toggle and a
+ * one-click 复制 JSON, falling back to the raw JSON block when the schema is not
+ * tabular. Used by the tool detail modal and the MCP tool rows' schema. */
+function SchemaView({ parameters, title, compact, t }: {
+  parameters: CatalogJsonValue | undefined
+  title?: string
+  compact?: boolean
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const hasTable = parameters !== undefined && parameters !== null && schemaProps(parameters) !== null
+  const [view, setView] = useState<'table' | 'json'>('table')
+  const [copied, setCopied] = useState(false)
+  const [expandedParams, setExpandedParams] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => { if (!hasTable) setView('json') }, [hasTable])
+  const toggleParam = (key: string): void => {
+    setExpandedParams((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const paramsJson = useMemo(() => formatParams(parameters, t), [parameters, t])
+  const copyJson = async (): Promise<void> => {
+    if (parameters === undefined || parameters === null) return
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(parameters, null, 2))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { /* clipboard may be blocked */ }
+  }
+  return (
+    <div>
+      <div className={compact ? (css.toolParamsHeadCompact ?? '') : css.toolParamsHead}>
+        {title !== undefined ? <span className={css.toolDetailParamsTitle}>{title}</span> : <span />}
+        <span className={css.toolParamsActions}>
+          {hasTable ? (
+            <span className={css.toolParamsTabs}>
+              <button type="button" className={css.toolParamsTab} data-active={view === 'table'} onClick={() => setView('table')}>{t('paramsTable')}</button>
+              <button type="button" className={css.toolParamsTab} data-active={view === 'json'} onClick={() => setView('json')}>{t('paramsJson')}</button>
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className={css.toolCopyBtn}
+            disabled={parameters === undefined || parameters === null}
+            onClick={() => void copyJson()}
+          >{copied ? t('copied') : t('copyJson')}</button>
+        </span>
+      </div>
+      {parameters === undefined || parameters === null ? (
+        <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
+      ) : hasTable && view === 'table' ? (
+        <div className={css.toolParamsTableWrap}>
+          <ParamTable schema={parameters} path="" expanded={expandedParams} onToggle={toggleParam} depth={0} t={t} />
+        </div>
+      ) : (
+        <div className={css.toolParamsBody}>{paramsJson}</div>
+      )}
+    </div>
   )
 }
 
@@ -578,78 +653,37 @@ function ToolDetailModal({ tool, onClose, t }: { tool: CatalogToolRow; onClose: 
     if (el === null) { setDescOverflow(false); return }
     setDescOverflow(el.scrollHeight > el.clientHeight + 1)
   }, [tool.description])
-  // Params: render recursively as an expandable table when tabular; JSON
-  // otherwise. The full schema is always one click away (copy button).
-  const hasTable = tool.parameters !== undefined && tool.parameters !== null && schemaProps(tool.parameters) !== null
-  const [paramsView, setParamsView] = useState<'table' | 'json'>('table')
-  const [copied, setCopied] = useState(false)
-  const [expandedParams, setExpandedParams] = useState<ReadonlySet<string>>(() => new Set())
-  useEffect(() => { if (!hasTable) setParamsView('json') }, [hasTable])
-  const toggleParam = (key: string): void => {
-    setExpandedParams((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
-  const paramsJson = useMemo(() => formatParams(tool.parameters, t), [tool.parameters, t])
-  const copyJson = async (): Promise<void> => {
-    if (tool.parameters === undefined || tool.parameters === null) return
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(tool.parameters, null, 2))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch { /* clipboard may be blocked */ }
-  }
+  // Esc + mask-click close (the shared .overlay/.modal chrome has no host-Modal
+  // behavior).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={tool.name}
-      className={css.toolDetailModal ?? ''}
-    >
-      <div className={css.toolDetailDesc}>
-        <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? (css.toolDescExpanded ?? '') : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
-        {descOverflow ? (
-          <button type="button" className={css.toolDescToggle ?? ''} onClick={() => setDescExpanded(e => !e)}>
-            {descExpanded ? t('toolCollapse') : t('toolExpand')}
-          </button>
-        ) : null}
-      </div>
-      <div className={css.meta}>
-        <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
-        <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
-      </div>
-      <div>
-        <div className={css.toolParamsHead}>
-          <span className={css.toolDetailParamsTitle}>{t('toolParams')}</span>
-          <span className={css.toolParamsActions}>
-            {hasTable ? (
-              <span className={css.toolParamsTabs}>
-                <button type="button" className={css.toolParamsTab} data-active={paramsView === 'table'} onClick={() => setParamsView('table')}>{t('paramsTable')}</button>
-                <button type="button" className={css.toolParamsTab} data-active={paramsView === 'json'} onClick={() => setParamsView('json')}>{t('paramsJson')}</button>
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className={css.toolCopyBtn}
-              disabled={tool.parameters === undefined || tool.parameters === null}
-              onClick={() => void copyJson()}
-            >{copied ? t('copied') : t('copyJson')}</button>
-          </span>
+    <div className={css.overlay} role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className={css.modal}>
+        <div className={css.modalHead}>
+          <h3 className={css.modalTitle}>{tool.name}</h3>
+          <button type="button" className={css.modalClose} onClick={onClose} aria-label={t('detailClose')}>×</button>
         </div>
-        {tool.parameters === undefined || tool.parameters === null ? (
-          <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
-        ) : hasTable && paramsView === 'table' ? (
-          <div className={css.toolParamsTableWrap}>
-            <ParamTable schema={tool.parameters as CatalogJsonValue} path="" expanded={expandedParams} onToggle={toggleParam} depth={0} t={t} />
+        <div className={css.modalBody}>
+          <div className={css.toolDetailDesc}>
+            <p ref={descRef} className={`${css.toolDesc ?? ''} ${descExpanded ? (css.toolDescExpanded ?? '') : (css.toolDescClamp ?? '')}`}>{tool.description}</p>
+            {descOverflow ? (
+              <button type="button" className={css.toolDescToggle ?? ''} onClick={() => setDescExpanded(e => !e)}>
+                {descExpanded ? t('toolCollapse') : t('toolExpand')}
+              </button>
+            ) : null}
           </div>
-        ) : (
-          <div className={css.toolParamsBody}>{paramsJson}</div>
-        )}
+          <div className={css.meta}>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('source')}</span><span className={css.metaVal}>{toolTag(tool, t)}</span></span>
+            <span className={css.metaItem}><span className={css.metaKey}>{t('provider')}</span><span className={css.metaVal}>{toolOrigin(tool, t)}</span></span>
+          </div>
+          <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} title={t('toolParams')} t={t} />
+        </div>
       </div>
-    </Modal>
+    </div>
   )
 }
 
@@ -1440,7 +1474,7 @@ function McpToolRow({ tool, managed, serverName, schemaFor, setSchemaFor, onSetT
           </label>
         ) : null}
       </div>
-      {open ? <pre className={css.mcpToolSchema}>{formatParams(tool.parameters, t)}</pre> : null}
+      {open ? <SchemaView parameters={tool.parameters as CatalogJsonValue | undefined} compact t={t} /> : null}
     </div>
   )
 }
