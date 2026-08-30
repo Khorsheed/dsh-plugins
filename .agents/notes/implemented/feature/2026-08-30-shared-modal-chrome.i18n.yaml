@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-shared-modal-chrome.md
+.agents/notes/implemented/feature/2026-08-30-shared-modal-chrome.md: 9aaee1dd50a2be685b752d92f77499c73e8448db
+.agents/notes/implemented/feature/2026-08-30-shared-modal-chrome.zh.md: 2c2bbb370c3c81214fea05e11864944ce7250cdc

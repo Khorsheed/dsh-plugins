@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-mcp-persist-name-enabled.md
+.agents/notes/implemented/feature/2026-08-30-mcp-persist-name-enabled.md: eee7f4c4657c8dbcd541662c03f431ba7cc1b368
+.agents/notes/implemented/feature/2026-08-30-mcp-persist-name-enabled.zh.md: 410bf4440c4e4ab2300f82fd00f269ff03c3fe08

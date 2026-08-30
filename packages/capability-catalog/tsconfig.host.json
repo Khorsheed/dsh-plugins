@@ -18,6 +18,10 @@
     "src/namespace.ts",
     "src/settings.ts",
     "src/shellEnv.ts",
-    "src/envHint.ts"
+    "src/envHint.ts",
+    "src/mcpStore.ts",
+    "src/mcpConnector.ts",
+    "src/mcpTools.ts",
+    "src/mcps.ts"
   ]
 }
