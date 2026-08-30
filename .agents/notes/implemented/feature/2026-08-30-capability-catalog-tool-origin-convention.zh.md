@@ -28,6 +28,7 @@ Status: implemented
 ## 影响
 
 - 标记可选/增量、追加式；未标记工具保留启发式兜底（绝不崩）。
+- catalog 通过**延迟 `ctx.inject(['tools'])`** 加入工具注册表（基线、`list_capabilities`、MCP 桥），而非 apply 时一次性 `ctx.get('tools')` 探测——一次性探测会与注册表挂载顺序竞争、在真实组合树上会输，导致带标记的工具**悄悄不注册**（worktrees 的坑）。并在实例日志警告：某工具可见但 `ctx.tools.get()` 取不回来、或 tag 的 channel 未知。
 - 共享工具模块（如 `dsh-local-agent-tool-subagent`）必须从自身 config 接收/推导 `owner`，勿硬编码（README + AGENTS.md）。
 - 纯 catalog 改动；`tool-origin.ts` 加入 `tsconfig.host.json`。build + 71 个宿主侧测试 + `check:plugins` 全绿；`GEN_TYPERT_ONLY` 限定构建可避开并发的 `packages/datasets` typert 递归栈错误（见该改动）。
 - 约定已写入 `AGENTS.md`（Tool origin tagging）与 `docs/upstream-seam-registry.md` S12。

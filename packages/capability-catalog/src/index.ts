@@ -106,7 +106,7 @@ function resolveServicesHelper(ctx: Context): { registry: RegistrySlice | undefi
 export class CapabilityCatalogService extends TypertRemoteService {
   static inject = []
 
-  private readonly baseline: Set<string>
+  private baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
   private readonly mcp: McpStore
   /** The live `ctx.tools` (traceable proxy) captured from the tools inject. */
@@ -117,6 +117,8 @@ export class CapabilityCatalogService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'capabilityCatalog')
     this.mcp = new McpStore()
+    this.baseline = new Set()
+    this.appearedAfterApply = new Set()
     // Register the settings namespace so the ConfigurablePluginsTab serves
     // our settings.plugin.item card (it dispatches cards only for Host-served
     // namespaces). The card reads its data through the Remote; the namespace
@@ -145,19 +147,20 @@ export class CapabilityCatalogService extends TypertRemoteService {
       // blocked. Re-syncs registration once the descriptions are back.
       void this.reconnectEnabledMcp()
     })
-    // Baseline snapshot of the tools visible at apply time; tools that appear
-    // later (a tools/change diff) are marked plugin/inferred.
-    const tools = ctx.get?.('tools') as ToolsSlice | undefined
-    this.baseline = new Set(tools?.schemas().map(t => t.name) ?? [])
-    this.appearedAfterApply = new Set()
-    ctx.on('tools/change', () => this.markNewTools(tools))
-    this.registerListTool()
-    // Register discovered MCP tools for the model once tools is composed. The
-    // inject keeps the catalog degrading when tools is absent; `toolCtx.tools`
-    // is the traceable proxy, so `register` must stay a MEMBER call on it.
+    // Baseline snapshot of the tools visible once the registry is ready; tools
+    // that appear later (a tools/change diff) are marked plugin/inferred. Set it
+    // inside the DEFERRED tools inject — an apply-time ctx.get probe races the
+    // registry's own mount order and can lose on the real composition tree (tools
+    // may compose after the catalog), yielding an empty baseline and mislabeling
+    // every visible tool as post-apply/plugin.
     ctx.inject(['tools'], (toolCtx) => {
       this.mcpToolsRegistry = toolCtx.tools as unknown as McpToolRegistry
       this.syncRegisteredMcpTools()
+      this.registerListTool(toolCtx.tools as { register?: (def: ReturnType<typeof defineTool>) => void })
+      // Baseline for the channel heuristics (set where the registry is known).
+      this.baseline = new Set(toolCtx.tools.schemas().map(t => t.name) ?? [])
+      this.appearedAfterApply.clear()
+      ctx.on('tools/change', () => this.markNewTools())
     })
     // Expose each configured skill credential as a trusted per-execution
     // `DSH_<KEY>` env var so the agent's shell can use it (shell expansion),
@@ -175,8 +178,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
     installSkillEnvHint(ctx, () => this.catalogScope())
   }
 
-  /** Record tools that appeared after the apply-time baseline. */
-  private markNewTools(tools: ToolsSlice | undefined): void {
+  /** Record tools that appeared after the apply-time baseline (reads the live
+   * registry each time, so a change event never sees a stale/undefined ref). */
+  private markNewTools(): void {
+    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
     const current = new Set(tools?.schemas().map(t => t.name) ?? [])
     for (const name of current) {
       if (!this.baseline.has(name)) this.appearedAfterApply.add(name)
@@ -217,10 +222,10 @@ export class CapabilityCatalogService extends TypertRemoteService {
     return scope === undefined ? [undefined] : [scope]
   }
 
-  /** Register the model-facing `list_capabilities` tool (optional). */
-  private registerListTool(): void {
-    const tools = this.ctx.get?.('tools') as { register?: (def: ReturnType<typeof defineTool>) => void } | undefined
-    if (tools?.register === undefined) return
+  /** Register the model-facing `list_capabilities` tool (optional; called from the
+   * tools inject so the registry is guaranteed present). */
+  private registerListTool(tools: { register?: (def: ReturnType<typeof defineTool>) => void }): void {
+    if (tools.register === undefined) return
     tools.register(defineTool({
       name: 'list_capabilities',
       description: 'List the capabilities (skills and tools) registered in this instance and their source channels. Call to discover what is available.',

@@ -28,6 +28,7 @@ This note records the community tool-origin tagging convention, its catalog-side
 ## Consequences
 
 - Tagging is optional/incremental and additive; untagged tools keep the heuristic fallback (never break).
+- The catalog joins the tools registry through a DEFERRED `ctx.inject(['tools'])` (baseline, `list_capabilities`, MCP bridge), not an apply-time `ctx.get('tools')` one-shot probe — an apply-time probe races the registry's mount order and can lose on the real composition tree, so a tagged tool silently never registers (the worktrees bug). It also warns in the instance log when a visible tool can't be read back via `ctx.tools.get()` or a tag's channel is unknown.
 - Shared tool modules (e.g. `dsh-local-agent-tool-subagent`) must derive `owner` from their own config, not hardcode a package (README + AGENTS.md).
 - Catalog-only change; `tool-origin.ts` added to `tsconfig.host.json`. Build + 71 host-side tests + `check:plugins` green; the ready-to-ship `GEN_TYPERT_ONLY`-scoped build avoids a concurrent `packages/datasets` typert stack-depth error (see that change for the convention tag).
 - Convention is codified in `AGENTS.md` (Tool origin tagging) and `docs/upstream-seam-registry.md` S12.

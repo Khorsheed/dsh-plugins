@@ -23,15 +23,17 @@ const DSH_PREFIX = 'DSH_'
 /** Subscribe to `tools/post-execute`; appends an env-mapping hint for the
  * loaded skill. Returns a disposer. Degrades silently when tools/registry/
  * credentials are absent or the tool is not the skills loader. */
-export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknown | undefined>): () => void {
-  const tools = ctx.get?.('tools')
-  if (tools === undefined) return () => {}
-
-  const off = ctx.on('tools/post-execute', (async (
-    exec: { name?: string; arguments?: unknown },
-    _result: unknown,
-    next: () => Promise<unknown>,
-  ) => {
+export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknown | undefined>): void {
+  // Subscribe inside the DEFERRED tools inject — a one-shot ctx.get probe loses
+  // the hint if tools mounts after this plugin (silently degrading it with no
+  // error), while inject fires when the registry appears and never in a
+  // composition without one (dropping only the hint, never the boot).
+  ctx.inject(['tools'], () => {
+    ctx.on('tools/post-execute', (async (
+      exec: { name?: string; arguments?: unknown },
+      _result: unknown,
+      next: () => Promise<unknown>,
+    ) => {
     if (exec?.name !== 'skill') return next()
     const skillName = (exec.arguments as { name?: string } | undefined)?.name
     if (typeof skillName !== 'string' || skillName.length === 0) return next()
@@ -71,7 +73,6 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
         source: { kind: 'plugin', plugin: 'capability-catalog' },
       }] as unknown as never,
     }
-  }) as never)
-
-  return () => { off() }
+    }) as never)
+  })
 }

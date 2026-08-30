@@ -36,7 +36,18 @@ ctx.tools.register(setToolOrigin(defineTool({ name: 'subagent_dsh' /* ... */ }),
 1. **谁调 `ctx.tools.register` 谁挂 origin。** 很多家族插件的工具其实由**公共工具模块**注册（如 `@khorsheed/dsh-local-agent-tool-subagent`），不是插件本尊。这时共享模块**必须从自己的 config 接收/推导 `owner`**，**绝不要**把某个插件名硬编码进共享模块——否则所有用该模块的插件都会被标成同一个 owner。
 2. **可选、增量。** 未标记的工具不会报错或崩溃，只是退回现有启发式（可能显示为「内置」）。新工具应默认带标记。
 3. **标记是宿主侧**，挂在 `ToolDefinition` 上。模型看到的 schema 由 `schemaOf()` 重建，**永远不带**这个标记。
+4. **打标之外，先确认工具真的注册上了。** 用 `ctx.get('tools')` 一次性同步探测再 `register` 的写法，在真实组合树上会输——tools 插件未必比你先就绪，探不到就永久跳过，而插件其余部分照常挂载，表面看不出异常（worktrees 当初就踩了这个坑：标记对、owner 对、也部署了，但工具压根没注册）。正确形态是 `ctx.inject(['tools'], (toolsCtx) => { ... })`：注册表出现时才触发，组合里没有 tools 时不触发，**且不会 pend 整个插件**（回调是子作用域）。
+
+   三种注册时机的取舍：
+
+   | 写法 | 结果 |
+   |---|---|
+   | 插件级 `export const inject = ['tools']` | 安全；代价是组合无 tools 时**整个插件 pend** |
+   | `ctx.inject(['tools'], cb)` | 安全；只有**回调子作用域** pend，插件其余照常（✅ 推荐） |
+   | `ctx.get('tools')` 一次性探测 | ✗ 真实组合树上会输，工具**悄悄不注册** |
+
+   正例 `packages/room`（`ctx.inject(['tools'], ...)`），反例 `packages/worktrees`（已改为 inject）。
 
 ## 验证
 
-标记后刷新 `工具与技能` 工具 tab，该工具应显示为「插件」，副标题是 `owner`。若仍显示「内置」，说明标记没挂上（检查是否在 `register` 前挂了、`owner` 是否取对）。
+标记后刷新 `工具与技能` 工具 tab，该工具应显示为「插件」，副标题是 `owner`。若仍显示「内置」，说明标记没挂上（检查是否在 `register` 前挂了、`owner` 是否取对）。**若工具在「插件」和「内置」两段都找不到，那不是标记问题——它根本没注册，先查注册时机（见注意事项 4）。**
