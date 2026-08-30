@@ -1,0 +1,8 @@
+# plugin-upgrade bundle patch: inserts the plugin row into the composing
+# profile, so `dsh plugin --profile <name> add @khorsheed/dsh-plugin-upgrade`
+# reconciles it into the bundles layer. The row is a bare mount — the plugin
+# takes no config. The `name` value must stay quoted — `@` is a YAML-reserved
+# indicator and an unquoted scalar fails the parse at boot.
+- insert:
+    - id: plugin-upgrade
+      name: '@khorsheed/dsh-plugin-upgrade'

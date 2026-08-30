@@ -1,0 +1,6 @@
+# fixture-legacy-store bundle patch: self-mounting row so the test profile
+# composes this plugin like any other bundle. The `name` value must stay
+# quoted — `@` is a YAML-reserved indicator.
+- insert:
+    - id: fixture-legacy-store
+      name: '@fixture/legacy-store'
