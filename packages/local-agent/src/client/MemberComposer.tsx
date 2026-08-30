@@ -65,6 +65,13 @@ export interface MemberComposerInjected {
   promptMember: (childSessionId: string, text: string) => Promise<LocalAgentPromptResult | undefined>
   /** Interrupt the member's in-flight run. */
   stopMember: (childSessionId: string) => Promise<boolean | undefined>
+  /**
+   * The in-flight delegation child session ids (the second running source:
+   * the official summary `running` flag is agent-based and stays false for
+   * external CLI runs, which have no live host agent). undefined = RPC
+   * failure; the component keeps the last known bit rather than flapping.
+   */
+  activeDelegations: () => Promise<readonly string[] | undefined>
 }
 
 /** Full chain props after the member selector accepts the owner currency. */
@@ -78,6 +85,8 @@ type Membership = LocalAgentDelegationView | null | undefined
 const MEMBER_PROBE_RETRIES = 2
 /** Delay between membership probe retries. */
 const MEMBER_PROBE_RETRY_MS = 300
+/** In-flight delegation poll cadence (the taskpilot dock's proven cadence). */
+const ACTIVE_DELEGATIONS_POLL_MS = 1_500
 
 /**
  * Session-level positive membership cache: a recorded delegation is immutable
@@ -98,20 +107,25 @@ export function resetMembershipCache(): void {
  * official-looking read-only panel for every other one-shot session. Drafts
  * stay in local state (the official input machine is deliberately NOT wired —
  * its send path is hardwired to the host prompt pipeline this channel must
- * bypass); a run in flight (the session's own `running` flag, driven by the
- * mirrored transcript events) disables the input and swaps Send for Stop.
+ * bypass). A run in flight disables the input and swaps Send for Stop — the
+ * running bit is DUAL-SOURCE: the session summary's flag (agent-based; the
+ * dsh member's sub-instance drives it natively) OR the family's in-flight
+ * delegation registry polled through `activeDelegations` (the only source
+ * that lights up for external CLI runs, which have no live host agent).
  * @param props - selector match, standard slot props, locale seat, and the
  *   injected gateway face.
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   /** The last structured promptMember failure, rendered inline. */
   const [error, setError] = useState<string | null>(null)
-  const running = useSession(snapshot => snapshot.running) ?? false
+  const sessionRunning = useSession(snapshot => snapshot.running) ?? false
+  /** The polled in-flight bit for this child (second running source). */
+  const [memberActive, setMemberActive] = useState(false)
   /** The child the current membership answer belongs to (re-probes on switch). */
   const membershipFor = useRef<string | null>(null)
   /** Mirror of `membership` for the probe effect (kept out of its deps: a null answer must not self-trigger). */
@@ -126,6 +140,26 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     tokenUsage: useProjection('tokenUsage'),
     todos: useProjection('todos'),
   }
+
+  // Second running source: poll the family's in-flight delegation registry.
+  // The official summary flag never lights up for external CLI runs (no live
+  // host agent), so without this the Stop button and the running badge never
+  // appear and the membership re-probe below never fires in production. An
+  // RPC failure keeps the last known bit instead of flapping Stop off.
+  useEffect(() => {
+    let cancelled = false
+    const childId = matched.childSessionId
+    const tick = (): void => {
+      void activeDelegations().then((ids) => {
+        if (cancelled || ids === undefined) return
+        setMemberActive(ids.includes(childId))
+      }, () => {})
+    }
+    tick()
+    const timer = setInterval(tick, ACTIVE_DELEGATIONS_POLL_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [activeDelegations, matched.childSessionId])
+  const running = sessionRunning || memberActive
 
   useEffect(() => {
     const childId = matched.childSessionId

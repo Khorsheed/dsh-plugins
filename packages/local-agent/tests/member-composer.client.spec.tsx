@@ -63,6 +63,7 @@ function props(
     memberOf: () => Promise.resolve(MEMBER),
     promptMember: () => Promise.resolve({ ok: true } satisfies LocalAgentPromptResult),
     stopMember: () => Promise.resolve(true),
+    activeDelegations: () => Promise.resolve([]),
     t,
     ...over,
   } as unknown as MemberComposerProps
@@ -231,6 +232,51 @@ describe('MemberComposer', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['member.stop'] }))
     await act(async () => {})
     expect(stopMember).toHaveBeenCalledWith(CHILD)
+  })
+
+  it('shows Stop from the in-flight delegation poll even when the summary flag is false (external CLI runs)', async () => {
+    const stopMember = vi.fn().mockResolvedValue(true)
+    const activeDelegations = vi.fn().mockResolvedValue([CHILD])
+    render(<MemberComposer {...props({ stopMember, activeDelegations }, false)} />)
+
+    // The official summary flag is false (agent-based; no live host agent for
+    // external CLI runs) — the polled registry alone drives the running UI.
+    expect(await screen.findByText(zh['member.running'])).toBeTruthy()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: zh['member.stop'] }))
+    await act(async () => {})
+    expect(stopMember).toHaveBeenCalledWith(CHILD)
+  })
+
+  it('keeps the running bit on a poll RPC failure instead of flapping Stop off', async () => {
+    const activeDelegations = vi.fn()
+      .mockResolvedValueOnce([CHILD])
+      .mockResolvedValue(undefined)
+    render(<MemberComposer {...props({ activeDelegations }, false)} />)
+    await screen.findByText(zh['member.running'])
+
+    // Past the next poll (1.5s), which fails: the bit must hold.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_800)) })
+    expect(screen.getByText(zh['member.running'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['member.stop'] })).toBeTruthy()
+  })
+
+  it('flips the read-only panel to the member box when the first round settles (in-flight bit drops)', async () => {
+    // First round in flight: no delegation record yet, the registry says active.
+    let active: readonly string[] = [CHILD]
+    const activeDelegations = vi.fn(() => Promise.resolve(active))
+    const memberOf = vi.fn().mockResolvedValue(null)
+    render(<MemberComposer {...props({ memberOf, activeDelegations }, false)} />)
+    expect(await screen.findByText(zh['member.readonly.title'])).toBeTruthy()
+
+    // The round settles: the record lands and the in-flight bit drops on the
+    // next poll (1.5s) — the running flip re-probes and the panel turns writable.
+    active = []
+    memberOf.mockResolvedValue(MEMBER)
+    expect(await screen.findByText(zh['member.title'].replace('{harness}', 'Fake Agent'), {}, { timeout: 4_000 })).toBeTruthy()
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(memberOf.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it('keeps the send button disabled for an empty draft', async () => {
