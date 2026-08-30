@@ -1107,6 +1107,7 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
   const [schemaFor, setSchemaFor] = useState<string | null>(null)
+  const [toolQuery, setToolQuery] = useState('')
 
   const saveCred = async (ref: string): Promise<void> => {
     const value = credValues[ref] ?? ''
@@ -1123,16 +1124,20 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
   }
 
   const live = group.managed ? group.tools : group.liveTools
+  const toolQ = toolQuery.trim().toLowerCase()
+  const visibleLive = toolQ === ''
+    ? live
+    : live.filter((tool) => tool.name.toLowerCase().includes(toolQ) || tool.description.toLowerCase().includes(toolQ))
 
   return (
     <Modal open onClose={onClose} title={group.serverName} className={css.toolDetailModal ?? ''}>
       <div className={css.mcpBody}>
         {group.managed && group.config !== undefined ? (
           <>
-            <div>
-              <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
+            <details className={css.mcpConfigDetails}>
+              <summary className={css.mcpConfigSummary}>{t('mcpConfig')}</summary>
               <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
-            </div>
+            </details>
 
             {group.credentials.length > 0 ? (
               <div>
@@ -1180,12 +1185,29 @@ function McpServerManageModal({ group, discovering, onClose, onSetCredential, on
         ) : null}
 
         <div>
-          <div className={css.mcpBlockLabel}>{t('mcpTools')}</div>
+          <div className={css.mcpToolBar}>
+            <div className={css.mcpBlockLabel}>{t('mcpTools')}<span className={css.tabCnt}>{live.length}</span></div>
+            {live.length > 0 ? (
+              <div className={css.mcpToolSearchBox}>
+                <span className={css.searchIcon}><IconSearchOutline16 size={14} /></span>
+                <input
+                  className={css.mcpToolSearch}
+                  type="search"
+                  value={toolQuery}
+                  placeholder={t('mcpToolSearchPlaceholder')}
+                  aria-label={t('mcpToolSearchPlaceholder')}
+                  onChange={(e) => setToolQuery(e.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
           {live.length === 0 ? (
             <div className={css.empty}>{t('mcpEmptyTools')}</div>
+          ) : visibleLive.length === 0 ? (
+            <div className={css.empty}>{t('toolNoMatch')}</div>
           ) : (
             <div className={css.mcpTools}>
-              {live.map((tool) => (
+              {visibleLive.map((tool) => (
                 <McpToolRow
                   key={tool.name}
                   tool={tool}
