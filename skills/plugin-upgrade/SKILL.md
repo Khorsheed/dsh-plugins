@@ -38,8 +38,11 @@ with the user, never a surprise mid-activity.
 ## Phase 0 — Baseline
 
 1. Record the current host version (`dsh --version`, or the host package's
-   `package.json`) and the target version. If you cannot name both, stop and
-   ask.
+   `package.json`) and the target version. The user often pastes a release
+   page URL instead of a version number — parse the tag out of it
+   (`.../releases/tag/dsh-v0.1.2-alpha.2` → `0.1.2-alpha.2`; strip any
+   `dsh-v`/`v` prefix). If you cannot name both versions even after that,
+   stop and ask.
 2. Record how this instance runs: profile name, port, `$DSH_HOME`, and the
    exact launch command (a process listing or the profile's deploy notes).
    You need this verbatim for the restart phase. **Resolve every path to an
@@ -53,29 +56,41 @@ with the user, never a surprise mid-activity.
    inventory to a file** — it doubles as the checklist for the post-restart
    fleet verification (Phase 6), and the conversation alone is not durable
    enough to serve as it.
+4. Locate the SOURCE of every installed plugin — the dual-line fixes land in
+   sources, not in installed artifacts. The profile's dependency list tells
+   you the shape: a `file:`/`link:` spec points at the source directly; a
+   registry version means the source is elsewhere. If the user hasn't said
+   where the sources live, ask ONCE ("where do the plugin sources live?").
+   Plugins are open source by default: when only the npm name is known and
+   nobody answers, clone the repository named in the package's
+   `repository` field beside your staging area and work there.
 
 ## Phase 1 — Fetch the new host beside the old
 
 The invariant is *beside, never in place*: the new host lands in its own
 directory so the running deployment stays intact and rollback is a path swap.
 How you stage it is your call — a git worktree, a fresh clone, or an npm
-staging dir all satisfy the invariant. Examples:
+staging dir all satisfy the invariant. **Do not wait for the user to pre-stage
+the new host — fetch it yourself.** For an npm-distributed host that means a
+throwaway staging dir you create:
 
-Source-based deployment (a worktree keeps the checkout's object store shared
-and disposable):
+```sh
+staging=$(mktemp -d) && cd "$staging"
+npm install @deepseek-ai/dsh@<target-version>   # the CLI plus its bundle set
+```
+
+For a source checkout, a worktree keeps the object store shared and
+disposable:
 
 ```sh
 git -C /path/to/host/repo fetch --tags
 git -C /path/to/host/repo worktree add /path/to/host-next <new-tag>   # detached
 ```
 
-npm-based deployment: install the new version into a separate staging
-directory, never over the running install:
-
-```sh
-mkdir -p /path/to/host-staging && cd /path/to/host-staging
-npm install @deepseek-ai/dsh@<target-version>
-```
+If the user DID pre-stage the new host (a toolchain dir, a path in their
+message), use theirs instead of fetching again — but verify the version it
+carries (`<path>/node_modules/.bin/dsh --version`) against the target before
+trusting it.
 
 Then read the release notes commit by commit (changelog range
 `old-tag...new-tag`) and build a symbol migration map: every removed, renamed,
