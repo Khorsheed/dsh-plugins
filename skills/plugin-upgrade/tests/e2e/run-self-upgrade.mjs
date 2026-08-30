@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
- * run-self-upgrade.mjs — e2e driver for the @khorsheed/dsh-plugin-upgrade
- * "one-sentence self-upgrade" acceptance run. NOT shipped in the package
- * tarball (tests/ is outside `files`).
+ * run-self-upgrade.mjs — e2e driver for the plugin-upgrade skill's
+ * "one-sentence self-upgrade" acceptance run. Test asset, never shipped in
+ * the skill zip (tests/ is excluded).
  *
  * Commands:
- *   up                      Build a throwaway instance home, boot a 0.1.1-rc.2
- *                           instance with the legacy fixture + plugin-upgrade
- *                           installed, wait until ready, print the handoff
- *                           guidance (URL + the one sentence to send).
- *   up [--extra <name@spec>]…
- *                           Extra plugins installed alongside the fixture
- *                           (registry version or file: path) — the "normal
- *                           fleet" that must survive the upgrade untouched.
+ *   up [--skill <dir>] [--tarballs <dir>] [--extra <name@spec>]… [--home-note <file>]
+ *                           Build a throwaway instance home, boot a 0.1.1-rc.2
+ *                           instance with the legacy fixture installed, wait
+ *                           until ready, print the handoff guidance.
+ *                           --skill copies a skill directory (minus tests/)
+ *                           into $DSH_HOME/skills/ (the user-level skill root
+ *                           dsh-skill-filesystem discovers). --tarballs
+ *                           installs every *.tgz in a directory as the plugin
+ *                           fleet. --extra adds one registry/file plugin.
+ *                           --home-note records the throwaway home path to a
+ *                           file for the outer harness.
  *   assert --home <dir>     Post-upgrade assertions: instance answers HTTP
  *                           (200 on rc.2, token-gated 401 on 0.1.2), the
  *                           listener on the recorded port runs from the alpha
@@ -20,12 +23,12 @@
  *                           (marker pid == listener pid), fixture client.js
  *                           serves 200 (rc.2 single-file URL, or the 0.1.2
  *                           batch-manifest URL with auth cookie), plus one
- *                           per --extra plugin. --report adds the v2 checks:
- *                           Phase 6.5 final report on disk covering every
- *                           installed plugin, and the second session's log
- *                           surviving the restart. Exit code reflects the
- *                           verdict. --wait <sec> polls until all pass
- *                           (default 0).
+ *                           check per installed plugin that declares a browser
+ *                           half. --report adds the v2+ checks: Phase 6.5
+ *                           final report on disk covering every installed
+ *                           plugin, and the second session's log surviving
+ *                           the restart. Exit code reflects the verdict.
+ *                           --wait <sec> polls until all pass (default 0).
  *   cleanup --home <dir>    Kill the instance and delete the throwaway home.
  *
  * The script never drives a browser; an agent/human does that with the
@@ -33,6 +36,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -48,18 +52,18 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readdirSync, statSync } from 'node:fs'
+import { lstatSync, readdirSync, statSync } from 'node:fs'
 
 const HOME_REAL = process.env.HOME
 const STABLE_BIN = join(HOME_REAL, '.dsh-toolchains/stable/node_modules/.bin/dsh')
+const STABLE_MODULES = join(HOME_REAL, '.dsh-toolchains/stable/node_modules')
 const ALPHA_BIN = join(HOME_REAL, '.dsh-toolchains/alpha-0.1.2/node_modules/.bin/dsh')
 const ALPHA_BASE = join(HOME_REAL, '.dsh-toolchains/alpha-0.1.2/node_modules/@deepseek-ai/dsh-base')
 const ALPHA_WEB_APP = join(HOME_REAL, '.dsh-toolchains/alpha-0.1.2/node_modules/@deepseek-ai/dsh-web-app')
 const CREDENTIALS = join(HOME_REAL, '.dsh-official/.credentials.yaml')
-const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const WORKTREE_ROOT = resolve(PKG_ROOT, '..', '..')
-const FIXTURE_DIR = join(PKG_ROOT, 'tests/e2e/fixtures/fixture-legacy-store')
-const TARBALL = process.env.PLUGIN_UPGRADE_TARBALL ?? join(WORKTREE_ROOT, 'dist-publish/khorsheed-dsh-plugin-upgrade-0.1.0.tgz')
+const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const REPO_ROOT = resolve(SKILL_ROOT, '..', '..')
+const FIXTURE_DIR = join(SKILL_ROOT, 'tests/e2e/fixtures/fixture-legacy-store')
 
 const MARKER_REL = 'state/legacy-store-alive.json'
 const CLIENT_URL_PATH = '/plugins/@fixture/legacy-store/client.js'
@@ -76,25 +80,54 @@ function parseArgs(argv) {
   for (let i = 0; i < rest.length; i += 1) {
     if (rest[i] === '--home') opts.home = rest[++i]
     else if (rest[i] === '--wait') opts.wait = Number(rest[++i])
-    else if (rest[i] === '--report') opts.report = true // v2: also assert final report + second session
+    else if (rest[i] === '--report') opts.report = true // v2+: also assert final report + second session
     else if (rest[i] === '--extra') opts.extra.push(rest[++i]) // name@spec, spec = version range or file: path
+    else if (rest[i] === '--tarballs') opts.tarballs = rest[++i] // dir of *.tgz — the whole fleet
+    else if (rest[i] === '--links') opts.links = rest[++i] // plugin repo dir — link: every packages/* bundle
+    else if (rest[i] === '--skill') opts.skill = rest[++i] // skill dir copied into $DSH_HOME/skills/
+    else if (rest[i] === '--home-note') opts.homeNote = rest[++i] // file to record the throwaway home path
     else fail(`unknown argument: ${rest[i]}`)
   }
   return { command, opts }
 }
 
-function checkPrerequisites() {
+function checkPrerequisites(opts = {}) {
   for (const [label, path] of [
     ['stable toolchain (0.1.1-rc.2)', STABLE_BIN],
     ['fixture plugin', FIXTURE_DIR],
-    ['plugin-upgrade tarball', TARBALL],
     ['official credentials', CREDENTIALS],
   ]) {
     if (!existsSync(path)) fail(`${label} not found: ${path}`)
   }
+  if (opts.tarballs !== undefined && !existsSync(opts.tarballs)) fail(`tarballs dir not found: ${opts.tarballs}`)
+  if (opts.skill !== undefined && !existsSync(join(opts.skill, 'SKILL.md'))) fail(`skill dir has no SKILL.md: ${opts.skill}`)
   if (!existsSync(ALPHA_BIN)) {
     log(`WARNING: alpha toolchain missing at ${ALPHA_BIN} — environment will be built, but the upgrade target is not staged yet`)
   }
+}
+
+/**
+ * Re-point every non-symlink @deepseek-ai/* entry in the profile's
+ * node_modules at the stable toolchain. npm's peer auto-install otherwise
+ * drags REGISTRY builds of host packages into the profile tree, and a
+ * registry-built client package shadowing the toolchain's rc.2 line broke
+ * the / route (400) in the v2 run. The toolchain symlink keeps every host
+ * package resolution on the line the instance actually runs.
+ */
+function repointHostPackages(profileDir) {
+  const scopeDir = join(profileDir, 'node_modules', '@deepseek-ai')
+  if (!existsSync(scopeDir)) return 0
+  let repointed = 0
+  for (const entry of readdirSync(scopeDir)) {
+    const p = join(scopeDir, entry)
+    if (lstatSync(p).isSymbolicLink()) continue
+    const target = join(STABLE_MODULES, '@deepseek-ai', entry)
+    if (!existsSync(target)) continue // not a toolchain package — leave it
+    rmSync(p, { recursive: true, force: true })
+    symlinkSync(target, p)
+    repointed += 1
+  }
+  return repointed
 }
 
 async function freePort() {
@@ -202,7 +235,7 @@ function commandOf(pid) {
 // --------------------------------------------------------------------- up --
 
 async function up(opts) {
-  checkPrerequisites()
+  checkPrerequisites(opts)
   const home = mkdtempSync(join(tmpdir(), 'dsh-e2e-upgrade-'))
   const dshHome = join(home, '.dsh')
   const profileDir = join(dshHome, 'profiles', 'web')
@@ -227,8 +260,8 @@ async function up(opts) {
   )
 
   // The profile mounts the official bundles from the STABLE toolchain (file:
-  // links, so the rc.2 line is what boots) plus the two test subjects and any
-  // --extra name@spec plugins (registry version or file: path).
+  // links, so the rc.2 line is what boots) plus the fixture, any --extra
+  // name@spec plugins, and every tarball in --tarballs <dir> (the fleet).
   const extraDeps = {}
   const extraNames = []
   for (const spec of opts.extra ?? []) {
@@ -238,6 +271,44 @@ async function up(opts) {
     const version = spec.slice(at + 1)
     extraDeps[name] = /^(\d|\^|~)/.test(version) ? version : version.startsWith('file:') ? version : `file:${version}`
     extraNames.push(name)
+  }
+  if (opts.tarballs !== undefined) {
+    for (const file of readdirSync(opts.tarballs)) {
+      if (!file.endsWith('.tgz')) continue
+      const tgz = join(opts.tarballs, file)
+      const pkgJson = JSON.parse(execFileSync('tar', ['-xzOf', tgz, 'package/package.json'], { encoding: 'utf8' }))
+      extraDeps[pkgJson.name] = `file:${tgz}`
+      // Family-internal row packages (no dsh.bundle.patch) ride as plain
+      // dependencies — the family's core row mounts them; only self-mounting
+      // bundles get a bundle row.
+      if (pkgJson.dsh?.bundle?.patch !== undefined) extraNames.push(pkgJson.name)
+    }
+    log(`fleet: ${Object.keys(extraDeps).length} tarballs (${extraNames.length} bundles) from ${opts.tarballs}`)
+  }
+  // --links <repoDir>: the "user has the plugin repo locally" form — every
+  // packages/* bundle links live (npm file: on a directory is a symlink), so
+  // the upgrading agent edits sources, rebuilds, and a restart picks it up.
+  //
+  // @khorsheed/dsh-local-agent-dsh-headless is a HEADLESS-profile bundle (it
+  // composes a sub-dsh app and inserts a code-runtime row the web profile
+  // already owns — a duplicate-id boot failure). It links as a plain
+  // dependency so the family provider resolves it, but gets no bundle row.
+  const HEADLESS_ONLY = new Set(['@khorsheed/dsh-local-agent-dsh-headless'])
+  const linkedPackages = {}
+  if (opts.links !== undefined) {
+    const packagesDir = join(opts.links, 'packages')
+    for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const manifest = join(packagesDir, entry.name, 'package.json')
+      if (!existsSync(manifest)) continue
+      const pkgJson = JSON.parse(readFileSync(manifest, 'utf8'))
+      if (pkgJson.private === true) continue
+      const dir = join(packagesDir, entry.name)
+      extraDeps[pkgJson.name] = `file:${dir}`
+      linkedPackages[pkgJson.name] = dir
+      if (pkgJson.dsh?.bundle?.patch !== undefined && !HEADLESS_ONLY.has(pkgJson.name)) extraNames.push(pkgJson.name)
+    }
+    log(`fleet: ${Object.keys(linkedPackages).length} linked packages (${extraNames.length} bundles) from ${opts.links}`)
   }
   writeFileSync(
     join(profileDir, 'package.json'),
@@ -249,7 +320,6 @@ async function up(opts) {
           '@deepseek-ai/dsh-base': `file:${join(HOME_REAL, '.dsh-toolchains/stable/node_modules/@deepseek-ai/dsh-base')}`,
           '@deepseek-ai/dsh-web-app': `file:${join(HOME_REAL, '.dsh-toolchains/stable/node_modules/@deepseek-ai/dsh-web-app')}`,
           '@fixture/legacy-store': `file:${FIXTURE_DIR}`,
-          '@khorsheed/dsh-plugin-upgrade': `file:${TARBALL}`,
           ...extraDeps,
         },
         dsh: {
@@ -259,7 +329,6 @@ async function up(opts) {
               '@deepseek-ai/dsh-web-app',
               '@fixture/legacy-store',
               ...extraNames,
-              '@khorsheed/dsh-plugin-upgrade',
             ],
           },
         },
@@ -275,8 +344,22 @@ async function up(opts) {
     cwd: profileDir,
     stdio: ['ignore', 'pipe', 'inherit'],
     env: { ...process.env, HOME: home },
-    timeout: 300_000,
+    timeout: 600_000,
   })
+  const repointed = repointHostPackages(profileDir)
+  if (repointed > 0) log(`re-pointed ${repointed} registry-hoisted @deepseek-ai package(s) back at the stable toolchain`)
+
+  // The skill under test installs as a plain skill directory (user root),
+  // which is how dsh-skill-filesystem discovers it — no package machinery.
+  if (opts.skill !== undefined) {
+    const skillName = /^name:\s*(.+)$/m.exec(readFileSync(join(opts.skill, 'SKILL.md'), 'utf8'))?.[1]?.trim()
+    if (!skillName) fail(`cannot read skill name from ${opts.skill}/SKILL.md`)
+    const target = join(dshHome, 'skills', skillName)
+    mkdirSync(target, { recursive: true })
+    execFileSync('cp', ['-R', `${opts.skill}/`, target], { stdio: 'pipe' })
+    rmSync(join(target, 'tests'), { recursive: true, force: true }) // test assets never ship
+    log(`skill installed: ${skillName} -> ${target}`)
+  }
 
   const port = await freePort()
   const instanceLog = join(logsDir, 'instance-rc2.log')
@@ -290,8 +373,8 @@ async function up(opts) {
   log(`booting rc.2 instance: pid ${child.pid}, port ${port}, log ${instanceLog}`)
 
   const base = `http://127.0.0.1:${port}`
-  const ready = await poll(async () => (await httpCode(`${base}/`)) === 200, 90)
-  if (!ready) fail(`instance did not answer 200 within 90s — see ${instanceLog}`)
+  const ready = await poll(async () => (await httpCode(`${base}/`)) === 200, 240)
+  if (!ready) fail(`instance did not answer 200 within 240s — see ${instanceLog}`)
 
   const markerPath = join(dshHome, MARKER_REL)
   const marker = await poll(() => existsSync(markerPath), 30)
@@ -310,8 +393,10 @@ async function up(opts) {
     instanceLog,
     logsDir,
     fixtureDir: FIXTURE_DIR,
-    tarball: TARBALL,
     extraPlugins: extraNames,
+    installedPlugins: ['@fixture/legacy-store', ...Object.keys(extraDeps)],
+    linkedPackages,
+    skill: opts.skill,
     stableBin: STABLE_BIN,
     alphaBin: ALPHA_BIN,
     alphaBase: ALPHA_BASE,
@@ -319,23 +404,30 @@ async function up(opts) {
     createdAt: new Date().toISOString(),
   }
   writeFileSync(join(home, 'e2e-env.json'), JSON.stringify(env, null, 2) + '\n')
+  if (opts.homeNote) writeFileSync(opts.homeNote, `${home}\n`)
 
   log('environment is READY')
   console.log(`
 ================================================================================
 NEXT STEP (browser driver — a human, or an agent with playwright):
   1. Open ${base}/ in a NEW browser tab (do not close other tabs).
-  2. Start a new session and send exactly this one sentence:
+  2. Start a new session and send the upgrade sentence. The CURRENT v3
+     variant (no paths, no hints — the skill must self-serve):
 
-     把这个实例升级到 0.1.2,新宿主的 npm 包在 ~/.dsh-toolchains/alpha-0.1.2 已经装好,fixture 插件的源码在 ${FIXTURE_DIR},插件包管理器用 npm
+     官方发了 0.1.2(https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2),帮我把这个实例升上去,插件别坏
+
+     If the agent asks where the plugin sources live, answer with the
+     scratch clone path only (e.g. /tmp/dsh-v3-plugin-repo). If it asks to
+     restart, answer 可以.
 
   3. Watch the agent work through the plugin-upgrade skill. The page WILL
      disconnect when it restarts itself — reconnect and check recovery.
   4. Afterwards run:
-     node ${fileURLToPath(import.meta.url)} assert --home ${home} --wait 600
+     node ${fileURLToPath(import.meta.url)} assert --home ${home} --report --wait 600
   5. When finished inspecting:
      node ${fileURLToPath(import.meta.url)} cleanup --home ${home}
 
+Installed plugins: ${env.installedPlugins.length} (fixture included)
 State file: ${join(home, 'e2e-env.json')}
 ================================================================================`)
 }
@@ -349,20 +441,27 @@ async function assertCmd(opts) {
 
   // rc.2 serves the single-file URL unauthenticated; 0.1.2 only serves the
   // batch form from the boot manifest and requires the auth cookie. Try the
-  // rc.2 form first, then authenticate and follow the manifest.
-  const manifestBundleOk = async (singlePath, nameFragment) => {
-    if (singlePath && (await httpCode(`${env.base}${singlePath}`)) === 200) return true
+  // rc.2 form first, then authenticate and follow the manifest. Returns the
+  // bundle body (freshness checks hash it) or undefined when unserved.
+  const fetchBundle = async (singlePath, nameFragment) => {
+    if (singlePath) {
+      const direct = await httpRequest(`${env.base}${singlePath}`)
+      if (direct.code === 200) return direct.body
+    }
     const token = findSessionToken(env.home)
-    if (token === undefined) return false
+    if (token === undefined) return undefined
     const gate = await httpRequest(`${env.base}/?token=${token}`)
     const cookie = (gate.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
     const index = await httpRequest(`${env.base}/`, cookie)
-    if (index.code !== 200) return false
+    if (index.code !== 200) return undefined
     const match = new RegExp(`\\/plugins\\/\\?\\?[^"']*${nameFragment}[^"']*`).exec(index.body)
-    if (!match) return false
+    if (!match) return undefined
     const batchUrl = match[0].replaceAll('&amp;', '&')
-    return (await httpRequest(`${env.base}${batchUrl}`, cookie)).code === 200
+    const batch = await httpRequest(`${env.base}${batchUrl}`, cookie)
+    return batch.code === 200 ? batch.body : undefined
   }
+  const manifestBundleOk = async (singlePath, nameFragment) =>
+    (await fetchBundle(singlePath, nameFragment)) !== undefined
 
   const checks = {
     // rc.2 answers plain 200; 0.1.2 gates the UI behind a per-boot token and
@@ -390,10 +489,35 @@ async function assertCmd(opts) {
     clientJsServed: async () => manifestBundleOk(CLIENT_URL_PATH, 'legacy-store\\/client\\.js'),
   }
 
-  // Every --extra plugin's browser half must still serve post-upgrade.
-  for (const name of env.extraPlugins ?? []) {
+  // Every installed plugin with a browser half must still serve post-upgrade.
+  // Which plugins HAVE a browser half is read from the installed package.json
+  // (dsh.client declaration), so host-only plugins are not expected to serve.
+  for (const name of env.installedPlugins ?? env.extraPlugins ?? []) {
     const short = name.split('/').pop()
-    checks[`extraClient:${short}`] = () => manifestBundleOk(`/plugins/${name}/client.js`, `${short}\\/client\\.js`)
+    if (name === '@fixture/legacy-store') continue // covered by clientJsServed
+    let hasClient = true
+    try {
+      const pj = JSON.parse(readFileSync(join(env.profileDir, 'node_modules', name, 'package.json'), 'utf8'))
+      hasClient = pj.dsh?.client !== undefined || pj.exports?.['./client'] !== undefined
+    } catch {
+      /* unreadable — assume client */
+    }
+    if (hasClient) checks[`fleetClient:${short}`] = () => manifestBundleOk(`/plugins/${name}/client.js`, `${short}\\/client\\.js`)
+  }
+
+  // Linked fleet: the served bundle must match the CURRENT source checkout's
+  // built file — proves the agent's rebuild actually reached the new host
+  // (a stale bundle would mean the fix never landed).
+  for (const [name, dir] of Object.entries(env.linkedPackages ?? {})) {
+    const clientFile = join(dir, 'lib', 'client.js')
+    if (!existsSync(clientFile)) continue
+    const short = name.split('/').pop()
+    checks[`linksFresh:${short}`] = async () => {
+      const body = await fetchBundle(`/plugins/${name}/client.js`, `${short}\\/client\\.js`)
+      if (body === undefined) return false
+      const current = createHash('sha1').update(readFileSync(clientFile)).digest('hex')
+      return createHash('sha1').update(body).digest('hex') === current
+    }
   }
 
   if (opts.report) {
@@ -403,7 +527,7 @@ async function assertCmd(opts) {
       const report = join(env.dshHome, 'state', 'upgrade-final-report.md')
       if (!existsSync(report)) return false
       const text = readFileSync(report, 'utf8')
-      const all = ['@fixture/legacy-store', '@khorsheed/dsh-plugin-upgrade', ...(env.extraPlugins ?? [])]
+      const all = env.installedPlugins ?? ['@fixture/legacy-store', ...(env.extraPlugins ?? [])]
       return all.every((name) => text.includes(name))
     }
     // The second ("user keeps working") session survives the restart: both
