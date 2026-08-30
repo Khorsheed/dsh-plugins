@@ -86,7 +86,7 @@ ankh-guard restart --port 3080 \
 评测实例 :3082  常驻 eval profile，独立 $DSH_HOME
 ```
 
-这对评测反而更好：环境隔离本就是评测的基本要求，与开发共享实例会引入干扰变量。`~/.dsh-acceptance`(3082) 的形态已经在用。
+这对评测反而更好：环境隔离本就是评测的基本要求，与开发共享实例会引入干扰变量。落点见 [ops.md 的环境拓扑](ops.md)——测试 profile 统一住 `~/.dsh-lab`，不与 3080 同住。
 
 ### preset 的定位：同一 profile 内的 agent 变体
 
@@ -265,14 +265,14 @@ dsh-dev/
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
 | B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
 | B9 | **五条切换判据实测** | B6·B8 | 见下 |
-| B10 | 借 **3091 alpha 实例**做 0.1.2 线的首版验证 | B8 | 与 3080 线结果对照 |
-| B11 | agent 照指南装（同 A14） | B8 | 隔离环境 |
+| B10 | 借 **3091**（`~/.dsh-alpha-check`，宿主 0.1.2-alpha）做该线首版验证 | B8 | 与稳定线结果对照；历史兼容按 **floor + current** 覆盖（最低 minHost + 当前稳定线），中间 rc 仅在 `compat.notes` 点名时补验 |
+| B11 | agent 照指南装（同 A14） | B8 | 一次性纯净实例 |
 | B12 | 自由装卸载实测（同 A15，22 个成员） | B8 | 抽样人工验界面，其余自动跑启动检查 |
 | B13 | 建镜像仓并首次同步 | B7·B9·B11·B12·A6 | clone 能照 README 装上 |
 
 #### A14 / A15 的做法
 
-- **隔离环境**：独立 `$DSH_HOME` + 独立端口，绝不碰 3080。3082（acceptance）或 3091（alpha）都可以。
+- **隔离环境**：按 [ops.md 的环境拓扑](ops.md)——一次性纯净实例用 `DSH_HOME=$(mktemp -d) <toolchain>/dsh web`，测完删目录。**「纯净」天然是一次性的**，没有还原纪律可违反。注意工具链分工：验证「用户拿到手什么样」走 **npm 工具链线**（`~/.dsh-toolchains/stable`），验证 prod 配置走**源码检出线**。
 - **A14 用谁来测**：把 README 那句话发给 claude-code 或 codex——正好用工作台自己的委派能力测自己的安装指南。判据是**不需要人补充信息**：agent 中途来问「装哪个目录 / 端口是多少」，就说明指南缺了那一条。
 - **A15 的分层**：12 个成员全部跑 `plugin rm` + 启动检查（可脚本化，快）；界面消失与恢复抽样人工验（慢，选 message-tools / ui-file-preview / taskpilot 这类有明显界面的）。
 
@@ -283,8 +283,25 @@ dsh-dev/
 | ~~C1~~ | ~~`room` 推上 3080~~ | **已完成**：2026-08-29 18:55 部署，分支已合并删除 | — |
 | C2 | 确认迁移验收三步：会话里列出 skill 并**真调用一次** / `check-env --port 3080` 读数 / 门禁重启 canary PASS | ops.md 要求，从未确认执行过 | 下一期 npm 发布 |
 | C3 | 重新生成 `release-status.md`（`pnpm release:status`） | 现版本 08-23 生成，缺 5 个包 | 下一期 |
-| C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐 0.1.2 宿主线 | AGENTS.md 要求；0.1.2 适配分支待命中 | B10 |
+| C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐；历史兼容按 **floor + current** 覆盖 | AGENTS.md 要求；0.1.2 适配分支进行中 | B10 |
 | C5 | README 截图回填（各包占位注释） | ops.md「验收即截图」 | 下一期 |
+| C6 | **环境拓扑迁移**（管理员执行）：建 `~/.dsh-lab`、测试 profile 迁入、acceptance 并入 `web-candidate`、建 `~/.dsh-toolchains/stable` | `docs/ops.md` 已定稿 | A13–A16、B8–B11 的实测环境 |
+
+#### 僵尸清理：判据与点名流程
+
+判据 **14 天没动 AND 无活跃分支**，两条都满足才删；清理前点名，**24 小时无人认领再删**。
+
+2026-08-30 首次执行结果：
+
+| profile | 静置 | 对应分支 | 判定 |
+|---|---|---|---|
+| `message-tools-test` | 15 天 | 无 | **拟删**（认领窗口中） |
+| `web.bak-mt` | 15 天 | 无（`web` 的备份残留） | **拟删**（认领窗口中） |
+| `kimi-test` | 14 天 ✓ | **`feat/kimi-credential-guard` 08-27 有提交** | 保留——只看时间会误删它 |
+| `web-inline-html` | 4 天 | `feat/inline-html-render` | 保留 |
+| `cap-catalog-test` | 0 天 | `capability-catalog` 08-29 有提交 | 保留 |
+
+`kimi-test` 那一行是判据第二条的价值证明：单看静置时间会误删一个三天前还在提交的分支所属环境。
 
 ### 观察期实况（2026-08-30）
 
@@ -325,7 +342,7 @@ dsh-dev/
 - **0.1.2 基线迁移未在本文件占位，但已在进行**：`ankh-guard` 的 preset 探测双宿主面（`22e3a4a`）与 local-agent 的 dual-line CallId（`3a405aa`，从 0.1.2 wave cherry-pick）都已落地。发布前置里的「build + test 全绿」需明确针对哪条宿主线，否则阶段一的验收基准是浮动的。相关评估见 `.agents/notes/proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md`。
 
 - **多 domain pack 的 base 成员重复**：base 层 12 个包在每个 domain pack 里各列一份。**不是「dev 引用 basic」**——`web-basic` 只是「恰好只含 base 层的那个 domain」，它不拥有那些包；装 dev 的用户不该感知 basic 存在。要减少重复，正确形态是 **base 层的薄元包**，两个 domain pack 都引用它，这需要上游 `reconcilePlugins` 支持依赖闭包（[upstream-meta-pack-reconcile](../proposals/active/2026-08-21-upstream-meta-pack-reconcile.md)）。在那之前重复不可规避，代价是：更新要每个 profile 各跑一次；磁盘上 tarball 安装不走 pnpm store 共享（实测 19M/profile，链接数=1），npm 语义版本才共享。
-- **并存运行有并发风险**：会话按 cwd 分组存 `$DSH_HOME/sessions/`，home 级共享；持久化协调器是进程内序列化，跨进程无保护。同一 `$DSH_HOME` 上不应并行两个实例；需要隔离就给独立 `$DSH_HOME`（评测实例即属此类）。
+- ~~**并存运行有并发风险**~~ **已裁决**（2026-08-30，`docs/ops.md` 环境拓扑，commit `1c9829f`）：测试 profile 一律住 `~/.dsh-lab`，`~/.dsh-official` 只留 `profiles/web`；`~/.dsh-acceptance` 并入 lab 的 `web-candidate`；一次性纯净测试走 `mktemp` + `~/.dsh-toolchains/stable`。**遗留风险一条**：lab 的 `local-agent` 软链回 official，并发刷 token 有写竞争——**凭据刷新失败先查这里**。
 
 ## 九、维护规则
 
