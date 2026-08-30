@@ -243,7 +243,7 @@ dsh-dev/
 | A8 | 加两个成员（capability-catalog、inline-html-render），版本 bump 走 **minor** | A1·A2 | `--dump-config` 行数 +2 |
 | A9 | **模板保持最小**：只含 `package.json` + bundles 清单 + lockfile；用户个性化引导到 `cordis.patch.yml` 的 user 层（官方分层天然支持） | A2 | 模板里没有用户会改的东西 |
 | A10 | **ship `pnpm-lock.yaml`** | A9 | profile 是应用不是库——可复现安装优先于依赖新鲜度 |
-| A11 | **`install.sh` 升级路径**：已装过旧版的实例能升级（三路合并或明确的覆盖策略，二选一并写明） | A8·A9 | 现在是「目录已存在就报错退出」，无升级路径 |
+| A11 | **`update.sh`**：成员变更后的升级路径 | A8·A9 | **已写**：明确覆盖策略——只覆盖 `package.json` 与 lockfile，`cordis.patch.yml`（用户层）绝不触碰。install.sh 的「已存在即报错」保持不变，升级走独立动词 |
 | A12 | A11 的验收步骤（测试或手写清单） | A11 | 全新安装、旧实例升级两条路径都过 |
 | A13 | 全新 `$DSH_HOME` 装一遍 | A8·A11 | 一次通过 |
 | A14 | **agent 照指南装**：把 README 那句话原样发给一个 agent，看它能否独立装成 | A13 | **README 的终极验证**——指南是写给 agent 读的，读完做不对就是指南的 bug。隔离环境跑，不碰 3080 |
@@ -259,7 +259,7 @@ dsh-dev/
 | B1 | 确认成员清单与各包版本线 | A 线机制就位 | **21 个成员**（= 3080 现有全集）。`mission` 不在 3080，按标准排除在首版之外 |
 | B2 | 建 `profiles/web-dev/`：`package.json` + `cordis.patch.yml` + `pnpm-workspace.yaml` + `pnpm-lock.yaml` | B1·A2 | 自带 hoisted linker |
 | B3 | `dsh.profile.bundles` 挂 base + dev 的 feature | B2 | `--dump-config` 组合完整 |
-| B4 | ~~自带 preset~~ **首版不做**：用官方 `standard` | B3 | preset **无 patch 语义**，复制即快照、官方演进后不跟（官方 README：*A copy is a snapshot that drifts*）。`standard` 是 257 行 / 30 个插件行，为一段委派判据背这份漂移债不划算。隔离已由 profile 完成；差异化需求（review 变体、纯调度 agent）明确后再做 |
+| B4 | ~~自带 preset~~ **首版不做**：用官方 `standard`，README 给出自建路径 | B3 | preset **无 patch 语义**，复制即快照、官方演进后不跟（官方 README：*A copy is a snapshot that drifts*）。官方自定义路径是 GUI 复制 + 「创造模式」辅助创作，用户随时可自建，存 `$DSH_HOME/.agent-presets/`，不受 profile 更新影响——**我们不分发，也不挡路** |
 | B5 | 写 `scripts/install.sh`（复用 A11 的升级策略） | B2·A11 | 全新与升级两条路径 |
 | B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
