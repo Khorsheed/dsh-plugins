@@ -190,39 +190,6 @@
   transform: translateX(0.9375rem);
 }
 
-/* The override line: badge naming the yaml defaults being shadowed, plus the
-   reset action that clears the user layer. */
-.overrideRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.badge {
-  font-size: 11px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--dsw-alias-state-warn-tertiary);
-  color: var(--dsw-alias-state-warn-label);
-}
-
-.reset {
-  appearance: none;
-  border: 0;
-  background: none;
-  padding: 2px 6px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  border-radius: 6px;
-}
-
-.reset:hover {
-  color: var(--dsw-alias-label-primary);
-}
-
 .saved {
   font-size: 12px;
   color: var(--dsw-alias-state-success-primary);

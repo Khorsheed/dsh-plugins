@@ -2,7 +2,7 @@
 /**
  * The kimi settings card in the plugin configuration tab: collapsible chrome,
  * the family core's shared ProviderAuthBlock embedded for the auth states, and
- * the resident-mode block (live switch, granularity radios, override badge)
+ * the resident-mode block (live switch, granularity radios)
  * writing through the bound settingsScope.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -138,7 +138,7 @@ describe('KimiSettingsCard', () => {
 
     expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
     expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
-    const toggle = screen.getByRole('switch', { name: zh['live.enable'] })
+    const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByRole('radio', { name: zh['live.granularity.event'] })).toBeTruthy()
     expect(screen.getByRole('radio', { name: zh['live.granularity.token'] })).toBeTruthy()
@@ -150,7 +150,7 @@ describe('KimiSettingsCard', () => {
 
     expect(screen.getByText(coreZh['settings.authenticated'])).toBeTruthy()
     expect(screen.getByRole('button', { name: coreZh['settings.logout'] })).toBeTruthy()
-    const toggle = screen.getByRole('switch', { name: zh['live.enable'] })
+    const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
@@ -182,10 +182,10 @@ describe('KimiSettingsCard', () => {
     const { scope } = renderCard({})
     await openCard()
 
-    fireEvent.click(screen.getByRole('switch', { name: zh['live.enable'] }))
+    fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
     await act(async () => {})
     expect(scope.set).toHaveBeenCalledWith('live', true)
-    expect(screen.getByRole('switch', { name: zh['live.enable'] }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('switch', { name: zh['live.title'] }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText(zh['live.applied'])).toBeTruthy()
   })
 
@@ -199,39 +199,13 @@ describe('KimiSettingsCard', () => {
     expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).checked).toBe(true)
   })
 
-  it('shows the override badge only while the user layer carries a field, and 恢复默认 clears it', async () => {
-    const { scope } = renderCard({
-      value: { live: true, liveMirrorGranularity: 'event' },
-      user: { live: true },
-      base: { live: false, liveMirrorGranularity: 'event' },
-    })
-    await openCard()
-
-    // The badge names the yaml value being shadowed.
-    expect(screen.getByText('已覆盖部署默认（yaml：live=false）')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: zh['live.reset'] }))
-    await act(async () => {})
-    expect(scope.unset).toHaveBeenCalledWith('live')
-    expect(scope.unset).not.toHaveBeenCalledWith('liveMirrorGranularity')
-    // The user layer cleared → the badge disappears and the value re-inherits base.
-    expect(screen.queryByText(/已覆盖部署默认/)).toBeNull()
-    expect(screen.getByRole('switch', { name: zh['live.enable'] }).getAttribute('aria-checked')).toBe('false')
-  })
-
-  it('renders no override badge when the user layer is empty', async () => {
-    renderCard({ value: { live: true, liveMirrorGranularity: 'event' }, base: { live: true, liveMirrorGranularity: 'event' } })
-    await openCard()
-    expect(screen.queryByText(/已覆盖部署默认/)).toBeNull()
-  })
-
   it('disables the live controls and explains while the namespace is unavailable', async () => {
     renderCard({
       snapshot: { status: 'unavailable', value: undefined, base: undefined, user: undefined, revision: undefined, writable: false, mode: 'memory' },
     })
     await openCard()
 
-    expect((screen.getByRole('switch', { name: zh['live.enable'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('radio', { name: zh['live.granularity.token'] }) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })

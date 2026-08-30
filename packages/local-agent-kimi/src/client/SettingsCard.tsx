@@ -43,21 +43,6 @@ export type KimiSettingsCardProps =
   & InjectFace<KimiSettingsCardInjected>
   & PropsLocale<typeof NS>
 
-/** Whether the user layer carries a field (presence marks an override). */
-function overridden(snapshot: SettingsScopeSnapshot<KimiLiveSettings>, field: keyof KimiLiveSettings): boolean {
-  return snapshot.user !== undefined
-    && typeof snapshot.user === 'object'
-    && snapshot.user !== null
-    && field in snapshot.user
-}
-
-/** The composition (yaml) layer, when the host declared one. */
-function baseLayer(snapshot: SettingsScopeSnapshot<KimiLiveSettings>): Partial<KimiLiveSettings> {
-  return snapshot.base !== undefined && typeof snapshot.base === 'object' && snapshot.base !== null
-    ? snapshot.base as Partial<KimiLiveSettings>
-    : {}
-}
-
 /**
  * The kimi harness settings card in the plugin configuration tab: the same
  * collapsible chrome the official plugin cards use, re-implemented locally
@@ -78,29 +63,12 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
   const ready = snapshot.status === 'ready' && snapshot.writable
   const live = snapshot.value?.live ?? false
   const granularity = snapshot.value?.liveMirrorGranularity ?? 'event'
-  const liveOverridden = overridden(snapshot, 'live')
-  const granularityOverridden = overridden(snapshot, 'liveMirrorGranularity')
-  const base = baseLayer(snapshot)
 
   const write = (field: string, value: unknown): void => {
     setSaved(false)
     setError(false)
     void scope.set(field, value).then(() => { setSaved(true) }, () => { setError(true) })
   }
-
-  // 恢复默认 = clear the user layer so the fields re-inherit the yaml base.
-  const reset = (): void => {
-    setSaved(false)
-    setError(false)
-    const clears: Array<Promise<void>> = []
-    if (liveOverridden) clears.push(scope.unset('live'))
-    if (granularityOverridden) clears.push(scope.unset('liveMirrorGranularity'))
-    void Promise.all(clears).then(() => { setSaved(true) }, () => { setError(true) })
-  }
-
-  const yamlParts: string[] = []
-  if (liveOverridden) yamlParts.push(`live=${String(base.live ?? false)}`)
-  if (granularityOverridden) yamlParts.push(`liveMirrorGranularity=${base.liveMirrorGranularity ?? 'event'}`)
 
   const title = t('card.title')
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -143,19 +111,18 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
             />
           </section>
           <section className={css.block}>
-            <h3 className={css.blockTitle}>
-              {t('live.title')}
-              <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
-                <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
-              </Tooltip>
-            </h3>
             <div className={css.row}>
-              <span className={css.rowLabel}>{t('live.enable')}</span>
+              <span className={css.rowLabel}>
+                {t('live.title')}
+                <Tooltip label={t('live.info')} side="bottom" maxWidth={360}>
+                  <button type="button" className={css.info} aria-label={t('live.info.aria')}>ⓘ</button>
+                </Tooltip>
+              </span>
               <button
                 type="button"
                 role="switch"
                 aria-checked={live}
-                aria-label={t('live.enable')}
+                aria-label={t('live.title')}
                 className={live ? `${css.switch} ${css.switchOn}` : css.switch}
                 disabled={!ready}
                 onClick={() => { write('live', !live) }}
@@ -191,14 +158,6 @@ export function KimiSettingsCard({ useSettings, scope, auth, authT, useSessions,
                 {t('live.granularity.token')}
               </label>
             </div>
-            {(liveOverridden || granularityOverridden) && (
-              <div className={css.overrideRow}>
-                <span className={css.badge}>{t('live.overridden', { yaml: yamlParts.join(', ') })}</span>
-                <button type="button" className={css.reset} onClick={reset}>
-                  {t('live.reset')}
-                </button>
-              </div>
-            )}
             {saved && <span className={css.saved}>{t('live.applied')}</span>}
             {error && <span className={css.errorText}>{t('live.error')}</span>}
             {snapshot.status === 'unavailable' && (
