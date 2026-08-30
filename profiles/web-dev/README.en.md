@@ -8,21 +8,6 @@
 
 > **Status**: pre-release. 13 of the 21 members are not on npm yet, so installation currently builds from [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) source (see [Install](#install)).
 
-## Relationship to dsh-web-basic
-
-**These are two profiles. You switch between them; you do not stack them.**
-
-`dsh-web-basic` is the everyday mode: it completes dsh's Web GUI. `dsh-web-dev` is the development mode: the same baseline plus multi-agent delegation, live git state, and multi-agent rooms. You do not install the plugins twice — the two profiles are independent, and one command switches between them:
-
-```sh
-sh scripts/restart-into-web-dev.sh          # switch to development mode
-# switch back with the matching script in the dsh-web-basic repo
-```
-
-The switch is a **same-port handover**: refresh the original address, no new port to remember. A preflight runs first — if the target composition cannot boot, the running instance is never stopped, and you stay where you were.
-
-**Session data is unaffected**: sessions live in `$DSH_HOME/sessions/`, at home level, belonging to no profile. Switch away and back, and your history is still there.
-
 ## Install
 
 **With an Agent (recommended)**: after installing [dsh](https://github.com/deepseek-ai/deepseek-harness), tell your agent:
@@ -67,6 +52,36 @@ The client bundles changed, so the browser needs Cmd/Ctrl+Shift+R.
 
 </details>
 
+## Update
+
+When the member list changes, pull and run the updater:
+
+```sh
+cd dsh-web-dev && git pull
+sh scripts/update.sh
+sh scripts/restart-into-web-dev.sh
+```
+
+`update.sh` overwrites `package.json` and the lockfile only — it **never touches your `cordis.patch.yml`**, which is your layer.
+
+## Switching modes
+
+```sh
+sh scripts/restart-into-web-dev.sh          # switch to this profile, port 3080 by default
+sh scripts/restart-into-web-dev.sh 3090     # pick a port
+```
+
+To switch to another profile, run the matching script in its own repo. The switch is a same-port handover: refresh the original address.
+
+Installing several profiles: clone each and run its own `install.sh` — they do not interfere. To run them side by side, give each a port:
+
+```sh
+dsh --profile web-basic --port 3080 &
+dsh --profile web-dev   --port 3090 &
+```
+
+Sessions live in `$DSH_HOME/sessions/` and are shared by every profile.
+
 ## What is included
 
 21 members across three layers:
@@ -102,16 +117,17 @@ Invite an agent into any session and that session becomes a room: member tab, @-
 
 <!-- screenshot placeholder: docs/screenshots/room-members.png (pending) -->
 
-## Install and remove members freely
-
-Every member can be removed on its own, through the host's official verb — not a switch this profile invented:
+## Adding and removing single members
 
 ```sh
-dsh --profile web-dev plugin rm @khorsheed/dsh-whalesong    # remove
+dsh --profile web-dev plugin rm  @khorsheed/dsh-whalesong   # remove
 dsh --profile web-dev plugin add @khorsheed/dsh-whalesong   # add back
+sh scripts/restart-into-web-dev.sh                          # restart to apply
 ```
 
-Removal restores exactly: no plugin modifies or replaces an official file, so the composition returns precisely to its prior state. Restart the instance for changes to take effect.
+## Custom agent presets
+
+This profile runs the official Standard preset. To build your own: **Settings → Agent presets** → copy a built-in preset and edit it, or use "create with Creation mode" at the bottom to have an agent build it with you. Your presets live in `$DSH_HOME/.agent-presets/` and are unaffected by updates to this profile.
 
 ## Removing the whole profile
 
@@ -120,6 +136,12 @@ rm -rf "$DSH_HOME/profiles/web-dev"
 ```
 
 Session data lives in `$DSH_HOME/sessions/` and does not go with the profile.
+
+## Related packs
+
+| Pack | Role |
+|---|---|
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | Everyday mode: completes dsh's Web GUI. This profile's 12 baseline members come from it |
 
 ## License
 

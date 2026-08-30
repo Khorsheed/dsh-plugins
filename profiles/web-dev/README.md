@@ -8,21 +8,6 @@
 
 > **状态**：pre-release。21 个成员里有 13 个尚未上架 npm，当前需从 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 源码构建安装（见[安装](#安装)）。
 
-## 与 dsh-web-basic 的关系
-
-**这是两个 profile，切换关系，不是叠加关系。**
-
-`dsh-web-basic` 是日常模式：把 dsh 的 Web GUI 补完整。`dsh-web-dev` 是开发模式：在同样的基础体验之上，加上多 agent 委派、git 实况、多 agent 房间。你不需要装两遍插件——两个 profile 各自独立，用一条命令互相切换：
-
-```sh
-sh scripts/restart-into-web-dev.sh          # 切到开发模式
-# 切回日常模式用 dsh-web-basic 仓库里的同名脚本
-```
-
-切换是**同端口交接**：浏览器刷新原地址即可，不用记新端口。切换前会跑 preflight——目标组合起不来就绝不停当前实例，切不过去你还留在原来的模式。
-
-**会话数据不受影响**：会话存在 `$DSH_HOME/sessions/`，home 级、不属于任何 profile。切过去切回来，历史会话都在。
-
 ## 安装
 
 **有 Agent（推荐）**：装好 [dsh](https://github.com/deepseek-ai/deepseek-harness) 后，对你的 Agent 说一句：
@@ -67,6 +52,36 @@ sh /tmp/dsh-web-dev/scripts/restart-into-web-dev.sh [端口，默认 3080]
 
 </details>
 
+## 更新
+
+成员清单变化后（新增或移除插件），拉最新再跑一次 update：
+
+```sh
+cd dsh-web-dev && git pull
+sh scripts/update.sh
+sh scripts/restart-into-web-dev.sh
+```
+
+`update.sh` 只覆盖 `package.json` 与 lockfile，**不动你的 `cordis.patch.yml`**——那一层的改动是你的。
+
+## 切换模式
+
+```sh
+sh scripts/restart-into-web-dev.sh          # 切到本 profile，默认 3080
+sh scripts/restart-into-web-dev.sh 3090     # 指定端口
+```
+
+切回其它 profile，用它自己仓库里的同名脚本。切换是同端口交接，浏览器刷新原地址即可。
+
+同时装多个 profile：各自 clone、各自 `install.sh`，互不干扰。要并存运行就起在不同端口：
+
+```sh
+dsh --profile web-basic --port 3080 &
+dsh --profile web-dev   --port 3090 &
+```
+
+会话数据在 `$DSH_HOME/sessions/`，所有 profile 共享。
+
 ## 包含什么
 
 21 个成员，三层：
@@ -102,16 +117,17 @@ sh /tmp/dsh-web-dev/scripts/restart-into-web-dev.sh [端口，默认 3080]
 
 <!-- screenshot placeholder: docs/screenshots/room-members.png (pending) -->
 
-## 自由装卸载
-
-每个成员都可以单独卸载，用的是宿主的官方动词——不是本 profile 自造的开关：
+## 装卸单个成员
 
 ```sh
-dsh --profile web-dev plugin rm @khorsheed/dsh-whalesong    # 卸载
+dsh --profile web-dev plugin rm  @khorsheed/dsh-whalesong   # 卸载
 dsh --profile web-dev plugin add @khorsheed/dsh-whalesong   # 装回来
+sh scripts/restart-into-web-dev.sh                          # 重启生效
 ```
 
-卸载即精确还原：没有任何插件修改或替换官方文件，移除后组合精确回到之前的状态。改完重启实例生效。
+## 自定义 Agent 预设
+
+本 profile 使用官方「标准模式」。要做自己的预设：**设置 → Agent 预设** → 复制一份内置预设改，或点底部「用『创造模式』创作自定义预设」让 Agent 帮你做。自建的预设存在 `$DSH_HOME/.agent-presets/`，与本 profile 的更新互不影响。
 
 ## 卸载整个 profile
 
@@ -120,6 +136,12 @@ rm -rf "$DSH_HOME/profiles/web-dev"
 ```
 
 会话数据在 `$DSH_HOME/sessions/`，不随 profile 删除。
+
+## 相关整合包
+
+| 整合包 | 定位 |
+|---|---|
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | 日常模式：把 dsh 的 Web GUI 补完整，本 profile 的 12 个基础成员即来自它 |
 
 ## 许可
 
