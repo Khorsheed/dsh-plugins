@@ -282,7 +282,7 @@ dsh-dev/
 |---|---|---|---|
 | ~~C1~~ | ~~`room` 推上 3080~~ | **已完成**：2026-08-29 18:55 部署，分支已合并删除 | — |
 | C2 | 确认迁移验收三步：会话里列出 skill 并**真调用一次** / `check-env --port 3080` 读数 / 门禁重启 canary PASS | ops.md 要求，从未确认执行过 | 下一期 npm 发布 |
-| C3 | 重新生成 `release-status.md`（`pnpm release:status`） | 现版本 08-23 生成，缺 5 个包 | 下一期 |
+| ~~C3~~ | ~~重新生成 `release-status.md`~~ | **已完成**（2026-08-30）：25 个包在册，补上了此前缺的 capability-catalog / inline-html-render / local-files / room / worktrees。当前 **已发布 10、未发布 15** | — |
 | C4 | 各包 `Compatibility` 段 + `dsh.compat` 对齐；历史兼容按 **floor + current** 覆盖 | AGENTS.md 要求；0.1.2 适配分支进行中 | B10 |
 | C5 | README 截图回填（各包占位注释） | ops.md「验收即截图」 | 下一期 |
 | C6 | **环境拓扑迁移**（管理员执行）：建 `~/.dsh-lab`、测试 profile 迁入、acceptance 并入 `web-candidate`、建 `~/.dsh-toolchains/stable` | `docs/ops.md` 已定稿 | A13–A16、B8–B11 的实测环境 |
