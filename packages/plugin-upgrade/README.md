@@ -14,7 +14,7 @@ skill 内容骨架(完整内容见 `skills/plugin-upgrade/SKILL.md`):
 - **断裂面盘点**:外化依赖/模块种子表、slots、Remote、settings、skills、命令签名、DOM 锚点、prompt order 锚点,以及"命名导出删除时类型仍绿"的编译期盲区。
 - **修复纪律**:双 seat 探测、品牌类型锚定到消费方 API、删除包值导入内联(前提是无跨界身份)、降级不炸。
 - **验证阶梯**:包级 → 组合级 → 活体验收(全新 HOME + 浏览器 console 零插件错误)→ 交付级(从零按 README 安装)。
-- **自我重启**:有 ankh-guard 走守卫重启;没有则先写交接便签,再 spawn 全分离 supervisor(`skills/plugin-upgrade/assets/restart-resume.sh`:等旧进程死 → 起新宿主 → 健康检查 → 失败回滚旧检出)。
+- **自我重启**:有 ankh-guard 走守卫重启;没有则先写交接便签,再 spawn 全分离 supervisor(`skills/plugin-upgrade/assets/` 下的 restart-resume:`.sh` 用于有 setsid 的平台,`.mjs` 用于 macOS:等旧进程死 → 起新宿主 → 健康检查(任意 HTTP 应答即活,容忍 0.1.2 的 token 门禁)→ 失败回滚旧检出)。试启动用同目录的 `trial-boot.mjs`。
 - **失败兜底**:任何一步不过就停下报告;重启失败由 supervisor 回滚。
 
 ## 安装

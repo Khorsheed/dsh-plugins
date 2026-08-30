@@ -50,6 +50,16 @@ checklist below per installed plugin.
     source-loader that cannot inline the enum cross-package; the built CLI
     plus prebuilt frontend dist may become the only boot path. Your restart
     command from Phase 0 may need to change, not just your code.
+13. **Browser asset URL shape** — how plugin client bundles are SERVED is host
+    contract, and it changes across lines (one line serves a single-file
+    `/plugins/<id>/client.js`; the next serves only the boot-manifest batch
+    form `/plugins/??<id>/client.js,...&rev=...`). Verifiers and health checks
+    that hardcode the old URL report 404 on a perfectly healthy plugin. Always
+    take the URL from the page's boot manifest (`window.__DSH_BOOT__` graph),
+    never from memory. The same release may also gate the whole UI behind a
+    one-time `?token=` login (bare `GET /` answers 401) — that is host
+    behavior, not a plugin regression; health checks must treat any HTTP
+    answer as alive.
 
 ## Compile-time blind spots — the standing warning
 

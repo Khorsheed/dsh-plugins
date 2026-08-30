@@ -59,10 +59,14 @@ status() {
 
 pid_alive() { kill -0 "$1" 2>/dev/null; }
 
-# healthy — one HTTP probe; any 2xx/3xx counts, connection-refused does not.
+# healthy — one HTTP probe; ANY HTTP status code counts as alive: hosts may
+# gate the index behind one-time-token auth (0.1.2+ answers a bare GET / with
+# 401 and prints the `?token=` URL on stdout), so 4xx is alive too. Only a
+# missing answer (curl's 000) is down. If you need a 2xx, extract the token
+# from the new host's log first and poll "$HEALTH_URL?token=<token>".
 healthy() {
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --noproxy '*' "$HEALTH_URL" 2>/dev/null)
-  case "$code" in 2*|3*) return 0 ;; *) return 1 ;; esac
+  case "$code" in 000|'') return 1 ;; *) return 0 ;; esac
 }
 
 # wait_dead <pid> <seconds>

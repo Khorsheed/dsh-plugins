@@ -55,6 +55,8 @@ describe('pack smoke', () => {
     expect(existsSync(join(skillDir, 'reference', 'breakage-checklist.md')), 'reference/breakage-checklist.md missing').toBe(true)
     expect(existsSync(join(skillDir, 'reference', 'dual-host-fix-patterns.md')), 'reference/dual-host-fix-patterns.md missing').toBe(true)
     expect(existsSync(join(skillDir, 'assets', 'restart-resume.sh')), 'assets/restart-resume.sh missing').toBe(true)
+    expect(existsSync(join(skillDir, 'assets', 'restart-resume.mjs')), 'assets/restart-resume.mjs missing').toBe(true)
+    expect(existsSync(join(skillDir, 'assets', 'trial-boot.mjs')), 'assets/trial-boot.mjs missing').toBe(true)
     // Self-mounting: the bundle patch rides the tarball.
     expect(existsSync(join(unpack, 'package', 'cordis.patch.yml')), 'cordis.patch.yml missing from the tarball').toBe(true)
   })

@@ -42,7 +42,11 @@ with the user, never a surprise mid-activity.
    ask.
 2. Record how this instance runs: profile name, port, `$DSH_HOME`, and the
    exact launch command (a process listing or the profile's deploy notes).
-   You need this verbatim for the restart phase.
+   You need this verbatim for the restart phase. **Resolve every path to an
+   absolute one, and be careful whose `~` you expand**: a path the user quotes
+   (`~/...`) means their LOGIN home, while the instance's own `$HOME` may be a
+   mktemp or container path — the two differ exactly in the deployments where
+   upgrades are trickiest. Record both, expanded.
 3. List what is installed: the profile's plugin rows and every package's
    version. Snapshot the working state of any source checkouts you will touch
    (`git status`, current HEAD) so every change is attributable. **Write this
@@ -150,6 +154,21 @@ Climb in order; each rung's criterion must pass before the next:
    package README: install, use, uninstall. The README is the product; if the
    install needs a fact that is not in it, fix the README.
 
+Rungs 2–3 have an executable helper: `assets/trial-boot.mjs` beside this skill
+boots the NEW host on a spare port against a THROWAWAY copy of the live
+profile (symlinks preserved), waits for it to answer, and prints the entry URL
+— including the `?token=` one token-gated hosts (0.1.2+) print at boot:
+
+```sh
+HOST_BIN=/path/to/new-host/node_modules/.bin/dsh \
+PROFILE_FROM=$DSH_HOME/profiles/web \
+DSH_HOME_FROM=$DSH_HOME \
+node /path/to/trial-boot.mjs
+```
+
+A trial that answers and renders the fleet in a browser is the strongest
+pre-restart signal available; the running instance stays untouched throughout.
+
 ## Phase 5 — Self-restart and resume
 
 **Timing**: the restart is the only user-visible seam. Confirm the moment with
@@ -173,20 +192,39 @@ back on failure, and resumes the sessions the restart interrupted.
    you reached, the rollback pointer (old host checkout path + old launch
    command), and the exact first sentence to say after the restart. The you
    that wakes up after the restart has this note and nothing else.
-2. **Spawn the detached supervisor** — `assets/restart-resume.sh` beside this
-   skill. It waits for the old process to die, starts the new host,
-   health-checks it, and on failure rolls back to the old host. Launch it FULLY
-   detached — a merely backgrounded child dies with the session teardown:
+2. **Spawn the detached supervisor** — two variants of the same logic ship in
+   `assets/` beside this skill. Both wait for the old process to die, start
+   the new host, health-check it, and on failure roll back to the old host.
+   Both treat ANY HTTP answer from the health URL as alive: a token-gated host
+   (0.1.2+) answers a bare `GET /` with **401**, so demanding 2xx misreads a
+   healthy new host as dead and triggers a spurious rollback. If you need a
+   2xx, extract the `?token=` URL from the new host's boot log and poll that.
+   Pick the variant by platform:
 
-   ```sh
-   OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
-   HEALTH_URL='http://127.0.0.1:<port>/' \
-   ROLLBACK_CMD='<old launch command>' \
-   setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
-   ```
+   - `assets/restart-resume.sh` — where `setsid` exists (Linux). Launch it
+     FULLY detached — a merely backgrounded child dies with the session
+     teardown:
 
-   If `setsid` is unavailable and the session is sandboxed, STOP and hand the
-   command to the user — a reaped supervisor mid-restart strands the instance.
+     ```sh
+     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
+     HEALTH_URL='http://127.0.0.1:<port>/' \
+     ROLLBACK_CMD='<old launch command>' \
+     setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
+     ```
+
+   - `assets/restart-resume.mjs` — where `setsid` does NOT exist (macOS):
+     Node's `spawn(..., { detached: true })` is the same detach. Same env vars:
+
+     ```sh
+     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
+     HEALTH_URL='http://127.0.0.1:<port>/' \
+     ROLLBACK_CMD='<old launch command>' \
+     node /path/to/restart-resume.mjs </dev/null >>/path/to/restart.log 2>&1 &
+     ```
+
+   If neither detach is available and the session is sandboxed, STOP and hand
+   the command to the user — a reaped supervisor mid-restart strands the
+   instance.
 3. **Exit the old instance** only after the supervisor is confirmed running
    (its log shows it waiting). Then the supervisor owns the handoff.
    **Before you exit, say so in the conversation** — the session log persists

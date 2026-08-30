@@ -14,7 +14,7 @@ Skill outline (full text in `skills/plugin-upgrade/SKILL.md`):
 - **Breakage inventory**: externalized deps / the module seed table, slots, Remote, settings, skills, command signatures, DOM anchors, prompt-order anchors — plus the compile-time blind spot where deleted named exports still typecheck.
 - **Fix discipline**: dual-seat probing, anchoring renamed brand types to consumer APIs, inlining deleted value imports (only when no cross-boundary identity), degrade-never-explode.
 - **Verification ladder**: package level → composition level → live acceptance (fresh home + zero plugin errors in the browser console) → delivery level (install from zero via the README).
-- **Self-restart**: with ankh-guard, ride its guarded restart; without it, write the handoff note first, then spawn a fully detached supervisor (`skills/plugin-upgrade/assets/restart-resume.sh`: waits for the old process to die → boots the new host → health-checks → rolls back to the old checkout on failure).
+- **Self-restart**: with ankh-guard, ride its guarded restart; without it, write the handoff note first, then spawn a fully detached supervisor (the restart-resume pair under `skills/plugin-upgrade/assets/`: `.sh` where setsid exists, `.mjs` on macOS: waits for the old process to die → boots the new host → health-checks, treating any HTTP answer as alive so the 0.1.2 token gate is not misread → rolls back to the old checkout on failure). Trial boots use `trial-boot.mjs` in the same directory.
 - **Failure fallback**: any failed rung stops the line with a report; a failed restart is rolled back by the supervisor.
 
 ## Install
