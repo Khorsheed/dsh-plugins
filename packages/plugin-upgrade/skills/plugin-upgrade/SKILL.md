@@ -84,18 +84,27 @@ or moved export/type/package your installed plugins touch. See
 
 ## Phase 2 — Inventory the breakage surface
 
-For each installed plugin, check every surface the host can break (details and
-the why in `reference/breakage-checklist.md`):
+Start from the deterministic scan, then spend human judgement only on what a
+probe cannot settle. `assets/scan-plugin.mjs` beside this skill probes the
+TARGET host's install (package presence, exports subpaths, the frontend
+shell's seeded module table) instead of matching a hardcoded symbol list:
 
-- **Externalized value imports** — browser bundles ask the host's frozen module
-  table for shared packages at load time. If the host deleted a package from
-  that table, the bundle throws at load. Type-only imports of a deleted
-  package are erased at build and are compile-time-only migration.
+```sh
+node /path/to/scan-plugin.mjs --plugin /path/to/plugin --host /path/to/new-host-staging
+# per installed plugin; exit 1 = load-time hits, "uncertain" rows need your eyes
+```
+
+The scan covers the mechanizable surfaces — externalized value imports in the
+built client bundle, deleted host packages referenced from sources, peer
+dependencies pointing at vanished host packages, hardcoded browser-asset URLs
+— and emits a per-plugin hit list (`file:line — surface — fix pointer`).
+Type-only imports of deleted packages are deliberately skipped (erased at
+build, checklist #2). Everything the scan cannot probe stays manual — walk
+`reference/breakage-checklist.md` for the rest:
+
 - **Slots, Remote namespaces, settings registration, skills registry, command
   execution signatures, DOM anchors** — verify each against the new host
   source, not against memory.
-- **Deleted host packages** — grep every plugin repo for the package name; a
-  single leftover reference is a load-time crash.
 - **Compile-time blind spots** — when dev dependencies still resolve the OLD
   host's published types, a deleted named export compiles green and only
   explodes on a live boot. Treat "build passed" as a weak signal until Phase 4.
@@ -251,6 +260,43 @@ inventory file and check each row on the NEW host:
 Present the result as a table against the baseline — what is verified working,
 what degraded, what is missing. Anything missing that the ladder had cleared
 means the upgrade is NOT done: keep fixing or roll back (Phase 7).
+
+## Phase 6.5 — Final report
+
+Close the upgrade with a report the user can REVIEW and veto from — the fleet
+table proves things work; this report explains what you changed so a human can
+audit the diff before trusting it. Write it to a markdown file beside the
+handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND repeat its key
+points in the conversation; the file is the durable record, the message is the
+notification.
+
+Structure — one section per AFFECTED plugin, then the totals:
+
+```markdown
+# Upgrade final report: <old host> → <new host>
+
+## <plugin package name>  (<old version> → <new version or "unchanged">)
+- Broke: <what the new host broke, or "nothing — unaffected">
+- Changed: <file list with +added/-removed lines each>
+- Verified: <highest ladder rung passed: package | composition | trial boot |
+  live post-restart, with the one-line evidence>
+- Residual risk: <what you did NOT verify, or "none known">
+
+## Totals
+- Plugins affected: <n of m installed; list the unaffected by name — "unaffected"
+  is a verdict the user paid for, not silence>
+- Total change surface: <files, +added/-removed lines>
+- Cost: <wall time; token usage if the host meters it, else "not metered">
+
+## Review these first
+<the 1-3 fixes most worth a human's eyes, and why — e.g. "the fixture's
+try/catch probe silently swallows a real break if the module returns for a
+different reason">
+```
+
+Rules: every installed plugin appears exactly once (affected or declared
+unaffected); every changed file is named with its line counts; a fix you are
+less than sure of says so in Residual risk rather than hiding in the diff.
 
 ## Phase 7 — Failure fallback
 

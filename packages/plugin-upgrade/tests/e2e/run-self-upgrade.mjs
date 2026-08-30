@@ -9,15 +9,23 @@
  *                           instance with the legacy fixture + plugin-upgrade
  *                           installed, wait until ready, print the handoff
  *                           guidance (URL + the one sentence to send).
+ *   up [--extra <name@spec>]…
+ *                           Extra plugins installed alongside the fixture
+ *                           (registry version or file: path) — the "normal
+ *                           fleet" that must survive the upgrade untouched.
  *   assert --home <dir>     Post-upgrade assertions: instance answers HTTP
  *                           (200 on rc.2, token-gated 401 on 0.1.2), the
  *                           listener on the recorded port runs from the alpha
  *                           toolchain, the fixture re-applied on the NEW boot
  *                           (marker pid == listener pid), fixture client.js
  *                           serves 200 (rc.2 single-file URL, or the 0.1.2
- *                           batch-manifest URL with auth cookie). Exit code
- *                           reflects the verdict.
- *                           --wait <sec> polls until all pass (default 0).
+ *                           batch-manifest URL with auth cookie), plus one
+ *                           per --extra plugin. --report adds the v2 checks:
+ *                           Phase 6.5 final report on disk covering every
+ *                           installed plugin, and the second session's log
+ *                           surviving the restart. Exit code reflects the
+ *                           verdict. --wait <sec> polls until all pass
+ *                           (default 0).
  *   cleanup --home <dir>    Kill the instance and delete the throwaway home.
  *
  * The script never drives a browser; an agent/human does that with the
@@ -51,7 +59,7 @@ const CREDENTIALS = join(HOME_REAL, '.dsh-official/.credentials.yaml')
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const WORKTREE_ROOT = resolve(PKG_ROOT, '..', '..')
 const FIXTURE_DIR = join(PKG_ROOT, 'tests/e2e/fixtures/fixture-legacy-store')
-const TARBALL = join(WORKTREE_ROOT, 'dist-publish/khorsheed-dsh-plugin-upgrade-0.1.0.tgz')
+const TARBALL = process.env.PLUGIN_UPGRADE_TARBALL ?? join(WORKTREE_ROOT, 'dist-publish/khorsheed-dsh-plugin-upgrade-0.1.0.tgz')
 
 const MARKER_REL = 'state/legacy-store-alive.json'
 const CLIENT_URL_PATH = '/plugins/@fixture/legacy-store/client.js'
@@ -64,10 +72,12 @@ const fail = (msg) => {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv
-  const opts = { wait: 0 }
+  const opts = { wait: 0, extra: [], report: false }
   for (let i = 0; i < rest.length; i += 1) {
     if (rest[i] === '--home') opts.home = rest[++i]
     else if (rest[i] === '--wait') opts.wait = Number(rest[++i])
+    else if (rest[i] === '--report') opts.report = true // v2: also assert final report + second session
+    else if (rest[i] === '--extra') opts.extra.push(rest[++i]) // name@spec, spec = version range or file: path
     else fail(`unknown argument: ${rest[i]}`)
   }
   return { command, opts }
@@ -191,7 +201,7 @@ function commandOf(pid) {
 
 // --------------------------------------------------------------------- up --
 
-async function up() {
+async function up(opts) {
   checkPrerequisites()
   const home = mkdtempSync(join(tmpdir(), 'dsh-e2e-upgrade-'))
   const dshHome = join(home, '.dsh')
@@ -217,7 +227,18 @@ async function up() {
   )
 
   // The profile mounts the official bundles from the STABLE toolchain (file:
-  // links, so the rc.2 line is what boots) plus the two test subjects.
+  // links, so the rc.2 line is what boots) plus the two test subjects and any
+  // --extra name@spec plugins (registry version or file: path).
+  const extraDeps = {}
+  const extraNames = []
+  for (const spec of opts.extra ?? []) {
+    const at = spec.lastIndexOf('@')
+    if (at <= 0) fail(`--extra expects name@spec, got: ${spec}`)
+    const name = spec.slice(0, at)
+    const version = spec.slice(at + 1)
+    extraDeps[name] = /^\d|\^|~/.test(version) ? version : `file:${version}`
+    extraNames.push(name)
+  }
   writeFileSync(
     join(profileDir, 'package.json'),
     JSON.stringify(
@@ -229,6 +250,7 @@ async function up() {
           '@deepseek-ai/dsh-web-app': `file:${join(HOME_REAL, '.dsh-toolchains/stable/node_modules/@deepseek-ai/dsh-web-app')}`,
           '@fixture/legacy-store': `file:${FIXTURE_DIR}`,
           '@khorsheed/dsh-plugin-upgrade': `file:${TARBALL}`,
+          ...extraDeps,
         },
         dsh: {
           profile: {
@@ -236,6 +258,7 @@ async function up() {
               '@deepseek-ai/dsh-base',
               '@deepseek-ai/dsh-web-app',
               '@fixture/legacy-store',
+              ...extraNames,
               '@khorsheed/dsh-plugin-upgrade',
             ],
           },
@@ -288,6 +311,7 @@ async function up() {
     logsDir,
     fixtureDir: FIXTURE_DIR,
     tarball: TARBALL,
+    extraPlugins: extraNames,
     stableBin: STABLE_BIN,
     alphaBin: ALPHA_BIN,
     alphaBase: ALPHA_BASE,
@@ -323,6 +347,23 @@ async function assertCmd(opts) {
   const env = JSON.parse(readFileSync(join(opts.home, 'e2e-env.json'), 'utf8'))
   const deadlineMsg = opts.wait > 0 ? `within ${opts.wait}s` : 'on first probe'
 
+  // rc.2 serves the single-file URL unauthenticated; 0.1.2 only serves the
+  // batch form from the boot manifest and requires the auth cookie. Try the
+  // rc.2 form first, then authenticate and follow the manifest.
+  const manifestBundleOk = async (singlePath, nameFragment) => {
+    if (singlePath && (await httpCode(`${env.base}${singlePath}`)) === 200) return true
+    const token = findSessionToken(env.home)
+    if (token === undefined) return false
+    const gate = await httpRequest(`${env.base}/?token=${token}`)
+    const cookie = (gate.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
+    const index = await httpRequest(`${env.base}/`, cookie)
+    if (index.code !== 200) return false
+    const match = new RegExp(`\\/plugins\\/\\?\\?[^"']*${nameFragment}[^"']*`).exec(index.body)
+    if (!match) return false
+    const batchUrl = match[0].replaceAll('&amp;', '&')
+    return (await httpRequest(`${env.base}${batchUrl}`, cookie)).code === 200
+  }
+
   const checks = {
     // rc.2 answers plain 200; 0.1.2 gates the UI behind a per-boot token and
     // answers 401 without it — both prove an HTTP server is up.
@@ -346,22 +387,48 @@ async function assertCmd(opts) {
         return false
       }
     },
-    // rc.2 serves the single-file URL unauthenticated; 0.1.2 only serves the
-    // batch form from the boot manifest and requires the auth cookie. Try the
-    // rc.2 form first, then authenticate and follow the manifest.
-    clientJsServed: async () => {
-      if ((await httpCode(`${env.base}${CLIENT_URL_PATH}`)) === 200) return true
-      const token = findSessionToken(env.home)
-      if (token === undefined) return false
-      const gate = await httpRequest(`${env.base}/?token=${token}`)
-      const cookie = (gate.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
-      const index = await httpRequest(`${env.base}/`, cookie)
-      if (index.code !== 200) return false
-      const match = /\/plugins\/\?\?[^"']*legacy-store\/client\.js[^"']*/.exec(index.body)
-      if (!match) return false
-      const batchUrl = match[0].replaceAll('&amp;', '&')
-      return (await httpRequest(`${env.base}${batchUrl}`, cookie)).code === 200
-    },
+    clientJsServed: async () => manifestBundleOk(CLIENT_URL_PATH, 'legacy-store\\/client\\.js'),
+  }
+
+  // Every --extra plugin's browser half must still serve post-upgrade.
+  for (const name of env.extraPlugins ?? []) {
+    const short = name.split('/').pop()
+    checks[`extraClient:${short}`] = () => manifestBundleOk(`/plugins/${name}/client.js`, `${short}\\/client\\.js`)
+  }
+
+  if (opts.report) {
+    // Phase 6.5: the final report landed beside the handoff note and covers
+    // EVERY installed plugin — "unaffected" rows included.
+    checks.finalReport = async () => {
+      const report = join(env.dshHome, 'state', 'upgrade-final-report.md')
+      if (!existsSync(report)) return false
+      const text = readFileSync(report, 'utf8')
+      const all = ['@fixture/legacy-store', '@khorsheed/dsh-plugin-upgrade', ...(env.extraPlugins ?? [])]
+      return all.every((name) => text.includes(name))
+    }
+    // The second ("user keeps working") session survives the restart: both
+    // session logs are still on disk and non-trivial afterwards.
+    checks.secondSessionIntact = async () => {
+      const sessionsRoot = join(env.dshHome, 'sessions')
+      const logs = []
+      const walk = (dir, depth) => {
+        if (depth > 3) return
+        let entries
+        try {
+          entries = readdirSync(dir, { withFileTypes: true })
+        } catch {
+          return
+        }
+        for (const e of entries) {
+          const p = join(dir, e.name)
+          if (e.isDirectory()) walk(p, depth + 1)
+          else if (e.name === 'session.jsonl.zstd') logs.push(p)
+        }
+      }
+      walk(sessionsRoot, 0)
+      if (logs.length < 2) return false
+      return logs.every((f) => statSync(f).size > 2000)
+    }
   }
 
   const results = {}
@@ -405,7 +472,7 @@ function cleanup(opts) {
 // --------------------------------------------------------------------- main --
 
 const { command, opts } = parseArgs(process.argv.slice(2))
-if (command === 'up') await up()
+if (command === 'up') await up(opts)
 else if (command === 'assert') await assertCmd(opts)
 else if (command === 'cleanup') cleanup(opts)
-else fail('usage: run-self-upgrade.mjs <up|assert|cleanup> [--home <dir>] [--wait <sec>]')
+else fail('usage: run-self-upgrade.mjs <up|assert|cleanup> [--home <dir>] [--wait <sec>] [--report] [--extra <name@spec>]…')
