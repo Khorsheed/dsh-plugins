@@ -1,0 +1,181 @@
+---
+name: plugin-upgrade
+description: Upgrade this dsh instance across a host release. Use when the user asks to upgrade/migrate the instance or its plugins to a new host version (e.g. "upgrade this instance to 0.1.2", "adapt the plugins to the new host", "move this deployment onto the latest release").
+---
+
+# Plugin upgrade runbook
+
+You are an agent running INSIDE the instance being upgraded. Your job: move the
+instance onto a new host version without losing the deployment — fetch the new
+host safely, find what breaks, fix it so the artifacts run on BOTH host lines,
+prove it on a live instance, then restart yourself and resume the conversation.
+
+Work through the phases in order. Never skip a verification rung. If any step
+fails and you cannot fix it, STOP and report — never restart into known-broken
+code.
+
+## Ground rules
+
+- **Never modify the running host's checkout in place.** The process you live
+  in executes those files; editing them under a running instance can kill you
+  mid-write and leaves no clean rollback point. Always stage the new host
+  beside the old one.
+- **Probe features, never version numbers.** A capability check
+  (`if (host.newSurface !== undefined)`) runs correctly on every line; a
+  version comparison rots the moment a backport lands.
+- **Green typecheck/tests is not runtime-clean.** Dev-time type resolution can
+  keep deleted host exports compiling. Only a live boot catches load-time and
+  apply-time breaks. The verification ladder below ends in a live instance for
+  exactly this reason.
+
+## Phase 0 — Baseline
+
+1. Record the current host version (`dsh --version`, or the host package's
+   `package.json`) and the target version. If you cannot name both, stop and
+   ask.
+2. Record how this instance runs: profile name, port, `$DSH_HOME`, and the
+   exact launch command (a process listing or the profile's deploy notes).
+   You need this verbatim for the restart phase.
+3. List what is installed: the profile's plugin rows and every package's
+   version. Snapshot the working state of any source checkouts you will touch
+   (`git status`, current HEAD) so every change is attributable.
+
+## Phase 1 — Fetch the new host beside the old
+
+Source-based deployment:
+
+```sh
+git -C /path/to/host/repo fetch --tags
+git -C /path/to/host/repo worktree add /path/to/host-next <new-tag>   # detached
+```
+
+npm-based deployment: install the new version into a separate staging
+directory, never over the running install:
+
+```sh
+mkdir -p /path/to/host-staging && cd /path/to/host-staging
+npm install @deepseek-ai/dsh@<target-version>
+```
+
+Then read the release notes commit by commit (changelog range
+`old-tag...new-tag`) and build a symbol migration map: every removed, renamed,
+or moved export/type/package your installed plugins touch. See
+`reference/breakage-checklist.md` for the full inventory method.
+
+## Phase 2 — Inventory the breakage surface
+
+For each installed plugin, check every surface the host can break (details and
+the why in `reference/breakage-checklist.md`):
+
+- **Externalized value imports** — browser bundles ask the host's frozen module
+  table for shared packages at load time. If the host deleted a package from
+  that table, the bundle throws at load. Type-only imports of a deleted
+  package are erased at build and are compile-time-only migration.
+- **Slots, Remote namespaces, settings registration, skills registry, command
+  execution signatures, DOM anchors** — verify each against the new host
+  source, not against memory.
+- **Deleted host packages** — grep every plugin repo for the package name; a
+  single leftover reference is a load-time crash.
+- **Compile-time blind spots** — when dev dependencies still resolve the OLD
+  host's published types, a deleted named export compiles green and only
+  explodes on a live boot. Treat "build passed" as a weak signal until Phase 4.
+
+## Phase 3 — Fix with dual-line discipline
+
+Every fix must produce ONE artifact that runs on the old AND the new host
+line, so the upgrade never strands a rollback. The full pattern catalog with
+worked examples is in `reference/dual-host-fix-patterns.md`; the core moves:
+
+1. **Feature-probe both seats.** A service that moved or was renamed gets a
+   probe per line, never a version check:
+
+   ```ts
+   const events = ctx.get('newServiceName') ?? ctx.get('legacyServiceName')
+   ```
+
+2. **Anchor renamed types to a consumer API.** When the host renames a branded
+   type, do not import the name — derive it from a signature that exists on
+   both lines:
+
+   ```ts
+   // The host renamed the call-id brand; the name you imported is gone.
+   // import type { CallId } from 'host-llm/brand'            // breaks
+   type CallIdCompat = Parameters<ToolStream['onCall']>[0]['id'] // survives
+   ```
+
+3. **Inline deleted value imports.** If the host deleted a package whose
+   VALUES you import, bundle the replacement into your own artifact so it
+   needs no host row on either line — but only after verifying it carries no
+   cross-boundary identity: no `Symbol.for` keys, no `instanceof` against host
+   classes, no host-shared singletons. If it does carry identity, probe both
+   host seats instead.
+
+4. **Degrade, never explode.** A missing optional capability hides the feature;
+   it must never throw inside plugin apply — one throwing loader entry fails
+   the whole boot.
+
+## Phase 4 — The verification ladder
+
+Climb in order; each rung's criterion must pass before the next:
+
+1. **Package level** — every touched package builds and tests green against
+   BOTH host lines (two runs, two dependency seeds).
+2. **Composition level** — all plugins installed TOGETHER into one profile;
+   boot it. Catches duplicate loader entry ids and cross-plugin interference
+   that per-package runs cannot see.
+3. **Live acceptance** — a real instance on a FRESH home directory, every
+   candidate package installed from its tarball, then drive the UI in a
+   browser: navigate, send messages, open settings. Criterion: **zero plugin
+   errors in the browser console**. Green build+test is not runtime-clean —
+   load-time `SyntaxError`s, `undefined.subscribe` in plugin apply, and
+   renderer crashes from folded-away host members have all shipped past green
+   suites and only surfaced here.
+4. **Delivery level** — from zero, on a clean profile, following only the
+   package README: install, use, uninstall. The README is the product; if the
+   install needs a fact that is not in it, fix the README.
+
+## Phase 5 — Self-restart and resume
+
+Pick the path by capability, and prefer the guard when present:
+
+**Path A — the instance has the ankh-guard plugin.** Ask the user (or check the
+installed plugin list) whether `@khorsheed/dsh-ankh-guard` is installed. If
+yes, follow the `dsh-self-restart-guard` skill: record the green credential,
+schedule the guarded restart — the watchdog health-checks the new boot, rolls
+back on failure, and resumes the sessions the restart interrupted.
+
+**Path B — no guard.** Do it by hand, in this order:
+
+1. **Write the handoff note FIRST** — a state file under the instance's state
+   directory recording: what changed (files/commits), which verification rung
+   you reached, the rollback pointer (old host checkout path + old launch
+   command), and the exact first sentence to say after the restart. The you
+   that wakes up after the restart has this note and nothing else.
+2. **Spawn the detached supervisor** — `assets/restart-resume.sh` beside this
+   skill. It waits for the old process to die, starts the new host,
+   health-checks it, and on failure rolls back to the old host. Launch it FULLY
+   detached — a merely backgrounded child dies with the session teardown:
+
+   ```sh
+   OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
+   HEALTH_URL='http://127.0.0.1:<port>/' \
+   ROLLBACK_CMD='<old launch command>' \
+   setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
+   ```
+
+   If `setsid` is unavailable and the session is sandboxed, STOP and hand the
+   command to the user — a reaped supervisor mid-restart strands the instance.
+3. **Exit the old instance** only after the supervisor is confirmed running
+   (its log shows it waiting). Then the supervisor owns the handoff.
+4. **After the boot**, read the handoff note and the supervisor log, confirm
+   the health check passed, and open with the prepared first sentence.
+
+## Phase 6 — Failure fallback
+
+- Any rung of the ladder fails → stop, report what passed and what did not.
+  Do NOT restart into code that has not cleared the ladder.
+- The new host fails its health check → the supervisor rolls back to the old
+  checkout automatically; after you come back, report the rollback and the
+  captured boot error — do not retry blindly.
+- The rollback itself fails → the instance is down; the handoff note carries
+  the old launch command for manual recovery. Say so plainly.
