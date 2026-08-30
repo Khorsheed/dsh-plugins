@@ -108,10 +108,18 @@ is only in devDependencies. Consumers need it for the host contract.
   the DOM-anchor stylesheet (`dom-hider.ts`); if its probe fails or the anchor
   shifts, withdrawn assistant/tool rows can leak back into the visible
   transcript. Prefer an upstream projection/suppression seam over a DOM anchor.
-- **MED — restore preserves assistant role poorly.** Restored assistant text is
+- **MED — restore preserves assistant role poorly [decision: DO NOT fix in
+  plugin, filed as upstream observation — S11].** Restored assistant text is
   replayed as a **user-role** message (framed `RESTORED_ASSISTANT_NOTICE`),
-  which changes model semantics versus the original assistant turn. Needs a
-  host-supported replay seam that preserves the assistant role.
+  which changes model semantics versus the original assistant turn. A
+  faithful fix requires an upstream replay/projection seam (verified:
+  `assistant/message` is model-only and cannot carry a plugin source; the
+  harness projects every `user/message` as user-role to the model, with no
+  plugin→assistant API). Codex review + author both agree: the plugin-side
+  maximum is a stronger quoting envelope, which is only a mitigation and not
+  worth the churn right now. Left as-is (the `RESTORED_ASSISTANT_NOTICE`
+  frame stays), registered in `docs/upstream-seam-registry.md` S11, to be
+  re-checked against each official rc.
 - **MED — restore replay is not atomic.** Sequential appends + one flush can
   expose a partially restored span if an append/persistence step fails. Same
   fix family as the idempotency item above.

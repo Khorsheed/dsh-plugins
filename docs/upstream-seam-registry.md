@@ -92,6 +92,14 @@
 - **退役条件**:官方恢复逻辑在写伪中断块前检测 seq 冲突并和解(或不写);`sessionPersistence` 的 list/read 对单文件损坏降级为跳过 + 警告。落地后删除本条绕行说明， quarantine 目录里的坏文件样本可留作回归素材。
 - **状态**:绕行中(未上报;修复手法已在本条固化)。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。
 
+### S11. 恢复被撤回的助手文本无法保持 assistant role（@khorsheed/dsh-client-message-tools）
+
+- **需求**：撤回后「恢复」（restore）时，被撤回的**助手回复**应以 assistant role 回到模型上下文，而不是被当作一条新的用户输入。当前 `restore` 把助手文本重放成 `user/message`（plugin source, `op:'restore-assistant'`），模型看到的是 user-role 内容，无法区分「这是历史助手引用」与「用户的新指令」——语义上改变了"助手说的"这个事实，可能被模型误执行。
+- **为何不能自包含修**：`assistant/message` 是模型自有事件类型，官方 `assertMessageEventShape` 强制 `source.kind === 'model'` 且有真实 `provider`/`model`，`createAssistantMessage` 也硬编码 `source:{kind:'model'}`；插件无法合法伪造 model source（会谎报审计/语义）。且 harness 对所有 `user/message`（无论 source 是 user/plugin/agent-instructions）一视同仁投影为 user-role 传给模型，**没有**把 plugin 信封转成 system/assistant role 的 API。`agent/pre-step` 只能替换新 claim 的用户消息，`agent/request` 明确不能改模型可见消息——没有诚实的"历史助手内容插入缝"。
+- **现状绕行**：仅缓解——保留 plugin-sourced `user/message`，用 `RESTORED_ASSISTANT_NOTICE`(“以下是先前被撤回、现随恢复放回的助手回复”)前缀让模型自己识别；UI 层（`message-tools-restored-assistant`）用官方 `MarkdownText` 渲染成助手排版，所以**界面看起来是助手格式**，但**模型上下文里 role 仍是 user**。缓解不保证可靠（role 就是 user）。
+- **退役条件**：官方提供能保留原始 provenance、又投影成 assistant-role（或至少明确的"历史引用"语义）的持久化事件/投影机制——例如插件可 append 一个带 `source`/`op` 标记、模型侧投影为 context-引用而非新指令的事件；或提供"重放历史助手内容 seam"。落地后 `restore` 改走该 seam，`RESTORED_ASSISTANT_NOTICE` 前缀与 `restore-assistant` 用户消息退场，UI 保持。
+- **状态**：绕行中（@khorsheed/dsh-client-message-tools；未上报官方，等官方 rc 评估是否已有可用机制）。
+
 
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
