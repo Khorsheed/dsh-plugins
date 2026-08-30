@@ -9,6 +9,10 @@
   display: flex;
   flex-direction: column;
   color: var(--dsw-alias-label-primary);
+  /* Official code-font token, with the host's own stack as the fallback — a
+     bare `monospace` tail falls back to SimSun for CJK on Windows. The fixed
+     modals are DOM descendants of the section, so they inherit this. */
+  --cc-font-code: var(--ds-font-family-code, 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei');
 }
 
 /* Official section heading (PluginsSettingsSection.module.css). */
@@ -484,7 +488,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   font-size: 11px;
   line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
@@ -630,7 +634,7 @@
 }
 
 .schemaName {
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   font-size: 12px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
@@ -653,7 +657,7 @@
   border-radius: 5px;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
   color: var(--dsw-alias-state-business-primary);
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   font-size: 11px;
   line-height: 17px;
   white-space: nowrap;
@@ -728,7 +732,7 @@
 .metaVal {
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
 }
 
 /* Modal chrome (detail + add-skill share it). */
@@ -917,7 +921,7 @@
 .sourceBarFile {
   flex: 1;
   min-width: 0;
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   font-size: 14px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
@@ -1024,7 +1028,7 @@
   color: var(--dsw-alias-label-secondary);
   white-space: pre-wrap;
   overflow: auto;
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   scrollbar-width: thin;
 }
 
@@ -1298,7 +1302,7 @@
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
   margin: 0;
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
 }
 
 /* From-directory picked path: block below the browse button + hint row. */
@@ -1306,7 +1310,7 @@
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   word-break: break-all;
 }
 
@@ -1584,7 +1588,7 @@
   padding: 10px 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
-  font-family: var(--ds-font-family-code, monospace);
+  font-family: var(--cc-font-code);
   font-size: 11px;
   line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
