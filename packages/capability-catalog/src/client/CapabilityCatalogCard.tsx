@@ -263,18 +263,20 @@ export function CapabilityCatalogCard({
           )
       ) : null}
 
-      <ToolCards
-        loading={loading}
-        visibleTools={visibleTools}
-        mcpGroups={mcpGroups}
-        segment={toolSegment}
-        onOpenTool={(tool) => setToolDetail(tool)}
-        onOpenServer={(name) => setMcpDetailName(name)}
-        onSetEnabled={setMcpEnabled}
-        onRemove={removeMcp}
-        resetFilter={resetFilter}
-        t={t}
-      />
+      {kind === 'tools' ? (
+        <ToolCards
+          loading={loading}
+          visibleTools={visibleTools}
+          mcpGroups={mcpGroups}
+          segment={toolSegment}
+          onOpenTool={(tool) => setToolDetail(tool)}
+          onOpenServer={(name) => setMcpDetailName(name)}
+          onSetEnabled={setMcpEnabled}
+          onRemove={removeMcp}
+          resetFilter={resetFilter}
+          t={t}
+        />
+      ) : null}
 
       {toolDetail !== null ? (
         <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
@@ -630,7 +632,8 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
 }
 
 /** The tools tab's card views following the segment filter. `all` renders both the
- * builtin/plugin card grid AND the MCP server cards; the other segments render one. */
+ * builtin/plugin tool cards AND the MCP server cards in ONE grid (so the 16px gap
+ * stays uniform across them); the other segments render one set. */
 function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOpenServer, onSetEnabled, onRemove, resetFilter, t }: {
   loading: boolean
   visibleTools: readonly CatalogToolRow[]
@@ -643,33 +646,24 @@ function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOp
   resetFilter: () => void
   t: (key: CapabilityCatalogKey) => string
 }) {
+  if (loading) return null
   const showsToolCards = segment !== 'mcp'
   const showsMcpServers = segment !== 'builtin' && segment !== 'plugin'
+  const total = (showsToolCards ? visibleTools.length : 0) + (showsMcpServers ? mcpGroups.length : 0)
+  if (total === 0) {
+    return segment === 'mcp'
+      ? <div className={css.empty}>{t('mcpServerEmpty')}</div>
+      : <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+  }
   return (
-    <>
-      {!loading && showsToolCards ? (
-        visibleTools.length === 0
-          ? (segment === 'all' && mcpGroups.length > 0 ? null : <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>)
-          : (
-            <div className={css.grid}>
-              {visibleTools.map((tool) => (
-                <ToolCard key={tool.name} tool={tool} onOpen={() => onOpenTool(tool)} t={t} />
-              ))}
-            </div>
-          )
-      ) : null}
-      {!loading && showsMcpServers ? (
-        mcpGroups.length === 0
-          ? (segment === 'all' && visibleTools.length > 0 ? null : <div className={css.empty}>{t('mcpServerEmpty')}</div>)
-          : (
-            <div className={css.grid}>
-              {mcpGroups.map((g) => (
-                <McpCard key={g.serverName} group={g} onOpen={() => onOpenServer(g.serverName)} onSetEnabled={onSetEnabled} onRemove={onRemove} t={t} />
-              ))}
-            </div>
-          )
-      ) : null}
-    </>
+    <div className={css.grid}>
+      {showsToolCards ? visibleTools.map((tool) => (
+        <ToolCard key={tool.name} tool={tool} onOpen={() => onOpenTool(tool)} t={t} />
+      )) : null}
+      {showsMcpServers ? mcpGroups.map((g) => (
+        <McpCard key={g.serverName} group={g} onOpen={() => onOpenServer(g.serverName)} onSetEnabled={onSetEnabled} onRemove={onRemove} t={t} />
+      )) : null}
+    </div>
   )
 }
 
