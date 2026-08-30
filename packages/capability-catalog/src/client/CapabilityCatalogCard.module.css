@@ -278,7 +278,7 @@
 }
 
 .pvCard:hover {
-  border-color: var(--dsw-alias-label-dimmed);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .pvMain {
