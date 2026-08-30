@@ -32,6 +32,11 @@ async function boot() {
   const service = ctx.get('room') as RoomService
   expect(tools.register).toHaveBeenCalledTimes(3)
   const registered = tools.register.mock.calls.map(call => call[0] as ToolDefinition)
+  // Every room tool carries the origin tag (AGENTS.md "Tool origin tagging").
+  for (const entry of registered) {
+    expect((entry as Record<symbol, unknown>)[Symbol.for('dsh.tool.origin')])
+      .toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
+  }
   const tool = registered.find(entry => entry.name === 'room_invite')!
   const taskTool = registered.find(entry => entry.name === 'room_task')!
   const messageTool = registered.find(entry => entry.name === 'room_message')!
