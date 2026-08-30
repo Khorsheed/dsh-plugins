@@ -171,6 +171,67 @@ describe('the flat timeline panel', () => {
     expect(panel().textContent).toContain('改过的内容')
   })
 
+  it('drops a withdrawn original that still sits in the order (its row is hidden, so it cannot be jumped to)', () => {
+    // A withdraw leaves the original user message visible in the host order and
+    // a sibling `message-tools-withdrawn` divider carrying the span; the DOM
+    // hider hides that row, so a rail row for it is a dead row. The rail must
+    // skip it, while the untouched user message after the span still renders.
+    const withdrawn = {
+      key: 'kw', kind: 'user', target: 'chat', anchorSeq: 5, visibility: 'visible',
+      data: { seq: 5, content: [{ type: 'text', text: '被撤回的消息' }] },
+    } as unknown as ChatConversationViewNode
+    const divider = {
+      key: 'kd', kind: 'message-tools-withdrawn', target: 'chat', anchorSeq: 20, visibility: 'visible',
+      data: { seq: 20, hiddenStartSeq: 5 },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: {
+          // The host still lists the withdrawn original (no suppression seam),
+          // plus one untouched user message and the divider.
+          order: ['k1', 'kw', 'kd'],
+          nodes: nodeStore(NODES.k1, withdrawn, divider),
+        },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(1)
+    expect(panel().textContent).toContain('你好')
+    expect(panel().textContent).not.toContain('被撤回的消息')
+  })
+
+  it('keeps an edited bubble anchored at the span end but drops the withdrawn original in the same span', () => {
+    // The live edit replacement anchors at the span's exclusive end (its seq),
+    // which is OUTSIDE the span, so it renders. The withdrawn original user
+    // message — which the host order still lists — sits INSIDE the span and is
+    // dropped. This is the withdraw path in one picture: one dead row removed,
+    // the live replacement and untouched rows kept.
+    const edited = {
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 9, visibility: 'visible',
+      data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
+    } as unknown as ChatConversationViewNode
+    const withdrawn = {
+      key: 'kw', kind: 'user', target: 'chat', anchorSeq: 7, visibility: 'visible',
+      data: { seq: 7, content: [{ type: 'text', text: '被撤回的原文' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: {
+          order: ['kw', 'ke'],
+          nodes: nodeStore(withdrawn, edited),
+        },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(1)
+    expect(panel().textContent).toContain('改过的内容')
+    expect(panel().textContent).not.toContain('被撤回的原文')
+  })
+
   it('degrades to the order rows when the store read fails (ordinary session still renders)', () => {
     // A store whose `values()` throws must not break the rail: the primary
     // order loop still renders, the append silently drops.
