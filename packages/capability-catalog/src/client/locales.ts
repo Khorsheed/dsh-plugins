@@ -52,6 +52,7 @@ export const zh = {
   toolCollapse: '收起',
   toolSearchPlaceholder: '按名称 / 描述 / server 搜索…',
   toolNoMatch: '没有匹配的工具',
+  toolOther: '其他',
 
   credentials: '凭据配置',
   credentialsHint: '该 skill 的 metadata 声明了以下凭据，配置后模型可读取。',
@@ -120,6 +121,7 @@ export const zh = {
   mcpDiscover: '连接并发现工具',
   mcpDiscovering: '连接中…',
   mcpNoTools: '未发现工具',
+  mcpToolCount: '{n} 个工具',
   mcpTools: '工具',
   mcpNoCreds: '无凭据',
   mcpConfig: '配置',
@@ -182,6 +184,7 @@ export const en = {
   toolCollapse: 'Collapse',
   toolSearchPlaceholder: 'Search by name / description / server…',
   toolNoMatch: 'No matching tools',
+  toolOther: 'Other',
 
   credentials: 'Credential config',
   credentialsHint: 'The skill metadata declares these credentials; configure them so the model can read them.',
@@ -250,6 +253,7 @@ export const en = {
   mcpDiscover: 'Connect & discover tools',
   mcpDiscovering: 'Connecting…',
   mcpNoTools: 'No tools discovered',
+  mcpToolCount: '{n} tools',
   mcpTools: 'Tools',
   mcpNoCreds: 'No credentials',
   mcpConfig: 'Config',

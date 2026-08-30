@@ -30,14 +30,15 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CapabilityCatalogCardProps } from './slots.ts'
 import type { CapabilityCatalogKey } from './locales.ts'
-import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolChannel, CatalogToolRow, McpTransport } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogSnapshot, CatalogAddSkillRequest, CatalogDirSkillInfo, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpSnapshot, CatalogMcpTool, CatalogSkillDetail, CatalogSkillFileRead, CatalogSkillRow, CatalogToolRow, McpTransport } from '@khorsheed/dsh-capability-catalog/types'
 import { parseServerEntry, maskSecret, credentialStoredRefs, SECRET_REF_PREFIX } from '../mcps.ts'
 import css from './CapabilityCatalogCard.module.css'
 
 type Kind = 'skills' | 'tools'
 type DetailClaim = { status: 'idle' | 'loading' | 'done'; data: CatalogSkillDetail | undefined }
 type SortBy = 'name' | 'updated'
-type ToolChannelFilter = 'all' | CatalogToolChannel
+/** Tools-tab segment: one of the three grid views (builtin / plugin / mcp). */
+type ToolSegment = 'builtin' | 'plugin' | 'mcp'
 
 /** Built-in / plugin-provided skill sources — never deletable, shown with the 内置 tag. */
 const BUILTIN_SOURCES: ReadonlySet<string> = new Set(['runtime', 'bundled', 'skill-badge'])
@@ -58,14 +59,14 @@ export function CapabilityCatalogCard({
   // Grid filter / sort state.
   const [query, setQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('name')
-  // Tool channel filter state.
-  const [toolChannel, setToolChannel] = useState<ToolChannelFilter>('all')
+  // Tool grid segment (builtin / plugin / mcp).
+  const [toolSegment, setToolSegment] = useState<ToolSegment>('builtin')
   // Tool detail (click a tool card to view its full detail).
   const [toolDetail, setToolDetail] = useState<CatalogToolRow | null>(null)
   // MCP management state: the snapshot, the open add-dialog, expanded servers,
   // and the set currently mid-discover.
   const [mcps, setMcps] = useState<CatalogMcpSnapshot | null>(null)
-  const [expandedMcp, setExpandedMcp] = useState<ReadonlySet<string>>(() => new Set())
+  const [mcpDetailName, setMcpDetailName] = useState<string | null>(null)
   const [discoveringMcp, setDiscoveringMcp] = useState<ReadonlySet<string>>(() => new Set())
 
   const skills = snapshot?.skills ?? []
@@ -89,14 +90,16 @@ export function CapabilityCatalogCard({
     return sorted
   }, [skills, query, sortBy])
 
-  /** Visible tools filtered by query + channel, then sorted (flat, no grouping).
-   * MCP tools are excluded here — they render folded-by-server in the MCP
-   * section below the grid. */
-  const flatTools = useMemo(() => tools.filter((tool) => tool.channel !== 'mcp'), [tools])
+  /** Per-segment counts for the three grid filters. */
+  const builtinCount = useMemo(() => tools.filter((tool) => tool.channel === 'builtin').length, [tools])
+  const pluginCount = useMemo(() => tools.filter((tool) => tool.channel === 'plugin').length, [tools])
+
+  /** Tool cards for the builtin / plugin segment: filtered by query, name-sorted.
+   * MCP renders as server cards in the `mcp` segment (below), never as flat rows. */
   const visibleTools = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const matched = flatTools.filter((tool) => {
-      if (toolChannel !== 'all' && tool.channel !== toolChannel) return false
+    const matched = tools.filter((tool) => {
+      if (tool.channel !== toolSegment) return false
       if (q === '') return true
       return tool.name.toLowerCase().includes(q)
         || tool.description.toLowerCase().includes(q)
@@ -104,22 +107,19 @@ export function CapabilityCatalogCard({
         || (tool.owner ?? '').toLowerCase().includes(q)
     })
     return matched.sort((a, b) => a.name.localeCompare(b.name))
-  }, [flatTools, query, toolChannel])
+  }, [tools, query, toolSegment])
 
-  /** Merged MCP server groups: catalog-managed servers + any live-registered
-   * (mcp-serverName-prefixed) tools folded by server, so MCP never renders as
-   * flat cards. */
+  /** Merged MCP server groups for the `mcp` segment: catalog-managed servers
+   * + any live-registered (mcp-<server>__<tool>) tools grouped by server. */
   const mcpGroups = useMemo(() => buildMcpGroups(snapshot, mcps, query), [snapshot, mcps, query])
 
-  /** Toggle one server's expand state. */
-  const toggleMcp = (serverName: string): void => {
-    setExpandedMcp((prev) => {
-      const next = new Set(prev)
-      if (next.has(serverName)) next.delete(serverName)
-      else next.add(serverName)
-      return next
-    })
-  }
+  /** The MCP server group open in the manage modal (derived fresh so mutations
+   * re-render it, never a stale snapshot), or null when closed. */
+  const mcpDetail = useMemo(
+    () => mcpGroups.find((g) => g.serverName === mcpDetailName) ?? null,
+    [mcpGroups, mcpDetailName],
+  )
+
   const removeMcp = async (serverName: string): Promise<void> => {
     await mcpRemove(serverName)
     await refreshMcp()
@@ -156,7 +156,7 @@ export function CapabilityCatalogCard({
   const resetFilter = (): void => {
     setQuery('')
     setSortBy('name')
-    setToolChannel('all')
+    setToolSegment('builtin')
   }
 
   return (
@@ -205,32 +205,37 @@ export function CapabilityCatalogCard({
       ) : null}
 
       {!loading && kind === 'tools' && tools.length > 0 ? (
-        <div className={css.filterBar} role="search">
-          <div className={css.searchBox}>
-            <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
-            <input
-              className={css.searchInput}
-              type="search"
-              value={query}
-              placeholder={t('toolSearchPlaceholder')}
-              aria-label={t('toolSearchPlaceholder')}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+        <>
+          <div className={css.filterBar} role="search">
+            <div className={css.searchBox}>
+              <span className={css.searchIcon}><IconSearchOutline16 size={16} /></span>
+              <input
+                className={css.searchInput}
+                type="search"
+                value={query}
+                placeholder={t('toolSearchPlaceholder')}
+                aria-label={t('toolSearchPlaceholder')}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
           </div>
-          <select className={css.select} value={toolChannel} aria-label={t('source')} onChange={(e) => setToolChannel(e.target.value as ToolChannelFilter)}>
-            <option value="all">{t('filterAll')}</option>
-            <option value="builtin">{t('toolBuiltin')}</option>
-            <option value="plugin">{t('toolPlugin')}</option>
-          </select>
-        </div>
+          <div className={css.segBar} role="group" aria-label={t('source')}>
+            <button type="button" className={css.segBtn} data-active={toolSegment === 'builtin'} onClick={() => setToolSegment('builtin')}>
+              {t('toolBuiltin')}<span className={css.tabCnt}>{builtinCount}</span>
+            </button>
+            <button type="button" className={css.segBtn} data-active={toolSegment === 'plugin'} onClick={() => setToolSegment('plugin')}>
+              {t('toolPlugin')}<span className={css.tabCnt}>{pluginCount}</span>
+            </button>
+            <button type="button" className={css.segBtn} data-active={toolSegment === 'mcp'} onClick={() => setToolSegment('mcp')}>
+              {t('toolOther')}<span className={css.tabCnt}>{mcpGroups.length}</span>
+            </button>
+          </div>
+        </>
       ) : null}
 
       {loading ? <div className={css.empty}>{t('loading')}</div> : null}
       {!loading && kind === 'skills' && skills.length === 0 ? <div className={css.empty}>{t('empty')}</div> : null}
-      {!loading && kind === 'tools' && flatTools.length === 0 && mcpGroups.length === 0 ? <div className={css.empty}>{t('toolNoMatch')}</div> : null}
-      {!loading && kind === 'tools' && flatTools.length > 0 && visibleTools.length === 0 ? (
-        <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
-      ) : null}
+      {!loading && kind === 'tools' && tools.length === 0 ? <div className={css.empty}>{t('toolNoMatch')}</div> : null}
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
         visibleSkills.length === 0
@@ -251,31 +256,51 @@ export function CapabilityCatalogCard({
           )
       ) : null}
 
-      {!loading && kind === 'tools' && flatTools.length > 0 ? (
-        <div className={css.grid}>
-          {visibleTools.map((tool) => (
-            <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
-          ))}
-        </div>
+      {!loading && kind === 'tools' && toolSegment !== 'mcp' ? (
+        visibleTools.length === 0
+          ? <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+          : (
+            <div className={css.grid}>
+              {visibleTools.map((tool) => (
+                <ToolCard key={tool.name} tool={tool} onOpen={() => setToolDetail(tool)} t={t} />
+              ))}
+            </div>
+          )
       ) : null}
 
-      {!loading && kind === 'tools' ? (
-        <McpSection
-          groups={mcpGroups}
-          expanded={expandedMcp}
-          discovering={discoveringMcp}
-          onToggle={toggleMcp}
-          onRemove={removeMcp}
-          onSetEnabled={setMcpEnabled}
+      {!loading && kind === 'tools' && toolSegment === 'mcp' ? (
+        mcpGroups.length === 0
+          ? <div className={css.empty}>{t('mcpServerEmpty')}</div>
+          : (
+            <div className={css.grid}>
+              {mcpGroups.map((g) => (
+                <McpCard
+                  key={g.serverName}
+                  group={g}
+                  onOpen={() => setMcpDetailName(g.serverName)}
+                  onSetEnabled={setMcpEnabled}
+                  onRemove={removeMcp}
+                  t={t}
+                />
+              ))}
+            </div>
+          )
+      ) : null}
+
+      {toolDetail !== null ? (
+        <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
+      ) : null}
+
+      {mcpDetail !== null ? (
+        <McpServerManageModal
+          group={mcpDetail}
+          discovering={discoveringMcp.has(mcpDetail.serverName)}
+          onClose={() => setMcpDetailName(null)}
           onSetCredential={mcpSetCredential}
           onSetToolEnabled={setMcpToolEnabled}
           onDiscover={discoverMcp}
           t={t}
         />
-      ) : null}
-
-      {toolDetail !== null ? (
-        <ToolDetailModal tool={toolDetail} onClose={() => setToolDetail(null)} t={t} />
       ) : null}
 
       {selectedName !== null ? (
@@ -1016,51 +1041,64 @@ function extractServerPreamble(raw: string): { entry: Record<string, unknown>; s
   return { entry: container[firstKey] as Record<string, unknown>, suggestedName: firstKey }
 }
 
-/** The MCP section: title + a stack of folded server groups. */
-function McpSection({ groups, expanded, discovering, onToggle, onRemove, onSetEnabled, onSetCredential, onSetToolEnabled, onDiscover, t }: {
-  groups: readonly McpGroup[]
-  expanded: ReadonlySet<string>
-  discovering: ReadonlySet<string>
-  onToggle: (serverName: string) => void
-  onRemove: (serverName: string) => Promise<void>
+/** One MCP server tile in the `mcp` segment: name + transport pill + tool count,
+ * with an external enable switch (managed only) and a click-through to the
+ * manage modal. Servers carry no description, so the body shows the tool count. */
+function McpCard({ group, onOpen, onSetEnabled, onRemove, t }: {
+  group: McpGroup
+  onOpen: () => void
   onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
-  onSetCredential: (ref: string, value: string) => Promise<boolean>
-  onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
-  onDiscover: (serverName: string) => Promise<void>
+  onRemove: (serverName: string) => Promise<void>
   t: (key: CapabilityCatalogKey) => string
 }) {
+  const transportText = transportLabel(t, group.transport ?? 'stdio')
+  const body = group.toolCount > 0 ? t('mcpToolCount').replace('{n}', String(group.toolCount)) : t('mcpNoTools')
   return (
-    <div className={css.mcpSection}>
-      <div className={css.mcpSectionTitle}>{t('mcpSection')}<span className={css.tabCnt}>{groups.length}</span></div>
-      {groups.length === 0 ? (
-        <div className={css.empty}>{t('mcpServerEmpty')}</div>
-      ) : groups.map((g) => (
-        <McpGroupCard
-          key={g.serverName}
-          group={g}
-          expanded={expanded.has(g.serverName)}
-          discovering={discovering.has(g.serverName)}
-          onToggle={() => onToggle(g.serverName)}
-          onRemove={onRemove}
-          onSetEnabled={onSetEnabled}
-          onSetCredential={onSetCredential}
-          onSetToolEnabled={onSetToolEnabled}
-          onDiscover={onDiscover}
-          t={t}
-        />
-      ))}
+    <div className={css.pvCard}>
+      <button type="button" className={css.pvMain} onClick={onOpen}>
+        <span className={css.pvHead}>
+          <span className={css.pvName}>{group.serverName}</span>
+          <span className={`${css.pvTag} ${group.transport === 'stdio' ? css.tagStdio : group.transport === 'streamable-http' ? css.tagHttp : ''}`}>{transportText}</span>
+        </span>
+        <span className={css.pvDesc}>{body}</span>
+        <span className={css.pvSub}>{group.managed ? (group.enabled ? t('mcpEnabled') : t('mcpDisabled')) : 'MCP'}</span>
+      </button>
+      <div className={css.pvFoot}>
+        {group.managed ? (
+          <label className={`${css.switch} ${css.mcpFootToggle}`} onClick={(e) => e.stopPropagation()} title={t('mcpEnabled')}>
+            <input
+              type="checkbox"
+              checked={group.enabled}
+              onChange={(e) => void onSetEnabled(group.serverName, e.target.checked)}
+              aria-label={t('mcpEnabled')}
+            />
+            <span className={css.track} />
+            <span className={css.thumb} />
+          </label>
+        ) : null}
+        <span className={css.mcpCardActions}>
+          <button type="button" className={css.iconButton} onClick={onOpen} aria-label={t('viewDetail')} title={t('viewDetail')}>
+            <IconBrowseOutline16 size={16} />
+          </button>
+          {group.managed ? (
+            <button type="button" className={`${css.iconButton} ${css.iconDanger}`} onClick={() => void onRemove(group.serverName)} aria-label={t('mcpRemove')} title={t('mcpRemove')}>
+              <IconTrashOutline16 size={16} />
+            </button>
+          ) : null}
+        </span>
+      </div>
     </div>
   )
 }
 
-/** One folded MCP server group; expand its body to manage config/credentials/tools. */
-function McpGroupCard({ group, expanded, discovering, onToggle, onRemove, onSetEnabled, onSetCredential, onSetToolEnabled, onDiscover, t }: {
+/** Manage-modal for one MCP server (opened from the tile): config JSON,
+ * credential inputs, per-tool enable toggles, and discover. The inner view
+ * deliberately differs from the builtin/plugin detail modal (desc/params only)
+ * because MCP servers are configurable, not just inspectable. */
+function McpServerManageModal({ group, discovering, onClose, onSetCredential, onSetToolEnabled, onDiscover, t }: {
   group: McpGroup
-  expanded: boolean
   discovering: boolean
-  onToggle: () => void
-  onRemove: (serverName: string) => Promise<void>
-  onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
+  onClose: () => void
   onSetCredential: (ref: string, value: string) => Promise<boolean>
   onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
   onDiscover: (serverName: string) => Promise<void>
@@ -1085,129 +1123,97 @@ function McpGroupCard({ group, expanded, discovering, onToggle, onRemove, onSetE
   }
 
   const live = group.managed ? group.tools : group.liveTools
-  const transportText = transportLabel(t, group.transport ?? 'stdio')
 
   return (
-    <div className={`${css.mcpGroup} ${expanded ? css.open : ''} ${group.managed && !group.enabled ? css.disabled : ''}`}>
-      <div className={css.mcpGroupHead}>
-        <button type="button" className={css.mcpExpand} onClick={onToggle} aria-expanded={expanded}>
-          <span className={css.mcpChevron}>{expanded ? <IconChevronDownOutline14 size={16} /> : <IconChevronRightOutline14 size={16} />}</span>
-          <span className={css.mcpName}>{group.serverName}</span>
-          <span className={css.mcpPills}>
-            <span className={`${css.pvTag} ${group.transport === 'stdio' ? css.tagStdio : group.transport === 'streamable-http' ? css.tagHttp : ''}`}>{transportText}</span>
-            <span className={`${css.badge} ${group.enabled ? css.badgeOk : ''}`}>{group.enabled ? t('mcpEnabled') : t('mcpDisabled')}</span>
-          </span>
-        </button>
-        <span className={css.mcpCount}>{group.toolCount > 0 ? `${group.toolCount}` : t('mcpNoTools')}</span>
-        {group.managed ? (
-          <label className={css.switch} onClick={(e) => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              checked={group.enabled}
-              onChange={(e) => void onSetEnabled(group.serverName, e.target.checked)}
-              aria-label={t('mcpEnabled')}
-            />
-            <span className={css.track} />
-            <span className={css.thumb} />
-          </label>
-        ) : null}
-        {group.managed ? (
-          <button type="button" className={css.iconButton} onClick={() => void onRemove(group.serverName)} aria-label={t('mcpRemove')} title={t('mcpRemove')}>
-            <IconTrashOutline16 size={16} />
-          </button>
-        ) : null}
-      </div>
+    <Modal open onClose={onClose} title={group.serverName} className={css.toolDetailModal ?? ''}>
+      <div className={css.mcpBody}>
+        {group.managed && group.config !== undefined ? (
+          <>
+            <div>
+              <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
+              <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
+            </div>
 
-      {expanded ? (
-        <div className={css.mcpBody}>
-          {group.managed && group.config !== undefined ? (
-            <>
+            {group.credentials.length > 0 ? (
               <div>
-                <div className={css.mcpBlockLabel}>{t('mcpConfig')}</div>
-                <pre className={css.mcpConfig}>{configDisplay(group.config)}</pre>
-              </div>
-
-              {group.credentials.length > 0 ? (
-                <div>
-                  <div className={css.mcpBlockLabel}>{t('credentials')}</div>
-                  <div className={css.confHint}>{t('mcpNeedsCred')}</div>
-                  {group.credentials.map((decl) => {
-                    const ref = decl.ref
-                    const state = credState[ref] ?? 'idle'
-                    return (
-                      <div className={css.credRow} key={ref}>
-                        <label className={css.credLabel}>{decl.label}
-                          {decl.configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
-                        </label>
-                        <div className={css.credInputRow}>
-                          <div className={css.inputWrap}>
-                            <input
-                              className={css.input}
-                              type="password"
-                              value={credValues[ref] ?? ''}
-                              placeholder={decl.configured ? t('configuredReplace') : t('credPlaceholder')}
-                              onChange={(e) => setCredValues((s) => ({ ...s, [ref]: e.target.value }))}
-                              onBlur={() => { if ((credValues[ref] ?? '') !== '') void saveCred(ref) }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(ref) }}
-                            />
-                          </div>
-                          {!decl.configured ? (
-                            <button
-                              type="button"
-                              className={css.btnPrimary}
-                              disabled={state === 'saving' || (credValues[ref] ?? '') === ''}
-                              onClick={() => void saveCred(ref)}
-                            >{t('save')}</button>
-                          ) : null}
+                <div className={css.mcpBlockLabel}>{t('credentials')}</div>
+                <div className={css.confHint}>{t('mcpNeedsCred')}</div>
+                {group.credentials.map((decl) => {
+                  const ref = decl.ref
+                  const state = credState[ref] ?? 'idle'
+                  return (
+                    <div className={css.credRow} key={ref}>
+                      <label className={css.credLabel}>{decl.label}
+                        {decl.configured ? <span className={`${css.badge} ${css.badgeOk}`}>{t('configured')}</span> : <span className={css.badge}>{t('notConfigured')}</span>}
+                      </label>
+                      <div className={css.credInputRow}>
+                        <div className={css.inputWrap}>
+                          <input
+                            className={css.input}
+                            type="password"
+                            value={credValues[ref] ?? ''}
+                            placeholder={decl.configured ? t('configuredReplace') : t('credPlaceholder')}
+                            onChange={(e) => setCredValues((s) => ({ ...s, [ref]: e.target.value }))}
+                            onBlur={() => { if ((credValues[ref] ?? '') !== '') void saveCred(ref) }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') void saveCred(ref) }}
+                          />
                         </div>
-                        {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
-                        {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
+                        {!decl.configured ? (
+                          <button
+                            type="button"
+                            className={css.btnPrimary}
+                            disabled={state === 'saving' || (credValues[ref] ?? '') === ''}
+                            onClick={() => void saveCred(ref)}
+                          >{t('save')}</button>
+                        ) : null}
                       </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className={css.confHint}>{t('mcpNoCreds')}</div>
-              )}
-            </>
-          ) : null}
-
-          <div>
-            <div className={css.mcpBlockLabel}>{t('mcpTools')}</div>
-            {live.length === 0 ? (
-              <div className={css.empty}>{t('mcpEmptyTools')}</div>
-            ) : (
-              <div className={css.mcpTools}>
-                {live.map((tool) => (
-                  <McpToolRow
-                    key={tool.name}
-                    tool={tool}
-                    managed={group.managed}
-                    serverName={group.serverName}
-                    schemaFor={schemaFor}
-                    setSchemaFor={setSchemaFor}
-                    onSetToolEnabled={group.managed ? onSetToolEnabled : undefined}
-                    t={t}
-                  />
-                ))}
+                      {state === 'ok' ? <div className={css.credOk}>{t('saved')}</div> : null}
+                      {state === 'fail' ? <div className={css.credFail}>{t('saveFailed')}</div> : null}
+                    </div>
+                  )
+                })}
               </div>
+            ) : (
+              <div className={css.confHint}>{t('mcpNoCreds')}</div>
+            )}
+          </>
+        ) : null}
+
+        <div>
+          <div className={css.mcpBlockLabel}>{t('mcpTools')}</div>
+          {live.length === 0 ? (
+            <div className={css.empty}>{t('mcpEmptyTools')}</div>
+          ) : (
+            <div className={css.mcpTools}>
+              {live.map((tool) => (
+                <McpToolRow
+                  key={tool.name}
+                  tool={tool}
+                  managed={group.managed}
+                  serverName={group.serverName}
+                  schemaFor={schemaFor}
+                  setSchemaFor={setSchemaFor}
+                  onSetToolEnabled={group.managed ? onSetToolEnabled : undefined}
+                  t={t}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {group.managed ? (
+          <div className={css.mcpActions}>
+            {!group.enabled ? (
+              <span className={css.confHint}>{t('mcpNotEnabled')}</span>
+            ) : (
+              <button type="button" className={`${css.mcpActionBtn} ${css.primary}`} disabled={discovering} onClick={() => void runDiscover()}>
+                {discovering ? t('mcpDiscovering') : t('mcpDiscover')}
+              </button>
             )}
           </div>
-
-          {group.managed ? (
-            <div className={css.mcpActions}>
-              {!group.enabled ? (
-                <span className={css.confHint}>{t('mcpNotEnabled')}</span>
-              ) : (
-                <button type="button" className={`${css.mcpActionBtn} ${css.primary}`} disabled={discovering} onClick={() => void runDiscover()}>
-                  {discovering ? t('mcpDiscovering') : t('mcpDiscover')}
-                </button>
-              )}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </Modal>
   )
 }
 

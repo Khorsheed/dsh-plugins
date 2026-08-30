@@ -211,6 +211,52 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
 }
 
+/* Segmented filter for the tool grid: 内置 / 插件 / 其他 pills below the search
+   box. Active pill is tinted; the count badge reuses tabCnt. */
+.segBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px; /* search → segments 8px */
+}
+
+.segBtn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.segBtn:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.segBtn[data-active='true'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+}
+
+.segBtn:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.segBtn[data-active='true'] .tabCnt {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 /* Skills preview grid: responsive 2-column (host house pattern), falls to 1. */
 .grid {
   display: grid;
@@ -341,6 +387,19 @@
 .iconDanger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* MCP server tile foot: the enable switch pins to the left, actions to the
+   right (pvFoot is already flex-end, so a left margin-auto does the split). */
+.mcpFootToggle {
+  margin-right: auto;
+}
+
+.mcpCardActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 /* Channel pill color accents for tool cards. */
@@ -1451,93 +1510,7 @@
    MCP management.
    --------------------------------------------------------------------------- */
 
-/* MCP section: title + stacked server groups, set apart from the tool grid by
-   a divider. */
-.mcpSection {
-  margin-top: 20px; /* grid → divider 20px */
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  padding-top: 16px;
-}
-
-.mcpSectionTitle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
-.mcpSectionTitle .tabCnt {
-  margin-left: 0;
-}
-
-/* A folded server group (card). */
-.mcpGroup {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2);
-  overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.mcpGroupHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-}
-
-/* The expandable part of the group head (chevron + name + pills). */
-.mcpExpand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  font: inherit;
-  color: var(--dsw-alias-label-primary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.mcpChevron {
-  display: inline-flex;
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  transition: transform 0.18s;
-}
-
-.mcpGroup.open .mcpChevron {
-  transform: rotate(90deg);
-}
-
-.mcpName {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mcpPills {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-
-.mcpCount {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-}
-
+/* MCP manage modal (opened from a server tile) body. */
 .mcpBody {
   border-top: 1px solid var(--dsw-alias-border-l2);
   padding: 14px;
@@ -1679,9 +1652,4 @@
 
 .mcpToolSchemaWrap {
   grid-column: 1 / -1;
-}
-
-/* "已停用" server group dims its head. */
-.mcpGroup.disabled .mcpName {
-  color: var(--dsw-alias-label-tertiary);
 }
