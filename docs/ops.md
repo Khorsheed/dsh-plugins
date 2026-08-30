@@ -16,7 +16,7 @@
 | `~/code/deepseek-harness` | **部署检出**:prod 3080 从这里启动,guard 凭证绑定它的 HEAD | 只准 `reset --hard` 到官方 tag + guard checkpoint 提交;禁止任何其他本地改动 |
 | `~/code/deepseek-harness-alpha` | 0.1.2-alpha 源码检出(3091 的宿主) | 只读使用,停在 tag |
 | `~/.dsh-official`(3080) | **prod 专用**:稳定线宿主的常驻环境,3080 是我们的稳定部署(非社区 prod) | 只有 `profiles/web`;**测试 profile 一律不许建在这里**——`settings.yaml` 是全 HOME 共享的,测试 profile 改插件配置会漏进 3080 |
-| `~/.dsh-lab` | 稳定线(rc 线)的全部测试 | 所有 `<主题>-test` profile + `web-candidate`(原 3082 验收实例);凭据软链回 official(注意:并发刷新 token 有写竞争,凭据刷新失败先怀疑这里),settings/state/sessions 与 official 隔离 |
+| `~/.dsh-lab` | 稳定线(rc 线)的全部测试 | 所有 `<主题>-test` profile + `web-candidate`(3083,原 3082 验收实例,已迁移);凭据软链回 official(注意:并发刷新 token 有写竞争,凭据刷新失败先怀疑这里),settings/state/sessions 与 official 隔离 |
 | `~/.dsh-alpha-check`(3091) | 0.1.2 线的提前兼容验收 | 宿主用 `deepseek-harness-alpha` 检出启动;跑的是分支 tarball,合并后换回正式产物 |
 | `~/.dsh-toolchains/stable` | 官方 npm 宿主的缓存工具链(**无状态**) | 测"社区同款体验"的基座;由 mainline 在官方发新版时主动刷新( playbook 第 4 步)。用法:`DSH_HOME=$(mktemp -d) ~/.dsh-toolchains/stable/node_modules/.bin/dsh web --port <port>` |
 | `$(mktemp -d)` | 一次性 HOME:纯净安装测试、历史兼容测试 | "纯净"是会衰减的性质,只配一次性;历史兼容用 `npx @deepseek-ai/dsh@<minHost>` 起对应版本 |
@@ -27,6 +27,7 @@
 
 - **测试 profile 命名** `<主题>-test`,用完 `rm -rf $DSH_HOME/profiles/<name>`;**僵尸判据:14 天没动且无对应活跃分支/worktree**,清理前群里点名、24 小时无人认领再删(`settings.yaml.bak-*` 之类遗迹同规则)。
 - **历史兼容覆盖:floor + current + 标记中点。** 每次发布验两条:成员包声明的最低 `minHost` 和当前稳定线;中间 rc 只在某包 `dsh.compat.notes` 点名特定降级项时补验。
+- **新 profile 的正确搭法**:手写骨架三件套(package.json 空 deps + `dsh.profile.bundles` 清单、cordis.patch.yml、pnpm-workspace.yaml)再 boot——官方 bundle(dsh-base/dsh-web-app)由宿主在 boot 时链接进 profile,**不要 `plugin add` 官方 bundle**:web-app 依赖未发布的官方包(如 `dsh-client-ui-model`),从 registry 装必炸(2026-08-30 搭 lab 时踩过,CLI 报错文案里的 `plugin add` 提示只适用于社区包)。
 - **发布前测试矩阵**(包级 build+test 之后、生产六道闸之前的中间三层,原为空白):组合级 preflight(全装配组合过一次门禁)→ 交付级全新安装与升级(mktemp HOME 从零装 + 已装实例走升级路径)→ 体验级(agent 照 README 安装 + 逐个成员装卸载,整合包必做)。
 - **prod 检出与 npm 工具链的分工**:验证 prod 配置用 `~/code/deepseek-harness` 检出;验证"用户拿到手什么样"用 toolchains 缓存的 npm 线。
 
