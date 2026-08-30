@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@khorsheed/dsh-local-agent-tool-subagent'
+export const PACKAGE_NAME = '@khorsheed/dsh-local-agent-tool-subagent'
 
 /** Cordis companion plugin name. */
 export const name = 'local-agent-tool-subagent-invariant'

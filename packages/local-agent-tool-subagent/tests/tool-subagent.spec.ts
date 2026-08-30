@@ -89,6 +89,15 @@ describe('dsh-local-agent-tool-subagent', () => {
     expect(taken).toEqual([{ kind: 'fresh' }])
   })
 
+  it('tags the tool with its origin for the capability catalog (S12)', async () => {
+    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test' })
+    const def = ctx.tools.get('subagent_test') as Record<symbol, unknown>
+    expect(def[Symbol.for('dsh.tool.origin')]).toEqual({
+      channel: 'plugin',
+      owner: '@khorsheed/dsh-local-agent-tool-subagent',
+    })
+  })
+
   it('resolves a recorded delegation and stages a resume intent when resume is passed', async () => {
     const { ctx, taken } = await setup({ provider: 'mock', toolName: 'subagent_test' })
     // Round 1 recorded the mapping (as a family provider would after settle).

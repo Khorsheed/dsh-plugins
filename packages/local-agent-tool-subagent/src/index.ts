@@ -26,6 +26,18 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type {} from '@khorsheed/dsh-local-agent'
+import { PACKAGE_NAME } from './invariant.ts'
+
+/**
+ * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
+ * seam S12). This shared module registers on behalf of every family provider,
+ * so the owner is self-derived from the identity triangle's PACKAGE_NAME —
+ * never a hardcoded provider name.
+ */
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: PACKAGE_NAME },
+  })
 
 export const name = 'local-agent-tool-subagent'
 
@@ -181,7 +193,7 @@ export function apply(ctx: Context, config: Config): void {
   // can change provider availability while this fiber remains active.
   let disposeTool: (() => void) | undefined
   const mount = (): void => {
-    disposeTool = ctx.tools.register(defineTool({
+    disposeTool = ctx.tools.register(definePluginTool(defineTool({
       name: toolName,
       description: wording.description,
       parameters: {
@@ -288,7 +300,7 @@ export function apply(ctx: Context, config: Config): void {
         }
         return settled
       },
-    }))
+    })))
   }
 
   // Register listeners before checking presence so no synchronous change is missed.
