@@ -193,6 +193,18 @@ describe('activeRowKey', () => {
     expect(activeRowKey(scrollport, true)).toBe('s1')
   })
 
+  it('recognizes message-tools edited/restored rows as reading-position anchors', () => {
+    // The rail renders edited/restored bubbles, so while reading one the lit
+    // marker must anchor on it rather than jump to the next user row.
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 0, left: 0, width: 400, height: 300 })
+    row(scrollport, 'u1', 'user', -30) // scrolled past (bottom -10 <= 0)
+    row(scrollport, 'e1', 'message-tools-edited', 60)
+    row(scrollport, 'r1', 'message-tools-restored', 100)
+
+    expect(activeRowKey(scrollport, true)).toBe('e1')
+  })
+
   it('returns null with no visible user row', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 0, left: 0, width: 400, height: 300 })
@@ -495,6 +507,48 @@ describe('installRailTracker', () => {
     await frame()
 
     expect(tracker.state.getSnapshot().sessionId).toBe('s1')
+    tracker.dispose()
+  })
+
+  it('does not bind the scrollport after a dispose that lands before the initial bind frame', async () => {
+    // The bind schedules one frame out. If dispose() runs before that frame, the
+    // pending frame would otherwise still bind the global scrollport — adding a
+    // scroll listener and a ResizeObserver to a tracker that is already torn
+    // down. The generation token must invalidate it.
+    document.body.innerHTML = '<div data-conversation-scroll=""></div>'
+    rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
+      top: 0, left: 0, width: 400, height: 300,
+    })
+    const addSpy = vi.spyOn(HTMLElement.prototype, 'addEventListener')
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+
+    // Dispose before the frame flushes — the dangerous window.
+    tracker.dispose()
+    await frame()
+
+    // No scroll listener was ever attached (and no geometry ever published).
+    expect(addSpy).not.toHaveBeenCalledWith('scroll', expect.any(Function), { passive: true })
+    expect(tracker.state.getSnapshot().ready).toBe(false)
+  })
+
+  it('binds only the latest session when the session changes before the pending bind frame', async () => {
+    // Two bind() calls in the same tick (before the frame out binds) race: the
+    // first frame would bind under the stale session. The token must ignore it,
+    // so only the last session ever gets a bound scrollport.
+    document.body.innerHTML = '<div data-conversation-scroll=""></div>'
+    rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
+      top: 0, left: 0, width: 400, height: 300,
+    })
+    const ctx = fakeCtx(undefined)
+    const tracker = installRailTracker(ctx as unknown as ClientContext, true)
+
+    // Two session changes land before either bind frame runs.
+    ctx.sessions.list.set({ current: 's1' })
+    ctx.sessions.list.set({ current: 's2' })
+    await frame()
+
+    expect(tracker.state.getSnapshot().sessionId).toBe('s2')
+    expect(tracker.state.getSnapshot().ready).toBe(true)
     tracker.dispose()
   })
 

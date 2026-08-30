@@ -14,10 +14,12 @@
 import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { PANEL_WIDTH_MIN } from './config.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import { foldHiddenSpans, isSeqHidden } from './hidden-spans.ts'
+import { isTimelineRowKind, EDIT_KIND, RESTORED_KIND } from './timeline-kinds.ts'
 import css from './TimelineRail.module.css'
 
 /** Extract the preview blocks of one user/steering node (kind-checked by the caller). */
@@ -53,32 +55,34 @@ export function TimelineRail({
   const loadingOlder = useSession(s => s.loadingOlder)
 
   const items = useMemo<TimelineItem[]>(() => {
+    // The node store is an in-memory snapshot; take it once so the span fold
+    // and the message-tools append read the same snapshot.
+    let store: readonly ChatConversationViewNode[] = []
+    let spans: number[] = []
+    try {
+      store = nodes.values()
+      spans = foldHiddenSpans(store)
+    } catch {
+      // Degrade, don't explode: a failed store read leaves no spans and no
+      // appended bubbles, so the baseline order rows still render (a withdraw
+      // span reappears, and bubbles re-appear, after the store recovers).
+    }
     // A message-tools withdraw (or an in-place edit) leaves the withdrawn
     // originals in the store with a sibling `message-tools-withdrawn` /
     // `message-tools-edited` node carrying the span they cover as
     // `{ hiddenStartSeq, seq }`. Those originals can still surface in the
     // host's `order`, but the DOM hider hides their transcript rows — a rail
-    // row for one is a dead row (clicking cannot scroll to it). Fold the
-    // spans once and drop any row whose anchorSeq sits inside one, whether it
-    // came from the order loop or the append loop below. An ordinary session
-    // carries no span node, so the fold is empty and every row still renders:
-    // this filter never alters the baseline.
+    // row for one is a dead row (clicking cannot scroll to it). Drop any such
+    // row whose anchorSeq sits inside a span, from either loop below. An
+    // ordinary session carries no span node, so the fold is empty and every
+    // order row still renders: this filter never alters the baseline.
+    const hidden = (node: { anchorSeq: number }): boolean => isSeqHidden(spans, node.anchorSeq)
     const result: TimelineItem[] = []
     const seen = new Set<string>()
-    let spans: number[] = []
-    try {
-      spans = foldHiddenSpans(nodes.values())
-    } catch {
-      // Degrade, don't explode: a failed store read folds to no spans, so the
-      // baseline rows below still render (a withdraw span reappears after the
-      // store recovers).
-    }
-    const hidden = (node: { anchorSeq: number }): boolean => isSeqHidden(spans, node.anchorSeq)
     for (const key of order) {
       const node = nodes.get(key)
       if (node === undefined) continue
-      const kind = node.kind
-      if (kind !== 'user' && !(includeSteering && kind === 'steering')) continue
+      if (!isTimelineRowKind(node.kind, includeSteering)) continue
       if (hidden(node)) continue
       result.push({ key, node })
       seen.add(key)
@@ -88,29 +92,24 @@ export function TimelineRail({
     // that the host's visible `order` does not always surface, even though it
     // renders in the flow — an edit of the first message would drain the rail
     // to zero rows. Append any such visible bubble the order omitted, provided
-    // it is not itself a withdrawn original (inside a span). Normal sessions
-    // carry no such nodes, so this never alters the baseline. The append
-    // degrades (skips) if the store read fails.
-    try {
-      for (const node of nodes.values()) {
-        const kind = node.kind
-        if (kind !== 'message-tools-edited' && kind !== 'message-tools-restored') continue
-        if (node.visibility === 'hidden') continue
-        if (seen.has(node.key)) continue
-        if (hidden(node)) continue
-        result.push({ key: node.key, node })
-        seen.add(node.key)
-      }
-    } catch {
-      // Degrade, don't explode: a failed store read only drops the appended
-      // bubbles, never the rows the host's order already surfaced.
+    // it is not itself a withdrawn original (inside a span). Only these two
+    // bubble kinds are appended — a plain user/steering node not in `order`
+    // must never be resurrected as an orphan row. Normal sessions carry no
+    // such nodes, so this never alters the baseline.
+    for (const node of store) {
+      if (node.kind !== EDIT_KIND && node.kind !== RESTORED_KIND) continue
+      if (node.visibility === 'hidden') continue
+      if (seen.has(node.key)) continue
+      if (hidden(node)) continue
+      result.push({ key: node.key, node })
+      seen.add(node.key)
     }
-    // The order loop is seq-sorted, but the appended bubbles walk the store
-    // (its iteration order is not seq-ordered), so a bubble for an OLDER
+    // The order loop is seq-sorted, but the appended bubbles walked the store
+    // (whose iteration order is not seq-ordered), so a bubble for an OLDER
     // message would otherwise land at the very end, past the newest row.
-    // Sort the combined rows by anchorSeq so every row — original or
-    // appended — sits at its true transcript position. JS sort is stable, and
-    // an ordinary session has no appended bubbles, so this never reorders the
+    // Sort the combined rows by anchorSeq so every row — original or appended
+    // — sits at its true transcript position. JS sort is stable, and an
+    // ordinary session has no appended bubbles, so this never reorders the
     // baseline (which is already seq-sorted). Dropped rows are gone before the
     // sort, so a withdrawn original never resurfaces.
     result.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)

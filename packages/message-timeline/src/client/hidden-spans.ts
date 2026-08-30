@@ -20,16 +20,12 @@
  * alters the baseline path.
  */
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import { isHiddenSpanCarrierKind } from './timeline-kinds.ts'
 
 /** Span data carried by a `message-tools-withdrawn` / `message-tools-edited` node. */
 interface SpanCarrier {
   readonly hiddenStartSeq?: number
   readonly seq?: number
-}
-
-/** The node kinds whose data carries a `{ hiddenStartSeq, seq }` hidden span. */
-function isSpanCarrier(node: ChatConversationViewNode): boolean {
-  return node.kind === 'message-tools-withdrawn' || node.kind === 'message-tools-edited'
 }
 
 /**
@@ -44,7 +40,7 @@ function isSpanCarrier(node: ChatConversationViewNode): boolean {
 export function foldHiddenSpans(nodes: readonly ChatConversationViewNode[]): number[] {
   const pairs: Array<[number, number]> = []
   for (const node of nodes) {
-    if (!isSpanCarrier(node)) continue
+    if (!isHiddenSpanCarrierKind(node.kind)) continue
     const data = node.data as SpanCarrier
     if (data.hiddenStartSeq === undefined || data.seq === undefined) continue
     if (data.hiddenStartSeq >= data.seq) continue
