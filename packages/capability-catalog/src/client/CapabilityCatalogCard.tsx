@@ -6,10 +6,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CatalogMcpSnapshot, CatalogToolRow } from '@khorsheed/dsh-capability-catalog/types'
+import type { CapabilityCatalogKey } from './locales.ts'
 import type { CapabilityCatalogCardProps } from './slots.ts'
-import { SkillPreviewCard, DeleteSkillConfirm, isBuiltin } from './SkillCards.tsx'
+import { SkillPreviewCard, DeleteSkillConfirm } from './SkillCards.tsx'
 import { ToolCards, type ToolSegment } from './ToolCards.tsx'
 import { ToolDetailModal } from './ToolDetailModal.tsx'
+import { ModalShell } from './ModalShell.tsx'
 import { SkillDetailModal, type DetailClaim } from './SkillDetailModal.tsx'
 import { AddSkillModal } from './AddSkillModal.tsx'
 import { McpServerManageModal } from './McpServerManageModal.tsx'
@@ -44,6 +46,8 @@ export function CapabilityCatalogCard({
   const [mcps, setMcps] = useState<CatalogMcpSnapshot | null>(null)
   const [mcpDetailName, setMcpDetailName] = useState<string | null>(null)
   const [discoveringMcp, setDiscoveringMcp] = useState<ReadonlySet<string>>(() => new Set())
+  // Tool-origin guidance modal ("why is my plugin tool not here").
+  const [toolOriginHelp, setToolOriginHelp] = useState(false)
 
   const skills = snapshot?.skills ?? []
   const tools = snapshot?.tools ?? []
@@ -212,6 +216,9 @@ export function CapabilityCatalogCard({
               {t('toolOther')}<span className={css.tabCnt}>{mcpGroups.length}</span>
             </button>
           </div>
+          <button type="button" className={css.guideLink} onClick={() => setToolOriginHelp(true)}>
+            {t('toolOriginGuideLink')}
+          </button>
         </>
       ) : null}
 
@@ -228,7 +235,6 @@ export function CapabilityCatalogCard({
                 <SkillPreviewCard
                   key={skill.name}
                   skill={skill}
-                  builtin={isBuiltin(skill)}
                   onOpen={() => void openDetail(skill.name)}
                   onDelete={() => setDeleteTarget(skill.name)}
                   t={t}
@@ -308,6 +314,34 @@ export function CapabilityCatalogCard({
           t={t}
         />
       ) : null}
+
+      {toolOriginHelp ? <ToolOriginGuideModal onClose={() => setToolOriginHelp(false)} t={t} /> : null}
     </div>
+  )
+}
+
+/** Tool-origin guidance modal: explains why a plugin tool may show as builtin and
+ * points the user's agent at the convention doc to tag it. */
+function ToolOriginGuideModal({ onClose, t }: { onClose: () => void; t: (key: CapabilityCatalogKey) => string }) {
+  const [copied, setCopied] = useState(false)
+  const doc = 'docs/tool-origin-guide.md'
+  const copyDoc = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(doc)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { /* clipboard may be blocked */ }
+  }
+  return (
+    <ModalShell title={t('toolOriginGuideTitle')} onClose={onClose} t={t}>
+      <div className={css.confHint}>{t('toolOriginGuideIntro')}</div>
+      <div className={css.guideDocRow}>
+        <code className={css.guideDocPath}>{doc}</code>
+        <button type="button" className={css.btnPrimary} onClick={() => void copyDoc()}>
+          {copied ? t('copied') : t('copy')}
+        </button>
+      </div>
+      <div className={css.confHint}>{t('toolOriginGuideFooter')}</div>
+    </ModalShell>
   )
 }

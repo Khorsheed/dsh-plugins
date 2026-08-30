@@ -41,8 +41,14 @@ import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } fr
 import { maskConfig } from './mcps.ts'
 import { installSkillEnvHint } from './envHint.ts'
 import { MCP_TOOL_PREFIX } from './channels.ts'
+import { toolOrigin, type ToolOrigin } from './tool-origin.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
+
+// Community tool-origin convention: re-export the tag helpers so any plugin can
+// `import { setToolOrigin } from '@khorsheed/dsh-capability-catalog'`.
+export { TOOL_ORIGIN, setToolOrigin, toolOrigin } from './tool-origin.ts'
+export type { ToolOrigin } from './tool-origin.ts'
 
 export type {
   CapabilityCatalogSnapshot,
@@ -71,6 +77,7 @@ declare module '@deepseek-ai/cordis' {
 /** The slice of the tools registry this service reads (optional). */
 interface ToolsSlice {
   schemas: (scope?: unknown) => readonly ToolSchemaLike[]
+  get?: (name: string, scope?: unknown) => object | undefined
 }
 
 interface ToolSchemaLike {
@@ -241,6 +248,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
           await this.mcpServerNames(),
           this.appearedAfterApply,
           exec?.agent === undefined ? [undefined] : [exec.agent],
+          this.toolOriginsMap(exec?.agent),
         )
         const filter = args?.kind
         const skills = filter === undefined || filter === 'skill' ? snapshot.skills : []
@@ -261,6 +269,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
       await this.mcpServerNames(),
       this.appearedAfterApply,
       await this.catalogScopes(),
+      this.toolOriginsMap(await this.catalogScope()),
     )
   }
 
@@ -369,6 +378,22 @@ export class CapabilityCatalogService extends TypertRemoteService {
     if (tools?.schemas === undefined) return []
     const scope = await this.catalogScope()
     return scope === undefined ? tools.schemas() : tools.schemas(scope)
+  }
+
+  /** tool name → author-declared origin, read via `ctx.tools.get(name)` so the
+   * `Symbol.for('dsh.tool.origin')` tag on the retained definition survives (the
+   * system-prompt assembly strips it, but `get()` returns the full definition). */
+  private toolOriginsMap(scope: unknown): ReadonlyMap<string, ToolOrigin> {
+    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
+    if (tools?.get === undefined) return new Map()
+    const schemas = scope === undefined ? tools.schemas() : tools.schemas(scope)
+    const out = new Map<string, ToolOrigin>()
+    for (const schema of schemas) {
+      const def = scope === undefined ? tools.get(schema.name) : tools.get(schema.name, scope)
+      const origin = def === undefined ? undefined : toolOrigin(def)
+      if (origin !== undefined) out.set(schema.name, origin)
+    }
+    return out
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */

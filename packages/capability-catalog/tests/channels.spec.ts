@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { attributeToolChannel, resolveMcpServerName, skillChannelLabel, MCP_TOOL_PREFIX } from '../src/channels.ts'
+import { setToolOrigin, toolOrigin, TOOL_ORIGIN } from '../src/tool-origin.ts'
 
 const OFFICIAL = new Set(['bash', 'write', 'edit', 'read', 'glob', 'web_search'])
 
@@ -31,6 +32,17 @@ describe('attributeToolChannel', () => {
     expect(r).toMatchObject({ channel: 'plugin', confidence: 'inferred' })
   })
 
+  it('honors an author-declared origin tag over the heuristics', () => {
+    const origins = new Map([['subagent_kimi', { channel: 'plugin' as const, owner: '@khorsheed/dsh-local-agent-dsh' }]])
+    const r = attributeToolChannel('subagent_kimi', OFFICIAL, [], false, origins)
+    expect(r).toMatchObject({ channel: 'plugin', confidence: 'exact', owner: '@khorsheed/dsh-local-agent-dsh' })
+  })
+
+  it('keeps the official `subagent` tool (no tag) out of the plugin channel', () => {
+    const r = attributeToolChannel('subagent', OFFICIAL, [], false)
+    expect(r.channel).not.toBe('plugin')
+  })
+
   it('resolves longest-match serverName for underscore charset', () => {
     expect(resolveMcpServerName('mcp__a__b__query', ['a', 'a__b'])).toBe('a__b')
     expect(resolveMcpServerName('mcp__a__b__query', ['a'])).toBe('a')
@@ -47,5 +59,15 @@ describe('skillChannelLabel', () => {
     expect(skillChannelLabel('runtime')).toBe('插件 · runtime')
     expect(skillChannelLabel('user-dsh')).toBe('用户 · dsh')
     expect(skillChannelLabel('unknown-thing')).toBe('unknown-thing')
+  })
+})
+
+describe('tool origin tag', () => {
+  it('setToolOrigin/toolOrigin round-trip via the global symbol', () => {
+    const def = setToolOrigin({ name: 'subagent_dsh' }, { channel: 'plugin', owner: '@khorsheed/dsh-local-agent-dsh' })
+    expect(toolOrigin(def)).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-local-agent-dsh' })
+    expect(def[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-local-agent-dsh' })
+    // an untagged definition reads undefined
+    expect(toolOrigin({ name: 'bash' })).toBeUndefined()
   })
 })

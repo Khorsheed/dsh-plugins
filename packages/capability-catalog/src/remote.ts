@@ -22,6 +22,7 @@ import {
   collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice,
 } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
+import type { ToolOrigin } from './tool-origin.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
 
@@ -33,11 +34,16 @@ function officialToolsSet(): ReadonlySet<string> {
 }
 
 /** Project visible tools onto catalog rows with channel attribution. */
-export function projectTools(schemas: readonly ToolSchemaLike[], mcpServers: readonly string[], appearedAfterApply: Set<string>): CatalogToolRow[] {
+export function projectTools(
+  schemas: readonly ToolSchemaLike[],
+  mcpServers: readonly string[],
+  appearedAfterApply: Set<string>,
+  toolOrigins: ReadonlyMap<string, ToolOrigin> = new Map(),
+): CatalogToolRow[] {
   const official = officialToolsSet()
   const rows: CatalogToolRow[] = []
   for (const schema of schemas) {
-    const attributed = attributeToolChannel(schema.name, official, mcpServers, appearedAfterApply.has(schema.name))
+    const attributed = attributeToolChannel(schema.name, official, mcpServers, appearedAfterApply.has(schema.name), toolOrigins)
     rows.push({
       name: schema.name,
       description: schema.description ?? '',
@@ -66,9 +72,10 @@ export async function catalogSnapshot(
   mcpServers: readonly string[],
   appearedAfterApply: ReadonlySet<string>,
   scopes: readonly unknown[] = [undefined],
+  toolOrigins: ReadonlyMap<string, ToolOrigin> = new Map(),
 ): Promise<CapabilityCatalogSnapshot> {
   const base = await collectSkills(registry, workdir, scopes)
-  const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>)
+  const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>, toolOrigins)
   return {
     skills: base.skills,
     tools,

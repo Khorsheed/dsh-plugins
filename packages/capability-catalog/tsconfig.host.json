@@ -10,6 +10,7 @@
     "src/invariant.ts",
     "src/types.ts",
     "src/channels.ts",
+    "src/tool-origin.ts",
     "src/skills.ts",
     "src/remote.ts",
     "src/import.ts",

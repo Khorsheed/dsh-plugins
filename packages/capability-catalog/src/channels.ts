@@ -15,6 +15,7 @@
  */
 
 import type { CatalogToolChannel } from './types.ts'
+import type { ToolOrigin } from './tool-origin.ts'
 
 /** The `mcp__` prefix mcp-client stamps on every tool it registers. */
 export const MCP_TOOL_PREFIX = 'mcp__'
@@ -42,6 +43,7 @@ export function attributeToolChannel(
   officialTools: ReadonlySet<string>,
   mcpServerNames: readonly string[],
   appearedAfterApply: boolean,
+  toolOrigins: ReadonlyMap<string, ToolOrigin> = new Map(),
 ): ToolAttribution {
   if (name.startsWith(MCP_TOOL_PREFIX)) {
     const serverName = resolveMcpServerName(name, mcpServerNames)
@@ -49,6 +51,12 @@ export function attributeToolChannel(
   }
   if ((SELF_TOOL_NAMES as readonly string[]).includes(name)) {
     return { channel: 'plugin', confidence: 'exact', owner: '@khorsheed/dsh-capability-catalog' }
+  }
+  // A tagged origin is authoritatively declared by the tool author — honor it
+  // before the official whitelist / baseline fallback.
+  const origin = toolOrigins.get(name)
+  if (origin !== undefined) {
+    return { channel: origin.channel, confidence: 'exact', ...(origin.owner !== undefined ? { owner: origin.owner } : {}) }
   }
   if (officialTools.has(name)) {
     return { channel: 'builtin', confidence: 'exact' }
