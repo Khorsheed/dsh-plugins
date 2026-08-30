@@ -105,6 +105,15 @@ export function TimelineRail({
       // Degrade, don't explode: a failed store read only drops the appended
       // bubbles, never the rows the host's order already surfaced.
     }
+    // The order loop is seq-sorted, but the appended bubbles walk the store
+    // (its iteration order is not seq-ordered), so a bubble for an OLDER
+    // message would otherwise land at the very end, past the newest row.
+    // Sort the combined rows by anchorSeq so every row — original or
+    // appended — sits at its true transcript position. JS sort is stable, and
+    // an ordinary session has no appended bubbles, so this never reorders the
+    // baseline (which is already seq-sorted). Dropped rows are gone before the
+    // sort, so a withdrawn original never resurfaces.
+    result.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)
     return result
   }, [order, nodes, includeSteering])
 

@@ -171,6 +171,41 @@ describe('the flat timeline panel', () => {
     expect(panel().textContent).toContain('改过的内容')
   })
 
+  it('orders an appended bubble by its anchorSeq, not by store iteration order (the newest row stays last)', () => {
+    // An in-place edit of an OLDER message materializes a `message-tools-edited`
+    // bubble in the store; its anchorSeq is older than the newest user row.
+    // The append loop walks the store, whose iteration order is not seq order,
+    // so without a final sort the bubble would land AFTER the newer row. The
+    // rail must keep transcript order: the old edited bubble first, the newer
+    // user row last.
+    const edited = {
+      key: 'ke', kind: 'message-tools-edited', target: 'chat', anchorSeq: 5, visibility: 'visible',
+      data: { seq: 5, hiddenStartSeq: 3, content: [{ type: 'text', text: '旧消息(编辑后)' }] },
+    } as unknown as ChatConversationViewNode
+    const newest = {
+      key: 'k3', kind: 'user', target: 'chat', anchorSeq: 20, visibility: 'visible',
+      data: { content: [{ type: 'text', text: '最新消息' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore({
+        chat: {
+          // The host order surfaces only the newest user row; the edited bubble
+          // lives only in the store (store iteration yields the bubble first,
+          // the newest row second — the order loop keeps the row, the append
+          // adds the bubble).
+          order: ['k3'],
+          nodes: nodeStore(edited, newest),
+        },
+        hasMore: false,
+        loadingOlder: false,
+      } as unknown as ConversationSnapshot)),
+    })
+
+    expect(items()).toHaveLength(2)
+    expect(item('ke').compareDocumentPosition(item('k3')) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
   it('drops a withdrawn original that still sits in the order (its row is hidden, so it cannot be jumped to)', () => {
     // A withdraw leaves the original user message visible in the host order and
     // a sibling `message-tools-withdrawn` divider carrying the span; the DOM
