@@ -104,6 +104,18 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
             </details>
           ) : null}
 
+          {data.environmentRefs !== undefined && data.environmentRefs.length > 0 ? (
+            <details className={css.conf}>
+              <summary className={css.confTitle}>{t('envRefs')}</summary>
+              <div className={css.confHint}>{t('envRefsHint')}</div>
+              <div className={css.envRefList}>
+                {data.environmentRefs.map((ref) => (
+                  <span className={css.envRef} key={ref}>{ref}</span>
+                ))}
+              </div>
+            </details>
+          ) : null}
+
           {(() => {
             const files = data.files !== undefined && data.files.length > 0 ? data.files : ['SKILL.md']
             const single = files.length <= 1

@@ -153,8 +153,11 @@ export interface CatalogSkillDetail {
   readonly content: string
   /** Parsed frontmatter metadata, serialized to JSON text (typert boundary is strict JSON). */
   readonly metadataText?: string
-  /** Declared credentials + their configured state. */
+  /** Declared credentials + their configured state (metadata.credentials only). */
   readonly credentials?: readonly CatalogCredentialState[]
+  /** Env-var references detected in the skill body (read-only, informational —
+   * typically provided by the runtime/caller, NOT user-configurable here). */
+  readonly environmentRefs?: readonly string[]
   /** Bundle-relative file paths (SKILL.md + scripts/assets/references) for a directory side. */
   readonly files?: readonly string[]
 }

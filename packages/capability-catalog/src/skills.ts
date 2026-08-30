@@ -283,11 +283,15 @@ export async function loadSkillDetail(
   const lookup = scope === undefined ? base : { ...base, scope }
   const def = await registry.get(name, lookup)
   if (def === undefined) return undefined
-  const decls = mergeCredentialDecls(decodeCredentialDecls(def.metadata), decodeEnvDecls(def.content))
+  // metadata.credentials are the user-configurable secrets; env-var references
+  // detected in the body are the agent's own runtime inputs (DSH_HOME etc.) and
+  // must NOT be offered as configurable credential forms — keep them apart.
+  const metadataDecls = decodeCredentialDecls(def.metadata)
+  const environmentRefs = decodeEnvDecls(def.content).map((decl) => decl.key)
   const { credentials } = resolveServices(ctx)
   let credentialStates: readonly CatalogCredentialState[] = []
-  if (decls.length > 0 && credentials !== undefined) {
-    credentialStates = await Promise.all(decls.map(async (decl) => {
+  if (metadataDecls.length > 0 && credentials !== undefined) {
+    credentialStates = await Promise.all(metadataDecls.map(async (decl) => {
       const configured = CREDENTIAL_REF_NAME.test(decl.key)
         ? (await credentials.describe(decl.key).catch(() => undefined))?.configured === true
         : false
@@ -319,6 +323,7 @@ export async function loadSkillDetail(
     content: def.content,
     ...def.metadata !== undefined ? { metadataText: JSON.stringify(def.metadata) } : {},
     ...credentialStates.length > 0 ? { credentials: credentialStates } : {},
+    ...environmentRefs.length > 0 ? { environmentRefs } : {},
     ...files.length > 0 ? { files } : {},
   }
 }

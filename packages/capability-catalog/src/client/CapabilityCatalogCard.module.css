@@ -956,6 +956,24 @@
   margin: 8px 0 12px;
 }
 
+/* Read-only environment-var references (body-scan of the skill), shown as a
+ * chip row — NOT configurable credential inputs. */
+.envRefList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.envRef {
+  font-family: var(--cc-font-code);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
 .credRow {
   margin-bottom: 20px; /* input row → card bottom 20px */
 }

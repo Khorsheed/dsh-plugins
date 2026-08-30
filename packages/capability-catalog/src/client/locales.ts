@@ -60,6 +60,8 @@ export const zh = {
 
   credentials: '凭据配置',
   credentialsHint: '该 skill 的 metadata 声明了以下凭据，配置后模型可读取。',
+  envRefs: '引用的环境变量',
+  envRefsHint: '该 skill 的说明引用了以下变量；它们通常由运行环境或调用方提供，不能在此页配置。',
   configured: '已配置',
   notConfigured: '未配置',
   configuredReplace: '已配置——输入新值可替换',
@@ -197,6 +199,8 @@ export const en = {
 
   credentials: 'Credential config',
   credentialsHint: 'The skill metadata declares these credentials; configure them so the model can read them.',
+  envRefs: 'Referenced environment variables',
+  envRefsHint: 'The skill description references these variables; they are typically provided by the runtime or caller and cannot be configured here.',
   configured: 'Configured',
   notConfigured: 'Not configured',
   configuredReplace: 'Configured — enter a new value to replace',
