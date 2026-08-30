@@ -322,6 +322,33 @@ export function previousCursor(
 }
 
 /**
+ * Whether the roster a member was last told about is stale: any roster-visible
+ * change with a seq past their dispatch cursor — a member-added or
+ * member-removed, or a member-updated that touches what the roster section
+ * shows (instructions = the one-line role, rename = the addressing name). A
+ * childSessionId/cwd-only update is NOT roster-visible (the delegation handle
+ * is journaled right after a first run; counting it would re-send the roster
+ * on every member's next dispatch for nothing). A member with no cursor has
+ * never seen the roster, so their first dispatch always counts as stale.
+ * @param events - the session's event log.
+ * @param cursor - the member's pre-dispatch cursor ({@link previousCursor}).
+ * @returns true when the next dispatch must carry the roster section.
+ */
+export function rosterStaleSince(
+  events: readonly SessionEvent[],
+  cursor: number | undefined,
+): boolean {
+  if (cursor === undefined) return true
+  for (const event of events) {
+    if (event.seq <= cursor) continue
+    if (event.type === 'room/member-added' || event.type === 'room/member-removed') return true
+    if (event.type === 'room/member-updated'
+      && (event.data.instructions !== undefined || event.data.rename !== undefined)) return true
+  }
+  return false
+}
+
+/**
  * The role-instructions carry for the next dispatch to a member: 'initial'
  * when the member has never been dispatched (their instructions open the
  * first prompt), 'update' when the latest member-added/member-updated event

@@ -1,10 +1,15 @@
 /* Member speech: identity row + unframed body + IconActions-style action row.
-   Alias tokens with fallback chains only; no borders, backgrounds, or rules. */
+   The root carries a 2px member-color rail (inline borderLeft) with 8px of
+   clearance: an identity band — "this whole block is one member's speech" —
+   not a separator rule, so the content opens off it rather than leaning on
+   it. Alias tokens with fallback chains only; no other borders, backgrounds,
+   or rules. */
 
 .speech {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding-left: 8px;
 }
 
 .identity {
@@ -44,6 +49,42 @@
   font-size: 14px;
   line-height: 24px;
   color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+/* Collapsed long speech: ~10 lines (24px line-height), the tail dissolving
+   into the chat base under the fade — the official transcript-mask gradient
+   shape (ConversationRoot), rebased onto bg-base so both themes fade from
+   their own surface. */
+.clamped {
+  position: relative;
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dsw-alias-bg-base, #ffffff) 0%, transparent),
+    var(--dsw-alias-bg-base, #ffffff)
+  );
+}
+
+/* The expand/collapse toggle: the MembersView expandToggle chrome (business
+   primary text button), reused for the same affordance. */
+.expandToggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  cursor: pointer;
 }
 
 /* The official MessageIconActions chrome, replicated: 28px icon buttons in
@@ -103,6 +144,7 @@
 
 /* Mouse clicks never raise a focus ring; keyboard navigation keeps the
    visible one. */
-.action:focus:not(:focus-visible) {
+.action:focus:not(:focus-visible),
+.expandToggle:focus:not(:focus-visible) {
   outline: none;
 }

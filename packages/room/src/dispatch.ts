@@ -10,10 +10,13 @@
  *
  * The prompt every member receives is uniform (the design note's roster +
  * notifications contract): role instructions (first dispatch, or an edit
- * carried as an update) + the roster (who exists, with the notification
- * protocol) + the member's confirmed-undelivered notifications + this
- * dispatch's text. The member's own CLI session (resume chain) holds its
- * working memory; room never resends what it has seen.
+ * carried as an update) + the room goal (one line, every dispatch — cheap,
+ * and it orients the task) + the roster (who exists, with the notification
+ * protocol) ONLY when the member has never seen it or it changed since their
+ * last dispatch ({@link rosterStaleSince}) + the member's
+ * confirmed-undelivered notifications + this dispatch's text. The member's
+ * own CLI session (resume chain) holds its working memory; room never
+ * resends what it has seen.
  * @module @khorsheed/dsh-room/dispatch
  */
 import { randomUUID } from 'node:crypto'
@@ -23,7 +26,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { parseRelayDirective, pendingInstructions, previousCursor, replay } from './journal.ts'
+import { parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince } from './journal.ts'
 import type { RoomMember, RoomRelay } from './types.ts'
 
 /** Plugin tag carried by the main-agent followup's message source. */
@@ -45,11 +48,13 @@ export interface DispatchOptions {
  * The roster section: one line per OTHER member (name, provider, one-line
  * role) plus the notification protocol — the fallback channel's trailing
  * own-line `@name <content>` format lives here so a member can reach others
- * without any bridge tooling. The room's GOAL heads the section when set (one
- * line, "本房间的目标：…"; omitted when unset): members should know what the
- * room as a whole is driving at without ever seeing its running log.
+ * without any bridge tooling. Carried only when the member has never seen
+ * the roster or it changed since their last dispatch ({@link rosterStaleSince});
+ * the member's own session holds it in between. The room GOAL is NOT part of
+ * this section: it rides every dispatch on its own line (cheap, and it
+ * orients the task).
  */
-function rosterSection(state: { readonly members: readonly RoomMember[]; readonly goal?: string }, self: string): string {
+function rosterSection(state: { readonly members: readonly RoomMember[] }, self: string): string {
   const lines = state.members
     .filter(member => member.name !== self)
     .map((member) => {
@@ -59,7 +64,6 @@ function rosterSection(state: { readonly members: readonly RoomMember[]; readonl
     })
   return [
     '【成员名册】',
-    ...state.goal === undefined ? [] : [`本房间的目标：${state.goal}`],
     ...lines,
     '通知协议：要通知某个成员，在回复末尾独占一行写 `@名字 <内容>`；该行会被转交给对方（一阶段需房间主人确认）。',
   ].join('\n')
@@ -71,9 +75,10 @@ function notificationsSection(relays: readonly RoomRelay[]): string {
 }
 
 /**
- * Assemble the uniform member prompt: role-instructions carry, then the
- * roster, then the member's confirmed-undelivered notifications (except the
- * ones this dispatch's own text already delivers), then this dispatch's text.
+ * Assemble the uniform member prompt: role-instructions carry, then the room
+ * goal (every dispatch), then the roster (only when stale for this member),
+ * then the member's confirmed-undelivered notifications (except the ones
+ * this dispatch's own text already delivers), then this dispatch's text.
  */
 function assemblePrompt(
   room: Session,
@@ -89,7 +94,8 @@ function assemblePrompt(
   const pending = pendingInstructions(room.events, member.name, cursor)
   if (pending?.kind === 'initial') sections.push(`你的角色指令：${pending.instructions}`)
   if (pending?.kind === 'update') sections.push(`你的角色指令更新为：${pending.instructions}`)
-  sections.push(rosterSection(state, member.name))
+  if (state.goal !== undefined) sections.push(`本房间的目标：${state.goal}`)
+  if (rosterStaleSince(room.events, cursor)) sections.push(rosterSection(state, member.name))
   if (carried.length > 0) sections.push(notificationsSection(carried))
   sections.push(text)
   return { prompt: sections.join('\n\n'), carried }

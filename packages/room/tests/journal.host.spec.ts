@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
 import {
-  isRoomLog, parseMentions, parseRelayDirective, pendingInstructions, previousCursor, replay, taskProgress,
+  isRoomLog, parseMentions, parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince, taskProgress,
 } from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -281,6 +281,51 @@ describe('pendingInstructions', () => {
     const events = [ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' })]
     expect(pendingInstructions(events, 'ada', undefined)).toBeUndefined()
     expect(pendingInstructions(events, 'ghost', undefined)).toBeUndefined()
+  })
+})
+
+describe('rosterStaleSince', () => {
+  it('is stale for a never-dispatched member, fresh right after a dispatch', () => {
+    resetSeq()
+    const events = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
+      ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
+    ]
+    expect(rosterStaleSince(events, undefined)).toBe(true)
+    expect(rosterStaleSince(events, 1)).toBe(false)
+    // Changes AT the cursor were already carried by that dispatch.
+    expect(rosterStaleSince(events, 0)).toBe(false)
+  })
+
+  it('goes stale on a member add/remove or a roster-visible update past the cursor', () => {
+    resetSeq()
+    const base = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
+      ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
+    ]
+    const added = [...base, ev('room/member-added', { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'human' })] // 2
+    expect(rosterStaleSince(added, 1)).toBe(true)
+    const removed = [...base, ev('room/member-removed', { name: 'ada' })]
+    expect(rosterStaleSince(removed, 1)).toBe(true)
+    const role = [...base, ev('room/member-updated', { name: 'bill', instructions: '前端' })]
+    expect(rosterStaleSince(role, 1)).toBe(true)
+    const cleared = [...base, ev('room/member-updated', { name: 'bill', instructions: null })]
+    expect(rosterStaleSince(cleared, 1)).toBe(true)
+    const renamed = [...base, ev('room/member-updated', { name: 'ada', rename: 'ada2' })]
+    expect(rosterStaleSince(renamed, 1)).toBe(true)
+  })
+
+  it('ignores roster-invisible updates (the childSessionId handle, cwd) and older changes', () => {
+    resetSeq()
+    const events = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
+      ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
+      ev('room/member-updated', { name: 'ada', childSessionId: 'child-1' }),                       // 2
+      ev('room/member-updated', { name: 'ada', cwd: '/home/user/api' }),                           // 3
+    ]
+    expect(rosterStaleSince(events, 1)).toBe(false)
+    // Everything at or under the cursor was already carried.
+    expect(rosterStaleSince(events, 3)).toBe(false)
   })
 })
 

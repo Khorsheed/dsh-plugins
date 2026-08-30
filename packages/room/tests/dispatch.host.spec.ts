@@ -144,20 +144,51 @@ describe('DispatchEngine (real composition)', () => {
     expect(text.split('按方案 A 实现')).toHaveLength(2)
   })
 
-  it('the roster section carries the room goal on top when set, and omits it when unset', async () => {
+  it('the goal line rides every dispatch; the roster rides only a stale one', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
     bench.facade.resume.mockImplementation(async () => settledRun('child-1', 'done'))
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
     await bench.service.engine.idle()
-    // Unset: no goal line.
-    expect(textOf(bench.facade.start.mock.calls[0]![2] as ContentBlock[])).not.toContain('本房间的目标')
+    const first = textOf(bench.facade.start.mock.calls[0]![2] as ContentBlock[])
+    // First dispatch: the roster (with the protocol) opens the member's world;
+    // no goal line while unset.
+    expect(first).toContain('【成员名册】')
+    expect(first).not.toContain('本房间的目标')
 
     await bench.service.setGoal({ sessionId: bench.sessionId, text: '插件 API v2 上线' })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
     await bench.service.engine.idle()
-    const text = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
-    expect(text).toContain('【成员名册】\n本房间的目标：插件 API v2 上线')
+    const second = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
+    // The roster is unchanged since ada's last dispatch: omitted (the member's
+    // own session holds it). The goal still orients every dispatch.
+    expect(second).toContain('本房间的目标：插件 API v2 上线')
+    expect(second).not.toContain('【成员名册】')
+    expect(second).not.toContain('通知协议')
+
+    // A roster change (bill joins) re-carries the roster on the next dispatch.
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 再继续' })
+    await bench.service.engine.idle()
+    const third = textOf(bench.facade.resume.mock.calls[1]![3] as ContentBlock[])
+    expect(third).toContain('【成员名册】')
+    expect(third).toContain('- bill（codex）')
+    expect(third).toContain('本房间的目标：插件 API v2 上线')
+  })
+
+  it('a roster-invisible update (the journaled childSessionId handle) does not re-carry the roster', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
+    bench.facade.resume.mockImplementation(async () => settledRun('child-1', 'done'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
+    await bench.service.engine.idle()
+    // The first run journaled member-updated { childSessionId } AFTER ada's
+    // dispatch: roster-invisible, so the next dispatch stays lean.
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
+    await bench.service.engine.idle()
+    const second = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
+    expect(second).not.toContain('【成员名册】')
+    expect(second).toContain('继续')
   })
 
   it('an instructions edit rides the next dispatch as an update notice', async () => {

@@ -18,6 +18,7 @@ import { RoomEventView } from '../src/client/RoomEventView.tsx'
 import { RoomRelayView } from '../src/client/RoomRelayView.tsx'
 import { RoomTaskLineView } from '../src/client/RoomTaskLineView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
+import { memberColor } from '../src/client/member-color.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
   RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps, RoomTaskLineViewProps,
@@ -266,8 +267,8 @@ describe('RoomSpeechView', () => {
       node: nodeOf('room-speech', data), sessionId: 'room-1' as SessionId,
       roomStore, openSession, t,
     } as unknown as RoomSpeechViewProps
-    render(<RoomSpeechView {...props} />)
-    return { openSession }
+    const { container } = render(<RoomSpeechView {...props} />)
+    return { openSession, container }
   }
 
   it('renders the identity row, the unframed body, and the action row', async () => {
@@ -278,6 +279,39 @@ describe('RoomSpeechView', () => {
     expect(screen.getByRole('button', { name: '复制' })).toBeDefined()
     expect(screen.getByRole('button', { name: '查看成员会话' })).toBeDefined()
     expect(screen.getByText('1.2s')).toBeDefined()
+  })
+
+  it('bands the whole speech with the member-color rail', async () => {
+    const { container } = await bench()
+    const root = container.firstElementChild as HTMLElement
+    // jsdom normalizes the hex to rgb(); compare on that form.
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(memberColor('ada').slice(i, i + 2), 16))
+    expect(root.style.borderLeft).toBe(`2px solid rgb(${r}, ${g}, ${b})`)
+    // The rail anchors the whole block: identity row, body, and action row
+    // all live under it.
+    expect(root.contains(screen.getByText('ada'))).toBe(true)
+    expect(root.contains(screen.getByRole('button', { name: '复制' }))).toBe(true)
+  })
+
+  it('a short speech renders in full with no expand toggle', async () => {
+    await bench()
+    expect(screen.queryByRole('button', { name: '展开全部' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
+  })
+
+  it('a long speech starts collapsed and toggles expand/collapse', async () => {
+    const tail = '末尾标记'
+    const long = `${'很长的回复。'.repeat(120)}\n\n${tail}`
+    await bench({ ...speech, text: long })
+    // The full text is in the DOM (the clamp is visual); the toggle offers
+    // the expansion.
+    expect(screen.getByText(tail)).toBeDefined()
+    const expand = screen.getByRole('button', { name: '展开全部' })
+    fireEvent.click(expand)
+    expect(screen.queryByRole('button', { name: '展开全部' })).toBeNull()
+    const collapse = screen.getByRole('button', { name: '收起' })
+    fireEvent.click(collapse)
+    expect(screen.getByRole('button', { name: '展开全部' })).toBeDefined()
   })
 
   it('the jump button opens the child session; no handle, no button', async () => {
