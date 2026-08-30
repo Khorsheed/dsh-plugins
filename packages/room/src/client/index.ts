@@ -184,6 +184,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       return carried.ok ? carried.value : undefined
     },
     browseDirectory: () => ctx.workspaces.pickDirectory(),
+    listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,

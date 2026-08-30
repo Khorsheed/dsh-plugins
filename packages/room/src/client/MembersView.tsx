@@ -11,119 +11,16 @@
  * elapsed honest). The main-agent member takes no instructions and cannot be
  * removed — it is the room itself.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, IconAgentPresetOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { RoomMember, RoomMemberRun } from '../types.ts'
-import { formatDurationMs } from './format.ts'
-import { memberColor } from './member-color.ts'
+import type { RoomMember } from '../types.ts'
+import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { MembersViewProps } from './slots.ts'
 import type { RoomProviderList } from '../types.ts'
 import css from './MembersView.module.css'
 
 type DialogState = { readonly mode: 'invite' } | { readonly mode: 'edit'; readonly member: RoomMember } | null
-
-/** One roster card: identity, avatar block, role, status chip, actions. */
-function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t,
-}: {
-  readonly member: RoomMember
-  readonly run: RoomMemberRun | undefined
-  /** Tick-driven elapsed for a running member (undefined otherwise). */
-  readonly elapsedMs: number | undefined
-  readonly openSession: MembersViewProps['openSession']
-  readonly onEdit: () => void
-  readonly onRemove: () => void
-  readonly t: MembersViewProps['t']
-}): ReactNode {
-  const [expanded, setExpanded] = useState(false)
-  const [overflowing, setOverflowing] = useState(false)
-  const instructionsRef = useRef<HTMLParagraphElement | null>(null)
-  useEffect(() => {
-    if (expanded) return
-    const element = instructionsRef.current
-    if (element !== null) setOverflowing(element.scrollHeight > element.clientHeight + 1)
-  }, [member.instructions, expanded])
-
-  const color = memberColor(member.name)
-  const child = member.childSessionId
-  const running = run?.state === 'running'
-  const failed = run?.state === 'failed'
-  return (
-    <div className={css.card} data-member={member.name}>
-      <div className={css.head}>
-        <span className={css.avatarTile} style={{ '--member-color': color } as CSSProperties} aria-hidden>
-          {member.name.slice(0, 1).toUpperCase()}
-        </span>
-        <span className={css.identity}>
-          <span className={css.name}>{member.name}</span>
-          <span className={css.hint}>
-            {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
-          </span>
-        </span>
-        {running ? (
-          <button
-            type="button"
-            className={css.chipRunning}
-            title={t('speech.jump')}
-            disabled={child === undefined}
-            onClick={() => { if (child !== undefined) openSession(child) }}
-          >
-            {`${t('members.status.running')} · ${formatDurationMs(elapsedMs ?? 0)}`}
-          </button>
-        ) : (
-          <span className={failed ? css.chipFailed : css.chipIdle}>
-            {failed ? t('members.status.failed') : t('members.status.idle')}
-          </span>
-        )}
-      </div>
-      {member.kind === 'cli' && (
-        member.instructions === undefined ? (
-          <p className={css.instructionsEmpty}>{t('members.instructions.empty')}</p>
-        ) : (
-          <div className={css.instructionsBlock}>
-            <p
-              ref={instructionsRef}
-              className={expanded ? css.instructionsExpanded : css.instructions}
-              title={expanded ? undefined : member.instructions}
-            >
-              {member.instructions}
-            </p>
-            {(overflowing || expanded) && (
-              <button
-                type="button"
-                className={css.expandToggle}
-                onClick={() => { setExpanded(value => !value) }}
-              >
-                {expanded ? t('members.instructions.collapse') : t('members.instructions.expand')}
-              </button>
-            )}
-          </div>
-        )
-      )}
-      <div className={css.foot}>
-        {member.kind === 'cli' && (
-          <span className={css.actions}>
-            <button
-              type="button"
-              className={css.action}
-              disabled={child === undefined}
-              onClick={() => { if (child !== undefined) openSession(child) }}
-            >
-              {t('members.trajectory')}
-            </button>
-            <button type="button" className={css.action} onClick={onEdit}>
-              {t('members.edit')}
-            </button>
-            <button type="button" className={css.action} onClick={onRemove}>
-              {t('members.remove')}
-            </button>
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
 
 /** The members tab. */
 export function MembersView({
@@ -203,6 +100,7 @@ export function MembersView({
       providers={providers?.providers}
       localAgentAvailable={providers?.localAgentAvailable ?? true}
       inheritedCwd={roomCwd}
+      existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}

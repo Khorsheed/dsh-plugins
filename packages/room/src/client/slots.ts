@@ -63,6 +63,12 @@ export interface RoomInviteInjected {
    * the host serves no `native` directory-picking capability.
    */
   readonly browseDirectory: () => Promise<string | null>
+  /**
+   * The roster's current names, read from the store cache at call time (the
+   * invite dialog's name dice never rolls one of these). Empty on a cache
+   * miss — the host's duplicate check stays the backstop.
+   */
+  readonly listNames: () => readonly string[]
 }
 
 /**

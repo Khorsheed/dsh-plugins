@@ -14,7 +14,7 @@ import css from './InviteAgentAction.module.css'
 
 /** The header chip plus its dialog. */
 export function InviteAgentAction({
-  roomCwd, invite, listProviders, browseDirectory, t,
+  roomCwd, invite, listProviders, listNames, browseDirectory, t,
 }: InviteAgentActionProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
@@ -54,6 +54,7 @@ export function InviteAgentAction({
           providers={providers?.providers}
           localAgentAvailable={providers?.localAgentAvailable ?? true}
           inheritedCwd={roomCwd}
+          existingNames={listNames()}
           browseDirectory={browseDirectory}
           onSubmit={submit}
           onClose={() => { setOpen(false) }}

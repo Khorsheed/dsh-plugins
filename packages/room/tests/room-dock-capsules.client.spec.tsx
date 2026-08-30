@@ -285,10 +285,10 @@ describe('RoomDockCapsules', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => { expect(listProviders).toHaveBeenCalled() })
-    await screen.findByText('Kimi Code')
+    await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
     // No instructions, no first task: both are optional now.
-    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
     })

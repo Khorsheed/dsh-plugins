@@ -16,7 +16,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 380px;
+  width: 560px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 96px);
   overflow-y: auto;
@@ -26,6 +26,46 @@
   background: var(--dsw-alias-bg-layer-1, #ffffff);
   /* The card carries the whole separation now that the overlay does not dim. */
   box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+}
+
+/* The character-creation split: form left, live member-card preview right.
+   Narrow viewports stack with the preview on top (column-reverse). */
+.body {
+  display: flex;
+  gap: 16px;
+  min-width: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.previewCol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  width: 208px;
+}
+
+.previewLabel {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+@media (max-width: 640px) {
+  .body {
+    flex-direction: column-reverse;
+  }
+
+  .previewCol {
+    width: auto;
+  }
 }
 
 .title {
@@ -75,6 +115,59 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* The 称呼 row: the name input plus the 🎲 dice (a random game-flavored name
+   from the pool, never a roster duplicate). */
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nameRow .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dice {
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dice:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.dice:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* The advanced drawer (role instructions + cwd): folded on invite, open on
+   edit. The native details marker is the only affordance — no extra chrome. */
+.advanced {
+  display: block;
+}
+
+.advancedSummary {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  cursor: pointer;
+  user-select: none;
+}
+
+.advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 10px;
 }
 
 /* The cwd row: the read-only picked-path display plus the 浏览… trigger (and

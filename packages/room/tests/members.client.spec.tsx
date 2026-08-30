@@ -8,6 +8,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MembersView } from '../src/client/MembersView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
+import { memberColor } from '../src/client/member-color.ts'
+import { NAME_POOL, rollName } from '../src/client/name-pool.ts'
 import type { MembersViewProps, RoomMembersInjected } from '../src/client/slots.ts'
 import type { RoomProviderList, RoomState } from '../src/types.ts'
 
@@ -199,8 +201,8 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => { expect(face.listProviders).toHaveBeenCalled() })
-    await screen.findByText('Kimi Code')
-    const codex = screen.getByText(/Codex/) as HTMLOptionElement
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    const codex = screen.getByText(/Codex/, { selector: 'option' }) as HTMLOptionElement
     expect(codex.disabled).toBe(true)
     expect(dialog.textContent).toContain('置灰的 provider 未登录')
 
@@ -215,9 +217,9 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
     await waitFor(() => { expect((cwdInput as HTMLInputElement).value).toBe('/home/user/web') })
     const textareas = dialog.querySelectorAll('textarea')
-    fireEvent.change(textareas[0]!, { target: { value: '前端' } })
-    fireEvent.change(textareas[1]!, { target: { value: '搭页面' } })
-    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    fireEvent.change(textareas[0]!, { target: { value: '搭页面' } })
+    fireEvent.change(textareas[1]!, { target: { value: '前端' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({
         provider: 'kimi', name: 'cathy', instructions: '前端', cwd: '/home/user/web', firstTask: '搭页面',
@@ -230,10 +232,11 @@ describe('MembersView', () => {
     const { face } = await bench()
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
-    await screen.findByText('Kimi Code')
+    await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
-    fireEvent.change(dialog.querySelector('textarea')!, { target: { value: '前端' } })
-    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    // The advanced drawer (folded on invite) holds the role instructions.
+    fireEvent.change(dialog.querySelectorAll('textarea')[1]!, { target: { value: '前端' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', instructions: '前端' })
     })
@@ -244,10 +247,10 @@ describe('MembersView', () => {
     face.invite.mockResolvedValue({ ok: false, message: '名字已被占用' })
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
-    await screen.findByText('Kimi Code')
+    await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'ada' } })
-    fireEvent.change(dialog.querySelector('textarea')!, { target: { value: '后端' } })
-    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    fireEvent.change(dialog.querySelectorAll('textarea')[1]!, { target: { value: '后端' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await screen.findByRole('alert')
     expect(screen.getByRole('alert').textContent).toBe('名字已被占用')
     expect(screen.getByRole('dialog')).toBeDefined()
@@ -257,7 +260,7 @@ describe('MembersView', () => {
     await bench({ providers: { localAgentAvailable: false, providers: [] } })
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByText(/委派门面未挂载/)
-    expect((screen.getByRole('button', { name: '邀请' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '邀请入队' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('the instructions field carries the first-task-message copy and an example placeholder', async () => {
@@ -273,9 +276,9 @@ describe('MembersView', () => {
     const { face } = await bench()
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByRole('dialog')
-    await screen.findByText('Kimi Code')
+    await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
-    fireEvent.click(screen.getByRole('button', { name: '邀请' }))
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
     })
@@ -286,8 +289,77 @@ describe('MembersView', () => {
     face.browseDirectory.mockRejectedValue(new Error('no native capability'))
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByRole('dialog')
-    await screen.findByText('Kimi Code')
+    await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
     await screen.findByText(/目录选择器不可用/)
+  })
+
+  it('previews the member card live as the form changes', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    // Empty name: the placeholder identity, always idle, no action foot.
+    const preview = dialog.querySelector('[data-member="新成员"]') as HTMLElement
+    expect(preview).not.toBeNull()
+    expect(preview.textContent).toContain('Kimi Code')
+    expect(preview.textContent).toContain('空闲')
+    expect(preview.textContent).toContain('未设置角色')
+    expect(preview.textContent).not.toContain('轨迹→')
+    expect(preview.textContent).not.toContain('移除')
+    // Typing a name re-renders the card; the avatar color follows the hash.
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dex' } })
+    const updated = dialog.querySelector('[data-member="dex"]') as HTMLElement
+    expect(updated).not.toBeNull()
+    const tile = updated.querySelector('[class*="avatarTile"]') as HTMLElement
+    expect(tile.style.getPropertyValue('--member-color')).toBe(memberColor('dex'))
+    // Role instructions ride the preview too (advanced drawer stays folded).
+    fireEvent.change(dialog.querySelectorAll('textarea')[1]!, { target: { value: '后端' } })
+    expect((dialog.querySelector('[data-member="dex"]') as HTMLElement).textContent).toContain('后端')
+  })
+
+  it('the name dice rolls a pool name that is neither taken nor current', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    const nameInput = screen.getByPlaceholderText('ada') as HTMLInputElement
+    fireEvent.click(screen.getByRole('button', { name: '随机起名' }))
+    expect(NAME_POOL).toContain(nameInput.value)
+    // The roster (main/ada/bill/cathy) is never rolled.
+    expect(['main', 'ada', 'bill', 'cathy']).not.toContain(nameInput.value)
+    // The preview card follows the rolled name.
+    expect(screen.getByRole('dialog').querySelector(`[data-member="${nameInput.value}"]`)).not.toBeNull()
+    // A second roll never repeats the displayed name.
+    const first = nameInput.value
+    fireEvent.click(screen.getByRole('button', { name: '随机起名' }))
+    expect(nameInput.value).not.toBe(first)
+    expect(NAME_POOL).toContain(nameInput.value)
+  })
+
+  it('the advanced drawer is folded on invite and open on edit', async () => {
+    await bench()
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    const dialog = await screen.findByRole('dialog')
+    const details = dialog.querySelector('details') as HTMLDetailsElement
+    expect(details.textContent).toContain('高级设置')
+    expect(details.open).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    const adaCard = cardOf('ada')
+    fireEvent.click(Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const editDialog = await screen.findByRole('dialog')
+    expect((editDialog.querySelector('details') as HTMLDetailsElement).open).toBe(true)
+  })
+})
+
+describe('rollName', () => {
+  it('never rolls a taken or the current name, and exhausts cleanly', () => {
+    for (let index = 0; index < 50; index += 1) {
+      const rolled = rollName(['main', 'ada'], 'bill')!
+      expect(rolled).not.toBe('ada')
+      expect(rolled).not.toBe('bill')
+      expect(NAME_POOL).toContain(rolled)
+    }
+    // Pool minus taken minus current is empty → undefined.
+    expect(rollName(NAME_POOL.filter(name => name !== 'ada'), 'ada')).toBeUndefined()
   })
 })

@@ -323,6 +323,7 @@ export function RoomDockCapsules({
             providers={providers?.providers}
             localAgentAvailable={providers?.localAgentAvailable ?? true}
             inheritedCwd={roomCwd}
+            existingNames={state.members.map(entry => entry.name)}
             browseDirectory={browseDirectory}
             onSubmit={submitInvite}
             onClose={() => { setInviteOpen(false) }}

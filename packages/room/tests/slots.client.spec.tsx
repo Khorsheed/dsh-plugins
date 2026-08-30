@@ -176,6 +176,7 @@ describe('room client apply', () => {
       invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
       listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
       browseDirectory: vi.fn(async () => null),
+      listNames: vi.fn(() => []),
     }
     render(<InviteAgentAction {...({ ...face, t: (key: string) => key } as never)} />)
     fireEvent.click(screen.getByRole('button', { name: 'action.inviteAgent' }))

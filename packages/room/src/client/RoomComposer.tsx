@@ -89,7 +89,7 @@ export function selectRoomComposer(
 /** The room composer takeover component. */
 export function RoomComposer({
   sessionId, inputActions, roomStore, submit, stop, addTask, closeTask, setGoal,
-  roomCwd, invite, listProviders, browseDirectory, useSession, useProjection, t,
+  roomCwd, invite, listProviders, listNames, browseDirectory, useSession, useProjection, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [draft, setDraft] = useState('')
@@ -218,6 +218,7 @@ export function RoomComposer({
           roomCwd={roomCwd}
           invite={invite}
           listProviders={listProviders}
+          listNames={listNames}
           browseDirectory={browseDirectory}
           t={t}
         />
