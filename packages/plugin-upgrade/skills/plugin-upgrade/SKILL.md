@@ -218,11 +218,13 @@ you eventually solved it yourself:
    <the fix you found, if any>
    ```
 
-2. Tell the user the note exists and where, and ask them to send it to the
-   skill maintainers (the package README names the channel — currently the
-   repo's issue tracker). If the user is the maintainer (dogfooding), they
-   already know where to look.
+2. Tell the deployment's operator the note exists and where. **They own this
+   copy of the skill**: the runbook deliberately lives in a plain file they
+   can patch, and these notes are how it grows to fit their repo — its plugin
+   inventory, its conventions, its recurring breakages. If their fix belongs
+   upstream, they can optionally share the note with the package maintainers;
+   nothing is reported automatically.
 
-Keep the note factual — phase, error text, what unblocked you. The maintainer
+Keep the note factual — phase, error text, what unblocked you. The operator
 turns these into runbook edits and new reference entries; vague complaints
 help no one.
