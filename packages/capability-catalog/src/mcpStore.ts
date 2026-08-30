@@ -19,10 +19,18 @@ interface StoredServer {
   error: string | undefined
 }
 
-/** Wire/persisted form of one stored server (config + enabled + discovered tools). */
+/** One tool's persisted record: the user's toggle choice only. Descriptions and
+ * parameter schemas are discovered at connect time and deliberately NOT persisted
+ * (they bloat settings.yaml and go stale); `reconnectAll` re-fills them at boot. */
+export interface PersistedMcpTool {
+  readonly name: string
+  readonly enabled: boolean
+}
+
+/** Wire/persisted form of one stored server (config + enabled + tool toggles). */
 export interface PersistedMcpServer {
   readonly config: CatalogMcpServerConfig
-  readonly tools: readonly CatalogMcpTool[]
+  readonly tools: readonly PersistedMcpTool[]
 }
 
 /** The full persisted MCP state block (stored under the settings namespace `mcp` key). */
@@ -42,10 +50,22 @@ export class McpStore {
   loadFrom(state: PersistedMcpState | undefined): void {
     if (state === undefined) return
     for (const server of state.servers ?? []) {
+      const existing = this.servers.get(server.config.serverName)
+      // Keep descriptions/parameters already discovered in memory: the persisted
+      // block is authoritative only for the per-tool enabled flag (it stores just
+      // name+enabled), so a reload — e.g. after our own persist round-trips through
+      // the settings watch — must merge the toggle rather than wipe the tools.
+      const known = new Map((existing?.tools ?? []).map(t => [t.name, t]))
+      const tools = (server.tools ?? []).map(t => {
+        const prev = known.get(t.name)
+        return prev !== undefined
+          ? { ...prev, enabled: t.enabled }
+          : { name: t.name, description: '', enabled: t.enabled }
+      })
       this.servers.set(server.config.serverName, {
         config: server.config,
-        credentials: new Map(),
-        tools: [...(server.tools ?? [])],
+        credentials: existing?.credentials ?? new Map(),
+        tools,
         error: undefined,
       })
     }
@@ -59,7 +79,7 @@ export class McpStore {
   toPersisted(): PersistedMcpState {
     const servers = [...this.servers.values()]
       .sort((a, b) => a.config.serverName.localeCompare(b.config.serverName))
-      .map(s => ({ config: s.config, tools: s.tools }))
+      .map(s => ({ config: s.config, tools: s.tools.map(t => ({ name: t.name, enabled: t.enabled })) }))
     const credentials: Record<string, string> = {}
     for (const s of this.servers.values()) for (const [ref, value] of s.credentials) credentials[ref] = value
     return { servers, credentials }
@@ -157,7 +177,10 @@ export class McpStore {
         return undefined
       })
       const connection = await connectMcpServer(resolved)
-      s.tools = connection.tools.map(t => ({ ...t, enabled: true }))
+      // Preserve the user's per-tool enable flags — re-discovering refreshes
+      // descriptions/parameters without resetting toggles (new tools default on).
+      const prevEnabled = new Map(s.tools.map(t => [t.name, t.enabled]))
+      s.tools = connection.tools.map(t => ({ ...t, enabled: prevEnabled.get(t.name) ?? true }))
       s.error = undefined
       await connection.close()
       this.persist()
@@ -166,6 +189,17 @@ export class McpStore {
       s.error = String(error)
       this.persist()
       return s.tools
+    }
+  }
+
+  /** Re-connect + re-discover every enabled server — boot-time refill of the
+   * discovered descriptions/parameters (the persisted block stores only
+   * name+enabled). Preserves per-tool enable flags; per-server errors are
+   * recorded and do not stop the others. */
+  async reconnectAll(): Promise<void> {
+    for (const server of this.list()) {
+      if (!server.enabled) continue
+      await this.discover(server.serverName)
     }
   }
 

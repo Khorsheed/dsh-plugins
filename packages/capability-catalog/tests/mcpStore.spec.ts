@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { McpStore } from '../src/mcpStore.ts'
+import type { PersistedMcpState } from '../src/mcpStore.ts'
 import { SECRET_REF_PREFIX } from '../src/mcps.ts'
 
 describe('McpStore persistence', () => {
@@ -40,5 +41,35 @@ describe('McpStore persistence', () => {
     store.loadFrom({ servers: [], credentials: {} })
     expect(store.list()).toEqual([])
     expect(store.credentials()).toEqual([])
+  })
+
+  it('persists only tool name+enabled and drops descriptions/parameters', () => {
+    // A persisted state that (for back-compat) still carries full tool metadata.
+    const withDesc = {
+      servers: [{
+        config: { serverName: 's', transport: 'stdio', command: 'x', enabled: true },
+        tools: [
+          { name: 'a', description: 'long description', parameters: { type: 'object', properties: {} }, enabled: true },
+          { name: 'b', description: 'another', parameters: undefined, enabled: false },
+        ],
+      }],
+      credentials: {},
+    } as unknown as PersistedMcpState
+
+    const store = new McpStore()
+    store.loadFrom(withDesc)
+
+    // In-memory tools carry no description/parameters (re-filled on reconnect).
+    const byServer = store.toolsByServer()
+    expect(byServer['s']?.[0]?.description).toBe('')
+    expect(byServer['s']?.[0]?.parameters).toBeUndefined()
+    expect(byServer['s']?.[1]?.enabled).toBe(false)
+
+    // The serialized block only ever emits name+enabled — desc never reappears.
+    const persisted = store.toPersisted()
+    expect(persisted.servers?.[0]?.tools).toEqual([
+      { name: 'a', enabled: true },
+      { name: 'b', enabled: false },
+    ])
   })
 })

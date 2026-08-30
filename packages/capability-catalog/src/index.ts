@@ -132,6 +132,11 @@ export class CapabilityCatalogService extends TypertRemoteService {
       // Re-sync after loading persisted state (the tools inject may have fired
       // before the store was seeded).
       this.syncRegisteredMcpTools()
+      // The persisted block stores only tool names + toggles (descriptions and
+      // parameter schemas would bloat settings.yaml and go stale), so refill
+      // them by re-connecting the enabled servers at boot, async so boot is not
+      // blocked. Re-syncs registration once the descriptions are back.
+      void this.reconnectEnabledMcp()
     })
     // Baseline snapshot of the tools visible at apply time; tools that appear
     // later (a tools/change diff) are marked plugin/inferred.
@@ -398,6 +403,23 @@ export class CapabilityCatalogService extends TypertRemoteService {
 
   /** Re-sync registered MCP tools after any MCP store mutation. */
   private afterMcpMutation(): void {
+    this.syncRegisteredMcpTools()
+  }
+
+  /** Refill the persisted MCP tools' descriptions/parameters by re-connecting the
+   * enabled servers at boot (the persisted `mcp` block stores only name+enabled to
+   * keep settings.yaml small). Async: boot is not blocked; each server's errors are
+   * contained, and registration is re-synced once the descriptions are back. */
+  private async reconnectEnabledMcp(): Promise<void> {
+    const enabled = this.mcp.list().filter(s => s.enabled)
+    if (enabled.length === 0) return
+    for (const server of enabled) {
+      try {
+        await this.mcp.discover(server.serverName)
+      } catch (error) {
+        this.ctx.logger.error(`capability-catalog: reconnect ${server.serverName} failed: ${String(error)}`)
+      }
+    }
     this.syncRegisteredMcpTools()
   }
 }
