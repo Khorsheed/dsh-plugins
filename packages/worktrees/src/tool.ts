@@ -11,6 +11,19 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
+/**
+ * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
+ * seam S12): the capability catalog reads this `Symbol.for`-keyed tag back
+ * through `ctx.tools.get()`, so the `worktrees` tool attributes to this plugin
+ * (channel `plugin`) instead of falling back to heuristics. The tag is
+ * host-side only and never travels on the model wire. The generic form (not
+ * `typeof defineTool`) keeps typert from raising TS2321 on the helper.
+ */
+const definePluginTool = <T extends object>(def: T): T =>
+  Object.assign(def, {
+    [Symbol.for('dsh.tool.origin')]: { channel: 'plugin', owner: '@khorsheed/dsh-worktrees' },
+  })
+
 /** Parsed arguments of the `worktrees` tool. */
 interface WorktreesToolArgs {
   action: 'list' | 'switch' | 'create' | 'remove'
@@ -40,7 +53,7 @@ export function registerWorktreesTool(ctx: Context): boolean {
   // skipped while the badge/drawer still mount.
   const tools = ctx.get?.('tools') as { register: (definition: ReturnType<typeof defineTool>) => unknown } | undefined
   if (tools === undefined) return false
-  tools.register(defineTool({
+  tools.register(definePluginTool(defineTool({
     name: 'worktrees',
     description,
     parameters: {
@@ -101,6 +114,6 @@ export function registerWorktreesTool(ctx: Context): boolean {
         return JSON.stringify({ error: `worktrees: ${error instanceof Error ? error.message : String(error)}` })
       }
     },
-  }))
+  })))
   return true
 }
