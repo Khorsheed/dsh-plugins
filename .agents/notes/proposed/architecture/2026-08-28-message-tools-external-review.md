@@ -16,21 +16,29 @@ review is reproduced in full in the codex output; this note records the
 findings we accept (verified against the source and tests, not just the
 review's prose) and the direction we intend to take. No code changed yet.
 
+Two findings were re-litigated with codex afterward (serial-turn execution
+model + UI-reachability context the original brief withheld): both of the
+original HIGHs were downgraded (turn-settled → LOW, restored as a correctness
+issue; restore foreign-shadowing → MED, on Remote-contract grounds). The
+re-litigation also surfaced four findings the original review didn't reach
+(DOM-anchor leak, restore-role preservation, non-atomic restore, fixed settle
+timeout). Severities in this note are the post-consensus values.
+
 ## Proposal
 
 Adopt the review's findings in two tiers. Tier A items need an upstream
 harness API or behavior change and go through the upstream-change pipeline.
 Tier B items are self-contained to the package and can ship without upstream.
 
-A (upstream-pipeline, HIGH): make replace-after-cancel turn/revision-aware
-instead of trusting a client-side "latest turn" poll, and give the host an
-atomic cancel→await-closure→conditionally-replace so a just-started turn is
-never silently swept into a replacement tail.
+A (upstream-pipeline, robustness): make replace-after-cancel turn/revision-aware
+and give the host an atomic cancel→await-closure→conditionally-replace. Not a
+correctness bug in a serial harness (conceded with codex) — pursued for
+robustness, not because a race was observed.
 
-A (upstream-pipeline, HIGH): require a message-tools withdrawal that cites the
+A (upstream-pipeline, MED): require a message-tools withdrawal that cites the
 target before restoring; return a distinct `withdrawal-not-found` /
-`foreign-shadowing` failure otherwise (restore currently replays any
-off-surface editable target, crossing producer ownership).
+`foreign-shadowing` failure otherwise (the exported Remote contract currently
+accepts any off-surface editable target).
 
 B (self-contained): restore idempotency (stable withdrawal id + reject/return
 existing receipt) and transactional/multi-entry append; make ui-model-selection
@@ -46,24 +54,32 @@ sign the rule from actual hidden flow keys.
 
 ## Detailed findings
 
-### HIGH — replace-after-cancel is not turn/revision-aware
+### LOW (was HIGH) — replace-after-cancel is not turn/revision-aware
 
 `turnSettled` (client/edit-in-place.ts) reads the latest turn's close status,
 never the identity of the turn being cancelled. The test suite encodes the
-unsound case (`ignores an unclosed older turn once the latest one closed`).
-Combined with `running` being sampled before `editInPlace`/`withdrawInPlace`
-(client/index.ts), a new turn admitted between snapshot and replacement can be
-swept into the replacement tail, or the replacement can proceed without
-cancelling a just-started turn. Client choreography cannot guarantee this
-without host revalidation.
+defensive case (`ignores an unclosed older turn once the latest one closed`).
+**Re-litigated with codex and conceded: in a strictly serial-turn harness
+(`turn/end` always precedes the next `turn/start`), an older open turn cannot
+coexist with a newer closed turn, so no realistic correctness trigger remains.**
+The latest-turn check is safe under the stated execution contract; the test for
+an older open turn models invalid state and should be labeled as such. Tracking
+the cancelled turn's identity would improve robustness (`MED`-class value) but
+is not a correctness bug. Dropped from the final top-five.
 
-### HIGH — restore accepts foreign shadowing (e.g. compaction) as if it were ours
+### MED (was HIGH) — restore accepts foreign shadowing (e.g. compaction) as if it were ours
 
 `planRestore` replays any editable target absent from the live surface; when no
 message-tools withdrawal cites it, it replays the target alone (deliberate,
-tested `foreign shadowing` case). This crosses producer ownership: a caller can
-"restore" content another compactor/policy removed, and the API doc promises
-"restore a withdrawn message" which this doesn't guarantee.
+tested `foreign shadowing` case). **Re-litigated: keep at MED, but on the
+correct grounds.** Through normal UI, restore is only offered on a
+message-tools-created divider, so "resurrect content another compactor removed"
+is not normally reachable and crosses no privilege boundary. The real issue is
+the **exported Remote contract**: `restore` says "restore a withdrawn message",
+yet it accepts any off-surface editable message — silently broadening the
+contract to "replay content hidden by any producer", and direct RPC is a
+realistic (if uncommon) trigger. Fix = require a message-tools withdrawal
+provenance, or formally document cross-producer replay as adopted API semantics.
 
 ### MED — restore is non-idempotent and appends incrementally
 
@@ -85,6 +101,23 @@ ui-model-selection may be blocked before the degradation path is exercised.
 Host `static inject = ['sessions', 'agents']` and imports
 `@deepseek-ai/dsh-agent` (type-only). `dsh-session` is a peer, but `dsh-agent`
 is only in devDependencies. Consumers need it for the host contract.
+
+### New findings from the re-litigation (codex, 2026-08-28)
+
+- **MED — DOM-anchor hiding leaks withdrawn rows.** The only hiding mechanism is
+  the DOM-anchor stylesheet (`dom-hider.ts`); if its probe fails or the anchor
+  shifts, withdrawn assistant/tool rows can leak back into the visible
+  transcript. Prefer an upstream projection/suppression seam over a DOM anchor.
+- **MED — restore preserves assistant role poorly.** Restored assistant text is
+  replayed as a **user-role** message (framed `RESTORED_ASSISTANT_NOTICE`),
+  which changes model semantics versus the original assistant turn. Needs a
+  host-supported replay seam that preserves the assistant role.
+- **MED — restore replay is not atomic.** Sequential appends + one flush can
+  expose a partially restored span if an append/persistence step fails. Same
+  fix family as the idempotency item above.
+- **LOW — fixed five-second settle timeout is not adaptive.** A slow-but-valid
+  cancellation can reject a legitimate edit/withdraw. A host completion signal
+  or a better failure contract would be fairer to the user.
 
 ### Smaller accepted findings
 
@@ -121,14 +154,14 @@ is only in devDependencies. Consumers need it for the host contract.
 
 ## Alternatives considered
 
-- **Do nothing**: the plugin works and is tested; the HIGH items are
-  theoretical until a race is observed. Rejected for open-source release — the
-  review's HIGH concerns are real latent races, and a public surface is the
-  wrong place to discover them.
+- **Do nothing**: the plugin works and is tested; in a serial harness the
+  contested HIGH-1 is not an achievable race and HIGH-2 is a Remote-contract
+  nit. Rejected for open-source release only because a public surface is the
+  wrong place to discover the MED items (production-restore idempotency,
+  DOM-anchor leak, assistant-role loss).
 - **Fix only the self-contained items, defer upstream**: reasonable as a first
-  step, but the two HIGH items are the ones most likely to bite users (a silent
-  tail sweep can discard unrelated new work; foreign restore can resurrect
-  content). Deferring them is acceptable only if documented as known limits.
+  step. The two re-litigated items are no longer HIGH (conceded with codex), so
+  deferring them is acceptable if documented as known limits.
 - **Have the harness expose a turn-id/atomic replace**: the cleanest fix, but
   requires an upstream change; the pipe is slower, so it is scoped to Tier A.
 - **Rewrite instead of patch**: not warranted — the pure/core separation is
@@ -141,16 +174,18 @@ is only in devDependencies. Consumers need it for the host contract.
 - Tier A items are tracked as upstream-change-pipeline work items and
   re-checked against the next official rc (when the harness ships the
   capability, retire the degraded client path).
-- A follow-up codex re-review confirms the HIGH items are either fixed or
+- A follow-up codex re-review confirms the MED items are either fixed or
   documented as upstream-deferred known limits, and that no new correctness
   gap was introduced.
 
 ## Risks
 
-- Upstream items may take longer than the community release window; if
-  shipping first, users could hit the turn-sweep or foreign-restore edge cases
-  (mitigate: document as known limits and gate the restore foreign-shadowing
-  path behind a clear warning).
+- Upstream items may take longer than the community release window; the MED
+  items (restore idempotency/atomicity, Remote-contract broadening, DOM-anchor
+  leak, assistant-role loss) are the ones worth guarding if shipping first
+  (mitigate: document as known limits, gate the restore foreign-shadowing path
+  behind a clear warning, and prefer an upstream suppression seam over the
+  DOM anchor).
 - Making ui-model-selection optional changes the composition contract; a
   composition that relied on the chip being present would silently lose it
   (mitigate: keep the chip rendered when the service is present, degrade only
