@@ -232,11 +232,13 @@ dsh-dev/
 | # | 事项 | 依赖 | 验收 |
 |---|---|---|---|
 | A1 | **`capability-catalog` 功能冻结**：停止高频迭代、定下版本线 | — | 版本号一个工作日内不变 |
-| A2 | 建 `profiles/web-basic/`：profile 内容 + `scripts/` + 双语 README + CHANGELOG（结构与镜像仓一致，同步即纯拷贝） | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
-| A3 | **逐字节搬**现有 README 双指南与 restart 脚本 | A2 | 与镜像仓 diff 为空——**不许顺手优化**，那些是多轮事故打磨的（watchdog 交接、`$DSH_SESSION_ID` 寻址、不硬编码 `--initiator`） |
+| A2 | 建 `profiles/web-basic/`：**拉平结构**——仓库根即 profile（`package.json` / `cordis.patch.yml` / `pnpm-*.yaml`）+ `scripts/` + 双语 README + CHANGELOG + `docs/screenshots/` | — | monorepo 的 `packages/*` 够不着它，workspace 不吸收 |
+| A3 | **逐字节搬**现有 README 双指南与 restart 脚本 | A2 | 与镜像仓 diff 为空——**不许动行为**：watchdog 交接、`$DSH_SESSION_ID` 寻址、不硬编码 `--initiator` 都是事故换来的。（`install.sh` 的 `SRC` 一行属路径适配，已批准） |
+| A3b | **拷贝语义改显式白名单**：`cp package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml presets/ …`，新增模板文件必须显式加入 | A3 | **不是「全拷减排除」**——结构拉平后配套与 profile 文件同居，全拷的失败模式是新文件无声泄进用户 `$DSH_HOME`；白名单的失败模式是不生效、当场被 `--dump-config` 行数抓到。选响亮的 |
+| A3c | `.gitignore` 截图例外注释扩成「`docs/screenshots/` 与 `profiles/*/docs/screenshots/`」 | A2 | 整合包截图同样 `git add -f` |
 | A4 | 补 `README.i18n.yaml` sidecar | A3 | 配对门禁认得它 |
 | A5 | 扩翻译配对 glob 到 `{packages,profiles,.agents}` | A4 | 门禁扫得到 profiles/ |
-| A6 | 写 `scripts/sync-profile-mirror.mts`（照 `sync-ankh-guard-mirror.mts` 改） | A2 | 只拷整合包自身文件 + **被引用的**截图，不拖 monorepo 的 `docs/` |
+| A6 | 写 `scripts/sync-profile-mirror.mts`（照 `sync-ankh-guard-mirror.mts` 改） | A2 | 镜像仓根即 profile——clone 后 `pnpm install` 直接可跑。只拷整合包自身文件 + 它自己的 `docs/screenshots/`，不拖 monorepo 的 `docs/` |
 | A7 | **同步脚本加 `--check` 模式并进 CI** | A6 | 镜像落后于 monorepo 即红——防「单一事实源」漂成两个真相 |
 | A8 | 加两个成员（capability-catalog、inline-html-render），版本 bump 走 **minor** | A1·A2 | `--dump-config` 行数 +2 |
 | A9 | **模板保持最小**：只含 `package.json` + bundles 清单 + lockfile；用户个性化引导到 `cordis.patch.yml` 的 user 层（官方分层天然支持） | A2 | 模板里没有用户会改的东西 |
