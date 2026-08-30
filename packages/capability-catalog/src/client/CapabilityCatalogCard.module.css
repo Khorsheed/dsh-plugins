@@ -507,7 +507,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 20px;
+  margin-top: 20px; /* meta → desc 20px */
+  margin-bottom: 20px; /* desc → params 20px */
 }
 
 .toolDesc {
@@ -966,7 +967,7 @@
 }
 
 .detailDesc {
-  margin: 2px 0 24px; /* title → desc 20px, desc → meta 24px */
+  margin: 20px 0 24px; /* meta → desc 20px, desc → source 24px */
   font-size: 14px;
   line-height: 24px;
   color: var(--dsw-alias-label-secondary);
