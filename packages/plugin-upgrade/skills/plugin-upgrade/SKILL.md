@@ -14,6 +14,13 @@ Work through the phases in order. Never skip a verification rung. If any step
 fails and you cannot fix it, STOP and report — never restart into known-broken
 code.
 
+**Keep the user working while you work.** Phases 0–4 touch nothing the running
+instance serves — do them in a background subagent when the host offers one
+(e.g. a subagent tool with background mode), so the user's own session stays
+usable. The only user-visible seam is the restart in Phase 5: seconds on the
+guarded path, one short planned outage on the manual path — always scheduled
+with the user, never a surprise mid-activity.
+
 ## Ground rules
 
 - **Never modify the running host's checkout in place.** The process you live
@@ -38,7 +45,10 @@ code.
    You need this verbatim for the restart phase.
 3. List what is installed: the profile's plugin rows and every package's
    version. Snapshot the working state of any source checkouts you will touch
-   (`git status`, current HEAD) so every change is attributable.
+   (`git status`, current HEAD) so every change is attributable. **Write this
+   inventory to a file** — it doubles as the checklist for the post-restart
+   fleet verification (Phase 6), and the conversation alone is not durable
+   enough to serve as it.
 
 ## Phase 1 — Fetch the new host beside the old
 
@@ -142,6 +152,12 @@ Climb in order; each rung's criterion must pass before the next:
 
 ## Phase 5 — Self-restart and resume
 
+**Timing**: the restart is the only user-visible seam. Confirm the moment with
+the user ("upgrade verified, restart now?") unless they pre-authorized it —
+never surprise-restart while they are mid-task. With the guard the outage is
+seconds and sessions resume automatically; without it, schedule one short
+planned window.
+
 Pick the path by capability, and prefer the guard when present:
 
 **Path A — the instance has the ankh-guard plugin.** Ask the user (or check the
@@ -173,10 +189,32 @@ back on failure, and resumes the sessions the restart interrupted.
    command to the user — a reaped supervisor mid-restart strands the instance.
 3. **Exit the old instance** only after the supervisor is confirmed running
    (its log shows it waiting). Then the supervisor owns the handoff.
-4. **After the boot**, read the handoff note and the supervisor log, confirm
-   the health check passed, and open with the prepared first sentence.
+   **Before you exit, say so in the conversation** — the session log persists
+   across the restart, and your last message is what the user sees when they
+   come back: "restarting now; reopen this session when the page returns and
+   I will verify the fleet and report." Without a guard, nothing alive remains
+   to read the handoff note — the resumed session is the wake-up mechanism.
+4. **When the session resumes** (the user reopened it — or the guard resumed
+   it on Path A): read the handoff note and the supervisor log, confirm the
+   health check passed, then run Phase 6 before saying "done".
 
-## Phase 6 — Failure fallback
+## Phase 6 — Post-restart fleet verification
+
+You are back; now prove the fleet survived, not just the host. Walk the Phase 0
+inventory file and check each row on the NEW host:
+
+- every plugin row still composes (the host's config dump lists it);
+- every browser-facing plugin's bundle serves (`/plugins/<name>/client.js`
+  answers 200 — mind the host's bundle URL shape, it differs across lines);
+- every skill-bearing plugin still lists its skill (`skill.list` or the
+  catalog page);
+- every Remote-namespace plugin answers one cheap call.
+
+Present the result as a table against the baseline — what is verified working,
+what degraded, what is missing. Anything missing that the ladder had cleared
+means the upgrade is NOT done: keep fixing or roll back (Phase 7).
+
+## Phase 7 — Failure fallback
 
 - Any rung of the ladder fails → stop, report what passed and what did not.
   Do NOT restart into code that has not cleared the ladder.
