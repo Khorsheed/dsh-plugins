@@ -182,6 +182,18 @@ async function buildOverlay(): Promise<void> {
     paths[pkg.name] = [`./${pkg.dir}/src/index.ts`]
     paths[`${pkg.name}/*`] = [`./${pkg.dir}/src/*`]
   }
+  // Plugins may import a harness package's source files directly through the
+  // package's `./src/*` export (e.g. room registering the persistence
+  // vocabulary via '@deepseek-ai/dsh-session/src/known-event-types.ts' so the
+  // registration lands in the toolchain's module instance rather than a
+  // second lib copy). The harness base maps subpaths individually, so derive
+  // the `<pkg>/src/*` form from each mapped subpath's directory.
+  for (const [key, targets] of Object.entries(paths)) {
+    const match = /^(@deepseek-ai\/[^/]+)\//.exec(key)
+    if (match === null || `${match[1]}/src/*` in paths) continue
+    const dir = /^\.\/(.+\/src)\//.exec(targets[0] ?? '')
+    if (dir !== null) paths[`${match[1]}/src/*`] = [`./${dir[1]}/*`]
+  }
   base.compilerOptions = { ...base.compilerOptions, paths }
   writeFileSync(basePath, `${JSON.stringify(base, null, 2)}\n`)
   const aggregatePath = join(overlay, 'tsconfig.host.json')

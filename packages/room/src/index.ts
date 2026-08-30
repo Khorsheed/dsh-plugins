@@ -22,10 +22,25 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
 import type {} from '@deepseek-ai/dsh-agent'
-// The persistence read path refuses logs carrying event types outside this
-// catalog; registering the room vocabulary declares that a room-mounted build
-// understands them (see ROOM_EVENT_TYPES in journal.ts).
-import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
+// The persistence read path refuses logs carrying event types outside the
+// KNOWN_SESSION_EVENT_TYPES catalog; registering the room vocabulary declares
+// that a room-mounted build understands them (see ROOM_EVENT_TYPES in
+// journal.ts). The registration must land in the TOOLCHAIN's module instance:
+// the toolchain loads dsh-session from src (tsx path mapping) while a
+// profile-installed plugin resolves the root export to lib — two instances,
+// two catalog Sets, and a registration that never reaches the reader (the
+// prod 3080 failure mode). Importing the source file through the package's
+// `./src/*` export lands both sides on the same file URL, but no static
+// specifier expresses it (the exact-file exports map needs tsx's extension
+// probing; the `.ts` form trips TS2877) — so the specifier is computed and
+// resolved at runtime, and the top-level await lets the plugin loader block
+// boot on the registration completing. Test environments (vite) cannot
+// resolve the `./src/*` export and take the root fallback — there the root
+// and the toolchain already share one instance.
+const catalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'].join('/')
+const catalogModule = await import(catalogSpecifier)
+  .catch(() => import('@deepseek-ai/dsh-session')) as { KNOWN_SESSION_EVENT_TYPES: Set<string> }
+for (const type of ROOM_EVENT_TYPES) catalogModule.KNOWN_SESSION_EVENT_TYPES.add(type)
 import { composeRoomAgent, inspectCold, roomSessionPreset } from './agent-setup.ts'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -101,19 +116,6 @@ function taskTitle(text: string): string {
  * CREATED apart from a session — inviting an agent into any session promotes
  * it (see ensureRoom; the room-session-promotion proposal).
  */
-
-// Join the persistence catalog at MODULE LOAD, not in the RoomService
-// constructor: cordis constructs the service lazily on first use, so a
-// constructor-time registration arrives too late — opening a persisted room
-// before any room Remote call hit SessionFormatUnsupportedError (verified on
-// prod 3080: the open failed until a room Remote forced construction). The
-// read path refuses logs with out-of-catalog types, so the vocabulary must be
-// registered when the plugin module is imported, before any session loads.
-{
-  const catalog = KNOWN_SESSION_EVENT_TYPES as Set<string>
-  for (const type of ROOM_EVENT_TYPES) catalog.add(type)
-}
-
 export class RoomService extends TypertRemoteService {
   static inject = ['sessions', 'agents']
 
