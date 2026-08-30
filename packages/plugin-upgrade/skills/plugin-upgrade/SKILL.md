@@ -42,7 +42,13 @@ code.
 
 ## Phase 1 — Fetch the new host beside the old
 
-Source-based deployment:
+The invariant is *beside, never in place*: the new host lands in its own
+directory so the running deployment stays intact and rollback is a path swap.
+How you stage it is your call — a git worktree, a fresh clone, or an npm
+staging dir all satisfy the invariant. Examples:
+
+Source-based deployment (a worktree keeps the checkout's object store shared
+and disposable):
 
 ```sh
 git -C /path/to/host/repo fetch --tags
