@@ -236,7 +236,7 @@ async function up(opts) {
     if (at <= 0) fail(`--extra expects name@spec, got: ${spec}`)
     const name = spec.slice(0, at)
     const version = spec.slice(at + 1)
-    extraDeps[name] = /^\d|\^|~/.test(version) ? version : `file:${version}`
+    extraDeps[name] = /^(\d|\^|~)/.test(version) ? version : version.startsWith('file:') ? version : `file:${version}`
     extraNames.push(name)
   }
   writeFileSync(
