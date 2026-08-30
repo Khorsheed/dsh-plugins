@@ -73,20 +73,17 @@ sh scripts/restart-into-web-dev.sh 3090     # pick a port
 
 To switch to another profile, run the matching script in its own repo. The switch is a same-port handover: refresh the original address.
 
-Installing several profiles: clone each and run its own `install.sh` — they do not interfere. To run them side by side, give each a port:
+Installing several profiles: clone each and run its own `install.sh` — they do not interfere; **switch on the same port with each pack's restart script**, so there is no port to remember. With several installed, a membership update runs `update.sh` once per profile.
 
-```sh
-dsh --profile web-basic --port 3080 &
-dsh --profile web-dev   --port 3090 &
-```
+Sessions live in `$DSH_HOME/sessions/`, and credentials and shortcuts live under `$DSH_HOME` — **all shared across profiles**: log into Kimi under one and the next already has it.
 
-Sessions live in `$DSH_HOME/sessions/` and are shared by every profile.
+> Running two instances over one `$DSH_HOME` is not recommended: they share session data and there is no cross-process write protection. Give a long-lived isolated instance (an evaluation one, say) its own `$DSH_HOME`.
 
 ## What is included
 
 21 members across three layers:
 
-**Baseline experience** (the same 12 as dsh-web-basic): message edit/withdraw/restore, history timeline, inline session-title editing, file preview (service + UI), local file browser, background task capsules, context-compaction reminder, inline HTML cards, capability catalog, shortcuts, ambient task feedback. Each is introduced in [dsh-web-basic's README](https://github.com/Khorsheed/dsh-web-basic#功能展示).
+**Baseline experience** (the same 12 as dsh-web-basic): message edit/withdraw/restore, history timeline, inline session-title editing, file preview (service + UI), local file browser, background task capsules, context-compaction reminder, inline HTML cards, capability catalog, shortcuts, ambient task feedback. Each is introduced in the [baseline member notes](https://github.com/Khorsheed/dsh-web-basic#功能展示).
 
 **Development capabilities** (the 8 unique to this profile): see [Features](#features).
 
@@ -141,7 +138,7 @@ Session data lives in `$DSH_HOME/sessions/` and does not go with the profile.
 
 | Pack | Role |
 |---|---|
-| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | Everyday mode: completes dsh's Web GUI. This profile's 12 baseline members come from it |
+| [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) | Everyday mode: the baseline experience only, without the development capabilities |
 
 ## License
 
