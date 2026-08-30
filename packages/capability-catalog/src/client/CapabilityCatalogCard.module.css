@@ -1199,21 +1199,6 @@
   margin: 0 0 24px; /* title → tabs tight (scoped body pad below), divider → content 24px */
 }
 
-/* Inline reset-filter link. */
-.ghostLink {
-  border: none;
-  background: transparent;
-  padding: 0 2px;
-  color: var(--dsw-alias-state-business-primary);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.ghostLink:hover {
-  text-decoration: underline;
-}
-
 /* Add-skill form controls. */
 .dropzone {
   position: relative;

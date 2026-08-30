@@ -73,10 +73,15 @@ export function CapabilityCatalogCard({
   const tools = snapshot?.tools ?? []
   const loading = snapshot == null
 
-  /** Re-fetch the MCP management snapshot (after any MCP mutation). */
+  /** Re-fetch the catalog + MCP snapshots after any MCP mutation. MCP
+   * add/remove/enable/discover changes which `mcp__` tools are registered on the
+   * host tool registry, so the catalog grid must refresh too — not just the MCP
+   * store — or a removed server's tools linger until a manual page refresh. */
   const refreshMcp = async (): Promise<void> => {
-    const s = await mcpSnapshot()
-    setMcps(s)
+    await Promise.all([
+      refresh(),
+      mcpSnapshot().then(setMcps),
+    ])
   }
   useEffect(() => { void refreshMcp() }, [])
 
@@ -155,12 +160,6 @@ export function CapabilityCatalogCard({
   const closeDetail = (): void => {
     setSelectedName(null)
     setClaim({ status: 'idle', data: undefined })
-  }
-
-  const resetFilter = (): void => {
-    setQuery('')
-    setSortBy('name')
-    setToolSegment('all')
   }
 
   return (
@@ -246,7 +245,7 @@ export function CapabilityCatalogCard({
 
       {!loading && kind === 'skills' && skills.length > 0 ? (
         visibleSkills.length === 0
-          ? <div className={css.empty}>{t('noFilterMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+          ? <div className={css.empty}>{t('noFilterMatch')}</div>
           : (
             <div className={css.grid}>
               {visibleSkills.map((skill) => (
@@ -273,7 +272,6 @@ export function CapabilityCatalogCard({
           onOpenServer={(name) => setMcpDetailName(name)}
           onSetEnabled={setMcpEnabled}
           onRemove={removeMcp}
-          resetFilter={resetFilter}
           t={t}
         />
       ) : null}
@@ -666,7 +664,7 @@ function ToolCard({ tool, onOpen, t }: { tool: CatalogToolRow; onOpen: () => voi
 /** The tools tab's card views following the segment filter. `all` renders both the
  * builtin/plugin tool cards AND the MCP server cards in ONE grid (so the 16px gap
  * stays uniform across them); the other segments render one set. */
-function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOpenServer, onSetEnabled, onRemove, resetFilter, t }: {
+function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOpenServer, onSetEnabled, onRemove, t }: {
   loading: boolean
   visibleTools: readonly CatalogToolRow[]
   mcpGroups: readonly McpGroup[]
@@ -675,7 +673,6 @@ function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOp
   onOpenServer: (name: string) => void
   onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
   onRemove: (serverName: string) => Promise<void>
-  resetFilter: () => void
   t: (key: CapabilityCatalogKey) => string
 }) {
   if (loading) return null
@@ -685,7 +682,7 @@ function ToolCards({ loading, visibleTools, mcpGroups, segment, onOpenTool, onOp
   if (total === 0) {
     return segment === 'mcp'
       ? <div className={css.empty}>{t('mcpServerEmpty')}</div>
-      : <div className={css.empty}>{t('toolNoMatch')} <button type="button" className={css.ghostLink} onClick={resetFilter}>{t('filterAll')}</button></div>
+      : <div className={css.empty}>{t('toolNoMatch')}</div>
   }
   return (
     <div className={css.grid}>
@@ -788,7 +785,7 @@ function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, 
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'fail'>>({})
   const [copied, setCopied] = useState(false)
-  const [sourceOpen, setSourceOpen] = useState(true)
+  const [sourceOpen, setSourceOpen] = useState(false)
   const data = claim.data
   // Source browser: the selected bundle file and its content (right pane).
   const [srcFile, setSrcFile] = useState('')
