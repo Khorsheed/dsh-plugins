@@ -14,7 +14,7 @@
  *   zip archive, a pasted source command, or a local directory, then refreshes
  *   the catalog.
  */
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react'
 import {
   Button,
   IconChevronDownOutline14,
@@ -474,100 +474,114 @@ function typeLabel(schema: Record<string, unknown>): string {
   return typeof t === 'string' ? t : ''
 }
 
-/** Recursive rows for one schema level. Emits flat `<tr>`s so nested object /
- * array-of-object properties stay in the SAME table (no nested-table alignment
- * issues), indented by depth; a chevron expands a nested level. */
-function ParamRows({ schema, path, expanded, onToggle, depth, t }: {
-  schema: CatalogJsonValue
+/** One property node in the schema tree: a head row (chevron + mono name +
+ * required `*` + type chip) with the description on a second line aligned to
+ * the name, and nested children inside a guide-lined indent. A parent node's
+ * whole head row is the toggle button (big hit target, one focus stop). */
+function SchemaNode({ name, schema, required, path, collapsed, onToggle, t }: {
+  name: string
+  schema: Record<string, unknown>
+  required: boolean
   path: string
-  expanded: ReadonlySet<string>
+  collapsed: ReadonlySet<string>
   onToggle: (key: string) => void
-  depth: number
   t: (key: CapabilityCatalogKey) => string
 }): ReactNode {
-  const props = schemaProps(schema)
-  if (props === null) return null
-  const required = requiredNames(schema)
-  return (
+  const nested = nestedSchemaOf(schema as CatalogJsonValue)
+  const kids = nested === undefined ? null : schemaProps(nested)
+  const kidRequired = nested === undefined ? null : requiredNames(nested)
+  const open = !collapsed.has(path)
+  const type = typeLabel(schema)
+  const desc = typeof schema['description'] === 'string' && schema['description'] !== '' ? schema['description'] : undefined
+  const head = (
     <>
-      {props.map(([name, p]) => {
-        const key = path === '' ? name : `${path}.${name}`
-        const nested = nestedSchemaOf(p as CatalogJsonValue)
-        const open = expanded.has(key)
-        return (
-          <Fragment key={key}>
-            <tr className={depth > 0 ? css.toolParamsNestedRow : undefined}>
-              <td className={css.toolParamsName} style={{ paddingLeft: `${8 + depth * 18}px` }}>
-                {nested !== undefined ? (
-                  <button type="button" className={css.toolParamsExpand} onClick={() => onToggle(key)} aria-expanded={open}>
-                    {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
-                  </button>
-                ) : null}
-                <span>{name}</span>
-              </td>
-              <td className={css.toolParamsType}>{typeLabel(p)}</td>
-              <td className={css.toolParamsDesc}>{typeof p['description'] === 'string' ? p['description'] : '—'}</td>
-              <td className={css.toolParamsReq}>{required.has(name) ? t('yes') : ''}</td>
-            </tr>
-            {nested !== undefined && open ? (
-              <ParamRows schema={nested} path={key} expanded={expanded} onToggle={onToggle} depth={depth + 1} t={t} />
-            ) : null}
-          </Fragment>
-        )
-      })}
+      <span className={css.schemaName}>{name}</span>
+      {required ? <span className={css.schemaReq} title={t('paramRequired')}>*</span> : null}
+      {type !== '' ? <span className={css.schemaType}>{type}</span> : null}
     </>
   )
-}
-
-/** The wrap table for one schema level (header + recursive rows). */
-function ParamTable({ schema, path, expanded, onToggle, depth, t }: {
-  schema: CatalogJsonValue
-  path: string
-  expanded: ReadonlySet<string>
-  onToggle: (key: string) => void
-  depth: number
-  t: (key: CapabilityCatalogKey) => string
-}) {
-  if (schemaProps(schema) === null) return <div className={css.empty}>{t('toolNoParams')}</div>
   return (
-    <table className={css.toolParamsTable}>
-      <thead>
-        <tr>
-          <th className={css.toolParamsName}>{t('paramName')}</th>
-          <th className={css.toolParamsType}>{t('paramType')}</th>
-          <th>{t('paramDesc')}</th>
-          <th className={css.toolParamsReq}>{t('paramRequired')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <ParamRows schema={schema} path={path} expanded={expanded} onToggle={onToggle} depth={depth} t={t} />
-      </tbody>
-    </table>
+    <div className={css.schemaNode}>
+      {kids !== null ? (
+        <button type="button" className={css.schemaHeadBtn} onClick={() => onToggle(path)} aria-expanded={open}>
+          <span className={css.schemaChevron}>
+            {open ? <IconChevronDownOutline14 size={12} /> : <IconChevronRightOutline14 size={12} />}
+          </span>
+          {head}
+        </button>
+      ) : (
+        <div className={css.schemaHead}>
+          <span className={css.schemaChevronSpacer} />
+          {head}
+        </div>
+      )}
+      {desc !== undefined ? <div className={css.schemaDesc}>{desc}</div> : null}
+      {kids !== null && open ? (
+        <div className={css.schemaKids}>
+          {kids.map(([kidName, kidSchema]) => {
+            const kidPath = `${path}.${kidName}`
+            return (
+              <SchemaNode
+                key={kidPath}
+                name={kidName}
+                schema={kidSchema}
+                required={kidRequired?.has(kidName) ?? false}
+                path={kidPath}
+                collapsed={collapsed}
+                onToggle={onToggle}
+                t={t}
+              />
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
-/** Reusable parameter view: a recursive table with a 表格/JSON toggle and a
- * one-click 复制 JSON, falling back to the raw JSON block when the schema is not
- * tabular. Used by the tool detail modal and the MCP tool rows' schema. */
-function SchemaView({ parameters, title, compact, t }: {
-  parameters: CatalogJsonValue | undefined
-  title?: string
-  compact?: boolean
+/** The schema tree: one SchemaNode per top-level property. All levels start
+ * EXPANDED (state tracks the collapsed set) — the guide lines keep the full
+ * hierarchy readable at a glance, and deep MCP schemas collapse per node. */
+function SchemaTree({ schema, compact, t }: {
+  schema: CatalogJsonValue
+  compact?: boolean | undefined
   t: (key: CapabilityCatalogKey) => string
 }) {
-  const hasTable = parameters !== undefined && parameters !== null && schemaProps(parameters) !== null
-  const [view, setView] = useState<'table' | 'json'>('table')
-  const [copied, setCopied] = useState(false)
-  const [expandedParams, setExpandedParams] = useState<ReadonlySet<string>>(() => new Set())
-  useEffect(() => { if (!hasTable) setView('json') }, [hasTable])
-  const toggleParam = (key: string): void => {
-    setExpandedParams((prev) => {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const toggle = (key: string): void => {
+    setCollapsed((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
   }
+  const props = schemaProps(schema)
+  if (props === null) return null
+  const required = requiredNames(schema)
+  return (
+    <div className={compact === true ? css.schemaTreeCompact : css.schemaTree}>
+      {props.map(([name, p]) => (
+        <SchemaNode key={name} name={name} schema={p} required={required.has(name)} path={name} collapsed={collapsed} onToggle={toggle} t={t} />
+      ))}
+    </div>
+  )
+}
+
+/** Reusable parameter view: a schema tree with a 结构/JSON toggle and a
+ * one-click 复制 JSON, falling back to the raw JSON block when the schema is not
+ * an object with properties. Used by the tool detail modal and the MCP tool
+ * rows' schema. */
+function SchemaView({ parameters, title, compact, t }: {
+  parameters: CatalogJsonValue | undefined
+  title?: string
+  compact?: boolean
+  t: (key: CapabilityCatalogKey) => string
+}) {
+  const hasTree = parameters !== undefined && parameters !== null && schemaProps(parameters) !== null
+  const [view, setView] = useState<'tree' | 'json'>('tree')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => { if (!hasTree) setView('json') }, [hasTree])
   const paramsJson = useMemo(() => formatParams(parameters, t), [parameters, t])
   const copyJson = async (): Promise<void> => {
     if (parameters === undefined || parameters === null) return
@@ -579,12 +593,12 @@ function SchemaView({ parameters, title, compact, t }: {
   }
   return (
     <div>
-      <div className={compact ? (css.toolParamsHeadCompact ?? '') : css.toolParamsHead}>
+      <div className={compact === true ? css.toolParamsHeadCompact : css.toolParamsHead}>
         {title !== undefined ? <span className={css.toolDetailParamsTitle}>{title}</span> : <span />}
         <span className={css.toolParamsActions}>
-          {hasTable ? (
+          {hasTree ? (
             <span className={css.toolParamsTabs}>
-              <button type="button" className={css.toolParamsTab} data-active={view === 'table'} onClick={() => setView('table')}>{t('paramsTable')}</button>
+              <button type="button" className={css.toolParamsTab} data-active={view === 'tree'} onClick={() => setView('tree')}>{t('paramsTree')}</button>
               <button type="button" className={css.toolParamsTab} data-active={view === 'json'} onClick={() => setView('json')}>{t('paramsJson')}</button>
             </span>
           ) : null}
@@ -598,10 +612,8 @@ function SchemaView({ parameters, title, compact, t }: {
       </div>
       {parameters === undefined || parameters === null ? (
         <div className={css.toolParamsEmpty}>{t('toolNoParams')}</div>
-      ) : hasTable && view === 'table' ? (
-        <div className={css.toolParamsTableWrap}>
-          <ParamTable schema={parameters} path="" expanded={expandedParams} onToggle={toggleParam} depth={0} t={t} />
-        </div>
+      ) : hasTree && view === 'tree' ? (
+        <SchemaTree schema={parameters} compact={compact} t={t} />
       ) : (
         <div className={css.toolParamsBody}>{paramsJson}</div>
       )}

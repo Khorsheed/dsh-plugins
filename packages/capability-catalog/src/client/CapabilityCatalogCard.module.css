@@ -583,103 +583,115 @@
   padding: 8px 0;
 }
 
-/* Parameter table: slightly darker than the modal (no enclosing border) to keep
-   the hierarchy clear without a heavy frame. Not its own scroll region. */
-.toolParamsTableWrap {
-  border-radius: 8px;
+/* Parameter schema tree (replaces the old nested table): one row per property —
+   mono name + required `*` + type chip, description on a second line aligned to
+   the name, nested levels inside a single vertical guide line. All levels start
+   expanded; the guide line (not per-row rails) carries the hierarchy. */
+.schemaTree {
+  border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
+  padding: 6px 12px;
 }
 
-.toolParamsTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  line-height: 1.5;
+/* Inside an MCP tool card the schema body already carries the layer-1 band, so
+   the tree stays transparent and tight there. */
+.schemaTreeCompact {
+  padding: 2px 0;
 }
 
-.toolParamsTable th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-tertiary);
-  font-weight: 500;
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  white-space: nowrap;
+.schemaNode {
+  min-width: 0;
 }
 
-.toolParamsTable td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
-  vertical-align: top;
-}
-
-.toolParamsTable tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.toolParamsName {
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 11px;
-  color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
+/* Head row shared by the parent (button) and leaf (div) variants. */
+.schemaHead,
+.schemaHeadBtn {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  font: inherit;
+  text-align: left;
 }
 
-/* Chevron that expands a nested object/array-of-object property row. */
-.toolParamsExpand {
+.schemaHeadBtn {
   appearance: none;
   border: 0;
   background: none;
-  padding: 2px;
-  margin-right: 2px;
-  color: var(--dsw-alias-label-tertiary);
+  border-radius: 6px;
+  color: inherit;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  flex: none;
 }
 
-.toolParamsExpand:hover {
-  color: var(--dsw-alias-label-primary);
+.schemaHeadBtn:hover .schemaName {
+  color: var(--dsw-alias-state-business-primary);
 }
 
-.toolParamsExpand:focus-visible {
+.schemaHeadBtn:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
-  border-radius: 4px;
 }
 
-/* Nested schema row: an accent rail + slightly recessed background so the flat
-   indented rows read as a hierarchy. */
-.toolParamsNestedRow td {
-  background: var(--dsw-alias-bg-layer-1);
+.schemaChevron {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  width: 16px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
-.toolParamsNestedRow .toolParamsName {
-  box-shadow: inset 2px 0 0 var(--dsw-alias-border-l2);
+/* Leaf rows keep the name column aligned with expandable rows. */
+.schemaChevronSpacer {
+  flex: none;
+  width: 16px;
 }
 
-.toolParamsType {
+.schemaName {
+  font-family: var(--ds-font-family-code, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Required marker: a red asterisk snug after the name (tooltip says 必填). */
+.schemaReq {
+  flex: none;
+  margin-left: -5px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Type chip: a compact pill so the type reads as a value, not prose. */
+.schemaType {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  color: var(--dsw-alias-state-business-primary);
   font-family: var(--ds-font-family-code, monospace);
   font-size: 11px;
-  color: var(--dsw-alias-state-business-primary);
+  line-height: 17px;
   white-space: nowrap;
 }
 
-.toolParamsDesc {
+.schemaDesc {
+  margin-left: 24px; /* chevron 16 + gap 8: aligns with the name column */
+  padding-bottom: 3px;
+  font-size: 12px;
+  line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 
-.toolParamsReq {
-  text-align: center;
-  white-space: nowrap;
-  color: var(--dsw-alias-label-tertiary);
+/* Nested level: one vertical guide line at the parent chevron's center; child
+   content lands at 24px, aligned with the parent's name/description column. */
+.schemaKids {
+  margin-left: 8px;
+  padding-left: 15px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
 }
 
 /* Uniform pill badge for credential config (still used in the detail modal). */
@@ -703,75 +715,6 @@
 .badgeOk {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent);
   color: var(--dsw-alias-state-success-primary);
-}
-
-/* Collapsible tool card (unchanged chrome). */
-.card {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 14px;
-  background: var(--dsw-alias-bg-layer-2);
-  overflow: hidden;
-}
-
-.cardHead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  color: var(--dsw-alias-label-primary);
-}
-
-.cardHead:hover {
-  background: var(--dsw-alias-interactive-bg-hover-solid);
-}
-
-.title {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.scroll {
-  margin-left: auto;
-  transition: transform 0.2s;
-}
-
-.open .scroll {
-  transform: rotate(180deg);
-}
-
-.preview {
-  font-size: 13px;
-  color: var(--dsw-alias-label-secondary);
-  padding: 0 16px 14px;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.open .preview {
-  display: none;
-}
-
-.body {
-  display: none;
-  padding: 0 16px 16px;
-}
-
-.open .body {
-  display: block;
-}
-
-.divider {
-  height: 1px;
-  background: var(--dsw-alias-border-l1);
-  margin: 10px 0 12px;
 }
 
 /* Meta as a wrap row: item groups, 8px label→value, 32px between groups. */
@@ -1074,39 +1017,10 @@
   font-size: 13px;
 }
 
-.inputWrap .input {
-  padding-right: 64px; /* clear the 56px show/hide button */
-}
-
 .input:focus-visible {
   outline: none;
   border-color: var(--dsw-alias-state-business-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
-}
-
-.eyeBtn {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  flex: 0 0 56px;
-  height: 100%;
-  border: none;
-  border-radius: 0 10px 10px 0;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.eyeBtn:hover {
-  color: var(--dsw-alias-label-primary);
 }
 
 /* Code panel: fills its pane, no own border, distinct darker bg, thin scroll. */
@@ -1294,15 +1208,6 @@
   margin: 0 0 24px; /* title → tabs tight (scoped body pad below), divider → content 24px */
 }
 
-/* "Updated" date in the card meta, pushed to the right edge. */
-.pvDate {
-  margin-left: auto;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-}
-
 /* Inline reset-filter link. */
 .ghostLink {
   border: none;
@@ -1395,26 +1300,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* A field label + its controls stacked as one field group (input → button 12px). */
-.fieldGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .fieldLabel {
   display: block;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
   margin-bottom: 8px;
-}
-
-.fieldLabelStrong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
-  margin-bottom: 2px;
 }
 
 .fieldPath {
@@ -1431,49 +1321,6 @@
   color: var(--dsw-alias-label-tertiary);
   font-family: var(--ds-font-family-code, monospace);
   word-break: break-all;
-}
-
-/* Info button with a hover tooltip (model-invocable explanation). */
-.infoBtn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  font-style: italic;
-  cursor: help;
-}
-
-.infoBtn::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 240px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-3);
-  border: 1px solid var(--dsw-alias-border-l2);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
-  white-space: normal;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s;
-  z-index: 10;
-}
-
-.infoBtn:hover::after {
-  opacity: 1;
 }
 
 /* Directory skill picker. */
