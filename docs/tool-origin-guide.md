@@ -48,6 +48,26 @@ ctx.tools.register(setToolOrigin(defineTool({ name: 'subagent_dsh' /* ... */ }),
 
    正例 `packages/room`（`ctx.inject(['tools'], ...)`），反例 `packages/worktrees`（已改为 inject）。
 
+## 相关：组合层的两个共享命名空间
+
+工具来源之外，还有两处「所有插件共用、无人拥有」的命名空间，`pnpm check:plugins` 现在会检查：
+
+- **loader 行 id**（`cordis.patch.yml` 的 `id:`）：重复会**直接炸 boot**，因此是硬错误。
+- **chain 槽的 priority**：升序选举、第一个返回非 null 者胜出，所以同一优先级的两个条目由**注册顺序**决出——那是组合树的实现细节，不是稳定契约。条件不重叠时共存是合法的，因此只报警告，并打印台账：
+
+```sh
+pnpm check:plugins --ledger
+```
+
+```
+independence: chain-slot ledger
+  conversation.composer
+      -20  @khorsheed/dsh-local-agent
+      -10  @khorsheed/dsh-room
+```
+
+要接管某个 chain 槽时先看这份台账挑一个空位，不必读几个包的源码去猜。keyed 槽（注册时带 `key:`，如 `conversation.chat.node`）靠 key 天然隔离，不参与选举，也不在台账里。
+
 ## 验证
 
 标记后刷新 `工具与技能` 工具 tab，该工具应显示为「插件」，副标题是 `owner`。若仍显示「内置」，说明标记没挂上（检查是否在 `register` 前挂了、`owner` 是否取对）。**若工具在「插件」和「内置」两段都找不到，那不是标记问题——它根本没注册，先查注册时机（见注意事项 4）。**

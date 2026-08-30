@@ -46,6 +46,8 @@ export interface Finding {
   readonly path: string
   readonly kind: string
   readonly detail: string
+  /** `error` fails the check (default); `warn` reports without failing. */
+  readonly severity?: 'error' | 'warn'
 }
 
 /**
@@ -330,20 +332,112 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
   return findings
 }
 
+/**
+ * Cross-package checks the per-package scan cannot see.
+ *
+ * Two composition-level namespaces are shared by every plugin and owned by
+ * none, so a collision only surfaces at boot (loader row ids) or as a subtly
+ * wrong UI (chain-slot priorities). Both are cheap to detect here.
+ * @param pkgs - every package under the scanned root.
+ * @returns findings plus the chain-slot ledger for the report.
+ */
+function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] } {
+  const findings: Finding[] = []
+
+  // Loader row ids: a duplicate id fails boot outright, so this is an error.
+  // The id lives in each package's cordis.patch.yml `- id: <value>` entry.
+  const rowOwners = new Map<string, string[]>()
+  for (const pkg of pkgs) {
+    const patch = pkg.json.dsh?.bundle?.patch
+    if (patch === undefined) continue
+    const file = join(pkg.path, patch)
+    if (!existsSync(file)) continue
+    for (const m of readFileSync(file, 'utf8').matchAll(/^\s*-?\s*id:\s*([A-Za-z0-9_-]+)\s*$/gm)) {
+      const id = m[1]!
+      rowOwners.set(id, [...(rowOwners.get(id) ?? []), pkg.json.name])
+    }
+  }
+  for (const [id, owners] of rowOwners) {
+    if (owners.length > 1) {
+      findings.push({
+        path: 'packages/*/cordis.patch.yml',
+        kind: 'loader row id',
+        detail: `row id "${id}" is mounted by ${owners.join(' and ')} — a duplicate loader entry id fails boot`,
+      })
+    }
+  }
+
+  // Chain-slot priorities: election is ascending and the first non-null entry
+  // wins, so two entries sharing a priority resolve by registration order —
+  // a composition-tree detail, not a stable contract. Coexistence is legitimate
+  // when their conditions never overlap, so this warns rather than fails, and
+  // prints the ledger so the next plugin can pick a free number instead of
+  // reading five packages' sources to guess one.
+  const chain = new Map<string, { priority: number; owner: string }[]>()
+  for (const pkg of pkgs) {
+    for (const file of listSources(pkg.path)) {
+      const text = readFileSync(file, 'utf8')
+      for (const m of text.matchAll(/name:\s*'([a-z][a-zA-Z.]+)',([\s\S]{0,240}?)priority:\s*(-?\d+)/g)) {
+        // A `key` makes it a keyed slot: entries are isolated by key and never
+        // compete, so priority there is ordering within one key, not election.
+        if (/\bkey:\s*'/.test(m[2]!)) continue
+        const slot = m[1]!
+        chain.set(slot, [...(chain.get(slot) ?? []), { priority: Number(m[3]), owner: pkg.json.name }])
+      }
+    }
+  }
+  const ledger: string[] = []
+  for (const [slot, entries] of [...chain].sort(([a], [b]) => a.localeCompare(b))) {
+    const sorted = [...entries].sort((a, b) => a.priority - b.priority)
+    ledger.push(`  ${slot}`)
+    for (const e of sorted) ledger.push(`    ${String(e.priority).padStart(5)}  ${e.owner}`)
+    // Only a CROSS-package clash matters: one package registering two entries
+    // at the same priority orders them itself and knows its own intent.
+    const byPriority = new Map<number, Set<string>>()
+    for (const e of sorted) byPriority.set(e.priority, (byPriority.get(e.priority) ?? new Set()).add(e.owner))
+    for (const [priority, owners] of byPriority) {
+      if (owners.size < 2) continue
+      findings.push({
+        path: slot,
+        kind: 'chain slot priority',
+        detail: `${[...owners].join(' and ')} both register priority ${priority} — election falls back to registration order, which is a composition-tree detail rather than a stable contract`,
+        severity: 'warn',
+      })
+    }
+  }
+  return { findings, ledger }
+}
+
 /** Scan every package under a packages/ root. */
-export function scanTree(packagesRoot: string): { readonly count: number; readonly findings: Finding[] } {
+export function scanTree(
+  packagesRoot: string,
+): { readonly count: number; readonly findings: Finding[]; readonly ledger: string[] } {
   const pkgs = listPackages(packagesRoot)
   const allNames = pkgs.map((p) => p.json.name)
-  return { count: pkgs.length, findings: pkgs.flatMap((p) => scanPackage(p, allNames)) }
+  const cross = scanCrossPackage(pkgs)
+  return {
+    count: pkgs.length,
+    findings: [...pkgs.flatMap((p) => scanPackage(p, allNames)), ...cross.findings],
+    ledger: cross.ledger,
+  }
 }
 
 function main(): void {
-  const { count, findings } = scanTree(join(import.meta.dirname!, '..', 'packages'))
-  for (const f of findings) {
+  const { count, findings, ledger } = scanTree(join(import.meta.dirname!, '..', 'packages'))
+  const errors = findings.filter((f) => f.severity !== 'warn')
+  const warnings = findings.filter((f) => f.severity === 'warn')
+  for (const f of errors) {
     process.stderr.write(`independence: ${f.path}: ${f.kind} — ${f.detail}\n`)
   }
-  process.stdout.write(`independence: scanned ${count} package(s), ${findings.length} finding(s)\n`)
-  process.exit(findings.length > 0 ? 1 : 0)
+  for (const f of warnings) {
+    process.stderr.write(`independence: warning: ${f.path}: ${f.kind} — ${f.detail}\n`)
+  }
+  if (process.argv.includes('--ledger') && ledger.length > 0) {
+    process.stdout.write(`independence: chain-slot ledger\n${ledger.join('\n')}\n`)
+  }
+  const warned = warnings.length > 0 ? `, ${warnings.length} warning(s)` : ''
+  process.stdout.write(`independence: scanned ${count} package(s), ${errors.length} finding(s)${warned}\n`)
+  process.exit(errors.length > 0 ? 1 : 0)
 }
 
 // Only run the CLI when invoked directly; importing (e.g. from the spec)
