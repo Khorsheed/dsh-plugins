@@ -44,7 +44,8 @@ const KINDS = {
   skill: {
     srcDir: (name) => join(root, 'skills', name),
     keep: new Set(['.git', '.gitignore']),
-    skip: new Set(['node_modules', '.DS_Store']),
+    // tests/ is dev machinery (the e2e rig + baselines), not skill content.
+    skip: new Set(['node_modules', '.DS_Store', 'tests']),
     gitignore: 'node_modules/\n.DS_Store\n',
   },
 }
