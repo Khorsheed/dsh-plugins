@@ -1,4 +1,4 @@
-# plugin-upgrade 技能
+# self-upgrade 技能
 
 [English](README.en.md) | 中文
 
@@ -10,8 +10,8 @@
 
 任选其一:
 
-- **capability-catalog 导入(推荐)**:实例装了 `@khorsheed/dsh-capability-catalog` 时,把本目录打成 zip(带包裹目录、`tests/` 除外,例如 `zip -r plugin-upgrade.zip plugin-upgrade -x 'plugin-upgrade/tests/*'`),在 catalog 设置页「添加技能」上传,或用它的 add-skill 工具/Remote 传入。GitHub 导入同理可用。
-- **直接落盘**:把本目录(不含 `tests/`)复制到 `$DSH_HOME/skills/plugin-upgrade/`(用户级)或项目的 `.agents/skills/`。
+- **capability-catalog 导入(推荐)**:实例装了 `@khorsheed/dsh-capability-catalog` 时,把本目录打成 zip(带包裹目录、`tests/` 除外,例如 `zip -r self-upgrade.zip self-upgrade -x 'self-upgrade/tests/*'`),在 catalog 设置页「添加技能」上传,或用它的 add-skill 工具/Remote 传入。GitHub 导入同理可用。
+- **直接落盘**:把本目录(不含 `tests/`)复制到 `$DSH_HOME/skills/self-upgrade/`(用户级)或项目的 `.agents/skills/`。
 
 ## 内容
 

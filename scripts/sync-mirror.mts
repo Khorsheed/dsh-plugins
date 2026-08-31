@@ -13,7 +13,7 @@
  * `--check` (CI gate) clones over https and needs no credentials.
  *
  * Usage: npx tsx scripts/sync-mirror.mts <package|profile|skill> <name> [--dry-run|--check]
- *   e.g. sync-mirror.mts skill plugin-upgrade
+ *   e.g. sync-mirror.mts skill self-upgrade
  * Requires: push rights to Khorsheed/dsh-<name> for the push mode.
  * @module scripts/sync-mirror
  */

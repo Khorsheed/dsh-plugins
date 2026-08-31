@@ -1,5 +1,5 @@
 ---
-name: plugin-upgrade
+name: self-upgrade
 metadata:
   version: 0.2.0
 description: Upgrade this dsh instance across a host release. Use when the user asks to upgrade/migrate the instance or its plugins to a new host version (e.g. "upgrade this instance to 0.1.2", "adapt the plugins to the new host", "move this deployment onto the latest release").
@@ -83,11 +83,14 @@ with the user, never a surprise mid-activity.
 5. **Create a working branch in the plugin source repo FIRST** — before any
    edit. Every fix lands as one commit per package on that branch; the user
    audits the branch, not your memory, and a bad fix reverts cleanly.
-6. **Guard check — install ankh-guard directly if absent.** The guarded restart
-   is the default restart path, so the guard is part of the upgrade, not an
+6. **Guard check — install ankh-guard, announced.** The guarded restart is
+   the default restart path, so the guard is part of the upgrade, not an
    optional extra: probe the installed plugin list for
-   `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
-   @khorsheed/dsh-ankh-guard` on the spot (npm-published, self-mounting). The
+   `@khorsheed/dsh-ankh-guard`; if missing, say WHAT you are installing and
+   WHY first ("I need @khorsheed/dsh-ankh-guard for a guarded restart — it
+   keeps a watchdog process supervising this instance"), then `dsh plugin add
+   @khorsheed/dsh-ankh-guard` right away — transparency, not a permission
+   gate; only an explicit refusal keeps you on Path B. The
    first restart after installing it rides the self-detaching supervisor
    (`assets/restart-resume.mjs`) — no manual step, the agent does it all;
    from the next boot on, every restart rides the guard. Only a user who
@@ -397,7 +400,7 @@ checklist, a step that was wrong or unreadable, a host version whose breakage
 looks nothing like the documented patterns — leave a structured note, even if
 you eventually solved it yourself:
 
-1. Write it to `$DSH_HOME/skill-feedback/plugin-upgrade/<unix-ms>.md` — the
+1. Write it to `$DSH_HOME/skill-feedback/self-upgrade/<unix-ms>.md` — the
    shared board root is `skill-feedback/`, one subdirectory per skill, so any
    skill that adopts this convention lands in the same place and attribution
    is the subdir name plus the frontmatter (create the directory) using this
