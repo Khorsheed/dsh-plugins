@@ -295,7 +295,7 @@ page_script() {
 const http = require('http');
 const port = Number(process.env.WD_PORT || 3080);
 const wd = Number(process.env.WD_PID);
-http.createServer((req, res) => {
+const handler = (req, res) => {
   if (req.url === '/restart') {
     try { process.kill(wd, 'SIGUSR1'); res.end('retrying...'); }
     catch (e) { res.statusCode = 500; res.end('signal failed: ' + e.message); }
@@ -310,7 +310,31 @@ http.createServer((req, res) => {
     + '<div style="text-align:center"><h2>dsh 服务未能启动</h2>'
     + '<p>看门狗多次尝试仍未拉起服务。点击重试，或查看看门狗日志。</p>'
     + '<form action="/restart"><button style="font-size:18px;padding:10px 28px">重试</button></form></div></body>');
-}).listen(port, '127.0.0.1');
+};
+// An occupied port is the COMMON case at give-up (the boot failures were
+// often EADDRINUSE themselves). Dying on the bind error — an unhandled
+// 'error' event — would return the watchdog's `wait` and drop it back into
+// the boot loop, fighting the healthy occupant it just gave up against
+// (observed 2026-08-30 in an e2e rig: four give-up cycles, the occupant
+// killed over and over). Park instead: retry the bind every 5s; SIGUSR1
+// still re-arms the boot loop.
+let noted = false;
+function bind() {
+  const server = http.createServer(handler);
+  server.on('error', (e) => {
+    if (e && e.code === 'EADDRINUSE') {
+      if (!noted) {
+        noted = true;
+        process.stderr.write('[watchdog] crash page cannot bind :' + port + ' (occupied) — retrying every 5s; SIGUSR1 to ' + wd + ' re-arms the boot loop\n');
+      }
+      setTimeout(bind, 5000);
+      return;
+    }
+    throw e;
+  });
+  server.listen(port, '127.0.0.1');
+}
+bind();
 EOF
 }
 

@@ -7,7 +7,7 @@
  * reads the clock; git calls run against throwaway repositories.
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import { tmpdir, homedir } from 'node:os'
@@ -1756,6 +1756,71 @@ describe('supervise', () => {
     expect(readFileSync(join(home, 'state', 'watchdog.pid'), 'utf8').trim())
       .toBe(String(survivors()[0]))
   }, 30_000)
+
+  it('give-up parks when the crash page cannot bind — no boot-loop fight, SIGUSR1 re-arms', async () => {
+    // Give-up with the port still occupied is the COMMON shape (the boot
+    // failures were often EADDRINUSE themselves). The crash page's listen must
+    // survive it: pre-fix the page died on an unhandled 'error' event, the
+    // watchdog's `wait` returned, and the boot loop resumed — fighting the
+    // healthy occupant the watchdog had just given up against (observed in an
+    // e2e rig, 2026-08-30: give-up → page crash → more boot attempts, the
+    // occupant killed on every pass).
+    const home = tmpDir('guard-giveup-')
+    mkdirSync(join(home, 'state'), { recursive: true })
+    mkdirSync(join(home, 'home'), { recursive: true })
+    const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
+    const port = await freePort()
+    const wdLog = join(home, 'state', 'watchdog.log')
+    const wd = spawn('bash', [script, '--supervise'], {
+      env: watchdogEnv({ WD_HOME: home, WD_PORT: String(port), WD_TEST_BREAK: '1' }),
+      stdio: ['ignore', openSync(wdLog, 'a'), openSync(wdLog, 'a')],
+      detached: true,
+    })
+    wd.unref()
+    cleanups.unshift(() => {
+      try { process.kill(-(wd.pid ?? 0), 'SIGKILL') } catch { /* not a group leader */ }
+      try { process.kill(wd.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+    })
+    const attempts = (): number => (readFileSync(wdLog, 'utf8').match(/starting instance/g) ?? []).length
+    const until = async (fn: () => boolean, ms: number): Promise<boolean> => {
+      const deadline = Date.now() + ms
+      while (Date.now() < deadline) {
+        if (fn()) return true
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      return false
+    }
+    // The port must become occupied only AFTER the watchdog's startup
+    // free_port sweep — and the holder must never answer HTTP 200, or the
+    // loop-bottom health check frees it as a stale listener. A bare TCP
+    // listener (accepts, never responds) is exactly the "half-dead process
+    // still holding the port" shape the crash page faces in the field.
+    let holder: ReturnType<typeof spawn> | undefined
+    try {
+      // WD_TEST_BREAK fails every boot instantly; the backoff sleeps
+      // (failures*5) put give-up at ~35s of wall time.
+      expect(await until(() => readFileSync(wdLog, 'utf8').includes('failure #1'), 20_000)).toBe(true)
+      holder = spawn(process.execPath, ['-e', `require('net').createServer(()=>{}).listen(${port},'127.0.0.1')`], { stdio: 'ignore' })
+      const gaveUp = join(home, 'state', 'watchdog-gave-up')
+      expect(await until(() => existsSync(gaveUp), 50_000)).toBe(true)
+      // Parked: no further boot attempts, the page crash is absent, and the
+      // occupant is NOT touched.
+      const settled = attempts()
+      await new Promise((resolve) => { setTimeout(resolve, 4000) })
+      expect(attempts()).toBe(settled)
+      const log = readFileSync(wdLog, 'utf8')
+      expect(log).not.toContain("Unhandled 'error' event")
+      expect(log).toContain('crash page cannot bind')
+      try { process.kill(holder.pid ?? 0, 0) } catch { throw new Error('port holder was killed') }
+      // SIGUSR1 re-arms the boot loop.
+      process.kill(wd.pid ?? 0, 'SIGUSR1')
+      expect(await until(() => attempts() > settled, 15_000)).toBe(true)
+    } finally {
+      holder?.kill('SIGKILL')
+      await new Promise((resolve) => { setTimeout(resolve, 300) })
+      await killListener(port)
+    }
+  }, 75_000)
 
   it('schedule-exit refuses without a credential (the gate)', async () => {
     const env = supervisedEnv()
