@@ -44,6 +44,20 @@ function makeShellEnv(registrations: Registration[], throwInactive: () => boolea
   }
 }
 
+/** Build a skills service that decodes env refs from each row's own content. */
+function makeSkills(rows: Array<{ name: string; content?: string }>) {
+  return {
+    snapshot: async () => ({
+      skills: rows.map((r) => ({ name: r.name, invocation: { modelInvocable: true } })),
+      complete: true,
+    }),
+    get: async (name: string) => ({
+      content: rows.find((r) => r.name === name)?.content ?? '',
+      metadata: {},
+    }),
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers()
 })
@@ -103,5 +117,31 @@ describe('installSkillEnvInjection', () => {
 
     expect(registrations).toHaveLength(1)
     expect(registrations[0].name).toBe('capability-catalog')
+  })
+
+  it('never lets a credential take over a reserved built-in DSH_* name', async () => {
+    const registrations: Registration[] = []
+    // Declaring HOME maps to the built-in DSH_HOME (dropped). Declaring DSH_HOME
+    // maps to DSH_DSH_HOME (allowed, no collision). Raw SHELL / SESSION_ID map
+    // onto the reserved DSH_SHELL / DSH_SESSION_ID built-ins (dropped).
+    const { ctx } = makeFakeCtx({
+      shellEnv: makeShellEnv(registrations),
+      credentials,
+      skills: makeSkills([
+        { name: 'home', content: 'use $HOME' },
+        { name: 'dshhome', content: 'use $DSH_HOME' },
+        { name: 'shell', content: 'use $SHELL' },
+        { name: 'sess', content: 'use $SESSION_ID' },
+      ]),
+    })
+    installSkillEnvInjection(ctx, async () => undefined)
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+
+    expect(registrations).toHaveLength(1)
+    const keys = Object.keys(registrations[0].variables)
+    expect(keys).toContain('DSH_DSH_HOME') // DSH_HOME decl allowed (double prefix)
+    expect(keys).not.toContain('DSH_HOME') // HOME decl never shadows the built-in
+    expect(keys).not.toContain('DSH_SHELL') // raw SHELL dropped
+    expect(keys).not.toContain('DSH_SESSION_ID') // raw SESSION_ID dropped
   })
 })

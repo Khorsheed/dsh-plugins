@@ -37,8 +37,16 @@ import { decodeCredentialDecls, decodeEnvDecls, mergeCredentialDecls } from './s
 
 const DSH_PREFIX = 'DSH_'
 const ENV_KEY_SUFFIX = /^[A-Z][A-Z0-9_]*$/
-/** Env keys that would map onto reserved built-in DSH_* variables. */
-const RESERVED_ENV_KEYS = new Set(['HOME', 'SHELL', 'SESSION_ID'])
+/** Reserved `DSH_*` names the host's shell-env registry owns as built-in facts
+ * (the instance's real HOME / SHELL / SESSION_ID). A credential must never be
+ * allowed to take one of these over — a mapped value shadowing the built-in
+ * `DSH_HOME` would make the agent read the configured credential as the
+ * instance home. Keyed on the MAPPED name (not the raw declaration), so it
+ * matches the upstream registry's own reserved set (dsh-home-paths/dsh-shell)
+ * and survives prefix/schema drift. The catalog's own `DSH_`-prefixed keys are
+ * unaffected: declaring e.g. `DSH_HOME` maps to `DSH_DSH_HOME`, which is not a
+ * reserved name and never collides. */
+const RESERVED_ENV_KEYS = new Set(['DSH_HOME', 'DSH_SHELL', 'DSH_SESSION_ID'])
 
 /** The `ctx.shellEnv` registry slice this module consumes (optional). */
 export interface ShellEnvRegistryLike {
@@ -170,9 +178,13 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             decodeEnvDecls(def.content ?? ''),
           )
           for (const decl of decls) {
-            if (!ENV_KEY_SUFFIX.test(decl.key) || RESERVED_ENV_KEYS.has(decl.key)) continue
+            if (!ENV_KEY_SUFFIX.test(decl.key)) continue
             const dshKey = `${DSH_PREFIX}${decl.key}`
-            if (occupied.has(dshKey)) continue
+            // Never let a credential take over a reserved built-in DSH_* name
+            // (DSH_HOME etc.). Declaring `HOME` maps to `DSH_HOME` and is
+            // dropped here; declaring `DSH_HOME` maps to `DSH_DSH_HOME`, which
+            // is not reserved and stays.
+            if (RESERVED_ENV_KEYS.has(dshKey) || occupied.has(dshKey)) continue
             keys.add(decl.key)
             const resolved = await credentials.resolve(decl.key).catch(() => undefined)
             if (resolved !== undefined && resolved.value.length > 0) values.set(dshKey, resolved.value)
