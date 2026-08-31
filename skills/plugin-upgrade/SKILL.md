@@ -82,9 +82,9 @@ with the user, never a surprise mid-activity.
    optional extra: probe the installed plugin list for
    `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
    @khorsheed/dsh-ankh-guard` on the spot (npm-published, self-mounting). The
-   FIRST restart after installing it is the only manual one (the watchdog can
-   only supervise from the next boot on) — do that one by hand per Path B, and
-   every later restart in this upgrade rides the guard. Only a user who
+   first restart after installing it rides the self-detaching supervisor
+   (`assets/restart-resume.mjs`) — no manual step, the agent does it all;
+   from the next boot on, every restart rides the guard. Only a user who
    explicitly declines the install keeps you on Path B throughout.
    **Trust is re-earned every upgrade**: the guard is a plugin like any other
    — it goes through the Phase 4 ladder with the fleet, and if IT fails
@@ -340,6 +340,9 @@ handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND **post the full
 report as your closing message in the conversation** — the file is the
 archive, the message is the delivery. A report that only exists on disk was
 never delivered; the user reads the conversation, not your state directory.
+**Write the report in the user's language** — the language their upgrade
+request came in (a Chinese request gets a Chinese report); the runbook's
+English is for you, the report is for them.
 
 Structure — one section per AFFECTED plugin, then the totals:
 
