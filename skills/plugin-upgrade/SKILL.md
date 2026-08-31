@@ -133,6 +133,16 @@ build, checklist #2). Everything the scan cannot probe stays manual — walk
 
 ## Phase 3 — Fix with dual-line discipline
 
+**Parity is the bar, and there is no deadline.** You are working beside a live
+instance the user keeps using — take the time to fix EVERYTHING properly. A
+feature that worked before the upgrade must work after it: "degraded but
+doesn't crash" is a regression delivered silently, not a fix. If you genuinely
+cannot restore a capability, stop and ask the user per item — "I can't fix X
+yet: accept it disabled for now, or hold the upgrade" — and treat "hold" as
+the default. The degrade-don't-explode convention governs plugins probing
+OPTIONAL siblings at runtime; it does not apply to capabilities the user
+already had.
+
 Every fix must produce ONE artifact that runs on the old AND the new host
 line, so the upgrade never strands a rollback. The full pattern catalog with
 worked examples is in `reference/dual-host-fix-patterns.md`; the core moves:
