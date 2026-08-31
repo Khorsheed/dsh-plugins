@@ -34,6 +34,13 @@ with the user, never a surprise mid-activity.
   keep deleted host exports compiling. Only a live boot catches load-time and
   apply-time breaks. The verification ladder below ends in a live instance for
   exactly this reason.
+- **Never kill the instance without two locks.** Before ANY action that stops
+  the running process: (a) the user has explicitly confirmed the restart in
+  the conversation, and (b) a supervisor that will bring it back is confirmed
+  alive — the guard's watchdog on Path A, or your detached supervisor script
+  verified running on Path B. A bare kill with nobody waiting to resurrect is
+  an outage you chose. (Observed in the wild: an agent that killed the
+  instance "to make the restart happen" and stranded it.)
 
 ## Phase 0 — Baseline
 
@@ -173,7 +180,12 @@ Climb in order; each rung's criterion must pass before the next:
    errors in the browser console**. Green build+test is not runtime-clean —
    load-time `SyntaxError`s, `undefined.subscribe` in plugin apply, and
    renderer crashes from folded-away host members have all shipped past green
-   suites and only surfaced here.
+   suites and only surfaced here. **This rung is not substitutable**: a trial
+   boot only proves the composition loads — whole breakage classes (host
+   service members deleted between versions, DOM anchors that moved) stay
+   invisible until a browser actually applies the plugins. If you cannot
+   drive a browser, say so and hand the rung to the user; never skip it
+   silently.
 4. **Delivery level** — from zero, on a clean profile, following only the
    package README: install, use, uninstall. The README is the product; if the
    install needs a fact that is not in it, fix the README.
@@ -281,9 +293,10 @@ means the upgrade is NOT done: keep fixing or roll back (Phase 7).
 Close the upgrade with a report the user can REVIEW and veto from — the fleet
 table proves things work; this report explains what you changed so a human can
 audit the diff before trusting it. Write it to a markdown file beside the
-handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND repeat its key
-points in the conversation; the file is the durable record, the message is the
-notification.
+handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND **post the full
+report as your closing message in the conversation** — the file is the
+archive, the message is the delivery. A report that only exists on disk was
+never delivered; the user reads the conversation, not your state directory.
 
 Structure — one section per AFFECTED plugin, then the totals:
 
