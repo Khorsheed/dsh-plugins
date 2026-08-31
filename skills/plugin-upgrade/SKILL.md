@@ -285,45 +285,28 @@ back on failure, and resumes the sessions the restart interrupted.
    you reached, the rollback pointer (old host checkout path + old launch
    command), and the exact first sentence to say after the restart. The you
    that wakes up after the restart has this note and nothing else.
-2. **Spawn the detached supervisor** — two variants of the same logic ship in
-   `assets/` beside this skill. Both wait for the old process to die, start
-   the new host, health-check it, and on failure roll back to the old host.
-   Both treat ANY HTTP answer from the health URL as alive: a token-gated host
-   (0.1.2+) answers a bare `GET /` with **401**, so demanding 2xx misreads a
-   healthy new host as dead and triggers a spurious rollback. If you need a
-   2xx, extract the `?token=` URL from the new host's boot log and poll that.
-   Pick the variant by platform:
+2. **Spawn the detached supervisor** — `assets/restart-resume.mjs` beside this
+   skill. It waits for the old process to die, starts the new host,
+   health-checks it, and on failure rolls back to the old host. It treats ANY
+   HTTP answer from the health URL as alive: a token-gated host (0.1.2+)
+   answers a bare `GET /` with **401**, so demanding 2xx misreads a healthy
+   new host as dead and triggers a spurious rollback. If you need a 2xx,
+   extract the `?token=` URL from the new host's boot log and poll that.
 
-   - `assets/restart-resume.sh` — where `setsid` exists (Linux). Launch it
-     FULLY detached — a merely backgrounded child dies with the session
-     teardown:
+   ```sh
+   OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
+   HEALTH_URL='http://127.0.0.1:<port>/' \
+   ROLLBACK_CMD='<old launch command>' \
+   node /path/to/restart-resume.mjs
+   ```
 
-     ```sh
-     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
-     HEALTH_URL='http://127.0.0.1:<port>/' \
-     ROLLBACK_CMD='<old launch command>' \
-     setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
-     ```
+   The script **self-detaches**: however it is launched, its first process
+   re-spawns in its own session and exits, so no `setsid`/`nohup` ceremony is
+   needed and a session teardown cannot reap it. If the sandbox forbids
+   detached spawns, STOP and hand the command to the user.
+   It prints the detached supervisor's pid; confirm the log shows it waiting
+   before you exit the old instance.
 
-   - `assets/restart-resume.mjs` — the default on any platform with node (which
-     you have — the host runs on it). It **self-detaches**: however you launch
-     it, the first process re-spawns itself in its own session and exits, so
-     `nohup`-less, `&`-less, even sandboxed invocations are all safe. Same env
-     vars:
-
-     ```sh
-     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
-     HEALTH_URL='http://127.0.0.1:<port>/' \
-     ROLLBACK_CMD='<old launch command>' \
-     node /path/to/restart-resume.mjs
-     ```
-
-     It prints the detached supervisor's pid; confirm the log shows it waiting
-     before you exit the old instance.
-
-   If neither detach is available and the session is sandboxed, STOP and hand
-   the command to the user — a reaped supervisor mid-restart strands the
-   instance.
 3. **Exit the old instance** only after the supervisor is confirmed running
    (its log shows it waiting). Then the supervisor owns the handoff.
    **Before you exit, say so in the conversation** — the session log persists

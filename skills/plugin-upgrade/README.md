@@ -17,7 +17,7 @@
 
 - `SKILL.md` —— runbook 本体:铁律 → 基线 → 取新宿主 → 断裂面盘点 → 双线修复纪律 → 验证阶梯 → 自我重启(ankh-guard 守卫路径 / 手工 supervisor 路径)→ 舰队核验 → 终版报告 → 失败兜底 → 留言板。
 - `reference/breakage-checklist.md` —— 断裂面清单(13 面 + 编译期盲区);`reference/dual-host-fix-patterns.md` —— 双线修复模式目录。
-- `assets/` —— 可执行资产:`scan-plugin.mjs`(断裂面机械扫描,Phase 2 先跑它)、`trial-boot.mjs`(试启动新宿主)、`restart-resume.sh` / `restart-resume.mjs`(自我重启 supervisor,按平台二选一)。
+- `assets/` —— 可执行资产:`scan-plugin.mjs`(断裂面机械扫描,Phase 2 先跑它)、`trial-boot.mjs`(试启动新宿主)、`restart-resume.mjs`(自我重启 supervisor,自分离,全平台)。
 - `tests/` —— 开发资产(自升级 e2e 装置 + run-report 口径),**不进 zip**。
 
 ## Compatibility
