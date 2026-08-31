@@ -25,6 +25,10 @@ with the user, never a surprise mid-activity.
 
 ## Ground rules
 
+- **Plugin fixes are never destructive.** Every fix must keep the artifact
+  working on the OLD host line too — one artifact, both lines, so a rollback
+  is always free and a user who cannot upgrade yet is not abandoned. (This is
+  why every pattern in this skill probes features instead of cutting over.)
 - **Never modify the running host's checkout in place.** The process you live
   in executes those files; editing them under a running instance can kill you
   mid-write and leaves no clean rollback point. Always stage the new host
