@@ -1,5 +1,14 @@
 # Breakage inventory checklist
 
+This checklist is deliberately version-agnostic: it teaches the METHOD, and
+every concrete example is just the instance we met it on. Multi-hop upgrades
+(e.g. 0.1.0-rc.6 → 0.1.2) need no hop-by-hop planning — diffing the two
+endpoints directly covers the union of every intermediate break. Over time,
+distill each version pair you have personally verified into a case file under
+`reference/cases/<from>-to-<to>.md` (and feedback-board entries about unknown
+breaks belong there too) so the knowledge compounds instead of resetting per
+release.
+
 How to build the complete list of what a new host version breaks, before
 touching code. Read the changelog range (`old-tag...new-tag`) commit by commit,
 and for every host package your plugins depend on diff the public export
