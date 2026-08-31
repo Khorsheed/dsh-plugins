@@ -72,15 +72,16 @@ interface SkillRegistrySlice {
  * and `shellEnv.register` disposers are also effect-scoped to the calling fiber.
  * Degrades silently (a no-op) when `shellEnv`, `credentials`, or `skills` is
  * absent in the composition.
+ *
+ * Boot-timing robustness: the contributor's `register()` runs `ctx.effect(...)`
+ * internally, so it must be called while its backing fiber is still `active`
+ * (alpha's reordered app-boot can leave it in a transient inactive window where
+ * a captured reference would throw `INACTIVE_EFFECT`). This install never caches
+ * a service reference across an `await`; it re-reads `ctx.get` (strict — returns
+ * the impl only while its fiber is active) immediately before calling `register`,
+ * and self-retries on `INACTIVE_EFFECT` so it self-heals once boot stabilizes.
  */
 export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<unknown | undefined>): () => void {
-  const shellEnv = ctx.get?.('shellEnv') as ShellEnvRegistryLike | undefined
-  const credentials = ctx.get?.('credentials') as CredentialStoreSlice | undefined
-  const skills = ctx.get?.('skills') as SkillRegistrySlice | undefined
-  if (shellEnv?.register === undefined || credentials === undefined || skills === undefined) {
-    return () => {}
-  }
-
   let disposed = false
   let envCache = new Map<string, string>()
   let disposeEnv: (() => void) | undefined
@@ -88,6 +89,34 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
   let refreshGen = 0
   let inFlight: Promise<void> | undefined
   let queued = false
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
+  let retries = 0
+  const MAX_RETRIES = 30
+  const RETRY_DELAY = 300
+
+  const cancelRetry = (): void => {
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+    }
+  }
+
+  const scheduleRetry = (): void => {
+    if (disposed || retries >= MAX_RETRIES) return
+    cancelRetry()
+    retries++
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      if (!disposed) void refresh()
+    }, RETRY_DELAY)
+  }
+
+  /** True for the `INACTIVE_EFFECT` Cordis error thrown by `ctx.effect` when the
+   * fiber is inactive — a transient boot-time race, not a real owner collision. */
+  const isInactiveEffect = (err: unknown): boolean => {
+    return !!err && typeof err === 'object' && 'code' in err
+      && (err as { code?: unknown }).code === 'INACTIVE_EFFECT'
+  }
 
   /** One refresh pass; commits only if still the latest generation and not disposed. */
   const refresh = async (): Promise<void> => {
@@ -98,6 +127,18 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
       // latest-wins); the queued pass re-reads + commits fresh.
       refreshGen++
       queued = true
+      return
+    }
+    // Re-resolve the services FRESH on every pass (never across an `await`).
+    // `ctx.get` (strict) returns the implementation only while its providing
+    // fiber is active, so a reload/reorder that makes a previously-captured
+    // reference inactive is never called into here. If any service is not
+    // currently active, this is a transient boot window — retry.
+    const shellEnv = ctx.get?.('shellEnv') as ShellEnvRegistryLike | undefined
+    const credentials = ctx.get?.('credentials') as CredentialStoreSlice | undefined
+    const skills = ctx.get?.('skills') as SkillRegistrySlice | undefined
+    if (shellEnv?.register === undefined || credentials === undefined || skills === undefined) {
+      scheduleRetry()
       return
     }
     const gen = ++refreshGen
@@ -149,8 +190,17 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
           for (const k of keys) {
             variables[`${DSH_PREFIX}${k}`] = { description: `Configured via the capability catalog for skill env \`${k}\`` }
           }
+          // Re-resolve the registry immediately before `register` — never call
+          // `ctx.effect` on a reference captured across an `await`. If the
+          // service is inactive right now (boot reorder window), drop this pass
+          // and retry; leave refreshKey unset so the next pass re-registers.
+          const shellEnvNow = ctx.get?.('shellEnv') as ShellEnvRegistryLike | undefined
+          if (shellEnvNow?.register === undefined) {
+            scheduleRetry()
+            return
+          }
           try {
-            disposeEnv = shellEnv.register({
+            disposeEnv = shellEnvNow.register({
               name: 'capability-catalog',
               variables,
               resolve: () => {
@@ -162,11 +212,13 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
               },
             })
             refreshKey = keySet
+            retries = 0
           } catch (err) {
             // Register failed (e.g. a TOCTOU owner collision). Leave refreshKey
             // unset so the NEXT refresh retries regardless of the key set even
             // if the key set later returns to a previously-registered value.
             process.stderr.write(`capability-catalog: skill env contributor register failed (${String(err)})`)
+            if (isInactiveEffect(err)) scheduleRetry()
           }
         }
       } catch (err) {
@@ -185,6 +237,7 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
 
   return () => {
     disposed = true
+    cancelRetry()
     disposeEnv?.()
     offRecord()
     offReference()
