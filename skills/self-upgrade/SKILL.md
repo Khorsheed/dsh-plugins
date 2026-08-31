@@ -1,5 +1,5 @@
 ---
-name: plugin-upgrade
+name: self-upgrade
 metadata:
   version: 0.2.0
 description: Upgrade this dsh instance across a host release. Use when the user asks to upgrade/migrate the instance or its plugins to a new host version (e.g. "upgrade this instance to 0.1.2", "adapt the plugins to the new host", "move this deployment onto the latest release").
@@ -25,6 +25,10 @@ with the user, never a surprise mid-activity.
 
 ## Ground rules
 
+- **Plugin fixes are never destructive.** Every fix must keep the artifact
+  working on the OLD host line too — one artifact, both lines, so a rollback
+  is always free and a user who cannot upgrade yet is not abandoned. (This is
+  why every pattern in this skill probes features instead of cutting over.)
 - **Never modify the running host's checkout in place.** The process you live
   in executes those files; editing them under a running instance can kill you
   mid-write and leaves no clean rollback point. Always stage the new host
@@ -76,14 +80,17 @@ with the user, never a surprise mid-activity.
    nobody answers, clone the repository named in the package's
    `repository` field beside your staging area and work there.
 
-4. **Create a working branch in the plugin source repo FIRST** — before any
+5. **Create a working branch in the plugin source repo FIRST** — before any
    edit. Every fix lands as one commit per package on that branch; the user
    audits the branch, not your memory, and a bad fix reverts cleanly.
-5. **Guard check — install ankh-guard directly if absent.** The guarded restart
-   is the default restart path, so the guard is part of the upgrade, not an
+6. **Guard check — install ankh-guard, announced.** The guarded restart is
+   the default restart path, so the guard is part of the upgrade, not an
    optional extra: probe the installed plugin list for
-   `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
-   @khorsheed/dsh-ankh-guard` on the spot (npm-published, self-mounting). The
+   `@khorsheed/dsh-ankh-guard`; if missing, say WHAT you are installing and
+   WHY first ("I need @khorsheed/dsh-ankh-guard for a guarded restart — it
+   keeps a watchdog process supervising this instance"), then `dsh plugin add
+   @khorsheed/dsh-ankh-guard` right away — transparency, not a permission
+   gate; only an explicit refusal keeps you on Path B. The
    first restart after installing it rides the self-detaching supervisor
    (`assets/restart-resume.mjs`) — no manual step, the agent does it all;
    from the next boot on, every restart rides the guard. Only a user who
@@ -165,7 +172,6 @@ incremental caches silently ship a MIXED artifact (new host half, stale client
 bundle), and every downstream verifier sees a healthy-looking 200. (Observed
 in the wild: a correct fix shipped with a stale client bundle and the plugin
 never activated.)
-uncommitted: the user audits the branch, not your memory.
 
 **Parity is the bar, and there is no deadline.** You are working beside a live
 instance the user keeps using — take the time to fix EVERYTHING properly. A
@@ -281,45 +287,28 @@ back on failure, and resumes the sessions the restart interrupted.
    you reached, the rollback pointer (old host checkout path + old launch
    command), and the exact first sentence to say after the restart. The you
    that wakes up after the restart has this note and nothing else.
-2. **Spawn the detached supervisor** — two variants of the same logic ship in
-   `assets/` beside this skill. Both wait for the old process to die, start
-   the new host, health-check it, and on failure roll back to the old host.
-   Both treat ANY HTTP answer from the health URL as alive: a token-gated host
-   (0.1.2+) answers a bare `GET /` with **401**, so demanding 2xx misreads a
-   healthy new host as dead and triggers a spurious rollback. If you need a
-   2xx, extract the `?token=` URL from the new host's boot log and poll that.
-   Pick the variant by platform:
+2. **Spawn the detached supervisor** — `assets/restart-resume.mjs` beside this
+   skill. It waits for the old process to die, starts the new host,
+   health-checks it, and on failure rolls back to the old host. It treats ANY
+   HTTP answer from the health URL as alive: a token-gated host (0.1.2+)
+   answers a bare `GET /` with **401**, so demanding 2xx misreads a healthy
+   new host as dead and triggers a spurious rollback. If you need a 2xx,
+   extract the `?token=` URL from the new host's boot log and poll that.
 
-   - `assets/restart-resume.sh` — where `setsid` exists (Linux). Launch it
-     FULLY detached — a merely backgrounded child dies with the session
-     teardown:
+   ```sh
+   OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
+   HEALTH_URL='http://127.0.0.1:<port>/' \
+   ROLLBACK_CMD='<old launch command>' \
+   node /path/to/restart-resume.mjs
+   ```
 
-     ```sh
-     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
-     HEALTH_URL='http://127.0.0.1:<port>/' \
-     ROLLBACK_CMD='<old launch command>' \
-     setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
-     ```
+   The script **self-detaches**: however it is launched, its first process
+   re-spawns in its own session and exits, so no `setsid`/`nohup` ceremony is
+   needed and a session teardown cannot reap it. If the sandbox forbids
+   detached spawns, STOP and hand the command to the user.
+   It prints the detached supervisor's pid; confirm the log shows it waiting
+   before you exit the old instance.
 
-   - `assets/restart-resume.mjs` — the default on any platform with node (which
-     you have — the host runs on it). It **self-detaches**: however you launch
-     it, the first process re-spawns itself in its own session and exits, so
-     `nohup`-less, `&`-less, even sandboxed invocations are all safe. Same env
-     vars:
-
-     ```sh
-     OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
-     HEALTH_URL='http://127.0.0.1:<port>/' \
-     ROLLBACK_CMD='<old launch command>' \
-     node /path/to/restart-resume.mjs
-     ```
-
-     It prints the detached supervisor's pid; confirm the log shows it waiting
-     before you exit the old instance.
-
-   If neither detach is available and the session is sandboxed, STOP and hand
-   the command to the user — a reaped supervisor mid-restart strands the
-   instance.
 3. **Exit the old instance** only after the supervisor is confirmed running
    (its log shows it waiting). Then the supervisor owns the handoff.
    **Before you exit, say so in the conversation** — the session log persists
@@ -411,7 +400,7 @@ checklist, a step that was wrong or unreadable, a host version whose breakage
 looks nothing like the documented patterns — leave a structured note, even if
 you eventually solved it yourself:
 
-1. Write it to `$DSH_HOME/skill-feedback/plugin-upgrade/<unix-ms>.md` — the
+1. Write it to `$DSH_HOME/skill-feedback/self-upgrade/<unix-ms>.md` — the
    shared board root is `skill-feedback/`, one subdirectory per skill, so any
    skill that adopts this convention lands in the same place and attribution
    is the subdir name plus the frontmatter (create the directory) using this

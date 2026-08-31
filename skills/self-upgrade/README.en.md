@@ -1,4 +1,4 @@
-# @khorsheed/dsh-plugin-upgrade
+# @khorsheed/dsh-self-upgrade
 
 [English](README.en.md) | 中文
 
@@ -6,22 +6,23 @@ Host-upgrade self-guidance skill pack. Once installed, telling the agent "upgrad
 
 ## Form
 
-A skill-only lightweight package: the host half does exactly one thing — register the `plugin-upgrade` skill (with reference docs and a restart supervisor script template) into the skill catalog, where an agent **pulls** it whenever a task smells like an upgrade. No client face, no config, no persistent state.
+A plain skill directory (no plugin wrapper): `SKILL.md` plus `reference/` docs and executable `assets/`. Install it by importing through capability-catalog (zip or GitHub) or dropping the directory into the host's skills directory; an agent **pulls** it whenever a task smells like an upgrade. No host half, no client face, no config, no persistent state.
 
-Skill outline (full text in `skills/plugin-upgrade/SKILL.md`):
+Skill outline (full text in `skills/self-upgrade/SKILL.md`):
 
 - **Ground rules**: never modify the running host's checkout in place; probe features, never version numbers; green typecheck is not runtime-clean.
 - **Breakage inventory**: externalized deps / the module seed table, slots, Remote, settings, skills, command signatures, DOM anchors, prompt-order anchors — plus the compile-time blind spot where deleted named exports still typecheck.
 - **Fix discipline**: dual-seat probing, anchoring renamed brand types to consumer APIs, inlining deleted value imports (only when no cross-boundary identity), degrade-never-explode.
 - **Verification ladder**: package level → composition level → live acceptance (fresh home + zero plugin errors in the browser console) → delivery level (install from zero via the README).
-- **Self-restart**: with ankh-guard, ride its guarded restart; without it, write the handoff note first, then spawn a fully detached supervisor (the restart-resume pair under `skills/plugin-upgrade/assets/`: `.sh` where setsid exists, `.mjs` on macOS: waits for the old process to die → boots the new host → health-checks, treating any HTTP answer as alive so the 0.1.2 token gate is not misread → rolls back to the old checkout on failure). Trial boots use `trial-boot.mjs` in the same directory.
+- **Self-restart**: with ankh-guard, ride its guarded restart; without it, write the handoff note first, then spawn a fully detached supervisor (`skills/self-upgrade/assets/restart-resume.mjs`: self-detaching on any platform with node — waits for the old process to die → boots the new host → health-checks, treating any HTTP answer as alive so the 0.1.2 token gate is not misread → rolls back to the old checkout on failure). Trial boots use `trial-boot.mjs` in the same directory.
 - **Failure fallback**: any failed rung stops the line with a report; a failed restart is rolled back by the supervisor.
 
 ## Install
 
 ```sh
-dsh plugin --profile <p> add @khorsheed/dsh-plugin-upgrade      # install (self-mounting)
-dsh plugin --profile <p> remove @khorsheed/dsh-plugin-upgrade   # uninstall
+Import through capability-catalog (zip / GitHub import) or drop this
+directory (minus `tests/`) into the host's skills directory — no package
+machinery involved.
 ```
 
 ## Compatibility

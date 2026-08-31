@@ -194,7 +194,7 @@ if (clientDecl !== undefined || clientPath !== undefined) {
 // matters: the browser half is answered by the module table (node_modules OR
 // shell seed), the node half resolves from node_modules only.
 const HOST_SCOPE = /^@deepseek-ai\//
-const importRe = /(^|\n)[ \t]*import\s+(type\s+)?[^'"]*?from\s*['"](@deepseek-ai\/[^'"]+)['"]|(^|\n)[ \t]*(?:import\s*|require\()\s*['"](@deepseek-ai\/[^'"]+)['"]/g
+const importRe = /(^|\n)[ \t]*import\s+(type\s+)?([^'"]*?)from\s*['"](@deepseek-ai\/[^'"]+)['"]|(^|\n)[ \t]*(?:import\s*|require\()\s*['"](@deepseek-ai\/[^'"]+)['"]/g
 const declareModuleRe = /declare\s+module\s+['"](@deepseek-ai\/[^'"]+)['"]/g
 const seen = new Set()
 for (const file of walkSources(join(PLUGIN, 'src'))) {
@@ -203,8 +203,14 @@ for (const file of walkSources(join(PLUGIN, 'src'))) {
   const clientFace = /(^|\/)client\//.test(rel)
   for (const m of source.matchAll(declareModuleRe)) seen.add(`declare:${m[1]}:${rel}`)
   for (const m of source.matchAll(importRe)) {
+    // Type-only iff `import type ...`, or a braces-only clause whose every
+    // specifier is type-marked (`import { type A, type B }` erases at build;
+    // a mixed `import { type A, b }` keeps a runtime binding and counts).
+    const clause = m[3] ?? ''
     const typeOnly = m[2] !== undefined
-    const spec = m[3] ?? m[5]
+      || (clause.trim().startsWith('{')
+        && clause.trim().slice(1, -1).split(',').every((sp) => sp.trim().startsWith('type ')))
+    const spec = m[4] ?? m[6]
     if (typeOnly) continue // checklist #2: compile-time-only migration
     if (seen.has(`${spec}:${rel}`)) continue
     seen.add(`${spec}:${rel}`)

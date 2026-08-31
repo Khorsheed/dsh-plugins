@@ -1,4 +1,4 @@
-# plugin-upgrade 技能
+# self-upgrade 技能
 
 [English](README.en.md) | 中文
 
@@ -10,14 +10,14 @@
 
 任选其一:
 
-- **capability-catalog 导入(推荐)**:实例装了 `@khorsheed/dsh-capability-catalog` 时,把本目录打成 zip(带包裹目录、`tests/` 除外,例如 `zip -r plugin-upgrade.zip plugin-upgrade -x 'plugin-upgrade/tests/*'`),在 catalog 设置页「添加技能」上传,或用它的 add-skill 工具/Remote 传入。GitHub 导入同理可用。
-- **直接落盘**:把本目录(不含 `tests/`)复制到 `$DSH_HOME/skills/plugin-upgrade/`(用户级)或项目的 `.agents/skills/`。
+- **capability-catalog 导入(推荐)**:实例装了 `@khorsheed/dsh-capability-catalog` 时,把本目录打成 zip(带包裹目录、`tests/` 除外,例如 `zip -r self-upgrade.zip self-upgrade -x 'self-upgrade/tests/*'`),在 catalog 设置页「添加技能」上传,或用它的 add-skill 工具/Remote 传入。GitHub 导入同理可用。
+- **直接落盘**:把本目录(不含 `tests/`)复制到 `$DSH_HOME/skills/self-upgrade/`(用户级)或项目的 `.agents/skills/`。
 
 ## 内容
 
 - `SKILL.md` —— runbook 本体:铁律 → 基线 → 取新宿主 → 断裂面盘点 → 双线修复纪律 → 验证阶梯 → 自我重启(ankh-guard 守卫路径 / 手工 supervisor 路径)→ 舰队核验 → 终版报告 → 失败兜底 → 留言板。
 - `reference/breakage-checklist.md` —— 断裂面清单(13 面 + 编译期盲区);`reference/dual-host-fix-patterns.md` —— 双线修复模式目录。
-- `assets/` —— 可执行资产:`scan-plugin.mjs`(断裂面机械扫描,Phase 2 先跑它)、`trial-boot.mjs`(试启动新宿主)、`restart-resume.sh` / `restart-resume.mjs`(自我重启 supervisor,按平台二选一)。
+- `assets/` —— 可执行资产:`scan-plugin.mjs`(断裂面机械扫描,Phase 2 先跑它)、`trial-boot.mjs`(试启动新宿主)、`restart-resume.mjs`(自我重启 supervisor,自分离,全平台)。
 - `tests/` —— 开发资产(自升级 e2e 装置 + run-report 口径),**不进 zip**。
 
 ## Compatibility

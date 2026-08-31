@@ -88,8 +88,10 @@ function parseArgs(argv) {
     else if (rest[i] === '--extra') opts.extra.push(rest[++i]) // name@spec, spec = version range or file: path
     else if (rest[i] === '--tarballs') opts.tarballs = rest[++i] // dir of *.tgz — the whole fleet
     else if (rest[i] === '--links') opts.links = rest[++i] // plugin repo dir — link: every packages/* bundle
+    else if (rest[i] === '--clone-from') opts.cloneFrom = rest[++i] // create the --links repo as a SINGLE-BRANCH clone (see below)
     else if (rest[i] === '--skill') opts.skill = rest[++i] // skill dir copied into $DSH_HOME/skills/
     else if (rest[i] === '--home-note') opts.homeNote = rest[++i] // file to record the throwaway home path
+    else if (rest[i] === '--port') opts.port = Number(rest[++i]) // preferred port (fails busy, no auto-pick)
     else fail(`unknown argument: ${rest[i]}`)
   }
   return { command, opts }
@@ -135,7 +137,16 @@ function repointHostPackages(profileDir) {
   return repointed
 }
 
-async function freePort() {
+async function freePort(preferred) {
+  if (preferred !== undefined) {
+    const ok = await new Promise((res) => {
+      const server = createServer()
+      server.once('error', () => res(false))
+      server.listen(preferred, '127.0.0.1', () => server.close(() => res(true)))
+    })
+    if (!ok) fail(`port ${preferred} is busy`)
+    return preferred
+  }
   for (let port = 3200; port <= 3299; port += 1) {
     const ok = await new Promise((res) => {
       const server = createServer()
@@ -293,6 +304,13 @@ async function up(opts) {
     log(`fleet: ${Object.keys(extraDeps).length} tarballs (${extraNames.length} bundles) from ${opts.tarballs}`)
   }
   // --links <repoDir>: the "user has the plugin repo locally" form — every
+  //
+  // CONTAMINATION RULE: the repo the agent edits must NOT carry the answer
+  // key. A full-branch clone exposes feat/host-0.1.2-* (the compat port) in
+  // git branch -a, and a v4/v6 agent found and ported it. --clone-from
+  // creates the repo as `git clone --single-branch --branch main`, so no
+  // compat ref exists anywhere the agent can see. Never point --links at a
+  // full-branch clone.
   // packages/* bundle links live (npm file: on a directory is a symlink), so
   // the upgrading agent edits sources, rebuilds, and a restart picks it up.
   //
@@ -301,6 +319,19 @@ async function up(opts) {
   // already owns — a duplicate-id boot failure). It links as a plain
   // dependency so the family provider resolves it, but gets no bundle row.
   const HEADLESS_ONLY = new Set(['@khorsheed/dsh-local-agent-dsh-headless'])
+  // --clone-from <src>: the --links repo doesn't exist yet — create it as a
+  // single-branch clone (main only, no compat refs), then make it buildable.
+  if (opts.cloneFrom !== undefined) {
+    if (!opts.links) fail('--clone-from needs --links <dest>')
+    if (!existsSync(opts.links)) {
+      log(`cloning ${opts.cloneFrom} (single-branch main) -> ${opts.links}`)
+      execFileSync('git', ['clone', '--single-branch', '--branch', 'main', opts.cloneFrom, opts.links], { stdio: 'inherit' })
+      execFileSync('node', ['scripts/sync-harness-paths.mjs'], { cwd: opts.links, stdio: 'inherit' })
+      log('installing + building the clone (a few minutes)')
+      execFileSync('pnpm', ['install'], { cwd: opts.links, stdio: 'inherit', timeout: 600_000 })
+      execFileSync('pnpm', ['run', 'build'], { cwd: opts.links, stdio: 'inherit', timeout: 900_000 })
+    }
+  }
   const linkedPackages = {}
   if (opts.links !== undefined) {
     const packagesDir = join(opts.links, 'packages')
@@ -368,7 +399,7 @@ async function up(opts) {
     log(`skill installed: ${skillName} -> ${target}`)
   }
 
-  const port = await freePort()
+  const port = await freePort(opts.port)
   const instanceLog = join(logsDir, 'instance-rc2.log')
   const fd = openSync(instanceLog, 'a')
   const child = spawn(STABLE_BIN, ['web', '--port', String(port), '--no-open'], {
@@ -389,8 +420,10 @@ async function up(opts) {
     if (!marker) fail(`fixture alive marker never appeared at ${markerPath} — see ${instanceLog}`)
   }
 
-  const clientCode = await httpCode(`${base}${CLIENT_URL_PATH}`)
-  if (clientCode !== 200) fail(`fixture client.js not served (${clientCode}) at ${base}${CLIENT_URL_PATH}`)
+  if (WITH_FIXTURE) {
+    const clientCode = await httpCode(`${base}${CLIENT_URL_PATH}`)
+    if (clientCode !== 200) fail(`fixture client.js not served (${clientCode}) at ${base}${CLIENT_URL_PATH}`)
+  }
 
   const env = {
     home,
@@ -483,7 +516,10 @@ async function assertCmd(opts) {
       const pid = listenerPid(env.port)
       return pid !== undefined && commandOf(pid).includes('.dsh-toolchains/alpha-0.1.2')
     },
-    fixtureReapplied: async () => {
+  }
+  // The fixture is retired (v6+); its checks only exist when it was installed.
+  if (env.installedPlugins?.includes('@fixture/legacy-store')) {
+    checks.fixtureReapplied = async () => {
       const markerPath = join(env.dshHome, MARKER_REL)
       if (!existsSync(markerPath)) return false
       const pid = listenerPid(env.port)
@@ -494,8 +530,8 @@ async function assertCmd(opts) {
       } catch {
         return false
       }
-    },
-    clientJsServed: async () => manifestBundleOk(CLIENT_URL_PATH, 'legacy-store\\/client\\.js'),
+    }
+    checks.clientJsServed = async () => manifestBundleOk(CLIENT_URL_PATH, 'legacy-store\\/client\\.js')
   }
 
   // Every installed plugin with a browser half must still serve post-upgrade.
