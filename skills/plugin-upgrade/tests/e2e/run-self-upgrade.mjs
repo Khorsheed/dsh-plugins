@@ -62,6 +62,11 @@ const ALPHA_WEB_APP = join(HOME_REAL, '.dsh-toolchains/alpha-0.1.2/node_modules/
 const CREDENTIALS = join(HOME_REAL, '.dsh-official/.credentials.yaml')
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const REPO_ROOT = resolve(SKILL_ROOT, '..', '..')
+// The legacy fixture is RETIRED (v6+: real plugins only — a synthetic always-
+// broken plugin taught the skill one pattern and nothing else; real breaks come
+// from the host's actual changelog). The fixture lives in git history; restore
+// it from there if a rig self-test ever needs it again.
+const WITH_FIXTURE = process.argv.includes('--with-fixture')
 const FIXTURE_DIR = join(SKILL_ROOT, 'tests/e2e/fixtures/fixture-legacy-store')
 
 const MARKER_REL = 'state/legacy-store-alive.json'
@@ -91,11 +96,12 @@ function parseArgs(argv) {
 }
 
 function checkPrerequisites(opts = {}) {
-  for (const [label, path] of [
+  const required = [
     ['stable toolchain (0.1.1-rc.2)', STABLE_BIN],
-    ['fixture plugin', FIXTURE_DIR],
     ['official credentials', CREDENTIALS],
-  ]) {
+  ]
+  if (WITH_FIXTURE) required.push(['fixture plugin', FIXTURE_DIR])
+  for (const [label, path] of required) {
     if (!existsSync(path)) fail(`${label} not found: ${path}`)
   }
   if (opts.tarballs !== undefined && !existsSync(opts.tarballs)) fail(`tarballs dir not found: ${opts.tarballs}`)
@@ -320,7 +326,7 @@ async function up(opts) {
         dependencies: {
           '@deepseek-ai/dsh-base': `file:${join(HOME_REAL, '.dsh-toolchains/stable/node_modules/@deepseek-ai/dsh-base')}`,
           '@deepseek-ai/dsh-web-app': `file:${join(HOME_REAL, '.dsh-toolchains/stable/node_modules/@deepseek-ai/dsh-web-app')}`,
-          '@fixture/legacy-store': `file:${FIXTURE_DIR}`,
+          ...(WITH_FIXTURE ? { '@fixture/legacy-store': `file:${FIXTURE_DIR}` } : {}),
           ...extraDeps,
         },
         dsh: {
@@ -328,7 +334,7 @@ async function up(opts) {
             bundles: [
               '@deepseek-ai/dsh-base',
               '@deepseek-ai/dsh-web-app',
-              '@fixture/legacy-store',
+              ...(WITH_FIXTURE ? ['@fixture/legacy-store'] : []),
               ...extraNames,
             ],
           },
@@ -377,9 +383,11 @@ async function up(opts) {
   const ready = await poll(async () => (await httpCode(`${base}/`)) === 200, 240)
   if (!ready) fail(`instance did not answer 200 within 240s — see ${instanceLog}`)
 
-  const markerPath = join(dshHome, MARKER_REL)
-  const marker = await poll(() => existsSync(markerPath), 30)
-  if (!marker) fail(`fixture alive marker never appeared at ${markerPath} — see ${instanceLog}`)
+  if (WITH_FIXTURE) {
+    const markerPath = join(dshHome, MARKER_REL)
+    const marker = await poll(() => existsSync(markerPath), 30)
+    if (!marker) fail(`fixture alive marker never appeared at ${markerPath} — see ${instanceLog}`)
+  }
 
   const clientCode = await httpCode(`${base}${CLIENT_URL_PATH}`)
   if (clientCode !== 200) fail(`fixture client.js not served (${clientCode}) at ${base}${CLIENT_URL_PATH}`)
@@ -395,7 +403,7 @@ async function up(opts) {
     logsDir,
     fixtureDir: FIXTURE_DIR,
     extraPlugins: extraNames,
-    installedPlugins: ['@fixture/legacy-store', ...Object.keys(extraDeps)],
+    installedPlugins: [...(WITH_FIXTURE ? ['@fixture/legacy-store'] : []), ...Object.keys(extraDeps)],
     linkedPackages,
     skill: opts.skill,
     stableBin: STABLE_BIN,
