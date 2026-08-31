@@ -6,7 +6,7 @@ Host-upgrade self-guidance skill pack. Once installed, telling the agent "upgrad
 
 ## Form
 
-A skill-only lightweight package: the host half does exactly one thing — register the `plugin-upgrade` skill (with reference docs and a restart supervisor script template) into the skill catalog, where an agent **pulls** it whenever a task smells like an upgrade. No client face, no config, no persistent state.
+A plain skill directory (no plugin wrapper): `SKILL.md` plus `reference/` docs and executable `assets/`. Install it by importing through capability-catalog (zip or GitHub) or dropping the directory into the host's skills directory; an agent **pulls** it whenever a task smells like an upgrade. No host half, no client face, no config, no persistent state.
 
 Skill outline (full text in `skills/plugin-upgrade/SKILL.md`):
 

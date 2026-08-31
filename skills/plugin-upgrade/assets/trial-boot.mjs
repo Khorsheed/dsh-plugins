@@ -30,7 +30,7 @@
 // Exit code: 0 = trial host answered; 2 = never answered (see the printed log).
 
 import { spawn } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdtempSync, openSync, readFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, mkdirSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -60,6 +60,23 @@ const dshHome = join(home, '.dsh')
 const profileName = PROFILE_FROM.replace(/\/+$/, '').split('/').pop()
 mkdirSync(join(dshHome, 'profiles'), { recursive: true })
 cpSync(PROFILE_FROM, join(dshHome, 'profiles', profileName), { recursive: true, verbatimSymlinks: true })
+// Codex-review guard: a verbatim-copied symlink can still point at the OLD
+// plugin tree, silently booting the trial with pre-fix code. Prove what each
+// profile link resolves to and log it — a trial that loads the wrong code is
+// worse than no trial.
+const trialProfileDir = join(dshHome, 'profiles', profileName)
+const nmDir = join(trialProfileDir, 'node_modules')
+if (existsSync(nmDir)) {
+  for (const scope of readdirSync(nmDir)) {
+    const scopeDir = join(nmDir, scope)
+    for (const entry of scope.startsWith('@') ? readdirSync(scopeDir).map((e) => `${scope}/${e}`) : [scope]) {
+      const full = join(nmDir, entry)
+      try {
+        log(`trial link: ${entry} -> ${realpathSync(full)}`)
+      } catch { /* plain copy, not a link */ }
+    }
+  }
+}
 for (const file of ['.credentials.yaml', 'settings.yaml']) {
   const from = DSH_HOME_FROM && join(DSH_HOME_FROM, file)
   if (from && existsSync(from)) copyFileSync(from, join(dshHome, file))

@@ -80,10 +80,10 @@ with the user, never a surprise mid-activity.
    nobody answers, clone the repository named in the package's
    `repository` field beside your staging area and work there.
 
-4. **Create a working branch in the plugin source repo FIRST** — before any
+5. **Create a working branch in the plugin source repo FIRST** — before any
    edit. Every fix lands as one commit per package on that branch; the user
    audits the branch, not your memory, and a bad fix reverts cleanly.
-5. **Guard check — install ankh-guard directly if absent.** The guarded restart
+6. **Guard check — install ankh-guard directly if absent.** The guarded restart
    is the default restart path, so the guard is part of the upgrade, not an
    optional extra: probe the installed plugin list for
    `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
@@ -169,7 +169,6 @@ incremental caches silently ship a MIXED artifact (new host half, stale client
 bundle), and every downstream verifier sees a healthy-looking 200. (Observed
 in the wild: a correct fix shipped with a stale client bundle and the plugin
 never activated.)
-uncommitted: the user audits the branch, not your memory.
 
 **Parity is the bar, and there is no deadline.** You are working beside a live
 instance the user keeps using — take the time to fix EVERYTHING properly. A

@@ -155,11 +155,18 @@ function boot(cmd) {
 }
 
 function killTree(pid) {
+  // detached:true made the child a process-group leader; kill the GROUP
+  // (negative pid), or the host children outlive their wrapper — and the
+  // rollback health check would misread a surviving NEW host as the old one.
   for (const sig of ['SIGTERM', 'SIGKILL']) {
     try {
-      process.kill(pid, sig)
+      process.kill(-pid, sig)
     } catch {
-      /* already gone */
+      try {
+        process.kill(pid, sig)
+      } catch {
+        /* already gone */
+      }
     }
   }
 }
