@@ -36,6 +36,22 @@ import { spawn } from 'node:child_process'
 import { openSync, readFileSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 
+// Self-detach: no matter HOW we were launched (nohup, plain `&`, a sandboxed
+// shell that reaps its process group), the durable supervisor runs in its own
+// session. The first process re-spawns itself fully detached and exits at
+// once. (Observed in the wild: `nohup node restart-resume.mjs &` is NOT a
+// detach — the old instance's teardown took the supervisor with it.)
+if (process.env.RESTART_RESUME_DETACHED !== '1') {
+  const child = spawn(process.execPath, [new URL(import.meta.url).pathname], {
+    env: { ...process.env, RESTART_RESUME_DETACHED: '1' },
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+  console.error(`restart-resume.mjs: detached supervisor pid ${child.pid}`)
+  process.exit(0)
+}
+
 const OLD_PID = process.env.OLD_PID
 const NEW_HOST_CMD = process.env.NEW_HOST_CMD
 const HEALTH_URL = process.env.HEALTH_URL
@@ -60,6 +76,22 @@ function tokenUrl() {
     return match ? match[0] : undefined
   } catch {
     return undefined
+  }
+}
+
+// On success, hand the user straight into the new host: a token-gated host's
+// old bookmarks are dead (401), so the supervisor — the only thing alive
+// across the restart — opens the entry URL itself. GUI-less deployments skip
+// silently; the status file always carries the URL either way.
+function openForUser(url) {
+  if (!url || process.env.RESTART_RESUME_NO_OPEN === '1') return
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  try {
+    const child = spawn(opener, [url], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {})
+    child.unref()
+  } catch {
+    /* headless host: the status file carries the URL */
   }
 }
 
@@ -146,6 +178,7 @@ async function main() {
   log(`new host pid ${newPid}; polling ${HEALTH_URL} (up to ${HEALTH_TIMEOUT}s)`)
   if (await waitHealthy(HEALTH_TIMEOUT)) {
     status('upgraded', `new host healthy at ${HEALTH_URL} (pid ${newPid})`)
+    openForUser(tokenUrl())
     log('new host is healthy — upgrade complete')
     process.exit(0)
   }

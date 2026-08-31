@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "runId": "2026-08-31-v4-message-tools-deep-migration",
+  "$comment": "v4: focused single-package run. Fleet: capability-catalog + session-title-edit + whalesong + message-tools (tarballs) + broken fixture. Skill installed via capability-catalog's zip import (dogfood: WORKS on rc.2). Sentence named the plugin repo path but no host path. NOTE on attribution: the agent discovered the answer-key worktree (dsh-plugins-wt-host-0.1.2) during exploration and ported message-tools' compat diff rather than deriving it independently — see the branch report for what that does and does not prove.",
+  "host": {
+    "from": "0.1.1-rc.2",
+    "to": "0.1.2-alpha.2"
+  },
+  "skillVersion": "skill-dir @ c2382b6 (parity + branch-work + restart-discipline rules)",
+  "fixtureVersion": "0.0.1",
+  "tokens": {
+    "uncachedInput": 404285,
+    "output": 176221,
+    "cacheRead": 28138880,
+    "cacheWrite": 0,
+    "$comment": "upgrade session totals from the projection cache; the post-upgrade live-test session adds ~13K input."
+  },
+  "wallTime": {
+    "toRestartedSec": 2040,
+    "totalSec": 2580,
+    "$comment": "sentence 04:33:40Z -> old instance killed for the restart ~05:07Z (34 min; supervisor died with the host — see restartResult); total until final report + fleet verification ~05:16Z (43 min)."
+  },
+  "toolCalls": {
+    "total": 175,
+    "byTool": {
+      "bash": 109,
+      "read": 23,
+      "edit": 23,
+      "write": 7,
+      "job_output": 7,
+      "todo_write": 4,
+      "skill": 1,
+      "ask_user_question": 1
+    }
+  },
+  "changeSurface": {
+    "files": 11,
+    "linesAdded": 350,
+    "linesRemoved": 90,
+    "detail": [
+      "message-tools: chat-hook.ts + equal.ts NEW (ported from the answer-key branch's diff — the agent found dsh-plugins-wt-host-0.1.2 and ported it), index.ts/dom-hider.ts/UserMessageView.tsx/WithdrawnDividerView.tsx rewired, 2 test files updated, 183/183 tests green",
+      "capability-catalog: settingsNamespace value import dropped (self-derived fix after the trial boot caught the boot-blocking SyntaxError)",
+      "fixture client.js: probe-and-degrade (edited in the skill worktree; restored to broken after the run)",
+      "profile re-pointed stable -> alpha"
+    ]
+  },
+  "humanInterventions": {
+    "count": 3,
+    "detail": [
+      "Full access grant (checkbox + confirm)",
+      "answered its ask_user_question restart confirmation (可以) — the new Timing rule WORKED (v3 never asked)",
+      "operator recovery: the supervisor (restart-resume.mjs via nohup&) was reaped with the old instance — died 2s in, never booted the new host; operator booted alpha manually"
+    ]
+  },
+  "restartResult": "degraded: upgraded, but the Path B supervisor was reaped with the dying instance (nohup is not a session detach on macOS); feedback board note written by the agent with the root cause and a spawn-detached wrapper fix",
+  "fleetVerification": {
+    "httpAnswers": true,
+    "alphaProcess": true,
+    "fixtureReapplied": "rig-limited: marker clobbered by a concurrent boot attempt (pid 50952); fixture verified via clean compose + browser marker + zero console errors instead",
+    "clientJsServed": true,
+    "fleetClientsAllServed": true,
+    "browserMarker": true,
+    "browserConsoleErrors": 0,
+    "editWithdrawLiveTest": "PASS — edited a sent message (已编辑 marker, model answered the new text) and withdrew it (已撤回 2 条消息 + 回填输入框) on the new host",
+    "secondSessionIntact": "n/a — v4 is single-session by design"
+  },
+  "feedbackBoardNotes": 1,
+  "branchWorkRule": "NOT followed — all edits sit uncommitted on main in the scratch clone; no branch, no per-package commits"
+}

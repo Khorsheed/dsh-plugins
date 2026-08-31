@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "runId": "2026-08-30-v3-full-fleet-rc2-to-alpha2",
+  "$comment": "v3: full-fleet run (25 linked packages + broken fixture = 26 installed), natural-language sentence with NO paths/hints, second session doing user work throughout. Skill form: plain directory installed to $DSH_HOME/skills/ @ commit 7cf2287. NOTE the rig was readable from the workspace (the agent studied run-self-upgrade.mjs and the v1 baseline early on) — Phase 0/1 discovery was partially shortcut by that.",
+  "host": {
+    "from": "0.1.1-rc.2",
+    "to": "0.1.2-alpha.2"
+  },
+  "skillVersion": "skill-dir@7cf2287 (no package; plain skill directory)",
+  "fixtureVersion": "0.0.1",
+  "tokens": {
+    "uncachedInput": 1169026,
+    "output": 284251,
+    "cacheRead": 57854208,
+    "cacheWrite": 0,
+    "$comment": "upgrade session only (projection-cache totals). The user-work session B adds 24,800 input / 369 output / 112,896 cacheRead."
+  },
+  "wallTime": {
+    "toRestartedSec": 2040,
+    "totalSec": 5400,
+    "$comment": "sentence 18:34:28Z -> first alpha boot (broken fleet) ~19:08Z (34 min, restart then thrashed: watchdog EADDRINUSE x4, died). total: sentence -> final report written 20:04Z (~90 min), including two operator recoveries and the post-restart fix wave."
+  },
+  "toolCalls": {
+    "total": 275,
+    "byTool": {
+      "bash": 156,
+      "edit": 45,
+      "read": 42,
+      "job_output": 17,
+      "write": 7,
+      "todo_write": 5,
+      "skill": 2,
+      "job_kill": 1
+    }
+  },
+  "changeSurface": {
+    "files": 27,
+    "linesAdded": 122,
+    "linesRemoved": 49,
+    "detail": [
+      "build/tsdown.client.ts: dsh-client-store added to CLIENT_EXTERNALS (the shared fix point)",
+      "8 packages gained src/client/store-compat.ts (dual-line store-engine facade probing dsh-client-store then dsh-client-runtime/client)",
+      "message-tools + room: inject dropped conversationEvents, dual-seat probe to ctx.uiConversation.events",
+      "message-timeline: currentProvideInfo optional subscribe (matches the answer key's fix exactly)",
+      "local-agent + room: composer selectors dual-line over the renamed owner shape",
+      "profile: dsh-base/dsh-web-app re-pointed to the alpha toolchain, cordis.patch.yml round-tripped [] -> disabled rows -> []"
+    ]
+  },
+  "humanInterventions": {
+    "count": 3,
+    "detail": [
+      "granted Full access at session start (checkbox + confirm)",
+      "watchdog thrashed EADDRINUSE 4x and DIED mid-restart (watchdog-gave-up); operator booted alpha manually and handed the agent a detailed sitrep incl. the three shell-blocking plugin breaks",
+      "the agent later killed the instance bare (no supervisor waiting) to apply re-enables; operator booted alpha manually again"
+    ]
+  },
+  "restartResult": "degraded: upgraded but both restarts needed operator recovery (watchdog died on EADDRINUSE retry loop; second restart had no supervisor at all)",
+  "fleetVerification": {
+    "httpAnswers": true,
+    "alphaProcess": true,
+    "fixtureReapplied": true,
+    "clientJsServed": true,
+    "fleetClientsAllServed": true,
+    "linksFreshAllMatch": true,
+    "browserMarker": true,
+    "browserConsoleErrors": 4,
+    "$comment": "46/46 driver assertions pass after the final fix wave. Residual console errors (shell.overlay WeakMap key, composer chain selector) are characterized-but-unfixed, declared in the final report's residual section."
+  },
+  "feedbackBoardNotes": 0,
+  "secondSession": {
+    "survived": true,
+    "turns": 8,
+    "postUpgradeAnswer": "在 (answered on the new host, full pre-upgrade history intact)"
+  }
+}

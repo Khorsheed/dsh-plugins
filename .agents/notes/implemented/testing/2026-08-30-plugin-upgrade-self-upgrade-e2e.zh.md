@@ -27,6 +27,8 @@ Status: implemented
 ## 后果
 
 - 本次跑出的六条改进候选已在后续改动中回填进 skill:任意 HTTP 应答即活的健康检查(Phase 5 + `restart-resume.sh` 的 `healthy()`)、面向无 setsid 平台（macOS）的 Node 版 `restart-resume.mjs`、breakage 清单新增浏览器资产 URL 契约条目、Phase 0 的 `~` 与实例 HOME 歧义提醒、试启动收编为 `assets/trial-boot.mjs` 并在 Phase 4 引用。（第六条——无守卫重启的恢复语义——由主线的 Phase 5-7 改写单独落地。)`tests/e2e/run-report.template.json` 冻结了指标口径，本轮数据存于 `run-report.v1.baseline.json`。
+- v2/v3 扩展了这套装置：skill 变为纯目录形态（无插件壳——驱动改为装进 `$DSH_HOME/skills/`)；舰队形态（`--links <repoDir>` 把本地插件仓库克隆里的全部 bundle 链入，被测 agent 的改码→重建→重启循环没有打包往返；`--tarballs` 保留打包变体）;v3 断言覆盖每个带浏览器面的已装插件，以及服务产物与链入检出 lib 的新鲜度比对。全量舰队跑的数据存于 `run-report.v3.json`。
+- v3 跑暴露并修掉的两个 rig bug:token 提取必须取宿主日志里**最后**一个 `?token=`（日志是追加的，只有最新一次 boot 的 token 有效）；第二会话断言应数**有内容的**日志（重启机器会注册一个零字节壳会话）。
 - fixture 往 `main` 方向合并时必须保持损坏状态;在升级跑之外"修好"它就毁了这套装置。
 
 ## 否决的替代方案

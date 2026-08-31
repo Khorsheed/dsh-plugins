@@ -1,5 +1,7 @@
 ---
 name: plugin-upgrade
+metadata:
+  version: 0.2.0
 description: Upgrade this dsh instance across a host release. Use when the user asks to upgrade/migrate the instance or its plugins to a new host version (e.g. "upgrade this instance to 0.1.2", "adapt the plugins to the new host", "move this deployment onto the latest release").
 ---
 
@@ -34,12 +36,24 @@ with the user, never a surprise mid-activity.
   keep deleted host exports compiling. Only a live boot catches load-time and
   apply-time breaks. The verification ladder below ends in a live instance for
   exactly this reason.
+- **Never kill the instance without two locks.** Before ANY action that stops
+  the running process: (a) the user has explicitly confirmed the restart in
+  the conversation, and (b) a supervisor that will bring it back is confirmed
+  alive — the guard's watchdog on Path A, or your detached supervisor script
+  verified running on Path B. A bare kill with nobody waiting to resurrect is
+  an outage you chose. (Observed in the wild: an agent that killed the
+  instance "to make the restart happen" and stranded it.)
+
 
 ## Phase 0 — Baseline
 
+
 1. Record the current host version (`dsh --version`, or the host package's
-   `package.json`) and the target version. If you cannot name both, stop and
-   ask.
+   `package.json`) and the target version. The user often pastes a release
+   page URL instead of a version number — parse the tag out of it
+   (`.../releases/tag/dsh-v0.1.2-alpha.2` → `0.1.2-alpha.2`; strip any
+   `dsh-v`/`v` prefix). If you cannot name both versions even after that,
+   stop and ask.
 2. Record how this instance runs: profile name, port, `$DSH_HOME`, and the
    exact launch command (a process listing or the profile's deploy notes).
    You need this verbatim for the restart phase. **Resolve every path to an
@@ -53,29 +67,61 @@ with the user, never a surprise mid-activity.
    inventory to a file** — it doubles as the checklist for the post-restart
    fleet verification (Phase 6), and the conversation alone is not durable
    enough to serve as it.
+4. Locate the SOURCE of every installed plugin — the dual-line fixes land in
+   sources, not in installed artifacts. The profile's dependency list tells
+   you the shape: a `file:`/`link:` spec points at the source directly; a
+   registry version means the source is elsewhere. If the user hasn't said
+   where the sources live, ask ONCE ("where do the plugin sources live?").
+   Plugins are open source by default: when only the npm name is known and
+   nobody answers, clone the repository named in the package's
+   `repository` field beside your staging area and work there.
+
+4. **Create a working branch in the plugin source repo FIRST** — before any
+   edit. Every fix lands as one commit per package on that branch; the user
+   audits the branch, not your memory, and a bad fix reverts cleanly.
+5. **Guard check — install ankh-guard directly if absent.** The guarded restart
+   is the default restart path, so the guard is part of the upgrade, not an
+   optional extra: probe the installed plugin list for
+   `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
+   @khorsheed/dsh-ankh-guard` on the spot (npm-published, self-mounting). The
+   first restart after installing it rides the self-detaching supervisor
+   (`assets/restart-resume.mjs`) — no manual step, the agent does it all;
+   from the next boot on, every restart rides the guard. Only a user who
+   explicitly declines the install keeps you on Path B throughout.
+   **Trust is re-earned every upgrade**: the guard is a plugin like any other
+   — it goes through the Phase 4 ladder with the fleet, and if IT fails
+   verification on the new host, fall back to Path B and list "guard itself
+   needs adaptation" as the top item of the final report. (Its core rescue
+   piece — the watchdog — is a standalone script with no plugin-API
+   dependency, so a broken plugin half does not take the watchdog down with
+   it, but the credential/preflight gate is host-side and must be verified.)
 
 ## Phase 1 — Fetch the new host beside the old
 
 The invariant is *beside, never in place*: the new host lands in its own
 directory so the running deployment stays intact and rollback is a path swap.
 How you stage it is your call — a git worktree, a fresh clone, or an npm
-staging dir all satisfy the invariant. Examples:
+staging dir all satisfy the invariant. **Do not wait for the user to pre-stage
+the new host — fetch it yourself.** For an npm-distributed host that means a
+throwaway staging dir you create:
 
-Source-based deployment (a worktree keeps the checkout's object store shared
-and disposable):
+```sh
+staging=$(mktemp -d) && cd "$staging"
+npm install @deepseek-ai/dsh@<target-version>   # the CLI plus its bundle set
+```
+
+For a source checkout, a worktree keeps the object store shared and
+disposable:
 
 ```sh
 git -C /path/to/host/repo fetch --tags
 git -C /path/to/host/repo worktree add /path/to/host-next <new-tag>   # detached
 ```
 
-npm-based deployment: install the new version into a separate staging
-directory, never over the running install:
-
-```sh
-mkdir -p /path/to/host-staging && cd /path/to/host-staging
-npm install @deepseek-ai/dsh@<target-version>
-```
+If the user DID pre-stage the new host (a toolchain dir, a path in their
+message), use theirs instead of fetching again — but verify the version it
+carries (`<path>/node_modules/.bin/dsh --version`) against the target before
+trusting it.
 
 Then read the release notes commit by commit (changelog range
 `old-tag...new-tag`) and build a symbol migration map: every removed, renamed,
@@ -110,6 +156,26 @@ build, checklist #2). Everything the scan cannot probe stays manual — walk
   explodes on a live boot. Treat "build passed" as a weak signal until Phase 4.
 
 ## Phase 3 — Fix with dual-line discipline
+
+**Work on a branch in the user's source repo** — one commit per package, so
+every fix is a reviewable, revertable unit. Never edit the checkout the
+running instance reads from (Ground rules), and never leave fixes floating
+uncommitted. **Clean-rebuild before any packaging**: `rm -rf lib && build` —
+incremental caches silently ship a MIXED artifact (new host half, stale client
+bundle), and every downstream verifier sees a healthy-looking 200. (Observed
+in the wild: a correct fix shipped with a stale client bundle and the plugin
+never activated.)
+uncommitted: the user audits the branch, not your memory.
+
+**Parity is the bar, and there is no deadline.** You are working beside a live
+instance the user keeps using — take the time to fix EVERYTHING properly. A
+feature that worked before the upgrade must work after it: "degraded but
+doesn't crash" is a regression delivered silently, not a fix. If you genuinely
+cannot restore a capability, stop and ask the user per item — "I can't fix X
+yet: accept it disabled for now, or hold the upgrade" — and treat "hold" as
+the default. The degrade-don't-explode convention governs plugins probing
+OPTIONAL siblings at runtime; it does not apply to capabilities the user
+already had.
 
 Every fix must produce ONE artifact that runs on the old AND the new host
 line, so the upgrade never strands a rollback. The full pattern catalog with
@@ -148,7 +214,16 @@ worked examples is in `reference/dual-host-fix-patterns.md`; the core moves:
 Climb in order; each rung's criterion must pass before the next:
 
 1. **Package level** — every touched package builds and tests green against
-   BOTH host lines (two runs, two dependency seeds).
+   BOTH host lines (two runs, two dependency seeds). Build green is the
+   WEAKEST signal on the ladder: it proves compilation, nothing else.
+
+   **Match signal strength to failure shape.** Every rung's check must see the
+   failure it guards: a 200 proves the bundle is served, not that its CONTENT
+   is the fix — grep the built artifact for the fix's marker (a symbol added
+   or removed); a rendered page proves the shell, not the plugins — check the
+   browser for pending boot-gate entries and plugin console errors by name.
+   When a verifier cannot see the failure class it guards against, it is
+   decoration: strengthen the check or drop the claim.
 2. **Composition level** — all plugins installed TOGETHER into one profile;
    boot it. Catches duplicate loader entry ids and cross-plugin interference
    that per-package runs cannot see.
@@ -158,7 +233,12 @@ Climb in order; each rung's criterion must pass before the next:
    errors in the browser console**. Green build+test is not runtime-clean —
    load-time `SyntaxError`s, `undefined.subscribe` in plugin apply, and
    renderer crashes from folded-away host members have all shipped past green
-   suites and only surfaced here.
+   suites and only surfaced here. **This rung is not substitutable**: a trial
+   boot only proves the composition loads — whole breakage classes (host
+   service members deleted between versions, DOM anchors that moved) stay
+   invisible until a browser actually applies the plugins. If you cannot
+   drive a browser, say so and hand the rung to the user; never skip it
+   silently.
 4. **Delivery level** — from zero, on a clean profile, following only the
    package README: install, use, uninstall. The README is the product; if the
    install needs a fact that is not in it, fix the README.
@@ -221,15 +301,21 @@ back on failure, and resumes the sessions the restart interrupted.
      setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
      ```
 
-   - `assets/restart-resume.mjs` — where `setsid` does NOT exist (macOS):
-     Node's `spawn(..., { detached: true })` is the same detach. Same env vars:
+   - `assets/restart-resume.mjs` — the default on any platform with node (which
+     you have — the host runs on it). It **self-detaches**: however you launch
+     it, the first process re-spawns itself in its own session and exits, so
+     `nohup`-less, `&`-less, even sandboxed invocations are all safe. Same env
+     vars:
 
      ```sh
      OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
      HEALTH_URL='http://127.0.0.1:<port>/' \
      ROLLBACK_CMD='<old launch command>' \
-     node /path/to/restart-resume.mjs </dev/null >>/path/to/restart.log 2>&1 &
+     node /path/to/restart-resume.mjs
      ```
+
+     It prints the detached supervisor's pid; confirm the log shows it waiting
+     before you exit the old instance.
 
    If neither detach is available and the session is sandboxed, STOP and hand
    the command to the user — a reaped supervisor mid-restart strands the
@@ -241,6 +327,11 @@ back on failure, and resumes the sessions the restart interrupted.
    come back: "restarting now; reopen this session when the page returns and
    I will verify the fleet and report." Without a guard, nothing alive remains
    to read the handoff note — the resumed session is the wake-up mechanism.
+   **Token-gated hosts (0.1.2+) break bookmarks**: the old URL answers 401
+   forever. The supervisor records the new entry URL in its status file and
+   opens the user's browser to it automatically — before exiting, tell the
+   user BOTH the status-file path and that the page will pop up by itself;
+   never leave them holding a dead bookmark.
 4. **When the session resumes** (the user reopened it — or the guard resumed
    it on Path A): read the handoff note and the supervisor log, confirm the
    health check passed, then run Phase 6 before saying "done".
@@ -266,9 +357,13 @@ means the upgrade is NOT done: keep fixing or roll back (Phase 7).
 Close the upgrade with a report the user can REVIEW and veto from — the fleet
 table proves things work; this report explains what you changed so a human can
 audit the diff before trusting it. Write it to a markdown file beside the
-handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND repeat its key
-points in the conversation; the file is the durable record, the message is the
-notification.
+handoff note (`$DSH_HOME/state/upgrade-final-report.md`) AND **post the full
+report as your closing message in the conversation** — the file is the
+archive, the message is the delivery. A report that only exists on disk was
+never delivered; the user reads the conversation, not your state directory.
+**Write the report in the user's language** — the language their upgrade
+request came in (a Chinese request gets a Chinese report); the runbook's
+English is for you, the report is for them.
 
 Structure — one section per AFFECTED plugin, then the totals:
 
@@ -326,7 +421,7 @@ you eventually solved it yourself:
    ---
    host-from: <version>   # e.g. 0.1.1-rc.2
    host-to: <version>     # e.g. 0.1.2-alpha.2
-   skill-version: <from the package.json of the installed plugin-upgrade>
+   skill-version: <from this skill's frontmatter metadata.version>
    outcome: solved | worked-around | stuck
    ---
 

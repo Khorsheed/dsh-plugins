@@ -75,6 +75,17 @@ only gets delivered after that nudge.
   (The sixth — guard-less resume semantics — landed separately in the main
   line's Phase 5–7 rework.) `tests/e2e/run-report.template.json` freezes the
   metric schema; `run-report.v1.baseline.json` holds this run's numbers.
+- v2/v3 grew the rig: the skill became a plain directory (no package wrapper —
+  the driver now installs it into `$DSH_HOME/skills/`), the fleet form
+  (`--links <repoDir>` links every bundle from a local plugin-repo clone so
+  the upgrading agent's edit→rebuild→restart loop has no pack round-trip;
+  `--tarballs` keeps the pack-level variant), and v3 assertions cover every
+  installed plugin's browser half plus bundle freshness against the linked
+  checkout. `run-report.v3.json` holds the full-fleet run's numbers.
+- Two rig bugs the v3 run exposed and fixed: token extraction must take the
+  LAST `?token=` in an appended host log (only the latest boot's token is
+  valid), and the second-session check must count substantive logs (the
+  restart machinery registers a zero-byte shell session).
 - The fixture must stay broken on `main`-ward merges; "fixing" it outside an
   upgrade run destroys the rig.
 
