@@ -133,6 +133,11 @@ build, checklist #2). Everything the scan cannot probe stays manual — walk
 
 ## Phase 3 — Fix with dual-line discipline
 
+**Work on a branch in the user's source repo** — one commit per package, so
+every fix is a reviewable, revertable unit. Never edit the checkout the
+running instance reads from (Ground rules), and never leave fixes floating
+uncommitted: the user audits the branch, not your memory.
+
 **Parity is the bar, and there is no deadline.** You are working beside a live
 instance the user keeps using — take the time to fix EVERYTHING properly. A
 feature that worked before the upgrade must work after it: "degraded but
