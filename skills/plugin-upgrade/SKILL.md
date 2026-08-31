@@ -158,6 +158,11 @@ build, checklist #2). Everything the scan cannot probe stays manual — walk
 **Work on a branch in the user's source repo** — one commit per package, so
 every fix is a reviewable, revertable unit. Never edit the checkout the
 running instance reads from (Ground rules), and never leave fixes floating
+uncommitted. **Clean-rebuild before any packaging**: `rm -rf lib && build` —
+incremental caches silently ship a MIXED artifact (new host half, stale client
+bundle), and every downstream verifier sees a healthy-looking 200. (Observed
+in the wild: a correct fix shipped with a stale client bundle and the plugin
+never activated.)
 uncommitted: the user audits the branch, not your memory.
 
 **Parity is the bar, and there is no deadline.** You are working beside a live
@@ -207,7 +212,16 @@ worked examples is in `reference/dual-host-fix-patterns.md`; the core moves:
 Climb in order; each rung's criterion must pass before the next:
 
 1. **Package level** — every touched package builds and tests green against
-   BOTH host lines (two runs, two dependency seeds).
+   BOTH host lines (two runs, two dependency seeds). Build green is the
+   WEAKEST signal on the ladder: it proves compilation, nothing else.
+
+   **Match signal strength to failure shape.** Every rung's check must see the
+   failure it guards: a 200 proves the bundle is served, not that its CONTENT
+   is the fix — grep the built artifact for the fix's marker (a symbol added
+   or removed); a rendered page proves the shell, not the plugins — check the
+   browser for pending boot-gate entries and plugin console errors by name.
+   When a verifier cannot see the failure class it guards against, it is
+   decoration: strengthen the check or drop the claim.
 2. **Composition level** — all plugins installed TOGETHER into one profile;
    boot it. Catches duplicate loader entry ids and cross-plugin interference
    that per-package runs cannot see.
