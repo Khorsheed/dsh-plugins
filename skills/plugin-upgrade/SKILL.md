@@ -311,6 +311,11 @@ back on failure, and resumes the sessions the restart interrupted.
    come back: "restarting now; reopen this session when the page returns and
    I will verify the fleet and report." Without a guard, nothing alive remains
    to read the handoff note — the resumed session is the wake-up mechanism.
+   **Token-gated hosts (0.1.2+) break bookmarks**: the old URL answers 401
+   forever. The supervisor records the new entry URL in its status file and
+   opens the user's browser to it automatically — before exiting, tell the
+   user BOTH the status-file path and that the page will pop up by itself;
+   never leave them holding a dead bookmark.
 4. **When the session resumes** (the user reopened it — or the guard resumed
    it on Path A): read the handoff note and the supervisor log, confirm the
    health check passed, then run Phase 6 before saying "done".

@@ -79,6 +79,22 @@ function tokenUrl() {
   }
 }
 
+// On success, hand the user straight into the new host: a token-gated host's
+// old bookmarks are dead (401), so the supervisor — the only thing alive
+// across the restart — opens the entry URL itself. GUI-less deployments skip
+// silently; the status file always carries the URL either way.
+function openForUser(url) {
+  if (!url || process.env.RESTART_RESUME_NO_OPEN === '1') return
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  try {
+    const child = spawn(opener, [url], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {})
+    child.unref()
+  } catch {
+    /* headless host: the status file carries the URL */
+  }
+}
+
 function status(verdict, detail) {
   const token = tokenUrl()
   writeFileSync(
@@ -162,6 +178,7 @@ async function main() {
   log(`new host pid ${newPid}; polling ${HEALTH_URL} (up to ${HEALTH_TIMEOUT}s)`)
   if (await waitHealthy(HEALTH_TIMEOUT)) {
     status('upgraded', `new host healthy at ${HEALTH_URL} (pid ${newPid})`)
+    openForUser(tokenUrl())
     log('new host is healthy — upgrade complete')
     process.exit(0)
   }
