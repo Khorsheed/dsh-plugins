@@ -36,6 +36,22 @@ import { spawn } from 'node:child_process'
 import { openSync, readFileSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 
+// Self-detach: no matter HOW we were launched (nohup, plain `&`, a sandboxed
+// shell that reaps its process group), the durable supervisor runs in its own
+// session. The first process re-spawns itself fully detached and exits at
+// once. (Observed in the wild: `nohup node restart-resume.mjs &` is NOT a
+// detach — the old instance's teardown took the supervisor with it.)
+if (process.env.RESTART_RESUME_DETACHED !== '1') {
+  const child = spawn(process.execPath, [new URL(import.meta.url).pathname], {
+    env: { ...process.env, RESTART_RESUME_DETACHED: '1' },
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+  console.error(`restart-resume.mjs: detached supervisor pid ${child.pid}`)
+  process.exit(0)
+}
+
 const OLD_PID = process.env.OLD_PID
 const NEW_HOST_CMD = process.env.NEW_HOST_CMD
 const HEALTH_URL = process.env.HEALTH_URL

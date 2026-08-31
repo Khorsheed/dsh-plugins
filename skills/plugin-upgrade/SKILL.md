@@ -42,7 +42,9 @@ with the user, never a surprise mid-activity.
   an outage you chose. (Observed in the wild: an agent that killed the
   instance "to make the restart happen" and stranded it.)
 
+
 ## Phase 0 — Baseline
+
 
 1. Record the current host version (`dsh --version`, or the host package's
    `package.json`) and the target version. The user often pastes a release
@@ -71,6 +73,26 @@ with the user, never a surprise mid-activity.
    Plugins are open source by default: when only the npm name is known and
    nobody answers, clone the repository named in the package's
    `repository` field beside your staging area and work there.
+
+4. **Create a working branch in the plugin source repo FIRST** — before any
+   edit. Every fix lands as one commit per package on that branch; the user
+   audits the branch, not your memory, and a bad fix reverts cleanly.
+5. **Guard check — install ankh-guard directly if absent.** The guarded restart
+   is the default restart path, so the guard is part of the upgrade, not an
+   optional extra: probe the installed plugin list for
+   `@khorsheed/dsh-ankh-guard`; if missing, `dsh plugin add
+   @khorsheed/dsh-ankh-guard` on the spot (npm-published, self-mounting). The
+   FIRST restart after installing it is the only manual one (the watchdog can
+   only supervise from the next boot on) — do that one by hand per Path B, and
+   every later restart in this upgrade rides the guard. Only a user who
+   explicitly declines the install keeps you on Path B throughout.
+   **Trust is re-earned every upgrade**: the guard is a plugin like any other
+   — it goes through the Phase 4 ladder with the fleet, and if IT fails
+   verification on the new host, fall back to Path B and list "guard itself
+   needs adaptation" as the top item of the final report. (Its core rescue
+   piece — the watchdog — is a standalone script with no plugin-API
+   dependency, so a broken plugin half does not take the watchdog down with
+   it, but the credential/preflight gate is host-side and must be verified.)
 
 ## Phase 1 — Fetch the new host beside the old
 
@@ -263,15 +285,21 @@ back on failure, and resumes the sessions the restart interrupted.
      setsid sh /path/to/restart-resume.sh </dev/null >>/path/to/restart.log 2>&1 &
      ```
 
-   - `assets/restart-resume.mjs` — where `setsid` does NOT exist (macOS):
-     Node's `spawn(..., { detached: true })` is the same detach. Same env vars:
+   - `assets/restart-resume.mjs` — the default on any platform with node (which
+     you have — the host runs on it). It **self-detaches**: however you launch
+     it, the first process re-spawns itself in its own session and exits, so
+     `nohup`-less, `&`-less, even sandboxed invocations are all safe. Same env
+     vars:
 
      ```sh
      OLD_PID=<pid> NEW_HOST_CMD='<new launch command>' \
      HEALTH_URL='http://127.0.0.1:<port>/' \
      ROLLBACK_CMD='<old launch command>' \
-     node /path/to/restart-resume.mjs </dev/null >>/path/to/restart.log 2>&1 &
+     node /path/to/restart-resume.mjs
      ```
+
+     It prints the detached supervisor's pid; confirm the log shows it waiting
+     before you exit the old instance.
 
    If neither detach is available and the session is sandboxed, STOP and hand
    the command to the user — a reaped supervisor mid-restart strands the
