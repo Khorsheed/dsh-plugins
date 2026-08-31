@@ -1,5 +1,7 @@
 ---
 name: plugin-upgrade
+metadata:
+  version: 0.2.0
 description: Upgrade this dsh instance across a host release. Use when the user asks to upgrade/migrate the instance or its plugins to a new host version (e.g. "upgrade this instance to 0.1.2", "adapt the plugins to the new host", "move this deployment onto the latest release").
 ---
 
@@ -419,7 +421,7 @@ you eventually solved it yourself:
    ---
    host-from: <version>   # e.g. 0.1.1-rc.2
    host-to: <version>     # e.g. 0.1.2-alpha.2
-   skill-version: <from the package.json of the installed plugin-upgrade>
+   skill-version: <from this skill's frontmatter metadata.version>
    outcome: solved | worked-around | stuck
    ---
 
