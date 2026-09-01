@@ -24,6 +24,8 @@ A green build still says nothing about the profile composition: bad patch YAML, 
 
 The restart itself is handed to a watchdog: a detached supervisor that brings the host back if it dies, rolls back to the last known-good revision (the healthy-boot stamp — the last revision that actually came up in this deployment — else the checkpoint, else the green credential's HEAD) if it can't come up, and stops at a crash page after four consecutive failures. A boot failure whose origin lives outside the checkout (a freshly installed plugin is the common case) cannot be fixed by reverting the repository — so the watchdog instead rolls back the **profile composition**: every healthy boot snapshots the profile's composition inputs (the bundles layer and the profile manifest), and an out-of-repo boot failure restores that snapshot (unmounting the newest plugin change; the failing inputs are kept under `composition-backup-*`) and reports the recovery, naming what was unmounted, through the restart-report channel. Every rollback leaves `guard-backup-*` recovery anchors for the discarded HEAD and any uncommitted work. `checkpoint` commits the whole working tree as a rollback point before a batch, `reset` hard-resets to it (anchored the same way), and `canary` re-verifies after a restart. Checkpoints and credentials persist in a state file that survives restarts, so the canary runs after the new instance is up.
 
+Readiness is application-aware. Any HTTP response, including a naked 401, proves only that the transport is up. A public root is ready at HTTP 200. A protected root is ready only after the watchdog extracts the final process's same-authority launch URL from that process's output, uses a temporary cookie jar to prove launch URL → 303 → authenticated `/` → 200, and (for a launch cutover) hands that URL to the browser once. Bearer URLs are redacted from durable logs and receipts.
+
 ## Install and load
 
 This package is a dsh plugin: it guards a running dsh web instance against broken self-modification restarts. Its single identity is **`@khorsheed/dsh-ankh-guard`**, developed in the `dsh-plugins` monorepo and published to npm from there. Install the host and add the plugin as a profile bundle:
@@ -51,12 +53,12 @@ Runtime needs: `node`, `bash`, `lsof` on macOS/Linux for listener discovery (`--
 - **pnpm blocks dependency build scripts by default.** If the add fails on a build-script interception, allow the toolchain entries via `allowBuilds` and retry.
 - **A root-owned npm cache** (one `sudo npm …` in the past) fails the prepare build with EPERM: `sudo chown -R $(id -u):$(id -g) ~/.npm`.
 - **`--start` does not run from your cwd.** The watchdog `cd`s into the dsh home (else `/tmp`) before launching, so the start command must be self-contained — absolute paths, or an explicit `cd` inside it.
-- **Put `--no-open` in the start command.** Without it, every respawn (watchdog takeover, scheduled restart) opens a fresh browser tab on the host. The preflight dry-run never opens one.
+- **Put `--no-open` in the start command.** It prevents the host itself from opening a tab on every respawn. When a protected launch configuration is cut over, `reconfigure` instead verifies the final process's launch URL and performs one deliberate browser handoff; the candidate process's URL is never reused. The preflight dry-run never opens a browser.
 - **Supervision adopted from a sandboxed session stays sandboxed.** A watchdog spawned from inside a workspace-write sandbox passes that profile to every respawned instance (nested sandbox-exec then fails, and every command degrades to approvals). For a permanent deployment, use the layered shape (the launchd/systemd installer) so the watchdog chain starts outside any sandbox.
 
 ## CLI
 
-The primary interface is the CLI, usable even when the instance is down. Use the `dsh-ankh-guard` bin (or `node lib/cli.js`). Every command takes `--state-dir "$DSH_HOME/state" --repo "$PWD"`.
+The primary interface is the CLI, usable even when the instance is down. Use the `dsh-ankh-guard` bin (or `node lib/cli.js`). `--repo` always names the credential/rollback repository; `--harness-root` names the host root used by preflight and the child, and the two can — and usually do — differ. State commands take `--state-dir "$DSH_HOME/state"`.
 
 ```sh
 dsh-ankh-guard verify      # is it safe to restart right now
@@ -65,9 +67,11 @@ dsh-ankh-guard checkpoint --message "what changed"   # checkpoint before editing
 dsh-ankh-guard preflight   # deep dry-run: does the profile composition boot
 dsh-ankh-guard canary --port 3080   # confirm after restart
 dsh-ankh-guard supervise --port 3080 --start "CMD"   # hand the port to a watchdog
+dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
+  --harness-root "<host root>" --on-failure restore-previous
 ```
 
-Full commands: `verify`, `record`, `status`, `clear`, `checkpoint`, `reset`, `canary`, `preflight`, `restart`, `schedule-exit`, `supervise`.
+Full commands: `verify`, `record`, `status`, `clear`, `checkpoint`, `reset`, `canary`, `preflight`, `restart`, `schedule-exit`, `configure-launch`, `launch-status`, `reconfigure`, `supervise`.
 
 ### preflight: the composition gate
 
@@ -77,7 +81,7 @@ Full commands: `verify`, `record`, `status`, `clear`, `checkpoint`, `reset`, `ca
 - `1` — a composition verdict: the tree a restart would boot is broken; the output names the failing layer.
 - `3` — preflight itself could not execute (missing app layout, infrastructure crash) — **not** a verdict on the composition.
 
-`schedule-exit` and `restart` run this gate after the credential check, before anything is stopped. A composition failure refuses with the preflight's diagnostics; an infrastructure failure also refuses — worded differently and with the manual override (stop the instance by hand, let the watchdog respawn it) — because the guard will not stop a healthy instance it cannot prove will come back. The gate locates the dsh app to dry-run with via `--repo`, else `DSH_HARNESS`, else the conventional `~/code/deepseek-harness` checkout; where none of those resolves (a pure npm deployment with no harness checkout) there is no engine to boot the profile with, so the gate warns once and proceeds. Flags: `--profile NAME` (default `$DSH_PROFILE`, else `web`) and `--preflight-timeout-ms MS` (default 120000); `DSH_PREFLIGHT_COMMAND` replaces the resolved app bin wholesale (test hook). Run it by hand any time with `dsh-ankh-guard preflight --profile web`.
+`schedule-exit`, `restart`, and `reconfigure` run this gate after the credential check, before anything is stopped. A composition failure refuses with the preflight's diagnostics; an infrastructure failure also refuses — worded differently and with the manual override (stop the instance by hand, let the watchdog respawn it) — because the guard will not stop a healthy instance it cannot prove will come back. The gate locates the dsh app to dry-run via `--harness-root`, then the durable selected launch spec, `DSH_HARNESS`, and finally the conventional `~/code/deepseek-harness` checkout; the credential `--repo` never participates in host resolution. Where none resolves (a pure npm deployment with no harness checkout), there is no engine to boot the profile with, so the gate warns once and proceeds. Flags: `--profile NAME` (default `$DSH_PROFILE`, else `web`) and `--preflight-timeout-ms MS` (default 120000); `DSH_PREFLIGHT_COMMAND` replaces the resolved app bin wholesale (test hook). Run it by hand any time with `dsh-ankh-guard preflight --profile web --harness-root "$DSH_HARNESS"`.
 
 ### The self-restart protocol
 
@@ -95,14 +99,33 @@ Six steps for a safe restart after editing code:
 `restart` runs the whole kill → start → probe → canary loop in one CLI process (use `--delay-ms` so the scheduling turn finishes first). For deployments where nobody should touch a terminal, `supervise` hands the job to a **watchdog** — a detached supervisor process that survives the instance:
 
 ```sh
-dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state" --repo "$PWD"
+dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state" \
+  --repo "<credential repo>" --harness-root "<host root>"
 ```
 
-`supervise` also needs the dsh home the supervised instance boots with (the watchdog exports it as the instance's `DSH_HOME`): `--home DIR` wins, else `$DSH_HOME`; with neither set it refuses loudly — a home guessed from `--state-dir` would silently boot the instance on the wrong profiles/credentials.
+`supervise` also needs the dsh home the supervised instance boots with (the watchdog exports it as the instance's `DSH_HOME`): `--home DIR` wins, else `$DSH_HOME`; with neither set it refuses loudly — a home guessed from `--state-dir` would silently boot the instance on the wrong profiles/credentials. First-time persistence also requires an explicit `--harness-root` or `DSH_HARNESS`; it never guesses the host root from the credential repo.
 
 It spawns `scripts/dsh-watchdog.sh` (ships with the package) detached with `--wait-owner`: the watchdog idles while the current instance runs, takes over the port when the instance exits (intentional restart or crash), respawns it, runs the guard canary on intentional restarts (a `restart-requested.json` marker), and clears the marker on pass. Two consecutive boot failures roll the checkout back to the last known-good revision — the healthy-boot stamp (`last-good-boot.json`, written every time the instance comes up, so it names the last revision that genuinely ran in this deployment), else the guard checkpoint, else the credential's HEAD — but only when the boot failure's error subject is a path inside the repository. When the subject lives outside the checkout (a broken profile overlay or an installed plugin), a checkout reset cannot help, so the watchdog instead restores the last healthy **profile composition**: the snapshot of the profile's composition inputs (`last-good-composition/`, taken at every healthy boot) replaces the live bundles layer and manifest, unmounting the newest plugin change, with the failing inputs preserved under `composition-backup-*` and the recovered report naming exactly what was unmounted. The same exemption logic covers a start command that does not bind the supervised port: when the boot window times out while the instance is listening elsewhere — or fails with `EADDRINUSE` naming a port this watchdog does not own — the watchdog names the bound port and skips both rollbacks, because resetting files cannot change a command-line argument. `EADDRINUSE` on the supervised port keeps its free-and-retry escape hatch, now bounded at five attempts. Every reset (watchdog, CLI, or service) first creates `guard-backup-*` branch anchors for the discarded HEAD and for uncommitted tracked changes, so recovery never depends on the reflog. Four failures serve a crash page on the port with a retry button (SIGUSR1 to the watchdog). A `watchdog-stop` marker exits the watchdog for good. The instance itself can adopt supervision before a self-restart — the user never starts the watchdog by hand.
 
 When a watchdog is already supervising, the restart trigger is `schedule-exit`: it writes the restart marker and spawns a detached exit agent (setsid via node `spawn`), which cannot be reaped by a managed shell's process group, so the scheduled kill actually lands after the scheduling turn ends (the fix for `(sleep N; kill) &` silently never firing). The watchdog respawns, runs the canary, and the new instance reports via `last-restart.json`. Prefer `restart` (single-shot loop) only when no watchdog is present.
+
+### reconfigure: transactional launch changes
+
+`schedule-exit` is the same-launch fast path. If the command, dsh home, credential/rollback repository, host root, or profile changes, use `reconfigure`; changing the online port is deliberately refused because it needs a separately supervised traffic cutover.
+
+```sh
+dsh-ankh-guard reconfigure \
+  --start "<complete target command>" \
+  --repo "<target credential/rollback repo>" \
+  --harness-root "<target host root>" \
+  --on-failure restore-previous \
+  --browser-handoff required \
+  --state-dir "$DSH_HOME/state"
+```
+
+The recovery choice is mandatory and therefore approved before the old host stops: `restore-previous` restores the entire previous launch specification, while `wait-for-user` parks for intervention without resetting any repository. The full previous/target pair separately persists command, home, credential repo, harness root, profile, and port, with the selected side in mode-0600 `launch-spec.json`; the atomic selected-side rename is the configuration commit point. If no complete durable previous spec exists, initialize it first with the real current values through `configure-launch`: legacy `instance-launch.json` cannot supply the missing roles, and a target `--repo` is never backfilled into previous. A replacement watchdog then atomically claims `watchdog.pid` while the old host is still serving. Only that replacement watchdog may stop the old child and start the final target, so the caller can disappear without stranding the transaction.
+
+For a protected target, the watchdog accepts a launch URL only from the final process's output, only for the exact supervised loopback authority, and without depending on a parameter name. It proves 303 cookie exchange and authenticated root 200 with a temporary jar, opens the URL once when browser handoff is required, runs the canary, and only then releases session wake-up. A naked 401 remains transport-up, never ready. `launch-cutover.json` is a durable credential-free receipt containing redacted configuration summaries, old/new supervisor and child PIDs, authentication handoff, attempts, canary, and recovery outcome; `launch-status` prints it without exposing either command.
 
 **The restart report reaches the model by itself — and waits for its owner.** After a scheduled restart (a pending `last-restart.json` record), the plugin queues the report as the next turn via `agent.followup` — the official wake-the-agent seam the schedule system uses for reminders — so the agent reports the restart result without any user message. Session restore after a restart is lazy (an agent is created only when the UI or an RPC touches the session), so the report goes ONLY to the session that scheduled the exit (`schedule-exit` records `$DSH_SESSION_ID` as the initiator), whenever it resumes — no other session is ever woken for reporting, and the record stays pending until its owner resumes or the next restart replaces it (new `exitAt`). A record without an initiator is claimed by the first root agent created. Only root agents, once (acknowledged on delivery). Config `reportRestartContext`: `followup` (default, autonomous), `step` (ride the first step of whatever turn comes next), or `off`.
 
@@ -117,12 +140,15 @@ A port must have exactly one supervision owner, but the owner itself should be s
 - **C — layered (recommended)**: launchd supervises the watchdog, the watchdog supervises the instance. One owner per port, and the owner is supervised. macOS: `scripts/install-launchd.sh --start "CMD"` generates a `com.dsh.watchdog.plist` (whose `ProgramArguments` run the CLI in the foreground) into `~/Library/LaunchAgents` and bootstraps it; `--force` replaces a running detached watchdog; `--uninstall` removes the job. systemd: `scripts/install-systemd.sh --start "CMD"` generates and enables the user unit `~/.config/systemd/user/dsh-watchdog.service` — `Restart=on-failure` is the counterpart of launchd's `SuccessfulExit: false`, `StartLimitIntervalSec=0` disables the start rate limit (the default puts a repeatedly restarting unit into `failed` and stops trying, which ends supervision silently), `--print` writes the unit to stdout without touching systemctl, and `--force`/`--uninstall` match the launchd installer. A user unit stops when the session ends; surviving logout needs an administrator to run `loginctl enable-linger <user>`. Both platforms run the same command:
 
 ```sh
-# launchd/systemd job (KeepAlive) runs this; the CLI process IS the watchdog:
-dsh-ankh-guard supervise --foreground --port 3093 --start "<start command>" \
-  --state-dir "$DSH_HOME/state" --repo "<checkout>"
+# The installers initialize this once, then every KeepAlive start follows the
+# selected durable launch specification:
+dsh-ankh-guard configure-launch --if-absent --port 3093 --start "<start command>" \
+  --home "$DSH_HOME" --state-dir "$DSH_HOME/state" \
+  --repo "<credential repo>" --harness-root "<host root>" &&
+exec dsh-ankh-guard supervise --foreground --state-dir "$DSH_HOME/state"
 ```
 
-`--foreground` runs the watchdog inline (adopting the port) and exits with it, so a dead watchdog triggers the external supervisor's restart. On TERM/INT or any exit the watchdog reaps what it spawned — the instance child and the give-up crash page — and removes its own pidfile, then exits non-zero; under the installed plist's `KeepAlive SuccessfulExit: false` a killed watchdog restarts the whole chain, while a deliberate `watchdog-stop` (exit 0) stays down. If a live detached watchdog already holds the pidfile, `--foreground` waits for it to exit and then takes over — exiting 0 instead would read as an intentional stop, idle the launchd job, and silently leave the other watchdog unsupervised. The detached form (`supervise` without `--foreground`) is a debug / one-shot tool — the instance adopting supervision ahead of a self-restart, or a quick manual session — not a production supervision shape, because nothing supervises the detached watchdog itself.
+`--foreground` runs the watchdog inline (adopting the port) and exits with it, so a dead watchdog triggers the external supervisor's restart. On TERM/INT or any exit the watchdog reaps what it spawned — the instance child and the give-up crash page — and removes its own pidfile, then exits non-zero; under the installed plist's `KeepAlive SuccessfulExit: false` a killed watchdog restarts the whole chain, while a deliberate `watchdog-stop` (exit 0) stays down. If a live detached watchdog already holds the pidfile, `--foreground` waits for it to exit and then takes over. If the cutover failed and restored previous during that wait, it rereads `launch-spec.json` and the receipt before spawning, so it cannot revive the pre-wait target snapshot. Exiting 0 instead would read as an intentional stop, idle the launchd job, and silently leave the other watchdog unsupervised. The detached form (`supervise` without `--foreground`) is a debug / one-shot tool — the instance adopting supervision ahead of a self-restart, or a quick manual session — not a production supervision shape, because nothing supervises the detached watchdog itself.
 
 The checkpoint/rollback round trip:
 
@@ -153,7 +179,7 @@ None.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ⚠️ degraded — everything works; the composition-preflight gate runs through the standalone `preflight-runner` (composing through the published `@deepseek-ai/dsh-app-boot` primitives with a drift tripwire, since 0.1.1-rc.2 still does not export `composeProfile`) wherever a dsh app layout resolves — `--repo`, `DSH_HARNESS`, or the default checkout. On a pure npm deployment with no harness checkout the gate reports a notice and proceeds instead; every other capability is intact on the npm line; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
+- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ⚠️ degraded — everything works; the composition-preflight gate runs through the standalone `preflight-runner` (composing through the published `@deepseek-ai/dsh-app-boot` primitives with a drift tripwire, since 0.1.1-rc.2 still does not export `composeProfile`) wherever a dsh app layout resolves — `--harness-root`, the durable launch spec, `DSH_HARNESS`, or the default checkout. On a pure npm deployment with no harness checkout the gate reports a notice and proceeds instead; every other capability is intact on the npm line; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
 - source line (deepseek-harness master, fork or upstream): ✅ — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
 ## Known Limitations and Deferred Work

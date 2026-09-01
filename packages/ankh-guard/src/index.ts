@@ -36,6 +36,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
+import { cutoverBlocksWake } from './launch-spec.ts'
 import { stateFile } from './state-files.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
@@ -397,6 +398,11 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     // injection fires; the restart's initiator gets the report — merged into
     // one message when it is both. The map makes repeat calls no-ops.
     const deliver = (agent: FollowupAgent & { id: unknown }): void => {
+      // Transport can be up before the watchdog has exchanged the launch URL,
+      // handed it to the browser, or run the canary. Do not let that early
+      // mount wake a session; the release poll below retries live roots once
+      // the durable receipt reaches a terminal phase.
+      if (cutoverBlocksWake(stateDir)) return
       const id = agent.id as string
       const exitAt = pendingContinue.get(id)
       const record = followupReport ? pendingRestartRecord(stateDir) : null
@@ -535,6 +541,10 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     // happens through `deliver` below, from the `agent/created` listener or
     // the live branch here.
     const resumePass = async (): Promise<void> => {
+      while (!disposed && cutoverBlocksWake(stateDir)) {
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+      if (disposed) return
       const snapshot = readInterruptedSnapshot(stateDir)
       if (snapshot === null) return
       // A stale snapshot (a stop/start hours later) is dropped: only a recent
@@ -576,6 +586,18 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       ctx.effect(() => () => { clearTimeout(timer) })
     }
 
+    // The browser handoff can create an agent while the receipt still says
+    // canary-pending. agent/created is one-shot, so retry already-live roots
+    // after release; acknowledgement and pendingContinue preserve exact-once.
+    if (cutoverBlocksWake(stateDir)) {
+      const releaseTimer = setInterval(() => {
+        if (disposed || cutoverBlocksWake(stateDir)) return
+        clearInterval(releaseTimer)
+        for (const agent of ctx.agents.roots()) deliver(agent)
+      }, 250)
+      ctx.effect(() => () => { clearInterval(releaseTimer) })
+    }
+
     ctx.on('agent/created', ({ agent }) => {
       if (!ctx.agents.roots().includes(agent)) return
       deliver(agent)
@@ -590,6 +612,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       if (decision.kind === 'reject' || signal.aborted) return decision
       const record = pendingRestartRecord(stateDir)
       if (record === null) return decision
+      if (cutoverBlocksWake(stateDir)) return decision
       const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
       const text = restartContextText(record, canaryPending)
       if (text === '') return decision

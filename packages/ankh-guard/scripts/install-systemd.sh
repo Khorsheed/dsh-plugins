@@ -31,6 +31,7 @@
 #
 # Usage:
 #   install-systemd.sh --start "CMD" [--port N] [--home DIR] [--repo DIR]
+#                      [--harness-root DIR] [--profile NAME]
 #                      [--cli "CMD"] [--label NAME] [--force] [--print]
 #   install-systemd.sh --uninstall [--label NAME]
 #
@@ -40,7 +41,11 @@
 #   --home DIR      dsh root: state/, logs, DSH_HOME for the unit (default
 #                   $DSH_HOME, else $HOME/.dsh-official).
 #   --repo DIR      checkout the guard credential/rollback binds to (default
-#                   DSH_HARNESS, else $HOME/code/deepseek-harness).
+#                   current directory); this may be a plugin migration repo.
+#   --harness-root DIR  dsh host checkout used by preflight and exported to
+#                   the child (default DSH_HARNESS, else conventional host).
+#   --profile NAME  dsh profile used for preflight/canary metadata (default
+#                   $DSH_PROFILE, else web).
 #   --cli "CMD"     guard CLI invocation prefix (default: this package's built
 #                   lib/cli.js run via an absolute node path).
 #   --label NAME    unit name without .service (default dsh-watchdog).
@@ -60,7 +65,9 @@ set -u
 LABEL="${DSH_WD_LABEL:-dsh-watchdog}"
 PORT="${DSH_WD_PORT:-3080}"
 HOME_DIR="${DSH_WD_HOME:-${DSH_HOME:-$HOME/.dsh-official}}"
-REPO="${DSH_WD_REPO:-${DSH_HARNESS:-$HOME/code/deepseek-harness}}"
+REPO="${DSH_WD_REPO:-$PWD}"
+HARNESS_ROOT="${DSH_WD_HARNESS_ROOT:-${DSH_HARNESS:-$HOME/code/deepseek-harness}}"
+PROFILE="${DSH_WD_PROFILE:-${DSH_PROFILE:-web}}"
 START=""
 CLI=""
 FORCE=0
@@ -86,6 +93,8 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:-}"; shift 2 ;;
     --home) HOME_DIR="${2:-}"; shift 2 ;;
     --repo) REPO="${2:-}"; shift 2 ;;
+    --harness-root) HARNESS_ROOT="${2:-}"; shift 2 ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
     --cli) CLI="${2:-}"; shift 2 ;;
     --label) LABEL="${2:-}"; shift 2 ;;
     --force) FORCE=1; shift ;;
@@ -122,9 +131,13 @@ STATE_DIR="$HOME_DIR/state"
 LOG_OUT="$STATE_DIR/watchdog.log"
 LOG_ERR="$STATE_DIR/watchdog.stderr.log"
 
-# One bash -c line: `exec <cli> supervise --foreground ...` so systemd restarts
-# the CLI (which exits with the watchdog) — never the watchdog script directly.
-PROGRAM="exec $CLI supervise --foreground --port $PORT --start $(printf '%q' "$START") --state-dir $(printf '%q' "$STATE_DIR") --repo $(printf '%q' "$REPO") --home $(printf '%q' "$HOME_DIR")"
+# Initialize the durable launch specification once, then always start from its
+# selected side. Reinstalling an OS service must not silently overwrite a
+# cutover/rollback decision; launch changes go through `reconfigure`.
+INIT="$CLI configure-launch --if-absent --port $PORT --start $(printf '%q' "$START") --state-dir $(printf '%q' "$STATE_DIR") --repo $(printf '%q' "$REPO") --harness-root $(printf '%q' "$HARNESS_ROOT") --home $(printf '%q' "$HOME_DIR") --profile $(printf '%q' "$PROFILE")"
+# One bash -c line: the CLI process (and not this setup shell) becomes the
+# watchdog's parent, so systemd observes the watchdog's eventual exit status.
+PROGRAM="$INIT && exec $CLI supervise --foreground --state-dir $(printf '%q' "$STATE_DIR")"
 
 # Quote one value as a single systemd argument. systemd does NOT parse shell
 # quoting: it splits on whitespace and understands double quotes with backslash
