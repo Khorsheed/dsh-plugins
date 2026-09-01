@@ -146,6 +146,14 @@ export function dshTestConfig(): ReturnType<typeof defineConfig> {
   }
   return defineConfig({
     esbuild: { jsx: 'automatic' },
+    // vitest's 5s default is tuned for pure unit tests; several suites here
+    // spawn real subprocesses (`pnpm pack`, the datasets CLI, guard restarts).
+    // Solo they finish in ~2s, but the root `pnpm run test` runs 25 packages'
+    // vitest instances at once and pushes them past 5s — reliably, not
+    // flakily, and invisibly to CI whose runner is fast enough to stay under.
+    // A larger budget costs a passing test nothing; it only changes how long a
+    // genuinely hung test takes to report.
+    test: { testTimeout: 30_000 },
     resolve: { dedupe: ['react', 'react-dom'], alias },
     plugins: [
       sourcePathsPlugin(harness, paths, /^@deepseek-ai\//),
