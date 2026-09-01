@@ -292,17 +292,26 @@ dsh --profile <p> --dump-config | grep -c '^- id: '
 
 **第二档 —— 可自动，有 Remote 服务的 7 个（服务层）**
 
-卸载后调它的 Remote 命名空间应当探测不到：
+⚠️ **这些包有两个命名空间，探错层会静默判绿**——探测结果与「插件真的卸载了」长得一模一样。`local-files` 的构造器把区别写得最清楚：
 
-| 成员 | Remote 命名空间 |
-|---|---|
-| `worktrees` | `worktrees` |
-| `room` | `room` |
-| `local-files` | `localFiles` |
-| `file-preview` | `filePreview` |
-| `capability-catalog` | `capabilityCatalog` |
-| `message-tools` | （有 Remote，命名空间待确认） |
-| `local-agent` | （有 Remote，命名空间待确认） |
+```ts
+super(ctx, 'localFilesRemote', { namespace: 'localFiles' })
+//         ↑ cordis 服务键（进程内部）  ↑ wire 命名空间（浏览器调用）
+```
+
+**检查器探 wire 命名空间那一列**——它模拟的是「用户还用不用得到这个功能」，浏览器走的就是这一层；cordis 服务键是进程内部标识，与用户视角不对应。
+
+| 成员 | **wire 命名空间（检查器用这个）** | cordis 服务键 |
+|---|---|---|
+| `worktrees` | `worktrees` | `worktreesRemote` |
+| `local-files` | `localFiles` | `localFilesRemote` |
+| `message-tools` | `messageTools` | 同名 |
+| `local-agent` | `localAgentGateway` | 同名 |
+| `file-preview` | `filePreview` | 同名 |
+| `capability-catalog` | `capabilityCatalog` | 同名 |
+| `room` | `room` | 同名 |
+
+浏览器侧的调用形如 `remote.<wire 命名空间>.<method>(…)`，可据此构造探测。
 
 **第三档 —— 可自动，注册模型工具的 4 个（工具层）**
 
