@@ -16,9 +16,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # The harness checkout seeds dev-time type/test resolution and typert
-      # generation (AGENTS.md build contract). Keep it at the published
-      # release line the repo currently tracks (see dsh.compat / the rc
-      # adaptation notes); bump deliberately when the host line moves.
+      # generation (AGENTS.md build contract). Pinned to the STABLE line the
+      # repo currently tracks (see dsh.compat / the rc adaptation notes);
+      # bump deliberately when the host line moves. The alpha-compat job
+      # below covers the line we are adapting to.
       - name: Clone deepseek-harness (type/test seed)
         uses: actions/checkout@v4
         with:
@@ -79,3 +80,67 @@ jobs:
           pnpm run verify-agent-note-format
           pnpm run verify-agent-note-classification
           pnpm run verify-translation-pairing
+
+  # The stable line above gates merges. This one reports: it builds and tests
+  # the same tree against the host line we are adapting TO, so a package that
+  # only works on one line is visible before the eventual baseline migration
+  # instead of during it.
+  #
+  # Deliberately non-blocking. The alpha line shipped alpha.1 through alpha.4
+  # inside a week, so upstream can turn this red at any time for reasons that
+  # are not ours. A required check somebody else controls is one people learn
+  # to ignore — and an ignored gate protects nothing.
+  alpha-compat:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Track whatever the alpha dist-tag points at rather than pinning a
+      # version here: a pinned alpha rots within days, and a job testing a
+      # host nobody is adapting to any more quietly stops meaning anything.
+      # The harness tags its releases `dsh-v<npm version>`.
+      - name: Resolve the current alpha host
+        id: alpha
+        run: |
+          version=$(npm view @deepseek-ai/dsh dist-tags.alpha)
+          echo "ref=dsh-v${version}" >> "$GITHUB_OUTPUT"
+          echo "tracking alpha host ${version}"
+
+      - name: Clone deepseek-harness (alpha line)
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${{ steps.alpha.outputs.ref }}
+          path: deepseek-harness
+          fetch-depth: 1
+
+      - name: Install (harness seed)
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: Build harness libs (type seed)
+        working-directory: deepseek-harness
+        run: pnpm run build:lib
+
+      - name: Install (repo)
+        run: pnpm install --frozen-lockfile
+
+      # Only the harness-sensitive steps run here. Hygiene, plugin
+      # independence, the doc gates and the mirror check never read the
+      # harness, so repeating them would double the cost for no new signal.
+      - name: Build (alpha host)
+        run: pnpm run build
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
+
+      - name: Test (alpha host)
+        run: pnpm run test
+        env:
+          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
