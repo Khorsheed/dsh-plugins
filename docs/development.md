@@ -68,6 +68,10 @@ pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装
 
 **镜像 `--check` 故意不在 gate 里**:镜像漂移归 mainline 修(同步需要镜像仓的推送权),不该挡住包 owner 合并。CI 保留这道门禁。
 
+## 验收记录放哪
+
+整合包与插件的实测证据放 `docs/acceptance/`,一次验收一个文件;格式、理由与三段式模板见 [docs/acceptance/README.md](acceptance/README.md)。一句话版本:**证据进 `docs/acceptance/`,决定进 Agent Note**——前者不受 note 格式与双语门禁约束(但受 hygiene 约束),后者照常。不放 `profiles/<name>/`,那里会被同步进公开镜像仓。
+
 ## 推送与分支保护
 
 - **push 由 human 一事一议**:AGENTS.md 的「never push unilaterally」不变。mainline 在每批合并后申请推送,并在推送后盯 CI、修组合层的红。
