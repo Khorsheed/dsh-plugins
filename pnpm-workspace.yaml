@@ -5,6 +5,12 @@ packages:
 # is required by tsdown — same allowance the harness carries.
 allowBuilds:
   esbuild: true
+  # koffi (FFI) arrives transitively: room's devDependency on the official
+  # @deepseek-ai/dsh-session-persistence-jsonl. Its install script builds the
+  # native addon from source; the prebuilt @koromix/koffi-<platform> packages
+  # in the lockfile already supply the binary, so the build is denied rather
+  # than run — reviewed and declined, which is what clears strictDepBuilds.
+  koffi: false
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent@0.1.1-rc.2'
   - '@deepseek-ai/dsh-agent-default-model@0.1.1-rc.2'
