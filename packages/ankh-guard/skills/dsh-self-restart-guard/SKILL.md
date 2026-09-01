@@ -48,17 +48,19 @@ $GUARD verify --repo <repo> --state-dir "$DSH_HOME/state"
 $GUARD preflight --profile web
 ```
 
-5. **Restart** — the path depends on supervision:
+5. **Restart or launch cutover** — the path depends on supervision and whether the complete launch specification changes:
    - **No watchdog yet** (e.g. right after installing the plugin): drive it with the `restart` verb — it owns stop → start → canary in a detached driver and self-detaches from the dying instance. `--start` defaults to the launch record when one exists.
-   - **Watchdog-supervised** (a `watchdog.pid` is live in the state dir): `schedule-exit --port <port> --delay-ms 5000 --repo <repo>`. It re-verifies the credential against the repo's CURRENT HEAD, runs the composition preflight, exits the instance after the delay (so the current turn finishes), and the watchdog respawns + canaries automatically. Do NOT use bare `restart` against a supervised instance — it fights the supervisor. **Never pass `--initiator` by hand**: it defaults to `$DSH_SESSION_ID`, which the shell environment already sets to THIS session's id — that is what routes the post-restart wake-up report back to you. An invented value sends the report to a session that does not exist and you are never woken (a branch name is not a session id).
+   - **Watchdog-supervised, same command, home, repo, and profile**: `schedule-exit --port <port> --delay-ms 5000 --repo <repo>`. It re-verifies the credential against the repo's CURRENT HEAD, runs the composition preflight, exits the instance after the delay (so the current turn finishes), and the watchdog respawns + canaries automatically. Do NOT use bare `restart` against a supervised instance — it fights the supervisor. **Never pass `--initiator` by hand**: it defaults to `$DSH_SESSION_ID`, which the shell environment already sets to THIS session's id — that is what routes the post-restart wake-up report back to you. An invented value sends the report to a session that does not exist and you are never woken (a branch name is not a session id).
+   - **Watchdog-supervised, command, home, repo, or profile changes**: use `reconfigure --start "<complete target command>" --on-failure <policy> --browser-handoff required`. Before running it, obtain the user's explicit recovery choice: `restore-previous` restores the entire previous launch specification; `wait-for-user` parks without resetting a repository. `reconfigure` atomically transfers the pidfile to a replacement watchdog before the old host is stopped. Online port changes are refused; deploy a separately supervised authority and cut traffic over instead.
    - Never hand-roll `sleep; kill; nohup start` scripts — they die with the instance (teardown reaps managed processes).
 
-6. **Verify after** — the port must listen again and the canary must PASS (`$DSH_HOME/state/restart.log` for the verb path, `watchdog.log` for the supervised path). On repeated boot failure the watchdog rolls the checkout back to the last known-good revision, leaving `guard-backup-*` branches on the discarded HEAD.
+6. **Verify after** — the port must listen again and the canary must PASS (`$DSH_HOME/state/restart.log` for the verb path, `watchdog.log` for the supervised path). For `reconfigure`, wait for `launch-status` to show a terminal receipt, read `$DSH_HOME/state/launch-cutover.json`, and report its supervisor/child PIDs, redacted launch summaries, authentication handoff, retries, canary, and recovery outcome. On repeated ordinary boot failure the watchdog rolls the checkout back to the last known-good revision; a cutover follows only its pre-approved full-spec recovery policy.
 
 ## Querying state
 
 ```sh
 $GUARD status --state-dir "$DSH_HOME/state"   # credentials, checkpoints, restart records
+$GUARD launch-status --state-dir "$DSH_HOME/state"   # redacted selected spec + durable cutover receipt
 $GUARD canary --port <port> --state-dir "$DSH_HOME/state" --repo <repo>
 ```
 
@@ -68,3 +70,4 @@ $GUARD canary --port <port> --state-dir "$DSH_HOME/state" --repo <repo>
 - **Sandboxed sessions**: restart verbs refuse in a sandboxed turn (a detached driver would be reaped). Escalate through your host's per-command approval, or the user runs `/permission danger-full-access` in the session — settings pages only affect NEW sessions.
 - **Preflight FAIL is information, not friction**: it has caught unbootable profile patches and duplicate loader entry ids before they could take prod down. Fix the composition; never bypass.
 - **Profile `link:`/`file:` deps**: after rebuilding a plugin, refresh the profile install (`dsh plugin --profile web add <path-or-tarball>`) before restarting — a restart serves whatever the profile's `node_modules` currently contains.
+- **401 is transport, not readiness**: a protected final process must announce a same-authority launch URL; the watchdog proves URL → 303 → cookie-authenticated `/` → 200 with a temporary jar. With `--browser-handoff required` it opens that final URL once before canary/session wake. Never copy a candidate instance's URL into the final restart, and never persist or print bearer URLs in a report.

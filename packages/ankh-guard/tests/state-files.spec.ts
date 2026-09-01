@@ -65,4 +65,14 @@ describe('state-directory protocol: bash literals match state-files.ts', () => {
       expect(lines[0]?.trimStart(), `${name}: the one derivation must be the STATE_DIR assignment`).toMatch(/^STATE_DIR=/)
     }
   })
+
+  it('OS supervisors initialize launch state once and thereafter boot the selected durable spec', () => {
+    for (const [name, content] of [['install-launchd.sh', launchd], ['install-systemd.sh', systemd]] as const) {
+      expect(content, `${name}: missing one-time durable launch initializer`)
+        .toContain('configure-launch --if-absent')
+      expect(content, `${name}: foreground supervisor still pins installer-time launch flags`)
+        .toContain('supervise --foreground --state-dir')
+      expect(content).not.toContain('supervise --foreground --port $PORT --start')
+    }
+  })
 })

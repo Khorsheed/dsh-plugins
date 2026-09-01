@@ -24,6 +24,8 @@ agent 改完代码想重启的时候，这个插件会先问一句：这次改�
 
 重启本身交给 watchdog 托管：独立的监督进程，宿主死了自动拉起来，起不来就回滚到最后已知可用版本（健康启动戳——本部署里最近一次真正跑起来过的版本——兜底依次是检查点、绿色凭证的 HEAD），连续四次失败停在崩溃页等人工处理。启动失败源自仓库之外时（新装的插件是最常见的情形），回滚检出修不好它——所以 watchdog 改为回滚 **profile 组合**：每次健康启动都会快照组合输入（bundles 层与 profile 清单），仓库外故障即恢复该快照（最新插件变更被卸载，故障输入备份在 `composition-backup-*`），并通过重启报告渠道点名被卸载的内容、向用户回报这次自动恢复。每次回滚都会留下 `guard-backup-*` 恢复锚点（被丢弃的 HEAD 和未提交改动各有分支），恢复不依赖 reflog。`checkpoint` 在批次前把整个工作树提交为回滚点，`reset` 硬重置回该点（同样留锚点），`canary` 在重启后复检。检查点与凭证存在状态文件里，重启后依然存活，所以 canary 可以在新实例起来之后运行。
 
+就绪判定理解应用语义：任何 HTTP 响应（包括裸 401）都只证明 transport-up；公开根路径 HTTP 200 才 ready。受保护根路径必须由 watchdog 从**最终进程**输出中取得同 authority 的启动 URL，用临时 Cookie jar 证明 启动 URL → 303 → 带 Cookie 的 `/` → 200；启动配置切换时还要向浏览器交接一次该 URL。Bearer URL 会从耐久日志和回执中脱敏。
+
 ## 安装与加载
 
 本包是 dsh 插件：守护运行中的 dsh web 实例，防止坏掉的自我修改重启。它的唯一身份是 **`@khorsheed/dsh-ankh-guard`**，在 `dsh-plugins` monorepo 中开发并从那里发布到 npm。装宿主后把插件加为 profile bundle：
@@ -51,7 +53,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 - **pnpm 默认拦截依赖的构建脚本。** add 因构建脚本拦截失败时，把工具链条目加进 `allowBuilds` 后重试。
 - **npm 缓存有 root 属主文件**（历史上用过一次 `sudo npm …`）会让 prepare 构建 EPERM：`sudo chown -R $(id -u):$(id -g) ~/.npm`。
 - **`--start` 不在你的 cwd 里跑。** watchdog 启动前会 `cd` 到 dsh home（否则 `/tmp`），所以启动命令必须自包含——绝对路径，或命令里显式 `cd`。
-- **启动命令里带上 `--no-open`。** 不带的话，每次拉起（watchdog 接管、计划重启）都会在宿主机上弹一个浏览器标签。preflight 干跑任何时候都不会弹。
+- **启动命令里带上 `--no-open`。** 它避免宿主自己在每次拉起时弹标签；受保护的启动配置切换由 `reconfigure` 校验最终进程的启动 URL 后只做一次明确的浏览器交接，绝不复用候选进程 URL。preflight 干跑不会打开浏览器。
 - **从沙箱会话里采用的监督会继承沙箱。** 从 workspace-write 沙箱里 spawn 的 watchdog 会把沙箱 profile 传给之后每次拉起的实例（嵌套 sandbox-exec 失败，每条命令退化成审批）。长期部署请用分层形态（launchd/systemd 安装器），让 watchdog 链从沙箱外启动。
 
 ## 命令行
@@ -65,9 +67,10 @@ dsh-ankh-guard checkpoint --message "what changed"   # checkpoint before editing
 dsh-ankh-guard preflight   # deep dry-run: does the profile composition boot
 dsh-ankh-guard canary --port 3080   # confirm after restart
 dsh-ankh-guard supervise --port 3080 --start "CMD"   # hand the port to a watchdog
+dsh-ankh-guard reconfigure --start "NEW CMD" --on-failure restore-previous
 ```
 
-完整命令：`verify`、`record`、`status`、`clear`、`checkpoint`、`reset`、`canary`、`preflight`、`restart`、`schedule-exit`、`supervise`。
+完整命令：`verify`、`record`、`status`、`clear`、`checkpoint`、`reset`、`canary`、`preflight`、`restart`、`schedule-exit`、`configure-launch`、`launch-status`、`reconfigure`、`supervise`。
 
 ### preflight: the composition gate
 
@@ -77,7 +80,7 @@ dsh-ankh-guard supervise --port 3080 --start "CMD"   # hand the port to a watchd
 - `1`——组合结论：重启将要 boot 的树是坏的；输出会指明坏在哪一层。
 - `3`——preflight 自身没能执行（缺 app 布局、基础设施崩溃）——**不是**对组合的结论。
 
-`schedule-exit` 和 `restart` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。闸门按 `--repo` → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；三者都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。随时可手动跑：`dsh-ankh-guard preflight --profile web`。
+`schedule-exit`、`restart` 和 `reconfigure` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。闸门按 `--repo` → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；三者都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。随时可手动跑：`dsh-ankh-guard preflight --profile web`。
 
 ### 自我重启协议
 
@@ -104,6 +107,22 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 已有 watchdog 监督时，重启触发用 `schedule-exit`：写入 restart 标记并 spawn 一个 detached 退出代理（node `spawn` 的 setsid），托管 shell 的进程组回收不到它，所以计划中的 kill 会在调度回合结束后真实落地（修复 `(sleep N; kill) &` 静默不触发的坑）。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报。只有无 watchdog 时才用 `restart`（单次循环）。
 
+### reconfigure：启动配置事务切换
+
+`schedule-exit` 是启动配置不变时的快速路径。命令、dsh home、检出或 profile 任一变化时必须用 `reconfigure`；在线改端口会被明确拒绝，因为那需要另起监督链再切流量。
+
+```sh
+dsh-ankh-guard reconfigure \
+  --start "<完整目标命令>" \
+  --on-failure restore-previous \
+  --browser-handoff required \
+  --state-dir "$DSH_HOME/state"
+```
+
+恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对与当前选中侧保存在 mode-0600 的 `launch-spec.json`，原子切换选中侧是配置提交点。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`；只有它有权停止旧 child 并启动最终 target，因此调用 `reconfigure` 的短命进程消失也不会把事务卡在中间。
+
+目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200；需要浏览器交接时只打开一次；再跑 canary，全部完成后才释放会话唤醒。裸 401 始终只是 transport-up。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child PID、认证交接、重试、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。
+
 **重启报告自动到达模型——并只等它的主人。** 计划重启后（存在未确认的 `last-restart.json` 记录），插件通过 `agent.followup` 把报告排入下一回合，agent 无需任何用户消息即可回报重启结果。重启后的会话恢复是 lazy 的（只有 UI 或 RPC 碰到某个会话，它的 agent 才会被创建），所以完整报告只发给发起重启的会话（`schedule-exit` 把 `$DSH_SESSION_ID` 记为 initiator），等它何时恢复何时送达——其他会话永远不会为了报告被唤醒；记录保持未确认，直到发起会话恢复或下一次重启替换它（新 `exitAt`）。没有 initiator 的记录由首个创建的根 agent 领走。仅根 agent、仅一次（送达即确认）。配置 `reportRestartContext`：`followup`（默认，自主）、`step`（骑在下一次回合的第一步上）、或 `off`。
 
 **被中断的会话自动恢复并继续。** SIGTERM 时插件把当时有在途回合的根会话（连同重启发起会话）快照进 `interrupted-sessions.json`；下一次重启开机时——冷启动会丢弃快照不做动作——通过 `ctx.agents.resume` 把这些会话拉起来，并给被中断的会话排入一条"继续"followup（它们的日志已被崩溃恢复修复以 `reason.kind === 'interrupted'` 关闭），自我重启不再悄悄暂停其他所有会话。一条边界：**泊在用户输入上的回合**（未回答的 `ask_user_question` 或未决审批，读修复后的日志尾部判定）不算被中断的工作——卡片还在日志里、用户随时能答——这类会话既不恢复也不续跑。配置 `resumeInterrupted`（默认 true）与 `resumeDelayMs`（默认 5000，等应用服务先起来）。
@@ -117,9 +136,10 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 - **C — 分层（推荐）**：launchd 监督 watchdog，watchdog 监督实例。每端口一个拥有者，且拥有者也被监督。macOS：`scripts/install-launchd.sh --start "CMD"` 生成 `com.dsh.watchdog.plist`（`ProgramArguments` 以前台方式跑 CLI）装进 `~/Library/LaunchAgents` 并 bootstrap；`--force` 替换正在运行的 detached watchdog；`--uninstall` 移除任务。systemd：`scripts/install-systemd.sh --start "CMD"` 生成用户单元 `~/.config/systemd/user/dsh-watchdog.service` 并 enable——`Restart=on-failure` 对应 launchd 的 `SuccessfulExit: false`，`StartLimitIntervalSec=0` 关掉启动频率限制（默认值会把反复重启的单元置为 failed 并停止重试，等于监督静默终止），`--print` 只输出单元不碰 systemctl，`--force`/`--uninstall` 同 launchd 版。用户单元在会话结束后停止；要跨登录存活需要管理员执行 `loginctl enable-linger <user>`。两个平台跑的是同一条命令：
 
 ```sh
-# launchd/systemd job (KeepAlive) runs this; the CLI process IS the watchdog:
-dsh-ankh-guard supervise --foreground --port 3093 --start "<start command>" \
-  --state-dir "$DSH_HOME/state" --repo "<checkout>"
+# 安装器只初始化一次；此后每次 KeepAlive 启动都服从耐久选中配置：
+dsh-ankh-guard configure-launch --if-absent --port 3093 --start "<start command>" \
+  --home "$DSH_HOME" --state-dir "$DSH_HOME/state" --repo "<checkout>" &&
+exec dsh-ankh-guard supervise --foreground --state-dir "$DSH_HOME/state"
 ```
 
 `--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。若已有存活的 detached watchdog 持有 pidfile，`--foreground` 会等它退出再接管——直接 exit 0 会被当作"正常结束"、任务转 idle，另一个看门狗静默失去监督者。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。

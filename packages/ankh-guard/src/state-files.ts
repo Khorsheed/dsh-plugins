@@ -44,6 +44,10 @@ export const STATE_FILES = {
   scheduleExitLog: 'schedule-exit.log',
   /** How the current instance was launched (recorded by the plugin at apply). */
   instanceLaunch: 'instance-launch.json',
+  /** The atomically selected full launch configuration (stable or in cutover). */
+  launchSpec: 'launch-spec.json',
+  /** Redacted durable receipt for the latest launch-configuration cutover. */
+  launchCutover: 'launch-cutover.json',
   /** Whether the restart-protocol skill registered at apply (and why not). */
   skillRegistration: 'skill-registration.json',
   /** Directory: the healthy-boot snapshot of the profile composition inputs. */
