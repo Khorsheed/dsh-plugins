@@ -91,6 +91,9 @@ describe('3d-artifact pack smoke', () => {
   // The skill is a generation-side discovery aid: it only exists for
   // community users if the tarball actually carries it. `files` must glob
   // `skills/**/*.md` in — this packs the real tarball and asserts presence.
+  // 30s, not vitest's 5s default: this spawns a real `pnpm pack` plus `tar`,
+  // and under the root `pnpm run test` (25 packages in parallel) that lands
+  // at 5.1-5.8s — reliably over the default, while a solo run takes 2.0s.
   it('the tarball ships skills/3d-artifact/SKILL.md', () => {
     const pkgDir = fileURLToPath(new URL('..', import.meta.url))
     const tmp = tmpDir('file-preview-pack-')
@@ -104,5 +107,5 @@ describe('3d-artifact pack smoke', () => {
       'the 3d-artifact skill is missing from the tarball').toBe(true)
     expect(existsSync(join(unpack, 'package', 'lib', 'index.js')),
       'lib/index.js missing from the tarball — run the host build first').toBe(true)
-  })
+  }, 30_000)
 })
