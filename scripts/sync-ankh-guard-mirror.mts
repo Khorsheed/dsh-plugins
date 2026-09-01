@@ -5,5 +5,6 @@
  * docs; new artifact kinds go through sync-mirror directly.
  * @module scripts/sync-ankh-guard-mirror
  */
-process.argv = [process.argv[0], process.argv[1], 'package', 'ankh-guard', ...process.argv.slice(2)]
-await import('./sync-mirror.mts')
+import { main } from './sync-mirror.mts'
+
+main(['package', 'ankh-guard', ...process.argv.slice(2)])

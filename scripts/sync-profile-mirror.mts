@@ -7,7 +7,9 @@
  * Usage: npx tsx scripts/sync-profile-mirror.mts <name> [--dry-run|--check]
  * @module scripts/sync-profile-mirror
  */
-const name = process.argv.slice(2).find((a) => !a.startsWith('--'))
-const flags = process.argv.slice(2).filter((a) => a.startsWith('--'))
-process.argv = [process.argv[0], process.argv[1], 'profile', ...(name === undefined ? [] : [name]), ...flags]
-await import('./sync-mirror.mts')
+import { main } from './sync-mirror.mts'
+
+const args = process.argv.slice(2)
+const name = args.find((a) => !a.startsWith('--'))
+
+main(['profile', ...(name === undefined ? [] : [name]), ...args.filter((a) => a.startsWith('--'))])

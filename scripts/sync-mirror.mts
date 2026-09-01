@@ -12,6 +12,12 @@
  * keep set, copy the artifact in, commit only when something changed.
  * `--check` (CI gate) clones over https and needs no credentials.
  *
+ * Only files git TRACKS cross over. The mirrors are public, so a disk walk is
+ * the wrong selector: it also picks up gitignored local state that happens to
+ * sit in the artifact directory (`*.tgz` build output, `*.tsbuildinfo`, debug
+ * screenshots, `*.log`). Tracked-only makes the hygiene gate — which only ever
+ * sees git's view — authoritative for the mirror path too.
+ *
  * Usage: npx tsx scripts/sync-mirror.mts <package|profile|skill> <name> [--dry-run|--check]
  *   e.g. sync-mirror.mts skill self-upgrade
  * Requires: push rights to Khorsheed/dsh-<name> for the push mode.
@@ -21,12 +27,15 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const root = join(import.meta.dirname, '..')
 
 /** Per-kind sync contract. `keep` survives the wipe in the mirror; `skip`
- * never crosses over; `gitignore` is what the mirror's own .gitignore holds. */
+ * drops a tracked top-level entry that should stay home; `gitignore` is what
+ * the mirror's own .gitignore holds. Untracked files need no skip entry —
+ * `mirrorFiles` never sees them. */
 const KINDS = {
   package: {
     srcDir: (name) => join(root, 'packages', name),
@@ -50,67 +59,102 @@ const KINDS = {
   },
 }
 
-const args = process.argv.slice(2)
-const kind = args.find((a) => !a.startsWith('--'))
-const name = args.filter((a) => !a.startsWith('--'))[1]
-const dryRun = args.includes('--dry-run')
-const check = args.includes('--check')
-
-const spec = KINDS[kind]
-if (spec === undefined || name === undefined) {
-  process.stderr.write(`usage: sync-mirror.mts <${Object.keys(KINDS).join('|')}> <name> [--dry-run|--check]\n`)
-  process.exit(2)
-}
-const src = spec.srcDir(name)
-if (!existsSync(src)) {
-  process.stderr.write(`sync-mirror: ${kind}s/${name} does not exist\n`)
-  process.exit(2)
-}
-
-const MIRROR_README_NOTE = `> 镜像仓：与 [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 的 \`${kind}s/${name}\` 自动同步。Issue 欢迎提在本仓；PR 请提交到 monorepo。\n>\n> `
-
 function run(cmd, cmdArgs, cwd) {
   return execFileSync(cmd, cmdArgs, { cwd, encoding: 'utf8' }).trim()
 }
 
-const headSha = run('git', ['rev-parse', 'HEAD'], root)
-const work = mkdtempSync(join(tmpdir(), `mirror-${name}-`))
-try {
-  // Read-only modes clone over https so CI needs no deploy key; push uses ssh.
-  const remote = check
-    ? `https://github.com/Khorsheed/dsh-${name}.git`
-    : `git@github.com:Khorsheed/dsh-${name}.git`
-  run('git', ['clone', ...(check ? ['--depth', '1'] : []), remote, '.'], work)
-
-  for (const entry of readdirSync(work)) {
-    if (spec.keep.has(entry)) continue
-    rmSync(join(work, entry), { recursive: true, force: true })
-  }
-  for (const entry of readdirSync(src)) {
-    if (spec.skip.has(entry)) continue
-    cpSync(join(src, entry), join(work, entry), { recursive: true })
-  }
-  writeFileSync(join(work, '.gitignore'), spec.gitignore)
-
-  const readme = join(work, 'README.md')
-  const text = readFileSync(readme, 'utf8')
-  const firstBreak = text.indexOf('\n\n')
-  writeFileSync(readme, text.slice(0, firstBreak + 2) + MIRROR_README_NOTE + text.slice(firstBreak + 2))
-
-  run('git', ['add', '-A'], work)
-  const diff = run('git', ['status', '--porcelain'], work)
-  if (diff === '') {
-    process.stdout.write(`mirror dsh-${name} already up to date\n`)
-  } else if (check) {
-    process.stderr.write(`mirror dsh-${name} is behind ${kind}s/${name}:\n${diff}\n\nrun: pnpm exec tsx scripts/sync-mirror.mts ${kind} ${name}\n`)
-    process.exit(1)
-  } else if (dryRun) {
-    process.stdout.write(`${run('git', ['status', '--short'], work)}\n(dry run — not pushed)\n`)
-  } else {
-    run('git', ['commit', '-m', `sync from dsh-plugins @ ${headSha.slice(0, 7)}`], work)
-    run('git', ['push', 'origin', 'HEAD'], work)
-    process.stdout.write(`mirror dsh-${name} synced @ ${headSha.slice(0, 7)}\n`)
-  }
-} finally {
-  rmSync(work, { recursive: true, force: true })
+/** The artifact-relative paths that cross into the mirror: everything git
+ * tracks under `<kind>s/<name>`, minus the kind's skip set. Content comes from
+ * the working tree, so the push mode refuses a dirty artifact (below) — that
+ * is what makes the sync commit's `@ <sha>` an honest claim. */
+export function mirrorFiles(kind, name) {
+  const kindSpec = KINDS[kind]
+  const prefix = `${kind}s/${name}`
+  const listed = execFileSync('git', ['ls-files', '-z', '--', prefix], { cwd: root, encoding: 'utf8' })
+  return listed
+    .split('\0')
+    .filter((path) => path !== '')
+    .map((path) => path.slice(prefix.length + 1))
+    .filter((path) => !kindSpec.skip.has(path.split('/')[0]))
 }
+
+export function main(argv = process.argv.slice(2)) {
+  const positional = argv.filter((a) => !a.startsWith('--'))
+  const kind = positional[0]
+  const name = positional[1]
+  const dryRun = argv.includes('--dry-run')
+  const check = argv.includes('--check')
+
+  const spec = KINDS[kind]
+  if (spec === undefined || name === undefined) {
+    process.stderr.write(`usage: sync-mirror.mts <${Object.keys(KINDS).join('|')}> <name> [--dry-run|--check]\n`)
+    process.exit(2)
+  }
+  const src = spec.srcDir(name)
+  if (!existsSync(src)) {
+    process.stderr.write(`sync-mirror: ${kind}s/${name} does not exist\n`)
+    process.exit(2)
+  }
+
+  const files = mirrorFiles(kind, name)
+  // An empty selection would wipe the mirror clean and call it a sync.
+  if (files.length === 0) {
+    process.stderr.write(`sync-mirror: ${kind}s/${name} has no tracked files — refusing to empty the mirror\n`)
+    process.exit(2)
+  }
+  // Content is read from the working tree, so a dirty artifact would ship
+  // something the recorded sha does not contain. Inspection modes still run.
+  const dirty = run('git', ['status', '--porcelain', '--', `${kind}s/${name}`], root)
+  if (dirty !== '' && !check && !dryRun) {
+    process.stderr.write(`sync-mirror: ${kind}s/${name} has uncommitted changes — commit first, the sync commit records a sha:\n${dirty}\n`)
+    process.exit(2)
+  }
+
+  const mirrorReadmeNote = `> 镜像仓：与 [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 的 \`${kind}s/${name}\` 自动同步。Issue 欢迎提在本仓；PR 请提交到 monorepo。\n>\n> `
+
+  const headSha = run('git', ['rev-parse', 'HEAD'], root)
+  const work = mkdtempSync(join(tmpdir(), `mirror-${name}-`))
+  try {
+    // Read-only modes clone over https so CI needs no deploy key; push uses ssh.
+    const remote = check
+      ? `https://github.com/Khorsheed/dsh-${name}.git`
+      : `git@github.com:Khorsheed/dsh-${name}.git`
+    run('git', ['clone', ...(check ? ['--depth', '1'] : []), remote, '.'], work)
+
+    for (const entry of readdirSync(work)) {
+      if (spec.keep.has(entry)) continue
+      rmSync(join(work, entry), { recursive: true, force: true })
+    }
+    for (const file of files) {
+      const dest = join(work, file)
+      mkdirSync(dirname(dest), { recursive: true })
+      cpSync(join(src, file), dest)
+    }
+    writeFileSync(join(work, '.gitignore'), spec.gitignore)
+
+    const readme = join(work, 'README.md')
+    const text = readFileSync(readme, 'utf8')
+    const firstBreak = text.indexOf('\n\n')
+    writeFileSync(readme, text.slice(0, firstBreak + 2) + mirrorReadmeNote + text.slice(firstBreak + 2))
+
+    run('git', ['add', '-A'], work)
+    const diff = run('git', ['status', '--porcelain'], work)
+    if (diff === '') {
+      process.stdout.write(`mirror dsh-${name} already up to date\n`)
+    } else if (check) {
+      process.stderr.write(`mirror dsh-${name} is behind ${kind}s/${name}:\n${diff}\n\nrun: pnpm exec tsx scripts/sync-mirror.mts ${kind} ${name}\n`)
+      process.exit(1)
+    } else if (dryRun) {
+      process.stdout.write(`${run('git', ['status', '--short'], work)}\n(dry run — not pushed)\n`)
+    } else {
+      run('git', ['commit', '-m', `sync from dsh-plugins @ ${headSha.slice(0, 7)}`], work)
+      run('git', ['push', 'origin', 'HEAD'], work)
+      process.stdout.write(`mirror dsh-${name} synced @ ${headSha.slice(0, 7)}\n`)
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+// Importable for the spec; the thin per-kind wrappers call main() directly.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main()
