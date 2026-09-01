@@ -398,6 +398,12 @@ function cliIo(): { out: string[]; err: string[]; io: CliIo } {
   return { out, err, io: { stdout: l => out.push(l), stderr: l => err.push(l) } }
 }
 
+/** Mark this test process as the live watchdog owner for gate-only CLI tests. */
+function markLiveWatchdog(stateDir: string): void {
+  mkdirSync(stateDir, { recursive: true })
+  writeFileSync(join(stateDir, STATE_FILES.watchdogPid), String(process.pid))
+}
+
 /** Set or unset $DSH_PREFLIGHT_COMMAND, restored after the test. `undefined` restores real app-bin resolution. */
 function stubPreflight(command: string | undefined): void {
   const previous = process.env.DSH_PREFLIGHT_COMMAND
@@ -523,6 +529,48 @@ describe('CLI', () => {
     })
   })
 
+  it('schedule-exit rejects flags or an instance record that diverge from the durable active launch spec', async () => {
+    const stateDir = tmpDir('guard-schedule-spec-')
+    const repo = makeRepo()
+    const otherRepo = makeRepo()
+    const home = tmpDir('guard-schedule-home-')
+    const active = {
+      version: 1 as const,
+      command: 'durable-host-command',
+      port: 3080,
+      home,
+      credentialRepo: repo,
+      harnessRoot: join(home, 'host'),
+      profile: 'web',
+    }
+    writeStableLaunchSpec(stateDir, active)
+    writeInstanceLaunchAsSupervisor(stateDir, {
+      command: active.command, source: 'supervisor', supervised: true, port: active.port, recordedAt: NOW,
+    })
+    markLiveWatchdog(stateDir)
+    expect(await runCli([
+      'record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo,
+    ], io().io)).toBe(0)
+
+    const flagConflict = io()
+    expect(await runCli([
+      'schedule-exit', '--port', '3080', '--delay-ms', '5000', '--state-dir', stateDir, '--repo', otherRepo,
+    ], flagConflict.io)).toBe(1)
+    expect(flagConflict.err.join('')).toContain('conflict with the durable active launch specification')
+    expect(flagConflict.err.join('')).toContain('Use reconfigure')
+    expect(existsSync(join(stateDir, STATE_FILES.restartRequested))).toBe(false)
+
+    writeInstanceLaunchAsSupervisor(stateDir, {
+      command: 'stale-rejected-target', source: 'supervisor', supervised: true, port: active.port, recordedAt: NOW,
+    })
+    const recordConflict = io()
+    expect(await runCli([
+      'schedule-exit', '--delay-ms', '5000', '--state-dir', stateDir,
+    ], recordConflict.io)).toBe(1)
+    expect(recordConflict.err.join('')).toContain('does not prove that its supervisor owns')
+    expect(existsSync(join(stateDir, STATE_FILES.restartRequested))).toBe(false)
+  })
+
   it('refuses a second stop or reconfigure while a launch cutover is active', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-cutover-')
@@ -562,11 +610,48 @@ describe('CLI', () => {
     // The agent's first contacts in any restart flow: the bootstrap gap must
     // surface HERE, before anyone considers a bare exit.
     const rec = io()
-    expect(await runCli(['record', 'build', ...flags], rec.io)).toBe(0)
+    expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], rec.io)).toBe(0)
     expect(rec.err.join('')).toContain('no live watchdog')
     const ver = io()
     expect(await runCli(['verify', ...flags], ver.io)).toBe(0)
     expect(ver.err.join('')).toContain('no live watchdog')
+  })
+
+  it('refuses self-attestation and records only an exact successful argv on a clean unchanged tree', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-evidence-')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+
+    const selfAttested = io()
+    expect(await runCli(['record', 'build', '--command', 'true', ...flags], selfAttested.io)).toBe(2)
+    expect(selfAttested.err.join('')).toContain('refuses self-attestation')
+
+    const observed = io()
+    expect(await runCli([
+      'record', 'build+test', ...flags, '--run', '--', process.execPath, '-e',
+      "if (process.argv[1] !== 'argument with spaces') process.exit(7)", 'argument with spaces',
+    ], observed.io)).toBe(0)
+    expect(loadState(stateDir).credential?.command).toContain(JSON.stringify('argument with spaces'))
+
+    const failed = io()
+    expect(await runCli([
+      'record', 'build+test', ...flags, '--run', '--', process.execPath, '-e', 'process.exit(9)',
+    ], failed.io)).toBe(1)
+    expect(failed.err.join('')).toContain('command exited 9')
+    expect(loadState(stateDir).credential).toBeUndefined()
+  })
+
+  it('rejects a credential when any uncommitted input appears after recording', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-dirty-credential-')
+    const flags = ['--state-dir', stateDir, '--repo', repo]
+    expect(await runCli([
+      'record', 'build', '--trust-command', '--command', 'test fixture', ...flags,
+    ], io().io)).toBe(0)
+    writeFileSync(join(repo, 'untracked.txt'), 'not tested\n')
+    const denied = io()
+    expect(await runCli(['verify', ...flags], denied.io)).toBe(1)
+    expect(denied.out.join('')).toContain('working tree is dirty')
   })
 
   it('records and verifies, then denies after a new commit', async () => {
@@ -575,7 +660,7 @@ describe('CLI', () => {
     const flags = ['--state-dir', stateDir, '--repo', repo]
 
     const rec = io()
-    expect(await runCli(['record', 'build+test', '--command', 'pnpm run build', ...flags], rec.io)).toBe(0)
+    expect(await runCli(['record', 'build+test', '--trust-command', '--command', 'pnpm run build', ...flags], rec.io)).toBe(0)
     expect(rec.out.join('')).toContain('build+test')
 
     const ok = io()
@@ -611,19 +696,45 @@ describe('CLI', () => {
     expect(reset.out.join('')).toContain('reset to')
   })
 
-  it('checkpoint warns (but still commits) when bare-tsc artifacts under src/ are swept in', async () => {
+  it('checkpoint refuses a dirty tree until the complete snapshot is explicitly approved', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const flags = ['--state-dir', stateDir, '--repo', repo]
     mkdirSync(join(repo, 'packages', 'x', 'y', 'src'), { recursive: true })
     writeFileSync(join(repo, 'packages', 'x', 'y', 'src', 'index.js'), '// stray emit\n')
     writeFileSync(join(repo, 'packages', 'x', 'y', 'src', 'index.ts'), 'export {}\n')
+    const before = execFileSync('git', ['status', '--porcelain=v1'], { cwd: repo, encoding: 'utf8' })
+    const refused = io()
+    expect(await runCli(['checkpoint', '--message', 'batch', ...flags], refused.io)).toBe(1)
+    expect(refused.err.join('')).toContain('--include-dirty')
+    expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: repo, encoding: 'utf8' })).toBe(before)
+
     const cp = io()
-    expect(await runCli(['checkpoint', '--message', 'batch', ...flags], cp.io)).toBe(0)
+    expect(await runCli(['checkpoint', '--message', 'batch', '--include-dirty', ...flags], cp.io)).toBe(0)
     expect(cp.out.join('')).toContain('1 build-artifact-looking')
     expect(cp.out.join('')).toContain('packages/x/y/src/index.js')
-    // The commit still happened, artifact included — a checkpoint never refuses work.
+    // Explicit approval commits the complete snapshot and still flags likely artifacts.
     expect(execFileSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8' })).toContain('packages/x/y/src/index.js')
+  })
+
+  it('a failed approved checkpoint leaves HEAD and the caller staging area untouched', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-checkpoint-hook-')
+    writeFileSync(join(repo, 'staged.txt'), 'staged\n')
+    run(repo, ['add', 'staged.txt'])
+    writeFileSync(join(repo, 'a.txt'), 'unstaged\n')
+    const head = currentHead(repo)
+    const status = execFileSync('git', ['status', '--porcelain=v1'], { cwd: repo, encoding: 'utf8' })
+    const hook = join(repo, '.git', 'hooks', 'pre-commit')
+    writeFileSync(hook, '#!/bin/sh\nexit 1\n')
+    chmodSync(hook, 0o755)
+
+    const out = io()
+    expect(await runCli([
+      'checkpoint', '--message', 'hook refusal', '--include-dirty', '--repo', repo, '--state-dir', stateDir,
+    ], out.io)).toBe(1)
+    expect(currentHead(repo)).toBe(head)
+    expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: repo, encoding: 'utf8' })).toBe(status)
   })
 
   it('canary passes only when verify passes and the port is listening', async () => {
@@ -637,7 +748,7 @@ describe('CLI', () => {
     expect(fail.out.join('')).toContain('canary FAIL')
 
     // Credential recorded and a live listener → PASS.
-    await runCli(['record', 'build', ...flags], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)
     const server = await new Promise<Server>((resolve) => {
       const s = createServer(() => {})
       s.listen(0, '127.0.0.1', () => { resolve(s) })
@@ -685,7 +796,7 @@ describe('CLI', () => {
     const oldServer = spawnServer(port, 'old')
     try {
       await waitForPort(port)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
       const restarted = io()
@@ -715,7 +826,7 @@ describe('CLI', () => {
     process.env.WD_PROBE_LEAK = 'must-not-reach-the-instance'
     try {
       await waitForPort(port)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       const startCmd = `env > '${dump}'; "${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
       const restarted = io()
@@ -741,7 +852,7 @@ describe('CLI', () => {
     const server = spawnServer(port, 'old')
     try {
       await waitForPort(port)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
       const started = Date.now()
@@ -770,7 +881,7 @@ describe('CLI', () => {
     { stdio: 'ignore' })
     try {
       await waitForPort(port)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       // The replacement retries binding: the stubborn listener's socket is
       // released asynchronously after its SIGKILL, so a single immediate bind
@@ -823,7 +934,7 @@ tryListen();
       expect(await runCli(['checkpoint', '--message', 'pre', '--state-dir', stateDir, '--repo', repo], cp.io)).toBe(0)
       const sha = cp.out.join('').trim().split(' ').pop()
       commitChange(repo)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       const broken = `"${process.execPath}" -e "process.exit(3)"`
       const failed = io()
@@ -841,18 +952,18 @@ tryListen();
     }
   })
 
-  it('restart --rollback skips the reset when the target already is HEAD', async () => {
+  it('restart refuses a dirty checkout before stopping the healthy instance', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
     const server = spawnServer(port, 'old')
     try {
       await waitForPort(port)
-      // Checkpoint and credential both bind the CURRENT HEAD: there is
-      // nothing to roll back, and the dirty tree must survive.
+      // Checkpoint and credential both bind the CURRENT HEAD, but an input
+      // appeared after evidence. It must not reach stop/start/rollback at all.
       const cp = io()
       expect(await runCli(['checkpoint', '--message', 'pre', '--state-dir', stateDir, '--repo', repo], cp.io)).toBe(0)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('true')
       writeFileSync(join(repo, 'a.txt'), 'dirty')
       const broken = `"${process.execPath}" -e "process.exit(3)"`
@@ -862,8 +973,9 @@ tryListen();
           '--state-dir', stateDir, '--repo', repo],
         failed.io,
       )).toBe(1)
-      expect(failed.out.join('')).toContain('skipping reset')
+      expect(failed.err.join('')).toContain('working tree is dirty')
       expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('dirty')
+      expect(await portListening(port)).toBe(true)
     } finally {
       await killListener(port)
       server.kill('SIGKILL')
@@ -953,7 +1065,8 @@ describe('composition preflight gate', () => {
     // gate must degrade and proceed, not refuse restarts on a phantom verdict.
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
-    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
+    markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "console.error(\\"error: unknown command 'preflight'\\"); process.exit(1)"`)
     const out = io()
     await runCli(['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo], out.io)
@@ -992,7 +1105,8 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses when the composition preflight fails, quoting the diagnostics', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
-    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
+    markLiveWatchdog(stateDir)
     const lines = Array.from({ length: 50 }, (_, i) => `console.error('layer ${i} failed')`).join(';')
     stubPreflight(`"${process.execPath}" -e "${lines}; process.exit(1)"`)
     const out = io()
@@ -1009,7 +1123,8 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses with the infrastructure wording when preflight exits 3', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
-    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
+    markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "process.exit(3)"`)
     const out = io()
     expect(await runCli(
@@ -1024,7 +1139,8 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses when the preflight times out', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
-    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
+    markLiveWatchdog(stateDir)
     // exec replaces the shell, so the timeout's SIGKILL kills the sleeper itself.
     stubPreflight('exec sleep 10')
     const out = io()
@@ -1045,7 +1161,8 @@ describe('composition preflight gate', () => {
       if (previousHome === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previousHome
     })
-    await runCli(['record', 'build', '--state-dir', join(home, 'state'), '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', join(home, 'state'), '--repo', repo], io().io)
+    markLiveWatchdog(join(home, 'state'))
     stubPreflight(undefined)
     stubPreflightBin(() => undefined)
     stubPreflightRunner(() => undefined)
@@ -1065,7 +1182,7 @@ describe('composition preflight gate', () => {
     const server = spawnServer(port, 'old')
     try {
       await waitForPort(port)
-      await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+      await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
       stubPreflight('false')
       const out = io()
       expect(await runCli(
@@ -1083,7 +1200,8 @@ describe('composition preflight gate', () => {
   it('caps captured preflight output instead of growing without bound', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
-    await runCli(['record', 'build', '--state-dir', stateDir, '--repo', repo], io().io)
+    await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
+    markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "process.stderr.write('x'.repeat(300000)); process.exit(1)"`)
     const out = io()
     expect(await runCli(
@@ -1244,6 +1362,8 @@ describe('supervise', () => {
         await new Promise((resolve) => { setTimeout(resolve, 300) })
       }
       expect(await fetchBody(port)).toBe('new')
+      expect(readFileSync(join(env.home, 'state', STATE_FILES.watchdogLog), 'utf8'))
+        .toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4} \[watchdog] /)
       // A live owner existed at supervise time: this takeover is an ADOPTION
       // restart, and the watchdog files a report record addressed to the
       // supervising session (empty initiator here — no DSH_SESSION_ID in this
@@ -1329,7 +1449,7 @@ describe('supervise', () => {
         source: 'instance',
         recordedAt: Date.now(),
       }))
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubPreflight('true')
       const host = spawn(process.execPath, ['-e',
         `require('http').createServer((q,s)=>s.end('old')).listen(${port},'127.0.0.1')`],
@@ -1355,7 +1475,7 @@ describe('supervise', () => {
     const flags = ['--state-dir', stateDir, '--repo', repo]
     try {
       writeInstanceLaunchAsSupervisor(stateDir, { command: `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('ok')).listen(1,'127.0.0.1')"`, source: 'supervisor', supervised: true, recordedAt: Date.now() })
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubPreflight('true')
       // Watchdog DEAD despite the supervised record: refusing here would send
       // the agent to schedule-exit → the instance dies with nobody to respawn
@@ -1471,7 +1591,7 @@ describe('supervise', () => {
     const serverFile = join(env.home, 'server.js')
     writeFileSync(serverFile, `require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')`)
     try {
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubPreflight('true')
       // The "instance": a node process running serverFile — discovery must
       // reconstruct `node <serverFile>` and re-run it after the stop.
@@ -1501,7 +1621,7 @@ describe('supervise', () => {
     host.unref()
     try {
       await waitForPort(port)
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubPreflight('true')
       const startCmd = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('new')).listen(${port},'127.0.0.1')"`
       // No --sync: the caller returns as soon as the driver is detached.
@@ -1548,7 +1668,7 @@ describe('supervise', () => {
     const stateDir = join(env.home, 'state')
     const flags = ['--state-dir', stateDir, '--repo', repo]
     try {
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubPreflight('true')
       const port = await freePort()
       // A LIVE holder (this test process): the second restart must refuse,
@@ -1590,7 +1710,8 @@ describe('supervise', () => {
     const stateDir = join(env.home, 'state')
     mkdirSync(stateDir, { recursive: true })
     try {
-      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      markLiveWatchdog(stateDir)
       stubPreflight('true')
       writeFileSync(join(stateDir, 'restart-requested.json'), JSON.stringify({ requestedAt: Date.now() }))
       const out = io()
@@ -1626,6 +1747,7 @@ describe('supervise', () => {
       expect(locked.err.join()).toContain('restart is in flight')
       rmSync(join(stateDir, 'restart.lock'), { force: true })
     } finally {
+      rmSync(join(stateDir, STATE_FILES.watchdogPid), { force: true })
       env.restore()
     }
   }, 15_000)
@@ -1923,7 +2045,7 @@ describe('supervise', () => {
       ], io().io)).toBe(0)
       await waitForPort(port)
       expect(await fetchBody(port)).toBe('old-host')
-      expect(await runCli(['record', 'build+test', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
       stubPreflight('true')
       stubSandboxProbe(false)
 
@@ -1974,7 +2096,7 @@ describe('supervise', () => {
         '--state-dir', stateDir, '--repo', repo,
       ], io().io)).toBe(0)
       await waitForPort(port)
-      expect(await runCli(['record', 'build+test', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
       stubPreflight('true')
       stubSandboxProbe(false)
       expect(await runCli([
@@ -2331,12 +2453,14 @@ server.listen(port, '127.0.0.1', () => {
   it('schedule-exit refuses without a credential (the gate)', async () => {
     const env = supervisedEnv()
     const repo = makeRepo()
+    markLiveWatchdog(join(env.home, 'state'))
     const out = io()
     expect(await runCli(
       ['schedule-exit', '--port', '3099', '--delay-ms', '1000', '--state-dir', join(env.home, 'state'), '--repo', repo],
       out.io,
     )).toBe(1)
-    expect(out.err.join('')).toContain('refused')
+    expect(out.err.join('')).toContain('no green-build credential')
+    rmSync(join(env.home, 'state', STATE_FILES.watchdogPid), { force: true })
     env.restore()
   })
 
@@ -2367,22 +2491,22 @@ server.listen(port, '127.0.0.1', () => {
     }
   })
 
-  it('schedule-exit warns when no live watchdog will respawn the instance', async () => {
+  it('schedule-exit hard-refuses when no live watchdog will respawn the instance', async () => {
     const env = supervisedEnv()
     const repo = makeRepo()
     const stateDir = join(env.home, 'state')
     try {
-      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
       stubPreflight('true')
       const port = await freePort()
       const out = io()
-      // No watchdog has ever run here: the first-install bootstrap gap must
-      // surface as a warning, not as a silently dead service.
+      // No watchdog has ever run here: scheduling the kill would guarantee an outage.
       expect(await runCli(
         ['schedule-exit', '--port', String(port), '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo],
         out.io,
-      )).toBe(0)
-      expect(out.err.join('')).toContain('no live watchdog')
+      )).toBe(1)
+      expect(out.err.join('')).toContain('schedule-exit refused: no live watchdog')
+      expect(existsSync(join(stateDir, 'restart-requested.json'))).toBe(false)
     } finally {
       env.restore()
     }
@@ -2394,7 +2518,7 @@ server.listen(port, '127.0.0.1', () => {
     const stateDir = join(env.home, 'state')
     const flags = ['--state-dir', stateDir, '--repo', repo]
     try {
-      expect(await runCli(['record', 'build', ...flags], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', ...flags], io().io)).toBe(0)
       stubSandboxProbe(true)
       const refused = io()
       expect(await runCli(['restart', '--sync', '--port', '1', '--start', 'true', ...flags], refused.io)).toBe(1)
@@ -2443,7 +2567,7 @@ server.listen(port, '127.0.0.1', () => {
     const port = await freePort()
     // Green credential in the throwaway state (bound to the throwaway HEAD).
     const rec = io()
-    expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', join(env.home, 'state')], rec.io)).toBe(0)
+    expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--repo', repo, '--state-dir', join(env.home, 'state')], rec.io)).toBe(0)
     stubPreflight('true')
     const host = spawn(process.execPath, ['-e',
       `require('http').createServer((q,s)=>s.end('host')).listen(${port},'127.0.0.1')`],
@@ -2505,7 +2629,8 @@ server.listen(port, '127.0.0.1', () => {
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
     try {
-      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      markLiveWatchdog(stateDir)
       stubPreflight('true')
       expect(await runCli(
         ['schedule-exit', '--port', String(port), '--delay-ms', '20', '--initiator', 'session-x',
@@ -2539,7 +2664,8 @@ server.listen(port, '127.0.0.1', () => {
     const previousSession = process.env.DSH_SESSION_ID
     process.env.DSH_SESSION_ID = 'session-real'
     try {
-      expect(await runCli(['record', 'build', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--repo', repo, '--state-dir', stateDir], io().io)).toBe(0)
+      markLiveWatchdog(stateDir)
       stubPreflight('true')
       const out = io()
       expect(await runCli(

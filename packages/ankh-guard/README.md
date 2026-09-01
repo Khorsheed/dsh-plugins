@@ -12,17 +12,18 @@ agent 改完代码想重启的时候，这个插件会先问一句：这次改�
 
 核心就一条规则：**先证明代码是好的，才允许重启。**
 
-构建和测试全绿后，插件记录一个凭证，绑定当时的 git commit，并带 10 分钟有效期（`maxAgeMinutes`）。要重启时检查三点：
+guard 以 `record --run -- PROGRAM ...` 亲自执行构建/测试并观察 exit 0 后，才记录一个绑定当时 git commit、有效 10 分钟（`maxAgeMinutes`）的凭证。要重启时检查四点：
 
 1. 有没有凭证；
 2. 凭证超没超过 `maxAgeMinutes`；
-3. 当前 HEAD 和记录凭证时的 commit 一不一致——记录之后任何改动都会让凭证失效。
+3. 当前 HEAD 和记录凭证时的 commit 一不一致；
+4. 工作树是否完全干净——staged、unstaged、untracked 任一种输入都会让凭证失效。
 
 这条规则能拦住一整类事故：改坏了构建、漏注册配置、导错模块——这些全都会让构建/类型检查失败，于是没有凭证，重启在造成伤害之前就被拒绝。
 
 但绿色构建证明不了 profile 组合能起来：坏掉的 patch YAML、缺失的构建产物、重复的 loader entry id、typert manifest 归属不匹配、apply 时抛错的插件——这些只在 boot 阶段才爆。于是第二道闸门在凭证检查之后、停任何东西之前运行：`preflight` 在子进程里对完全相同的组合做深度干跑（整个插件树走同一个引擎完整 boot 一遍，然后 dispose），组合起不来就绝不停止运行中的实例。见 [preflight：组合闸门](#preflight-the-composition-gate)。
 
-重启本身交给 watchdog 托管：独立的监督进程，宿主死了自动拉起来，起不来就回滚到最后已知可用版本（健康启动戳——本部署里最近一次真正跑起来过的版本——兜底依次是检查点、绿色凭证的 HEAD），连续四次失败停在崩溃页等人工处理。启动失败源自仓库之外时（新装的插件是最常见的情形），回滚检出修不好它——所以 watchdog 改为回滚 **profile 组合**：每次健康启动都会快照组合输入（bundles 层与 profile 清单），仓库外故障即恢复该快照（最新插件变更被卸载，故障输入备份在 `composition-backup-*`），并通过重启报告渠道点名被卸载的内容、向用户回报这次自动恢复。每次回滚都会留下 `guard-backup-*` 恢复锚点（被丢弃的 HEAD 和未提交改动各有分支），恢复不依赖 reflog。`checkpoint` 在批次前把整个工作树提交为回滚点，`reset` 硬重置回该点（同样留锚点），`canary` 在重启后复检。检查点与凭证存在状态文件里，重启后依然存活，所以 canary 可以在新实例起来之后运行。
+重启本身交给 watchdog 托管：独立的监督进程，宿主死了自动拉起来，起不来就回滚到最后已知可用版本（健康启动戳——本部署里最近一次真正跑起来过的版本——兜底依次是检查点、绿色凭证的 HEAD），连续四次失败停在崩溃页等人工处理。启动失败源自仓库之外时（新装的插件是最常见的情形），回滚检出修不好它——所以 watchdog 改为回滚 **profile 组合**：每次健康启动都会快照组合输入（bundles 层与 profile 清单），仓库外故障即恢复该快照（最新插件变更被卸载，故障输入备份在 `composition-backup-*`），并通过重启报告渠道点名被卸载的内容、向用户回报这次自动恢复。每次回滚都会留下 `guard-backup-*` 恢复锚点（被丢弃的 HEAD 和未提交改动各有分支），恢复不依赖 reflog。`checkpoint` 在批次前记录干净的现有 HEAD；脏树默认拒绝，只有复核完整路径集后显式 `--include-dirty` 才提交为回滚点。`reset` 硬重置回该点（同样留锚点），`canary` 在重启后复检。检查点与凭证存在状态文件里，重启后依然存活，所以 canary 可以在新实例起来之后运行。
 
 就绪判定理解应用语义：任何 HTTP 响应（包括裸 401）都只证明 transport-up；公开根路径 HTTP 200 才 ready。受保护根路径必须由 watchdog 从**最终进程**输出中取得同 authority 的启动 URL，用临时 Cookie jar 证明 启动 URL → 303 → 带 Cookie 的 `/` → 200；启动配置切换时还要向浏览器交接一次该 URL。Bearer URL 会从耐久日志和回执中脱敏。
 
@@ -43,9 +44,9 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 ## 自我重启的前提（给驱动重启的 agent）
 
-- **git 必需。** 凭证、检查点、回滚全部基于 git：凭证绑定 HEAD，checkpoint 是真实提交，rollback 是 reset。部署目录不是 git 仓库时，先 `git init` 并做一次初始提交，再 `record`——否则门禁以 "current git HEAD unavailable" 拒绝重启。`git init` 不是仪式：有了仓库，checkpoint/rollback 的恢复锚点才真正生效。
+- **git 必需。** 凭证、检查点、回滚全部基于 git：凭证绑定干净 HEAD，checkpoint 记录一个真实 commit（干净时复用现有 HEAD，批准脏快照时创建提交），rollback 是 reset。部署目录不是 git 仓库时，先 `git init` 并做一次初始提交，再 `record`——否则门禁以 "current git HEAD unavailable" 拒绝重启。`git init` 不是仪式：有了仓库，checkpoint/rollback 的恢复锚点才真正生效。
 - **需要 full-access（无沙箱）权限。** 重启链路要 spawn detached 进程、kill 进程、绑定端口；沙箱化的 tool runner（workspace-write 之类）会以 EPERM 拒绝其中操作，实例在 shell 层就起不来。**agent 自己无法切换沙箱**——这正是沙箱的意义：`/permission` 是用户输入的命令，单命令提权也要用户审批。长期部署更省事的官方做法：启动实例时设 `DSH_PERMISSION_MODE=danger-full-access`（base bundle 的部署级开关，沙箱与审批策略同时放开），所有会话默认无沙箱。或者发起自我重启前，请用户把**当前会话**切到 full-access：`/permission danger-full-access`——设置页只影响**新**会话；有打开中的持久终端（PTY）时会先被 fence 拒绝，须先关闭终端。（`verify` 和 `record` 的输出也会带这条提示。）
-- **安装后的第一次重启必须用 CLI 驱动。** 正在运行的实例还没加载插件（组合变更要重启才生效），watchdog 也还不存在——此时直接退出实例，服务就躺在地上没人拉。add 之后立刻跑 `dsh-ankh-guard supervise --port N --start "CMD"`（它会接管正在运行的实例，之后任何退出都会被拉起），或用 `dsh-ankh-guard restart --port N --start "CMD" --rollback` 驱动首次重启（它在 detached 进程里完成 停→起→canary 全循环），或安装 launchd/systemd 监督器。收编接管会写一条以 `supervise` 调用会话（`$DSH_SESSION_ID`）为收件人的报告记录——首次弹换和计划重启一样自动回报，驱动会话不会无声停泊。没有存活 watchdog 时 `verify`/`record`/`schedule-exit` 都会警告。
+- **安装后的第一次重启必须用 CLI 驱动。** 正在运行的实例还没加载插件（组合变更要重启才生效），watchdog 也还不存在——此时直接退出实例，服务就躺在地上没人拉。add 之后立刻跑 `dsh-ankh-guard supervise --port N --start "CMD"`（它会接管正在运行的实例，之后任何退出都会被拉起），或用 `dsh-ankh-guard restart --port N --start "CMD" --rollback` 驱动首次重启（它在 detached 进程里完成 停→起→canary 全循环），或安装 launchd/systemd 监督器。收编接管会写一条以 `supervise` 调用会话（`$DSH_SESSION_ID`）为收件人的报告记录——首次弹换和计划重启一样自动回报，驱动会话不会无声停泊。没有存活 watchdog 时 `verify`/`record` 会警告，`schedule-exit` 则硬拒绝，避免确定性停服。
 
 ## 已知安装坑
 
@@ -62,7 +63,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 ```sh
 dsh-ankh-guard verify      # is it safe to restart right now
-dsh-ankh-guard record build+test   # green build & tests → record the credential
+dsh-ankh-guard record build+test --run -- sh -c 'pnpm run build && pnpm run test'
 dsh-ankh-guard checkpoint --message "what changed"   # checkpoint before editing
 dsh-ankh-guard preflight   # deep dry-run: does the profile composition boot
 dsh-ankh-guard canary --port 3080   # confirm after restart
@@ -85,13 +86,13 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
 
 ### 自我重启协议
 
-改完代码安全重启的六步：
+改完代码安全重启的六步（纯重启没有任何文件/依赖/profile/启动配置变化时跳过第 1 步；只是“不制造空 checkpoint commit”，其余门禁一个不少）：
 
-1. **checkpoint**——快照工作树为回滚点：`dsh-ankh-guard checkpoint --message "<批次>"`
+1. **checkpoint**——干净树记录现有 HEAD；脏树默认拒绝，复核且批准完整快照后才加 `--include-dirty`：`dsh-ankh-guard checkpoint --message "<批次>"`
 2. **修改**——做完改动；注册它需要的每个面（聚合、paths、bundle 行、依赖）。
 3. **构建 + 测试**——改动面的完整定向集；没有绿色就没有凭证。
-4. **record**——`dsh-ankh-guard record build+test --command "<什么过了>"`
-5. **verify**——`dsh-ankh-guard verify` 必须 exit 0；拒绝（缺凭证/过期/HEAD 不匹配）就重建重录。
+4. **record**——让 guard 执行并观察证据命令：`dsh-ankh-guard record build+test --run -- sh -c 'pnpm run build && pnpm run test'`
+5. **verify**——`dsh-ankh-guard verify` 必须 exit 0；拒绝（缺凭证/过期/HEAD 不匹配/工作树脏）就清理后重建重录。
 6. **重启 + canary**——新实例起来后 `dsh-ankh-guard canary --port N` 确认。
 
 ### supervise：无感重启
@@ -107,7 +108,7 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 它以 `--wait-owner` 模式 detached 拉起随包发布的 `scripts/dsh-watchdog.sh`：watchdog 在当前实例运行期间待机，实例退出（有意重启或崩溃）后接管端口、重新拉起，有意重启时跑 guard canary（读 `restart-requested.json` 标记），通过后清除标记。连续 2 次起不来→回滚到最后已知可用版本：健康启动戳（`last-good-boot.json`，每次实例成功启动时重写，指向本部署里最近一次真正跑起来的版本）优先，其次是 guard checkpoint，最后是凭证 HEAD；但仅当启动失败的错误主体路径在仓库内。主体在仓库之外时（坏掉的 profile overlay 或已装插件），回滚检出修不好，watchdog 改为恢复上次健康的 **profile 组合**：健康启动时快照的组合输入（`last-good-composition/`）覆盖回 live 的 bundles 层与清单，最新插件变更被卸载，故障输入保留在 `composition-backup-*`，恢复报告会点名被卸载的内容。启动命令没有绑到被监督端口时同样豁免：启动窗口超时而实例正监听在别处、或以点名了本 watchdog 并不拥有的端口的 `EADDRINUSE` 失败时，watchdog 会点名实际绑定的端口并跳过两种回滚——重置文件改不了命令行参数。发生在被监督端口上的 `EADDRINUSE` 保留原本的释放并重试逃生口，现在以五次为上限。任何路径的 reset（watchdog、CLI、service）都会先为被丢弃的 HEAD 和未提交改动创建 `guard-backup-*` 分支锚点，恢复不依赖 reflog。4 次失败→在端口上提供带重试按钮的崩溃页（SIGUSR1 通知 watchdog）。`watchdog-stop` 标记让 watchdog 彻底退出。实例可以在自我重启前自行采用监督——用户永远不需要手动启动 watchdog。
 
-已有 watchdog 监督时，重启触发用 `schedule-exit`：写入 restart 标记并 spawn 一个 detached 退出代理（node `spawn` 的 setsid），托管 shell 的进程组回收不到它，所以计划中的 kill 会在调度回合结束后真实落地（修复 `(sleep N; kill) &` 静默不触发的坑）。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报。只有无 watchdog 时才用 `restart`（单次循环）。
+已有 watchdog 监督时，重启触发用 `schedule-exit`：它从耐久 active launch spec 取得端口、凭证仓库、宿主根与 profile，拒绝任何冲突的显式参数，并核对 supervisor 写下的完整命令后才写 restart 标记、spawn detached 退出代理（输出明确标为 `exit-agent pid`）。托管 shell 的进程组回收不到它，所以计划中的 kill 会在调度回合结束后真实落地。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报；watchdog 生命周期日志均带时间戳。没有存活 watchdog 时 `schedule-exit` 硬拒绝，只能先建立监督或使用拥有单次完整循环的 `restart`。
 
 ### reconfigure：启动配置事务切换
 
@@ -189,7 +190,7 @@ dsh-ankh-guard restart \
 - **SIGKILL 崩溃写不出中断会话快照**——中断会话自动继续只覆盖优雅停止（SIGTERM：计划内退出、watchdog 接管）；崩溃中断的会话仍在打开时 lazy 恢复。
 - **watchdog 需要一个比实例活得久的监督者**——`supervise` 以 detached（setsid）方式拉起它；从即将死亡的进程内派生的 watchdog 必须先被孤儿化，所以应用要在退出**之前**采用监督。
 - **guard 看着检出，不管还有谁在上面工作**——并发的自修改会话共享同一棵树；回滚有锚点可恢复，但没有任何机制串行化这些会话本身。
-- **checkpoint 提交会扫入整个工作树**——有意为之（检查点就是完整回滚点），但也会带上无关的未提交改动。
+- **脏树 checkpoint 默认拒绝**——`--include-dirty` 会提交整个 staged/unstaged/untracked 路径集，只能在逐项复核、用户明确批准且仓库策略允许时使用；纯重启直接跳过 checkpoint。
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；其他平台需用 `--pid`。
 - **杀进程一律按单 pid + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 的 `free_port` 都针对监听者 pid，并在强制路径（`restart` 的 SIGKILL 升级、watchdog 的端口接管与退出清理）沿 `pgrep -P` 回收后代，而不是杀进程组。被监管实例应在优雅停机时自行管理子进程；后代回收只是强制路径上的尽力而为兜底。
 

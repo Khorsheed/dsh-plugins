@@ -10,7 +10,7 @@
  *   record   — record a green credential for the current HEAD
  *   status   — print the full state (credential, checkpoint, audit)
  *   clear    — drop the credential
- *   checkpoint — commit the whole tree as a pre-batch snapshot
+ *   checkpoint — record clean HEAD, or explicitly commit a reviewed dirty snapshot
  *   reset    — `git reset --hard` to a checkpoint commit (rollback)
  *   canary   — post-restart probe: verify (+ optional TCP port check)
  *   restart  — DETACHED restart: gate → stop → start → probe → canary.
@@ -25,7 +25,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDirectInvocation, resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
-import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
+import { commitCheckpoint, currentHead, isWorkingTreeClean, resetToCheckpoint, workingTreeChanges } from './git.ts'
 import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
@@ -47,6 +47,8 @@ interface CliOptions {
   maxAgeMinutes: number
   port: number | undefined
   command: string | undefined
+  run: boolean
+  runArgv: string[] | undefined
   message: string | undefined
   detail: string | undefined
   start: string | undefined
@@ -65,6 +67,8 @@ interface CliOptions {
   onFailure: CutoverRecoveryPolicy | undefined
   browserHandoff: BrowserHandoffPolicy
   ifAbsent: boolean
+  trustCommand: boolean
+  includeDirty: boolean
   takeoverFrom: number | undefined
   cutoverId: string | undefined
 }
@@ -84,9 +88,8 @@ export interface CliIo {
 const FULL_ACCESS_HINT = 'hint: the restart loop spawns detached processes and signals them — a sandboxed session (not full-access) will fail with EPERM. You CANNOT switch the sandbox yourself (that is the point of it): ask the user to run /permission danger-full-access in THIS session (the settings page only affects NEW sessions; an open persistent terminal fences the switch)\n'
 
 /**
- * Printed (by verify/record, and as a refusal-grade warning in schedule-exit)
- * while no watchdog supervises the instance: a bare exit now leaves the
- * service DOWN — the first-install bootstrap gap.
+ * Printed by verify/record while no watchdog supervises the instance. The
+ * stop-capable schedule-exit verb has its own hard refusal for this state.
  */
 const NO_WATCHDOG_HINT = 'warning: no live watchdog supervises the instance — a bare exit now leaves the service DOWN. Before the first restart, run `supervise --port N --start "CMD"` (it adopts the running instance and respawns ANY exit), or drive the restart with `restart` yourself\n'
 
@@ -243,10 +246,11 @@ function cliInvocation(args: readonly string[]): string[] {
 const USAGE = `usage: dsh-ankh-guard <command> [args] [flags]
 commands:
   verify [--state-dir DIR] [--repo DIR] [--max-age MIN]
-  record <scope> [--command CMD] [--state-dir DIR] [--repo DIR]
+  record <scope> [--state-dir DIR] [--repo DIR] --run -- PROGRAM [ARG...]
+  record <scope> [--state-dir DIR] [--repo DIR] --trust-command --command CMD
   status [--state-dir DIR]
   clear [--state-dir DIR]
-  checkpoint [--message MSG] [--repo DIR] [--state-dir DIR]
+  checkpoint [--message MSG] [--include-dirty] [--repo DIR] [--state-dir DIR]
   reset <sha> [--repo DIR]
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
@@ -261,7 +265,7 @@ commands:
           [--delay-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
-  schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
+  schedule-exit [--port N] --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
           [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR]
   supervise --port N --start "CMD" [--foreground] [--log FILE] [--state-dir DIR] [--repo DIR] [--harness-root DIR] [--home DIR]
 flags:
@@ -272,8 +276,11 @@ flags:
                    this flag or an existing DSH_HARNESS
   --max-age MIN    credential freshness window in minutes (default: 10)
   --port N         canary/restart/supervise: TCP port that must be listening
-  --command CMD    record: the command that produced the green state
+  --run -- PROGRAM [ARG...]  record: execute this exact argv in --repo and record only on exit 0
+  --trust-command  record: explicitly trust an external orchestrator's already-green --command
+  --command CMD    record --trust-command: description of the externally proven command
   --message MSG    checkpoint: batch description
+  --include-dirty  checkpoint: after review, explicitly commit every staged, unstaged, and untracked change
   --start "CMD"    restart/supervise/reconfigure: the shell command that starts the instance
                    (optional once the plugin has booted — it records the launch
                    command to <state-dir>/instance-launch.json)
@@ -320,11 +327,11 @@ export function parse(
   argv: readonly string[],
 ): { error: string } | { command: string; positionals: readonly string[]; options: CliOptions } {
   const options: CliOptions = {
-    stateDir: '', repoDir: '', harnessRoot: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined, detail: undefined,
+    stateDir: '', repoDir: '', harnessRoot: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, run: false, runArgv: undefined, message: undefined, detail: undefined,
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
-    onFailure: undefined, browserHandoff: 'required', ifAbsent: false, takeoverFrom: undefined, cutoverId: undefined,
+    onFailure: undefined, browserHandoff: 'required', ifAbsent: false, trustCommand: false, includeDirty: false, takeoverFrom: undefined, cutoverId: undefined,
   }
   const positionals: string[] = []
   let i = 0
@@ -338,6 +345,10 @@ export function parse(
   try {
     for (; i < argv.length; i++) {
       const arg = argv[i] ?? ''
+      if (arg === '--') {
+        options.runArgv = argv.slice(i + 1)
+        break
+      }
       switch (arg) {
         case '--state-dir': options.stateDir = flagValue(arg, true) ?? ''; i++; break
         case '--home': options.home = flagValue(arg, true) ?? ''; i++; break
@@ -360,6 +371,9 @@ export function parse(
           break
         }
         case '--command': options.command = flagValue(arg, true) ?? ''; i++; break
+        case '--run': options.run = true; break
+        case '--trust-command': options.trustCommand = true; break
+        case '--include-dirty': options.includeDirty = true; break
         case '--message': options.message = flagValue(arg, true) ?? ''; i++; break
         case '--detail': options.detail = flagValue(arg, true); i++; break
         case '--start': options.start = flagValue(arg, true) ?? ''; i++; break
@@ -460,6 +474,56 @@ async function checkPort(port: number): Promise<boolean> {
 /** Sleep helper for bounded polling loops. */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => { setTimeout(resolve, ms) })
+}
+
+/** Execute the exact argv used as credential evidence, streaming diagnostics. */
+async function runCredentialCommand(
+  argv: readonly string[],
+  cwd: string,
+  io: CliIo,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const executable = argv[0]
+  if (executable === undefined || executable === '') return { ok: false, detail: 'no program was provided after --' }
+  return new Promise((resolvePromise) => {
+    let settled = false
+    const settle = (result: { ok: true } | { ok: false; detail: string }): void => {
+      if (settled) return
+      settled = true
+      resolvePromise(result)
+    }
+    let child
+    try {
+      child = spawn(executable, argv.slice(1), {
+        cwd,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (error) {
+      settle({ ok: false, detail: `could not start ${JSON.stringify(executable)}: ${String(error)}` })
+      return
+    }
+    child.stdout.on('data', (chunk: Buffer) => { io.stdout(chunk.toString()) })
+    child.stderr.on('data', (chunk: Buffer) => { io.stderr(chunk.toString()) })
+    child.once('error', (error) => {
+      settle({ ok: false, detail: `could not start ${JSON.stringify(executable)}: ${String(error)}` })
+    })
+    child.once('exit', (code, signal) => {
+      if (code === 0) settle({ ok: true })
+      else settle({ ok: false, detail: signal === null ? `command exited ${code ?? 'without a status'}` : `command was terminated by ${signal}` })
+    })
+  })
+}
+
+/** Stable, non-shell rendering for credential audit metadata. */
+function renderArgv(argv: readonly string[]): string {
+  return argv.map(word => JSON.stringify(word)).join(' ')
+}
+
+/** The credential gate always includes uncommitted and untracked inputs. */
+function verifyRepoCredential(stateDir: string, repoDir: string, maxAgeMinutes: number) {
+  return verifyCredential(
+    loadState(stateDir), currentHead(repoDir), Date.now(), maxAgeMinutes, isWorkingTreeClean(repoDir),
+  )
 }
 
 /**
@@ -888,6 +952,48 @@ function preflightHarnessRoot(options: CliOptions, stateDir: string): string {
 }
 
 /**
+ * A same-launch restart must use the exact durable supervisor configuration.
+ * Explicit flags may confirm that configuration, but may not silently replace
+ * one field while the live watchdog still owns a different command.
+ */
+function stableScheduleSpec(
+  options: CliOptions,
+  stateDir: string,
+  resolvedRepoDir: string,
+  io: CliIo,
+): LaunchSpec | null | undefined {
+  const state = readLaunchState(stateDir)
+  if (state === null) return null
+  if (state.mode !== 'stable') {
+    io.stderr(`schedule-exit refused: launch state is still in cutover mode (${state.cutoverId}); settle its receipt before a same-launch restart\n`)
+    return undefined
+  }
+  const active = state.active
+  const conflicts: string[] = []
+  if (options.port !== undefined && options.port !== active.port) conflicts.push(`port ${options.port} != ${active.port}`)
+  if (options.repoDir !== '' && resolve(resolvedRepoDir) !== resolve(active.credentialRepo)) {
+    conflicts.push(`credential repo ${resolve(resolvedRepoDir)} != ${resolve(active.credentialRepo)}`)
+  }
+  if (options.harnessRoot !== '' && resolve(options.harnessRoot) !== resolve(active.harnessRoot)) {
+    conflicts.push(`harness root ${resolve(options.harnessRoot)} != ${resolve(active.harnessRoot)}`)
+  }
+  if (options.profile !== undefined && options.profile !== '' && options.profile !== active.profile) {
+    conflicts.push(`profile ${options.profile} != ${active.profile}`)
+  }
+  if (conflicts.length > 0) {
+    io.stderr(`schedule-exit refused: explicit flags conflict with the durable active launch specification (${conflicts.join('; ')}). Use reconfigure for launch changes.\n`)
+    return undefined
+  }
+  const recorded = readInstanceLaunch(stateDir)
+  if (recorded === null || recorded.source !== 'supervisor' || recorded.supervised !== true
+    || recorded.command !== active.command || recorded.port !== active.port) {
+    io.stderr('schedule-exit refused: the live instance launch record does not prove that its supervisor owns the durable active launch specification. Re-establish supervision or use reconfigure; do not stop the host on an inferred command.\n')
+    return undefined
+  }
+  return active
+}
+
+/**
  * Wait for a pid to exit; SIGKILL (the whole descendant tree) after the
  * deadline. @param onEscalate - invoked right before the SIGKILL, so the
  * caller can write a log line that correlates with the watchdog log's
@@ -961,7 +1067,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 
   switch (command) {
     case 'verify': {
-      const result = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+      const result = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
       io.stdout(`${result.reason}\n`)
       if (result.ok) {
         io.stdout(FULL_ACCESS_HINT)
@@ -975,13 +1081,64 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`record requires a <scope>\n\n${USAGE}`)
         return 2
       }
-      const head = currentHead(repoDir)
-      if (head === null) {
+      if (positionals.length > 1) {
+        io.stderr(`record accepts one <scope>; put the evidence command after --run --\n\n${USAGE}`)
+        return 2
+      }
+      if (options.run && options.trustCommand) {
+        io.stderr('record requires exactly one proof mode: --run or --trust-command\n')
+        return 2
+      }
+      if (options.run && options.command !== undefined) {
+        io.stderr('record --run derives its audit command from the exact argv after --; do not also pass --command\n')
+        return 2
+      }
+      if (options.runArgv !== undefined && !options.run) {
+        io.stderr('record command argv after -- requires --run\n')
+        return 2
+      }
+      if (!options.run && !options.trustCommand) {
+        io.stderr('record refuses self-attestation: use --run -- PROGRAM [ARG...] so the guard observes exit 0, or --trust-command --command CMD only from an external orchestrator that already observed the command\n')
+        return 2
+      }
+      if (options.run && (options.runArgv === undefined || options.runArgv.length === 0)) {
+        io.stderr('record --run requires -- PROGRAM [ARG...]\n')
+        return 2
+      }
+      if (options.trustCommand && (options.command === undefined || options.command.trim() === '')) {
+        io.stderr('record --trust-command requires a non-empty --command description\n')
+        return 2
+      }
+      const headBefore = currentHead(repoDir)
+      if (headBefore === null) {
         io.stderr('cannot record a credential outside a git repository\n')
         return 1
       }
-      recordCredential(stateDir, { scope, revision: head, command: options.command ?? '' }, Date.now())
-      io.stdout(`recorded green credential: ${scope} @ ${head}\n`)
+      if (!isWorkingTreeClean(repoDir)) {
+        io.stderr('cannot record a credential while the working tree has staged, unstaged, or untracked changes\n')
+        return 1
+      }
+      let evidenceCommand = options.command ?? ''
+      if (options.run) {
+        const runArgv = options.runArgv ?? []
+        // A failed/replaced proof attempt must not leave an older credential
+        // available to a subsequent restart command in another session.
+        clearCredential(stateDir, Date.now())
+        evidenceCommand = renderArgv(runArgv)
+        io.stdout(`running credential evidence: ${evidenceCommand}\n`)
+        const evidence = await runCredentialCommand(runArgv, repoDir, io)
+        if (!evidence.ok) {
+          io.stderr(`credential evidence failed: ${evidence.detail}; no credential recorded\n`)
+          return 1
+        }
+        const headAfter = currentHead(repoDir)
+        if (headAfter !== headBefore || !isWorkingTreeClean(repoDir)) {
+          io.stderr('credential evidence exited 0 but changed HEAD or left the working tree dirty; no credential recorded\n')
+          return 1
+        }
+      }
+      recordCredential(stateDir, { scope, revision: headBefore, command: evidenceCommand }, Date.now())
+      io.stdout(`recorded green credential: ${scope} @ ${headBefore}${options.trustCommand ? ' (external proof trusted)' : ''}\n`)
       io.stdout(FULL_ACCESS_HINT)
       if (liveWatchdogPid(stateDir) === null) io.stderr(NO_WATCHDOG_HINT)
       return 0
@@ -1051,13 +1208,21 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     }
     case 'checkpoint': {
       const message = options.message ?? 'batch snapshot'
-      const result = commitCheckpoint(repoDir, `dsh-ankh-guard checkpoint: ${message}`, SRC_ARTIFACT_PATTERN)
+      const changes = workingTreeChanges(repoDir)
+      if (options.includeDirty && changes !== null && changes.length > 0) {
+        io.stdout(`checkpoint includes ${changes.length} reviewed working-tree change(s)\n`)
+      }
+      const result = commitCheckpoint(
+        repoDir, `dsh-ankh-guard checkpoint: ${message}`, SRC_ARTIFACT_PATTERN, options.includeDirty,
+      )
       if (!result.ok) {
         io.stderr(`${result.error}\n`)
         return 1
       }
       setCheckpoint(stateDir, { revision: result.sha, message }, Date.now())
-      io.stdout(`checkpoint committed: ${result.sha}\n`)
+      io.stdout(result.createdCommit
+        ? `checkpoint committed: ${result.sha}\n`
+        : `checkpoint recorded at existing clean HEAD: ${result.sha}\n`)
       if (result.artifacts.length > 0) {
         io.stdout(`warning: ${result.artifacts.length} build-artifact-looking file(s) swept in (bare tsc emission? real build output belongs in lib/):\n`)
         for (const file of result.artifacts.slice(0, 5)) io.stdout(`  ${file}\n`)
@@ -1080,7 +1245,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return 0
     }
     case 'canary': {
-      const verdict = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+      const verdict = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
       io.stdout(`verify: ${verdict.ok ? 'PASS' : 'FAIL'} — ${verdict.reason}\n`)
       let ok = verdict.ok
       if (options.port !== undefined) {
@@ -1228,7 +1393,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('reconfigure refused: no live watchdog owns the old instance. Establish supervision first; an online handoff cannot promise continuity without an old supervisor.\n')
         return 1
       }
-      const gate = verifyCredential(loadState(stateDir), currentHead(target.credentialRepo), Date.now(), options.maxAgeMinutes)
+      const gate = verifyRepoCredential(stateDir, target.credentialRepo, options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`reconfigure refused: ${gate.reason}\n`)
         return 1
@@ -1344,7 +1509,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       const isDriver = process.env.DSH_ANKH_RESTART_DRIVER === '1'
       // THE GATE: never stop an instance on a denial.
-      const gate = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+      const gate = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`restart refused: ${gate.reason}\n`)
         return 1
@@ -1474,7 +1639,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
           return 1
         }
-        const post = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+        const post = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
         io.stdout(`canary verify: ${post.ok ? 'PASS' : 'FAIL'} — ${post.reason}\n`)
         io.stdout(`canary port: PASS — listening on 127.0.0.1:${port}\n`)
         if (!post.ok) {
@@ -1691,15 +1856,36 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
         env,
       })
+      let spawnError: Error | undefined
+      child.once('error', (error) => { spawnError = error })
       child.unref()
-      io.stdout(`watchdog spawned (pid ${child.pid ?? 'unknown'}) — supervises :${spec.port}, log ${logPath}\n`)
-      return 0
+      const spawnedPid = child.pid
+      if (spawnedPid === undefined) {
+        io.stderr('supervise refused: watchdog process has no pid\n')
+        return 1
+      }
+      // Returning before the pidfile claim creates a dangerous API race: an
+      // immediate schedule-exit sees no owner. Wait until the detached child
+      // has durably claimed supervision (or failed) before reporting success.
+      const claimDeadline = Date.now() + 5_000
+      while (Date.now() < claimDeadline && spawnError === undefined) {
+        if (liveWatchdogPid(stateDir) === spawnedPid) {
+          io.stdout(`watchdog spawned and ready (pid ${spawnedPid}) — supervises :${spec.port}, log ${logPath}\n`)
+          return 0
+        }
+        try { process.kill(spawnedPid, 0) } catch { break }
+        await sleep(50)
+      }
+      try { process.kill(-spawnedPid, 'SIGTERM') } catch { try { process.kill(spawnedPid, 'SIGTERM') } catch { /* already gone */ } }
+      io.stderr(`supervise refused: watchdog ${spawnedPid} did not claim ${pidfile} within 5000 ms${
+        spawnError === undefined ? '' : ` (${String(spawnError)})`
+      }; inspect ${logPath}\n`)
+      return 1
     }
     case 'schedule-exit': {
-      const port = options.port ?? readInstanceLaunch(stateDir)?.port
       const delayMs = options.delayMs
-      if (port === undefined || delayMs === undefined) {
-        io.stderr(`schedule-exit requires --port N and --delay-ms MS\n\n${USAGE}`)
+      if (delayMs === undefined) {
+        io.stderr(`schedule-exit requires --delay-ms MS (and --port N before durable launch configuration exists)\n\n${USAGE}`)
         return 2
       }
       const scheduledCutover = activeCutover(stateDir)
@@ -1707,8 +1893,25 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`schedule-exit refused: launch cutover ${scheduledCutover.receipt.id} is ${scheduledCutover.receipt.phase}; let that transaction settle before scheduling another stop\n`)
         return 1
       }
+      const durableSpec = stableScheduleSpec(options, stateDir, repoDir, io)
+      if (durableSpec === undefined) return 1
+      const port = durableSpec?.port ?? options.port ?? readInstanceLaunch(stateDir)?.port
+      if (port === undefined) {
+        io.stderr(`schedule-exit requires --port N before a durable launch specification exists\n\n${USAGE}`)
+        return 2
+      }
+      const credentialRepo = durableSpec?.credentialRepo ?? repoDir
+      const profile = durableSpec?.profile ?? resolveProfileName(options)
+      const harnessRoot = durableSpec?.harnessRoot ?? preflightHarnessRoot(options, stateDir)
+      // Killing the child without an owner that will respawn it is never a
+      // degraded restart: it is a guaranteed outage. Refuse before running
+      // the expensive composition gate or writing any restart marker.
+      if (liveWatchdogPid(stateDir) === null) {
+        io.stderr(`schedule-exit refused: no live watchdog owns the instance on :${port}; establish supervision first. A scheduled exit here would leave the service down.\n`)
+        return 1
+      }
       // THE GATE: never schedule an exit on a denial.
-      const gate = verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), options.maxAgeMinutes)
+      const gate = verifyRepoCredential(stateDir, credentialRepo, options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`schedule-exit refused: ${gate.reason}\n`)
         return 1
@@ -1716,14 +1919,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // THE ENVIRONMENT GATE: the detached exit agent must outlive this turn.
       if (!sandboxGate('schedule-exit', options, io)) return 1
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
-      if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, preflightHarnessRoot(options, stateDir)))) {
+      if (!(await preflightGate(
+        'schedule-exit', profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, harnessRoot,
+      ))) {
         return 1
-      }
-      // Bootstrap guard: with no live watchdog the scheduled exit leaves the
-      // service DOWN — the classic first-install gap (the running instance
-      // has not loaded the plugin yet, and no supervisor exists yet).
-      if (liveWatchdogPid(stateDir) === null) {
-        io.stderr(NO_WATCHDOG_HINT)
       }
       // One scheduled restart at a time, and never while a restart is in
       // flight. Both checks must hold ATOMICALLY with writing the marker and
@@ -1788,7 +1987,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           },
         })
         child.unref()
-        io.stdout(`exit scheduled in ${delayMs} ms (agent pid ${child.pid ?? 'unknown'}) — watchdog will respawn and run the canary\n`)
+        io.stdout(`exit scheduled in ${delayMs} ms (exit-agent pid ${child.pid ?? 'unknown'}) — watchdog will respawn and run the canary\n`)
         return 0
       } finally {
         lock.release()
