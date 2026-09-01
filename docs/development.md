@@ -27,7 +27,7 @@ mainline 不是审批者:开发者自己跑流程上线,mainline 不逐包审批
 
 1. **worktree-only 开发**:功能代码只允许在各自 worktree(worktree/分支)里写;主工作区不做功能开发。mainline 维护者同样遵守——基线/发布类工作可以在 main 直接做(那本就是 mainline 的职责),插件功能绝不在主工作区写。
 2. worktree 内自测:包级 build+test 全绿(邻居的在制品红色状态不影响你:`GEN_TYPERT_ONLY=<你的包>`)。
-3. 合并回 main:PR 或直接合并,CI 必须绿(14 步门禁,含 build/test/hygiene/check:plugins/文档门禁)。
+3. 合并回 main:**先在 worktree 里 `pnpm gate` 全绿**,再合。gate 跑的是 CI 里本地可复现的那一部分,外加两个专门补盲区的检查器(见下)。
 4. 上 3080:`pnpm deploy:3080 --package packages/<你的包>` 自助完成(构建→打包→刷新→凭证→preflight→按闸重启→canary)。**只有这条流程能写 profile。**
 5. 验收观察期(默认 3 天无相关事故)后进入 npm 波次。
 
@@ -46,6 +46,33 @@ mainline 不是审批者:开发者自己跑流程上线,mainline 不逐包审批
 - npm 由 mainline 按波次统一发布(独立包成熟一波发一波;local-agent 家族按依赖序同发;整合包最后)。发布动作照 [publishing.md](publishing.md) 自查清单。
 - **整合包由 mainline 拥有**:成员增删与版本 bump 由 mainline 管理,因为每个包既要单独验证也要在整合里一起验证,单点 ownership 才落得动。
 - push 到 GitHub 由 human 协调(现状不变)。
+
+## 合并前的门禁:`pnpm gate`
+
+CI 只在推 main 时触发,而**推由 human 一事一议拍板**——所以 CI 的反馈天然稀疏。`pnpm gate` 是让这件事仍然安全的东西:合并回 main 之前在自己的 worktree 里跑,全绿才合。
+
+```sh
+pnpm gate          # 日常:CI 里本地可复现的全部步骤
+pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装层)
+```
+
+**CI 有三步本地复现不了**,而事故恰恰爱长在那里:
+
+| CI 做的事 | 本地为什么不同 | gate 怎么补 |
+|---|---|---|
+| 冷装 `pnpm install --frozen-lockfile` | 本地 `node_modules` 是热的,pnpm 记着历史审批 | `check:builds`——扫出带 install 脚本的依赖,要求每个在 `allowBuilds` 里有明确取值(`true`/`false` 都行,**没有取值**才是红) |
+| harness 检出钉在 CI 的 tag | 本地检出通常领先若干 guard checkpoint 提交 | gate 第一步打印两边的 ref,不一致就出声(**只提醒,不阻断**) |
+| workflow 自己是否自洽 | 本地根本不跑 workflow | `check:workflows`——断言 workflow 里引用的每个脚本/npm script 真的存在 |
+
+两个检查器都是事故换来的(2026-09-01 那次 CI 三连红),各自的 spec 里冻着当时的复现用例。`--full` 用 `act` 把真实 workflow 在容器里跑一遍,是唯一能本地复现冷装的手段;它需要 Docker 与 `brew install act`。
+
+**镜像 `--check` 故意不在 gate 里**:镜像漂移归 mainline 修(同步需要镜像仓的推送权),不该挡住包 owner 合并。CI 保留这道门禁。
+
+## 推送与分支保护
+
+- **push 由 human 一事一议**:AGENTS.md 的「never push unilaterally」不变。mainline 在每批合并后申请推送,并在推送后盯 CI、修组合层的红。
+- **main 的保护目前在本地**:GitHub 对免费账户的私有仓拒绝 protected branch 与 ruleset(两个接口都答 403),所以「禁止强推、禁止删除 main」由 `.githooks/pre-push` 兜着(随 `pnpm hooks:install` 生效)。**仓库转 public 后应在服务端开启真正的分支保护**,届时这个 hook 退化为本地快速回声。
+- **推送节奏是这套设计的前提**:冷装那层永远只有 CI 能验,所以 CI 是最后一道网——网可以稀疏,但不能一周才收一次(2026-09-01 的三连红攒了 378 个提交才暴露)。
 
 ## 冲突规则
 
