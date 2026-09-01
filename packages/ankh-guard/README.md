@@ -58,7 +58,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 ## 命令行
 
-主要接口是 CLI，实例宕机也能用。安装后用 `dsh-ankh-guard` bin（或 `node lib/cli.js`）。所有命令带 `--state-dir "$DSH_HOME/state" --repo "$PWD"`。
+主要接口是 CLI，实例宕机也能用。安装后用 `dsh-ankh-guard` bin（或 `node lib/cli.js`）。`--repo` 始终表示凭证/回滚仓库；`--harness-root` 表示 preflight 与 child 实际使用的宿主根，两者可以且通常不同。状态命令带 `--state-dir "$DSH_HOME/state"`。
 
 ```sh
 dsh-ankh-guard verify      # is it safe to restart right now
@@ -67,7 +67,8 @@ dsh-ankh-guard checkpoint --message "what changed"   # checkpoint before editing
 dsh-ankh-guard preflight   # deep dry-run: does the profile composition boot
 dsh-ankh-guard canary --port 3080   # confirm after restart
 dsh-ankh-guard supervise --port 3080 --start "CMD"   # hand the port to a watchdog
-dsh-ankh-guard reconfigure --start "NEW CMD" --on-failure restore-previous
+dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
+  --harness-root "<host root>" --on-failure restore-previous
 ```
 
 完整命令：`verify`、`record`、`status`、`clear`、`checkpoint`、`reset`、`canary`、`preflight`、`restart`、`schedule-exit`、`configure-launch`、`launch-status`、`reconfigure`、`supervise`。
@@ -80,7 +81,7 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --on-failure restore-previous
 - `1`——组合结论：重启将要 boot 的树是坏的；输出会指明坏在哪一层。
 - `3`——preflight 自身没能执行（缺 app 布局、基础设施崩溃）——**不是**对组合的结论。
 
-`schedule-exit`、`restart` 和 `reconfigure` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。闸门按 `--repo` → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；三者都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。随时可手动跑：`dsh-ankh-guard preflight --profile web`。
+`schedule-exit`、`restart` 和 `reconfigure` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。闸门按 `--harness-root` → 耐久选中 launch spec → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；凭证 `--repo` 永不参与宿主定位。全部都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。随时可手动跑：`dsh-ankh-guard preflight --profile web --harness-root "$DSH_HARNESS"`。
 
 ### 自我重启协议
 
@@ -98,10 +99,11 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --on-failure restore-previous
 `restart` 在单个 CLI 进程里跑完 kill → start → probe → canary（用 `--delay-ms` 让调度方回合先完成）。对于不该碰终端的部署，`supervise` 把工作交给 **watchdog**——一个 detached、比实例活得久的监督进程：
 
 ```sh
-dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state" --repo "$PWD"
+dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state" \
+  --repo "<credential repo>" --harness-root "<host root>"
 ```
 
-`supervise` 还需要被监管实例启动时使用的 dsh home（watchdog 会把它 export 为实例的 `DSH_HOME`）：`--home DIR` 优先，否则取 `$DSH_HOME`；两者都没有时响亮拒绝——从 `--state-dir` 猜出来的 home 会让实例静默读错 profile/凭据目录。
+`supervise` 还需要被监管实例启动时使用的 dsh home（watchdog 会把它 export 为实例的 `DSH_HOME`）：`--home DIR` 优先，否则取 `$DSH_HOME`；两者都没有时响亮拒绝——从 `--state-dir` 猜出来的 home 会让实例静默读错 profile/凭据目录。首次持久化还必须显式提供 `--harness-root` 或 `DSH_HARNESS`；它不会把 credential repo 猜成宿主根。
 
 它以 `--wait-owner` 模式 detached 拉起随包发布的 `scripts/dsh-watchdog.sh`：watchdog 在当前实例运行期间待机，实例退出（有意重启或崩溃）后接管端口、重新拉起，有意重启时跑 guard canary（读 `restart-requested.json` 标记），通过后清除标记。连续 2 次起不来→回滚到最后已知可用版本：健康启动戳（`last-good-boot.json`，每次实例成功启动时重写，指向本部署里最近一次真正跑起来的版本）优先，其次是 guard checkpoint，最后是凭证 HEAD；但仅当启动失败的错误主体路径在仓库内。主体在仓库之外时（坏掉的 profile overlay 或已装插件），回滚检出修不好，watchdog 改为恢复上次健康的 **profile 组合**：健康启动时快照的组合输入（`last-good-composition/`）覆盖回 live 的 bundles 层与清单，最新插件变更被卸载，故障输入保留在 `composition-backup-*`，恢复报告会点名被卸载的内容。启动命令没有绑到被监督端口时同样豁免：启动窗口超时而实例正监听在别处、或以点名了本 watchdog 并不拥有的端口的 `EADDRINUSE` 失败时，watchdog 会点名实际绑定的端口并跳过两种回滚——重置文件改不了命令行参数。发生在被监督端口上的 `EADDRINUSE` 保留原本的释放并重试逃生口，现在以五次为上限。任何路径的 reset（watchdog、CLI、service）都会先为被丢弃的 HEAD 和未提交改动创建 `guard-backup-*` 分支锚点，恢复不依赖 reflog。4 次失败→在端口上提供带重试按钮的崩溃页（SIGUSR1 通知 watchdog）。`watchdog-stop` 标记让 watchdog 彻底退出。实例可以在自我重启前自行采用监督——用户永远不需要手动启动 watchdog。
 
@@ -109,17 +111,19 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 ### reconfigure：启动配置事务切换
 
-`schedule-exit` 是启动配置不变时的快速路径。命令、dsh home、检出或 profile 任一变化时必须用 `reconfigure`；在线改端口会被明确拒绝，因为那需要另起监督链再切流量。
+`schedule-exit` 是启动配置不变时的快速路径。命令、dsh home、凭证/回滚仓库、宿主根或 profile 任一变化时必须用 `reconfigure`；在线改端口会被明确拒绝，因为那需要另起监督链再切流量。
 
 ```sh
 dsh-ankh-guard reconfigure \
   --start "<完整目标命令>" \
+  --repo "<目标凭证/回滚仓库>" \
+  --harness-root "<目标宿主根>" \
   --on-failure restore-previous \
   --browser-handoff required \
   --state-dir "$DSH_HOME/state"
 ```
 
-恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对与当前选中侧保存在 mode-0600 的 `launch-spec.json`，原子切换选中侧是配置提交点。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`；只有它有权停止旧 child 并启动最终 target，因此调用 `reconfigure` 的短命进程消失也不会把事务卡在中间。
+恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`；只有它有权停止旧 child 并启动最终 target，因此调用 `reconfigure` 的短命进程消失也不会把事务卡在中间。
 
 目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200；需要浏览器交接时只打开一次；再跑 canary，全部完成后才释放会话唤醒。裸 401 始终只是 transport-up。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child PID、认证交接、重试、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。
 
@@ -138,11 +142,12 @@ dsh-ankh-guard reconfigure \
 ```sh
 # 安装器只初始化一次；此后每次 KeepAlive 启动都服从耐久选中配置：
 dsh-ankh-guard configure-launch --if-absent --port 3093 --start "<start command>" \
-  --home "$DSH_HOME" --state-dir "$DSH_HOME/state" --repo "<checkout>" &&
+  --home "$DSH_HOME" --state-dir "$DSH_HOME/state" \
+  --repo "<credential repo>" --harness-root "<host root>" &&
 exec dsh-ankh-guard supervise --foreground --state-dir "$DSH_HOME/state"
 ```
 
-`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。若已有存活的 detached watchdog 持有 pidfile，`--foreground` 会等它退出再接管——直接 exit 0 会被当作"正常结束"、任务转 idle，另一个看门狗静默失去监督者。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。
+`--foreground` 让 watchdog 内联运行（接管端口）并随它退出，watchdog 死掉会触发外部监督者重启。收到 TERM/INT 或任何退出时，watchdog 会回收它拉起的一切——实例子进程和放弃后的崩溃页——并删除属于自己的 pidfile，然后以非零码退出；在已装 plist 的 `KeepAlive SuccessfulExit: false` 下，被杀的 watchdog 会重启整条链，而刻意的 `watchdog-stop`（exit 0）保持停机。若已有存活的 detached watchdog 持有 pidfile，`--foreground` 会等它退出再接管；等待期间若 cutover 已失败并恢复 previous，它会重新读取 `launch-spec.json` 与回执后才启动，绝不会复活等待前缓存的 target。直接 exit 0 会被当作"正常结束"、任务转 idle，另一个看门狗静默失去监督者。detached 形态（不带 `--foreground` 的 `supervise`）是调试/一次性工具——实例在自我重启前自行采用监督，或快速手动会话——不是生产监督形态，因为没有东西监督 detached watchdog 自己。
 
 检查点/回滚闭环：
 
@@ -173,7 +178,7 @@ dsh-ankh-guard restart \
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.2 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--repo`、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
+- npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：⚠️ 降级——一切可用；composition-preflight 门禁通过独立的 `preflight-runner` 运行（0.1.1-rc.2 仍未导出 `composeProfile`，runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装，带漂移绊线测试），只要能解析到 dsh app 布局——`--harness-root`、耐久 launch spec、`DSH_HARNESS` 或默认检出路径——就完整运行。没有 harness 检出的纯 npm 部署下门禁退化为提示后放行；其余能力在 npm 线上完整；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。
 - 源码线(deepseek-harness master,fork 或上游):✅——门禁通过独立的 `preflight-runner` 运行(从在线 checkout 解析已发布的 `@deepseek-ai/dsh-app-boot` 等),不再需要 fork 补丁。
 
 ## Known Limitations and Deferred Work

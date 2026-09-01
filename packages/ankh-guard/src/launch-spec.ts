@@ -1,9 +1,10 @@
 /**
  * Durable launch-configuration cutovers.
  *
- * A launch change is not a repository rollback: the command, home, checkout,
- * profile, port, readiness handoff, and recovery choice move as one unit. The
- * selected side lives in launch-spec.json (one atomic write); the redacted,
+ * A launch change is not a repository rollback: the command, home, credential
+ * repository, host root, profile, port, readiness handoff, and recovery choice
+ * move as one unit. The selected side lives in launch-spec.json (one atomic
+ * write); the redacted,
  * append-only-ish operational receipt lives in launch-cutover.json. The full
  * commands never enter the receipt because a launch command may carry secret
  * environment values.
@@ -23,7 +24,10 @@ export interface LaunchSpec {
   command: string
   port: number
   home: string
-  repo: string
+  /** Repository whose HEAD is bound to the guard credential and rollback. */
+  credentialRepo: string
+  /** dsh host checkout used by preflight and exported as DSH_HARNESS. */
+  harnessRoot: string
   profile: string
 }
 
@@ -60,7 +64,8 @@ export interface LaunchSpecSummary {
   commandSha256: string
   port: number
   home: string
-  repo: string
+  credentialRepo: string
+  harnessRoot: string
   profile: string
 }
 
@@ -126,7 +131,8 @@ function isLaunchSpec(value: unknown): value is LaunchSpec {
     && typeof spec.command === 'string' && spec.command !== ''
     && Number.isInteger(spec.port) && (spec.port ?? 0) > 0 && (spec.port ?? 0) <= 65535
     && typeof spec.home === 'string' && spec.home !== ''
-    && typeof spec.repo === 'string' && spec.repo !== ''
+    && typeof spec.credentialRepo === 'string' && spec.credentialRepo !== ''
+    && typeof spec.harnessRoot === 'string' && spec.harnessRoot !== ''
     && typeof spec.profile === 'string' && spec.profile !== ''
 }
 
@@ -166,7 +172,8 @@ export function summarizeLaunchSpec(spec: LaunchSpec): LaunchSpecSummary {
     commandSha256: createHash('sha256').update(spec.command).digest('hex').slice(0, 16),
     port: spec.port,
     home: spec.home,
-    repo: spec.repo,
+    credentialRepo: spec.credentialRepo,
+    harnessRoot: spec.harnessRoot,
     profile: spec.profile,
   }
 }

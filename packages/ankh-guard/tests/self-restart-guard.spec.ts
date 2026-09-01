@@ -246,7 +246,8 @@ describe('durable launch cutover state', () => {
     command,
     port: 3080,
     home: join(root, 'home'),
-    repo: join(root, 'repo'),
+    credentialRepo: join(root, 'credential-repo'),
+    harnessRoot: join(root, 'harness-root'),
     profile: 'web',
   })
 
@@ -441,10 +442,12 @@ describe('CLI', () => {
     expect(await runCli([
       'configure-launch', '--port', '3080', '--start', firstCommand,
       '--home', home, '--profile', 'web', '--state-dir', stateDir, '--repo', repo,
+      '--harness-root', join(home, 'host-current'),
     ], io().io)).toBe(0)
     expect(await runCli([
       'configure-launch', '--if-absent', '--port', '3080', '--start', replacementCommand,
       '--home', home, '--profile', 'web', '--state-dir', stateDir, '--repo', repo,
+      '--harness-root', join(home, 'host-replacement'),
     ], io().io)).toBe(0)
     expect(selectedLaunchSpec(readLaunchState(stateDir)!).command).toBe(firstCommand)
 
@@ -456,10 +459,81 @@ describe('CLI', () => {
     expect(text).toContain('commandSha256')
   })
 
+  it('refuses to invent a complete previous spec from the legacy instance-launch record', async () => {
+    const stateDir = tmpDir('guard-legacy-launch-')
+    const home = tmpDir('guard-legacy-home-')
+    const targetRepo = makeRepo()
+    writeInstanceLaunchAsSupervisor(stateDir, {
+      command: 'legacy-current-command', source: 'supervisor', supervised: true, port: 3080, recordedAt: NOW,
+    })
+    const result = io()
+    expect(await runCli([
+      'reconfigure', '--start', 'target-command', '--on-failure', 'restore-previous',
+      '--port', '3080', '--home', home, '--repo', targetRepo,
+      '--harness-root', join(home, 'target-harness'), '--profile', 'web', '--state-dir', stateDir,
+    ], result.io)).toBe(2)
+    expect(result.err.join('')).toContain('legacy instance-launch record does not identify credential repo, host root, home, and profile independently')
+    expect(result.err.join('')).toContain('configure-launch')
+    expect(readLaunchState(stateDir)).toBeNull()
+  })
+
+  it('uses target credential repo for the gate and target harness root for reconfigure preflight', async () => {
+    const stateDir = tmpDir('guard-split-roots-')
+    const previousRepo = makeRepo()
+    const targetRepo = makeRepo()
+    const previousHarness = tmpDir('guard-previous-harness-')
+    const targetHarness = tmpDir('guard-target-harness-')
+    const home = tmpDir('guard-split-home-')
+    writeStableLaunchSpec(stateDir, {
+      version: 1,
+      command: 'previous-command',
+      port: 3080,
+      home,
+      credentialRepo: previousRepo,
+      harnessRoot: previousHarness,
+      profile: 'web',
+    })
+    recordCredential(stateDir, {
+      scope: 'target build+test', revision: currentHead(targetRepo)!, command: 'pnpm test',
+    }, Date.now())
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(join(stateDir, STATE_FILES.watchdogPid), String(process.pid))
+    // Stop after the two independent gates and before any cutover mutation.
+    writeFileSync(join(stateDir, STATE_FILES.restartLock), String(process.pid))
+    stubSandboxProbe(false)
+    stubPreflight(undefined)
+    let observedHarness = ''
+    stubPreflightRunner((root) => {
+      observedHarness = root
+      return 'true'
+    })
+
+    const result = io()
+    expect(await runCli([
+      'reconfigure', '--start', 'target-command', '--on-failure', 'restore-previous',
+      '--repo', targetRepo, '--harness-root', targetHarness,
+      '--state-dir', stateDir,
+    ], result.io)).toBe(1)
+    expect(result.out.join('')).toContain('composition preflight PASS')
+    expect(result.err.join('')).toContain('restart is in flight')
+    expect(observedHarness).toBe(targetHarness)
+    expect(selectedLaunchSpec(readLaunchState(stateDir)!)).toMatchObject({
+      credentialRepo: previousRepo,
+      harnessRoot: previousHarness,
+    })
+  })
+
   it('refuses a second stop or reconfigure while a launch cutover is active', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-cutover-')
-    const base = { version: 1 as const, port: 3080, home: join(stateDir, 'home'), repo, profile: 'web' }
+    const base = {
+      version: 1 as const,
+      port: 3080,
+      home: join(stateDir, 'home'),
+      credentialRepo: repo,
+      harnessRoot: join(stateDir, 'harness'),
+      profile: 'web',
+    }
     prepareLaunchCutover(stateDir, {
       id: 'exclusive-cutover',
       previous: { ...base, command: 'previous' },
@@ -826,8 +900,8 @@ describe('composition preflight gate', () => {
     expect(resolvePreflightBin(foreignCli(tmpDir('guard-layout-')))).toBeUndefined()
   })
 
-  it('resolveHarnessRoot prefers the repo target, then DSH_HARNESS, then the conventional default', () => {
-    expect(resolveHarnessRoot('/repo')).toBe('/repo')
+  it('resolveHarnessRoot prefers the explicit host root, then DSH_HARNESS, then the conventional default', () => {
+    expect(resolveHarnessRoot('/explicit-host')).toBe('/explicit-host')
     expect(resolveHarnessRoot(undefined, { DSH_HARNESS: '/env-harness' })).toBe('/env-harness')
     expect(resolveHarnessRoot('', { DSH_HARNESS: '  ' })).toBe(join(homedir(), 'code/deepseek-harness'))
   })
@@ -1103,8 +1177,11 @@ describe('supervise', () => {
   /** Throwaway DSH_HOME isolation + watchdog cleanup for the spawned supervisor. */
   function supervisedEnv(): { home: string; restore: () => void; stop: () => void } {
     const home = tmpDir('guard-home-')
-    const previous = process.env.DSH_HOME
+    const previousHome = process.env.DSH_HOME
+    const previousHarness = process.env.DSH_HARNESS
     process.env.DSH_HOME = home
+    process.env.DSH_HARNESS = join(home, 'harness-root')
+    mkdirSync(process.env.DSH_HARNESS, { recursive: true })
     const stop = (): void => {
       try {
         mkdirSync(join(home, 'state'), { recursive: true })
@@ -1122,8 +1199,10 @@ describe('supervise', () => {
       } catch { /* best-effort */ }
     }
     const restore = (): void => {
-      if (previous === undefined) delete process.env.DSH_HOME
-      else process.env.DSH_HOME = previous
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      if (previousHarness === undefined) delete process.env.DSH_HARNESS
+      else process.env.DSH_HARNESS = previousHarness
     }
     // A watchdog is setsid'd and detached: nothing reaps it when a test fails
     // before its own `stop()`, so it outlives the run and keeps respawning a
@@ -1923,6 +2002,86 @@ describe('supervise', () => {
       env.restore()
     }
   }, 45_000)
+
+  it('a foreground supervisor waiting behind a cutover reloads restored previous state before takeover', async () => {
+    const env = supervisedEnv()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    const previousRepo = makeRepo()
+    const targetRepo = makeRepo()
+    const previousHarness = tmpDir('guard-waiter-previous-host-')
+    const targetHarness = tmpDir('guard-waiter-target-host-')
+    const previousMarker = join(env.home, 'previous-started.txt')
+    const targetMarker = join(env.home, 'target-started.txt')
+    const hostCommand = (marker: string, body: string): string => {
+      const program = `const fs=require('fs'),http=require('http');fs.writeFileSync(${JSON.stringify(marker)},process.env.DSH_HARNESS||'');http.createServer((q,s)=>s.end(${JSON.stringify(body)})).listen(${port},'127.0.0.1')`
+      return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(program)}`
+    }
+    const previous: LaunchSpec = {
+      version: 1,
+      command: hostCommand(previousMarker, 'previous-after-wait'),
+      port,
+      home: env.home,
+      credentialRepo: previousRepo,
+      harnessRoot: previousHarness,
+      profile: 'web',
+    }
+    const target: LaunchSpec = {
+      ...previous,
+      command: hostCommand(targetMarker, 'rejected-target'),
+      credentialRepo: targetRepo,
+      harnessRoot: targetHarness,
+    }
+    const successor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' })
+    const waiterOutput = io()
+    let waiter: Promise<number> | undefined
+    try {
+      mkdirSync(stateDir, { recursive: true })
+      writeFileSync(join(stateDir, STATE_FILES.watchdogPid), String(successor.pid))
+      prepareLaunchCutover(stateDir, {
+        id: 'waiter-refresh-cutover', previous, target,
+        recoveryPolicy: 'restore-previous', browserHandoff: 'off',
+        previousSupervisorPid: successor.pid!, now: NOW,
+      })
+
+      // This models launchd/systemd restarting its stable foreground launcher
+      // while the cutover successor owns supervision. It initially observes
+      // selected target, then waits behind that live owner.
+      waiter = runCli(['supervise', '--foreground', '--state-dir', stateDir], waiterOutput.io)
+      const waitingDeadline = Date.now() + 5_000
+      while (!waiterOutput.out.join('').includes('waiting for it to exit') && Date.now() < waitingDeadline) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      expect(waiterOutput.out.join('')).toContain('waiting for it to exit')
+
+      recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'restoring', ['target rejected'], NOW + 1)
+      recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'child-started', ['previous', '1', String(successor.pid)], NOW + 2)
+      recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'canary', ['pass'], NOW + 3)
+      recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'ready', ['previous'], NOW + 4)
+      successor.kill('SIGTERM')
+
+      const previousDeadline = Date.now() + 15_000
+      while (!existsSync(previousMarker) && Date.now() < previousDeadline) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      expect(readFileSync(previousMarker, 'utf8')).toBe(previousHarness)
+      expect(existsSync(targetMarker)).toBe(false)
+      expect(await fetchBody(port)).toBe('previous-after-wait')
+      expect(readLaunchState(stateDir)).toMatchObject({
+        mode: 'stable',
+        active: { command: previous.command, credentialRepo: previousRepo, harnessRoot: previousHarness },
+      })
+      expect(waiterOutput.out.join('')).toContain('launch state refreshed after wait')
+    } finally {
+      successor.kill('SIGKILL')
+      mkdirSync(stateDir, { recursive: true })
+      writeFileSync(join(stateDir, STATE_FILES.watchdogStop), '')
+      await killListener(port)
+      if (waiter !== undefined) await Promise.race([waiter, new Promise<number>(resolve => setTimeout(() => resolve(-1), 3_000))])
+      env.stop()
+      env.restore()
+    }
+  }, 30_000)
 
   it('treats naked 401 as transport-up and requires launch URL → 303 → cookie 200 → browser handoff', async () => {
     const home = tmpDir('guard-auth-ready-')
@@ -2729,7 +2888,8 @@ describe('restart context injection', () => {
       version: 1 as const,
       port: 3080,
       home: join(stateDir, 'home'),
-      repo,
+      credentialRepo: repo,
+      harnessRoot: join(stateDir, 'harness-root'),
       profile: 'web',
     }
     prepareLaunchCutover(stateDir, {

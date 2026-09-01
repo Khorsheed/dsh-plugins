@@ -70,6 +70,8 @@ describe('state-directory protocol: bash literals match state-files.ts', () => {
     for (const [name, content] of [['install-launchd.sh', launchd], ['install-systemd.sh', systemd]] as const) {
       expect(content, `${name}: missing one-time durable launch initializer`)
         .toContain('configure-launch --if-absent')
+      expect(content, `${name}: credential repo and host checkout are not persisted independently`)
+        .toContain('--repo $(printf \'%q\' "$REPO") --harness-root $(printf \'%q\' "$HARNESS_ROOT")')
       expect(content, `${name}: foreground supervisor still pins installer-time launch flags`)
         .toContain('supervise --foreground --state-dir')
       expect(content).not.toContain('supervise --foreground --port $PORT --start')

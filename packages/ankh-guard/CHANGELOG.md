@@ -2,7 +2,8 @@
 
 ## 未发布
 
-- 新增通用启动配置事务切换：`configure-launch`/`reconfigure` 持久化并原子选择 previous/target 完整 launch spec，新 watchdog 在旧宿主仍运行时接管监督；失败按预先批准的完整配置恢复或停留等待用户
+- 新增通用启动配置事务切换：`configure-launch`/`reconfigure` 持久化并原子选择 previous/target 完整 launch spec，分别记录 credential/rollback repo 与宿主 `harnessRoot`；资料不足时拒绝从旧 command record 或目标 repo 伪造 previous
+- launchd/systemd 前台等待者在 successor 退出后重新读取耐久 launch state 与回执；target 失败恢复 previous 后，外层 supervisor 不会复活等待前缓存的 target
 - watchdog 就绪探针区分 transport-up 与 ready：裸 401 不再健康；最终进程输出的同 authority 启动 URL 必须完成临时 Cookie jar 的 303 交换、认证后 `/` 200 与一次浏览器交接，Bearer URL 不进入耐久日志/回执
 - 新增脱敏耐久回执 `launch-cutover.json`，记录 supervisor/child PID、配置摘要、认证、重试、canary 与恢复结果；会话仅在回执终态后唤醒
 

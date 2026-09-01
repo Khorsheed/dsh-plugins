@@ -42,6 +42,7 @@ import {
 interface CliOptions {
   stateDir: string
   repoDir: string
+  harnessRoot: string
   home: string
   maxAgeMinutes: number
   port: number | undefined
@@ -249,23 +250,26 @@ commands:
   reset <sha> [--repo DIR]
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
-  preflight [--profile NAME] [--timeout-ms MS]
+  preflight [--profile NAME] [--harness-root DIR] [--timeout-ms MS]
   record-unexpected-exit [--state-dir DIR]   # watchdog-facing: record an unplanned-exit recovery
   record-adoption [--initiator ID] [--state-dir DIR]   # watchdog-facing: record the first (adoption) takeover
   record-composition-recovery [--state-dir DIR]   # watchdog-facing: record a composition-rollback recovery
-  configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] [--profile NAME] [--if-absent]
+  configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] --harness-root DIR [--profile NAME] [--if-absent]
   launch-status [--state-dir DIR]
   reconfigure --start "CMD" --on-failure restore-previous|wait-for-user [--port N]
-          [--home DIR] [--repo DIR] [--profile NAME] [--browser-handoff required|off]
+          [--home DIR] [--repo DIR] [--harness-root DIR] [--profile NAME] [--browser-handoff required|off]
           [--delay-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
-          [--profile NAME] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
+          [--profile NAME] [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit --port N --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
-          [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR]
-  supervise --port N --start "CMD" [--foreground] [--log FILE] [--state-dir DIR] [--repo DIR] [--home DIR]
+          [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR]
+  supervise --port N --start "CMD" [--foreground] [--log FILE] [--state-dir DIR] [--repo DIR] [--harness-root DIR] [--home DIR]
 flags:
   --state-dir DIR  state directory (default: $DSH_HOME/state, else <cwd>/.dsh-guard-state)
   --repo DIR       repository the credential binds to (default: cwd)
+  --harness-root DIR  dsh host checkout used by preflight and exported to the
+                   child as DSH_HARNESS; launch-state initialization requires
+                   this flag or an existing DSH_HARNESS
   --max-age MIN    credential freshness window in minutes (default: 10)
   --port N         canary/restart/supervise: TCP port that must be listening
   --command CMD    record: the command that produced the green state
@@ -316,7 +320,7 @@ export function parse(
   argv: readonly string[],
 ): { error: string } | { command: string; positionals: readonly string[]; options: CliOptions } {
   const options: CliOptions = {
-    stateDir: '', repoDir: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined, detail: undefined,
+    stateDir: '', repoDir: '', harnessRoot: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, message: undefined, detail: undefined,
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
@@ -338,6 +342,7 @@ export function parse(
         case '--state-dir': options.stateDir = flagValue(arg, true) ?? ''; i++; break
         case '--home': options.home = flagValue(arg, true) ?? ''; i++; break
         case '--repo': options.repoDir = flagValue(arg, true) ?? ''; i++; break
+        case '--harness-root': options.harnessRoot = flagValue(arg, true) ?? ''; i++; break
         case '--max-age': {
           const raw = flagValue(arg, true)
           const n = Number(raw)
@@ -554,11 +559,12 @@ export const preflightInternals: {
 
 /**
  * The harness checkout the live instance boots from (and the preflight
- * runner resolves the official published packages from): the `--repo` target
- * when given, else `DSH_HARNESS`, else the conventional default.
+ * runner resolves the official published packages from): the
+ * `--harness-root` target when given, else `DSH_HARNESS`, else the
+ * conventional default. Credential repositories never enter this resolver.
  */
-export function resolveHarnessRoot(optionRepoDir: string | undefined, env: Record<string, string | undefined> = process.env): string {
-  if (optionRepoDir !== undefined && optionRepoDir !== '') return optionRepoDir
+export function resolveHarnessRoot(optionHarnessRoot: string | undefined, env: Record<string, string | undefined> = process.env): string {
+  if (optionHarnessRoot !== undefined && optionHarnessRoot !== '') return optionHarnessRoot
   const fromEnv = env.DSH_HARNESS
   return fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : join(homedir(), 'code/deepseek-harness')
 }
@@ -742,65 +748,93 @@ export function resolveWdHome(optionHome: string, env: Record<string, string | u
   return fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined
 }
 
-function launchSpec(input: { command: string; port: number; home: string; repo: string; profile: string }): LaunchSpec {
+/** A persisted launch spec must never guess which checkout is the host. */
+function resolveLaunchHarnessRoot(optionHarnessRoot: string, selected?: string, env: Record<string, string | undefined> = process.env): string | undefined {
+  if (optionHarnessRoot !== '') return optionHarnessRoot
+  if (selected !== undefined && selected !== '') return selected
+  const fromEnv = env.DSH_HARNESS
+  return fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : undefined
+}
+
+function launchSpec(input: {
+  command: string
+  port: number
+  home: string
+  credentialRepo: string
+  harnessRoot: string
+  profile: string
+}): LaunchSpec {
   return {
     version: 1,
     command: input.command,
     port: input.port,
     home: resolve(input.home),
-    repo: resolve(input.repo),
+    credentialRepo: resolve(input.credentialRepo),
+    harnessRoot: resolve(input.harnessRoot),
     profile: input.profile,
   }
 }
 
 function sameLaunchSpec(left: LaunchSpec, right: LaunchSpec): boolean {
   return left.command === right.command && left.port === right.port && left.home === right.home
-    && left.repo === right.repo && left.profile === right.profile
+    && left.credentialRepo === right.credentialRepo && left.harnessRoot === right.harnessRoot
+    && left.profile === right.profile
 }
 
-/** Resolve supervise's complete spec, preferring explicit flags over durable state. */
-function resolveSuperviseSpec(options: CliOptions, stateDir: string, repoDir: string, io: CliIo): LaunchSpec | undefined {
+/** Resolve supervise's complete spec; a post-wait refresh always prefers durable state. */
+function resolveSuperviseSpec(
+  options: CliOptions,
+  stateDir: string,
+  repoDir: string,
+  io: CliIo,
+  preferDurable = false,
+): LaunchSpec | undefined {
   const durable = readLaunchState(stateDir)
   const selected = durable === null ? undefined : selectedLaunchSpec(durable)
   const recorded = readInstanceLaunch(stateDir)
-  const port = options.port ?? selected?.port ?? recorded?.port
+  const port = preferDurable && selected !== undefined ? selected.port : options.port ?? selected?.port ?? recorded?.port
   if (port === undefined) {
     io.stderr(`supervise requires --port N and --start "CMD" on first configuration\n\n${USAGE}`)
     return undefined
   }
-  const command = options.start !== undefined && options.start !== ''
+  const command = !preferDurable && options.start !== undefined && options.start !== ''
     ? options.start
     : selected?.command ?? resolveStartCommand(undefined, stateDir, 'supervise', io, port)
   if (command === undefined || command === '') {
     io.stderr(`supervise requires --port N and --start "CMD" on first configuration\n\n${USAGE}`)
     return undefined
   }
-  const home = options.home !== '' ? options.home : selected?.home ?? resolveWdHome('')
+  const home = !preferDurable && options.home !== '' ? options.home : selected?.home ?? resolveWdHome('')
   if (home === undefined) {
     io.stderr('supervise needs the dsh home: pass --home DIR or set DSH_HOME — the supervised instance reads its profiles/credentials from there, and deriving one from --state-dir would guess wrong\n')
+    return undefined
+  }
+  const harnessRoot = resolveLaunchHarnessRoot(
+    !preferDurable ? options.harnessRoot : '',
+    selected?.harnessRoot,
+  )
+  if (harnessRoot === undefined) {
+    io.stderr('supervise needs the dsh host checkout: pass --harness-root DIR or set DSH_HARNESS. The credential --repo is a separate role and is never used as the host root.\n')
     return undefined
   }
   return launchSpec({
     command,
     port,
     home,
-    repo: options.repoDir !== '' ? repoDir : selected?.repo ?? repoDir,
-    profile: options.profile !== undefined && options.profile !== '' ? options.profile : selected?.profile ?? resolveProfileName(options),
+    credentialRepo: !preferDurable && options.repoDir !== '' ? repoDir : selected?.credentialRepo ?? repoDir,
+    harnessRoot,
+    profile: !preferDurable && options.profile !== undefined && options.profile !== ''
+      ? options.profile
+      : selected?.profile ?? resolveProfileName(options),
   })
 }
 
-/** Existing full spec, with a migration bridge from the older instance-launch record. */
-function resolvePreviousSpec(options: CliOptions, stateDir: string, repoDir: string, io: CliIo): LaunchSpec | undefined {
+/** Existing full spec. The legacy launch record lacks both repository roles. */
+function resolvePreviousSpec(stateDir: string, io: CliIo): LaunchSpec | undefined {
   const state = readLaunchState(stateDir)
   if (state !== null) return selectedLaunchSpec(state)
-  const recorded = readInstanceLaunch(stateDir)
-  const port = recorded?.port ?? options.port
-  const home = resolveWdHome(options.home)
-  if (recorded === null || port === undefined || home === undefined) {
-    io.stderr('reconfigure refused: no complete previous launch specification is available. Initialize it with `configure-launch --port N --start "CMD" --home DIR --repo DIR --profile NAME`, or pass --home/--port while an instance-launch record exists\n')
-    return undefined
-  }
-  return launchSpec({ command: recorded.command, port, home, repo: repoDir, profile: resolveProfileName(options) })
+  io.stderr('reconfigure refused: no complete durable previous launch specification is available. The legacy instance-launch record does not identify credential repo, host root, home, and profile independently. Run `configure-launch --port N --start "CURRENT CMD" --home DIR --repo CREDENTIAL_REPO --harness-root HOST_ROOT --profile NAME` first.\n')
+  return undefined
 }
 
 /** The first ~40 lines of captured preflight output, newline-terminated, or empty. */
@@ -844,6 +878,13 @@ async function preflightGate(verb: string, profile: string, timeoutMs: number, i
       }manual override: stop the instance by hand (\`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)\`) and let the watchdog respawn it, or fix the preflight failure and retry.\n`)
       return false
   }
+}
+
+/** Same-launch verbs follow the durable host root unless explicitly overridden. */
+function preflightHarnessRoot(options: CliOptions, stateDir: string): string {
+  if (options.harnessRoot !== '') return resolveHarnessRoot(options.harnessRoot)
+  const state = readLaunchState(stateDir)
+  return state === null ? resolveHarnessRoot(undefined) : selectedLaunchSpec(state).harnessRoot
 }
 
 /**
@@ -960,11 +1001,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('configure-launch requires --home DIR or DSH_HOME\n')
         return 2
       }
+      const harnessRoot = resolveLaunchHarnessRoot(options.harnessRoot)
+      if (harnessRoot === undefined) {
+        io.stderr('configure-launch requires --harness-root DIR or DSH_HARNESS; --repo names the independent credential/rollback repository\n')
+        return 2
+      }
       const spec = launchSpec({
         command: options.start,
         port: options.port,
         home,
-        repo: repoDir,
+        credentialRepo: repoDir,
+        harnessRoot,
         profile: resolveProfileName(options),
       })
       const written = writeStableLaunchSpec(stateDir, spec, options.ifAbsent)
@@ -1045,7 +1092,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return ok ? 0 : 1
     }
     case 'preflight': {
-      const outcome = await runPreflightCheck(resolveProfileName(options), options.timeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, resolveHarnessRoot(options.repoDir))
+      const outcome = await runPreflightCheck(
+        resolveProfileName(options),
+        options.timeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
+        resolveHarnessRoot(options.harnessRoot),
+      )
       if (outcome.kind === 'unavailable') {
         io.stderr('preflight unavailable outside the dsh app layout\n')
         return 3
@@ -1154,13 +1205,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr(`reconfigure refused: launch cutover ${inFlightCutover.receipt.id} is still ${inFlightCutover.receipt.phase}; inspect it with \`launch-status\` and settle/retry that transaction first\n`)
         return 1
       }
-      const previous = resolvePreviousSpec(options, stateDir, repoDir, io)
+      const previous = resolvePreviousSpec(stateDir, io)
       if (previous === undefined) return 2
       const target = launchSpec({
         command: options.start,
         port: options.port ?? previous.port,
         home: options.home !== '' ? options.home : previous.home,
-        repo: options.repoDir !== '' ? repoDir : previous.repo,
+        credentialRepo: options.repoDir !== '' ? repoDir : previous.credentialRepo,
+        harnessRoot: options.harnessRoot !== '' ? options.harnessRoot : previous.harnessRoot,
         profile: options.profile !== undefined && options.profile !== '' ? options.profile : previous.profile,
       })
       if (target.port !== previous.port) {
@@ -1176,7 +1228,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('reconfigure refused: no live watchdog owns the old instance. Establish supervision first; an online handoff cannot promise continuity without an old supervisor.\n')
         return 1
       }
-      const gate = verifyCredential(loadState(stateDir), currentHead(target.repo), Date.now(), options.maxAgeMinutes)
+      const gate = verifyCredential(loadState(stateDir), currentHead(target.credentialRepo), Date.now(), options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`reconfigure refused: ${gate.reason}\n`)
         return 1
@@ -1184,7 +1236,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       if (!sandboxGate('reconfigure', options, io)) return 1
       if (!(await preflightGate(
         'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
-        io, resolveHarnessRoot(target.repo),
+        io, target.harnessRoot,
       ))) return 1
 
       const lock = acquireRestartLock(stateDir)
@@ -1303,7 +1355,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // THE COMPOSITION GATE (caller side only — the detached driver inherits
       // a composition the caller already proved; re-running it would double a
       // minute-long dry-run). A green build does not prove the profile boots.
-      if (!isDriver && !(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
+      if (!isDriver && !(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, preflightHarnessRoot(options, stateDir)))) {
         return 1
       }
       // See every other pending stop before becoming one: a scheduled exit's
@@ -1439,13 +1491,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
     }
     case 'supervise': {
-      const spec = resolveSuperviseSpec(options, stateDir, repoDir, io)
+      let spec = resolveSuperviseSpec(options, stateDir, repoDir, io)
       if (spec === undefined) return 2
       // An OS supervisor restarting after the replacement watchdog itself
       // crashes must resume the durable transaction. Treating that start as
       // ordinary would compact selected target into stable and discard the
       // pre-approved recovery contract.
-      const transaction = activeCutover(stateDir)
+      let transaction = activeCutover(stateDir)
       if (options.cutoverId !== undefined && (transaction === null || transaction.receipt.id !== options.cutoverId)) {
         io.stderr(`supervise refused: cutover ${options.cutoverId} is not the selected launch transaction\n`)
         return 1
@@ -1476,6 +1528,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // '<cwd>/.dsh-guard-state' fallback): the CLI would write '<cwd>/state'
       // while the plugin reads '<cwd>/.dsh-guard-state'.
       const pidfile = stateFile(stateDir, 'watchdogPid')
+      let waitedForWatchdog = false
       if (existsSync(pidfile)) {
         const existing = readFileSync(pidfile, 'utf8').trim()
         const existingPid = Number(existing)
@@ -1518,6 +1571,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
                 }
                 await sleep(1000)
               }
+              waitedForWatchdog = true
               io.stdout(`watchdog ${existing} exited — taking over\n`)
             } else {
               io.stdout(`already supervised by pid ${existing}\n`)
@@ -1526,6 +1580,25 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             }
           }
         }
+      }
+      if (waitedForWatchdog) {
+        // The successor can settle the cutover while this launchd/systemd
+        // process waits. Its pre-wait target snapshot is stale at that point:
+        // reread both the atomically selected spec and receipt before spawning
+        // anything, and ignore installer-time flags when durable state exists.
+        const refreshed = resolveSuperviseSpec(options, stateDir, repoDir, io, true)
+        if (refreshed === undefined) return 2
+        spec = refreshed
+        transaction = activeCutover(stateDir)
+        if (options.cutoverId !== undefined && (transaction === null || transaction.receipt.id !== options.cutoverId)) {
+          io.stderr(`supervise refused after wait: cutover ${options.cutoverId} is no longer the selected launch transaction\n`)
+          return 1
+        }
+        if (options.cutoverId === undefined && transaction?.receipt.phase === 'awaiting-user') {
+          io.stderr(`supervise: cutover ${transaction.receipt.id} settled awaiting-user while this supervisor waited; refusing to restart the rejected target (receipt ${stateFile(stateDir, 'launchCutover')})\n`)
+          return 0
+        }
+        io.stdout('launch state refreshed after wait — using the durable selected specification\n')
       }
       const watchdog = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
       if (!existsSync(watchdog)) {
@@ -1561,7 +1634,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         WD_PORT: String(spec.port),
         WD_HOME: spec.home,
         WD_STATE_DIR: stateDir,
-        WD_REPO: spec.repo,
+        WD_REPO: spec.credentialRepo,
+        WD_HARNESS_ROOT: spec.harnessRoot,
         WD_START: spec.command,
         // Let the instance mark its own launch record as supervised (the
         // watchdog passes its env to the instance it spawns).
@@ -1591,7 +1665,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           WD_CUTOVER_DELAY_SECONDS: String((options.delayMs ?? 5000) / 1000),
           WD_PREVIOUS_START: transaction.state.previous.command,
           WD_PREVIOUS_HOME: transaction.state.previous.home,
-          WD_PREVIOUS_REPO: transaction.state.previous.repo,
+          WD_PREVIOUS_REPO: transaction.state.previous.credentialRepo,
+          WD_PREVIOUS_HARNESS_ROOT: transaction.state.previous.harnessRoot,
           WD_PREVIOUS_PROFILE: transaction.state.previous.profile,
         } : {}),
       }
@@ -1641,7 +1716,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // THE ENVIRONMENT GATE: the detached exit agent must outlive this turn.
       if (!sandboxGate('schedule-exit', options, io)) return 1
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
-      if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, resolveHarnessRoot(options.repoDir)))) {
+      if (!(await preflightGate('schedule-exit', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, preflightHarnessRoot(options, stateDir)))) {
         return 1
       }
       // Bootstrap guard: with no live watchdog the scheduled exit leaves the

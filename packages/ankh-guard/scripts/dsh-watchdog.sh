@@ -28,7 +28,8 @@
 #   WD_HOME=DIR        dsh root (default: $DSH_HOME)
 #   WD_STATE_DIR=DIR   state dir: markers, pidfile, logs (default: <WD_HOME>/state)
 #   WD_PORT=N          port to own (default 3080)
-#   WD_REPO=DIR        checkout the guard rollback operates on
+#   WD_REPO=DIR        credential/rollback repository (not the host checkout)
+#   WD_HARNESS_ROOT=DIR host checkout exported to the child as DSH_HARNESS
 #   WD_START="CMD"     shell command that starts the supervised instance
 #   WD_PROFILE=NAME    the profile the instance boots (default web) — its
 #                      composition inputs are snapshotted at healthy boots and
@@ -64,6 +65,7 @@ PORT="${WD_PORT:-3080}"
 DELAY="${WD_DELAY:-0}"
 BOOT_TIMEOUT="${WD_BOOT_TIMEOUT:-60}"
 REPO="${WD_REPO:-}"
+HARNESS_ROOT="${WD_HARNESS_ROOT:-${DSH_HARNESS:-}}"
 PROFILE="${WD_PROFILE:-web}"
 START_CMD="${WD_START:-}"
 CUTOVER_ID="${WD_CUTOVER_ID:-}"
@@ -72,6 +74,7 @@ CUTOVER_ROLE="${WD_CUTOVER_ROLE:-target}"
 PREVIOUS_START="${WD_PREVIOUS_START:-}"
 PREVIOUS_HOME="${WD_PREVIOUS_HOME:-}"
 PREVIOUS_REPO="${WD_PREVIOUS_REPO:-}"
+PREVIOUS_HARNESS_ROOT="${WD_PREVIOUS_HARNESS_ROOT:-}"
 PREVIOUS_PROFILE="${WD_PREVIOUS_PROFILE:-}"
 BROWSER_HANDOFF="${WD_BROWSER_HANDOFF:-off}"
 TARGET_FAILURE_LIMIT="${WD_TARGET_FAILURE_LIMIT:-2}"
@@ -109,9 +112,10 @@ launch_instance() {
   # (WD_GUARD, WD_WAIT_OWNER, WD_ADOPTION, …) and a list silently goes stale.
   # WD_START is captured first: the unset would otherwise eat the command
   # itself. The guard CLI's bare-restart spawn applies the same scrub.
-  local start_cmd=$START_CMD launch_home=$DSH_ROOT
+  local start_cmd=$START_CMD launch_home=$DSH_ROOT launch_harness_root=$HARNESS_ROOT
   (
     export DSH_HOME="$launch_home"
+    if [ -n "$launch_harness_root" ]; then export DSH_HARNESS="$launch_harness_root"; fi
     cd "$launch_home/home" 2>/dev/null || cd /tmp || exit 1
     for v in $(env | sed -n 's/^\(WD_[^=]*\)=.*/\1/p'); do unset "$v"; done
     sh -c "$start_cmd"
@@ -828,15 +832,17 @@ while true; do
     # A launch cutover recovers the complete previous spec or waits, exactly as
     # approved before the stop. It never falls through to the ordinary
     # repository/composition reset machinery: neither can repair a command,
-    # home, checkout, or profile change as one unit.
+    # home, credential repo, host root, or profile change as one unit.
     if [ -n "$CUTOVER_ID" ] && [ "$failures" -ge "$TARGET_FAILURE_LIMIT" ]; then
       if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
-        && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ]; then
+        && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
+        && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
         echo "[watchdog] target launch failed after $failures attempt(s) — restoring the approved previous launch specification"
         cutover_event_required restoring "target failed after $failures attempt(s); restoring previous spec"
         START_CMD="$PREVIOUS_START"
         DSH_ROOT="$PREVIOUS_HOME"
         REPO="$PREVIOUS_REPO"
+        HARNESS_ROOT="$PREVIOUS_HARNESS_ROOT"
         PROFILE="${PREVIOUS_PROFILE:-web}"
         export DSH_HOME="$DSH_ROOT"
         CUTOVER_ROLE="previous"
@@ -929,13 +935,15 @@ while true; do
         echo "[watchdog] canary FAIL during launch cutover"
         cutover_event_required canary fail "credential/head verification failed"
         if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
-          && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ]; then
+          && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
+          && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
           kill_tree "$child" TERM
           wait "$child" 2>/dev/null || true
           cutover_event_required restoring "target became ready but canary failed; restoring previous spec"
           START_CMD="$PREVIOUS_START"
           DSH_ROOT="$PREVIOUS_HOME"
           REPO="$PREVIOUS_REPO"
+          HARNESS_ROOT="$PREVIOUS_HARNESS_ROOT"
           PROFILE="${PREVIOUS_PROFILE:-web}"
           export DSH_HOME="$DSH_ROOT"
           CUTOVER_ROLE="previous"
