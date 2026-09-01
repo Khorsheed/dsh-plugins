@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-16-gen-typert-overlay.md
-.agents/notes/implemented/process/2026-08-16-gen-typert-overlay.md: 96e0e2186dd8f0fd6be32d81fa3e5ebe26e750e3
-.agents/notes/implemented/process/2026-08-16-gen-typert-overlay.zh.md: 50e5fc92fa62ff45c38dd60c1ada21976591646d
+.agents/notes/implemented/process/2026-08-16-gen-typert-overlay.md: f6ac6f60858e791574ecebeaf54bf9bdc030bb2d
+.agents/notes/implemented/process/2026-08-16-gen-typert-overlay.zh.md: 594b52d708b352cd0fa00a4d264da767dd72b447

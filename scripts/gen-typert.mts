@@ -29,10 +29,11 @@
  *
  * Usage: tsx scripts/gen-typert.mts
  *
- * Always generates the full known set in ONE analysis batch: the generator's
- * shared type-declaration metadata depends on the analyzed package set, so
- * per-package invocations would emit divergent artifacts (harness's own
- * workspace build also generates every contributor in a single pass).
+ * With no filter, generates the full known set in one analysis batch. A
+ * `GEN_TYPERT_ONLY` build copies and analyzes only the named plugin packages,
+ * so an independently built plugin never reads an unrelated sibling's source.
+ * Every selected set still runs as one batch because the generator's shared
+ * type-declaration metadata depends on the analyzed set.
  */
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -46,7 +47,7 @@ interface JsoncParser {
   flattenDiagnosticMessageText(messageText: unknown, newLine: string): string
 }
 
-interface TypertPackage {
+export interface TypertPackage {
   /** This repo's package directory (relative to the repo root). */
   readonly dir: string
   /** The package's @khorsheed name — what the overlay manifest declares. */
@@ -56,7 +57,7 @@ interface TypertPackage {
 }
 
 /** Packages with ./typert + ./remote exports. */
-const TYPERT_PACKAGES: readonly TypertPackage[] = [
+export const TYPERT_PACKAGES: readonly TypertPackage[] = [
   {
     dir: 'packages/message-tools',
     name: '@khorsheed/dsh-client-message-tools',
@@ -143,8 +144,35 @@ const HARNESS_ENTRIES = [
   'tsconfig.host.json',
 ] as const
 
-/** Rebuild the overlay from the harness checkout, plugin packages overlaid. */
-async function buildOverlay(): Promise<void> {
+/** Resolve the plugin packages included in one generation batch. */
+export function selectTypertPackages(only: string | undefined): readonly TypertPackage[] {
+  const names = only?.split(',').map(name => name.trim()).filter(Boolean)
+  const selected = names !== undefined && names.length > 0
+    ? TYPERT_PACKAGES.filter(pkg => names.includes(pkg.name))
+    : TYPERT_PACKAGES
+  if (selected.length === 0) throw new Error('gen-typert: GEN_TYPERT_ONLY matched no registered package')
+  return selected
+}
+
+/** Copy only the selected plugin sources and compiler inputs into an overlay. */
+export function copyTypertPackageSources(
+  packages: readonly TypertPackage[],
+  sourceRoot: string,
+  targetRoot: string,
+): void {
+  for (const pkg of packages) {
+    const target = join(targetRoot, pkg.dir)
+    mkdirSync(target, { recursive: true })
+    cpSync(join(sourceRoot, pkg.dir, 'src'), join(target, 'src'), { recursive: true })
+    cpSync(join(sourceRoot, pkg.dir, 'package.json'), join(target, 'package.json'))
+    for (const config of pkg.hostConfigs) {
+      cpSync(join(sourceRoot, pkg.dir, config), join(target, config))
+    }
+  }
+}
+
+/** Rebuild the overlay from the harness checkout, selected plugin packages overlaid. */
+async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
   const ts = await import(pathToFileURL(join(harness, 'node_modules/typescript/lib/typescript.js')).href) as JsoncParser
   rmSync(overlay, { recursive: true, force: true })
   mkdirSync(overlay, { recursive: true })
@@ -158,15 +186,7 @@ async function buildOverlay(): Promise<void> {
       cpSync(source, join(overlay, entry), { recursive: true, verbatimSymlinks: true })
     }
   }
-  for (const pkg of TYPERT_PACKAGES) {
-    const target = join(overlay, pkg.dir)
-    mkdirSync(target, { recursive: true })
-    cpSync(join(repoRoot, pkg.dir, 'src'), join(target, 'src'), { recursive: true })
-    cpSync(join(repoRoot, pkg.dir, 'package.json'), join(target, 'package.json'))
-    for (const config of pkg.hostConfigs) {
-      cpSync(join(repoRoot, pkg.dir, config), join(target, config))
-    }
-  }
+  copyTypertPackageSources(packages, repoRoot, overlay)
   // The harness tsconfig.base.json maps only @deepseek-ai/*; overlaid packages
   // must also resolve each other's @khorsheed/* specifiers (cross-package
   // TYPE-only imports, e.g. room reading the local-agent facade's types).
@@ -178,7 +198,7 @@ async function buildOverlay(): Promise<void> {
   }
   const base = baseParsed.config as { compilerOptions?: { paths?: Record<string, string[]> } }
   const paths: Record<string, string[]> = { ...base.compilerOptions?.paths }
-  for (const pkg of TYPERT_PACKAGES) {
+  for (const pkg of packages) {
     paths[pkg.name] = [`./${pkg.dir}/src/index.ts`]
     paths[`${pkg.name}/*`] = [`./${pkg.dir}/src/*`]
   }
@@ -204,7 +224,7 @@ async function buildOverlay(): Promise<void> {
   const aggregate = parsed.config as { references?: Array<{ path: string }> }
   aggregate.references = [
     ...aggregate.references ?? [],
-    ...TYPERT_PACKAGES.flatMap(pkg => pkg.hostConfigs.map(config => ({ path: `./${pkg.dir}/${config}` }))),
+    ...packages.flatMap(pkg => pkg.hostConfigs.map(config => ({ path: `./${pkg.dir}/${config}` }))),
   ]
   writeFileSync(aggregatePath, `${JSON.stringify(aggregate, null, 2)}\n`)
 }
@@ -214,16 +234,12 @@ async function main(): Promise<void> {
   // package's in-flight remote-surface breakage must not block every other
   // package's build in a multi-agent repo (observed: mission WIP failing
   // message-tools' gen-typert). Default: all registered typert packages.
-  const only = process.env['GEN_TYPERT_ONLY']?.split(',').map(s => s.trim()).filter(Boolean)
-  const selected = only !== undefined && only.length > 0
-    ? TYPERT_PACKAGES.filter(pkg => only.includes(pkg.name))
-    : TYPERT_PACKAGES
-  if (selected.length === 0) throw new Error(`gen-typert: GEN_TYPERT_ONLY matched no registered package`)
+  const selected = selectTypertPackages(process.env['GEN_TYPERT_ONLY'])
   const generatorModule = join(harness, 'packages/typert/generator/src/workspace.ts')
   if (!existsSync(generatorModule)) {
     throw new Error(`gen-typert: harness checkout not found at ${harness} — set DSH_HARNESS to a deepseek-harness clone`)
   }
-  await buildOverlay()
+  await buildOverlay(selected)
   try {
     const { WorkspaceTypertGenerator } = await import(pathToFileURL(generatorModule).href) as {
       WorkspaceTypertGenerator: new (root: string) => WorkspaceGenerator
@@ -251,4 +267,6 @@ async function main(): Promise<void> {
   }
 }
 
-await main()
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main()
+}
