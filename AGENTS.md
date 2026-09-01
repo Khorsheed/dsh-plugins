@@ -13,7 +13,7 @@ Several agents work this repo at once. The rules below exist because of real inc
 - **Keep `main` green.** Before every commit: `pnpm run build && pnpm run test` for the packages you touched. Commit each logical change separately as soon as it is green.
 - **Non-trivial changes carry an Agent Note** in `.agents/notes/` (format in `.agents/notes/README.md`). The note is how concurrent agents learn why a decision was made without a meeting.
 - **Package-level ownership in flight**: before reworking a package, check `git log --oneline -3 -- packages/<pkg>` and recent notes for active work; do not silently overwrite another agent's un-pushed direction.
-- **Prod links here.** The production profile (`$DSH_HOME/profiles/web/package.json`, port 3080) `link:`s these packages. `pnpm install` in the profile can trigger a watchdog restart, and a restart serves whatever `lib/` currently contains — so never leave a package with a stale or missing `lib/` (build after every source change), and coordinate restarts in the open.
+- **Prod takes tarballs, not links.** The production profile (`$DSH_HOME/profiles/web/package.json`, port 3080) references every package as a `file:` tgz. `link:` was retired after in-flight `lib/` reached prod on a restart — the profile is shared state (docs/ops.md). Building in this checkout therefore cannot reach 3080; only `pnpm deploy:3080` can, and it packs from `lib/`. Build after every source change anyway: pack-dist ships whatever `lib/` holds, so a stale build becomes a stale tarball. Coordinate restarts in the open.
 
 ## Build contract
 
