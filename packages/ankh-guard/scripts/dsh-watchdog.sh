@@ -91,7 +91,13 @@ STOP_MARKER="$STATE_DIR/watchdog-stop"
 PIDFILE="$STATE_DIR/watchdog.pid"
 ATTEMPT_LOG="$STATE_DIR/boot-attempt.log"
 
-[ -n "$DSH_ROOT" ] || { echo "[watchdog] WD_HOME or DSH_HOME must be set" >&2; exit 1; }
+# Timestamp every lifecycle line so a durable receipt can be correlated with
+# supervisor/child PIDs across launchd, systemd, and detached CLI restarts.
+wd_log() {
+  printf '%s [watchdog] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"
+}
+
+[ -n "$DSH_ROOT" ] || { wd_log "WD_HOME or DSH_HOME must be set" >&2; exit 1; }
 export DSH_HOME="$DSH_ROOT"
 mkdir -p "$STATE_DIR"
 
@@ -101,7 +107,7 @@ launch_instance() {
     node -e "require('http').createServer((q,s)=>s.end('ok')).listen($PORT,'127.0.0.1')"
     exit
   fi
-  if [ -z "$START_CMD" ]; then echo "[watchdog] launch command unset — nothing to supervise" >&2; exit 1; fi
+  if [ -z "$START_CMD" ]; then wd_log "launch command unset — nothing to supervise" >&2; exit 1; fi
   # The instance inherits this process's environment: scrub EVERY WD_* so no
   # supervision variable can leak into the shells the instance hosts. A leaked
   # WD_STATE_DIR retargets any watchdog script those shells spawn (observed
@@ -138,7 +144,7 @@ cutover_event() {
 cutover_event_required() {
   [ -n "$CUTOVER_ID" ] || return 0
   while ! cutover_event "$@"; do
-    echo "[watchdog] could not persist cutover event $1 — retrying; service state is unchanged" >&2
+    wd_log "could not persist cutover event $1 — retrying; service state is unchanged" >&2
     sleep 1
   done
 }
@@ -236,7 +242,7 @@ ready_probe() {
     last_transport_status=$status
     cutover_event_required transport "$status"
     if [ "$status" != "200" ]; then
-      echo "[watchdog] transport up on :$PORT (HTTP $status); application readiness still pending"
+      wd_log "transport up on :$PORT (HTTP $status); application readiness still pending"
     fi
   fi
   if [ "$status" = "200" ]; then
@@ -251,7 +257,7 @@ ready_probe() {
   url=$launch_url_value
   [ -n "$url" ] || return 1
   if [ "$launch_url_reported" = "0" ]; then
-    echo "[watchdog] observed same-authority launch URL (credential redacted)"
+    wd_log "observed same-authority launch URL (credential redacted)"
     cutover_event_required launch-url
     launch_url_reported=1
   fi
@@ -270,7 +276,7 @@ ready_probe() {
   if [ "$BROWSER_HANDOFF" = "required" ] && [ "$browser_handoff_done" = "0" ]; then
     if ! open_launch_url "$url"; then
       if [ "$browser_handoff_reported" = "0" ]; then
-        echo "[watchdog] browser launch-URL handoff failed — not ready"
+        wd_log "browser launch-URL handoff failed — not ready"
         cutover_event_required browser-handoff failed
         browser_handoff_reported=1
       fi
@@ -279,7 +285,7 @@ ready_probe() {
     browser_handoff_done=1
     browser_handoff_reported=1
     cutover_event_required browser-handoff accepted
-    echo "[watchdog] browser launch-URL handoff accepted (URL credential redacted)"
+    wd_log "browser launch-URL handoff accepted (URL credential redacted)"
   elif [ "$BROWSER_HANDOFF" = "off" ] && [ "$browser_handoff_reported" = "0" ]; then
     cutover_event_required browser-handoff off
     browser_handoff_reported=1
@@ -339,7 +345,7 @@ free_port() {
   local pid p
   pid=$(lsof -tiTCP:$PORT -sTCP:LISTEN -P 2>/dev/null)
   if [ -n "$pid" ]; then
-    echo "[watchdog] freeing :$PORT from pid(s) $pid"
+    wd_log "freeing :$PORT from pid(s) $pid"
     for p in $pid; do kill_tree "$p" TERM; done
     sleep 2
   fi
@@ -429,7 +435,7 @@ restore_composition() {
   if [ -f "$dir/package.json" ]; then cp "$dir/package.json" "$backup/"; fi
   cp "$snap/cordis.patch.yml" "$dir/cordis.patch.yml"
   if [ -f "$snap/package.json" ]; then cp "$snap/package.json" "$dir/package.json"; fi
-  echo "[watchdog] restored the last healthy profile composition over $dir (failing inputs backed up to $backup)"
+  wd_log "restored the last healthy profile composition over $dir (failing inputs backed up to $backup)"
   return 0
 }
 
@@ -442,10 +448,10 @@ rollback_to() {
   local sha="$1" head
   head=$(git -C "$REPO" rev-parse HEAD 2>/dev/null)
   if [ -n "$head" ] && [ "$sha" = "$head" ]; then
-    echo "[watchdog] rollback target $sha is the current HEAD — skipping reset (nothing to roll back; a reset would only wipe uncommitted work)"
+    wd_log "rollback target $sha is the current HEAD — skipping reset (nothing to roll back; a reset would only wipe uncommitted work)"
     return 1
   fi
-  echo "[watchdog] rolling repo back to last known-good $sha"
+  wd_log "rolling repo back to last known-good $sha"
   guard_reset "$sha"
 }
 
@@ -521,7 +527,7 @@ function bind() {
     if (e && e.code === 'EADDRINUSE') {
       if (!noted) {
         noted = true;
-        process.stderr.write('[watchdog] crash page cannot bind :' + port + ' (occupied) — retrying every 5s; SIGUSR1 to ' + wd + ' re-arms the boot loop\n');
+        process.stderr.write(new Date().toISOString() + ' [watchdog] crash page cannot bind :' + port + ' (occupied) — retrying every 5s; SIGUSR1 to ' + wd + ' re-arms the boot loop\n');
       }
       setTimeout(bind, 5000);
       return;
@@ -535,7 +541,7 @@ EOF
 }
 
 retry_on_usrs() {
-  echo "[watchdog] USR1 received — clearing give-up marker and retrying"
+  wd_log "USR1 received — clearing give-up marker and retrying"
   rm -f "$GIVE_UP_MARKER"
   if [ -n "${page_pid:-}" ]; then kill "$page_pid" 2>/dev/null; fi
   failures=0
@@ -558,7 +564,7 @@ if [ "$SUPERVISE" = "1" ]; then
   if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
     owner=$(cat "$PIDFILE" 2>/dev/null)
     if [ "$owner" != "$WD_TAKEOVER_FROM" ] || ! kill -0 "$owner" 2>/dev/null; then
-      echo "[watchdog] takeover refused: expected live pidfile owner $WD_TAKEOVER_FROM, found ${owner:-none}" >&2
+      wd_log "takeover refused: expected live pidfile owner $WD_TAKEOVER_FROM, found ${owner:-none}" >&2
       exit 1
     fi
     takeover_tmp="$PIDFILE.takeover.$$"
@@ -569,7 +575,7 @@ if [ "$SUPERVISE" = "1" ]; then
     # older package version that had no reconfigure verb.
     mv -f "$takeover_tmp" "$PIDFILE"
     claimed=1
-    echo "[watchdog] claimed supervision from watchdog $owner; old child remains running until the scheduled exit"
+    wd_log "claimed supervision from watchdog $owner; old child remains running until the scheduled exit"
     cutover_event_required supervisor-ready "$$"
   else
     while [ "$attempt" -lt 5 ]; do
@@ -578,7 +584,7 @@ if [ "$SUPERVISE" = "1" ]; then
       owner=$(cat "$PIDFILE" 2>/dev/null)
       if [ -n "$owner" ]; then
         if kill -0 "$owner" 2>/dev/null; then
-          echo "[watchdog] already supervised by pid $owner; exiting"
+          wd_log "already supervised by pid $owner; exiting"
           exit 0
         fi
         # A real but dead claim: safe to drop below.
@@ -605,7 +611,7 @@ if [ "$SUPERVISE" = "1" ]; then
     done
   fi
   if [ "$claimed" != "1" ]; then
-    echo "[watchdog] could not claim $PIDFILE after $attempt attempts" >&2
+    wd_log "could not claim $PIDFILE after $attempt attempts" >&2
     exit 1
   fi
 fi
@@ -645,7 +651,7 @@ cleanup() {
       takeover_restore="$PIDFILE.restore.$$"
       echo "$WD_TAKEOVER_FROM" > "$takeover_restore"
       mv -f "$takeover_restore" "$PIDFILE"
-      echo "[watchdog] takeover aborted while old watchdog $WD_TAKEOVER_FROM is alive — restored its pidfile claim"
+      wd_log "takeover aborted while old watchdog $WD_TAKEOVER_FROM is alive — restored its pidfile claim"
     else
       rm -f "$PIDFILE"
     fi
@@ -674,7 +680,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # delayed old-child stop, so a caller/session death cannot strand the
   # transaction between "supervisor-ready" and "host stopped".
   cutover_delay="${WD_CUTOVER_DELAY_SECONDS:-5}"
-  echo "[watchdog] supervision claimed; leaving the old host uninterrupted for ${cutover_delay}s"
+  wd_log "supervision claimed; leaving the old host uninterrupted for ${cutover_delay}s"
   sleep "$cutover_delay"
   # Do not publish the restart marker while the previous watchdog is still
   # alive. Older watchdogs consume that marker themselves; if one wins that
@@ -683,7 +689,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # this wait. A healthy old watchdog notices our pidfile claim on its next
   # supervision pass and yields without reaping the child.
   if kill -0 "$WD_TAKEOVER_FROM" 2>/dev/null; then
-    echo "[watchdog] waiting for old watchdog $WD_TAKEOVER_FROM to yield; old host remains available"
+    wd_log "waiting for old watchdog $WD_TAKEOVER_FROM to yield; old host remains available"
     while kill -0 "$WD_TAKEOVER_FROM" 2>/dev/null; do sleep 0.2; done
   fi
   # Publish the intentional-restart marker only at the irreversible boundary.
@@ -693,7 +699,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # SIGTERM and can snapshot interrupted sessions with the correct initiator.
   write_cutover_restart_marker
   free_port
-  echo "[watchdog] old host stopped — taking over :$PORT"
+  wd_log "old host stopped — taking over :$PORT"
   # This is the irreversible boundary. Never restore a possibly recycled old
   # supervisor pid during a much later cleanup.
   WD_TAKEOVER_FROM=""
@@ -702,15 +708,15 @@ elif [ -n "$CUTOVER_ID" ]; then
   # resumes the atomically selected side of an existing transaction. Replace
   # any orphan listener from the failed supervisor, then prove a fresh final
   # child; never compact the transaction merely because its driver died.
-  echo "[watchdog] resuming launch cutover $CUTOVER_ID on selected side $CUTOVER_ROLE"
+  wd_log "resuming launch cutover $CUTOVER_ID on selected side $CUTOVER_ROLE"
   cutover_event_required supervisor-ready "$$"
   write_cutover_restart_marker
   free_port
 elif [ "${WD_WAIT_OWNER:-0}" = "1" ]; then
   # Adoption ahead of a self-restart: the current owner exits on its own.
-  echo "[watchdog] waiting for the current owner of :$PORT to exit"
+  wd_log "waiting for the current owner of :$PORT to exit"
   while lsof -tiTCP:$PORT -sTCP:LISTEN -P >/dev/null 2>&1; do sleep 1; done
-  echo "[watchdog] port free — taking over"
+  wd_log "port free — taking over"
 else
   free_port
 fi
@@ -725,7 +731,7 @@ while true; do
     if [ ! -f "$PIDFILE" ]; then (set -C; echo $$ > "$PIDFILE") 2>/dev/null || true; fi
     pidowner=$(cat "$PIDFILE" 2>/dev/null)
     if [ -n "$pidowner" ] && [ "$pidowner" != "$$" ] && kill -0 "$pidowner" 2>/dev/null; then
-      echo "[watchdog] pidfile now owned by live pid $pidowner — yielding"
+      wd_log "pidfile now owned by live pid $pidowner — yielding"
       yielded=1
       # Non-zero keeps launchd/systemd's stable launcher alive: it restarts,
       # reads the newly selected durable spec, then waits behind the successor.
@@ -749,7 +755,7 @@ while true; do
   fi
   # Keep the long-standing "starting instance" prefix stable for operators and
   # log consumers; the role is additive cutover metadata.
-  echo "[watchdog] starting instance on :$PORT (role=$CUTOVER_ROLE, failures=$failures, attempt=$current_attempt)"
+  wd_log "starting instance on :$PORT (role=$CUTOVER_ROLE, failures=$failures, attempt=$current_attempt)"
   # Capture this attempt's output for failure-domain classification. Plain
   # redirection only — never > >(tee …) process substitution: a sandboxed or
   # detached spawner can EPERM on the /dev/fd/N that >() opens (workspace-write
@@ -799,24 +805,24 @@ while true; do
         # is outside this watchdog's reach and retrying is a hot spin.
         port_races=$((port_races + 1))
         if [ "$port_races" -le 5 ]; then
-          echo "[watchdog] boot hit EADDRINUSE on :$PORT — freeing the port and retrying (not a code failure, attempt $port_races/5)"
+          wd_log "boot hit EADDRINUSE on :$PORT — freeing the port and retrying (not a code failure, attempt $port_races/5)"
           free_port
           continue
         fi
-        echo "[watchdog] :$PORT is still held after 5 free attempts — counting this as a boot failure"
+        wd_log ":$PORT is still held after 5 free attempts — counting this as a boot failure"
       else
         # EADDRINUSE on a port this watchdog does not own: the start command
         # targets somewhere else, and freeing :$PORT cannot release it. The
         # unconditional retry this replaces never counted the attempt, so a
         # start command aimed at an occupied foreign port respawned the
         # instance in a tight loop with no backoff and no give-up.
-        echo "[watchdog] boot hit EADDRINUSE on a port other than the supervised :$PORT — the --start command targets a port this watchdog does not own; freeing :$PORT cannot fix that"
+        wd_log "boot hit EADDRINUSE on a port other than the supervised :$PORT — the --start command targets a port this watchdog does not own; freeing :$PORT cannot fix that"
         reset_done=1
       fi
     fi
 
     failures=$((failures + 1))
-    echo "[watchdog] instance failed to come up (failure #$failures)"
+    wd_log "instance failed to come up (failure #$failures)"
     cutover_event_required attempt-failed "$CUTOVER_ROLE" "$current_attempt" "readiness not proven within ${BOOT_TIMEOUT}s"
 
     # The instance came up on a port this watchdog does not own: a start-command
@@ -825,7 +831,7 @@ while true; do
     # whose subject lives outside the repository) and keep counting toward the
     # crash page, which is what makes the misconfiguration visible.
     if [ -n "$bound" ] && ! printf '%s\n' "$bound" | grep -qx "$PORT"; then
-      echo "[watchdog] instance bound :$(printf '%s' "$bound" | paste -sd, -) but supervision owns :$PORT — the --start command does not bind the supervised port; a repository rollback cannot fix that"
+      wd_log "instance bound :$(printf '%s' "$bound" | paste -sd, -) but supervision owns :$PORT — the --start command does not bind the supervised port; a repository rollback cannot fix that"
       reset_done=1
     fi
 
@@ -837,7 +843,7 @@ while true; do
       if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
         && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
         && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
-        echo "[watchdog] target launch failed after $failures attempt(s) — restoring the approved previous launch specification"
+        wd_log "target launch failed after $failures attempt(s) — restoring the approved previous launch specification"
         cutover_event_required restoring "target failed after $failures attempt(s); restoring previous spec"
         START_CMD="$PREVIOUS_START"
         DSH_ROOT="$PREVIOUS_HOME"
@@ -855,7 +861,7 @@ while true; do
         port_races=0
         continue
       fi
-      echo "[watchdog] launch cutover cannot become ready — approved policy is ${CUTOVER_POLICY:-wait-for-user}; parking for user action"
+      wd_log "launch cutover cannot become ready — approved policy is ${CUTOVER_POLICY:-wait-for-user}; parking for user action"
       cutover_event_required awaiting-user "$CUTOVER_ROLE launch failed after $failures attempt(s)"
       printf '%s launch cutover waiting after %s failures\n' "$(date '+%F %T')" "$failures" > "$GIVE_UP_MARKER"
       WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
@@ -868,7 +874,7 @@ while true; do
     if [ -z "$CUTOVER_ID" ] && [ "$failures" -ge 2 ] && [ "$reset_done" -eq 0 ]; then
       sha=$(rollback_sha)
       if [ -z "$sha" ]; then
-        echo "[watchdog] no guard credential/checkpoint recorded; cannot roll back"
+        wd_log "no guard credential/checkpoint recorded; cannot roll back"
       elif failure_subject_outside_repo; then
         # The failure lives outside the checkout (profile overlay, installed
         # plugin, environment) — reverting the repository cannot fix it. But
@@ -881,7 +887,7 @@ while true; do
           failures=0
           continue
         fi
-        echo "[watchdog] boot failure originates outside $REPO — repository rollback cannot fix it; leaving the checkout untouched"
+        wd_log "boot failure originates outside $REPO — repository rollback cannot fix it; leaving the checkout untouched"
         reset_done=1
       else
         if rollback_to "$sha"; then
@@ -896,9 +902,9 @@ while true; do
     fi
 
     if [ "$failures" -ge 4 ]; then
-      echo "[watchdog] giving up after $failures consecutive failures"
+      wd_log "giving up after $failures consecutive failures"
       printf '%s giving up after %s failures\n' "$(date '+%F %T')" "$failures" > "$GIVE_UP_MARKER"
-      echo "[watchdog] serving crash page on :$PORT — click 重试 or send SIGUSR1 to $$"
+      wd_log "serving crash page on :$PORT — click 重试 or send SIGUSR1 to $$"
       WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
       page_pid=$!
       wait "$page_pid"
@@ -911,7 +917,7 @@ while true; do
   fi
 
   # Instance is up.
-  echo "[watchdog] instance ready on :$PORT ($readiness_detail) — instance output: $ATTEMPT_LOG"
+  wd_log "instance ready on :$PORT ($readiness_detail) — instance output: $ATTEMPT_LOG"
   if [ "$comp_restored" = "1" ]; then
     # The boot only succeeded because the composition was rolled back — the
     # recovery (newest plugin change unmounted) must be reported, not silent.
@@ -922,7 +928,7 @@ while true; do
   # Intentional restart: run the guard canary (credential fresh + HEAD match).
   if [ -f "$RESTART_MARKER" ]; then
     if guard_verify; then
-      echo "[watchdog] canary PASS — clearing restart marker"
+      wd_log "canary PASS — clearing restart marker"
       cutover_event_required canary pass
       if [ -n "$CUTOVER_ID" ]; then
         rm -f "$RESTART_MARKER"
@@ -932,7 +938,7 @@ while true; do
       rm -f "$RESTART_MARKER"
     else
       if [ -n "$CUTOVER_ID" ]; then
-        echo "[watchdog] canary FAIL during launch cutover"
+        wd_log "canary FAIL during launch cutover"
         cutover_event_required canary fail "credential/head verification failed"
         if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
           && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
@@ -972,7 +978,7 @@ while true; do
           continue
         fi
       else
-      echo "[watchdog] canary FAIL — rolling back to last known-good"
+      wd_log "canary FAIL — rolling back to last known-good"
       sha=$(rollback_sha)
       if [ -n "$sha" ]; then rollback_to "$sha" || true; fi
       rm -f "$RESTART_MARKER"
@@ -1017,7 +1023,7 @@ while true; do
       if [ ! -f "$PIDFILE" ]; then (set -C; echo $$ > "$PIDFILE") 2>/dev/null || true; fi
       pidowner=$(cat "$PIDFILE" 2>/dev/null)
       if [ -n "$pidowner" ] && [ "$pidowner" != "$$" ] && kill -0 "$pidowner" 2>/dev/null; then
-        echo "[watchdog] pidfile now owned by live pid $pidowner — yielding (instance left running for the new owner)"
+        wd_log "pidfile now owned by live pid $pidowner — yielding (instance left running for the new owner)"
         yielded=1
         exit 75
       fi
@@ -1028,7 +1034,7 @@ while true; do
 
   # Explicit stop: exit the watchdog without respawn.
   if [ -f "$STOP_MARKER" ]; then
-    echo "[watchdog] stop marker present — exiting"
+    wd_log "stop marker present — exiting"
     rm -f "$STOP_MARKER" "$PIDFILE"
     exit 0
   fi

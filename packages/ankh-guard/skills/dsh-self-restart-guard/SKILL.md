@@ -1,6 +1,6 @@
 ---
 name: dsh-self-restart-guard
-description: Use before ANY self-modification batch that may end in restarting the running dsh web instance (product code, client plugins, tsconfig/bundle registrations, dependencies). Enforces the green-build credential gate, the pre-batch checkpoint, and the post-restart canary so a broken self-change rolls back instead of taking the instance down. Also consult it to query the guard state or the recorded pitfalls before deployment.
+description: Use before a self-modification batch or any agent-driven restart of the running dsh web instance. Enforces execution-backed green evidence, clean-tree/HEAD binding, launch-spec continuity, the checkpoint policy for real edits, and the post-restart canary. Also consult it to query guard state or recorded deployment pitfalls.
 ---
 
 # Self-Restart Guard: atomic self-modification protocol
@@ -25,36 +25,46 @@ Never restart "the instance" from a recipe — restart the one you are actually 
 
 Run `$GUARD check-env --state-dir "$DSH_HOME/state" --repo <repo>` for a one-shot readout of all of the above plus sandbox status and watchdog presence.
 
-## The protocol (every batch)
+## Classify the operation first
 
-1. **Checkpoint** — before touching anything, snapshot the working tree of the repo you are about to change:
+- **Pure same-launch restart**: no source, dependency, profile, generated output, or launch-spec input changed. Skip the Git checkpoint because there is no pre-edit state to preserve. This does **not** skip build/test evidence, credential verification, the verb's internal preflight, watchdog ownership, or canary.
+- **Modification followed by restart**: take the checkpoint before editing, then commit the logical change and prove the resulting clean HEAD.
+- **Launch configuration changes**: use the modification protocol as applicable, then `reconfigure`; never smuggle a new command/repo/host root/profile through `schedule-exit`.
+
+## The protocol
+
+1. **Checkpoint real edits only** — before touching anything, record the rollback point of the repo you are about to change. A clean tree records the existing HEAD without creating an empty commit. A dirty tree is refused by default; inspect every path and, only with explicit approval and where repository policy permits committing the complete snapshot, rerun with `--include-dirty`:
 
 ```sh
 $GUARD checkpoint --message "before <batch-name>" --repo <repo> --state-dir "$DSH_HOME/state"
+# reviewed dirty snapshot only:
+$GUARD checkpoint --message "before <batch-name>" --include-dirty --repo <repo> --state-dir "$DSH_HOME/state"
 ```
 
 2. **Modify** — make the change; register every surface the change needs (package `files`, `dsh.bundle.patch`, identity triangle, dependencies). Missing registrations are the single most common failure class — an unregistered package is invisible to every gate.
 
-3. **Prove green** — run the build and tests that cover the change, then record the green-build credential bound to the repo's HEAD (freshness window 10 minutes):
+3. **Prove green on the final clean commit** — use `record --run --` to make the guard execute the exact argv and observe exit 0. The guard clears any old credential before the command, and records only if HEAD is unchanged and staged, unstaged, and untracked inputs are all absent afterward. For multiple shell steps, invoke the shell explicitly as the evidence program:
 
 ```sh
-$GUARD record build --command "<the command that went green>" --repo <repo> --state-dir "$DSH_HOME/state"
+$GUARD record build+test --repo <repo> --state-dir "$DSH_HOME/state" --run -- sh -c 'pnpm run build && pnpm run test'
 $GUARD verify --repo <repo> --state-dir "$DSH_HOME/state"
 ```
 
-4. **Preflight** — the composition dry-run gate; a FAIL blocks the restart and must never be bypassed:
+`--trust-command --command "..."` is reserved for an external orchestrator that already observed the command's real exit status (for example, the repository's deployment driver). It is not an agent shortcut.
+
+4. **Composition preflight** — `restart`, `schedule-exit`, and `reconfigure` each run this gate internally exactly once and refuse before stopping the healthy host. Use the standalone verb only as an earlier diagnostic; do not run it as a mandatory duplicate immediately before one of those verbs:
 
 ```sh
 $GUARD preflight --profile web
 ```
 
 5. **Restart or launch cutover** — the path depends on supervision and whether the complete launch specification changes:
-   - **No watchdog yet** (e.g. right after installing the plugin): drive it with the `restart` verb — it owns stop → start → canary in a detached driver and self-detaches from the dying instance. `--start` defaults to the launch record when one exists.
-   - **Watchdog-supervised, same command, home, credential repo, harness root, and profile**: `schedule-exit --port <port> --delay-ms 5000 --repo <credential-repo> --harness-root <host-root>`. It re-verifies the credential against the repo's CURRENT HEAD, runs composition preflight against the independent host root, exits the instance after the delay (so the current turn finishes), and the watchdog respawns + canaries automatically. Do NOT use bare `restart` against a supervised instance — it fights the supervisor. **Never pass `--initiator` by hand**: it defaults to `$DSH_SESSION_ID`, which the shell environment already sets to THIS session's id — that is what routes the post-restart wake-up report back to you. An invented value sends the report to a session that does not exist and you are never woken (a branch name is not a session id).
+   - **No watchdog yet** (e.g. right after installing the plugin): `schedule-exit` hard-refuses because killing the host would guarantee an outage. Establish supervision, or drive the first bounce with the `restart` verb — it owns stop → start → canary in a detached driver and self-detaches from the dying instance. `--start` defaults to the launch record when one exists.
+   - **Watchdog-supervised, same command, home, credential repo, harness root, and profile**: run `schedule-exit --delay-ms 5000 --state-dir "$DSH_HOME/state"` (`--port` may confirm the durable port on legacy state). It reloads the durable active spec, rejects explicit repo/host-root/profile/port conflicts, verifies that the live supervisor record owns the same command, re-verifies the credential against the active credential repo, runs one composition preflight against the active host root, then exits the child. The watchdog respawns + canaries automatically. Do NOT use bare `restart` against a supervised instance — it fights the supervisor. **Never pass `--initiator` by hand**: it defaults to `$DSH_SESSION_ID`, which the shell environment already sets to THIS session's id — that is what routes the post-restart wake-up report back to you. An invented value sends the report to a session that does not exist and you are never woken (a branch name is not a session id).
    - **Watchdog-supervised, command, home, credential repo, harness root, or profile changes**: first ensure `launch-status` shows a complete durable previous spec. If it does not, explicitly initialize the real current values with `configure-launch`; never infer previous from the target repo or legacy command record. Then use `reconfigure --start "<complete target command>" --repo <target-credential-repo> --harness-root <target-host-root> --on-failure <policy> --browser-handoff required`. Before running it, obtain the user's explicit recovery choice: `restore-previous` restores the entire previous launch specification; `wait-for-user` parks without resetting a repository. `reconfigure` atomically transfers the pidfile to a replacement watchdog before the old host is stopped. Online port changes are refused; deploy a separately supervised authority and cut traffic over instead.
    - Never hand-roll `sleep; kill; nohup start` scripts — they die with the instance (teardown reaps managed processes).
 
-6. **Verify after** — the port must listen again and the canary must PASS (`$DSH_HOME/state/restart.log` for the verb path, `watchdog.log` for the supervised path). For `reconfigure`, wait for `launch-status` to show a terminal receipt, read `$DSH_HOME/state/launch-cutover.json`, and report its supervisor/child PIDs, redacted launch summaries, authentication handoff, retries, canary, and recovery outcome. On repeated ordinary boot failure the watchdog rolls the checkout back to the last known-good revision; a cutover follows only its pre-approved full-spec recovery policy.
+6. **Verify after** — the port must listen again and the canary must PASS (`$DSH_HOME/state/restart.log` for the verb path, timestamped `watchdog.log` for the supervised path). For `reconfigure`, wait for `launch-status` to show a terminal receipt, read `$DSH_HOME/state/launch-cutover.json`, and report its supervisor/child PIDs, redacted launch summaries, authentication handoff, retries, canary, and recovery outcome. On repeated ordinary boot failure the watchdog rolls the checkout back to the last known-good revision; a cutover follows only its pre-approved full-spec recovery policy.
 
 ## Querying state
 
@@ -66,7 +76,7 @@ $GUARD canary --port <port> --state-dir "$DSH_HOME/state" --repo <repo>
 
 ## Pitfalls this protocol exists for
 
-- **Credential/HEAD mismatch**: `schedule-exit`/`restart` refuse when the credential's revision ≠ current HEAD — rebuild and re-record after every commit. Record with `--state-dir` pointing at the SAME state the restart reads (`$DSH_HOME/state`); a record without it lands in a stray `<cwd>/.dsh-guard-state` and the gate will not see it.
+- **Credential/checkout mismatch**: `verify`, `schedule-exit`, and `restart` refuse when the credential's revision ≠ current HEAD or when any staged, unstaged, or untracked input exists. Commit/remove the input, then rerun the execution-backed evidence. Record with `--state-dir` pointing at the SAME state the restart reads (`$DSH_HOME/state`); a record without it lands in a stray `<cwd>/.dsh-guard-state` and the gate will not see it.
 - **Sandboxed sessions**: restart verbs refuse in a sandboxed turn (a detached driver would be reaped). Escalate through your host's per-command approval, or the user runs `/permission danger-full-access` in the session — settings pages only affect NEW sessions.
 - **Preflight FAIL is information, not friction**: it has caught unbootable profile patches and duplicate loader entry ids before they could take prod down. Fix the composition; never bypass.
 - **Profile `link:`/`file:` deps**: after rebuilding a plugin, refresh the profile install (`dsh plugin --profile web add <path-or-tarball>`) before restarting — a restart serves whatever the profile's `node_modules` currently contains.

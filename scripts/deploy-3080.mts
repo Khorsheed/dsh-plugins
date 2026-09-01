@@ -13,8 +13,8 @@
  *   3. refresh the profile manifest (dep → file:<tgz>, version bumps handled)
  *      + family overrides, then a clean profile install
  *   4. record the green-build credential for the harness checkout
- *   5. preflight (FAIL aborts before anything restarts — never bypassed)
- *   6. schedule-exit → watchdog respawn → wait for canary PASS + port 200
+ *   5. schedule-exit (owns the one preflight; FAIL stops before host exit)
+ *   6. watchdog respawn → wait for authenticated canary PASS
  *
  * Usage:
  *   pnpm deploy:3080 --package packages/<dir> [--package packages/<dir2> ...]
@@ -164,15 +164,19 @@ try {
   run('pnpm', ['install'], { cwd: PROFILE })
 
   // 4. credential for the harness checkout HEAD.
-  runGuard(['record', 'build', '--command', 'pnpm deploy:3080 (build+test green)', '--repo', HARNESS])
-
-  // 5. preflight — FAIL aborts, nothing restarts.
-  runGuard(['preflight', '--profile', 'web'])
+  // This orchestrator has already observed every package build/test above;
+  // use the explicit trusted seam instead of pretending the guard ran them.
+  runGuard(['record', 'build', '--trust-command', '--command', 'pnpm deploy:3080 (build+test green)', '--repo', HARNESS])
 
   if (noRestart) {
+    // With no stop-capable verb there is no internal composition gate, so the
+    // refresh-only acceptance path runs the diagnostic explicitly.
+    runGuard(['preflight', '--profile', 'web'])
     process.stdout.write('\ndeploy-3080: packed + refreshed (no restart, per --no-restart)\n')
   } else {
-    // 6. gated restart + canary watch.
+    // 5. gated restart + canary watch. schedule-exit owns the single
+    // composition preflight; running it separately here doubled the slowest
+    // part of an ordinary 3080 restart without strengthening the gate.
     const logPath = join(DSH_HOME, 'state', 'watchdog.log')
     const logOffset = existsSync(logPath) ? readFileSync(logPath, 'utf8').length : 0
     runGuard(['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--initiator', initiator])

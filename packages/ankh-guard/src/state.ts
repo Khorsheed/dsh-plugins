@@ -185,6 +185,7 @@ export function setCheckpoint(stateDir: string, input: { revision: string; messa
  * @param currentRevision - the git HEAD of the checkout, or null when unavailable.
  * @param now - epoch milliseconds (injected for deterministic tests).
  * @param maxAgeMinutes - freshness window.
+ * @param workingTreeClean - whether staged, unstaged, and untracked inputs are absent.
  * @returns ok plus a human reason either way.
  */
 export function verifyCredential(
@@ -192,11 +193,18 @@ export function verifyCredential(
   currentRevision: string | null,
   now: number,
   maxAgeMinutes: number,
+  workingTreeClean = true,
 ): VerifyResult {
   const credential = state.credential
   if (credential === undefined) return { ok: false, reason: 'no green-build credential recorded' }
   if (currentRevision === null) {
     return { ok: false, reason: 'current git HEAD unavailable (not inside a git repository?)' }
+  }
+  if (!workingTreeClean) {
+    return {
+      ok: false,
+      reason: 'working tree is dirty (staged, unstaged, or untracked changes exist) — commit or remove them, then rebuild and re-record',
+    }
   }
   if (credential.revision !== currentRevision) {
     return {

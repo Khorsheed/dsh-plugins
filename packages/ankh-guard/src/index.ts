@@ -35,7 +35,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
-import { commitCheckpoint, currentHead, resetToCheckpoint } from './git.ts'
+import { commitCheckpoint, currentHead, isWorkingTreeClean, resetToCheckpoint } from './git.ts'
 import { cutoverBlocksWake } from './launch-spec.ts'
 import { stateFile } from './state-files.ts'
 import {
@@ -161,7 +161,7 @@ export interface CanaryResult {
 
 /** Result of a checkpoint request. */
 export type CheckpointResult =
-  | { ok: true; sha: string; artifacts: string[] }
+  | { ok: true; sha: string; artifacts: string[]; createdCommit: boolean }
   | { ok: false; error: string }
 
 /**
@@ -175,11 +175,13 @@ export interface SelfRestartGuard {
    */
   verify(): VerifyResult
   /**
-   * Record a green credential for the current HEAD.
+   * Record an externally proven green credential for the current clean HEAD.
+   * This synchronous service is a trusted orchestrator seam; agent/CLI flows
+   * must use `record --run -- PROGRAM` so the guard observes the exit status.
    * @param scope - what passed, e.g. 'build+test'.
    * @param options - optional command that produced the green state.
    * @returns the persisted state including the new credential.
-   * @throws outside a git repository (no HEAD to bind to).
+   * @throws outside a git repository or while the checkout is dirty.
    */
   record(scope: string, options?: { command?: string }): GuardState
   /**
@@ -193,7 +195,9 @@ export interface SelfRestartGuard {
    */
   status(): GuardState
   /**
-   * Commit the whole tree as a pre-batch checkpoint and remember it.
+   * Remember the existing clean HEAD as a pre-batch checkpoint. Dirty trees
+   * are refused; the CLI's reviewed `--include-dirty` path is deliberately
+   * unavailable through this convenience service.
    * @param message - batch description; defaults to 'batch snapshot'.
    * @returns the checkpoint commit sha, or a failure reason.
    */
@@ -634,10 +638,13 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   }
 
   const service: SelfRestartGuard = {
-    verify: () => verifyCredential(loadState(stateDir), currentHead(repoDir), Date.now(), maxAgeMinutes),
+    verify: () => verifyCredential(
+      loadState(stateDir), currentHead(repoDir), Date.now(), maxAgeMinutes, isWorkingTreeClean(repoDir),
+    ),
     record: (scope, options) => {
       const head = currentHead(repoDir)
       if (head === null) throw new Error('ankh-guard: cannot record a credential outside a git repository')
+      if (!isWorkingTreeClean(repoDir)) throw new Error('ankh-guard: cannot record a credential while the working tree is dirty')
       return recordCredential(stateDir, { scope, revision: head, command: options?.command ?? '' }, Date.now())
     },
     clear: () => clearCredential(stateDir, Date.now()),
