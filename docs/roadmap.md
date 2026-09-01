@@ -34,6 +34,8 @@
 
 **两层的生命周期预期不同，直接影响投入。** base 是替官方补课，因此**不该过度投资**——够用即可，官方补上就按 [AGENTS.md 的 Compatibility labeling](../AGENTS.md) 退役该路径，提案按「官方吸收」转 `closed`。feature 是自己的领域资产，官方不会替你做 mission / lab / room，值得深耕。
 
+**domain 整合包可以包含 `ops` 层的包，当该包是它的安装或运维通道时。** `dsh-web-basic` 含 `ankh-guard` 即属此例：`restart-into-web-basic.sh` 走的正是它的守卫通道（环境探针 → 凭证 → preflight → watchdog 停旧启新 + canary），没有它就没有「同端口交接、不用记新端口」的安装体验，而那是 README 的核心卖点、也是 B9 判据 1–3 的执行基础。为分类整洁移出它，是拿用户体验换纯粹性。
+
 `feature` 层独立的理由：local-agent 家族、mission、lab 这批包不是每个 domain 都要（写小说不需要委派编码 CLI，也不需要实验单元），塞进 base 会让基础整合包变重；但它们也不专属某个 domain（mission 归 eval 还是 dev？两边都要）。强行按「主标签唯一」归类会产生归属冲突。
 
 名字取 `feature` 而非 `capability`，是因为后者在 dsh 语境里已被占用三处：官方的 capability seams、本仓的 `capability-catalog` 包、以及泛指插件能力的日常用法。
@@ -264,7 +266,7 @@ dsh-dev/
 | B6 | 写 `scripts/restart-into-web-dev.sh` | B5 | 同端口交接成功 |
 | B7 | 写双语 README + sidecar + CHANGELOG | B4·B6 | 门禁绿 |
 | B8 | 全新 `$DSH_HOME` 装一遍 | B5 | 一次通过 |
-| B9 | **五条切换判据实测** | B6·B8 | 见下 |
+| B9 | **五条切换判据实测** | B6·B8 | 见下方判据表 |
 | B10 | 借 **3091**（`~/.dsh-alpha-check`，宿主 0.1.2-alpha）做该线首版验证 | B8 | 与稳定线结果对照；历史兼容按 **floor + current** 覆盖（最低 minHost + 当前稳定线），中间 rc 仅在 `compat.notes` 点名时补验 |
 | B11 | agent 照指南装（同 A14） | B8 | 一次性纯净实例 |
 | B12 | 自由装卸载实测（同 A15，22 个成员） | B8 | 抽样人工验界面，其余自动跑启动检查 |
@@ -275,6 +277,65 @@ dsh-dev/
 - **隔离环境**：按 [ops.md 的环境拓扑](ops.md)——一次性纯净实例用 `DSH_HOME=$(mktemp -d) <toolchain>/dsh web`，测完删目录。**「纯净」天然是一次性的**，没有还原纪律可违反。注意工具链分工：验证「用户拿到手什么样」走 **npm 工具链线**（`~/.dsh-toolchains/stable`），验证 prod 配置走**源码检出线**。
 - **A14 用谁来测**：把 README 那句话发给 claude-code 或 codex——正好用工作台自己的委派能力测自己的安装指南。判据是**不需要人补充信息**：agent 中途来问「装哪个目录 / 端口是多少」，就说明指南缺了那一条。
 - **A15 的分层**：12 个成员全部跑 `plugin rm` + 启动检查（可脚本化，快）；界面消失与恢复抽样人工验（慢，选 message-tools / ui-file-preview / taskpilot 这类有明显界面的）。
+
+#### A15 / B12 的可观测信号清单
+
+装卸载测试要机器可判，取决于每个成员**卸载后有什么信号能被程序看见**。扫描 21 个成员后分三档：
+
+**第一档 —— 全自动，所有成员都有（组合层）**
+
+```
+dsh --profile <p> --dump-config | grep -c '^- id: '
+```
+
+`plugin rm` 后行数 −1 且该行 id 消失，`plugin add` 后复原。**这是唯一 21/21 都适用的信号**，也是检查器的主干。它证明「没挂载」，但不证明「功能消失」。
+
+**第二档 —— 可自动，有 Remote 服务的 7 个（服务层）**
+
+卸载后调它的 Remote 命名空间应当探测不到：
+
+| 成员 | Remote 命名空间 |
+|---|---|
+| `worktrees` | `worktrees` |
+| `room` | `room` |
+| `local-files` | `localFiles` |
+| `file-preview` | `filePreview` |
+| `capability-catalog` | `capabilityCatalog` |
+| `message-tools` | （有 Remote，命名空间待确认） |
+| `local-agent` | （有 Remote，命名空间待确认） |
+
+**第三档 —— 可自动，注册模型工具的 4 个（工具层）**
+
+卸载后工具应从注册表消失，经 `list_capabilities` 或工具列表可查：
+
+| 成员 | 工具 |
+|---|---|
+| `worktrees` | `worktrees` |
+| `room` | `room_invite` / `room_task` / `room_message` |
+| `capability-catalog` | `list_capabilities` |
+| `local-agent-tool-subagent` | `subagent_kimi` / `subagent_codex` / `subagent_claude_code` / `subagent_dsh` |
+
+**只能人工的 —— 纯 client UI 的 9 个**
+
+`message-timeline`、`session-title-edit`、`ui-file-preview`、`taskpilot`、`whalesong`、`ui-shortcuts`、`context-guard`、`inline-html-render`，以及 local-agent 的四个 provider 包（`-kimi` / `-codex` / `-claude-code` / `-dsh`，它们只贡献设置卡片与 harness 行）。
+
+这些**没有 host 侧可探测的东西**，卸载后只有界面上少了一块。人工抽样选界面最明显的三个：`message-tools`（编辑/撤回按钮）、`ui-file-preview`（产物 tab）、`taskpilot`（任务胶囊）。
+
+**结论：21 个成员里 12 个可全自动**（第一档全覆盖 + 第二、三档叠加验证），9 个纯 UI 包只能靠第一档的行数判定加人工抽样。检查器按这三档实现即可，不必为纯 UI 包造探测手段——那是投入产出不划算的一段。
+
+#### B9 的五条切换判据
+
+原表在第七节改写时丢失，此处按当前成员清单重拟（不再引用被排除在首版之外的 `mission`）：
+
+| # | 判据 | 验证什么 | 判定方式 |
+|---|---|---|---|
+| 1 | **切得过去**：web-basic → web-dev 同端口交接，刷新后 **worktrees 徽标出现**在会话标题栏右上 | 切换成立，UI 随 profile 走 | 肉眼 + `--dump-config` 行数 |
+| 2 | **切得回来**：再切回 web-basic，徽标消失，**无残留组件、无报错空槽** | 可逆——敢日常使用的前提 | 肉眼 + 浏览器控制台无错误 |
+| 3 | **切不过去不伤当前实例**：故意改坏 web-dev 的一行 patch YAML 再切，**preflight 拒绝且当前实例继续服务** | 安全网真的在 | 实例仍响应 + 失败原因可读 |
+| 4 | **数据跨切换存活**：切过去开一个会话 → 切回 → 再切过去，会话仍在且能打开 | 切的是组合不是数据（sessions 在 `$DSH_HOME` home 级） | 会话列表 |
+| 5 | **隔离真的成立**：`--dump-config` 中 web-dev 比 web-basic **多 11 行**，且多出的正是 local-agent 家族 6 + worktrees + room + base 增量 | profile 层隔离有效 | 纯机器可判 |
+
+第 2、3 条是核心：**可逆 + 失败不伤当前实例**，这两条成立才敢把切换当日常操作。第 5 条刻意用 `--dump-config` 而非 capability-catalog 的界面——catalog 尚未进 web-basic（等 A8），用它做判据会连带被 A1 卡住。
 
 ### C 线：前置修复（可并行，不阻塞 A/B 的文件工作）
 
@@ -332,7 +393,7 @@ dsh-dev/
 
 ## 八、待决
 
-- **`dsh-web-basic` 含 `ankh-guard`（ops 层）**是历史组成。四层模型下 base 整合包是否应包含 ops 包，需在 package-management 里定；改动会影响已发布整合包的成员清单。
+- ~~**`dsh-web-basic` 含 `ankh-guard`**~~ **已裁决**：保留。分类规则补上「domain 整合包可含 ops 包，当它是安装/运维通道时」（见第二节），规则本身容纳该情形，不必逐次解释。
 - **eval 的重复实验建模**：N 次重复是 N 个 attempt 还是 N 个 mission（`retry` 不幂等）。pilot 时定死，影响后续能否算方差。
 - **attest key 的人机边界**：若要求某些转移必须人来，需在模板层约定该 key 只由 CLI/slash 登记，或排除出模型工具可写范围。
 
