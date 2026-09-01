@@ -60,8 +60,6 @@ dsh plugin --profile web remove @khorsheed/dsh-taskpilot
 
 构建与测试:`pnpm install && pnpm run build && pnpm run typecheck && pnpm test`(tsc 出类型 + tsdown 打包;host/client 两个 aggregate;vitest 覆盖轨迹折叠与组件)。
 
-**开发期类型解析**:产品 npm 发布链暂不完整(client 依赖未发布的 `@deepseek-ai/dsh-compact`),tsconfig `paths` 指向本地 deepseek-harness checkout 的 `lib/types` 产物;路径表 gitignore,用 `node ../../scripts/sync-harness-paths.mjs` 生成(读 `DSH_HARNESS`,默认 `~/code/deepseek-harness`)。
-
 </details>
 
 ## 开发

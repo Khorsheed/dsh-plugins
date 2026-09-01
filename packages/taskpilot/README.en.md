@@ -60,8 +60,6 @@ No configuration. The capsules register at `conversation.input.dock` order 30 an
 
 Build and test: `pnpm install && pnpm run build && pnpm run typecheck && pnpm test` (tsc types + tsdown bundles; host/client aggregates; vitest covers trail folding and components).
 
-**Type resolution during development**: the product's npm release chain is not complete yet (client packages depend on unpublished `@deepseek-ai/dsh-compact`), so tsconfig `paths` resolve product types into a local deepseek-harness checkout's `lib/types` artifacts; the path map is gitignored — regenerate with `node ../../scripts/sync-harness-paths.mjs` (honors `DSH_HARNESS`, default `~/code/deepseek-harness`).
-
 </details>
 
 ## Development

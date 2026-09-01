@@ -4,7 +4,6 @@ lib/
 .DS_Store
 coverage/
 *.log
-packages/taskpilot/tsconfig.paths.json
 .harness-diff/
 
 # Stray repo-root scratch note (kept out of git; not a project file).
