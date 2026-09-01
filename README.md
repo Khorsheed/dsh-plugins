@@ -247,7 +247,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -c
 ```
 packages/   一个目录一个可发布插件
 build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
-scripts/    仓库工具(pack-dist、gen-typert、sync-harness-paths)
+scripts/    仓库工具(pack-dist、gen-typert、门禁检查器)
 ```
 
 ```sh
@@ -259,10 +259,9 @@ pnpm run typecheck  # pnpm -r --if-present run typecheck
 
 测试必须走根 `pnpm test` 或 `pnpm --filter <pkg> test`——裸跑 `vitest run packages/xxx` 会绕过每包的 vitest 配置(源码面别名预设),报误导性的解析错误。
 
-**开发期对 harness checkout 的依赖。** 三条机制解析到本地 deepseek-harness clone(env `DSH_HARNESS`,默认 `~/code/deepseek-harness`),发布的 npm 产物单独无法满足:
+**开发期对 harness checkout 的依赖。** 两条机制解析到本地 deepseek-harness clone(env `DSH_HARNESS`,默认 `~/code/deepseek-harness`),发布的 npm 产物单独无法满足:
 
 - `scripts/gen-typert.mts` 对 harness checkout 重新生成 `lib/typert.*` 产物(message-tools、file-preview、local-agent),再把 `@khorsheed` 自名重写后拷回。
 - `build/vitest.ts`(共享 vitest 预设)把平台 import 映射到 harness 的 `tsconfig.base.json` 路径——发布的包不携带 `src/`,其 `/client` 入口是 loader 包裹的浏览器 bundle,裸 import 会炸。
-- `scripts/sync-harness-paths.mjs` 为 taskpilot 写 gitignored 的 `tsconfig.paths.json` 用于类型解析(npm 发布链不完整)。
 
 CI 注意:先在本仓库旁 clone deepseek-harness 并设 `DSH_HARNESS` 再 `pnpm test`;harness checkout 过期意味着被测 API 面可能落后于生产宿主。发布走 `scripts/pack-dist.ts`(`--family` 重写 peer 依赖的 scope),`npm publish` 前先验证 tarball。完整仓库纪律见 [AGENTS.md](AGENTS.md)。

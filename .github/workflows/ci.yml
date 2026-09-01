@@ -37,18 +37,11 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm install --frozen-lockfile
 
-      # Host + client: taskpilot's generated paths point at the client
-      # ui-slots type lib, so host-only is not enough.
+      # Host + client: client faces resolve against the harness's client type
+      # libs, so a host-only seed is not enough.
       - name: Build harness libs (type seed)
         working-directory: deepseek-harness
         run: pnpm run build:lib
-
-      # Before the repo install: taskpilot's prepare builds, and the build
-      # needs the gitignored harness paths file.
-      - name: Generate taskpilot harness type paths
-        run: node scripts/sync-harness-paths.mjs
-        env:
-          DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
 
       - name: Install (repo)
         run: pnpm install --frozen-lockfile
