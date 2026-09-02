@@ -18,7 +18,10 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as selfRestartGuard from '../src/index.ts'
 import { currentHead } from '../src/git.ts'
-import { findOwnedListener, findPidOnPort, killPidTree, processIdentityMatches } from '../src/processes.ts'
+import {
+  findOwnedListener, findPidOnPort, killPidTree, processIdentity,
+  processIdentityMatches, signalProcessIdentity,
+} from '../src/processes.ts'
 import { install as installInvariant } from '../src/invariant.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isParkedOnUserInput, pendingRestartRecord,
@@ -144,6 +147,17 @@ describe('process ownership discovery', () => {
       await killListener(port)
     }
   }, 15_000)
+
+  it('freezes and revalidates before signalling an identity mismatch', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' })
+    cleanups.unshift(() => { child.kill('SIGKILL') })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const identity = processIdentity(child.pid!)
+    expect(identity).not.toBeNull()
+    expect(signalProcessIdentity({ ...identity!, startToken: `${identity!.startToken}-recycled` }, 'SIGTERM')).toBe('mismatch')
+    expect(processIdentityMatches(identity!)).toBe(true)
+    expect(signalProcessIdentity(identity!, 'SIGTERM')).toBe('signalled')
+  })
 })
 
 describe('state core', () => {
@@ -300,7 +314,7 @@ describe('durable launch cutover state', () => {
     prepareLaunchCutover(stateDir, {
       id: 'cutover-1', previous, target,
       recoveryPolicy: 'restore-previous', browserHandoff: 'required',
-      previousSupervisorPid: 101, previousOwnership: fakeOwnership(102, 103),
+      previousSupervisorPid: 101, previousSupervisorStartToken: 'supervisor-start-101', previousOwnership: fakeOwnership(102, 103),
       initiator: 'session-owner', now: NOW,
     })
     const active = readLaunchState(stateDir)
@@ -308,8 +322,8 @@ describe('durable launch cutover state', () => {
     expect(active === null ? null : selectedLaunchSpec(active)).toEqual(target)
     expect(cutoverBlocksWake(stateDir)).toBe(true)
 
-    recordCutoverEvent(stateDir, 'cutover-1', 'driver-started', ['201'], NOW + 1)
-    recordCutoverEvent(stateDir, 'cutover-1', 'supervisor-ready', ['202'], NOW + 2)
+    recordCutoverEvent(stateDir, 'cutover-1', 'driver-started', ['201', 'driver-start-201'], NOW + 1)
+    recordCutoverEvent(stateDir, 'cutover-1', 'supervisor-ready', ['202', 'supervisor-start-202'], NOW + 2)
     recordCutoverEvent(stateDir, 'cutover-1', 'child-started', ['target', '1', '203', 'target-start-203'], NOW + 3)
     recordCutoverEvent(stateDir, 'cutover-1', 'transport', ['401'], NOW + 4)
     recordCutoverEvent(stateDir, 'cutover-1', 'launch-url', [], NOW + 5)
@@ -327,7 +341,14 @@ describe('durable launch cutover state', () => {
     const receipt = readCutoverReceipt(stateDir)
     expect(receipt).toMatchObject({
       phase: 'ready',
-      supervisor: { previousPid: 101, targetDriverPid: 201, targetPid: 202 },
+      supervisor: {
+        previousPid: 101,
+        previousStartToken: 'supervisor-start-101',
+        targetDriverPid: 201,
+        targetDriverStartToken: 'driver-start-201',
+        targetPid: 202,
+        targetStartToken: 'supervisor-start-202',
+      },
       child: { previousPid: 102, targetPid: 203 },
       ownership: {
         previous: fakeOwnership(102, 103),
@@ -359,7 +380,7 @@ describe('durable launch cutover state', () => {
     prepareLaunchCutover(stateDir, {
       id: 'cutover-restore', previous, target,
       recoveryPolicy: 'restore-previous', browserHandoff: 'off',
-      previousSupervisorPid: 301, previousOwnership: fakeOwnership(300), now: NOW,
+      previousSupervisorPid: 301, previousSupervisorStartToken: 'supervisor-start-301', previousOwnership: fakeOwnership(300), now: NOW,
     })
     recordCutoverEvent(stateDir, 'cutover-restore', 'child-started', ['target', '1', '302', 'target-start-302'], NOW + 1)
     recordCutoverEvent(stateDir, 'cutover-restore', 'attempt-failed', ['target', '1', 'readiness failed'], NOW + 2)
@@ -384,7 +405,7 @@ describe('durable launch cutover state', () => {
     prepareLaunchCutover(stateDir, {
       id: 'cutover-proof', previous, target,
       recoveryPolicy: 'restore-previous', browserHandoff: 'required',
-      previousSupervisorPid: 801, previousOwnership: fakeOwnership(802, 803), now: NOW,
+      previousSupervisorPid: 801, previousSupervisorStartToken: 'supervisor-start-801', previousOwnership: fakeOwnership(802, 803), now: NOW,
     })
     recordCutoverEvent(stateDir, 'cutover-proof', 'child-started', ['target', '1', '804', 'target-start-804'], NOW + 1)
     recordCutoverEvent(stateDir, 'cutover-proof', 'launch-url', [], NOW + 2)
@@ -411,7 +432,7 @@ describe('durable launch cutover state', () => {
     prepareLaunchCutover(stateDir, {
       id: 'cutover-summary', previous, target,
       recoveryPolicy: 'wait-for-user', browserHandoff: 'required',
-      previousSupervisorPid: 401, previousOwnership: fakeOwnership(402), now: NOW,
+      previousSupervisorPid: 401, previousSupervisorStartToken: 'supervisor-start-401', previousOwnership: fakeOwnership(402), now: NOW,
     })
     const rendered = JSON.stringify(summarizeLaunchState(readLaunchState(stateDir)))
     expect(rendered).not.toContain(previous.command)
@@ -661,7 +682,7 @@ describe('CLI', () => {
       previous: { ...base, command: 'previous' },
       target: { ...base, command: 'target' },
       recoveryPolicy: 'wait-for-user', browserHandoff: 'off',
-      previousSupervisorPid: 501, previousOwnership: fakeOwnership(502), now: NOW,
+      previousSupervisorPid: 501, previousSupervisorStartToken: 'supervisor-start-501', previousOwnership: fakeOwnership(502), now: NOW,
     })
     const reconfigure = io()
     expect(await runCli([
@@ -697,7 +718,7 @@ describe('CLI', () => {
       previous: { ...base, command: 'previous' },
       target: { ...base, command: 'target' },
       recoveryPolicy: 'wait-for-user', browserHandoff: 'off',
-      previousSupervisorPid: 901, previousOwnership: fakeOwnership(902), now: NOW,
+      previousSupervisorPid: 901, previousSupervisorStartToken: 'supervisor-start-901', previousOwnership: fakeOwnership(902), now: NOW,
     })
     expect(await runCli(['abort-cutover', '--state-dir', stateDir], io().io)).toBe(0)
     expect(readCutoverControl(stateDir)).toMatchObject({ cutoverId: 'controlled-cutover', action: 'abort' })
@@ -705,6 +726,23 @@ describe('CLI', () => {
     expect(readCutoverControl(stateDir)).toMatchObject({ cutoverId: 'controlled-cutover', action: 'restore-previous' })
     // A later weaker abort cannot downgrade the explicit restoration request.
     expect(await runCli(['abort-cutover', '--state-dir', stateDir], io().io)).toBe(0)
+    expect(readCutoverControl(stateDir)?.action).toBe('restore-previous')
+
+    // Cross-process writers cannot reproduce the old read-then-overwrite
+    // ordering bug: the separate restore marker remains dominant regardless
+    // of which CLI process renames its file last.
+    rmSync(join(stateDir, STATE_FILES.cutoverAbort), { force: true })
+    rmSync(join(stateDir, STATE_FILES.cutoverRestorePrevious), { force: true })
+    const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+    const tsx = fileURLToPath(new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url))
+    const actions = Array.from({ length: 12 }, (_, index) => index % 2 === 0 ? 'abort-cutover' : 'restore-previous')
+    const writers = actions.map(action => spawn(process.execPath, [
+      '--import', tsx, cli, action, '--state-dir', stateDir,
+    ], { stdio: 'ignore' }))
+    const codes = await Promise.all(writers.map(writer => new Promise<number | null>(resolveExit => {
+      writer.on('exit', resolveExit)
+    })))
+    expect(codes).toEqual(actions.map(() => 0))
     expect(readCutoverControl(stateDir)?.action).toBe('restore-previous')
   })
 
@@ -724,7 +762,7 @@ describe('CLI', () => {
       previous: { ...base, command: 'previous' },
       target: { ...base, command: 'target' },
       recoveryPolicy: 'wait-for-user', browserHandoff: 'off',
-      previousSupervisorPid: 911, previousOwnership: fakeOwnership(912), now: NOW,
+      previousSupervisorPid: 911, previousSupervisorStartToken: 'supervisor-start-911', previousOwnership: fakeOwnership(912), now: NOW,
     })
     const receiptFile = join(stateDir, STATE_FILES.launchCutover)
     const legacy = JSON.parse(readFileSync(receiptFile, 'utf8'))
@@ -734,6 +772,34 @@ describe('CLI', () => {
     const output = io()
     expect(await runCli(['supervise', '--foreground', '--state-dir', stateDir], output.io)).toBe(1)
     expect(output.err.join('')).toContain('predates authoritative child/listener ownership evidence')
+  })
+
+  it('refuses a PID-only legacy cutover that lacks previous supervisor start identity', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-cli-legacy-supervisor-')
+    const base = {
+      version: 1 as const,
+      port: 3080,
+      home: join(stateDir, 'home'),
+      credentialRepo: repo,
+      harnessRoot: join(stateDir, 'harness'),
+      profile: 'web',
+    }
+    prepareLaunchCutover(stateDir, {
+      id: 'legacy-supervisor-cutover',
+      previous: { ...base, command: 'previous' },
+      target: { ...base, command: 'target' },
+      recoveryPolicy: 'wait-for-user', browserHandoff: 'off',
+      previousSupervisorPid: 921, previousSupervisorStartToken: 'supervisor-start-921', previousOwnership: fakeOwnership(922), now: NOW,
+    })
+    const receiptFile = join(stateDir, STATE_FILES.launchCutover)
+    const legacy = JSON.parse(readFileSync(receiptFile, 'utf8'))
+    delete legacy.supervisor.previousStartToken
+    writeFileSync(receiptFile, JSON.stringify(legacy))
+
+    const output = io()
+    expect(await runCli(['supervise', '--foreground', '--state-dir', stateDir], output.io)).toBe(1)
+    expect(output.err.join('')).toContain('predates supervisor start identity evidence')
   })
 
   it('verify and record warn while no watchdog supervises the instance', async () => {
@@ -2198,6 +2264,9 @@ describe('supervise', () => {
       expect(result.out.join('')).toContain('replacement watchdog stops the old child')
       const claimed = readCutoverReceipt(stateDir)
       expect(claimed?.supervisor.targetPid).not.toBe(claimed?.supervisor.previousPid)
+      expect(claimed?.supervisor.previousStartToken).toMatch(/^(darwin|linux|posix):/)
+      expect(claimed?.supervisor.targetDriverStartToken).toMatch(/^(darwin|linux|posix):/)
+      expect(claimed?.supervisor.targetStartToken).toMatch(/^(darwin|linux|posix):/)
       expect(claimed?.ownership.previous.childPid).not.toBe(claimed?.supervisor.previousPid)
       expect(claimed?.ownership.previous.childPid).not.toBe(claimed?.ownership.previous.listenerPid)
       expect(claimed?.ownership.previous.childStartToken).not.toBe('')
@@ -2233,6 +2302,72 @@ describe('supervise', () => {
       })).toBe(false)
       expect(readLaunchState(stateDir)).toMatchObject({ mode: 'stable', active: { command: targetStart } })
     } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 45_000)
+
+  it('bounds a hung previous watchdog, consumes restore while waiting, and retires only its frozen identity', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    const previousStart = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('previous-after-hung-supervisor')).listen(${port},'127.0.0.1')"`
+    const targetStart = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('target-must-not-start')).listen(${port},'127.0.0.1')"`
+    let previousSupervisor: ReturnType<typeof processIdentity> = null
+    try {
+      expect(await runCli([
+        'supervise', '--port', String(port), '--start', previousStart,
+        '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+      await waitForPort(port)
+      const previousPid = Number(readFileSync(join(stateDir, STATE_FILES.watchdogPid), 'utf8'))
+      previousSupervisor = processIdentity(previousPid)
+      expect(previousSupervisor).not.toBeNull()
+      expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
+      stubPreflight('true')
+      stubSandboxProbe(false)
+      expect(await runCli([
+        'reconfigure', '--start', targetStart,
+        '--on-failure', 'wait-for-user', '--browser-handoff', 'off',
+        '--delay-ms', '200', '--supervisor-yield-timeout-ms', '3000',
+        '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+
+      // Model a wedged old watchdog after the replacement has atomically
+      // claimed the pidfile. Its host child keeps serving while it is stopped.
+      process.kill(previousPid, 'SIGSTOP')
+      const logFile = join(stateDir, STATE_FILES.watchdogLog)
+      const waitingDeadline = Date.now() + 5_000
+      while ((!existsSync(logFile) || !readFileSync(logFile, 'utf8').includes('waiting up to 3000ms'))
+        && Date.now() < waitingDeadline) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      expect(readFileSync(logFile, 'utf8')).toContain('waiting up to 3000ms')
+      expect(await fetchBody(port)).toBe('previous-after-hung-supervisor')
+      expect(await runCli(['restore-previous', '--state-dir', stateDir], io().io)).toBe(0)
+
+      const restoredDeadline = Date.now() + 20_000
+      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < restoredDeadline) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      const receipt = readCutoverReceipt(stateDir)
+      expect(receipt?.phase, `${JSON.stringify(receipt, null, 2)}\n${readFileSync(logFile, 'utf8').slice(-12000)}`).toBe('restored')
+      expect(receipt).toMatchObject({
+        supervisor: { previousPid, previousRetirement: 'forced' },
+        failureCount: { target: 0, previous: 0 },
+        readiness: { role: 'previous', retryCount: 0 },
+        recovery: { result: 'restored' },
+      })
+      expect(receipt?.attempts.some(attempt => attempt.role === 'target')).toBe(false)
+      expect(receipt?.events.some(event => event.kind === 'control-requested' && event.detail === 'restore-previous')).toBe(true)
+      expect(processIdentityMatches(previousSupervisor!)).toBe(false)
+      expect(await fetchBody(port)).toBe('previous-after-hung-supervisor')
+    } finally {
+      if (previousSupervisor !== null && processIdentityMatches(previousSupervisor)) {
+        signalProcessIdentity(previousSupervisor, 'SIGKILL')
+      }
       env.stop()
       await killListener(port)
       env.restore()
@@ -2559,7 +2694,7 @@ setTimeout(() => process.exit(23), 1800)
       prepareLaunchCutover(stateDir, {
         id: 'waiter-refresh-cutover', previous, target,
         recoveryPolicy: 'restore-previous', browserHandoff: 'off',
-        previousSupervisorPid: successor.pid!, previousOwnership: fakeOwnership(successor.pid!), now: NOW,
+        previousSupervisorPid: successor.pid!, previousSupervisorStartToken: 'successor-start', previousOwnership: fakeOwnership(successor.pid!), now: NOW,
       })
 
       // This models launchd/systemd restarting its stable foreground launcher
@@ -3420,7 +3555,7 @@ describe('restart context injection', () => {
       previous: { ...launchBase, command: 'previous-host' },
       target: { ...launchBase, command: 'target-host' },
       recoveryPolicy: 'restore-previous', browserHandoff: 'off',
-      previousSupervisorPid: 701, previousOwnership: fakeOwnership(702),
+      previousSupervisorPid: 701, previousSupervisorStartToken: 'supervisor-start-701', previousOwnership: fakeOwnership(702),
       initiator: 'session-cutover-owner', now: NOW,
     })
     const followup = vi.fn()

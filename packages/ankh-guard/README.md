@@ -124,9 +124,9 @@ dsh-ankh-guard reconfigure \
   --state-dir "$DSH_HOME/state"
 ```
 
-恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`。准备事务时 guard 同时固化旧 supervisor、直接 child 与 listener 的 PID/启动 identity；successor 只停止这棵已证明的旧进程树并确认端口释放，绝不凭端口反查后杀任意监听者。因此调用 `reconfigure` 的短命进程消失、外层 launchd/systemd 等待者或嵌套 shell 都不会模糊 child 所有权。
+恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`。准备事务时 guard 同时固化旧 supervisor、直接 child 与 listener 的 PID/启动 identity；successor 按 identity 有界等待旧 supervisor 正常让权（默认 15 秒，可用 `--supervisor-yield-timeout-ms` 调整），等待期间持续消费 abort/restore。超时只会在先冻结并复核旧 supervisor identity 后终止其精确进程树。successor 随后只停止已证明的旧 child/listener 并确认端口释放，绝不凭端口反查后杀任意监听者。因此 PID 复用、卡死 watchdog、短命 `reconfigure` 调用者、外层 launchd/systemd 等待者或嵌套 shell 都不会模糊所有权或无限悬挂切换。
 
-目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0；只有这份证明稳定后，才在需要时向浏览器打开一次 URL，随后跑 canary，全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child/listener identity、认证交接、稳定性证明、分角色失败计数、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 是新的显式授权，会停止已证明的 target 并恢复完整 previous spec。控制请求也先耐久化，不能被后来的普通 abort 降级。
+目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0；只有这份证明稳定后，才在需要时向浏览器打开一次 URL，随后跑 canary，全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child/listener identity、旧 supervisor 的让权结果、认证交接、稳定性证明、分角色失败计数、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 是新的显式授权，会停止已证明的 target 并恢复完整 previous spec。两个动作分别使用原子 marker，读取时 restore 永远优先，因此并发会话的晚到 abort 也不能降级 restore。
 
 **重启报告自动到达模型——并只等它的主人。** 计划重启后（存在未确认的 `last-restart.json` 记录），插件通过 `agent.followup` 把报告排入下一回合，agent 无需任何用户消息即可回报重启结果。重启后的会话恢复是 lazy 的（只有 UI 或 RPC 碰到某个会话，它的 agent 才会被创建），所以完整报告只发给发起重启的会话（`schedule-exit` 把 `$DSH_SESSION_ID` 记为 initiator），等它何时恢复何时送达——其他会话永远不会为了报告被唤醒；记录保持未确认，直到发起会话恢复或下一次重启替换它（新 `exitAt`）。没有 initiator 的记录由首个创建的根 agent 领走。仅根 agent、仅一次（送达即确认）。配置 `reportRestartContext`：`followup`（默认，自主）、`step`（骑在下一次回合的第一步上）、或 `off`。
 
@@ -192,7 +192,7 @@ dsh-ankh-guard restart \
 - **guard 看着检出，不管还有谁在上面工作**——并发的自修改会话共享同一棵树；回滚有锚点可恢复，但没有任何机制串行化这些会话本身。
 - **脏树 checkpoint 默认拒绝**——`--include-dirty` 会提交整个 staged/unstaged/untracked 路径集，只能在逐项复核、用户明确批准且仓库策略允许时使用；纯重启直接跳过 checkpoint。
 - **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；guard 优先使用系统绝对路径，其他平台需用 `--pid`。
-- **杀进程一律按单 pid identity + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 清理都针对已记录的 child/listener；强制路径先冻结根进程再沿 `pgrep -P` 捕获并回收后代，避免 wrapper 先退出后把内层 watchdog/宿主重新挂到 PID 1。普通非 cutover 端口恢复仍有受限的 listener 清理兜底；cutover 禁止凭端口选择或杀进程。
+- **杀进程一律按单 pid identity + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 清理都针对已记录的 child/listener；cutover 强制路径先 `SIGSTOP`，再用 Linux boot/start-tick 或 macOS `proc_pidinfo` 微秒启动时间复核 identity，不匹配就只 `SIGCONT` 并拒绝，然后才沿 `pgrep -P` 冻结、复核亲缘并回收后代。普通非 cutover 端口恢复仍有受限的 listener 清理兜底；cutover 禁止凭端口选择或杀进程。
 
 ## 变更记录
 

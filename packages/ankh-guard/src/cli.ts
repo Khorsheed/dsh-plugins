@@ -30,7 +30,10 @@ import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
-import { discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree } from './processes.ts'
+import {
+  discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree,
+  processIdentity, processIdentityMatches,
+} from './processes.ts'
 import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeCompositionRecovery, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 import {
   activeCutover, prepareLaunchCutover, readCutoverReceipt, readLaunchState, recordCutoverEvent,
@@ -56,6 +59,7 @@ interface CliOptions {
   timeoutMs: number | undefined
   delayMs: number | undefined
   stopTimeoutMs: number | undefined
+  supervisorYieldTimeoutMs: number | undefined
   log: string | undefined
   foreground: boolean
   rollback: boolean
@@ -264,7 +268,7 @@ commands:
   restore-previous [--state-dir DIR]   # explicit new authorization to restore the complete previous spec
   reconfigure --start "CMD" --on-failure restore-previous|wait-for-user [--port N]
           [--home DIR] [--repo DIR] [--harness-root DIR] [--profile NAME] [--browser-handoff required|off]
-          [--delay-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
+          [--delay-ms MS] [--supervisor-yield-timeout-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit [--port N] --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
@@ -330,7 +334,7 @@ export function parse(
 ): { error: string } | { command: string; positionals: readonly string[]; options: CliOptions } {
   const options: CliOptions = {
     stateDir: '', repoDir: '', harnessRoot: '', home: '', maxAgeMinutes: 10, port: undefined, command: undefined, run: false, runArgv: undefined, message: undefined, detail: undefined,
-    start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined,
+    start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined, supervisorYieldTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
     onFailure: undefined, browserHandoff: 'required', ifAbsent: false, trustCommand: false, includeDirty: false, takeoverFrom: undefined, cutoverId: undefined,
@@ -402,6 +406,14 @@ export function parse(
           const n = Number(raw)
           if (raw === undefined || !Number.isInteger(n) || n < 100) throw new Error('--stop-timeout-ms must be an integer >= 100')
           options.stopTimeoutMs = n
+          i++
+          break
+        }
+        case '--supervisor-yield-timeout-ms': {
+          const raw = flagValue(arg, true)
+          const n = Number(raw)
+          if (raw === undefined || !Number.isInteger(n) || n < 100) throw new Error('--supervisor-yield-timeout-ms must be an integer >= 100')
+          options.supervisorYieldTimeoutMs = n
           i++
           break
         }
@@ -1444,9 +1456,16 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           return 1
         }
         const initiator = resolveInitiator(options.initiator, io)
+        const previousSupervisor = processIdentity(previousSupervisorPid)
+        if (previousSupervisor === null) {
+          throw new Error(`could not capture a start identity for watchdog ${previousSupervisorPid}`)
+        }
         const previousOwned = findOwnedListener(previous.port, previousSupervisorPid)
         if (previousOwned === null) {
           throw new Error(`the listener on :${previous.port} is not uniquely owned by watchdog ${previousSupervisorPid}; refusing a port-inferred takeover`)
+        }
+        if (!processIdentityMatches(previousSupervisor)) {
+          throw new Error(`watchdog ${previousSupervisorPid} changed while ownership was captured; refusing a recycled-PID takeover`)
         }
         prepareLaunchCutover(stateDir, {
           id: cutoverId,
@@ -1455,6 +1474,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           recoveryPolicy: options.onFailure,
           browserHandoff: options.browserHandoff,
           previousSupervisorPid,
+          previousSupervisorStartToken: previousSupervisor.startToken,
           previousOwnership: {
             childPid: previousOwned.child.pid,
             childStartToken: previousOwned.child.startToken,
@@ -1475,6 +1495,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           'supervise', '--foreground', '--state-dir', stateDir,
           '--takeover-from', String(previousSupervisorPid), '--cutover-id', cutoverId,
           '--delay-ms', String(options.delayMs ?? 5000),
+          '--supervisor-yield-timeout-ms', String(options.supervisorYieldTimeoutMs ?? 15_000),
           ...(initiator !== undefined ? ['--initiator', initiator] : []),
         ]
         const driver = spawn(process.execPath, cliInvocation(driverArgs), {
@@ -1491,18 +1512,16 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         while (Date.now() < takeoverDeadline) {
           const receipt = readCutoverReceipt(stateDir)
           const candidate = receipt?.supervisor.targetPid
-          if (candidate !== undefined && livePidIn(stateFile(stateDir, 'watchdogPid')) === String(candidate)) {
+          const candidateStartToken = receipt?.supervisor.targetStartToken
+          if (candidate !== undefined && candidateStartToken !== undefined
+            && processIdentityMatches({ pid: candidate, startToken: candidateStartToken })
+            && livePidIn(stateFile(stateDir, 'watchdogPid')) === String(candidate)) {
             replacementPid = candidate
             break
           }
-          // The live pidfile is the handoff authority. The driver/watchdog
-          // write receipt events serially; this observer must not perform a
-          // concurrent read-modify-write that could lose either PID event.
-          const owner = liveWatchdogPid(stateDir)
-          if (owner !== null && owner !== previousSupervisorPid) {
-            replacementPid = owner
-            break
-          }
+          // Both proofs are required: the pidfile is the ownership commit,
+          // and the receipt binds that PID to its start identity. Never fall
+          // back to accepting an arbitrary new live pidfile owner.
           try { process.kill(driverPid, 0) } catch { break }
           await sleep(100)
         }
@@ -1712,7 +1731,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           // The driver records itself before spawning the watchdog. Every
           // later receipt update then comes from this ordered process tree;
           // the reconfigure caller only observes the pidfile handoff.
-          recordCutoverEvent(stateDir, options.cutoverId, 'driver-started', [String(process.pid)], Date.now())
+          const driverIdentity = processIdentity(process.pid)
+          if (driverIdentity === null) throw new Error(`could not capture driver ${process.pid} start identity`)
+          recordCutoverEvent(stateDir, options.cutoverId, 'driver-started', [String(process.pid), driverIdentity.startToken], Date.now())
         } catch (error) {
           io.stderr(`supervise refused: could not persist cutover driver PID: ${String(error)}\n`)
           return 1
@@ -1750,7 +1771,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
                 return 1
               }
               if (durable === null) writeStableLaunchSpec(stateDir, spec)
-            if (options.foreground) {
+              if (options.foreground) {
               // Foreground = an external supervisor (launchd KeepAlive) runs
               // THIS process. Exiting 0 here would read as an intentional stop
               // under `KeepAlive SuccessfulExit: false`, so the job would go
@@ -1759,15 +1780,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
               // single-point-of-failure shape. Instead, wait for it to exit
               // and then take over: the chain (supervisor → this CLI →
               // watchdog) stays intact the whole time.
-              io.stdout(`watchdog ${existing} already supervises the port — waiting for it to exit, then taking over (foreground)\n`)
-              while (true) {
-                try {
-                  process.kill(existingPid, 0)
-                } catch {
-                  break
-                }
-                await sleep(1000)
+                io.stdout(`watchdog ${existing} already supervises the port — waiting for it to exit, then taking over (foreground)\n`)
+              const existingIdentity = processIdentity(existingPid)
+              if (existingIdentity === null) {
+                io.stderr(`supervise refused: could not capture watchdog ${existingPid} start identity before waiting\n`)
+                return 1
               }
+              while (processIdentityMatches(existingIdentity)) await sleep(1000)
               waitedForWatchdog = true
               io.stdout(`watchdog ${existing} exited — taking over\n`)
             } else {
@@ -1803,6 +1822,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         || !Number.isInteger(previousOwnership.listenerPid) || previousOwnership.listenerPid <= 0
         || previousOwnership.childStartToken === '' || previousOwnership.listenerStartToken === '')) {
         io.stderr(`supervise refused: active cutover ${transaction.receipt.id} predates authoritative child/listener ownership evidence; refusing to infer or kill a process by port. Keep the existing host untouched and settle the transaction explicitly.\n`)
+        return 1
+      }
+      const previousSupervisorStart = transaction?.receipt.supervisor?.previousStartToken
+      if (transaction !== null && (previousSupervisorStart === undefined || previousSupervisorStart === '')) {
+        io.stderr(`supervise refused: active cutover ${transaction.receipt.id} predates supervisor start identity evidence; refusing a PID-only takeover. Keep the existing host untouched and settle the transaction explicitly.\n`)
         return 1
       }
       const watchdog = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
@@ -1861,13 +1885,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // adoption; the detached form waits for the current owner to exit.
         WD_WAIT_OWNER: options.takeoverFrom !== undefined || !options.foreground ? '1' : '0',
         WD_GUARD: guardInvocation(),
-        ...(options.takeoverFrom !== undefined ? { WD_TAKEOVER_FROM: String(options.takeoverFrom) } : {}),
+        ...(options.takeoverFrom !== undefined ? {
+          WD_TAKEOVER_FROM: String(options.takeoverFrom),
+          WD_TAKEOVER_FROM_START: previousSupervisorStart ?? '',
+        } : {}),
         ...(transaction !== null && previousOwnership !== undefined ? {
           WD_CUTOVER_ID: transaction.receipt.id,
           WD_CUTOVER_ROLE: transaction.state.selected,
           WD_CUTOVER_POLICY: transaction.receipt.recovery.policy,
           WD_BROWSER_HANDOFF: transaction.receipt.authentication.browserHandoff === 'off' ? 'off' : 'required',
           WD_CUTOVER_DELAY_SECONDS: String((options.delayMs ?? 5000) / 1000),
+          WD_SUPERVISOR_YIELD_TIMEOUT_MS: String(options.supervisorYieldTimeoutMs ?? 15_000),
           WD_PREVIOUS_START: transaction.state.previous.command,
           WD_PREVIOUS_HOME: transaction.state.previous.home,
           WD_PREVIOUS_REPO: transaction.state.previous.credentialRepo,

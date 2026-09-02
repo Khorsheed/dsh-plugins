@@ -99,6 +99,8 @@ STOP_MARKER="$STATE_DIR/watchdog-stop"
 PIDFILE="$STATE_DIR/watchdog.pid"
 ATTEMPT_LOG="$STATE_DIR/boot-attempt.log"
 CONTROL_FILE="$STATE_DIR/launch-cutover-control.json"
+CONTROL_ABORT_FILE="$STATE_DIR/launch-cutover-abort.json"
+CONTROL_RESTORE_FILE="$STATE_DIR/launch-cutover-restore-previous.json"
 
 # Timestamp every lifecycle line so a durable receipt can be correlated with
 # supervisor/child PIDs across launchd, systemd, and detached CLI restarts.
@@ -119,6 +121,8 @@ resolve_tool() {
 LSOF_BIN=$(resolve_tool lsof /usr/sbin/lsof /usr/bin/lsof) || { wd_log "lsof is required to prove listener ownership" >&2; exit 1; }
 PS_BIN=$(resolve_tool ps /bin/ps /usr/bin/ps) || { wd_log "ps is required to prove process identity" >&2; exit 1; }
 PGREP_BIN=$(resolve_tool pgrep /usr/bin/pgrep /bin/pgrep) || { wd_log "pgrep is required to manage the supervised child tree" >&2; exit 1; }
+SYSCTL_BIN=$(resolve_tool sysctl /usr/sbin/sysctl /sbin/sysctl 2>/dev/null || true)
+PYTHON_BIN=$(resolve_tool python3 /usr/bin/python3 /opt/homebrew/bin/python3 2>/dev/null || true)
 
 [ -n "$DSH_ROOT" ] || { wd_log "WD_HOME or DSH_HOME must be set" >&2; exit 1; }
 export DSH_HOME="$DSH_ROOT"
@@ -176,15 +180,19 @@ cutover_control_action() {
   [ -n "$CUTOVER_ID" ] || return 0
   node -e '
     const fs = require("fs")
-    const [file, id] = process.argv.slice(1)
-    try {
-      const value = JSON.parse(fs.readFileSync(file, "utf8"))
-      if (value?.version === 1 && value.cutoverId === id
-        && (value.action === "abort" || value.action === "restore-previous")) {
-        process.stdout.write(value.action)
-      }
-    } catch {}
-  ' "$CONTROL_FILE" "$CUTOVER_ID" 2>/dev/null
+    const [restoreFile, abortFile, legacyFile, id] = process.argv.slice(1)
+    const read = (file) => {
+      try {
+        const value = JSON.parse(fs.readFileSync(file, "utf8"))
+        return value?.version === 1 && value.cutoverId === id
+          && (value.action === "abort" || value.action === "restore-previous") ? value.action : ""
+      } catch { return "" }
+    }
+    const restore = read(restoreFile)
+    const legacy = read(legacyFile)
+    process.stdout.write(restore === "restore-previous" || legacy === "restore-previous"
+      ? "restore-previous" : read(abortFile) || legacy)
+  ' "$CONTROL_RESTORE_FILE" "$CONTROL_ABORT_FILE" "$CONTROL_FILE" "$CUTOVER_ID" 2>/dev/null
 }
 
 # The host owns the shape of its per-process launch URL. Discovery is generic:
@@ -390,7 +398,37 @@ transport_up() {
 }
 
 process_start_token() {
-  "$PS_BIN" -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -n "$PYTHON_BIN" ]; then
+    "$PYTHON_BIN" -c 'import ctypes,struct,sys;p=int(sys.argv[1]);b=ctypes.create_string_buffer(136);n=ctypes.CDLL("/usr/lib/libproc.dylib").proc_pidinfo(p,3,0,b,136);n == 136 or sys.exit(1);s,u=struct.unpack_from("QQ",b.raw,120);print(f"darwin:{s}:{u}",end="")' "$1" 2>/dev/null && return 0
+  fi
+  PROCESS_PS="$PS_BIN" PROCESS_SYSCTL="$SYSCTL_BIN" node -e '
+    const { createHash } = require("crypto")
+    const { existsSync, readFileSync } = require("fs")
+    const { execFileSync } = require("child_process")
+    const pid = Number(process.argv[1])
+    try {
+      const run = (file, args) => execFileSync(file, args, { encoding: "utf8", stdio: "pipe" }).trim()
+      const status = run(process.env.PROCESS_PS, ["-o", "stat=", "-p", String(pid)])
+      if (!status || status.startsWith("Z")) process.exit(1)
+      const procStat = `/proc/${pid}/stat`
+      if (existsSync(procStat)) {
+        const stat = readFileSync(procStat, "utf8")
+        const end = stat.lastIndexOf(")")
+        const fields = end < 0 ? [] : stat.slice(end + 1).trim().split(/\s+/)
+        const ticks = fields[19]
+        if (!ticks) process.exit(1)
+        let boot = "unknown-boot"
+        try { boot = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || boot } catch {}
+        process.stdout.write(`linux:${boot}:${ticks}`)
+        process.exit(0)
+      }
+      const base = run(process.env.PROCESS_PS, ["-o", "sess=", "-o", "uid=", "-o", "lstart=", "-o", "command=", "-p", String(pid)])
+      if (!base) process.exit(1)
+      let boot = "unknown-boot"
+      try { if (process.env.PROCESS_SYSCTL) boot = run(process.env.PROCESS_SYSCTL, ["-n", "kern.boottime"]) || boot } catch {}
+      process.stdout.write("posix:" + createHash("sha256").update(boot).update("\0").update(base).digest("hex"))
+    } catch { process.exit(1) }
+  ' "$1" 2>/dev/null
 }
 
 now_ms() {
@@ -406,6 +444,12 @@ identity_matches() {
 
 listener_pids() {
   "$LSOF_BIN" -tiTCP:"$PORT" -sTCP:LISTEN -P 2>/dev/null | sort -u
+}
+
+pid_is_listener() {
+  local expected=$1 candidate
+  for candidate in $(listener_pids); do [ "$candidate" = "$expected" ] && return 0; done
+  return 1
 }
 
 pid_belongs_to_tree() {
@@ -455,23 +499,44 @@ current_ownership_matches() {
 # guarantees the direct child; the sweep keeps grandchildren from outliving
 # the instance — a single-pid kill is what orphaned listeners and left the
 # EADDRINUSE race behind.
-kill_tree() {
-  local pid=$1 sig=${2:-TERM} child
-  # Freeze the root before enumerating descendants. Signalling the wrapper
-  # first lets its listener reparent to PID 1 between pgrep and kill — the
-  # exact nested-watchdog leak this protocol must prevent.
-  kill -STOP "$pid" 2>/dev/null || return 0
+kill_frozen_tree() {
+  local pid=$1 sig=${2:-TERM} child parent unsafe=0
   for child in $("$PGREP_BIN" -P "$pid" 2>/dev/null); do
-    kill_tree "$child" "$sig"
+    kill -STOP "$child" 2>/dev/null || continue
+    parent=$("$PS_BIN" -o ppid= -p "$child" 2>/dev/null | tr -d ' ')
+    if [ "$parent" != "$pid" ]; then
+      kill -CONT "$child" 2>/dev/null || true
+      unsafe=1
+      continue
+    fi
+    kill_frozen_tree "$child" "$sig" || unsafe=1
   done
   kill -s "$sig" "$pid" 2>/dev/null || true
   if [ "$sig" != "KILL" ]; then kill -CONT "$pid" 2>/dev/null || true; fi
+  [ "$unsafe" = "0" ]
+}
+
+kill_tree() {
+  local pid=$1 sig=${2:-TERM}
+  # Freeze before enumeration so a wrapper cannot exit and orphan its
+  # listener to PID 1 between pgrep and signal delivery.
+  kill -STOP "$pid" 2>/dev/null || return 0
+  kill_frozen_tree "$pid" "$sig"
 }
 
 stop_matching_identity() {
-  local pid=$1 token=$2 sig=${3:-TERM}
-  identity_matches "$pid" "$token" || return 0
-  kill_tree "$pid" "$sig"
+  local pid=$1 token=$2 sig=${3:-TERM} actual
+  [ -n "$pid" ] && [ -n "$token" ] || return 2
+  # Authorization is checked while the PID is frozen. A pre-STOP check leaves
+  # a reuse window in which the signal can hit a new, unrelated process.
+  kill -STOP "$pid" 2>/dev/null || return 0
+  actual=$(process_start_token "$pid")
+  if [ -z "$actual" ] || [ "$actual" != "$token" ]; then
+    kill -CONT "$pid" 2>/dev/null || true
+    wd_log "refused signal $sig to pid $pid: frozen start identity did not match" >&2
+    return 2
+  fi
+  kill_frozen_tree "$pid" "$sig"
 }
 
 # Stop only the process identities captured while the old supervisor still
@@ -479,27 +544,38 @@ stop_matching_identity() {
 # and orphan its server between tree enumeration and signal delivery. Never
 # replace this with "kill whatever owns the port" during a cutover.
 stop_previous_owned_tree() {
-  local deadline pids foreign=0
+  local deadline pids foreign=0 identity_error=0
   [ -n "$PREVIOUS_CHILD_PID" ] && [ -n "$PREVIOUS_CHILD_START" ] \
     && [ -n "$PREVIOUS_LISTENER_PID" ] && [ -n "$PREVIOUS_LISTENER_START" ] || {
       wd_log "cutover ownership proof is incomplete; refusing to stop by port" >&2
       return 1
     }
-  stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" TERM
-  stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" TERM
+  stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" TERM || identity_error=1
+  # The frozen root sweep normally signals the listener too. Give its exit
+  # teardown time to drop the socket before separately touching the captured
+  # listener PID; a dying process can retain a ps row after its executable
+  # identity is already gone.
+  sleep 0.5
+  if pid_is_listener "$PREVIOUS_LISTENER_PID"; then
+    stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" TERM || identity_error=1
+  fi
   deadline=$(( $(date +%s) + 15 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if ! identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" \
-      && ! identity_matches "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START"; then
+      && ! pid_is_listener "$PREVIOUS_LISTENER_PID"; then
       break
     fi
     sleep 0.2
   done
-  stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" KILL
-  stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" KILL
+  if identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START"; then
+    stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" KILL || identity_error=1
+  fi
+  if pid_is_listener "$PREVIOUS_LISTENER_PID"; then
+    stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" KILL || identity_error=1
+  fi
   sleep 0.2
   if identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" \
-    || identity_matches "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START"; then
+    || pid_is_listener "$PREVIOUS_LISTENER_PID"; then
     wd_log "captured previous child/listener identity did not exit" >&2
     return 1
   fi
@@ -508,23 +584,29 @@ stop_previous_owned_tree() {
     wd_log "port :$PORT is owned by unapproved pid(s) $(printf '%s' "$pids" | paste -sd, -); refusing arbitrary cleanup" >&2
     foreign=1
   fi
-  [ "$foreign" = "0" ]
+  [ "$foreign" = "0" ] && [ "$identity_error" = "0" ]
 }
 
 kill_current_owned_attempt() {
+  local identity_error=0
   if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ]; then
-    stop_matching_identity "$child" "$child_start_token" TERM
-  fi
-  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ]; then
-    stop_matching_identity "$current_listener_pid" "$current_listener_start" TERM
+    stop_matching_identity "$child" "$child_start_token" TERM || identity_error=1
   fi
   sleep 0.2
-  if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ]; then
-    stop_matching_identity "$child" "$child_start_token" KILL
+  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ] \
+    && pid_is_listener "$current_listener_pid"; then
+    stop_matching_identity "$current_listener_pid" "$current_listener_start" TERM || identity_error=1
   fi
-  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ]; then
-    stop_matching_identity "$current_listener_pid" "$current_listener_start" KILL
+  sleep 0.2
+  if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ] \
+    && identity_matches "$child" "$child_start_token"; then
+    stop_matching_identity "$child" "$child_start_token" KILL || identity_error=1
   fi
+  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ] \
+    && pid_is_listener "$current_listener_pid"; then
+    stop_matching_identity "$current_listener_pid" "$current_listener_start" KILL || identity_error=1
+  fi
+  [ "$identity_error" = "0" ]
 }
 
 select_previous_spec() {
@@ -544,7 +626,7 @@ select_previous_spec() {
   failures=0
   reset_done=1
   port_races=0
-  rm -f "$CONTROL_FILE"
+  rm -f "$CONTROL_FILE" "$CONTROL_ABORT_FILE" "$CONTROL_RESTORE_FILE"
   return 0
 }
 
@@ -559,7 +641,12 @@ handle_cutover_control() {
   effective=$action
   if [ "$action" = "abort" ]; then effective=$CUTOVER_POLICY; fi
   if [ "$effective" = "restore-previous" ]; then
-    kill_current_owned_attempt
+    if ! kill_current_owned_attempt; then
+      rm -f "$CONTROL_FILE" "$CONTROL_ABORT_FILE" "$CONTROL_RESTORE_FILE"
+      cutover_event_required awaiting-user "operator requested $action, but the frozen current identity no longer matched; refusing to signal an unapproved process"
+      control_result='wait'
+      return 0
+    fi
     if [ -n "${child:-}" ]; then wait "$child" 2>/dev/null || true; fi
     if select_previous_spec "operator requested $action; restoring previous complete launch specification"; then
       control_result='restore'
@@ -567,7 +654,7 @@ handle_cutover_control() {
     fi
     effective='wait-for-user'
   fi
-  rm -f "$CONTROL_FILE"
+  rm -f "$CONTROL_FILE" "$CONTROL_ABORT_FILE" "$CONTROL_RESTORE_FILE"
   cutover_event_required awaiting-user "operator requested $action; recovery is waiting for user"
   control_result='wait'
   return 0
@@ -830,8 +917,9 @@ if [ "$SUPERVISE" = "1" ]; then
   empty_reads=0
   if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
     owner=$(cat "$PIDFILE" 2>/dev/null)
-    if [ "$owner" != "$WD_TAKEOVER_FROM" ] || ! kill -0 "$owner" 2>/dev/null; then
-      wd_log "takeover refused: expected live pidfile owner $WD_TAKEOVER_FROM, found ${owner:-none}" >&2
+    if [ -z "${WD_TAKEOVER_FROM_START:-}" ] || [ "$owner" != "$WD_TAKEOVER_FROM" ] \
+      || ! identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START"; then
+      wd_log "takeover refused: expected matching pidfile owner identity $WD_TAKEOVER_FROM, found ${owner:-none}" >&2
       exit 1
     fi
     takeover_tmp="$PIDFILE.takeover.$$"
@@ -843,7 +931,9 @@ if [ "$SUPERVISE" = "1" ]; then
     mv -f "$takeover_tmp" "$PIDFILE"
     claimed=1
     wd_log "claimed supervision from watchdog $owner; old child remains running until the scheduled exit"
-    cutover_event_required supervisor-ready "$$"
+    supervisor_start_token=$(process_start_token "$$")
+    [ -n "$supervisor_start_token" ] || { wd_log "could not capture replacement watchdog start identity" >&2; exit 1; }
+    cutover_event_required supervisor-ready "$$" "$supervisor_start_token"
   else
     while [ "$attempt" -lt 5 ]; do
       attempt=$((attempt + 1))
@@ -909,12 +999,19 @@ cleanup() {
   if [ -n "${page_pid:-}" ]; then kill "$page_pid" 2>/dev/null; fi
   # A YIELDING watchdog leaves its instance running for the new owner (the
   # port is healthy; killing it would just make the successor respawn).
-  if [ -n "${child:-}" ] && [ "${yielded:-0}" != "1" ]; then kill_tree "$child" TERM; fi
+  if [ -n "${child:-}" ] && [ "${yielded:-0}" != "1" ]; then
+    if [ -n "${CUTOVER_ID:-}" ] && [ -n "${child_start_token:-}" ]; then
+      stop_matching_identity "$child" "$child_start_token" TERM || true
+    else
+      kill_tree "$child" TERM
+    fi
+  fi
   # Drop the pidfile ONLY while it names us: a successor watchdog may have
   # already claimed it in the restart window, and deleting theirs would let a
   # second supervisor in.
   if [ -f "$PIDFILE" ] && [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ]; then
-    if [ -n "${WD_TAKEOVER_FROM:-}" ] && kill -0 "$WD_TAKEOVER_FROM" 2>/dev/null; then
+    if [ -n "${WD_TAKEOVER_FROM:-}" ] && [ -n "${WD_TAKEOVER_FROM_START:-}" ] \
+      && identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START"; then
       takeover_restore="$PIDFILE.restore.$$"
       echo "$WD_TAKEOVER_FROM" > "$takeover_restore"
       mv -f "$takeover_restore" "$PIDFILE"
@@ -949,6 +1046,18 @@ write_cutover_restart_marker() {
   ' "$RESTART_MARKER" "$CUTOVER_ID" "${WD_INITIATOR:-}"
 }
 
+consume_takeover_control() {
+  if handle_cutover_control; then
+    if [ "$control_result" = "wait" ]; then
+      wd_log "operator control parked cutover before the irreversible boundary; previous host remains available"
+      park_cutover "operator abort follows wait-for-user policy"
+      rm -f "$GIVE_UP_MARKER"
+    else
+      wd_log "operator control selected previous launch configuration before takeover"
+    fi
+  fi
+}
+
 if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # The atomic pidfile claim above is the cutover commit point. From here the
   # replacement watchdog — not the short-lived reconfigure caller — owns the
@@ -956,17 +1065,57 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # transaction between "supervisor-ready" and "host stopped".
   cutover_delay="${WD_CUTOVER_DELAY_SECONDS:-5}"
   wd_log "supervision claimed; leaving the old host uninterrupted for ${cutover_delay}s"
-  sleep "$cutover_delay"
+  cutover_delay_deadline=$(node -e '
+    const delay = Number(process.argv[1])
+    if (!Number.isFinite(delay) || delay < 0) process.exit(1)
+    process.stdout.write(String(Date.now() + delay * 1000))
+  ' "$cutover_delay") || { wd_log "invalid WD_CUTOVER_DELAY_SECONDS" >&2; exit 1; }
+  while [ "$(now_ms)" -lt "$cutover_delay_deadline" ]; do
+    consume_takeover_control
+    sleep 0.2
+  done
   # Do not publish the restart marker while the previous watchdog is still
   # alive. Older watchdogs consume that marker themselves; if one wins that
   # race, the replacement child can become healthy while the cutover receipt
   # remains permanently nonterminal. The previous child stays up throughout
   # this wait. A healthy old watchdog notices our pidfile claim on its next
   # supervision pass and yields without reaping the child.
-  if kill -0 "$WD_TAKEOVER_FROM" 2>/dev/null; then
-    wd_log "waiting for old watchdog $WD_TAKEOVER_FROM to yield; old host remains available"
-    while kill -0 "$WD_TAKEOVER_FROM" 2>/dev/null; do sleep 0.2; done
+  supervisor_yield_timeout_ms="${WD_SUPERVISOR_YIELD_TIMEOUT_MS:-15000}"
+  case "$supervisor_yield_timeout_ms" in ''|*[!0-9]*) wd_log "invalid WD_SUPERVISOR_YIELD_TIMEOUT_MS" >&2; exit 1 ;; esac
+  [ "$supervisor_yield_timeout_ms" -ge 100 ] || { wd_log "WD_SUPERVISOR_YIELD_TIMEOUT_MS must be at least 100" >&2; exit 1; }
+  supervisor_yield_deadline=$(( $(now_ms) + supervisor_yield_timeout_ms ))
+  supervisor_was_live=0
+  supervisor_timed_out=0
+  supervisor_retirement='identity-gone'
+  if identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START"; then
+    supervisor_was_live=1
+    wd_log "waiting up to ${supervisor_yield_timeout_ms}ms for old watchdog $WD_TAKEOVER_FROM to yield; old host remains available"
   fi
+  while identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START"; do
+    consume_takeover_control
+    if [ "$(now_ms)" -ge "$supervisor_yield_deadline" ]; then
+      supervisor_timed_out=1
+      wd_log "old watchdog $WD_TAKEOVER_FROM did not yield in ${supervisor_yield_timeout_ms}ms; retiring its frozen, revalidated identity"
+      if stop_matching_identity "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START" TERM; then
+        supervisor_retirement='forced'
+        retirement_deadline=$(( $(date +%s) + 3 ))
+        while identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START" \
+          && [ "$(date +%s)" -lt "$retirement_deadline" ]; do sleep 0.2; done
+        stop_matching_identity "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START" KILL || true
+      else
+        # The PID changed between the loop predicate and SIGSTOP. The helper
+        # resumed it without delivering TERM; the authorized old identity is
+        # gone, so proceed using only the separately captured child identities.
+        supervisor_retirement='identity-gone'
+      fi
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$supervisor_was_live" = "1" ] && [ "$supervisor_timed_out" = "0" ]; then
+    supervisor_retirement='yielded'
+  fi
+  cutover_event_required previous-supervisor-retired "$supervisor_retirement"
   # Publish the intentional-restart marker only at the irreversible boundary.
   # Writing it in the reconfigure caller lets the OLD watchdog consume and
   # clear it before yielding, leaving the final child ready but the receipt
@@ -992,7 +1141,9 @@ elif [ -n "$CUTOVER_ID" ]; then
   # any orphan listener from the failed supervisor, then prove a fresh final
   # child; never compact the transaction merely because its driver died.
   wd_log "resuming launch cutover $CUTOVER_ID on selected side $CUTOVER_ROLE"
-  cutover_event_required supervisor-ready "$$"
+  supervisor_start_token=$(process_start_token "$$")
+  [ -n "$supervisor_start_token" ] || { wd_log "could not capture resumed watchdog start identity" >&2; exit 1; }
+  cutover_event_required supervisor-ready "$$" "$supervisor_start_token"
   write_cutover_restart_marker
   if ! stop_previous_owned_tree; then
     cutover_event_required awaiting-user "resume could not prove the shared port free from the captured previous identity"
@@ -1114,7 +1265,7 @@ while true; do
     # Read the bound ports BEFORE reaping — once the child is gone there is no
     # way left to tell "never started" from "started on the wrong port".
     bound=""
-    if kill -0 "$child" 2>/dev/null; then bound=$(instance_listen_ports "$child"); fi
+    if identity_matches "$child" "$child_start_token"; then bound=$(instance_listen_ports "$child"); fi
     # Never came up (or died); stop a still-alive child and reap it.
     kill_current_owned_attempt
     wait "$child" 2>/dev/null

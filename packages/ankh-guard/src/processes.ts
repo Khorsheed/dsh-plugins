@@ -5,7 +5,8 @@
  * caller goes through here.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 
 /** A PID plus the kernel-visible process start instant used to reject PID reuse. */
 export interface ProcessIdentity {
@@ -29,6 +30,17 @@ function executable(name: string, candidates: readonly string[]): string {
 const LSOF = executable('lsof', ['/usr/sbin/lsof', '/usr/bin/lsof'])
 const PS = executable('ps', ['/bin/ps', '/usr/bin/ps'])
 const PGREP = executable('pgrep', ['/usr/bin/pgrep', '/bin/pgrep'])
+const SYSCTL = executable('sysctl', ['/usr/sbin/sysctl', '/sbin/sysctl'])
+const PYTHON = executable('python3', ['/usr/bin/python3', '/opt/homebrew/bin/python3'])
+const DARWIN_START_TOKEN = [
+  'import ctypes,struct,sys',
+  'p=int(sys.argv[1])',
+  'b=ctypes.create_string_buffer(136)',
+  'n=ctypes.CDLL("/usr/lib/libproc.dylib").proc_pidinfo(p,3,0,b,136)',
+  'n == 136 or sys.exit(1)',
+  's,u=struct.unpack_from("QQ",b.raw,120)',
+  'print(f"darwin:{s}:{u}",end="")',
+].join(';')
 
 /** Every process listening on a TCP port. An empty list also covers unavailable lsof. */
 export function findPidsOnPort(port: number): number[] {
@@ -55,12 +67,54 @@ export function findPidOnPort(port: number): string | null {
   return findPidsOnPort(port)[0]?.toString() ?? null
 }
 
-/** Current identity for a live process, or null when it cannot be proved. */
+/**
+ * Current identity for a live process, or null when it cannot be proved.
+ * Linux exposes a boot-scoped kernel start tick. Other POSIX hosts do not,
+ * so bind the start instant to the boot, uid, session, and settled command.
+ * This materially strengthens macOS ps(1)'s second-granularity lstart; all
+ * guard captures occur after the watchdog/child has reached its steady argv.
+ */
 export function processIdentity(pid: number): ProcessIdentity | null {
   if (!Number.isInteger(pid) || pid <= 0) return null
   try {
-    const startToken = execFileSync(PS, ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: 'pipe' }).trim()
-    return startToken === '' ? null : { pid, startToken }
+    const status = execFileSync(PS, ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', stdio: 'pipe' }).trim()
+    if (status === '' || status.startsWith('Z')) return null
+    if (process.platform === 'darwin') {
+      try {
+        const nativeStart = execFileSync(PYTHON, ['-c', DARWIN_START_TOKEN, String(pid)], {
+          encoding: 'utf8', stdio: 'pipe',
+        }).trim()
+        if (/^darwin:\d+:\d+$/.test(nativeStart)) return { pid, startToken: nativeStart }
+      } catch {
+        // Minimal macOS installations can lack python3; use the strengthened
+        // ps evidence below rather than silently dropping identity checks.
+      }
+    }
+    const procStat = `/proc/${pid}/stat`
+    if (existsSync(procStat)) {
+      const stat = readFileSync(procStat, 'utf8')
+      const commandEnd = stat.lastIndexOf(')')
+      const fields = commandEnd < 0 ? [] : stat.slice(commandEnd + 1).trim().split(/\s+/)
+      const startTicks = fields[19]
+      if (startTicks === undefined || startTicks === '') return null
+      let bootId = 'unknown-boot'
+      try { bootId = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() || bootId } catch { /* optional */ }
+      return { pid, startToken: `linux:${bootId}:${startTicks}` }
+    }
+    const processEvidence = execFileSync(PS, ['-o', 'sess=', '-o', 'uid=', '-o', 'lstart=', '-o', 'command=', '-p', String(pid)], {
+      encoding: 'utf8', stdio: 'pipe',
+    }).trim()
+    if (processEvidence === '') return null
+    let bootEvidence = 'unknown-boot'
+    try {
+      bootEvidence = execFileSync(SYSCTL, ['-n', 'kern.boottime'], {
+        encoding: 'utf8', stdio: 'pipe',
+      }).trim() || bootEvidence
+    } catch {
+      // The start instant + uid/session remains a portable fallback.
+    }
+    const startToken = `posix:${createHash('sha256').update(bootEvidence).update('\0').update(processEvidence).digest('hex')}`
+    return { pid, startToken }
   } catch {
     return null
   }
@@ -181,14 +235,8 @@ export function discoverLaunchCommand(pid: string): string | null {
  * setsid'd — so the sweep walks `pgrep -P` instead. `pgrep` missing or
  * returning nothing is fine: the pid itself still gets the signal.
  */
-export function killPidTree(pid: number, signal: NodeJS.Signals): void {
-  try {
-    // Freeze before enumeration so a wrapper cannot exit and orphan its
-    // listener to PID 1 between pgrep and delivery of the requested signal.
-    process.kill(pid, 'SIGSTOP')
-  } catch {
-    return // already gone
-  }
+function signalFrozenTree(pid: number, signal: NodeJS.Signals): boolean {
+  let safe = true
   let children: string[] = []
   try {
     const out = execFileSync(PGREP, ['-P', String(pid)], { encoding: 'utf8', stdio: 'pipe' }).trim()
@@ -198,7 +246,21 @@ export function killPidTree(pid: number, signal: NodeJS.Signals): void {
   }
   for (const raw of children) {
     const child = Number(raw)
-    if (Number.isInteger(child) && child > 0) killPidTree(child, signal)
+    if (!Number.isInteger(child) || child <= 0) continue
+    try {
+      process.kill(child, 'SIGSTOP')
+    } catch {
+      continue
+    }
+    // pgrep and SIGSTOP are separate syscalls. Verify the frozen PID is still
+    // this frozen parent's child before recursively signalling it; if not,
+    // resume the unrelated process and refuse to claim a complete sweep.
+    if (parentPid(child) !== pid) {
+      safe = false
+      try { process.kill(child, 'SIGCONT') } catch { /* already gone */ }
+      continue
+    }
+    safe = signalFrozenTree(child, signal) && safe
   }
   try {
     process.kill(pid, signal)
@@ -206,4 +268,33 @@ export function killPidTree(pid: number, signal: NodeJS.Signals): void {
   } catch {
     // already gone
   }
+  return safe
+}
+
+/**
+ * Freeze, then revalidate, then signal an authorized process identity. A
+ * mismatch resumes the PID without delivering the requested signal.
+ */
+export function signalProcessIdentity(identity: ProcessIdentity, signal: NodeJS.Signals): 'signalled' | 'gone' | 'mismatch' {
+  try {
+    process.kill(identity.pid, 'SIGSTOP')
+  } catch {
+    return 'gone'
+  }
+  if (!processIdentityMatches(identity)) {
+    try { process.kill(identity.pid, 'SIGCONT') } catch { /* already gone */ }
+    return 'mismatch'
+  }
+  return signalFrozenTree(identity.pid, signal) ? 'signalled' : 'mismatch'
+}
+
+export function killPidTree(pid: number, signal: NodeJS.Signals): void {
+  try {
+    // Freeze before enumeration so a wrapper cannot exit and orphan its
+    // listener to PID 1 between pgrep and delivery of the requested signal.
+    process.kill(pid, 'SIGSTOP')
+  } catch {
+    return // already gone
+  }
+  signalFrozenTree(pid, signal)
 }

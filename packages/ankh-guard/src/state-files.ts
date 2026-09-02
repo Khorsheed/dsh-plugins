@@ -48,8 +48,12 @@ export const STATE_FILES = {
   launchSpec: 'launch-spec.json',
   /** Redacted durable receipt for the latest launch-configuration cutover. */
   launchCutover: 'launch-cutover.json',
-  /** Operator → watchdog: abort according to policy, or explicitly restore previous. */
+  /** Legacy combined operator-control marker, retained for rolling upgrades. */
   cutoverControl: 'launch-cutover-control.json',
+  /** Operator → watchdog: abort according to the pre-approved recovery policy. */
+  cutoverAbort: 'launch-cutover-abort.json',
+  /** Monotonic stronger operator action: explicitly restore the previous spec. */
+  cutoverRestorePrevious: 'launch-cutover-restore-previous.json',
   /** Whether the restart-protocol skill registered at apply (and why not). */
   skillRegistration: 'skill-registration.json',
   /** Directory: the healthy-boot snapshot of the profile composition inputs. */

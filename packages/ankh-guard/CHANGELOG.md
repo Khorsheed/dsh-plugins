@@ -10,9 +10,9 @@
 - launchd/systemd 前台等待者在 successor 退出后重新读取耐久 launch state 与回执；target 失败恢复 previous 后，外层 supervisor 不会复活等待前缓存的 target
 - watchdog 就绪探针区分 transport-up 与 ready：裸 401 不再健康；最终进程输出的同 authority 启动 URL 必须完成临时 Cookie jar 的 303 交换、认证后 `/` 200 与一次浏览器交接，Bearer URL 不进入耐久日志/回执
 - 新增脱敏耐久回执 `launch-cutover.json`，记录 supervisor/child PID、配置摘要、认证、重试、canary 与恢复结果；会话仅在回执终态后唤醒
-- 修复嵌套 watchdog 接管的进程所有权漏洞：`reconfigure` 在旧宿主仍存活时固化 supervisor、直接 child 与 listener 的 PID/start identity；successor 只停止已证明的旧进程树，并冻结根进程后再回收后代，拒绝按端口误杀或把旧 listener 的 HTTP 200 当成 target ready
+- 修复嵌套 watchdog 接管的进程所有权漏洞：`reconfigure` 在旧宿主仍存活时固化 supervisor、直接 child 与 listener 的 PID/start identity；successor 对旧 supervisor 做可消费控制请求的有界等待，超时只终止先冻结再复核的精确 identity，并冻结/复核后代亲缘后回收，拒绝按端口误杀或把旧 listener 的 HTTP 200 当成 target ready
 - cutover 就绪现在同时要求目标 child 存活、唯一 listener 属于该 child 树、child/listener identity 在稳定窗口内不变且 retry 为 0；目标在 provisional ready 后退出、`EADDRINUSE` 或旧 listener 持续 200 都会计入失败并执行完整 spec 恢复策略
-- 进程发现优先使用 `/usr/sbin/lsof`、`/usr/bin/lsof` 等绝对路径，不依赖 dsh 工具环境的 PATH；新增耐久 `abort-cutover` 与显式 `restore-previous` 控制命令，回执记录 ownership、稳定性证明、分角色失败计数与控制结果
+- 进程发现优先使用 `/usr/sbin/lsof`、`/usr/bin/lsof` 等绝对路径，不依赖 dsh 工具环境的 PATH；Linux identity 使用 boot/start tick，macOS 优先使用 `proc_pidinfo` 微秒启动时间；新增耐久 `abort-cutover` 与显式 `restore-previous` 控制命令，独立原子 marker 保证并发时 restore 单调优先，回执记录 ownership、稳定性证明、分角色失败计数与控制结果
 
 ## 0.1.1（2026-08-23）
 

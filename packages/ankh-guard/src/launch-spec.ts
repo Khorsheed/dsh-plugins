@@ -99,8 +99,12 @@ export interface LaunchCutoverReceipt {
   target: LaunchSpecSummary
   supervisor: {
     previousPid: number
+    previousStartToken: string
     targetDriverPid?: number
+    targetDriverStartToken?: string
     targetPid?: number
+    targetStartToken?: string
+    previousRetirement?: 'yielded' | 'identity-gone' | 'forced'
   }
   child: {
     previousPid?: number
@@ -240,16 +244,24 @@ export function writeCutoverControl(
 ): CutoverControlRequest {
   const active = activeCutover(stateDir)
   if (active === null || active.receipt.id !== cutoverId) throw new Error(`cutover ${cutoverId} is not active`)
-  const existing = readCutoverControl(stateDir)
-  if (existing?.cutoverId === cutoverId && existing.action === 'restore-previous' && action === 'abort') return existing
   const request: CutoverControlRequest = { version: 1, cutoverId, action, requestedAt: now }
-  atomicWriteJson(stateFile(stateDir, 'cutoverControl'), request)
-  return request
+  // Separate monotonic markers remove the read-then-overwrite race between
+  // independent operator sessions. Once restore exists, no later abort write
+  // can downgrade the durable effective action.
+  if (action === 'restore-previous') {
+    atomicWriteJson(stateFile(stateDir, 'cutoverRestorePrevious'), request)
+  } else {
+    const existing = readControlFile(stateFile(stateDir, 'cutoverRestorePrevious'))
+    if (existing?.cutoverId === cutoverId) return existing
+    atomicWriteJson(stateFile(stateDir, 'cutoverAbort'), request)
+  }
+  const effective = readCutoverControl(stateDir)
+  return effective?.cutoverId === cutoverId ? effective : request
 }
 
-export function readCutoverControl(stateDir: string): CutoverControlRequest | null {
+function readControlFile(file: string): CutoverControlRequest | null {
   try {
-    const value = JSON.parse(readFileSync(stateFile(stateDir, 'cutoverControl'), 'utf8')) as Partial<CutoverControlRequest>
+    const value = JSON.parse(readFileSync(file, 'utf8')) as Partial<CutoverControlRequest>
     if (value.version !== 1 || typeof value.cutoverId !== 'string'
       || (value.action !== 'abort' && value.action !== 'restore-previous')
       || typeof value.requestedAt !== 'number') return null
@@ -259,9 +271,19 @@ export function readCutoverControl(stateDir: string): CutoverControlRequest | nu
   }
 }
 
+export function readCutoverControl(stateDir: string): CutoverControlRequest | null {
+  const restore = readControlFile(stateFile(stateDir, 'cutoverRestorePrevious'))
+  if (restore?.action === 'restore-previous') return restore
+  const legacy = readControlFile(stateFile(stateDir, 'cutoverControl'))
+  if (legacy?.action === 'restore-previous') return legacy
+  return readControlFile(stateFile(stateDir, 'cutoverAbort')) ?? legacy
+}
+
 export function clearCutoverControl(stateDir: string, cutoverId: string): void {
-  const request = readCutoverControl(stateDir)
-  if (request?.cutoverId === cutoverId) rmSync(stateFile(stateDir, 'cutoverControl'), { force: true })
+  for (const role of ['cutoverRestorePrevious', 'cutoverAbort', 'cutoverControl'] as const) {
+    const file = stateFile(stateDir, role)
+    if (readControlFile(file)?.cutoverId === cutoverId) rmSync(file, { force: true })
+  }
 }
 
 /**
@@ -276,6 +298,7 @@ export function prepareLaunchCutover(stateDir: string, input: {
   recoveryPolicy: CutoverRecoveryPolicy
   browserHandoff: BrowserHandoffPolicy
   previousSupervisorPid: number
+  previousSupervisorStartToken: string
   previousOwnership: CutoverProcessOwnership
   initiator?: string
   now: number
@@ -283,6 +306,7 @@ export function prepareLaunchCutover(stateDir: string, input: {
   if (!isLaunchSpec(input.previous) || !isLaunchSpec(input.target)) throw new Error('invalid launch specification')
   if (input.id === '') throw new Error('cutover id is required')
   if (!Number.isInteger(input.previousSupervisorPid) || input.previousSupervisorPid <= 0) throw new Error('invalid previous supervisor pid')
+  if (input.previousSupervisorStartToken === '') throw new Error('previous supervisor start identity is required')
   for (const [label, value] of Object.entries({
     previousChildPid: input.previousOwnership.childPid,
     previousListenerPid: input.previousOwnership.listenerPid,
@@ -295,6 +319,11 @@ export function prepareLaunchCutover(stateDir: string, input: {
   if (input.previous.port !== input.target.port) {
     throw new Error('online cutover requires previous and target to use the same port')
   }
+  // A terminal transaction normally clears these. Remove any abandoned
+  // marker before creating a new ID so precedence is scoped to this cutover.
+  for (const role of ['cutoverRestorePrevious', 'cutoverAbort', 'cutoverControl'] as const) {
+    rmSync(stateFile(stateDir, role), { force: true })
+  }
   const receipt: LaunchCutoverReceipt = {
     version: 1,
     id: input.id,
@@ -304,7 +333,10 @@ export function prepareLaunchCutover(stateDir: string, input: {
     ...(input.initiator !== undefined && input.initiator !== '' ? { initiator: input.initiator } : {}),
     previous: summarizeLaunchSpec(input.previous),
     target: summarizeLaunchSpec(input.target),
-    supervisor: { previousPid: input.previousSupervisorPid },
+    supervisor: {
+      previousPid: input.previousSupervisorPid,
+      previousStartToken: input.previousSupervisorStartToken,
+    },
     child: { previousPid: input.previousOwnership.childPid },
     ownership: { previous: input.previousOwnership },
     authentication: {
@@ -381,11 +413,27 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
     case 'driver-started':
       receipt.phase = 'supervisor-starting'
       receipt.supervisor.targetDriverPid = pidAt(0, 'driver pid')
+      if (args[1] === undefined || args[1] === '') {
+        throw new Error('driver-started: driver start identity is required')
+      }
+      receipt.supervisor.targetDriverStartToken = args[1]
       break
     case 'supervisor-ready':
       receipt.phase = 'supervisor-ready'
       receipt.supervisor.targetPid = pidAt(0, 'supervisor pid')
+      if (args[1] === undefined || args[1] === '') {
+        throw new Error('supervisor-ready: supervisor start identity is required')
+      }
+      receipt.supervisor.targetStartToken = args[1]
       break
+    case 'previous-supervisor-retired': {
+      const outcome = args[0]
+      if (outcome !== 'yielded' && outcome !== 'identity-gone' && outcome !== 'forced') {
+        throw new Error('previous-supervisor-retired: invalid outcome')
+      }
+      receipt.supervisor.previousRetirement = outcome
+      break
+    }
     case 'child-started': {
       const role = args[0]
       if (role !== 'target' && role !== 'previous') throw new Error('child-started: invalid role')
