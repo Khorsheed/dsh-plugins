@@ -146,6 +146,9 @@ describe('browser handoff host bridge', () => {
       const ackBytes = readFileSync(join(dir, STATE_FILES.browserHandoffAck), 'utf8')
       expect(ackBytes).not.toContain(capability)
       expect(ackBytes).not.toContain('process-only')
+      expect(await (await post(origin, { version: 1, operation: 'poll', capability }, 'dsh=valid')).json()).toEqual({
+        state: 'idle',
+      })
     })
   })
 

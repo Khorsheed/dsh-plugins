@@ -225,6 +225,16 @@ function currentReadyOwnership(
   }
 }
 
+function acknowledgementMatchesReady(
+  acknowledgement: BrowserHandoffAcknowledgement | null,
+  ready: NonNullable<ReturnType<typeof currentReadyOwnership>>,
+): boolean {
+  return acknowledgement?.cutoverId === ready.cutoverId
+    && acknowledgement.role === ready.role
+    && acknowledgement.listenerPid === ready.ownership.listenerPid
+    && acknowledgement.listenerStartToken === ready.ownership.listenerStartToken
+}
+
 function authenticationState(
   connection: ConnectionSlice | undefined, req: IncomingMessage,
 ): 'authenticated' | 'unauthenticated' | 'forbidden' | 'legacy-public' {
@@ -260,6 +270,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
     const active = activeCutover(dependencies.stateDir)
     if (message.operation === 'poll') {
       if (active === null || active.receipt.phase === 'awaiting-user'
+        || active.receipt.browserHandoff.status === 'acknowledged'
         || active.receipt.browserHandoff.status === 'off') {
         json(res, 200, { state: 'idle' })
         return
@@ -291,6 +302,12 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
 
       const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
       const registration = readBrowserHandoffRequest(dependencies.stateDir)
+      if (ready !== null && acknowledgementMatchesReady(
+        readBrowserHandoffAcknowledgement(dependencies.stateDir), ready,
+      )) {
+        json(res, 200, { state: 'idle' })
+        return
+      }
       if (ready === null || ready.cutoverId !== active.receipt.id
         || registration?.cutoverId !== active.receipt.id
         || registration.authority !== requestAuthority.authority
