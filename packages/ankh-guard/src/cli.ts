@@ -30,11 +30,11 @@ import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
-import { discoverLaunchCommand, findPidOnPort, killPidTree } from './processes.ts'
+import { discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree } from './processes.ts'
 import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeCompositionRecovery, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 import {
   activeCutover, prepareLaunchCutover, readCutoverReceipt, readLaunchState, recordCutoverEvent,
-  selectedLaunchSpec, summarizeLaunchState, writeStableLaunchSpec,
+  selectedLaunchSpec, summarizeLaunchState, writeCutoverControl, writeStableLaunchSpec,
   type BrowserHandoffPolicy, type CutoverRecoveryPolicy, type LaunchSpec,
 } from './launch-spec.ts'
 
@@ -260,6 +260,8 @@ commands:
   record-composition-recovery [--state-dir DIR]   # watchdog-facing: record a composition-rollback recovery
   configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] --harness-root DIR [--profile NAME] [--if-absent]
   launch-status [--state-dir DIR]
+  abort-cutover [--state-dir DIR]      # apply the recovery policy approved by reconfigure
+  restore-previous [--state-dir DIR]   # explicit new authorization to restore the complete previous spec
   reconfigure --start "CMD" --on-failure restore-previous|wait-for-user [--port N]
           [--home DIR] [--repo DIR] [--harness-root DIR] [--profile NAME] [--browser-handoff required|off]
           [--delay-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
@@ -1186,6 +1188,31 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       io.stdout(`${JSON.stringify({ launch: summarizeLaunchState(readLaunchState(stateDir)), receipt: readCutoverReceipt(stateDir) }, null, 2)}\n`)
       return 0
     }
+    case 'abort-cutover':
+    case 'restore-previous': {
+      const transaction = activeCutover(stateDir)
+      if (transaction === null) {
+        io.stderr(`${command} refused: no nonterminal launch cutover is active\n`)
+        return 1
+      }
+      const watchdogPid = liveWatchdogPid(stateDir)
+      if (watchdogPid === null) {
+        io.stderr(`${command} refused: no live watchdog can consume the durable control request\n`)
+        return 1
+      }
+      const requested = command === 'restore-previous' ? 'restore-previous' : 'abort'
+      try {
+        const control = writeCutoverControl(stateDir, transaction.receipt.id, requested, Date.now())
+        process.kill(watchdogPid, 'SIGUSR2')
+        io.stdout(control.action === 'restore-previous'
+          ? `cutover ${control.cutoverId}: explicit restore-previous requested; watchdog ${watchdogPid} will stop only the proven target identity and relaunch the complete previous spec\n`
+          : `cutover ${control.cutoverId}: abort requested; watchdog ${watchdogPid} will apply the pre-approved ${transaction.receipt.recovery.policy} policy\n`)
+        return 0
+      } catch (error) {
+        io.stderr(`${command} failed: ${String(error)}\n`)
+        return 1
+      }
+    }
     case 'cutover-event': {
       const id = positionals[0]
       const kind = positionals[1]
@@ -1417,8 +1444,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           return 1
         }
         const initiator = resolveInitiator(options.initiator, io)
-        const previousChildRaw = findPidOnPort(previous.port)
-        const previousChildPid = previousChildRaw === null ? undefined : Number(previousChildRaw)
+        const previousOwned = findOwnedListener(previous.port, previousSupervisorPid)
+        if (previousOwned === null) {
+          throw new Error(`the listener on :${previous.port} is not uniquely owned by watchdog ${previousSupervisorPid}; refusing a port-inferred takeover`)
+        }
         prepareLaunchCutover(stateDir, {
           id: cutoverId,
           previous,
@@ -1426,9 +1455,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           recoveryPolicy: options.onFailure,
           browserHandoff: options.browserHandoff,
           previousSupervisorPid,
-          ...(previousChildPid !== undefined && Number.isInteger(previousChildPid) && previousChildPid > 0
-            ? { previousChildPid }
-            : {}),
+          previousOwnership: {
+            childPid: previousOwned.child.pid,
+            childStartToken: previousOwned.child.startToken,
+            listenerPid: previousOwned.listener.pid,
+            listenerStartToken: previousOwned.listener.startToken,
+          },
           ...(initiator !== undefined ? { initiator } : {}),
           now: Date.now(),
         })
@@ -1765,6 +1797,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         }
         io.stdout('launch state refreshed after wait — using the durable selected specification\n')
       }
+      const previousOwnership = transaction?.receipt.ownership?.previous
+      if (transaction !== null && (previousOwnership === undefined
+        || !Number.isInteger(previousOwnership.childPid) || previousOwnership.childPid <= 0
+        || !Number.isInteger(previousOwnership.listenerPid) || previousOwnership.listenerPid <= 0
+        || previousOwnership.childStartToken === '' || previousOwnership.listenerStartToken === '')) {
+        io.stderr(`supervise refused: active cutover ${transaction.receipt.id} predates authoritative child/listener ownership evidence; refusing to infer or kill a process by port. Keep the existing host untouched and settle the transaction explicitly.\n`)
+        return 1
+      }
       const watchdog = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
       if (!existsSync(watchdog)) {
         io.stderr(`watchdog script not found at ${watchdog}\n`)
@@ -1822,7 +1862,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         WD_WAIT_OWNER: options.takeoverFrom !== undefined || !options.foreground ? '1' : '0',
         WD_GUARD: guardInvocation(),
         ...(options.takeoverFrom !== undefined ? { WD_TAKEOVER_FROM: String(options.takeoverFrom) } : {}),
-        ...(transaction !== null ? {
+        ...(transaction !== null && previousOwnership !== undefined ? {
           WD_CUTOVER_ID: transaction.receipt.id,
           WD_CUTOVER_ROLE: transaction.state.selected,
           WD_CUTOVER_POLICY: transaction.receipt.recovery.policy,
@@ -1833,6 +1873,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           WD_PREVIOUS_REPO: transaction.state.previous.credentialRepo,
           WD_PREVIOUS_HARNESS_ROOT: transaction.state.previous.harnessRoot,
           WD_PREVIOUS_PROFILE: transaction.state.previous.profile,
+          WD_PREVIOUS_CHILD_PID: String(previousOwnership.childPid),
+          WD_PREVIOUS_CHILD_START: previousOwnership.childStartToken,
+          WD_PREVIOUS_LISTENER_PID: String(previousOwnership.listenerPid),
+          WD_PREVIOUS_LISTENER_START: previousOwnership.listenerStartToken,
         } : {}),
       }
       if (options.foreground) {

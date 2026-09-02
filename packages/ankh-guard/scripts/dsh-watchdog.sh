@@ -48,6 +48,9 @@
 #   WD_CUTOVER_ID=ID   durable launch-cutover receipt transaction
 #   WD_CUTOVER_POLICY= restore-previous or wait-for-user (approved pre-stop)
 #   WD_CUTOVER_DELAY_SECONDS=N grace after supervisor claim before old-child stop
+#   WD_PREVIOUS_CHILD_*=PID/start token authoritative old supervisor child root
+#   WD_PREVIOUS_LISTENER_*=PID/start token listener inside that old child tree
+#   WD_READY_STABILITY_SECONDS=N unchanged child/listener proof window (default 3)
 #   WD_BROWSER_HANDOFF=required|off after an authenticated launch-URL exchange
 #   WD_TEST_FAKE=1     launch a throwaway http server instead of the instance
 #   WD_TEST_BREAK=1    launch a command that always fails (give-up testing)
@@ -76,8 +79,13 @@ PREVIOUS_HOME="${WD_PREVIOUS_HOME:-}"
 PREVIOUS_REPO="${WD_PREVIOUS_REPO:-}"
 PREVIOUS_HARNESS_ROOT="${WD_PREVIOUS_HARNESS_ROOT:-}"
 PREVIOUS_PROFILE="${WD_PREVIOUS_PROFILE:-}"
+PREVIOUS_CHILD_PID="${WD_PREVIOUS_CHILD_PID:-}"
+PREVIOUS_CHILD_START="${WD_PREVIOUS_CHILD_START:-}"
+PREVIOUS_LISTENER_PID="${WD_PREVIOUS_LISTENER_PID:-}"
+PREVIOUS_LISTENER_START="${WD_PREVIOUS_LISTENER_START:-}"
 BROWSER_HANDOFF="${WD_BROWSER_HANDOFF:-off}"
 TARGET_FAILURE_LIMIT="${WD_TARGET_FAILURE_LIMIT:-2}"
+READY_STABILITY_SECONDS="${WD_READY_STABILITY_SECONDS:-3}"
 # Every marker, the pidfile, and the attempt log live in ONE state directory:
 # WD_STATE_DIR when the guard CLI names it (its --state-dir), else the
 # conventional <home>/state. Deriving it here as <home>/state while the guard
@@ -90,12 +98,27 @@ RESTART_MARKER="$STATE_DIR/restart-requested.json"
 STOP_MARKER="$STATE_DIR/watchdog-stop"
 PIDFILE="$STATE_DIR/watchdog.pid"
 ATTEMPT_LOG="$STATE_DIR/boot-attempt.log"
+CONTROL_FILE="$STATE_DIR/launch-cutover-control.json"
 
 # Timestamp every lifecycle line so a durable receipt can be correlated with
 # supervisor/child PIDs across launchd, systemd, and detached CLI restarts.
 wd_log() {
   printf '%s [watchdog] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"
 }
+
+resolve_tool() {
+  local name=$1 candidate
+  shift
+  for candidate in "$@"; do [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }; done
+  command -v "$name" 2>/dev/null || return 1
+}
+
+# macOS tool sessions commonly omit /usr/sbin from PATH. Listener identity is
+# a safety proof, not optional telemetry, so resolve canonical absolute paths
+# and fail loud when the proof machinery truly is unavailable.
+LSOF_BIN=$(resolve_tool lsof /usr/sbin/lsof /usr/bin/lsof) || { wd_log "lsof is required to prove listener ownership" >&2; exit 1; }
+PS_BIN=$(resolve_tool ps /bin/ps /usr/bin/ps) || { wd_log "ps is required to prove process identity" >&2; exit 1; }
+PGREP_BIN=$(resolve_tool pgrep /usr/bin/pgrep /bin/pgrep) || { wd_log "pgrep is required to manage the supervised child tree" >&2; exit 1; }
 
 [ -n "$DSH_ROOT" ] || { wd_log "WD_HOME or DSH_HOME must be set" >&2; exit 1; }
 export DSH_HOME="$DSH_ROOT"
@@ -147,6 +170,21 @@ cutover_event_required() {
     wd_log "could not persist cutover event $1 — retrying; service state is unchanged" >&2
     sleep 1
   done
+}
+
+cutover_control_action() {
+  [ -n "$CUTOVER_ID" ] || return 0
+  node -e '
+    const fs = require("fs")
+    const [file, id] = process.argv.slice(1)
+    try {
+      const value = JSON.parse(fs.readFileSync(file, "utf8"))
+      if (value?.version === 1 && value.cutoverId === id
+        && (value.action === "abort" || value.action === "restore-previous")) {
+        process.stdout.write(value.action)
+      }
+    } catch {}
+  ' "$CONTROL_FILE" "$CUTOVER_ID" 2>/dev/null
 }
 
 # The host owns the shape of its per-process launch URL. Discovery is generic:
@@ -231,13 +269,16 @@ browser_handoff_done=0
 browser_handoff_reported=0
 handoff_cookie_jar=''
 readiness_detail=''
+protected_ready=0
 
 # Readiness has two layers. Any HTTP response proves transport-up; only a bare
 # 200, or a same-authority launch-URL exchange (303 + cookie-authenticated 200)
 # proves application readiness. A naked 401 therefore never counts as ready.
 ready_probe() {
   local status url jar exchange authenticated
+  current_owned_listener || return 1
   status=$(http_status)
+  current_ownership_matches || return 1
   if [ -n "$status" ] && [ "$status" != "000" ] && [ "$status" != "$last_transport_status" ]; then
     last_transport_status=$status
     cutover_event_required transport "$status"
@@ -246,6 +287,7 @@ ready_probe() {
     fi
   fi
   if [ "$status" = "200" ]; then
+    protected_ready=0
     readiness_detail="plain HTTP 200"
     return 0
   fi
@@ -272,9 +314,21 @@ ready_probe() {
   handoff_cookie_jar=''
   cutover_event_required authenticated "${authenticated:-0}"
   [ "$authenticated" = "200" ] || return 1
+  current_ownership_matches || return 1
+  protected_ready=1
+  readiness_detail="authenticated launch URL: 303 exchange, cookie / = 200"
+  return 0
+}
 
+# Browser handoff is deliberately after the ownership stability window. A URL
+# from a target that only survives long enough for one authenticated response
+# must never be delivered to the user and then superseded by recovery.
+complete_browser_handoff() {
+  current_ownership_matches || return 1
+  [ "$protected_ready" = "1" ] || return 0
   if [ "$BROWSER_HANDOFF" = "required" ] && [ "$browser_handoff_done" = "0" ]; then
-    if ! open_launch_url "$url"; then
+    [ -n "$launch_url_value" ] || return 1
+    if ! open_launch_url "$launch_url_value"; then
       if [ "$browser_handoff_reported" = "0" ]; then
         wd_log "browser launch-URL handoff failed — not ready"
         cutover_event_required browser-handoff failed
@@ -290,11 +344,42 @@ ready_probe() {
     cutover_event_required browser-handoff off
     browser_handoff_reported=1
   fi
+  current_ownership_matches || return 1
   if [ "$browser_handoff_done" = "1" ]; then
     readiness_detail="authenticated launch URL: 303 exchange, cookie / = 200, browser handoff accepted"
-  else
-    readiness_detail="authenticated launch URL: 303 exchange, cookie / = 200"
   fi
+  return 0
+}
+
+# Initial HTTP/auth readiness is provisional. Hold the exact child PID/start
+# identity and exact listener PID/start identity unchanged for a stability
+# window, with no retry tolerated inside that window, before canary/terminal
+# receipt. A child that exits after first returning 200 therefore fails the
+# cutover instead of borrowing another process's response.
+prove_stable_readiness() {
+  local expected_child=$child expected_child_start=$child_start_token
+  local expected_listener=$current_listener_pid expected_listener_start=$current_listener_start
+  local deadline
+  case "$READY_STABILITY_SECONDS" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$READY_STABILITY_SECONDS" -gt 0 ] || return 1
+  deadline=$(( $(now_ms) + READY_STABILITY_SECONDS * 1000 ))
+  while [ "$(now_ms)" -lt "$deadline" ]; do
+    [ -z "$(cutover_control_action)" ] || return 1
+    [ "$child" = "$expected_child" ] && [ "$child_start_token" = "$expected_child_start" ] || return 1
+    current_listener_pid=$expected_listener
+    current_listener_start=$expected_listener_start
+    current_ownership_matches || return 1
+    ready_probe || return 1
+    [ "$current_listener_pid" = "$expected_listener" ] \
+      && [ "$current_listener_start" = "$expected_listener_start" ] || return 1
+    sleep 0.25
+  done
+  current_listener_pid=$expected_listener
+  current_listener_start=$expected_listener_start
+  current_ownership_matches || return 1
+  readiness_detail="$readiness_detail; ownership stable ${READY_STABILITY_SECONDS}s (child $child, listener $current_listener_pid, retry 0)"
+  cutover_event_required ownership-stable "$CUTOVER_ROLE" "$child" "$child_start_token" \
+    "$current_listener_pid" "$current_listener_start" "$((READY_STABILITY_SECONDS * 1000))" 0
   return 0
 }
 
@@ -304,23 +389,195 @@ transport_up() {
   [ -n "$status" ] && [ "$status" != "000" ]
 }
 
+process_start_token() {
+  "$PS_BIN" -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+}
+
+now_ms() {
+  node -e 'process.stdout.write(String(Date.now()))'
+}
+
+identity_matches() {
+  local pid=$1 expected=$2 actual
+  [ -n "$pid" ] && [ -n "$expected" ] || return 1
+  actual=$(process_start_token "$pid")
+  [ -n "$actual" ] && [ "$actual" = "$expected" ]
+}
+
+listener_pids() {
+  "$LSOF_BIN" -tiTCP:"$PORT" -sTCP:LISTEN -P 2>/dev/null | sort -u
+}
+
+pid_belongs_to_tree() {
+  local root=$1 cursor=$2 parent hops=0
+  while [ "$cursor" -gt 0 ] 2>/dev/null && [ "$hops" -lt 256 ]; do
+    [ "$cursor" = "$root" ] && return 0
+    parent=$("$PS_BIN" -o ppid= -p "$cursor" 2>/dev/null | tr -d ' ')
+    [ -n "$parent" ] || return 1
+    cursor=$parent
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
+# Prove one unchanged listener inside the launched child tree. The response
+# probe is accepted only while this identity remains true before and after
+# the HTTP exchange, preventing a stale/foreign server on the same port from
+# being mistaken for the target.
+current_owned_listener() {
+  local pids count listener token
+  identity_matches "$child" "$child_start_token" || return 1
+  pids=$(listener_pids)
+  count=$(printf '%s\n' "$pids" | sed '/^$/d' | wc -l | tr -d ' ')
+  [ "$count" = "1" ] || return 1
+  listener=$(printf '%s\n' "$pids" | head -1)
+  pid_belongs_to_tree "$child" "$listener" || return 1
+  token=$(process_start_token "$listener")
+  [ -n "$token" ] || return 1
+  current_listener_pid=$listener
+  current_listener_start=$token
+  return 0
+}
+
+current_ownership_matches() {
+  local pids count token
+  identity_matches "$child" "$child_start_token" || return 1
+  pids=$(listener_pids)
+  count=$(printf '%s\n' "$pids" | sed '/^$/d' | wc -l | tr -d ' ')
+  [ "$count" = "1" ] || return 1
+  [ "$(printf '%s\n' "$pids" | head -1)" = "$current_listener_pid" ] || return 1
+  token=$(process_start_token "$current_listener_pid")
+  [ -n "$token" ] && [ "$token" = "$current_listener_start" ] \
+    && pid_belongs_to_tree "$child" "$current_listener_pid"
+}
+
 # Reap a pid AND its descendants, deepest first (best effort). The watchdog
 # guarantees the direct child; the sweep keeps grandchildren from outliving
 # the instance — a single-pid kill is what orphaned listeners and left the
 # EADDRINUSE race behind.
 kill_tree() {
   local pid=$1 sig=${2:-TERM} child
-  for child in $(pgrep -P "$pid" 2>/dev/null); do
+  # Freeze the root before enumerating descendants. Signalling the wrapper
+  # first lets its listener reparent to PID 1 between pgrep and kill — the
+  # exact nested-watchdog leak this protocol must prevent.
+  kill -STOP "$pid" 2>/dev/null || return 0
+  for child in $("$PGREP_BIN" -P "$pid" 2>/dev/null); do
     kill_tree "$child" "$sig"
   done
   kill -s "$sig" "$pid" 2>/dev/null || true
+  if [ "$sig" != "KILL" ]; then kill -CONT "$pid" 2>/dev/null || true; fi
+}
+
+stop_matching_identity() {
+  local pid=$1 token=$2 sig=${3:-TERM}
+  identity_matches "$pid" "$token" || return 0
+  kill_tree "$pid" "$sig"
+}
+
+# Stop only the process identities captured while the old supervisor still
+# owned them. The listener is also retained because a shell wrapper can exit
+# and orphan its server between tree enumeration and signal delivery. Never
+# replace this with "kill whatever owns the port" during a cutover.
+stop_previous_owned_tree() {
+  local deadline pids foreign=0
+  [ -n "$PREVIOUS_CHILD_PID" ] && [ -n "$PREVIOUS_CHILD_START" ] \
+    && [ -n "$PREVIOUS_LISTENER_PID" ] && [ -n "$PREVIOUS_LISTENER_START" ] || {
+      wd_log "cutover ownership proof is incomplete; refusing to stop by port" >&2
+      return 1
+    }
+  stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" TERM
+  stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" TERM
+  deadline=$(( $(date +%s) + 15 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if ! identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" \
+      && ! identity_matches "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START"; then
+      break
+    fi
+    sleep 0.2
+  done
+  stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" KILL
+  stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" KILL
+  sleep 0.2
+  if identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" \
+    || identity_matches "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START"; then
+    wd_log "captured previous child/listener identity did not exit" >&2
+    return 1
+  fi
+  pids=$(listener_pids)
+  if [ -n "$pids" ]; then
+    wd_log "port :$PORT is owned by unapproved pid(s) $(printf '%s' "$pids" | paste -sd, -); refusing arbitrary cleanup" >&2
+    foreign=1
+  fi
+  [ "$foreign" = "0" ]
+}
+
+kill_current_owned_attempt() {
+  if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ]; then
+    stop_matching_identity "$child" "$child_start_token" TERM
+  fi
+  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ]; then
+    stop_matching_identity "$current_listener_pid" "$current_listener_start" TERM
+  fi
+  sleep 0.2
+  if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ]; then
+    stop_matching_identity "$child" "$child_start_token" KILL
+  fi
+  if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ]; then
+    stop_matching_identity "$current_listener_pid" "$current_listener_start" KILL
+  fi
+}
+
+select_previous_spec() {
+  local reason=$1
+  [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
+    && [ -n "$PREVIOUS_HARNESS_ROOT" ] || return 1
+  cutover_event_required restoring "$reason"
+  START_CMD="$PREVIOUS_START"
+  DSH_ROOT="$PREVIOUS_HOME"
+  REPO="$PREVIOUS_REPO"
+  HARNESS_ROOT="$PREVIOUS_HARNESS_ROOT"
+  PROFILE="${PREVIOUS_PROFILE:-web}"
+  export DSH_HOME="$DSH_ROOT"
+  CUTOVER_ROLE="previous"
+  browser_handoff_done=0
+  browser_handoff_reported=0
+  failures=0
+  reset_done=1
+  port_races=0
+  rm -f "$CONTROL_FILE"
+  return 0
+}
+
+# Return 0 when a durable operator request was consumed; control_result tells
+# the caller whether to launch previous or park according to wait-for-user.
+handle_cutover_control() {
+  local action effective
+  control_result=''
+  action=$(cutover_control_action)
+  [ -n "$action" ] || return 1
+  cutover_event_required control-requested "$action"
+  effective=$action
+  if [ "$action" = "abort" ]; then effective=$CUTOVER_POLICY; fi
+  if [ "$effective" = "restore-previous" ]; then
+    kill_current_owned_attempt
+    if [ -n "${child:-}" ]; then wait "$child" 2>/dev/null || true; fi
+    if select_previous_spec "operator requested $action; restoring previous complete launch specification"; then
+      control_result='restore'
+      return 0
+    fi
+    effective='wait-for-user'
+  fi
+  rm -f "$CONTROL_FILE"
+  cutover_event_required awaiting-user "operator requested $action; recovery is waiting for user"
+  control_result='wait'
+  return 0
 }
 
 # Echo a pid and all its descendants, one per line.
 pid_tree() {
   local pid=$1 child
   echo "$pid"
-  for child in $(pgrep -P "$pid" 2>/dev/null); do
+  for child in $("$PGREP_BIN" -P "$pid" 2>/dev/null); do
     pid_tree "$child"
   done
 }
@@ -335,7 +592,7 @@ instance_listen_ports() {
   local pids
   pids=$(pid_tree "$1" | paste -sd, -)
   [ -n "$pids" ] || return 0
-  lsof -nP -a -p "$pids" -iTCP -sTCP:LISTEN 2>/dev/null \
+  "$LSOF_BIN" -nP -a -p "$pids" -iTCP -sTCP:LISTEN 2>/dev/null \
     | awk 'NR > 1 { n = split($9, a, ":"); print a[n] }' | sort -u
 }
 
@@ -343,7 +600,7 @@ instance_listen_ports() {
 # listener (the one-time bounce that moves a running instance under supervision).
 free_port() {
   local pid p
-  pid=$(lsof -tiTCP:$PORT -sTCP:LISTEN -P 2>/dev/null)
+  pid=$(listener_pids)
   if [ -n "$pid" ]; then
     wd_log "freeing :$PORT from pid(s) $pid"
     for p in $pid; do kill_tree "$p" TERM; done
@@ -536,8 +793,18 @@ function bind() {
   });
   server.listen(port, '127.0.0.1');
 }
+
 bind();
 EOF
+}
+
+park_cutover() {
+  local reason=$1
+  printf '%s launch cutover waiting: %s\n' "$(date '+%F %T')" "$reason" > "$GIVE_UP_MARKER"
+  WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
+  page_pid=$!
+  wait "$page_pid" 2>/dev/null || true
+  page_pid=''
 }
 
 retry_on_usrs() {
@@ -661,6 +928,14 @@ cleanup() {
 trap cleanup EXIT
 trap 'cleanup; exit 143' TERM INT
 
+cutover_control_signal() {
+  # The durable marker is the signal. Let the main loop freeze and reap the
+  # authoritative tree; killing only the wrapper here recreates the orphan
+  # listener race.
+  if [ -n "${page_pid:-}" ]; then kill "$page_pid" 2>/dev/null || true; fi
+}
+trap 'cutover_control_signal' USR2
+
 write_cutover_restart_marker() {
   node -e '
     const fs = require("fs")
@@ -698,8 +973,16 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   # permanently nonterminal. The old instance still sees the marker during
   # SIGTERM and can snapshot interrupted sessions with the correct initiator.
   write_cutover_restart_marker
-  free_port
-  wd_log "old host stopped — taking over :$PORT"
+  if ! stop_previous_owned_tree; then
+    WD_TAKEOVER_FROM=""
+    cutover_event_required awaiting-user "could not stop the captured previous child/listener identity without touching an unapproved port owner"
+    printf '%s launch cutover waiting: previous ownership could not be retired\n' "$(date '+%F %T')" > "$GIVE_UP_MARKER"
+    WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
+    page_pid=$!
+    wait "$page_pid"
+    exit 1
+  fi
+  wd_log "captured previous child $PREVIOUS_CHILD_PID and listener $PREVIOUS_LISTENER_PID exited — taking over :$PORT"
   # This is the irreversible boundary. Never restore a possibly recycled old
   # supervisor pid during a much later cleanup.
   WD_TAKEOVER_FROM=""
@@ -711,17 +994,31 @@ elif [ -n "$CUTOVER_ID" ]; then
   wd_log "resuming launch cutover $CUTOVER_ID on selected side $CUTOVER_ROLE"
   cutover_event_required supervisor-ready "$$"
   write_cutover_restart_marker
-  free_port
+  if ! stop_previous_owned_tree; then
+    cutover_event_required awaiting-user "resume could not prove the shared port free from the captured previous identity"
+    printf '%s launch cutover waiting: port ownership is ambiguous\n' "$(date '+%F %T')" > "$GIVE_UP_MARKER"
+    WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
+    page_pid=$!
+    wait "$page_pid"
+    exit 1
+  fi
 elif [ "${WD_WAIT_OWNER:-0}" = "1" ]; then
   # Adoption ahead of a self-restart: the current owner exits on its own.
   wd_log "waiting for the current owner of :$PORT to exit"
-  while lsof -tiTCP:$PORT -sTCP:LISTEN -P >/dev/null 2>&1; do sleep 1; done
+  while "$LSOF_BIN" -tiTCP:"$PORT" -sTCP:LISTEN -P >/dev/null 2>&1; do sleep 1; done
   wd_log "port free — taking over"
 else
   free_port
 fi
 
 while true; do
+  if [ -n "$CUTOVER_ID" ] && handle_cutover_control; then
+    if [ "$control_result" = "wait" ]; then
+      park_cutover "operator abort follows wait-for-user policy"
+      continue
+    fi
+    wd_log "operator control selected the previous complete launch specification"
+  fi
   # Self-heal the ownership claim FIRST: if the state dir (or the pidfile) was
   # cleaned underneath a live watchdog, reclaim it; if another LIVE watchdog
   # now holds it, yield — two supervisors on one port reap each other's
@@ -766,18 +1063,50 @@ while true; do
   chmod 600 "$ATTEMPT_LOG" 2>/dev/null || true
   launch_instance > "$ATTEMPT_LOG" 2>&1 &
   child=$!
-  cutover_event_required child-started "$CUTOVER_ROLE" "$current_attempt" "$child"
+  child_start_token=$(process_start_token "$child")
+  [ -n "$child_start_token" ] || child_start_token="unavailable-$child"
+  cutover_event_required child-started "$CUTOVER_ROLE" "$current_attempt" "$child" "$child_start_token"
   last_transport_status=''
   launch_url_reported=0
   launch_url_value=''
   readiness_detail=''
+  protected_ready=0
+  # Launch URLs and browser cookies are process-bound. Every retry must prove
+  # and hand off its own URL; an accepted URL from a rejected child is stale.
+  browser_handoff_done=0
+  browser_handoff_reported=0
+  current_listener_pid=''
+  current_listener_start=''
   # Boot window: transport-up is not enough. A protected root can answer 401;
   # ready_probe completes the process's announced launch-URL cookie exchange.
   up=0
+  readiness_failure_detail="readiness not proven within ${BOOT_TIMEOUT}s"
   boot_limit=$(( $(date +%s) + BOOT_TIMEOUT ))
   while [ "$(date +%s)" -lt "$boot_limit" ]; do
-    if ! kill -0 "$child" 2>/dev/null; then break; fi
-    if ready_probe; then up=1; break; fi
+    if [ -n "$(cutover_control_action)" ]; then
+      readiness_failure_detail="operator control interrupted readiness"
+      kill_current_owned_attempt
+      break
+    fi
+    if ! kill -0 "$child" 2>/dev/null; then
+      readiness_failure_detail="child exited before ownership-stable readiness"
+      break
+    fi
+    if ready_probe; then
+      if prove_stable_readiness; then
+        if complete_browser_handoff; then
+          up=1
+        else
+          readiness_failure_detail="browser handoff or final child/listener identity proof failed"
+        fi
+      else
+        readiness_failure_detail="provisional readiness did not retain one child/listener identity through the stability window"
+      fi
+      # Readiness that cannot hold the same child/listener identity for the
+      # stability window is an attempt failure, not an invitation to attach
+      # to whichever process next answers on the shared port.
+      break
+    fi
     sleep 1
   done
 
@@ -787,7 +1116,7 @@ while true; do
     bound=""
     if kill -0 "$child" 2>/dev/null; then bound=$(instance_listen_ports "$child"); fi
     # Never came up (or died); stop a still-alive child and reap it.
-    if kill -0 "$child" 2>/dev/null; then kill "$child" 2>/dev/null; fi
+    kill_current_owned_attempt
     wait "$child" 2>/dev/null
     # Strip bearer launch URLs before any durable failure output is mirrored.
     redact_launch_urls_in_output
@@ -796,8 +1125,30 @@ while true; do
     # written, and the watchdog log is where an operator looks first.
     sed 's/^/[instance] /' "$ATTEMPT_LOG" 2>/dev/null
 
+    if [ -n "$CUTOVER_ID" ] && [ -n "$(cutover_control_action)" ]; then
+      failures=$((failures + 1))
+      cutover_event_required attempt-failed "$CUTOVER_ROLE" "$current_attempt" "operator control interrupted readiness"
+      if handle_cutover_control; then
+        if [ "$control_result" = "restore" ]; then
+          wd_log "operator control interrupted target readiness — restoring previous"
+          continue
+        fi
+        park_cutover "operator abort follows wait-for-user policy"
+        continue
+      fi
+    fi
+
     if grep -q 'EADDRINUSE' "$ATTEMPT_LOG" 2>/dev/null; then
       if grep 'EADDRINUSE' "$ATTEMPT_LOG" | grep -qE "[:.]$PORT([^0-9]|$)"; then
+        if [ -n "$CUTOVER_ID" ]; then
+          # The target never inherits authority to kill an arbitrary owner of
+          # the shared port. Count the attempt so the approved full-spec
+          # recovery policy runs; any listener previously proven inside this
+          # attempt was already retired by kill_current_owned_attempt.
+          wd_log "cutover $CUTOVER_ROLE hit EADDRINUSE on :$PORT — refusing port-based cleanup; counting a $CUTOVER_ROLE failure"
+          readiness_failure_detail="EADDRINUSE on supervised :$PORT; cutover refused port-based cleanup"
+          port_races=5
+        else
         # The supervised port was still held (a leftover process, a slow exit)
         # — an operational race, not a code regression. The watchdog owns this
         # port, so free it and retry WITHOUT counting toward rollback or
@@ -810,6 +1161,7 @@ while true; do
           continue
         fi
         wd_log ":$PORT is still held after 5 free attempts — counting this as a boot failure"
+        fi
       else
         # EADDRINUSE on a port this watchdog does not own: the start command
         # targets somewhere else, and freeing :$PORT cannot release it. The
@@ -822,8 +1174,8 @@ while true; do
     fi
 
     failures=$((failures + 1))
-    wd_log "instance failed to come up (failure #$failures)"
-    cutover_event_required attempt-failed "$CUTOVER_ROLE" "$current_attempt" "readiness not proven within ${BOOT_TIMEOUT}s"
+    wd_log "instance failed to come up (failure #$failures: $readiness_failure_detail)"
+    cutover_event_required attempt-failed "$CUTOVER_ROLE" "$current_attempt" "$readiness_failure_detail"
 
     # The instance came up on a port this watchdog does not own: a start-command
     # argument, not a code regression. Resetting the checkout cannot change a
@@ -844,21 +1196,7 @@ while true; do
         && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
         && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
         wd_log "target launch failed after $failures attempt(s) — restoring the approved previous launch specification"
-        cutover_event_required restoring "target failed after $failures attempt(s); restoring previous spec"
-        START_CMD="$PREVIOUS_START"
-        DSH_ROOT="$PREVIOUS_HOME"
-        REPO="$PREVIOUS_REPO"
-        HARNESS_ROOT="$PREVIOUS_HARNESS_ROOT"
-        PROFILE="${PREVIOUS_PROFILE:-web}"
-        export DSH_HOME="$DSH_ROOT"
-        CUTOVER_ROLE="previous"
-        # Any earlier accepted handoff belonged to a rejected target process.
-        # A protected restored process must hand off its own launch URL.
-        browser_handoff_done=0
-        browser_handoff_reported=0
-        failures=0
-        reset_done=1
-        port_races=0
+        select_previous_spec "target failed after $failures attempt(s); restoring previous spec"
         continue
       fi
       wd_log "launch cutover cannot become ready — approved policy is ${CUTOVER_POLICY:-wait-for-user}; parking for user action"
@@ -927,9 +1265,15 @@ while true; do
 
   # Intentional restart: run the guard canary (credential fresh + HEAD match).
   if [ -f "$RESTART_MARKER" ]; then
-    if guard_verify; then
-      wd_log "canary PASS — clearing restart marker"
+    canary_proven=0
+    if guard_verify && current_ownership_matches; then
       cutover_event_required canary pass
+      # Persisting canary evidence can take long enough for a short-lived child
+      # to exit. Recheck after the event and before the terminal ready event.
+      if current_ownership_matches; then canary_proven=1; fi
+    fi
+    if [ "$canary_proven" = "1" ]; then
+      wd_log "canary PASS — clearing restart marker"
       if [ -n "$CUTOVER_ID" ]; then
         rm -f "$RESTART_MARKER"
         cutover_event_required ready "$CUTOVER_ROLE"
@@ -938,25 +1282,14 @@ while true; do
       rm -f "$RESTART_MARKER"
     else
       if [ -n "$CUTOVER_ID" ]; then
-        wd_log "canary FAIL during launch cutover"
-        cutover_event_required canary fail "credential/head verification failed"
+        wd_log "canary/ownership FAIL during launch cutover"
+        cutover_event_required canary fail "credential/head verification or child/listener identity failed after readiness"
         if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
           && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
           && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
-          kill_tree "$child" TERM
+          kill_current_owned_attempt
           wait "$child" 2>/dev/null || true
-          cutover_event_required restoring "target became ready but canary failed; restoring previous spec"
-          START_CMD="$PREVIOUS_START"
-          DSH_ROOT="$PREVIOUS_HOME"
-          REPO="$PREVIOUS_REPO"
-          HARNESS_ROOT="$PREVIOUS_HARNESS_ROOT"
-          PROFILE="${PREVIOUS_PROFILE:-web}"
-          export DSH_HOME="$DSH_ROOT"
-          CUTOVER_ROLE="previous"
-          browser_handoff_done=0
-          browser_handoff_reported=0
-          failures=0
-          reset_done=1
+          select_previous_spec "target became ready but canary failed; restoring previous spec"
           continue
         fi
         if [ "$CUTOVER_ROLE" = "previous" ]; then
@@ -967,7 +1300,7 @@ while true; do
           cutover_event_required ready previous
           CUTOVER_ID=''
         else
-          kill_tree "$child" TERM
+          kill_current_owned_attempt
           wait "$child" 2>/dev/null || true
           cutover_event_required awaiting-user "target canary failed"
           printf '%s launch cutover waiting after canary failure\n' "$(date '+%F %T')" > "$GIVE_UP_MARKER"

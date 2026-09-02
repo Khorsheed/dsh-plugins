@@ -30,12 +30,12 @@ import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 // failure this dual-host probing exists to survive. The derivation below
 // reads both surfaces through one structural cast.
 import * as agentPresetsHost from '@deepseek-ai/dsh-agent-presets'
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveRepoDir, resolveStateDir, SRC_ARTIFACT_PATTERN } from './defaults.ts'
 import { commitCheckpoint, currentHead, isWorkingTreeClean, resetToCheckpoint } from './git.ts'
+import { listeningPortsForPid } from './processes.ts'
 import { cutoverBlocksWake } from './launch-spec.ts'
 import { stateFile } from './state-files.ts'
 import {
@@ -683,14 +683,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       for (const [key, value] of Object.entries(process.env)) {
         if (key.startsWith('DSH_') && value !== undefined) env[key] = value
       }
-      let port: number | undefined
-      try {
-        const out = execFileSync('lsof', ['-a', '-p', String(process.pid), '-iTCP', '-sTCP:LISTEN', '-P'], { encoding: 'utf8', stdio: 'pipe' })
-        const match = /:(\d+) \(LISTEN\)/.exec(out)
-        if (match !== null) port = Number(match[1])
-      } catch {
-        // lsof unavailable or nothing listening yet — the record still helps.
-      }
+      const port = listeningPortsForPid(process.pid)[0]
       writeInstanceLaunch(stateDir, {
         command: buildLaunchCommand(process.execPath, process.execArgv, process.argv.slice(1), process.cwd(), env),
         source: 'instance',

@@ -25,7 +25,7 @@ guard 以 `record --run -- PROGRAM ...` 亲自执行构建/测试并观察 exit 
 
 重启本身交给 watchdog 托管：独立的监督进程，宿主死了自动拉起来，起不来就回滚到最后已知可用版本（健康启动戳——本部署里最近一次真正跑起来过的版本——兜底依次是检查点、绿色凭证的 HEAD），连续四次失败停在崩溃页等人工处理。启动失败源自仓库之外时（新装的插件是最常见的情形），回滚检出修不好它——所以 watchdog 改为回滚 **profile 组合**：每次健康启动都会快照组合输入（bundles 层与 profile 清单），仓库外故障即恢复该快照（最新插件变更被卸载，故障输入备份在 `composition-backup-*`），并通过重启报告渠道点名被卸载的内容、向用户回报这次自动恢复。每次回滚都会留下 `guard-backup-*` 恢复锚点（被丢弃的 HEAD 和未提交改动各有分支），恢复不依赖 reflog。`checkpoint` 在批次前记录干净的现有 HEAD；脏树默认拒绝，只有复核完整路径集后显式 `--include-dirty` 才提交为回滚点。`reset` 硬重置回该点（同样留锚点），`canary` 在重启后复检。检查点与凭证存在状态文件里，重启后依然存活，所以 canary 可以在新实例起来之后运行。
 
-就绪判定理解应用语义：任何 HTTP 响应（包括裸 401）都只证明 transport-up；公开根路径 HTTP 200 才 ready。受保护根路径必须由 watchdog 从**最终进程**输出中取得同 authority 的启动 URL，用临时 Cookie jar 证明 启动 URL → 303 → 带 Cookie 的 `/` → 200；启动配置切换时还要向浏览器交接一次该 URL。Bearer URL 会从耐久日志和回执中脱敏。
+就绪判定理解应用语义：任何 HTTP 响应（包括裸 401）都只证明 transport-up；公开根路径 HTTP 200 才 ready。受保护根路径必须由 watchdog 从**最终进程**输出中取得同 authority 的启动 URL，用临时 Cookie jar 证明 启动 URL → 303 → 带 Cookie 的 `/` → 200；启动配置切换时还要向浏览器交接一次该 URL。HTTP 成功还不够：被拉起的直接 child 必须仍存活，端口的唯一 listener 必须属于该 child 的进程树，child/listener 的 PID 与启动 identity 要在稳定窗口内保持不变，且当前 retry 必须为 0。Bearer URL 会从耐久日志和回执中脱敏。
 
 ## 安装与加载
 
@@ -40,7 +40,7 @@ dsh plugin --profile web add @khorsheed/dsh-ankh-guard       # this plugin
 
 配置（全部可选）：`stateDir`（默认 `$DSH_HOME/state`，否则 `<cwd>/.dsh-guard-state`）、`repoDir`（默认进程 cwd）、`maxAgeMinutes`（凭证新鲜窗口，默认 10）、`reportRestartContext`（`followup` 自主报告 / `step` 骑下一次回合 / `off`，默认 `followup`）、`resumeInterrupted`（恢复被重启中断的会话并排入继续回合，默认 true）、`resumeDelayMs`（默认 5000）、`resumeMaxSnapshotAgeMs`（默认 600000）。
 
-运行时需要：`node`、`bash`、macOS/Linux 上的 `lsof`（发现监听者；`--pid` 可绕过），以及 `pgrep`（回收后代进程：watchdog 的 `free_port`/清理与 `restart` 的强杀升级都遍历子进程树，而不是假设进程组）。消费者无需构建——发布的 `lib/` 就是可运行产物。
+运行时需要：`node`、`bash`、macOS/Linux 上的 `lsof`（发现监听者；`--pid` 可绕过），以及 `pgrep`（回收后代进程：watchdog 的清理与 `restart` 的强杀升级都遍历子进程树，而不是假设进程组）。guard 会先探测 `/usr/sbin/lsof`、`/usr/bin/lsof` 等系统绝对路径，再回退到 PATH，因此 dsh 的精简 PATH 不会让监听者检查静默失效。消费者无需构建——发布的 `lib/` 就是可运行产物。
 
 ## 自我重启的前提（给驱动重启的 agent）
 
@@ -72,7 +72,7 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
   --harness-root "<host root>" --on-failure restore-previous
 ```
 
-完整命令：`verify`、`record`、`status`、`clear`、`checkpoint`、`reset`、`canary`、`preflight`、`restart`、`schedule-exit`、`configure-launch`、`launch-status`、`reconfigure`、`supervise`。
+完整命令：`verify`、`record`、`status`、`clear`、`checkpoint`、`reset`、`canary`、`preflight`、`restart`、`schedule-exit`、`configure-launch`、`launch-status`、`reconfigure`、`abort-cutover`、`restore-previous`、`supervise`。
 
 ### preflight: the composition gate
 
@@ -124,9 +124,9 @@ dsh-ankh-guard reconfigure \
   --state-dir "$DSH_HOME/state"
 ```
 
-恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`；只有它有权停止旧 child 并启动最终 target，因此调用 `reconfigure` 的短命进程消失也不会把事务卡在中间。
+恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`。准备事务时 guard 同时固化旧 supervisor、直接 child 与 listener 的 PID/启动 identity；successor 只停止这棵已证明的旧进程树并确认端口释放，绝不凭端口反查后杀任意监听者。因此调用 `reconfigure` 的短命进程消失、外层 launchd/systemd 等待者或嵌套 shell 都不会模糊 child 所有权。
 
-目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200；需要浏览器交接时只打开一次；再跑 canary，全部完成后才释放会话唤醒。裸 401 始终只是 transport-up。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child PID、认证交接、重试、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。
+目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0；只有这份证明稳定后，才在需要时向浏览器打开一次 URL，随后跑 canary，全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器。`launch-cutover.json` 是不含凭据的耐久回执，记录脱敏配置摘要、新旧 supervisor/child/listener identity、认证交接、稳定性证明、分角色失败计数、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 是新的显式授权，会停止已证明的 target 并恢复完整 previous spec。控制请求也先耐久化，不能被后来的普通 abort 降级。
 
 **重启报告自动到达模型——并只等它的主人。** 计划重启后（存在未确认的 `last-restart.json` 记录），插件通过 `agent.followup` 把报告排入下一回合，agent 无需任何用户消息即可回报重启结果。重启后的会话恢复是 lazy 的（只有 UI 或 RPC 碰到某个会话，它的 agent 才会被创建），所以完整报告只发给发起重启的会话（`schedule-exit` 把 `$DSH_SESSION_ID` 记为 initiator），等它何时恢复何时送达——其他会话永远不会为了报告被唤醒；记录保持未确认，直到发起会话恢复或下一次重启替换它（新 `exitAt`）。没有 initiator 的记录由首个创建的根 agent 领走。仅根 agent、仅一次（送达即确认）。配置 `reportRestartContext`：`followup`（默认，自主）、`step`（骑在下一次回合的第一步上）、或 `off`。
 
@@ -191,8 +191,8 @@ dsh-ankh-guard restart \
 - **watchdog 需要一个比实例活得久的监督者**——`supervise` 以 detached（setsid）方式拉起它；从即将死亡的进程内派生的 watchdog 必须先被孤儿化，所以应用要在退出**之前**采用监督。
 - **guard 看着检出，不管还有谁在上面工作**——并发的自修改会话共享同一棵树；回滚有锚点可恢复，但没有任何机制串行化这些会话本身。
 - **脏树 checkpoint 默认拒绝**——`--include-dirty` 会提交整个 staged/unstaged/untracked 路径集，只能在逐项复核、用户明确批准且仓库策略允许时使用；纯重启直接跳过 checkpoint。
-- **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；其他平台需用 `--pid`。
-- **杀进程一律按单 pid + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 的 `free_port` 都针对监听者 pid，并在强制路径（`restart` 的 SIGKILL 升级、watchdog 的端口接管与退出清理）沿 `pgrep -P` 回收后代，而不是杀进程组。被监管实例应在优雅停机时自行管理子进程；后代回收只是强制路径上的尽力而为兜底。
+- **`restart`/`supervise` 通过 `lsof` 发现监听者**（macOS / 带 lsof 的 Linux）；guard 优先使用系统绝对路径，其他平台需用 `--pid`。
+- **杀进程一律按单 pid identity + 后代回收，从不按进程组**——实例不是 setsid 的，所以 `restart`、`schedule-exit` 的退出代理和 watchdog 清理都针对已记录的 child/listener；强制路径先冻结根进程再沿 `pgrep -P` 捕获并回收后代，避免 wrapper 先退出后把内层 watchdog/宿主重新挂到 PID 1。普通非 cutover 端口恢复仍有受限的 listener 清理兜底；cutover 禁止凭端口选择或杀进程。
 
 ## 变更记录
 

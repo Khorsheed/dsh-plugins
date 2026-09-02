@@ -48,6 +48,8 @@ export const STATE_FILES = {
   launchSpec: 'launch-spec.json',
   /** Redacted durable receipt for the latest launch-configuration cutover. */
   launchCutover: 'launch-cutover.json',
+  /** Operator → watchdog: abort according to policy, or explicitly restore previous. */
+  cutoverControl: 'launch-cutover-control.json',
   /** Whether the restart-protocol skill registered at apply (and why not). */
   skillRegistration: 'skill-registration.json',
   /** Directory: the healthy-boot snapshot of the profile composition inputs. */

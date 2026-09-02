@@ -10,13 +10,14 @@
  * environment values.
  */
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { stateFile } from './state-files.ts'
 
 export type CutoverRecoveryPolicy = 'restore-previous' | 'wait-for-user'
 export type BrowserHandoffPolicy = 'required' | 'off'
 export type LaunchRole = 'target' | 'previous'
+export type CutoverControlAction = 'abort' | 'restore-previous'
 
 /** Everything needed to launch one supervised instance. The state directory is the transaction anchor. */
 export interface LaunchSpec {
@@ -73,9 +74,18 @@ export interface CutoverAttempt {
   role: LaunchRole
   number: number
   childPid: number
+  childStartToken?: string
   startedAt: number
   outcome?: 'failed' | 'ready'
   detail?: string
+}
+
+/** PID identity proof safe to persist in the redacted operational receipt. */
+export interface CutoverProcessOwnership {
+  childPid: number
+  childStartToken: string
+  listenerPid: number
+  listenerStartToken: string
 }
 
 export interface LaunchCutoverReceipt {
@@ -97,6 +107,18 @@ export interface LaunchCutoverReceipt {
     targetPid?: number
     restoredPid?: number
   }
+  ownership: {
+    previous: CutoverProcessOwnership
+    target?: CutoverProcessOwnership
+    restored?: CutoverProcessOwnership
+  }
+  readiness?: {
+    role: LaunchRole
+    childPid: number
+    listenerPid: number
+    stableWindowMs: number
+    retryCount: number
+  }
   authentication: {
     transportStatus?: number
     launchUrlObserved?: boolean
@@ -106,12 +128,20 @@ export interface LaunchCutoverReceipt {
   }
   canary?: { outcome: 'pass' | 'fail'; detail?: string }
   attempts: CutoverAttempt[]
+  failureCount: { target: number; previous: number }
   recovery: {
     policy: CutoverRecoveryPolicy
     result: 'pending' | 'not-needed' | 'restored' | 'waiting-for-user' | 'prepare-failed'
     detail?: string
   }
   events: Array<{ at: number; kind: string; detail?: string }>
+}
+
+export interface CutoverControlRequest {
+  version: 1
+  cutoverId: string
+  action: CutoverControlAction
+  requestedAt: number
 }
 
 function atomicWriteJson(file: string, value: unknown): void {
@@ -204,6 +234,36 @@ export function readCutoverReceipt(stateDir: string): LaunchCutoverReceipt | nul
   }
 }
 
+/** Persist an operator control request for the current watchdog to consume. */
+export function writeCutoverControl(
+  stateDir: string, cutoverId: string, action: CutoverControlAction, now: number,
+): CutoverControlRequest {
+  const active = activeCutover(stateDir)
+  if (active === null || active.receipt.id !== cutoverId) throw new Error(`cutover ${cutoverId} is not active`)
+  const existing = readCutoverControl(stateDir)
+  if (existing?.cutoverId === cutoverId && existing.action === 'restore-previous' && action === 'abort') return existing
+  const request: CutoverControlRequest = { version: 1, cutoverId, action, requestedAt: now }
+  atomicWriteJson(stateFile(stateDir, 'cutoverControl'), request)
+  return request
+}
+
+export function readCutoverControl(stateDir: string): CutoverControlRequest | null {
+  try {
+    const value = JSON.parse(readFileSync(stateFile(stateDir, 'cutoverControl'), 'utf8')) as Partial<CutoverControlRequest>
+    if (value.version !== 1 || typeof value.cutoverId !== 'string'
+      || (value.action !== 'abort' && value.action !== 'restore-previous')
+      || typeof value.requestedAt !== 'number') return null
+    return value as CutoverControlRequest
+  } catch {
+    return null
+  }
+}
+
+export function clearCutoverControl(stateDir: string, cutoverId: string): void {
+  const request = readCutoverControl(stateDir)
+  if (request?.cutoverId === cutoverId) rmSync(stateFile(stateDir, 'cutoverControl'), { force: true })
+}
+
 /**
  * Prepare one cutover. The receipt lands first; the single launch-state rename
  * is the commit point selecting target. A crash before that rename leaves the
@@ -216,15 +276,21 @@ export function prepareLaunchCutover(stateDir: string, input: {
   recoveryPolicy: CutoverRecoveryPolicy
   browserHandoff: BrowserHandoffPolicy
   previousSupervisorPid: number
-  previousChildPid?: number
+  previousOwnership: CutoverProcessOwnership
   initiator?: string
   now: number
 }): LaunchCutoverReceipt {
   if (!isLaunchSpec(input.previous) || !isLaunchSpec(input.target)) throw new Error('invalid launch specification')
   if (input.id === '') throw new Error('cutover id is required')
   if (!Number.isInteger(input.previousSupervisorPid) || input.previousSupervisorPid <= 0) throw new Error('invalid previous supervisor pid')
-  if (input.previousChildPid !== undefined && (!Number.isInteger(input.previousChildPid) || input.previousChildPid <= 0)) {
-    throw new Error('invalid previous child pid')
+  for (const [label, value] of Object.entries({
+    previousChildPid: input.previousOwnership.childPid,
+    previousListenerPid: input.previousOwnership.listenerPid,
+  })) {
+    if (!Number.isInteger(value) || value <= 0) throw new Error(`invalid ${label}`)
+  }
+  if (input.previousOwnership.childStartToken === '' || input.previousOwnership.listenerStartToken === '') {
+    throw new Error('previous child/listener start identity is required')
   }
   if (input.previous.port !== input.target.port) {
     throw new Error('online cutover requires previous and target to use the same port')
@@ -239,11 +305,13 @@ export function prepareLaunchCutover(stateDir: string, input: {
     previous: summarizeLaunchSpec(input.previous),
     target: summarizeLaunchSpec(input.target),
     supervisor: { previousPid: input.previousSupervisorPid },
-    child: { ...(input.previousChildPid !== undefined ? { previousPid: input.previousChildPid } : {}) },
+    child: { previousPid: input.previousOwnership.childPid },
+    ownership: { previous: input.previousOwnership },
     authentication: {
       browserHandoff: input.browserHandoff === 'required' ? 'pending' : 'off',
     },
     attempts: [],
+    failureCount: { target: 0, previous: 0 },
     recovery: { policy: input.recoveryPolicy, result: 'pending' },
     events: [{ at: input.now, kind: 'prepared' }],
   }
@@ -323,10 +391,48 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       if (role !== 'target' && role !== 'previous') throw new Error('child-started: invalid role')
       const attempt = numberAt(1, 'attempt')
       const childPid = pidAt(2, 'child pid')
+      const childStartToken = args[3]
+      if (childStartToken === undefined || childStartToken === '') throw new Error('child-started: child start identity is required')
       receipt.phase = role === 'target' ? 'target-starting' : 'restoring'
       if (role === 'target') receipt.child.targetPid = childPid
       else receipt.child.restoredPid = childPid
-      receipt.attempts.push({ role, number: attempt, childPid, startedAt: now })
+      // Authentication, handoff, readiness, and canary belong to this exact
+      // process identity. A retry must never inherit a previous process's
+      // accepted launch URL or terminal proof.
+      receipt.authentication = {
+        browserHandoff: receipt.authentication.browserHandoff === 'off' ? 'off' : 'pending',
+      }
+      delete receipt.readiness
+      delete receipt.canary
+      receipt.attempts.push({ role, number: attempt, childPid, childStartToken, startedAt: now })
+      break
+    }
+    case 'ownership-stable': {
+      const role = args[0]
+      if (role !== 'target' && role !== 'previous') throw new Error('ownership-stable: invalid role')
+      const ownership: CutoverProcessOwnership = {
+        childPid: pidAt(1, 'child pid'),
+        childStartToken: args[2] ?? '',
+        listenerPid: pidAt(3, 'listener pid'),
+        listenerStartToken: args[4] ?? '',
+      }
+      if (ownership.childStartToken === '' || ownership.listenerStartToken === '') {
+        throw new Error('ownership-stable: child/listener start identity is required')
+      }
+      const stableWindowMs = numberAt(5, 'stable window')
+      const retryCount = numberAt(6, 'retry count')
+      if (stableWindowMs < 1 || retryCount !== 0) throw new Error('ownership-stable: stable window must be positive and retry count must be zero')
+      const attempt = [...receipt.attempts].reverse().find(candidate => candidate.role === role && candidate.outcome === undefined)
+      if (attempt === undefined || attempt.childPid !== ownership.childPid
+        || attempt.childStartToken !== ownership.childStartToken) {
+        throw new Error(`ownership-stable: ${role} identity does not match the active attempt`)
+      }
+      if (role === 'target') receipt.ownership.target = ownership
+      else receipt.ownership.restored = ownership
+      receipt.readiness = {
+        role, childPid: ownership.childPid, listenerPid: ownership.listenerPid,
+        stableWindowMs, retryCount,
+      }
       break
     }
     case 'transport':
@@ -347,6 +453,14 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       receipt.authentication.browserHandoff = outcome
       break
     }
+    case 'control-requested': {
+      const action = args[0]
+      if (action !== 'abort' && action !== 'restore-previous') throw new Error('control-requested: invalid action')
+      receipt.recovery.detail = action === 'restore-previous'
+        ? 'operator explicitly requested restoration of the previous complete launch specification'
+        : `operator aborted the cutover; applying pre-approved ${receipt.recovery.policy} policy`
+      break
+    }
     case 'attempt-failed': {
       const role = args[0]
       if (role !== 'target' && role !== 'previous') throw new Error('attempt-failed: invalid role')
@@ -357,6 +471,8 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
         found.outcome = 'failed'
         if (detail !== '') found.detail = detail
       }
+      receipt.failureCount ??= { target: 0, previous: 0 }
+      receipt.failureCount[role] += 1
       receipt.phase = role === 'target' ? 'target-retrying' : 'restoring'
       receipt.recovery.detail = detail
       break
@@ -364,6 +480,15 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
     case 'restoring':
       receipt.phase = 'restoring'
       receipt.recovery.detail = args.join(' ')
+      // Authentication belongs to one concrete launch attempt. Do not let a
+      // rejected target's launch URL/handoff satisfy (or block) the restored
+      // previous child. Attempts retain the target failure history; this
+      // summary is reset to describe the selected recovery side.
+      receipt.authentication = {
+        browserHandoff: receipt.authentication.browserHandoff === 'off' ? 'off' : 'pending',
+      }
+      delete receipt.readiness
+      delete receipt.canary
       {
         const state = readLaunchState(stateDir)
         if (state?.mode !== 'cutover' || state.cutoverId !== id) throw new Error('restoring: cutover launch state is missing')
@@ -381,8 +506,26 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       if (role !== 'target' && role !== 'previous') throw new Error('ready: invalid role')
       const state = readLaunchState(stateDir)
       if (state?.mode !== 'cutover' || state.cutoverId !== id) throw new Error('ready: cutover launch state is missing')
-      const found = [...receipt.attempts].reverse().find(candidate => candidate.role === role)
-      if (found !== undefined) found.outcome = 'ready'
+      const ownership = role === 'target' ? receipt.ownership?.target : receipt.ownership?.restored
+      if (ownership === undefined || receipt.readiness?.role !== role
+        || receipt.readiness.childPid !== ownership.childPid
+        || receipt.readiness.listenerPid !== ownership.listenerPid
+        || receipt.readiness.retryCount !== 0) {
+        throw new Error(`ready: ${role} child/listener ownership was not stable and proven`)
+      }
+      const found = [...receipt.attempts].reverse().find(candidate => candidate.role === role && candidate.outcome === undefined)
+      if (found === undefined || found.childPid !== ownership.childPid
+        || found.childStartToken !== ownership.childStartToken) {
+        throw new Error(`ready: ${role} ownership does not match the active attempt`)
+      }
+      if (role === 'target' && receipt.canary?.outcome !== 'pass') {
+        throw new Error('ready: target canary has not passed')
+      }
+      if (receipt.authentication.launchUrlObserved === true
+        && receipt.authentication.browserHandoff === 'pending') {
+        throw new Error('ready: authenticated launch URL browser handoff is still pending')
+      }
+      found.outcome = 'ready'
       if (role === 'target') {
         receipt.phase = 'ready'
         receipt.recovery.result = 'not-needed'
@@ -435,6 +578,7 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
   // the exit agent's older, context-free record.
   if (terminal !== undefined) updateRestartRecord(stateDir, receipt, terminal)
   atomicWriteJson(stateFile(stateDir, 'launchCutover'), receipt)
+  if (terminal !== undefined) clearCutoverControl(stateDir, id)
   if (stableSpec !== undefined) {
     atomicWriteJson(stateFile(stateDir, 'launchSpec'), { version: 1, mode: 'stable', active: stableSpec } satisfies StableLaunchState)
   }

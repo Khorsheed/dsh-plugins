@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-02-ankh-guard-cutover-process-ownership.md
+.agents/notes/implemented/bug-fix/2026-09-02-ankh-guard-cutover-process-ownership.md: cdfe873651277979038d26d52875918cef7b551e
+.agents/notes/implemented/bug-fix/2026-09-02-ankh-guard-cutover-process-ownership.zh.md: e23db585f45de33922132fab46055297a63e9e86
