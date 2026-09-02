@@ -1,11 +1,13 @@
 /** Browser half of the original-tab launch-cutover handoff. */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 
 const ROUTE = '/_ankh-guard/browser-handoff'
 const CAPABILITY_KEY = 'ankh-guard.browser-handoff-capability.v1'
 const PENDING_KEY = 'ankh-guard.browser-handoff-pending.v1'
 const FALLBACK_HASH_KEY = 'ankh-guard-handoff'
-const POLL_MS = 500
+const ACTIVE_RETRY_MS = 250
+const ERROR_RETRY_MIN_MS = 1_000
+const ERROR_RETRY_MAX_MS = 30_000
 
 type HandoffChannel = 'original-tab' | 'fallback-tab'
 type HandoffAuthentication = 'existing-cookie' | 'launch-url'
@@ -16,6 +18,8 @@ interface PendingHandoff {
   channel: HandoffChannel
   authentication: HandoffAuthentication
   capability?: string
+  /** Same-origin, credential-free location to restore after authentication. */
+  returnPath?: string
 }
 
 interface PollResponse {
@@ -56,10 +60,28 @@ function readPending(): PendingHandoff | null {
       || (value.channel !== 'original-tab' && value.channel !== 'fallback-tab')
       || (value.authentication !== 'existing-cookie' && value.authentication !== 'launch-url')) return null
     if (value.channel === 'original-tab' && typeof value.capability !== 'string') return null
+    if (value.returnPath !== undefined && !isSafeReturnPath(value.returnPath)) return null
     return value as PendingHandoff
   } catch {
     return null
   }
+}
+
+/** Deliberately discard query and fragment because either may hold credentials. */
+export function safeReturnPath(href: string, origin: string): string | undefined {
+  try {
+    const url = new URL(href)
+    if (url.origin !== origin || url.pathname === '' || url.pathname.startsWith('//')
+      || url.pathname.includes('\\')) return undefined
+    return url.pathname
+  } catch {
+    return undefined
+  }
+}
+
+function isSafeReturnPath(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
+    && !value.includes('\\') && !value.includes('?') && !value.includes('#')
 }
 
 function writePending(value: PendingHandoff): void {
@@ -136,9 +158,10 @@ export function apply(_ctx: ClientContext): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending = consumeFallbackFragment() ?? readPending()
   let cap: string | undefined
+  let errorRetryMs = ERROR_RETRY_MIN_MS
 
-  const schedule = (): void => {
-    if (!disposed) timer = setTimeout(() => { void tick() }, POLL_MS)
+  const schedule = (delayMs = 0): void => {
+    if (!disposed) timer = setTimeout(() => { void tick() }, delayMs)
   }
   const tick = async (): Promise<void> => {
     if (disposed) return
@@ -146,37 +169,52 @@ export function apply(_ctx: ClientContext): () => void {
       if (pending !== null) {
         waitingOverlay()
         if (await acknowledge(pending)) {
+          const returnPath = pending.returnPath
+          const originalTab = pending.channel === 'original-tab'
           sessionStorage.removeItem(PENDING_KEY)
           sessionStorage.removeItem(CAPABILITY_KEY)
           document.getElementById('ankh-guard-browser-handoff')?.remove()
           pending = null
+          if (originalTab && returnPath !== undefined
+            && safeReturnPath(location.href, location.origin) !== returnPath) {
+            location.replace(returnPath)
+            return
+          }
         }
-        schedule()
+        errorRetryMs = ERROR_RETRY_MIN_MS
+        schedule(ACTIVE_RETRY_MS)
         return
       }
       const tabCapability = cap ??= capability()
       const response = await post({ version: 1, operation: 'poll', capability: tabCapability })
       if (!response.ok) {
-        schedule()
+        schedule(errorRetryMs)
+        errorRetryMs = Math.min(errorRetryMs * 2, ERROR_RETRY_MAX_MS)
         return
       }
+      errorRetryMs = ERROR_RETRY_MIN_MS
       const result = await response.json() as PollResponse
       if (result.state === 'idle') {
         document.getElementById('ankh-guard-browser-handoff')?.remove()
+        // The server holds idle polls, providing event-like wakeup without a
+        // permanent fixed-frequency request loop.
         schedule()
         return
       }
       if (result.state === 'waiting') waitingOverlay()
       if (result.state !== 'ready' || typeof result.cutoverId !== 'string') {
-        schedule()
+        schedule(ACTIVE_RETRY_MS)
         return
       }
       if (result.action === 'reload' && result.authentication === 'existing-cookie') {
-        pending = {
+        const returnPath = safeReturnPath(location.href, location.origin)
+        const nextPending: PendingHandoff = {
           version: 1, cutoverId: result.cutoverId, channel: 'original-tab',
           authentication: 'existing-cookie', capability: tabCapability,
+          ...(returnPath === undefined ? {} : { returnPath }),
         }
-        writePending(pending)
+        pending = nextPending
+        writePending(nextPending)
         waitingOverlay()
         location.reload()
         return
@@ -184,15 +222,19 @@ export function apply(_ctx: ClientContext): () => void {
       if (result.action === 'replace' && result.authentication === 'launch-url'
         && typeof result.launchUrl === 'string') {
         const launch = new URL(result.launchUrl)
-        if (launch.origin !== location.origin || launch.pathname !== '/' || launch.search === '') {
-          schedule()
+        if (launch.origin !== location.origin || launch.pathname !== '/' || launch.search === ''
+          || launch.username !== '' || launch.password !== '' || launch.hash !== '') {
+          schedule(ACTIVE_RETRY_MS)
           return
         }
-        pending = {
+        const returnPath = safeReturnPath(location.href, location.origin)
+        const nextPending: PendingHandoff = {
           version: 1, cutoverId: result.cutoverId, channel: 'original-tab',
           authentication: 'launch-url', capability: tabCapability,
+          ...(returnPath === undefined ? {} : { returnPath }),
         }
-        writePending(pending)
+        pending = nextPending
+        writePending(nextPending)
         waitingOverlay()
         // The bearer remains a local variable for the shortest possible time.
         location.replace(launch.href)
@@ -200,8 +242,11 @@ export function apply(_ctx: ClientContext): () => void {
       }
     } catch {
       // The expected restart interval rejects fetches; keep the old page and retry.
+      schedule(errorRetryMs)
+      errorRetryMs = Math.min(errorRetryMs * 2, ERROR_RETRY_MAX_MS)
+      return
     }
-    schedule()
+    schedule(ACTIVE_RETRY_MS)
   }
   void tick()
   return () => {

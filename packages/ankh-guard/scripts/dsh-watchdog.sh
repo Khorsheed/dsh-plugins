@@ -336,19 +336,27 @@ ready_probe() {
 }
 
 # Whether the previous, proven listener armed an original tab for this
-# transaction. The file contains only a capability digest; never the raw
-# capability or bearer launch URL.
+# transaction. All registered tabs are eligible to recover; the file contains
+# only capability digests, never raw capabilities or bearer launch URLs.
 browser_original_registered() {
   node -e '
     const fs = require("fs")
     try {
       const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
-      const authority = new URL(`http://${value.authority ?? ""}`)
-      if (value.version !== 1 || value.cutoverId !== process.argv[2]
-        || typeof value.authority !== "string" || value.authority === ""
-        || authority.host !== value.authority || authority.port !== process.argv[3]
-        || authority.username !== "" || authority.password !== ""
-        || !/^[a-f0-9]{64}$/.test(value.capabilitySha256)) process.exit(1)
+      if (value.version !== 2 || value.cutoverId !== process.argv[2]
+        || !Array.isArray(value.registrations) || value.registrations.length < 1
+        || value.registrations.length > 64) process.exit(1)
+      let expectedPort = false
+      for (const registration of value.registrations) {
+        const authority = new URL(`http://${registration.authority ?? ""}`)
+        if (typeof registration.authority !== "string" || registration.authority === ""
+          || authority.host !== registration.authority
+          || authority.username !== "" || authority.password !== ""
+          || !/^[a-f0-9]{64}$/.test(registration.capabilitySha256)
+          || !Number.isFinite(registration.armedAt)) process.exit(1)
+        if (authority.port === process.argv[3]) expectedPort = true
+      }
+      if (!expectedPort) process.exit(1)
     } catch { process.exit(1) }
   ' "$BROWSER_HANDOFF_REQUEST_FILE" "$CUTOVER_ID" "$PORT" >/dev/null 2>&1
 }
@@ -398,9 +406,9 @@ wait_for_browser_ack() {
   return 1
 }
 
-# Browser handoff is deliberately after the ownership stability window. The
-# opener's exit status proves only that a fallback was attempted. Readiness
-# requires a page-authored acknowledgement naming the stable listener.
+# Browser handoff is deliberately after the ownership stability window and
+# canary. An opener's exit status proves only that a fallback was attempted;
+# readiness requires a page-authored acknowledgement naming the stable listener.
 complete_browser_handoff() {
   local fallback_url
   current_ownership_matches || return 1
@@ -408,18 +416,18 @@ complete_browser_handoff() {
   if [ "$BROWSER_HANDOFF" = "required" ] && [ "$browser_handoff_done" = "0" ]; then
     [ -n "$launch_url_value" ] || return 1
     if browser_original_registered; then
-      wd_log "waiting for the armed original browser tab to acknowledge the final process"
+      wd_log "waiting for an armed original browser tab to acknowledge the final process"
       if wait_for_browser_ack; then
         browser_handoff_done=1
         browser_handoff_reported=1
         cutover_event_required browser-handoff acknowledged "$browser_ack_channel" \
           "$browser_ack_authentication" "$browser_ack_authority"
-        wd_log "original browser tab acknowledged handoff ($browser_ack_authentication; authority $browser_ack_authority)"
+        wd_log "original browser tab acknowledged handoff ($browser_ack_authentication; authority $browser_ack_authority); all registered responsive tabs remain eligible to recover"
       else
         wd_log "original browser tab did not acknowledge within ${BROWSER_HANDOFF_TIMEOUT_SECONDS}s; falling back to system open"
       fi
     else
-      wd_log "no original browser tab armed before shutdown; falling back to system open"
+      wd_log "no original browser tab registered before shutdown; falling back to system open"
     fi
     if [ "$browser_handoff_done" = "0" ]; then
       fallback_url="${launch_url_value}#ankh-guard-handoff=${CUTOVER_ID}"
@@ -754,6 +762,17 @@ handle_cutover_control() {
   cutover_event_required awaiting-user "operator requested $action; recovery is waiting for user"
   control_result='wait'
   return 0
+}
+
+# Keep a recovered/otherwise healthy child available while a non-terminal
+# cutover waits for explicit operator action. This path intentionally skips
+# last-good stamping and continues to consume abort/restore requests.
+wait_cutover_with_live_child() {
+  while identity_matches "$child" "$child_start_token"; do
+    if handle_cutover_control && [ "$control_result" = "restore" ]; then return 0; fi
+    sleep 2
+  done
+  wait "$child" 2>/dev/null || true
 }
 
 # Echo a pid and all its descendants, one per line.
@@ -1341,11 +1360,7 @@ while true; do
     fi
     if ready_probe; then
       if prove_stable_readiness; then
-        if complete_browser_handoff; then
-          up=1
-        else
-          readiness_failure_detail="browser handoff or final child/listener identity proof failed"
-        fi
+        up=1
       else
         readiness_failure_detail="provisional readiness did not retain one child/listener identity through the stability window"
       fi
@@ -1520,13 +1535,41 @@ while true; do
       if current_ownership_matches; then canary_proven=1; fi
     fi
     if [ "$canary_proven" = "1" ]; then
-      wd_log "canary PASS — clearing restart marker"
-      if [ -n "$CUTOVER_ID" ]; then
+      if [ -n "$CUTOVER_ID" ] && ! complete_browser_handoff; then
+        failures=$((failures + 1))
+        cutover_event_required attempt-failed "$CUTOVER_ROLE" "$current_attempt" \
+          "browser handoff failed after canary and stable ownership"
+        if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
+          && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
+          && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
+          kill_current_owned_attempt
+          wait "$child" 2>/dev/null || true
+          select_previous_spec "target canary passed but browser handoff failed; restoring previous spec"
+          continue
+        fi
+        if [ "$CUTOVER_ROLE" = "previous" ]; then
+          rm -f "$RESTART_MARKER"
+          cutover_event_required awaiting-user "restored previous host is ready, but browser handoff was not acknowledged"
+          wait_cutover_with_live_child
+          continue
+        fi
+        kill_current_owned_attempt
+        wait "$child" 2>/dev/null || true
         rm -f "$RESTART_MARKER"
+        cutover_event_required awaiting-user "target browser handoff failed after canary"
+        printf '%s launch cutover waiting after browser handoff failure\n' "$(date '+%F %T')" > "$GIVE_UP_MARKER"
+        WD_PORT="$PORT" WD_PID="$$" node -e "$(page_script)" &
+        page_pid=$!
+        wait "$page_pid"
+        page_pid=''
+        continue
+      fi
+      wd_log "canary PASS — browser handoff settled; clearing restart marker"
+      rm -f "$RESTART_MARKER"
+      if [ -n "$CUTOVER_ID" ]; then
         cutover_event_required ready "$CUTOVER_ROLE"
         CUTOVER_ID=''
       fi
-      rm -f "$RESTART_MARKER"
     else
       if [ -n "$CUTOVER_ID" ]; then
         wd_log "canary/ownership FAIL during launch cutover"
@@ -1541,11 +1584,20 @@ while true; do
         fi
         if [ "$CUTOVER_ROLE" = "previous" ]; then
           # The previous service is restored and ready; a credential tied to a
-          # different target repo may legitimately fail. Preserve that fact in
-          # the receipt, release the report, and leave the recovered service up.
+          # different target repo may legitimately fail. Browser acknowledgement
+          # is still required before this recovery becomes terminal.
           rm -f "$RESTART_MARKER"
-          cutover_event_required ready previous
-          CUTOVER_ID=''
+          if complete_browser_handoff; then
+            cutover_event_required ready previous
+            CUTOVER_ID=''
+          else
+            failures=$((failures + 1))
+            cutover_event_required attempt-failed previous "$current_attempt" \
+              "browser handoff failed after restored-previous canary settled"
+            cutover_event_required awaiting-user "restored previous host is ready, but browser handoff was not acknowledged"
+            wait_cutover_with_live_child
+            continue
+          fi
         else
           kill_current_owned_attempt
           wait "$child" 2>/dev/null || true

@@ -330,8 +330,8 @@ describe('durable launch cutover state', () => {
     recordCutoverEvent(stateDir, 'cutover-1', 'auth-exchange', ['303'], NOW + 6)
     recordCutoverEvent(stateDir, 'cutover-1', 'authenticated', ['200'], NOW + 7)
     recordCutoverEvent(stateDir, 'cutover-1', 'ownership-stable', ['target', '203', 'target-start-203', '204', 'listener-start-204', '3000', '0'], NOW + 8)
-    recordCutoverEvent(stateDir, 'cutover-1', 'browser-handoff', ['acknowledged', 'original-tab', 'launch-url', '127.0.0.1:3080'], NOW + 9)
-    recordCutoverEvent(stateDir, 'cutover-1', 'canary', ['pass'], NOW + 10)
+    recordCutoverEvent(stateDir, 'cutover-1', 'canary', ['pass'], NOW + 9)
+    recordCutoverEvent(stateDir, 'cutover-1', 'browser-handoff', ['acknowledged', 'original-tab', 'launch-url', '127.0.0.1:3080'], NOW + 10)
     writeFileSync(join(stateDir, STATE_FILES.lastRestart), JSON.stringify({ exitAt: 1, unexpected: true, reportedAt: 2 }))
     recordCutoverEvent(stateDir, 'cutover-1', 'ready', ['target'], NOW + 11)
 
@@ -361,7 +361,7 @@ describe('durable launch cutover state', () => {
       },
       browserHandoff: {
         required: true, status: 'acknowledged', channel: 'original-tab',
-        authentication: 'launch-url', authority: '127.0.0.1:3080', acknowledgedAt: NOW + 9,
+        authentication: 'launch-url', authority: '127.0.0.1:3080', acknowledgedAt: NOW + 10,
       },
       canary: { outcome: 'pass' },
       recovery: { policy: 'restore-previous', result: 'not-needed' },
@@ -422,6 +422,10 @@ describe('durable launch cutover state', () => {
       stateDir, 'cutover-proof', 'ownership-stable',
       ['target', '804', 'target-start-804', '805', 'listener-start-805', '3000', '0'], NOW + 5,
     )
+    expect(() => recordCutoverEvent(
+      stateDir, 'cutover-proof', 'browser-handoff',
+      ['acknowledged', 'original-tab', 'existing-cookie', '127.0.0.1:3080'], NOW + 6,
+    )).toThrow(/canary has not passed/)
     expect(() => recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 6)).toThrow(/canary has not passed/)
     recordCutoverEvent(stateDir, 'cutover-proof', 'canary', ['pass'], NOW + 7)
     expect(() => recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 8)).toThrow(/no browser acknowledgement/)
@@ -2376,16 +2380,19 @@ const timer = setInterval(() => {
     const receipt = JSON.parse(fs.readFileSync(path.join(stateDir, 'launch-cutover.json'), 'utf8'))
     if (!armed) {
       writeAtomic(path.join(stateDir, 'browser-handoff-request.json'), {
-        version: 1,
+        version: 2,
         cutoverId: receipt.id,
-        authority: '127.0.0.1:' + port,
-        capabilitySha256: 'a'.repeat(64),
-        armedAt: Date.now(),
+        registrations: [{
+          authority: '127.0.0.1:' + port,
+          capabilitySha256: 'a'.repeat(64),
+          armedAt: Date.now(),
+        }],
       })
       armed = true
     }
     const ownership = receipt.ownership && receipt.ownership.target
-    if (!acknowledged && receipt.readiness && receipt.readiness.role === 'target'
+    if (!acknowledged && receipt.canary && receipt.canary.outcome === 'pass'
+      && receipt.readiness && receipt.readiness.role === 'target'
       && ownership && ownership.listenerPid === process.pid) {
       writeAtomic(path.join(stateDir, 'browser-handoff-ack.json'), {
         version: 1,
@@ -2443,6 +2450,9 @@ const timer = setInterval(() => {
         canary: { outcome: 'pass' },
         recovery: { result: 'not-needed' },
       })
+      const eventKinds = receipt?.events.map(event => event.kind) ?? []
+      expect(eventKinds.indexOf('canary')).toBeLessThan(eventKinds.indexOf('browser-handoff'))
+      expect(eventKinds.indexOf('browser-handoff')).toBeLessThan(eventKinds.indexOf('ready'))
       expect(receipt?.events.some(event => event.kind === 'browser-fallback-opened')).toBe(false)
       expect(log).toContain('original browser tab acknowledged handoff')
       expect(log).not.toContain('?grant=')
@@ -2984,6 +2994,30 @@ http.createServer((req, res) => {
     const opener = join(home, 'browser-open.sh')
     writeFileSync(opener, `#!/bin/sh\nprintf opened > ${JSON.stringify(opened)}\n`)
     chmodSync(opener, 0o700)
+    const cutoverId = 'cutover-browser-no-ack'
+    const targetCommand = `${JSON.stringify(process.execPath)} ${JSON.stringify(hostFixture)} ${port}`
+    const previous = {
+      version: 1, command: 'previous-host', port, home,
+      credentialRepo: repo, harnessRoot: home, profile: 'web',
+    } satisfies LaunchSpec
+    prepareLaunchCutover(stateDir, {
+      id: cutoverId,
+      previous,
+      target: { ...previous, command: targetCommand },
+      recoveryPolicy: 'wait-for-user',
+      browserHandoff: 'required',
+      previousSupervisorPid: 999_998,
+      previousSupervisorStartToken: 'gone-supervisor',
+      previousOwnership: {
+        childPid: 999_999,
+        childStartToken: 'gone-child',
+        listenerPid: 999_999,
+        listenerStartToken: 'gone-listener',
+      },
+    })
+    recordCredential(stateDir, {
+      scope: 'build+test', revision: currentHead(repo)!, command: 'test fixture',
+    }, Date.now())
     const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
     let output = ''
     const watchdog = spawn('bash', [script, '--supervise'], {
@@ -2994,11 +3028,25 @@ http.createServer((req, res) => {
         WD_STATE_DIR: stateDir,
         WD_PORT: String(port),
         WD_REPO: repo,
-        WD_START: `${JSON.stringify(process.execPath)} ${JSON.stringify(hostFixture)} ${port}`,
+        WD_HARNESS_ROOT: home,
+        WD_START: targetCommand,
         WD_BOOT_TIMEOUT: '10',
         WD_BROWSER_HANDOFF: 'required',
         WD_BROWSER_HANDOFF_TIMEOUT_SECONDS: '1',
         WD_BROWSER_OPEN_COMMAND: opener,
+        WD_CUTOVER_ID: cutoverId,
+        WD_CUTOVER_POLICY: 'wait-for-user',
+        WD_CUTOVER_ROLE: 'target',
+        WD_PREVIOUS_START: previous.command,
+        WD_PREVIOUS_HOME: previous.home,
+        WD_PREVIOUS_REPO: previous.credentialRepo,
+        WD_PREVIOUS_HARNESS_ROOT: previous.harnessRoot,
+        WD_PREVIOUS_PROFILE: previous.profile,
+        WD_PREVIOUS_CHILD_PID: '999999',
+        WD_PREVIOUS_CHILD_START: 'gone-child',
+        WD_PREVIOUS_LISTENER_PID: '999999',
+        WD_PREVIOUS_LISTENER_START: 'gone-listener',
+        WD_GUARD: `${process.execPath} ${fileURLToPath(new URL('../lib/cli.js', import.meta.url))}`,
       }),
     })
     watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
@@ -3011,10 +3059,19 @@ http.createServer((req, res) => {
       while (!output.includes('no page acknowledgement') && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 100))
       }
-      expect(existsSync(opened)).toBe(true)
+      while (readCutoverReceipt(stateDir)?.phase !== 'awaiting-user' && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      expect(existsSync(opened), output).toBe(true)
       expect(output).toContain('browser fallback open requested')
       expect(output).toContain('browser handoff failed: no page acknowledgement')
-      expect(output).not.toContain('instance ready')
+      expect(output).toContain('instance ready')
+      expect(readCutoverReceipt(stateDir)).toMatchObject({
+        phase: 'awaiting-user',
+        canary: { outcome: 'pass' },
+        browserHandoff: { status: 'failed' },
+        failureCount: { target: 1 },
+      })
     } finally {
       try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
       await killListener(port)

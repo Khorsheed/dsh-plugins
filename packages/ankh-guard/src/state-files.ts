@@ -54,7 +54,7 @@ export const STATE_FILES = {
   cutoverAbort: 'launch-cutover-abort.json',
   /** Monotonic stronger operator action: explicitly restore the previous spec. */
   cutoverRestorePrevious: 'launch-cutover-restore-previous.json',
-  /** Original browser tab registration: capability hash only, never the launch URL or raw capability. */
+  /** Original browser-tab registry: per-tab capability hashes only; retained through terminal recovery. */
   browserHandoffRequest: 'browser-handoff-request.json',
   /** Browser → watchdog acknowledgement for one proven final process. */
   browserHandoffAck: 'browser-handoff-ack.json',

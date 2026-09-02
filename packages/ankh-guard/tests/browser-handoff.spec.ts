@@ -94,7 +94,10 @@ describe('browser handoff host bridge', () => {
     await withHandler(oldHandler, async (setHandler, origin) => {
       const arm = await post(origin, { version: 1, operation: 'poll', capability })
       expect(await arm.json()).toEqual({ state: 'waiting', cutoverId: id })
-      expect(readBrowserHandoffRequest(dir)).toMatchObject({ cutoverId: id, authority: new URL(origin).host })
+      expect(readBrowserHandoffRequest(dir)).toMatchObject({
+        cutoverId: id,
+        registrations: [{ authority: new URL(origin).host }],
+      })
       const requestBytes = readFileSync(join(dir, STATE_FILES.browserHandoffRequest), 'utf8')
       expect(requestBytes).not.toContain(capability)
 
@@ -107,6 +110,7 @@ describe('browser handoff host bridge', () => {
         dir, id, 'ownership-stable',
         ['target', '203', 'child-203', '204', 'listener-204', '3000', '0'], 1205,
       )
+      recordCutoverEvent(dir, id, 'canary', ['pass'], 1206)
       const targetHandler = createBrowserHandoffHandler({
         stateDir: dir,
         pid: 204,
@@ -183,18 +187,19 @@ describe('browser handoff host bridge', () => {
       // activation. It must wait, not misclassify the missing service as a
       // valid public cookie and reload the original page into a naked 401.
       recordCutoverEvent(dir, id, 'launch-url', [], 2002)
-      expect(await (await post(origin, { version: 1, operation: 'poll', capability })).json()).toEqual({
-        state: 'waiting', cutoverId: id,
-      })
+      const settlingPoll = post(origin, { version: 1, operation: 'poll', capability })
+      await new Promise(resolve => setTimeout(resolve, 20))
       connection = {
         requestRejection: request => request.headers.cookie === 'dsh=valid' ? undefined : 401,
         authenticatedUrl: () => { throw new Error('valid-cookie flow must not ask for a launch URL') },
       }
+      recordCutoverEvent(dir, id, 'canary', ['pass'], 2003)
+      expect(await (await settlingPoll).json()).toEqual({ state: 'waiting', cutoverId: id })
       const response = await post(origin, { version: 1, operation: 'poll', capability }, 'dsh=valid')
       expect(await response.json()).toEqual({
         state: 'ready', action: 'reload', cutoverId: id, role: 'target', authentication: 'existing-cookie',
       })
-      recordCutoverEvent(dir, id, 'awaiting-user', ['operator intervention required'], 2003)
+      recordCutoverEvent(dir, id, 'awaiting-user', ['operator intervention required'], 2004)
       expect(await (await post(origin, { version: 1, operation: 'poll', capability })).json()).toEqual({ state: 'idle' })
     })
   })
@@ -210,6 +215,7 @@ describe('browser handoff host bridge', () => {
       dir, id, 'ownership-stable',
       ['target', '403', 'child-403', '404', 'listener-404', '3000', '0'], 3003,
     )
+    recordCutoverEvent(dir, id, 'canary', ['pass'], 3004)
     await withHandler(createBrowserHandoffHandler({
       stateDir: dir,
       pid: 404,
@@ -234,6 +240,67 @@ describe('browser handoff host bridge', () => {
         authentication: 'launch-url',
         authority: new URL(origin).host,
       })
+    })
+  })
+
+  it('registers every responsive original tab and wakes an idle long poll when cutover starts', async () => {
+    const dir = stateDir()
+    const id = 'cutover-browser-tabs'
+    const firstCapability = 'D'.repeat(43)
+    const secondCapability = 'E'.repeat(43)
+    const identityMatches = (): boolean => true
+    await withHandler(createBrowserHandoffHandler({
+      stateDir: dir, pid: 103, identityMatches, longPollMs: 250, longPollIntervalMs: 5,
+    }), async (setHandler, origin) => {
+      const firstPoll = post(origin, { version: 1, operation: 'poll', capability: firstCapability })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      prepare(dir, id)
+      expect(await (await firstPoll).json()).toEqual({ state: 'waiting', cutoverId: id })
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability: secondCapability,
+      })).json()).toEqual({ state: 'waiting', cutoverId: id })
+      const registration = readBrowserHandoffRequest(dir)
+      expect(registration?.registrations).toHaveLength(2)
+      expect(readFileSync(join(dir, STATE_FILES.browserHandoffRequest), 'utf8')).not.toContain(firstCapability)
+      expect(readFileSync(join(dir, STATE_FILES.browserHandoffRequest), 'utf8')).not.toContain(secondCapability)
+
+      recordCutoverEvent(dir, id, 'child-started', ['target', '1', '503', 'child-503'], 4000)
+      recordCutoverEvent(
+        dir, id, 'ownership-stable',
+        ['target', '503', 'child-503', '504', 'listener-504', '3000', '0'], 4001,
+      )
+      recordCutoverEvent(dir, id, 'canary', ['pass'], 4002)
+      setHandler(createBrowserHandoffHandler({
+        stateDir: dir, pid: 504, identityMatches, longPollMs: 0,
+      }))
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability: firstCapability,
+      })).json()).toMatchObject({ state: 'ready', action: 'reload', cutoverId: id })
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'original-tab',
+        authentication: 'existing-cookie', capability: firstCapability,
+      })).status).toBe(204)
+      recordCutoverEvent(
+        dir, id, 'browser-handoff',
+        ['acknowledged', 'original-tab', 'existing-cookie', new URL(origin).host], 4003,
+      )
+      recordCutoverEvent(dir, id, 'ready', ['target'], 4004)
+
+      // Terminal readiness is gated by one real page ACK, but a slower second
+      // registered tab remains eligible to recover after state compaction.
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability: secondCapability,
+      })).json()).toMatchObject({ state: 'ready', action: 'reload', cutoverId: id })
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'original-tab',
+        authentication: 'existing-cookie', capability: secondCapability,
+      })).status).toBe(204)
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability: secondCapability,
+      })).json()).toEqual({ state: 'idle' })
+      expect(readBrowserHandoffRequest(dir)?.registrations.every(item => (
+        item.acknowledgedAt !== undefined
+      ))).toBe(true)
     })
   })
 })

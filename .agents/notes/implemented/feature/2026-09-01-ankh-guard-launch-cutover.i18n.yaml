@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-ankh-guard-launch-cutover.md
-.agents/notes/implemented/feature/2026-09-01-ankh-guard-launch-cutover.md: 4d6b87bbef463b67926f91cb9df47f96d7e0a596
-.agents/notes/implemented/feature/2026-09-01-ankh-guard-launch-cutover.zh.md: 34813073814ee3d56771bd6f6fd509c325bc39fc
+.agents/notes/implemented/feature/2026-09-01-ankh-guard-launch-cutover.md: aad4cacdf3df40ed9a10f0ac2f73c1c042f6b798
+.agents/notes/implemented/feature/2026-09-01-ankh-guard-launch-cutover.zh.md: 5fa8c2fe17fdc60130f92c43ca0fc4391defec83

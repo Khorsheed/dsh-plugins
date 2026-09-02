@@ -547,6 +547,12 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
           throw new Error('browser-handoff: invalid acknowledgement evidence')
         }
         if (receipt.readiness === undefined) throw new Error('browser-handoff: server readiness is not proven')
+        if (receipt.readiness.role === 'target' && receipt.canary?.outcome !== 'pass') {
+          throw new Error('browser-handoff: target canary has not passed')
+        }
+        if (receipt.readiness.role === 'previous' && receipt.canary === undefined) {
+          throw new Error('browser-handoff: restored-previous canary has not settled')
+        }
         receipt.browserHandoff = {
           required: true,
           status: 'acknowledged',
@@ -563,6 +569,12 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
     }
     case 'browser-fallback-opened':
       if (!receipt.browserHandoff.required) throw new Error('browser-fallback-opened: handoff is disabled')
+      if (receipt.readiness?.role === 'target' && receipt.canary?.outcome !== 'pass') {
+        throw new Error('browser-fallback-opened: target canary has not passed')
+      }
+      if (receipt.readiness?.role === 'previous' && receipt.canary === undefined) {
+        throw new Error('browser-fallback-opened: restored-previous canary has not settled')
+      }
       receipt.browserHandoff = { required: true, status: 'fallback-opened' }
       receipt.authentication.browserHandoff = 'fallback-opened'
       break
@@ -699,7 +711,12 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
   atomicWriteJson(stateFile(stateDir, 'launchCutover'), receipt)
   if (terminal !== undefined) clearCutoverControl(stateDir, id)
   if (terminal !== undefined) {
-    rmSync(stateFile(stateDir, 'browserHandoffRequest'), { force: true })
+    // Keep hashed per-tab registrations after a successful terminal event so
+    // slower registered tabs can still recover through this exact final
+    // listener. A new cutover removes the registry before arming its own tabs.
+    if (terminal !== 'target-ready' && terminal !== 'restored') {
+      rmSync(stateFile(stateDir, 'browserHandoffRequest'), { force: true })
+    }
     rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
   }
   if (stableSpec !== undefined) {

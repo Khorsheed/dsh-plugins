@@ -44,12 +44,27 @@ describe('browser handoff client lifecycle', () => {
     const dispose = apply({} as never)
     await vi.waitFor(() => { expect(replace).toHaveBeenCalledWith(launchUrl) })
     expect(sessionStorage.getItem(PENDING_KEY)).toContain('cutover-client-replace')
+    expect(sessionStorage.getItem(PENDING_KEY)).toContain('/session/one')
     const stored = Array.from({ length: sessionStorage.length }, (_, index) => (
       sessionStorage.getItem(sessionStorage.key(index) ?? '') ?? ''
     )).join('\n')
     expect(stored).not.toContain('final-process-only')
     expect(document.getElementById('ankh-guard-browser-handoff')).not.toBeNull()
     dispose()
+
+    replace.mockClear()
+    vi.stubGlobal('location', {
+      hash: '',
+      href: 'http://127.0.0.1:3080/',
+      origin: 'http://127.0.0.1:3080',
+      reload: vi.fn(),
+      replace,
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => response(204)))
+    const authenticatedDispose = apply({} as never)
+    await vi.waitFor(() => { expect(replace).toHaveBeenCalledWith('/session/one') })
+    expect(sessionStorage.length).toBe(0)
+    authenticatedDispose()
   })
 
   it('reloads with an existing cookie and acknowledges only after the new page loads', async () => {

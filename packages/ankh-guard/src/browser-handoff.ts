@@ -1,16 +1,16 @@
 /**
  * Browser handoff bridge for launch cutovers.
  *
- * The old, authenticated page registers a random per-tab capability while the
- * previous process is still the proven listener. Only its SHA-256 digest is
- * durable. After the successor proves one stable listener, that same tab may
- * ask the final process for either a plain reload (its cookie is still valid)
- * or that process's authenticated URL. The URL exists only in the response
- * object and the browser's location.replace call: it never enters a state
- * file, receipt, or log.
+ * Old authenticated pages register random per-tab capabilities while the
+ * previous process is still the proven listener. Only SHA-256 digests are
+ * durable. After the successor proves one stable listener and passes canary,
+ * every registered tab may ask the final process for either a plain reload
+ * (its cookie is still valid) or that process's authenticated URL. The URL
+ * exists only in the response object and the browser's location.replace call:
+ * it never enters a state file, receipt, or log.
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { chmodSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -22,16 +22,24 @@ export const BROWSER_HANDOFF_ROUTE = '/_ankh-guard/browser-handoff'
 
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const MAX_BODY_BYTES = 4096
+const MAX_REGISTRATIONS = 64
+const DEFAULT_LONG_POLL_MS = 25_000
+const DEFAULT_LONG_POLL_INTERVAL_MS = 200
 
 export type BrowserHandoffChannel = 'original-tab' | 'fallback-tab'
 export type BrowserHandoffAuthentication = 'existing-cookie' | 'launch-url'
 
-export interface BrowserHandoffRequest {
-  version: 1
-  cutoverId: string
+export interface BrowserHandoffRegistration {
   authority: string
   capabilitySha256: string
   armedAt: number
+  acknowledgedAt?: number
+}
+
+export interface BrowserHandoffRequest {
+  version: 2
+  cutoverId: string
+  registrations: BrowserHandoffRegistration[]
 }
 
 export interface BrowserHandoffAcknowledgement {
@@ -84,6 +92,9 @@ interface BrowserHandoffDependencies {
   connection?: ConnectionSlice
   /** Resolve lazily because WebServer can activate before the optional connection service. */
   connectionProvider?: () => ConnectionSlice | undefined
+  /** Test seams; production defaults turn idle polling into a held request. */
+  longPollMs?: number
+  longPollIntervalMs?: number
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -139,13 +150,88 @@ function createJsonOnce(file: string, value: unknown): boolean {
   }
 }
 
+function writeJsonAtomic(file: string, value: unknown): void {
+  mkdirSync(dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+  try {
+    renameSync(tmp, file)
+    try { chmodSync(file, 0o600) } catch { /* best effort on non-POSIX filesystems */ }
+  } finally {
+    try { unlinkSync(tmp) } catch { /* rename already consumed the temporary file */ }
+  }
+}
+
+function validRegistration(value: unknown): value is BrowserHandoffRegistration {
+  return isObject(value) && typeof value.authority === 'string' && value.authority !== ''
+    && typeof value.capabilitySha256 === 'string' && /^[a-f0-9]{64}$/.test(value.capabilitySha256)
+    && typeof value.armedAt === 'number' && Number.isFinite(value.armedAt)
+    && (value.acknowledgedAt === undefined
+      || (typeof value.acknowledgedAt === 'number' && Number.isFinite(value.acknowledgedAt)))
+}
+
 export function readBrowserHandoffRequest(stateDir: string): BrowserHandoffRequest | null {
   const request = readJson<Partial<BrowserHandoffRequest>>(stateFile(stateDir, 'browserHandoffRequest'))
-  if (request?.version !== 1 || typeof request.cutoverId !== 'string'
-    || typeof request.authority !== 'string' || request.authority === ''
-    || typeof request.capabilitySha256 !== 'string' || !/^[a-f0-9]{64}$/.test(request.capabilitySha256)
-    || typeof request.armedAt !== 'number') return null
+  if (request?.version !== 2 || typeof request.cutoverId !== 'string'
+    || !Array.isArray(request.registrations) || request.registrations.length === 0
+    || request.registrations.length > MAX_REGISTRATIONS
+    || !request.registrations.every(validRegistration)) return null
   return request as BrowserHandoffRequest
+}
+
+function registerBrowserTab(
+  stateDir: string,
+  cutoverId: string,
+  registration: BrowserHandoffRegistration,
+): BrowserHandoffRequest | null {
+  const existing = readBrowserHandoffRequest(stateDir)
+  const registrations = existing?.cutoverId === cutoverId ? [...existing.registrations] : []
+  if (!registrations.some(item => item.authority === registration.authority
+    && item.capabilitySha256 === registration.capabilitySha256)) {
+    if (registrations.length >= MAX_REGISTRATIONS) return null
+    registrations.push(registration)
+  }
+  const request: BrowserHandoffRequest = { version: 2, cutoverId, registrations }
+  writeJsonAtomic(stateFile(stateDir, 'browserHandoffRequest'), request)
+  return request
+}
+
+function registrationMatches(
+  request: BrowserHandoffRequest | null,
+  cutoverId: string,
+  authority: string,
+  digest: string,
+): boolean {
+  return request?.cutoverId === cutoverId && request.registrations.some(item => (
+    item.authority === authority && item.capabilitySha256 === digest
+  ))
+}
+
+function matchingRegistration(
+  request: BrowserHandoffRequest | null,
+  cutoverId: string,
+  authority: string,
+  digest: string,
+): BrowserHandoffRegistration | undefined {
+  if (request?.cutoverId !== cutoverId) return undefined
+  return request.registrations.find(item => (
+    item.authority === authority && item.capabilitySha256 === digest
+  ))
+}
+
+function acknowledgeBrowserTab(
+  stateDir: string,
+  cutoverId: string,
+  authority: string,
+  digest: string,
+  acknowledgedAt: number,
+): boolean {
+  const request = readBrowserHandoffRequest(stateDir)
+  const registration = matchingRegistration(request, cutoverId, authority, digest)
+  if (request === null || registration === undefined) return false
+  registration.acknowledgedAt = acknowledgedAt
+  writeJsonAtomic(stateFile(stateDir, 'browserHandoffRequest'), request)
+  return true
 }
 
 export function readBrowserHandoffAcknowledgement(stateDir: string): BrowserHandoffAcknowledgement | null {
@@ -210,29 +296,40 @@ function currentReadyOwnership(
   pid: number,
   identityMatches: typeof processIdentityMatches,
 ): { cutoverId: string; role: LaunchRole; ownership: CutoverProcessOwnership; protected: boolean } | null {
-  const active = activeCutover(stateDir)
-  if (active === null || active.receipt.readiness?.retryCount !== 0) return null
-  const role = active.receipt.readiness.role
-  const ownership = role === 'target' ? active.receipt.ownership.target : active.receipt.ownership.restored
+  const receipt = readCutoverReceipt(stateDir)
+  if (receipt === null || receipt.phase === 'awaiting-user' || receipt.readiness?.retryCount !== 0) return null
+  const role = receipt.readiness.role
+  const ownership = role === 'target' ? receipt.ownership.target : receipt.ownership.restored
+  const canarySettled = role === 'target'
+    ? receipt.canary?.outcome === 'pass'
+    : receipt.canary !== undefined
   if (!ownershipMatches(ownership, pid, identityMatches)
-    || active.receipt.readiness.listenerPid !== ownership.listenerPid
-    || active.receipt.readiness.childPid !== ownership.childPid) return null
+    || !canarySettled
+    || receipt.readiness.listenerPid !== ownership.listenerPid
+    || receipt.readiness.childPid !== ownership.childPid) return null
   return {
-    cutoverId: active.receipt.id,
+    cutoverId: receipt.id,
     role,
     ownership,
-    protected: active.receipt.authentication.launchUrlObserved === true,
+    protected: receipt.authentication.launchUrlObserved === true,
   }
 }
 
-function acknowledgementMatchesReady(
-  acknowledgement: BrowserHandoffAcknowledgement | null,
-  ready: NonNullable<ReturnType<typeof currentReadyOwnership>>,
-): boolean {
-  return acknowledgement?.cutoverId === ready.cutoverId
-    && acknowledgement.role === ready.role
-    && acknowledgement.listenerPid === ready.ownership.listenerPid
-    && acknowledgement.listenerStartToken === ready.ownership.listenerStartToken
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function waitForPollState(
+  ready: () => boolean,
+  waitMs: number,
+  intervalMs: number,
+): Promise<void> {
+  if (ready() || waitMs <= 0) return
+  const deadline = Date.now() + waitMs
+  while (Date.now() < deadline) {
+    await delay(Math.min(intervalMs, Math.max(1, deadline - Date.now())))
+    if (ready()) return
+  }
 }
 
 function authenticationState(
@@ -249,6 +346,8 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
   const pid = dependencies.pid ?? process.pid
   const now = dependencies.now ?? Date.now
   const identityMatches = dependencies.identityMatches ?? processIdentityMatches
+  const longPollMs = dependencies.longPollMs ?? DEFAULT_LONG_POLL_MS
+  const longPollIntervalMs = dependencies.longPollIntervalMs ?? DEFAULT_LONG_POLL_INTERVAL_MS
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const connection = dependencies.connectionProvider?.() ?? dependencies.connection
     if (req.method !== 'POST' || req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
@@ -267,59 +366,76 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
       return
     }
 
-    const active = activeCutover(dependencies.stateDir)
     if (message.operation === 'poll') {
-      if (active === null || active.receipt.phase === 'awaiting-user'
-        || active.receipt.browserHandoff.status === 'acknowledged'
-        || active.receipt.browserHandoff.status === 'off') {
+      const digest = capabilitySha256(message.capability)
+      const pollHasState = (): boolean => {
+        const active = activeCutover(dependencies.stateDir)
+        if (active !== null) {
+          if (active.receipt.phase === 'awaiting-user'
+            || active.receipt.browserHandoff.status === 'off') return true
+          if (ownershipMatches(active.receipt.ownership.previous, pid, identityMatches)) {
+            return !registrationMatches(
+              readBrowserHandoffRequest(dependencies.stateDir), active.receipt.id,
+              requestAuthority.authority, digest,
+            )
+          }
+          return currentReadyOwnership(dependencies.stateDir, pid, identityMatches) !== null
+        }
+        const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
+        const registration = readBrowserHandoffRequest(dependencies.stateDir)
+        return ready !== null && matchingRegistration(
+          registration, ready.cutoverId, requestAuthority.authority, digest,
+        )?.acknowledgedAt === undefined
+      }
+      await waitForPollState(pollHasState, longPollMs, longPollIntervalMs)
+      const active = activeCutover(dependencies.stateDir)
+      const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
+      const registration = readBrowserHandoffRequest(dependencies.stateDir)
+      const registered = ready === null ? undefined : matchingRegistration(
+        registration, ready.cutoverId, requestAuthority.authority, digest,
+      )
+      if (registered?.acknowledgedAt !== undefined
+        || (active === null && (ready === null || registered === undefined))
+        || active?.receipt.phase === 'awaiting-user'
+        || active?.receipt.browserHandoff.status === 'off') {
         json(res, 200, { state: 'idle' })
         return
       }
-      const digest = capabilitySha256(message.capability)
-      const previous = active.receipt.ownership.previous
-      if (ownershipMatches(previous, pid, identityMatches)) {
+      const previous = active?.receipt.ownership.previous
+      if (active !== null && ownershipMatches(previous, pid, identityMatches)) {
         const oldAuthentication = authenticationState(connection, req)
         if (oldAuthentication === 'unauthenticated' || oldAuthentication === 'forbidden') {
           json(res, 401, { state: 'unauthorized' })
           return
         }
-        const handoff: BrowserHandoffRequest = {
-          version: 1,
-          cutoverId: active.receipt.id,
+        const registration: BrowserHandoffRegistration = {
           authority: requestAuthority.authority,
           capabilitySha256: digest,
           armedAt: now(),
         }
-        const file = stateFile(dependencies.stateDir, 'browserHandoffRequest')
-        const created = createJsonOnce(file, handoff)
-        const selected = created ? handoff : readBrowserHandoffRequest(dependencies.stateDir)
-        json(res, 200, selected?.cutoverId === handoff.cutoverId
-          && selected.authority === handoff.authority && selected.capabilitySha256 === digest
+        const selected = registerBrowserTab(dependencies.stateDir, active.receipt.id, registration)
+        json(res, 200, registrationMatches(
+          selected, active.receipt.id, requestAuthority.authority, digest,
+        )
           ? { state: 'waiting', cutoverId: active.receipt.id }
           : { state: 'standby', cutoverId: active.receipt.id })
         return
       }
 
-      const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
-      const registration = readBrowserHandoffRequest(dependencies.stateDir)
-      if (ready !== null && acknowledgementMatchesReady(
-        readBrowserHandoffAcknowledgement(dependencies.stateDir), ready,
-      )) {
-        json(res, 200, { state: 'idle' })
-        return
-      }
-      if (ready === null || ready.cutoverId !== active.receipt.id
-        || registration?.cutoverId !== active.receipt.id
-        || registration.authority !== requestAuthority.authority
-        || registration.capabilitySha256 !== digest) {
-        json(res, 200, { state: 'waiting', cutoverId: active.receipt.id })
+      if (ready === null || (active !== null && ready.cutoverId !== active.receipt.id)
+        || !registrationMatches(
+          registration, ready?.cutoverId ?? '', requestAuthority.authority, digest,
+        )) {
+        json(res, 200, active === null
+          ? { state: 'idle' }
+          : { state: 'waiting', cutoverId: active.receipt.id })
         return
       }
       // A protected listener may expose the route before its optional
       // connection service settles. Do not misclassify that startup window as
       // a public/valid-cookie host and strand the original tab on a bare 401.
       if (ready.protected && connection?.requestRejection === undefined) {
-        json(res, 200, { state: 'waiting', cutoverId: active.receipt.id })
+        json(res, 200, { state: 'waiting', cutoverId: ready.cutoverId })
         return
       }
       const cookieState = authenticationState(connection, req)
@@ -335,7 +451,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         return
       }
       if (connection?.authenticatedUrl === undefined) {
-        json(res, 200, { state: 'waiting', cutoverId: active.receipt.id })
+        json(res, 200, { state: 'waiting', cutoverId: ready.cutoverId })
         return
       }
       let launchUrl: string
@@ -369,12 +485,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
     }
     const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
     if (ready === null || ready.cutoverId !== message.cutoverId) {
-      if (receipt.browserHandoff.status === 'acknowledged') {
-        res.writeHead(204, { 'cache-control': 'no-store' })
-        res.end()
-      } else {
-        json(res, 409, { state: 'waiting' })
-      }
+      json(res, 409, { state: 'waiting' })
       return
     }
     if (ready.protected && connection?.requestRejection === undefined) {
@@ -388,12 +499,21 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
       })
       return
     }
+    const acknowledgedAt = now()
     if (message.channel === 'original-tab') {
       const registration = readBrowserHandoffRequest(dependencies.stateDir)
-      if (message.capability === undefined || registration?.cutoverId !== message.cutoverId
-        || registration.authority !== requestAuthority.authority
-        || registration.capabilitySha256 !== capabilitySha256(message.capability)) {
+      if (message.capability === undefined || !registrationMatches(
+        registration, message.cutoverId, requestAuthority.authority,
+        capabilitySha256(message.capability),
+      )) {
         json(res, 403, { state: 'forbidden' })
+        return
+      }
+      if (!acknowledgeBrowserTab(
+        dependencies.stateDir, message.cutoverId, requestAuthority.authority,
+        capabilitySha256(message.capability), acknowledgedAt,
+      )) {
+        json(res, 409, { state: 'conflict' })
         return
       }
     }
@@ -406,7 +526,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
       listenerStartToken: ready.ownership.listenerStartToken,
       channel: message.channel,
       authentication: message.authentication,
-      acknowledgedAt: now(),
+      acknowledgedAt,
     }
     const ackFile = stateFile(dependencies.stateDir, 'browserHandoffAck')
     if (!createJsonOnce(ackFile, acknowledgement)) {
