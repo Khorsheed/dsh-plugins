@@ -54,6 +54,10 @@ export const STATE_FILES = {
   cutoverAbort: 'launch-cutover-abort.json',
   /** Monotonic stronger operator action: explicitly restore the previous spec. */
   cutoverRestorePrevious: 'launch-cutover-restore-previous.json',
+  /** Original browser tab registration: capability hash only, never the launch URL or raw capability. */
+  browserHandoffRequest: 'browser-handoff-request.json',
+  /** Browser → watchdog acknowledgement for one proven final process. */
+  browserHandoffAck: 'browser-handoff-ack.json',
   /** Whether the restart-protocol skill registered at apply (and why not). */
   skillRegistration: 'skill-registration.json',
   /** Directory: the healthy-boot snapshot of the profile composition inputs. */

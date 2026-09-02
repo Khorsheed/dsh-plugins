@@ -38,6 +38,7 @@ import { commitCheckpoint, currentHead, isWorkingTreeClean, resetToCheckpoint } 
 import { listeningPortsForPid } from './processes.ts'
 import { cutoverBlocksWake } from './launch-spec.ts'
 import { stateFile } from './state-files.ts'
+import { registerBrowserHandoff } from './browser-handoff.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
   isParkedOnUserInput,
@@ -343,6 +344,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   // (default-on!) with no warning — a misconfiguration failing silent.
   const followupReport = reportMode === 'followup'
   registerRestartSkill(ctx, stateDir)
+  registerBrowserHandoff(ctx, stateDir)
 
   if (followupReport || resumeInterrupted) {
     type FollowupAgent = { followup: (message: ReturnType<typeof createUserMessage>) => void }

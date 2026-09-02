@@ -52,6 +52,8 @@
 #   WD_PREVIOUS_LISTENER_*=PID/start token listener inside that old child tree
 #   WD_READY_STABILITY_SECONDS=N unchanged child/listener proof window (default 3)
 #   WD_BROWSER_HANDOFF=required|off after an authenticated launch-URL exchange
+#   WD_BROWSER_HANDOFF_TIMEOUT_SECONDS=N wait for original-tab acknowledgement,
+#                      then (after fallback open) for fallback acknowledgement
 #   WD_TEST_FAKE=1     launch a throwaway http server instead of the instance
 #   WD_TEST_BREAK=1    launch a command that always fails (give-up testing)
 #
@@ -86,6 +88,7 @@ PREVIOUS_LISTENER_START="${WD_PREVIOUS_LISTENER_START:-}"
 BROWSER_HANDOFF="${WD_BROWSER_HANDOFF:-off}"
 TARGET_FAILURE_LIMIT="${WD_TARGET_FAILURE_LIMIT:-2}"
 READY_STABILITY_SECONDS="${WD_READY_STABILITY_SECONDS:-3}"
+BROWSER_HANDOFF_TIMEOUT_SECONDS="${WD_BROWSER_HANDOFF_TIMEOUT_SECONDS:-8}"
 # Every marker, the pidfile, and the attempt log live in ONE state directory:
 # WD_STATE_DIR when the guard CLI names it (its --state-dir), else the
 # conventional <home>/state. Deriving it here as <home>/state while the guard
@@ -101,6 +104,8 @@ ATTEMPT_LOG="$STATE_DIR/boot-attempt.log"
 CONTROL_FILE="$STATE_DIR/launch-cutover-control.json"
 CONTROL_ABORT_FILE="$STATE_DIR/launch-cutover-abort.json"
 CONTROL_RESTORE_FILE="$STATE_DIR/launch-cutover-restore-previous.json"
+BROWSER_HANDOFF_REQUEST_FILE="$STATE_DIR/browser-handoff-request.json"
+BROWSER_HANDOFF_ACK_FILE="$STATE_DIR/browser-handoff-ack.json"
 
 # Timestamp every lifecycle line so a durable receipt can be correlated with
 # supervisor/child PIDs across launchd, systemd, and detached CLI restarts.
@@ -209,7 +214,8 @@ launch_url_from_output() {
       try {
         const url = new URL(match[0])
         if (url.protocol === "http:" && url.hostname === "127.0.0.1"
-          && url.port === port && url.pathname === "/" && url.search !== "") {
+          && url.port === port && url.pathname === "/" && url.search !== ""
+          && url.username === "" && url.password === "" && url.hash === "") {
           process.stdout.write(url.href)
           break
         }
@@ -235,7 +241,8 @@ redact_launch_urls_in_output() {
       try {
         const url = new URL(match[0])
         if (url.protocol === "http:" && url.hostname === "127.0.0.1"
-          && url.port === port && url.pathname === "/" && url.search !== "") {
+          && url.port === port && url.pathname === "/" && url.search !== ""
+          && url.username === "" && url.password === "" && url.hash === "") {
           const start = Buffer.byteLength(text.slice(0, match.index))
           const length = Buffer.byteLength(match[0])
           edits.push({ start, length })
@@ -328,33 +335,121 @@ ready_probe() {
   return 0
 }
 
-# Browser handoff is deliberately after the ownership stability window. A URL
-# from a target that only survives long enough for one authenticated response
-# must never be delivered to the user and then superseded by recovery.
+# Whether the previous, proven listener armed an original tab for this
+# transaction. The file contains only a capability digest; never the raw
+# capability or bearer launch URL.
+browser_original_registered() {
+  node -e '
+    const fs = require("fs")
+    try {
+      const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+      const authority = new URL(`http://${value.authority ?? ""}`)
+      if (value.version !== 1 || value.cutoverId !== process.argv[2]
+        || typeof value.authority !== "string" || value.authority === ""
+        || authority.host !== value.authority || authority.port !== process.argv[3]
+        || authority.username !== "" || authority.password !== ""
+        || !/^[a-f0-9]{64}$/.test(value.capabilitySha256)) process.exit(1)
+    } catch { process.exit(1) }
+  ' "$BROWSER_HANDOFF_REQUEST_FILE" "$CUTOVER_ID" "$PORT" >/dev/null 2>&1
+}
+
+# Print non-secret acknowledgement evidence only when it names this exact
+# stable listener identity and cutover role.
+browser_ack_evidence() {
+  node -e '
+    const fs = require("fs")
+    try {
+      const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+      const authority = new URL(`http://${value.authority ?? ""}`)
+      if (value.version !== 1 || value.cutoverId !== process.argv[2]
+        || value.role !== process.argv[3] || String(value.listenerPid) !== process.argv[4]
+        || value.listenerStartToken !== process.argv[5]
+        || !["original-tab", "fallback-tab"].includes(value.channel)
+        || !["existing-cookie", "launch-url"].includes(value.authentication)
+        || typeof value.authority !== "string" || value.authority === ""
+        || authority.host !== value.authority || authority.port !== process.argv[6]
+        || authority.username !== "" || authority.password !== ""
+        || !Number.isFinite(value.acknowledgedAt) || value.acknowledgedAt <= 0
+        || value.authority.includes("|")) process.exit(1)
+      process.stdout.write(`${value.channel}|${value.authentication}|${value.authority}`)
+    } catch { process.exit(1) }
+  ' "$BROWSER_HANDOFF_ACK_FILE" "$CUTOVER_ID" "$CUTOVER_ROLE" \
+    "$current_listener_pid" "$current_listener_start" "$PORT" 2>/dev/null
+}
+
+wait_for_browser_ack() {
+  local deadline evidence rest
+  case "$BROWSER_HANDOFF_TIMEOUT_SECONDS" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$BROWSER_HANDOFF_TIMEOUT_SECONDS" -gt 0 ] || return 1
+  deadline=$(( $(now_ms) + BROWSER_HANDOFF_TIMEOUT_SECONDS * 1000 ))
+  while [ "$(now_ms)" -lt "$deadline" ]; do
+    [ -z "$(cutover_control_action)" ] || return 1
+    current_ownership_matches || return 1
+    evidence=$(browser_ack_evidence) || evidence=''
+    if [ -n "$evidence" ]; then
+      browser_ack_channel=${evidence%%|*}
+      rest=${evidence#*|}
+      browser_ack_authentication=${rest%%|*}
+      browser_ack_authority=${rest#*|}
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+# Browser handoff is deliberately after the ownership stability window. The
+# opener's exit status proves only that a fallback was attempted. Readiness
+# requires a page-authored acknowledgement naming the stable listener.
 complete_browser_handoff() {
+  local fallback_url
   current_ownership_matches || return 1
   [ "$protected_ready" = "1" ] || return 0
   if [ "$BROWSER_HANDOFF" = "required" ] && [ "$browser_handoff_done" = "0" ]; then
     [ -n "$launch_url_value" ] || return 1
-    if ! open_launch_url "$launch_url_value"; then
+    if browser_original_registered; then
+      wd_log "waiting for the armed original browser tab to acknowledge the final process"
+      if wait_for_browser_ack; then
+        browser_handoff_done=1
+        browser_handoff_reported=1
+        cutover_event_required browser-handoff acknowledged "$browser_ack_channel" \
+          "$browser_ack_authentication" "$browser_ack_authority"
+        wd_log "original browser tab acknowledged handoff ($browser_ack_authentication; authority $browser_ack_authority)"
+      else
+        wd_log "original browser tab did not acknowledge within ${BROWSER_HANDOFF_TIMEOUT_SECONDS}s; falling back to system open"
+      fi
+    else
+      wd_log "no original browser tab armed before shutdown; falling back to system open"
+    fi
+    if [ "$browser_handoff_done" = "0" ]; then
+      fallback_url="${launch_url_value}#ankh-guard-handoff=${CUTOVER_ID}"
+      if open_launch_url "$fallback_url"; then
+        cutover_event_required browser-fallback-opened
+        wd_log "browser fallback open requested; waiting for page acknowledgement"
+        if wait_for_browser_ack; then
+          browser_handoff_done=1
+          browser_handoff_reported=1
+          cutover_event_required browser-handoff acknowledged "$browser_ack_channel" \
+            "$browser_ack_authentication" "$browser_ack_authority"
+          wd_log "browser acknowledged fallback handoff ($browser_ack_channel; authority $browser_ack_authority)"
+        fi
+      fi
+    fi
+    if [ "$browser_handoff_done" = "0" ]; then
       if [ "$browser_handoff_reported" = "0" ]; then
-        wd_log "browser launch-URL handoff failed — not ready"
+        wd_log "browser handoff failed: no page acknowledgement — not ready"
         cutover_event_required browser-handoff failed
         browser_handoff_reported=1
       fi
       return 1
     fi
-    browser_handoff_done=1
-    browser_handoff_reported=1
-    cutover_event_required browser-handoff accepted
-    wd_log "browser launch-URL handoff accepted (URL credential redacted)"
   elif [ "$BROWSER_HANDOFF" = "off" ] && [ "$browser_handoff_reported" = "0" ]; then
     cutover_event_required browser-handoff off
     browser_handoff_reported=1
   fi
   current_ownership_matches || return 1
   if [ "$browser_handoff_done" = "1" ]; then
-    readiness_detail="authenticated launch URL: 303 exchange, cookie / = 200, browser handoff accepted"
+    readiness_detail="authenticated launch URL: 303 exchange, cookie / = 200, browser page acknowledged"
   fi
   return 0
 }
@@ -623,6 +718,7 @@ select_previous_spec() {
   CUTOVER_ROLE="previous"
   browser_handoff_done=0
   browser_handoff_reported=0
+  rm -f "$BROWSER_HANDOFF_ACK_FILE"
   failures=0
   reset_done=1
   port_races=0

@@ -88,6 +88,15 @@ export interface CutoverProcessOwnership {
   listenerStartToken: string
 }
 
+export interface CutoverBrowserHandoff {
+  required: boolean
+  status: 'pending' | 'acknowledged' | 'fallback-opened' | 'off' | 'failed' | 'not-required'
+  channel?: 'original-tab' | 'fallback-tab'
+  authentication?: 'existing-cookie' | 'launch-url'
+  authority?: string
+  acknowledgedAt?: number
+}
+
 export interface LaunchCutoverReceipt {
   version: 1
   id: string
@@ -128,8 +137,11 @@ export interface LaunchCutoverReceipt {
     launchUrlObserved?: boolean
     exchangeStatus?: number
     authenticatedStatus?: number
-    browserHandoff: 'pending' | 'accepted' | 'off' | 'failed' | 'not-required'
+    /** Compatibility summary; detailed browser evidence lives in browserHandoff. */
+    browserHandoff: CutoverBrowserHandoff['status']
   }
+  /** Browser acknowledgement is independent of server transport/readiness/canary. */
+  browserHandoff: CutoverBrowserHandoff
   canary?: { outcome: 'pass' | 'fail'; detail?: string }
   attempts: CutoverAttempt[]
   failureCount: { target: number; previous: number }
@@ -232,7 +244,23 @@ export function summarizeLaunchState(state: LaunchState | null): unknown {
 export function readCutoverReceipt(stateDir: string): LaunchCutoverReceipt | null {
   try {
     const receipt = JSON.parse(readFileSync(stateFile(stateDir, 'launchCutover'), 'utf8')) as LaunchCutoverReceipt
-    return receipt.version === 1 && typeof receipt.id === 'string' && Array.isArray(receipt.events) ? receipt : null
+    if (receipt.version !== 1 || typeof receipt.id !== 'string' || !Array.isArray(receipt.events)) return null
+    // Rolling migration from receipts written before browser acknowledgement
+    // became its own evidence plane. A legacy "accepted" means only that the
+    // opener returned success; never relabel it as a page acknowledgement.
+    if (receipt.browserHandoff === undefined) {
+      const legacy = receipt.authentication?.browserHandoff as string | undefined
+      const status: CutoverBrowserHandoff['status'] = legacy === 'off' ? 'off'
+        : legacy === 'not-required' ? 'not-required'
+          : legacy === 'failed' ? 'failed'
+            : legacy === 'accepted' ? 'fallback-opened' : 'pending'
+      receipt.browserHandoff = {
+        required: status !== 'off',
+        status,
+      }
+      if (legacy === 'accepted') receipt.authentication.browserHandoff = status
+    }
+    return receipt
   } catch {
     return null
   }
@@ -324,6 +352,8 @@ export function prepareLaunchCutover(stateDir: string, input: {
   for (const role of ['cutoverRestorePrevious', 'cutoverAbort', 'cutoverControl'] as const) {
     rmSync(stateFile(stateDir, role), { force: true })
   }
+  rmSync(stateFile(stateDir, 'browserHandoffRequest'), { force: true })
+  rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
   const receipt: LaunchCutoverReceipt = {
     version: 1,
     id: input.id,
@@ -341,6 +371,10 @@ export function prepareLaunchCutover(stateDir: string, input: {
     ownership: { previous: input.previousOwnership },
     authentication: {
       browserHandoff: input.browserHandoff === 'required' ? 'pending' : 'off',
+    },
+    browserHandoff: {
+      required: input.browserHandoff === 'required',
+      status: input.browserHandoff === 'required' ? 'pending' : 'off',
     },
     attempts: [],
     failureCount: { target: 0, previous: 0 },
@@ -450,6 +484,11 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       receipt.authentication = {
         browserHandoff: receipt.authentication.browserHandoff === 'off' ? 'off' : 'pending',
       }
+      receipt.browserHandoff = {
+        required: receipt.browserHandoff.required,
+        status: receipt.browserHandoff.required ? 'pending' : 'off',
+      }
+      rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
       delete receipt.readiness
       delete receipt.canary
       receipt.attempts.push({ role, number: attempt, childPid, childStartToken, startedAt: now })
@@ -497,10 +536,36 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       break
     case 'browser-handoff': {
       const outcome = args[0]
-      if (outcome !== 'accepted' && outcome !== 'off' && outcome !== 'failed') throw new Error('browser-handoff: invalid outcome')
-      receipt.authentication.browserHandoff = outcome
+      if (outcome !== 'acknowledged' && outcome !== 'off' && outcome !== 'failed') throw new Error('browser-handoff: invalid outcome')
+      if (outcome === 'acknowledged') {
+        const channel = args[1]
+        const authentication = args[2]
+        const authority = args[3]
+        if ((channel !== 'original-tab' && channel !== 'fallback-tab')
+          || (authentication !== 'existing-cookie' && authentication !== 'launch-url')
+          || authority === undefined || authority === '') {
+          throw new Error('browser-handoff: invalid acknowledgement evidence')
+        }
+        if (receipt.readiness === undefined) throw new Error('browser-handoff: server readiness is not proven')
+        receipt.browserHandoff = {
+          required: true,
+          status: 'acknowledged',
+          channel,
+          authentication,
+          authority,
+          acknowledgedAt: now,
+        }
+      } else {
+        receipt.browserHandoff = { required: outcome !== 'off', status: outcome }
+      }
+      receipt.authentication.browserHandoff = receipt.browserHandoff.status
       break
     }
+    case 'browser-fallback-opened':
+      if (!receipt.browserHandoff.required) throw new Error('browser-fallback-opened: handoff is disabled')
+      receipt.browserHandoff = { required: true, status: 'fallback-opened' }
+      receipt.authentication.browserHandoff = 'fallback-opened'
+      break
     case 'control-requested': {
       const action = args[0]
       if (action !== 'abort' && action !== 'restore-previous') throw new Error('control-requested: invalid action')
@@ -535,6 +600,11 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       receipt.authentication = {
         browserHandoff: receipt.authentication.browserHandoff === 'off' ? 'off' : 'pending',
       }
+      receipt.browserHandoff = {
+        required: receipt.browserHandoff.required,
+        status: receipt.browserHandoff.required ? 'pending' : 'off',
+      }
+      rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
       delete receipt.readiness
       delete receipt.canary
       {
@@ -569,9 +639,9 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       if (role === 'target' && receipt.canary?.outcome !== 'pass') {
         throw new Error('ready: target canary has not passed')
       }
-      if (receipt.authentication.launchUrlObserved === true
-        && receipt.authentication.browserHandoff === 'pending') {
-        throw new Error('ready: authenticated launch URL browser handoff is still pending')
+      if (receipt.authentication.launchUrlObserved === true && receipt.browserHandoff.required
+        && receipt.browserHandoff.status !== 'acknowledged') {
+        throw new Error('ready: authenticated launch URL has no browser acknowledgement')
       }
       found.outcome = 'ready'
       if (role === 'target') {
@@ -586,6 +656,7 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       if (receipt.authentication.browserHandoff === 'pending'
         && receipt.authentication.launchUrlObserved !== true) {
         receipt.authentication.browserHandoff = 'not-required'
+        receipt.browserHandoff = { required: receipt.browserHandoff.required, status: 'not-required' }
       }
       // Keep the full pair until AFTER the terminal receipt rename releases
       // the wake gate. Compacting state first would make cutoverBlocksWake see
@@ -627,6 +698,10 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
   if (terminal !== undefined) updateRestartRecord(stateDir, receipt, terminal)
   atomicWriteJson(stateFile(stateDir, 'launchCutover'), receipt)
   if (terminal !== undefined) clearCutoverControl(stateDir, id)
+  if (terminal !== undefined) {
+    rmSync(stateFile(stateDir, 'browserHandoffRequest'), { force: true })
+    rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
+  }
   if (stableSpec !== undefined) {
     atomicWriteJson(stateFile(stateDir, 'launchSpec'), { version: 1, mode: 'stable', active: stableSpec } satisfies StableLaunchState)
   }

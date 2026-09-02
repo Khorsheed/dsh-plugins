@@ -317,7 +317,8 @@ flags:
                    wait-for-user (park without resetting a repository)
   --browser-handoff MODE  reconfigure: required (default) or off; when a protected
                    root announces a same-authority launch URL, readiness requires
-                   303 cookie exchange, authenticated / = 200, and this handoff
+                   303 cookie exchange and authenticated / = 200; browser handoff
+                   separately requires an original/fallback page acknowledgement
   --if-absent      configure-launch: initialize only; keep an existing selected spec
   --force          restart/schedule-exit/supervise/reconfigure: override the sandbox probe refusal
   --sync           restart: run the whole loop in-process (debug/tests; the default

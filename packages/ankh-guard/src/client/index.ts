@@ -1,0 +1,211 @@
+/** Browser half of the original-tab launch-cutover handoff. */
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+
+const ROUTE = '/_ankh-guard/browser-handoff'
+const CAPABILITY_KEY = 'ankh-guard.browser-handoff-capability.v1'
+const PENDING_KEY = 'ankh-guard.browser-handoff-pending.v1'
+const FALLBACK_HASH_KEY = 'ankh-guard-handoff'
+const POLL_MS = 500
+
+type HandoffChannel = 'original-tab' | 'fallback-tab'
+type HandoffAuthentication = 'existing-cookie' | 'launch-url'
+
+interface PendingHandoff {
+  version: 1
+  cutoverId: string
+  channel: HandoffChannel
+  authentication: HandoffAuthentication
+  capability?: string
+}
+
+interface PollResponse {
+  state?: string
+  action?: string
+  cutoverId?: string
+  authentication?: string
+  launchUrl?: string
+}
+
+/** No Cordis services are needed; this is a same-origin browser lifecycle observer. */
+export const inject: readonly string[] = []
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}
+
+function freshCapability(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return encodeBase64Url(bytes)
+}
+
+function capability(): string {
+  const existing = sessionStorage.getItem(CAPABILITY_KEY)
+  if (existing !== null && /^[A-Za-z0-9_-]{43}$/.test(existing)) return existing
+  const created = freshCapability()
+  sessionStorage.setItem(CAPABILITY_KEY, created)
+  return created
+}
+
+function readPending(): PendingHandoff | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null') as Partial<PendingHandoff> | null
+    if (value?.version !== 1 || typeof value.cutoverId !== 'string'
+      || (value.channel !== 'original-tab' && value.channel !== 'fallback-tab')
+      || (value.authentication !== 'existing-cookie' && value.authentication !== 'launch-url')) return null
+    if (value.channel === 'original-tab' && typeof value.capability !== 'string') return null
+    return value as PendingHandoff
+  } catch {
+    return null
+  }
+}
+
+function writePending(value: PendingHandoff): void {
+  // Deliberately excludes launchUrl: bearer URLs never enter browser storage.
+  sessionStorage.setItem(PENDING_KEY, JSON.stringify(value))
+}
+
+export function fallbackCutoverId(hash: string): string | null {
+  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+  const id = params.get(FALLBACK_HASH_KEY)
+  return id !== null && /^[A-Za-z0-9._-]{1,160}$/.test(id) ? id : null
+}
+
+function consumeFallbackFragment(): PendingHandoff | null {
+  const cutoverId = fallbackCutoverId(location.hash)
+  if (cutoverId === null) return null
+  const url = new URL(location.href)
+  url.hash = ''
+  history.replaceState(history.state, '', url.href)
+  const pending: PendingHandoff = {
+    version: 1,
+    cutoverId,
+    channel: 'fallback-tab',
+    authentication: 'launch-url',
+  }
+  writePending(pending)
+  return pending
+}
+
+function waitingOverlay(): HTMLElement {
+  const existing = document.getElementById('ankh-guard-browser-handoff')
+  if (existing !== null) return existing
+  const element = document.createElement('div')
+  element.id = 'ankh-guard-browser-handoff'
+  element.setAttribute('role', 'status')
+  element.setAttribute('aria-live', 'polite')
+  element.textContent = navigator.language.toLowerCase().startsWith('zh')
+    ? 'dsh 正在重启；此标签页会自动恢复。'
+    : 'dsh is restarting; this tab will recover automatically.'
+  element.style.cssText = [
+    'position:fixed', 'inset:0', 'z-index:2147483647', 'display:grid', 'place-items:center',
+    'padding:24px', 'background:rgba(15,18,24,.92)', 'color:#fff',
+    'font:500 16px/1.5 system-ui,sans-serif', 'text-align:center',
+  ].join(';')
+  document.documentElement.append(element)
+  return element
+}
+
+async function post(body: unknown): Promise<Response> {
+  return fetch(ROUTE, {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+async function acknowledge(pending: PendingHandoff): Promise<boolean> {
+  const response = await post({
+    version: 1,
+    operation: 'ack',
+    cutoverId: pending.cutoverId,
+    channel: pending.channel,
+    authentication: pending.authentication,
+    ...(pending.capability !== undefined ? { capability: pending.capability } : {}),
+  })
+  return response.status === 204
+}
+
+/** Install the polling/reload loop for this tab's lifetime. */
+export function apply(_ctx: ClientContext): () => void {
+  let disposed = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let pending = consumeFallbackFragment() ?? readPending()
+  let cap: string | undefined
+
+  const schedule = (): void => {
+    if (!disposed) timer = setTimeout(() => { void tick() }, POLL_MS)
+  }
+  const tick = async (): Promise<void> => {
+    if (disposed) return
+    try {
+      if (pending !== null) {
+        waitingOverlay()
+        if (await acknowledge(pending)) {
+          sessionStorage.removeItem(PENDING_KEY)
+          sessionStorage.removeItem(CAPABILITY_KEY)
+          document.getElementById('ankh-guard-browser-handoff')?.remove()
+          pending = null
+        }
+        schedule()
+        return
+      }
+      const tabCapability = cap ??= capability()
+      const response = await post({ version: 1, operation: 'poll', capability: tabCapability })
+      if (!response.ok) {
+        schedule()
+        return
+      }
+      const result = await response.json() as PollResponse
+      if (result.state === 'idle') {
+        document.getElementById('ankh-guard-browser-handoff')?.remove()
+        schedule()
+        return
+      }
+      if (result.state === 'waiting') waitingOverlay()
+      if (result.state !== 'ready' || typeof result.cutoverId !== 'string') {
+        schedule()
+        return
+      }
+      if (result.action === 'reload' && result.authentication === 'existing-cookie') {
+        pending = {
+          version: 1, cutoverId: result.cutoverId, channel: 'original-tab',
+          authentication: 'existing-cookie', capability: tabCapability,
+        }
+        writePending(pending)
+        waitingOverlay()
+        location.reload()
+        return
+      }
+      if (result.action === 'replace' && result.authentication === 'launch-url'
+        && typeof result.launchUrl === 'string') {
+        const launch = new URL(result.launchUrl)
+        if (launch.origin !== location.origin || launch.pathname !== '/' || launch.search === '') {
+          schedule()
+          return
+        }
+        pending = {
+          version: 1, cutoverId: result.cutoverId, channel: 'original-tab',
+          authentication: 'launch-url', capability: tabCapability,
+        }
+        writePending(pending)
+        waitingOverlay()
+        // The bearer remains a local variable for the shortest possible time.
+        location.replace(launch.href)
+        return
+      }
+    } catch {
+      // The expected restart interval rejects fetches; keep the old page and retry.
+    }
+    schedule()
+  }
+  void tick()
+  return () => {
+    disposed = true
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}

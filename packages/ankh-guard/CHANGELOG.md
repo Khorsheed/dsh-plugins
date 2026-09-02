@@ -8,7 +8,7 @@
 - detached `supervise` 等到 watchdog 已持久化 pidfile claim 才返回成功，关闭“刚 supervise 就 schedule-exit”竞态；输出区分 `exit-agent pid`，watchdog 生命周期日志带时间戳
 - 新增通用启动配置事务切换：`configure-launch`/`reconfigure` 持久化并原子选择 previous/target 完整 launch spec，分别记录 credential/rollback repo 与宿主 `harnessRoot`；资料不足时拒绝从旧 command record 或目标 repo 伪造 previous
 - launchd/systemd 前台等待者在 successor 退出后重新读取耐久 launch state 与回执；target 失败恢复 previous 后，外层 supervisor 不会复活等待前缓存的 target
-- watchdog 就绪探针区分 transport-up 与 ready：裸 401 不再健康；最终进程输出的同 authority 启动 URL 必须完成临时 Cookie jar 的 303 交换、认证后 `/` 200 与一次浏览器交接，Bearer URL 不进入耐久日志/回执
+- watchdog 就绪探针区分 transport-up 与 ready：裸 401 不再健康；最终进程输出的同 authority 启动 URL 必须完成临时 Cookie jar 的 303 交换和认证后 `/` 200；浏览器交接单独等待真实页面 ACK，优先让原标签页刷新或以 `location.replace()` 完成一次性 URL 交换，仅在原页缺失/超时时 system-open 兜底，opener 成功不再等同接管成功，Bearer URL 不进入耐久状态、日志或回执
 - 新增脱敏耐久回执 `launch-cutover.json`，记录 supervisor/child PID、配置摘要、认证、重试、canary 与恢复结果；会话仅在回执终态后唤醒
 - 修复嵌套 watchdog 接管的进程所有权漏洞：`reconfigure` 在旧宿主仍存活时固化 supervisor、直接 child 与 listener 的 PID/start identity；successor 对旧 supervisor 做可消费控制请求的有界等待，超时只终止先冻结再复核的精确 identity，并冻结/复核后代亲缘后回收，拒绝按端口误杀或把旧 listener 的 HTTP 200 当成 target ready
 - cutover 就绪现在同时要求目标 child 存活、唯一 listener 属于该 child 树、child/listener identity 在稳定窗口内不变且 retry 为 0；目标在 provisional ready 后退出、`EADDRINUSE` 或旧 listener 持续 200 都会计入失败并执行完整 spec 恢复策略

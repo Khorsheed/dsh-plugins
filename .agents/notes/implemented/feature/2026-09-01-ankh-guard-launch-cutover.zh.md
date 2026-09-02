@@ -25,11 +25,15 @@ ankh-guard 现在提供通用启动配置 cutover 协议，不绑定任何宿主
 
 就绪分两层。除传输失败外的任意 HTTP 状态都是 `transport-up`；公开根路径 HTTP 200 只满足应用层就绪。watchdog 还必须证明进程 identity：拉起的直接 child 持续存活，端口恰有一个 listener 且位于该 child 树内，child/listener 的 PID 与内核可见启动 identity 在默认三秒稳定窗口内不变，并且 retry 为 0。否则旧 listener 的 200 或 provisional ready 后退出的 target 都可能冒充目标。受保护根路径下，watchdog 读取本次 attempt 输出，只接受首个 authority 与被监督 loopback 完全一致、路径为 `/`、且 query 非空的 HTTP 启动 URL。协议不硬编码 `token` 参数名或宿主发布版本。
 
-watchdog 只在内存中保留该最终进程 URL，用等长脱敏串覆盖 mode-0600 attempt log 中的原文，任何事件和回执都不包含它。临时 mode-0600 Cookie jar 必须观察到启动 URL HTTP 303，再观察到认证后根路径 HTTP 200。cutover 默认在 jar 证明与 ownership 稳定窗口都通过后才进行一次浏览器 URL 交接；关闭必须显式传 `--browser-handoff off`。只有 HTTP/认证就绪、稳定 ownership、需要时的浏览器交接和 guard canary 全部完成，回执才进入终态并释放会话唤醒。稳定窗口内死亡的 target 绝不会把已拒绝 URL 泄漏给浏览器。
+watchdog 只在内存中保留该最终进程 URL，用等长脱敏串覆盖 mode-0600 attempt log 中的原文，任何事件和回执都不包含它。临时 mode-0600 Cookie jar 必须观察到启动 URL HTTP 303，再观察到认证后根路径 HTTP 200。cutover 默认在 jar 证明与 ownership 稳定窗口都通过后进行浏览器交接；关闭必须显式传 `--browser-handoff off`。
+
+浏览器交接是独立证据面。immediate client bundle 轮询插件的精确同源路由。当 previous listener 仍匹配回执捕获的 PID/start identity 时，第一个标签页用每标签页的随机 capability 登记；只有它的 SHA-256 摘要写进 mode-0600 状态，页面同时显示重启等待层。final target 或 restored listener 匹配回执中的 readiness ownership 后，该路由通过宿主的可选认证 seam 检查浏览器请求。Cookie 仍有效就返回刷新指令；收到 401 时才从该最终进程生成新的 authenticated URL，并且仅接受 origin 与请求完全相同、路径为根且 query 非空的 URL。client 不把 URL 写入 storage，直接执行 `location.replace()`。重新加载并认证的页面会写入绑定 cutover role 与精确 listener identity 的 ACK。没有原标签页，或其 ACK 超时时，watchdog 才请求一次平台 open 兜底，用非敏感 cutover fragment 关联新页面，并继续等待该页面的已认证 ACK。opener exit 0 只记录 `fallback-opened`，绝不代表成功。
+
+只有 HTTP/认证就绪、稳定 ownership、需要时的浏览器 ACK 和 guard canary 全部完成，回执才进入终态并释放会话唤醒。稳定窗口内死亡的 target 绝不会把已拒绝 URL 泄漏给浏览器。原始浏览器 capability 与 bearer URL 都不进入耐久状态、日志、事件或回执。
 
 ## Durable receipt and recovery
 
-`launch-cutover.json` 是供 operator/agent 验收的回执。它包含脱敏命令哈希和 spec 非敏感字段、previous/driver/replacement supervisor PID、previous/target/restored child 与 listener identity、attempt 历史、分角色失败计数、transport 与认证状态、稳定窗口证明、浏览器交接、canary 和恢复结果。`launch-status` 只输出脱敏 state 与回执，绝不输出命令。
+`launch-cutover.json` 是供 operator/agent 验收的回执。它包含脱敏命令哈希和 spec 非敏感字段、previous/driver/replacement supervisor PID、previous/target/restored child 与 listener identity、attempt 历史、分角色失败计数、transport 与认证状态、稳定窗口证明、独立的浏览器交接状态/渠道/认证方式、canary 和恢复结果。`launch-status` 只输出脱敏 state 与回执，绝不输出命令。
 
 target boot/就绪或 canary 失败时，只执行停止前记录的策略。`restore-previous` 会把命令、home、credential repo、harness root 和 profile 一起切回，export previous `DSH_HARNESS`，启动 previous spec 并记录 `restored`；`wait-for-user` 由崩溃页原地提供/停留，并记录 `awaiting-user`。`abort-cutover` 耐久请求执行事前批准策略；单独的 `restore-previous` 控制是恢复完整 previous spec 的新显式授权，不能被后来的普通 abort 降级。cutover 绝不掉进仓库或 profile 组合回滚。重启报告先于回执终态写入；followup 与被中断会话恢复都持续阻塞到该终态 rename。
 
@@ -40,11 +44,12 @@ target boot/就绪或 canary 失败时，只执行停止前记录的策略。`re
 - **把 401 或任意 HTTP 响应当健康。** 否决：这只证明 TCP/HTTP transport，会在用户仍看到未认证应用时运行 canary 并唤醒会话。
 - **通过重置目标仓库恢复。** 否决：启动变化可能同时覆盖命令、home、credential repo、harness root 和 profile，也可能根本不是仓库内容导致。恢复单位只能是 previous 完整 spec，或显式等待。
 - **让 `reconfigure` 调用者安排旧 child 退出。** 否决：调用者就运行在将被替换的进程里，supervisor 交接后随时可能消失；所有不可逆步骤必须由已提交的替代 watchdog 持有。
+- **把平台 opener exit 0 当作浏览器交接。** 否决：它只能证明操作系统接受了请求，不能证明标签页加载了最终 authority、交换了一次性 URL 或持有认证 Cookie。浏览器边界必须由页面自身 ACK。
 
 ## Consequences
 
 - 启动命令不变的重启继续走更小的 `schedule-exit` 路径；启动变化有独立事务和显式恢复决策。
 - 根路径受保护的宿主必须在 boot timeout 前打印同 authority 启动 URL。参数词汇仍归宿主持有，但 303 与认证后 200 交换成为互操作契约。
-- 浏览器交接成功只表示平台 opener 接受了 URL；watchdog 无法检查用户浏览器 Cookie store。临时 jar 已先独立证明认证流程。
+- 浏览器交接成功表示已认证页面确认了精确 final listener。临时 jar 先独立证明服务端认证就绪；平台 open 只是超时兜底，并在回执中保持独立状态。
 - 完整启动命令为恢复而耐久保存但受权限保护；回执与 CLI status 是安全摘要。SIGKILL 仍可能让优雅的中断会话快照来不及写，但不会让非终态 cutover 伪装成 ready。
-- 单元测试钉住原子 state/receipt 转换、active-attempt identity 匹配、独立仓库角色、拒绝伪造 legacy previous spec 及耐久 abort/restore 优先级。真实进程集成测试钉住精简 PATH 下的绝对工具解析、嵌套 child ownership、完整 previous-watchdog → replacement-watchdog 接管、旧 200 加 target `EADDRINUSE`、target 在稳定窗口内退出、失败计数与完整 spec 恢复、等待后耐久 state 刷新、受保护根路径认证、启动 URL 脱敏与终态唤醒闸门。
+- 单元测试钉住原子 state/receipt 转换、active-attempt identity 匹配、独立仓库角色、拒绝伪造 legacy previous spec、耐久 abort/restore 优先级、原标签页哈希登记、同源最终进程 URL 交付、现有 Cookie 刷新、已认证精确 listener ACK 与兜底 fragment 校验。真实进程集成测试钉住精简 PATH 下的绝对工具解析、嵌套 child ownership、完整 previous-watchdog → replacement-watchdog 接管、旧 200 加 target `EADDRINUSE`、target 在稳定窗口内退出、失败计数与完整 spec 恢复、等待后耐久 state 刷新、受保护根路径认证、启动 URL 脱敏、页面 ACK 保护的 cutover、拒绝 opener-only 成功与终态唤醒闸门。

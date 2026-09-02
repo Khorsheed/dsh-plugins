@@ -29,6 +29,10 @@
       "types": "./lib/types/cli.d.ts",
       "default": "./lib/cli.js"
     },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -47,16 +51,31 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session-persistence": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-agent-presets": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-llm": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-session-persistence": "^0.1.1-rc.1",
@@ -89,9 +108,16 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web",
+      "immediately": true
+    },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "composition-preflight gate runs via the standalone preflight-runner (resolves official packages from a live harness checkout, no fork patch); on the npm line without a checkout it degrades to a notice, every other capability intact",
+      "notes": "composition-preflight runs via the standalone preflight-runner and degrades to a notice when no live harness checkout resolves; original-tab browser handoff feature-probes optional WebServer/connection auth seams and falls back to a page-acknowledged system open",
       "verifiedHost": "0.1.1-rc.2"
     }
   }

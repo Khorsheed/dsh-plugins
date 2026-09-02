@@ -329,8 +329,8 @@ describe('durable launch cutover state', () => {
     recordCutoverEvent(stateDir, 'cutover-1', 'launch-url', [], NOW + 5)
     recordCutoverEvent(stateDir, 'cutover-1', 'auth-exchange', ['303'], NOW + 6)
     recordCutoverEvent(stateDir, 'cutover-1', 'authenticated', ['200'], NOW + 7)
-    recordCutoverEvent(stateDir, 'cutover-1', 'browser-handoff', ['accepted'], NOW + 8)
-    recordCutoverEvent(stateDir, 'cutover-1', 'ownership-stable', ['target', '203', 'target-start-203', '204', 'listener-start-204', '3000', '0'], NOW + 9)
+    recordCutoverEvent(stateDir, 'cutover-1', 'ownership-stable', ['target', '203', 'target-start-203', '204', 'listener-start-204', '3000', '0'], NOW + 8)
+    recordCutoverEvent(stateDir, 'cutover-1', 'browser-handoff', ['acknowledged', 'original-tab', 'launch-url', '127.0.0.1:3080'], NOW + 9)
     recordCutoverEvent(stateDir, 'cutover-1', 'canary', ['pass'], NOW + 10)
     writeFileSync(join(stateDir, STATE_FILES.lastRestart), JSON.stringify({ exitAt: 1, unexpected: true, reportedAt: 2 }))
     recordCutoverEvent(stateDir, 'cutover-1', 'ready', ['target'], NOW + 11)
@@ -357,7 +357,11 @@ describe('durable launch cutover state', () => {
       readiness: { role: 'target', childPid: 203, listenerPid: 204, stableWindowMs: 3000, retryCount: 0 },
       authentication: {
         transportStatus: 401, launchUrlObserved: true, exchangeStatus: 303,
-        authenticatedStatus: 200, browserHandoff: 'accepted',
+        authenticatedStatus: 200, browserHandoff: 'acknowledged',
+      },
+      browserHandoff: {
+        required: true, status: 'acknowledged', channel: 'original-tab',
+        authentication: 'launch-url', authority: '127.0.0.1:3080', acknowledgedAt: NOW + 9,
       },
       canary: { outcome: 'pass' },
       recovery: { policy: 'restore-previous', result: 'not-needed' },
@@ -420,9 +424,33 @@ describe('durable launch cutover state', () => {
     )
     expect(() => recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 6)).toThrow(/canary has not passed/)
     recordCutoverEvent(stateDir, 'cutover-proof', 'canary', ['pass'], NOW + 7)
-    expect(() => recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 8)).toThrow(/browser handoff is still pending/)
-    recordCutoverEvent(stateDir, 'cutover-proof', 'browser-handoff', ['accepted'], NOW + 9)
+    expect(() => recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 8)).toThrow(/no browser acknowledgement/)
+    recordCutoverEvent(stateDir, 'cutover-proof', 'browser-handoff', ['acknowledged', 'original-tab', 'existing-cookie', '127.0.0.1:3080'], NOW + 9)
     expect(recordCutoverEvent(stateDir, 'cutover-proof', 'ready', ['target'], NOW + 10).phase).toBe('ready')
+  })
+
+  it('does not upgrade a legacy opener-success receipt into a page acknowledgement', () => {
+    const stateDir = tmpDir('guard-cutover-legacy-browser-')
+    const previous = spec('node previous-host.js', stateDir)
+    const target = spec('node target-host.js', stateDir)
+    prepareLaunchCutover(stateDir, {
+      id: 'cutover-legacy-browser', previous, target,
+      recoveryPolicy: 'restore-previous', browserHandoff: 'required',
+      previousSupervisorPid: 901, previousSupervisorStartToken: 'supervisor-start-901',
+      previousOwnership: fakeOwnership(902, 903), now: NOW,
+    })
+    const file = join(stateDir, STATE_FILES.launchCutover)
+    const legacy = JSON.parse(readFileSync(file, 'utf8'))
+    legacy.phase = 'ready'
+    legacy.authentication.browserHandoff = 'accepted'
+    delete legacy.browserHandoff
+    writeFileSync(file, JSON.stringify(legacy))
+
+    expect(readCutoverReceipt(stateDir)).toMatchObject({
+      phase: 'ready',
+      authentication: { browserHandoff: 'fallback-opened' },
+      browserHandoff: { required: true, status: 'fallback-opened' },
+    })
   })
 
   it('summarizes launch state without exposing either command', () => {
@@ -2308,6 +2336,125 @@ describe('supervise', () => {
     }
   }, 45_000)
 
+  it('settles a protected previous-watchdog → candidate-watchdog cutover only after page acknowledgement', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    const oldStart = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('old-protected-cutover-host')).listen(${port},'127.0.0.1')"`
+    const targetFixture = join(env.home, 'protected-ack-target.cjs')
+    writeFileSync(targetFixture, `
+const fs = require('fs')
+const http = require('http')
+const path = require('path')
+const port = Number(process.argv[2])
+const stateDir = process.argv[3]
+const grant = 'final-' + process.pid + '-' + Date.now()
+let armed = false
+let acknowledged = false
+const writeAtomic = (file, value) => {
+  const tmp = file + '.' + process.pid + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify(value) + '\\n', { mode: 0o600 })
+  fs.renameSync(tmp, file)
+}
+http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://127.0.0.1:' + port)
+  if (url.searchParams.get('grant') === grant) {
+    res.writeHead(303, { location: '/', 'set-cookie': 'guard-session=ready; Path=/; HttpOnly' })
+    res.end()
+  } else if ((req.headers.cookie || '').includes('guard-session=ready')) {
+    res.end('protected-target')
+  } else {
+    res.statusCode = 401
+    res.end('authentication required')
+  }
+}).listen(port, '127.0.0.1', () => {
+  console.log('http://127.0.0.1:' + port + '/?grant=' + grant)
+})
+const timer = setInterval(() => {
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(stateDir, 'launch-cutover.json'), 'utf8'))
+    if (!armed) {
+      writeAtomic(path.join(stateDir, 'browser-handoff-request.json'), {
+        version: 1,
+        cutoverId: receipt.id,
+        authority: '127.0.0.1:' + port,
+        capabilitySha256: 'a'.repeat(64),
+        armedAt: Date.now(),
+      })
+      armed = true
+    }
+    const ownership = receipt.ownership && receipt.ownership.target
+    if (!acknowledged && receipt.readiness && receipt.readiness.role === 'target'
+      && ownership && ownership.listenerPid === process.pid) {
+      writeAtomic(path.join(stateDir, 'browser-handoff-ack.json'), {
+        version: 1,
+        cutoverId: receipt.id,
+        role: 'target',
+        authority: '127.0.0.1:' + port,
+        listenerPid: ownership.listenerPid,
+        listenerStartToken: ownership.listenerStartToken,
+        channel: 'original-tab',
+        authentication: 'launch-url',
+        acknowledgedAt: Date.now(),
+      })
+      acknowledged = true
+      clearInterval(timer)
+    }
+  } catch {}
+}, 20)
+`)
+    const targetStart = `"${process.execPath}" ${JSON.stringify(targetFixture)} ${port} ${JSON.stringify(stateDir)}`
+    try {
+      expect(await runCli([
+        'supervise', '--port', String(port), '--start', oldStart,
+        '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+      await waitForPort(port)
+      expect(await runCli([
+        'record', 'build', '--trust-command', '--command', 'test fixture',
+        '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+      stubPreflight('true')
+      stubSandboxProbe(false)
+      expect(await runCli([
+        'reconfigure', '--start', targetStart,
+        '--on-failure', 'restore-previous', '--browser-handoff', 'required',
+        '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+
+      const deadline = Date.now() + 30_000
+      while (readCutoverReceipt(stateDir)?.phase !== 'ready' && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      const receipt = readCutoverReceipt(stateDir)
+      const log = readFileSync(join(stateDir, STATE_FILES.watchdogLog), 'utf8')
+      expect(receipt?.phase, `${JSON.stringify(receipt, null, 2)}\n${log.slice(-12000)}`).toBe('ready')
+      expect(receipt).toMatchObject({
+        readiness: { role: 'target', retryCount: 0 },
+        browserHandoff: {
+          required: true,
+          status: 'acknowledged',
+          channel: 'original-tab',
+          authentication: 'launch-url',
+          authority: `127.0.0.1:${port}`,
+        },
+        authentication: { transportStatus: 401, browserHandoff: 'acknowledged' },
+        canary: { outcome: 'pass' },
+        recovery: { result: 'not-needed' },
+      })
+      expect(receipt?.events.some(event => event.kind === 'browser-fallback-opened')).toBe(false)
+      expect(log).toContain('original browser tab acknowledged handoff')
+      expect(log).not.toContain('?grant=')
+      expect(readFileSync(join(stateDir, STATE_FILES.launchCutover), 'utf8')).not.toContain('?grant=')
+      expect(await fetchStatus(port)).toBe(401)
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 45_000)
+
   it('bounds a hung previous watchdog, consumes restore while waiting, and retires only its frozen identity', async () => {
     const env = supervisedEnv()
     const repo = makeRepo()
@@ -2737,7 +2884,7 @@ setTimeout(() => process.exit(23), 1800)
     }
   }, 30_000)
 
-  it('treats naked 401 as transport-up and requires launch URL → 303 → cookie 200 → browser handoff', async () => {
+  it('treats naked 401 as transport-up and requires launch URL → 303 → cookie 200 for server readiness', async () => {
     const home = tmpDir('guard-auth-ready-')
     const repo = makeRepo()
     const stateDir = join(home, 'state')
@@ -2770,10 +2917,6 @@ server.listen(port, '127.0.0.1', () => {
   console.log('host launch: http://127.0.0.1:' + port + '/?grant=' + grant)
 })
 `)
-    const handoffFile = join(home, 'browser-handoff.txt')
-    const opener = join(home, 'browser-open.sh')
-    writeFileSync(opener, `#!/bin/sh\nprintf '%s\\n' "$1" > ${JSON.stringify(handoffFile)}\n`)
-    chmodSync(opener, 0o700)
     const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
     let output = ''
     const watchdog = spawn('bash', [script, '--supervise'], {
@@ -2786,8 +2929,7 @@ server.listen(port, '127.0.0.1', () => {
         WD_REPO: repo,
         WD_START: `${JSON.stringify(process.execPath)} ${JSON.stringify(hostFixture)} ${port}`,
         WD_BOOT_TIMEOUT: '10',
-        WD_BROWSER_HANDOFF: 'required',
-        WD_BROWSER_OPEN_COMMAND: opener,
+        WD_BROWSER_HANDOFF: 'off',
       }),
     })
     watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
@@ -2802,10 +2944,8 @@ server.listen(port, '127.0.0.1', () => {
         await new Promise((resolve) => { setTimeout(resolve, 100) })
       }
       expect(output).toContain(`transport up on :${port} (HTTP 401)`)
-      expect(output).toContain('browser launch-URL handoff accepted')
       expect(output).toContain('instance ready')
       expect(await fetchStatus(port)).toBe(401)
-      expect(readFileSync(handoffFile, 'utf8')).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${port}/\\?grant=process-`))
       const attempt = readFileSync(join(stateDir, STATE_FILES.bootAttemptLog), 'utf8')
       expect(attempt).toContain('[launch-url-redacted]')
       expect(attempt).not.toContain('?grant=')
@@ -2815,6 +2955,71 @@ server.listen(port, '127.0.0.1', () => {
       await killListener(port)
     }
   }, 30_000)
+
+  it('does not treat a successful system opener as browser acknowledgement', async () => {
+    const home = tmpDir('guard-browser-no-ack-')
+    const repo = makeRepo()
+    const stateDir = join(home, 'state')
+    mkdirSync(stateDir, { recursive: true })
+    const port = await freePort()
+    const hostFixture = join(home, 'protected-no-ack.cjs')
+    writeFileSync(hostFixture, `
+const http = require('http')
+const port = Number(process.argv[2])
+const grant = 'attempt-' + process.pid
+http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://127.0.0.1:' + port)
+  if (url.searchParams.get('grant') === grant) {
+    res.writeHead(303, { location: '/', 'set-cookie': 'guard-session=ready; Path=/; HttpOnly' })
+    res.end()
+  } else if ((req.headers.cookie || '').includes('guard-session=ready')) {
+    res.end('authenticated')
+  } else {
+    res.statusCode = 401
+    res.end('authentication required')
+  }
+}).listen(port, '127.0.0.1', () => console.log('http://127.0.0.1:' + port + '/?grant=' + grant))
+`)
+    const opened = join(home, 'open-returned-zero')
+    const opener = join(home, 'browser-open.sh')
+    writeFileSync(opener, `#!/bin/sh\nprintf opened > ${JSON.stringify(opened)}\n`)
+    chmodSync(opener, 0o700)
+    const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
+    let output = ''
+    const watchdog = spawn('bash', [script, '--supervise'], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: watchdogEnv({
+        WD_HOME: home,
+        WD_STATE_DIR: stateDir,
+        WD_PORT: String(port),
+        WD_REPO: repo,
+        WD_START: `${JSON.stringify(process.execPath)} ${JSON.stringify(hostFixture)} ${port}`,
+        WD_BOOT_TIMEOUT: '10',
+        WD_BROWSER_HANDOFF: 'required',
+        WD_BROWSER_HANDOFF_TIMEOUT_SECONDS: '1',
+        WD_BROWSER_OPEN_COMMAND: opener,
+      }),
+    })
+    watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+    watchdog.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+    cleanups.unshift(() => {
+      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
+    })
+    try {
+      const deadline = Date.now() + 15_000
+      while (!output.includes('no page acknowledgement') && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      expect(existsSync(opened)).toBe(true)
+      expect(output).toContain('browser fallback open requested')
+      expect(output).toContain('browser handoff failed: no page acknowledgement')
+      expect(output).not.toContain('instance ready')
+    } finally {
+      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
+      await killListener(port)
+    }
+  }, 20_000)
 
   it('reclaims a pidfile deleted underneath it, and yields to a live replacement owner', async () => {
     // The state dir cleaned under a RUNNING watchdog must not fork
@@ -4239,7 +4444,7 @@ describe('pack smoke', () => {
   it('the tarball contains every relative import of the lib entries', async () => {
     const pkgDir = fileURLToPath(new URL('..', import.meta.url))
     const libDir = join(pkgDir, 'lib')
-    const entries = ['index.js', 'invariant.js', 'cli.js']
+    const entries = ['index.js', 'invariant.js', 'cli.js', 'client.js']
     for (const entry of entries) {
       expect(existsSync(join(libDir, entry)), `lib/${entry} missing — run the host build first`).toBe(true)
     }
