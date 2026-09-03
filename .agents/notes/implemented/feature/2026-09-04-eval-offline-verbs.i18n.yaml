@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-04-eval-offline-verbs.md
+.agents/notes/implemented/feature/2026-09-04-eval-offline-verbs.md: 8a0c67092a59a5937074b45fc3fe01f344995929
+.agents/notes/implemented/feature/2026-09-04-eval-offline-verbs.zh.md: 7cdda2b7efbb7f4f75f0ff94c6d9d0ff6bcf1dd9
