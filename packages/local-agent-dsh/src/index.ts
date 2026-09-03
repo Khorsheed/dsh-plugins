@@ -141,6 +141,15 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           return false
         }
       },
+      // The eval snapshot. No sandbox or permission field: a headless sub-dsh
+      // has no such knob (the web-eval frozen baseline calls this harness
+      // unrestricted — absence IS the honest condition-hash input). The
+      // endpoint is the host instance's model config, which this provider
+      // never overrides, so no custom endpoint is ever pinned.
+      effectiveSettings: () => ({
+        drive: scope.get().live ? 'live' : 'exec',
+        baseUrlSet: false,
+      }),
     }
     const homeDir = ctx.localAgent.homeDir('dsh')
 
