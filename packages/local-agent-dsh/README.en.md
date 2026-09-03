@@ -42,6 +42,8 @@ The scoped home (`$DSH_HOME/local-agent/dsh`) is kept on purpose — it holds th
 | `liveIdleMs` | `1800000` (30 min) | idle lifetime of a resident runtime before reclaim |
 | `liveMirrorGranularity` | `event` | live mirror granularity; `token` additionally appends `assistant/chunk` deltas to the child session (write amplification — opt-in) |
 
+**Evaluation snapshot (`effectiveSettings`).** The harness's fairness snapshot carries just the drive (exec/live) and the no-pinned-endpoint flag: a headless sub-dsh has no sandbox or permission knob (the web-eval frozen baseline calls this harness unrestricted — the absent fields are themselves the honest condition-hash input), and the endpoint is the host instance's model config, which this provider never overrides. `/dsh status` and the `LocalAgentStatus` Remote attach the same snapshot.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.

@@ -40,6 +40,8 @@ bundle 行接受这些可选字段:
 
 ⚠️ `skip` 没有 OS 级沙箱——子进程可以写宿主用户能写的任何地方,包括工作区之外;作用域登录的 OAuth token 会发送给 `baseUrl` 指向的端点。委派需要限制时改用 `normal`;`baseUrl` 只指向你信任的地址。
 
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、permissionMode(skip/normal,插件配置)、端点是否固定(按 provider 的解析顺序——配置项优先于宿主进程环境的 `ANTHROPIC_BASE_URL`,只报主机名)。`/claude-code status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+
 ## Compatibility
 
 - npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——rc.8→0.1.1-rc.1 API 审计(2026-08-21)确认本插件消费的所有面无变化或纯增量(ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包),无需改动源码；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过。

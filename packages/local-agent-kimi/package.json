@@ -55,7 +55,8 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "verifiedHost": "0.1.1-rc.2"
+      "verifiedHost": "0.1.1-rc.2",
+      "notes": "the thinkingEffort config item (default high, provision-time only) and the effectiveSettings eval snapshot are plugin-level — scoped-file provisioning and reads with no host-API dependency on either host line"
     }
   },
   "files": [
