@@ -148,7 +148,10 @@ function assertOperationScope(plan: TransitionPlan, stateDir?: string): void {
   if (stateDir === undefined) return
   const canonicalState = canonicalDirectory(stateDir, 'transition state directory')
   const stateRelative = relative(plan.home, canonicalState)
-  if (stateRelative === '' || (!stateRelative.startsWith(`..${sep}`) && stateRelative !== '..' && !isAbsolute(stateRelative))) {
+  if (stateRelative === '') {
+    throw new Error('transition state directory must not equal the transition home')
+  }
+  if (!stateRelative.startsWith(`..${sep}`) && stateRelative !== '..' && !isAbsolute(stateRelative)) {
     for (const path of paths) {
       if (overlaps(path, stateRelative)) {
         throw new Error(`transition path overlaps the guard state directory: ${path}`)
@@ -430,8 +433,9 @@ function finishTargetRetention(loaded: LoadedTransition, entry: TransitionEntryS
       writeRecord(loaded)
       return
     }
-    if (sourceExists && !targetExists) return
-    throw new Error(`cannot reconcile rejected target output for ${entry.path}`)
+    if (!sourceExists || targetExists) {
+      throw new Error(`cannot reconcile rejected target output for ${entry.path}`)
+    }
   }
   if (sourceExists) {
     if (targetExists) throw new Error(`rejected target quarantine already exists for ${entry.path}`)
@@ -463,8 +467,9 @@ function finishPreviousRestore(loaded: LoadedTransition, entry: TransitionEntryS
       writeRecord(loaded)
       return
     }
-    if (!sourceExists && retainedExists) return
-    throw new Error(`cannot reconcile previous-state restore for ${entry.path}`)
+    if (sourceExists || !retainedExists) {
+      throw new Error(`cannot reconcile previous-state restore for ${entry.path}`)
+    }
   }
   if (sourceExists || !retainedExists) throw new Error(`previous-state quarantine is incomplete for ${entry.path}`)
   entry.rollback = 'restoring'
@@ -510,7 +515,7 @@ export function rollbackTransition(
         continue
       }
       assertPathHasNoSymlink(loaded.plan.home, entry.path)
-      finishTargetRetention(loaded, entry)
+      if (entry.rollback !== 'restoring') finishTargetRetention(loaded, entry)
       finishPreviousRestore(loaded, entry)
       changed.push(entry.path)
     }

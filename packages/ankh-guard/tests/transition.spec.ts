@@ -55,6 +55,7 @@ describe('filesystem transition', () => {
       ...plan,
       operations: [{ kind: 'quarantine', path: 'guard-state/launch.json', expect: 'absent' }],
     }, home, stateDir)).toThrow(/guard state directory/)
+    expect(() => validateTransitionPlan(plan, home, home)).toThrow(/must not equal/)
 
     mkdirSync(join(home, 'outside'))
     symlinkSync(join(home, 'outside'), join(home, 'linked'))
@@ -155,6 +156,74 @@ describe('filesystem transition', () => {
     expect(readTransitionRecord(reference, home, stateDir, 'cutover-interrupted')).toMatchObject({
       phase: 'applied', entries: [{ apply: 'quarantined', original: 'present' }],
     })
+  })
+
+  it('resumes rollback after recording a target move intent before the rename', () => {
+    const { home, stateDir, plan } = fixture()
+    const source = join(home, 'storages/session_projcache.json')
+    writeFileSync(source, 'previous')
+    const reference = prepareTransition({
+      ...plan, operations: [{ ...plan.operations[0]!, expect: 'present' }],
+    }, home, stateDir, 'cutover-target-intent')
+    applyTransition(reference, home, stateDir, 'cutover-target-intent')
+    writeFileSync(source, 'target')
+
+    const stateFile = join(stateDir, 'launch-transitions/cutover-target-intent/state.json')
+    const record = JSON.parse(readFileSync(stateFile, 'utf8'))
+    record.phase = 'rolling-back'
+    record.entries[0].rollback = 'moving-target'
+    writeFileSync(stateFile, `${JSON.stringify(record, null, 2)}\n`)
+
+    expect(rollbackTransition(reference, home, stateDir, 'cutover-target-intent').phase).toBe('rolled-back')
+    expect(readFileSync(source, 'utf8')).toBe('previous')
+    expect(readFileSync(
+      join(stateDir, 'launch-transitions/cutover-target-intent/rejected-target/storages/session_projcache.json'),
+      'utf8',
+    )).toBe('target')
+  })
+
+  it('resumes rollback after recording a restore intent before the rename', () => {
+    const { home, stateDir, plan } = fixture()
+    const source = join(home, 'storages/session_projcache.json')
+    writeFileSync(source, 'previous')
+    const reference = prepareTransition({
+      ...plan, operations: [{ ...plan.operations[0]!, expect: 'present' }],
+    }, home, stateDir, 'cutover-restore-intent')
+    applyTransition(reference, home, stateDir, 'cutover-restore-intent')
+
+    const stateFile = join(stateDir, 'launch-transitions/cutover-restore-intent/state.json')
+    const record = JSON.parse(readFileSync(stateFile, 'utf8'))
+    record.phase = 'rolling-back'
+    record.entries[0].rollback = 'restoring'
+    writeFileSync(stateFile, `${JSON.stringify(record, null, 2)}\n`)
+
+    expect(rollbackTransition(reference, home, stateDir, 'cutover-restore-intent').phase).toBe('rolled-back')
+    expect(readFileSync(source, 'utf8')).toBe('previous')
+    expect(readTransitionRecord(reference, home, stateDir, 'cutover-restore-intent')).toMatchObject({
+      phase: 'rolled-back', entries: [{ rollback: 'restored' }],
+    })
+  })
+
+  it('commits a completed restore whose rename preceded its journal update', () => {
+    const { home, stateDir, plan } = fixture()
+    const source = join(home, 'storages/session_projcache.json')
+    writeFileSync(source, 'previous')
+    const reference = prepareTransition({
+      ...plan, operations: [{ ...plan.operations[0]!, expect: 'present' }],
+    }, home, stateDir, 'cutover-restored-before-journal')
+    applyTransition(reference, home, stateDir, 'cutover-restored-before-journal')
+
+    const root = join(stateDir, 'launch-transitions/cutover-restored-before-journal')
+    const stateFile = join(root, 'state.json')
+    const record = JSON.parse(readFileSync(stateFile, 'utf8'))
+    record.phase = 'rolling-back'
+    record.entries[0].rollback = 'restoring'
+    writeFileSync(stateFile, `${JSON.stringify(record, null, 2)}\n`)
+    renameSync(join(root, 'previous/storages/session_projcache.json'), source)
+
+    expect(rollbackTransition(reference, home, stateDir, 'cutover-restored-before-journal').phase).toBe('rolled-back')
+    expect(readFileSync(source, 'utf8')).toBe('previous')
+    expect(existsSync(join(root, 'rejected-target/storages/session_projcache.json'))).toBe(false)
   })
 
   it('preflights on a transitioned copy without mutating the live home', () => {
