@@ -4,7 +4,7 @@
 
 **Run controlled comparisons from one screen: hand the same batch of tasks to different harnesses, models, presets, or skills, and compare them paired by task.** Task sets, conditions, and plans are reviewed in git; execution is driven by a deterministic orchestrator; verdicts come from three sources (scripts, LLM draft, human final) that never overwrite each other; conclusions leave as a self-contained bundle. The base experience and the local-agent family are included.
 
-> **Status**: planning (I0). This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan). What is installable today is only the plugin composition; the orchestrator `@khorsheed/dsh-eval` does not exist yet. The roadmap's "dsh-eval pack" is this profile.
+> **Status**: I1 walked one cell by hand; I2 is under way. The offline half of the orchestrator `@khorsheed/dsh-eval` has landed (the three contract schemas, `dsh-eval validate`, `dsh-eval conditions hash`); the executing half (run / report) follows the iterations. This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan). The roadmap's "dsh-eval pack" is this profile.
 
 ## Positioning
 
@@ -80,7 +80,7 @@ Each of the six layers does exactly one thing:
 
 ### The contract layer's three schemas
 
-They are this profile's real design work; their shapes are finalized in I1, below is the intent. All three join the dataset authoring protocol alongside `dataseek.verify/1` and `dataseek.rubric/2`.
+They are this profile's real design work; their shapes were finalized in I1 and have landed as `dataseek.condition/1`, `dataseek.plan/1`, and `dataseek.verdict/1` (full text and hash rules in [dataset-authoring-protocol §6](../../docs/dataset-authoring-protocol.en.md)). Below is the intent.
 
 **condition.json: the subject.** A condition = the content of one scoped home + a set of env keys + one argv template + optional materialized packs; the content hash of the whole is the condition id.
 
@@ -105,17 +105,17 @@ They are this profile's real design work; their shapes are finalized in I1, belo
 {
   "schema": "dataseek.plan/1",
   "dataset": { "repo": "<path>", "commit": "<sha>", "id": "harness-comparison", "items": ["F2-multi-agent-room", "F3-self-restart-report"] },
-  "conditions": ["<condition sha>", "<condition sha>"],
+  "conditions": ["<condition id>", "<condition id>"],
   "reps": 3,
   "stages": ["stage1", "stage2"],
   "order": { "seed": 42, "interleave": true },
   "budget": { "activeMinutes": 60, "turns": 10 },
-  "judge": { "conditions": ["<judge condition sha>"], "samples": 2 },
+  "judge": { "conditions": ["<judge condition id>"], "samples": 2 },
   "expectedNs": ["script", "llm-draft", "human-final"]
 }
 ```
 
-The run template is written by neither human nor agent: it is a deterministic function of the task set manifest's stages plus the archive gate, generated and linted at validate time and reviewed together with the plan. A condition is a declaration; `dsh-eval conditions provision` turns it into a real scoped home and computes `home.sha` back; a mismatch between declaration and reality means "not ready", and validate blocks it. The orchestrator version is written into run.meta alongside the plan hash: same version and same plan means the same procedure.
+The plan's `conditions` and `judge.conditions` carry **condition ids** (never shas; the validator resolves shas from `conditions/<id>.lock.json` and run.meta records them); `judge` may be absent, and when it is, `expectedNs` must not contain `llm-draft`; a plan carries no template field. The run template is written by neither human nor agent: it is a deterministic function of the task set manifest's stages plus the archive gate, generated and linted at validate time and reviewed together with the plan. A condition is a declaration; `dsh-eval conditions provision` turns it into a real scoped home and computes `home.sha` back; a mismatch between declaration and reality means "not ready", and validate blocks it. The orchestrator version is written into run.meta alongside the plan hash: same version and same plan means the same procedure.
 
 **verdict.json: the verdict output contract.** Probe scripts and judges both emit it, the orchestrator writes it into the matching ns, the report tabulates it.
 
@@ -134,7 +134,7 @@ The run template is written by neither human nor agent: it is a deterministic fu
 | Evaluation mechanisms | `datasets` / `mission` / `lab` | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers |
 | Ops guard | `ankh-guard` | ✅ | none; the eval instance gets its own `$DSH_HOME` |
 
-One to build: **`@khorsheed/dsh-eval`** (the orchestrator). A host plugin + the `dsh-eval` CLI + an `eval-planning` skill: reads the plan, drives the four service faces, owns timing, cancellation, retry reasons, prompt hashes, and model read-back, writes the `script` and `orchestrator` namespaces, and produces the report. It is what `scripts/integration-triad.mts` looks like when grown up. It joins the member list in I2.
+Half-built: **`@khorsheed/dsh-eval`** (the orchestrator). Its offline core landed as packages/eval with I2·T2: the three contract schemas, the `validatePlan` / `hashCondition` / `hashHome` service face, and the `dsh-eval` CLI (validate / conditions hash). The full shape — host plugin + `dsh-eval` CLI + an `eval-planning` skill — reads the plan, drives the four service faces, owns timing, cancellation, retry reasons, prompt hashes, and model read-back, writes the `script` and `orchestrator` namespaces, and produces the report. It is what `scripts/integration-triad.mts` looks like when grown up. The executing verbs follow the I2 tasks.
 
 `capability-catalog` gains one more use here: it reads the registry by the preset's standing scope, so it is the evidence source for "which tools and skills does the agent have under this condition"; I4 makes it emit a hashable capability manifest.
 

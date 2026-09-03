@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：规划中（I0）。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里。当前可安装的只是插件组合，编排器 `@khorsheed/dsh-eval` 尚未存在。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I1 已手工走通一格，I2 进行中。编排器 `@khorsheed/dsh-eval` 的离线一半已落地（三份契约 schema、`dsh-eval validate`、`dsh-eval conditions hash`），执行半（run / report）按迭代推进。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
@@ -80,7 +80,7 @@ flowchart TB
 
 ### 契约层的三份 schema
 
-它们是本 profile 真正的设计工作，形状在 I1 定稿，下面是意图。三份都归入数据集作者协议，与 `dataseek.verify/1`、`dataseek.rubric/2` 并列。
+它们是本 profile 真正的设计工作，形状已在 I1 定稿并落成 `dataseek.condition/1`、`dataseek.plan/1`、`dataseek.verdict/1`（全文与哈希规则见[数据集作者协议 §6](../../docs/dataset-authoring-protocol.md)）。下面是意图。
 
 **condition.json：受试对象。** 一个条件 = 一个 scoped home 的内容 + 一组 env 键 + 一个 argv 模板 + 一组可选物化包，整体内容哈希即条件 id。
 
@@ -105,17 +105,17 @@ flowchart TB
 {
   "schema": "dataseek.plan/1",
   "dataset": { "repo": "<路径>", "commit": "<sha>", "id": "harness-comparison", "items": ["F2-multi-agent-room", "F3-self-restart-report"] },
-  "conditions": ["<condition sha>", "<condition sha>"],
+  "conditions": ["<condition id>", "<condition id>"],
   "reps": 3,
   "stages": ["stage1", "stage2"],
   "order": { "seed": 42, "interleave": true },
   "budget": { "activeMinutes": 60, "turns": 10 },
-  "judge": { "conditions": ["<judge condition sha>"], "samples": 2 },
+  "judge": { "conditions": ["<judge condition id>"], "samples": 2 },
   "expectedNs": ["script", "llm-draft", "human-final"]
 }
 ```
 
-run 模板不由人或 agent 手写：它是题集 manifest 的 stages 加归档闸的确定性函数，validate 时生成、lint，随 plan 一起审阅。condition 是声明，`dsh-eval conditions provision` 把它变成实物 scoped home 并回算 `home.sha`，声明与实物不符即「未就绪」，validate 拦住。编排器版本与 plan 哈希一起写进 run.meta，同版本同 plan 即同一套程序。
+plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha 由校验器从 `conditions/<id>.lock.json` 解析并随 run.meta 记录）；`judge` 可缺省，缺省时 `expectedNs` 不得含 `llm-draft`；plan 不含 template 字段。run 模板不由人或 agent 手写：它是题集 manifest 的 stages 加归档闸的确定性函数，validate 时生成、lint，随 plan 一起审阅。condition 是声明，`dsh-eval conditions provision` 把它变成实物 scoped home 并回算 `home.sha`，声明与实物不符即「未就绪」，validate 拦住。编排器版本与 plan 哈希一起写进 run.meta，同版本同 plan 即同一套程序。
 
 **verdict.json：判定输出契约。** 探针脚本与判官都按它输出，编排器写进对应 ns，报告按它做表。
 
@@ -134,7 +134,7 @@ run 模板不由人或 agent 手写：它是题集 manifest 的 stages 加归档
 | 评测机制 | `datasets` / `mission` / `lab` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针 |
 | 运维守护 | `ankh-guard` | ✅ | 无；评测实例独立 `$DSH_HOME` |
 
-待建的一个：**`@khorsheed/dsh-eval`**（编排器）。宿主插件 + `dsh-eval` CLI + `eval-planning` skill：读 plan，驱动四个服务面，管计时、取消、重试原因、prompt 哈希、模型回读，写 `script` 与 `orchestrator` 两个 ns，出报告。它是 `scripts/integration-triad.mts` 长大后的样子。I2 进成员清单。
+已建一半的：**`@khorsheed/dsh-eval`**（编排器）。离线核心已随 I2·T2 落地为 packages/eval：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome` 服务面与 `dsh-eval` CLI（validate / conditions hash）。宿主插件 + `dsh-eval` CLI + `eval-planning` skill 的全貌是：读 plan，驱动四个服务面，管计时、取消、重试原因、prompt 哈希、模型回读，写 `script` 与 `orchestrator` 两个 ns，出报告。它是 `scripts/integration-triad.mts` 长大后的样子。执行动词按 I2 任务补齐。
 
 `capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源，I4 让它输出可哈希的能力清单。
 
