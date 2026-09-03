@@ -89,6 +89,40 @@ export async function readCodexBaseUrl(homeDir: string): Promise<string | undefi
 }
 
 /**
+ * Read the scoped config's effective reasoning effort: the top-level
+ * `model_reasoning_effort` key (codex reads it for reasoning-capable models).
+ * A missing or malformed config, or no key, yields undefined — the honest
+ * "unknown", never a guessed default. Read-only: the config is authoritative
+ * and a user-edited value is reported as-is. The provider passes no effort
+ * override on the argv, so this IS the value every round runs with.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @returns the configured effort, or undefined when none is set.
+ */
+export async function readCodexReasoningEffort(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  // model_reasoning_effort is a top-level key, so it only counts before the
+  // first table header — the same rule the model_provider scan applies.
+  let section = ''
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    if (section !== '') continue
+    const key = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (key !== null && key[1] === 'model_reasoning_effort') return key[2]
+  }
+  return undefined
+}
+
+/**
  * The credential file's modification stamp (epoch ms), undefined when absent.
  * A completed device-code login rewrites `auth.json`, so the stamp
  * distinguishes a fresh login from a leftover (possibly revoked) credential.
