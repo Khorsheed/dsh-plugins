@@ -167,7 +167,7 @@ dsh-dev/
 |---|---|---|
 | `dsh-web-basic` | ✅ 10 成员已发 npm 0.1.0 | base 全体 + `ankh-guard`（见「待决」）|
 | `dsh-dev` | ⬜ | **首发目标**：base + local-agent 家族 + worktrees + mission + room |
-| `dsh-eval` | ⬜ | base + local-agent 家族 + mission + datasets + lab |
+| `dsh-web-eval` | ⬜ 规划中（I0） | base + local-agent 家族 + mission + datasets + lab + `dsh-eval` 编排器（待建）。目标架构、成员改动、冻结决策与迭代计划 I0–I6 见 [profiles/web-eval](../profiles/web-eval/README.md) |
 | `dsh-novel` | ⬜ | 未展开 |
 
 ### ops — 自托管运维
