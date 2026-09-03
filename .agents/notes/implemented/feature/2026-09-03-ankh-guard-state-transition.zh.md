@@ -35,4 +35,4 @@ guard 需要一个安全属性不依赖具体宿主版本的小型执行器。�
 - 不支持 copy-on-write 的文件系统可能需要完整复制 home。健康的 previous 会在此期间继续服务，失败仍发生在 takeover 之前。
 - live transition 要求 guard state 目录与每个存在的 source 位于同一文件系统，使每次变更都只是一条 rename。跨文件系统部署会在 previous 停止前失败。
 - 耐久回执只暴露计划 digest、操作数量、phase 与失败详情。路径只存在于 mode-0600 launch state 与 cutover plan；命令、浏览器 capability 与 bearer URL 仍不会进入回执。
-- 单测覆盖恶意路径、计划篡改、rename 中断恢复、source 缺失、target 替代内容保留、原字节恢复与隔离 preflight。真实 watchdog 生命周期覆盖 previous 读取旧状态并提供服务、transition 后 target 写入不兼容替代状态并重试、rollback 与 previous 恢复。
+- 单测覆盖恶意路径、计划篡改、rename 中断恢复、source 缺失、target 替代内容保留、原字节恢复与隔离 preflight。真实 watchdog 生命周期覆盖 previous 读取旧状态并提供服务、transition 后 target 写入不兼容替代状态并重试、rollback 与 previous 恢复。另一轮 npm host 演练把带旧 schema v3 projection record 的隔离端点从 0.1.1-rc.2 切到 0.1.2-alpha.4：无 transition 对照在产生部分 per-record 文件后失败，guarded cutover 则在副本完成 preflight、只 apply 一次，以 retry zero 达到认证 readiness 与 canary，并逐字节保留原 whole-unit 文件。

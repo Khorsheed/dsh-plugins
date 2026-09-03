@@ -110,8 +110,8 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "composition-preflight runs via the standalone preflight-runner and degrades to a notice when no live harness checkout resolves; original-tab browser handoff feature-probes optional WebServer/connection auth seams and falls back to a page-acknowledged system open",
-      "verifiedHost": "0.1.1-rc.2"
+      "notes": "composition-preflight runs via the standalone preflight-runner and degrades to a notice when no live harness checkout resolves; original-tab browser handoff feature-probes optional WebServer/connection auth seams; reversible state quarantine was exercised in a live 0.1.1-rc.2 to 0.1.2-alpha.4 cutover",
+      "verifiedHost": "0.1.2-alpha.4"
     }
   }
 }
