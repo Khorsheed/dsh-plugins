@@ -47,6 +47,79 @@ export interface LocalAgentStatus {
    * a logout action.
    */
   logoutable?: boolean
+  /**
+   * The harness's fairness-relevant effective settings, when the harness
+   * declares a snapshot ({@link LocalAgentHarness.effectiveSettings}).
+   * Additive: surfaces and clients written before the field simply ignore it.
+   */
+  effectiveSettings?: LocalAgentEffectiveSettings
+}
+
+/**
+ * One harness's fairness-relevant effective settings — the read side of the
+ * web-eval condition hash. Everything here is a knob the evaluation must hold
+ * equal across harnesses (drive, approval boundary, reasoning effort,
+ * endpoint route, CLI version) expressed as PURE JSON. Credentials never
+ * enter: no keys, no tokens, no full URLs (an endpoint reports its hostname
+ * only — a URL's path could carry tenant or project ids).
+ *
+ * A field the harness has no knob for stays ABSENT (`sandbox`,
+ * `permissionMode`, `autoApprove`, `reasoningEffort`, `cliVersion`): absence
+ * means "this harness has no such knob", which is itself the honest
+ * condition-hash input (the web-eval frozen baseline calls the dsh harness
+ * unrestricted because no knob exists). `drive` and `baseUrlSet` are always
+ * present.
+ */
+export interface LocalAgentEffectiveSettings {
+  /**
+   * How delegation rounds run: a one-shot CLI process per round (`exec`) or a
+   * resident runtime driven over its wire (`live`). The reported value is the
+   * configured driver preference in force; a live round may still fall back
+   * to exec when its channel cannot come up.
+   */
+  drive: 'exec' | 'live'
+  /** Codex: the sandbox policy every round passes to `codex exec --sandbox`. */
+  sandbox?: string
+  /** Claude Code: the `claude -p` permission handling (`skip` or `normal`). */
+  permissionMode?: string
+  /**
+   * Kimi: whether the scoped config's permission rules auto-approve tool use
+   * (the `Bash(*)` allow rule the provisioning gate keys on).
+   */
+  autoApprove?: boolean
+  /**
+   * The reasoning effort in force, when the harness has one. Kimi reads its
+   * scoped config (`[thinking] effort`, falling back to the model's
+   * `default_effort`); codex reads its scoped config's
+   * `model_reasoning_effort`. Absent when the harness exposes no effort knob.
+   */
+  reasoningEffort?: string
+  /** Whether a non-default endpoint is in force (a provider-pinned or env-provided base URL). */
+  baseUrlSet: boolean
+  /**
+   * The endpoint's HOSTNAME only, present exactly when `baseUrlSet`. Never
+   * the full URL — its path can carry credential-adjacent segments.
+   */
+  baseUrlHost?: string
+  /**
+   * The CLI's own version. No family probe ships yet (probing would spawn
+   * every CLI at status time), so this stays absent until a probe exists;
+   * the field is reserved so a later probe is additive.
+   */
+  cliVersion?: string
+}
+
+/**
+ * The hostname of an endpoint URL, or undefined when the value does not parse
+ * as a URL (scheme-less `host:port` forms included — still reported via
+ * `baseUrlSet`, just without a hostname).
+ */
+export function endpointHost(url: string): string | undefined {
+  try {
+    return new URL(url).host
+  } catch {
+    return undefined
+  }
 }
 
 /** Roster row: enough of a harness for a client list. */
