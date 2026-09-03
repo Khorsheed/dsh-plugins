@@ -17,6 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
+import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -159,6 +160,20 @@ export function apply(ctx: Context, config: Config): void {
       isAuthenticated: claudeAuthenticated,
       credentialStamp: claudeCredentialStamp,
       logout: claudeLogout,
+      // The eval snapshot: the permission mode is the plugin config resolved
+      // at apply (it selects the spawn flags); the endpoint mirrors the
+      // provider's own resolution order — the config item wins over the host
+      // process environment's ANTHROPIC_BASE_URL.
+      effectiveSettings: async () => {
+        const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
+        const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
+        return {
+          drive: scope.get().live ? 'live' : 'exec',
+          permissionMode,
+          baseUrlSet: effectiveBaseUrl !== undefined,
+          ...baseUrlHost !== undefined ? { baseUrlHost } : {},
+        }
+      },
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {
         const [verb] = input.split(/\s+/)
         if (verb === 'sessions') {
