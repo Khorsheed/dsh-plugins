@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- `reconfigure --transition-file` 新增版本无关的可逆状态隔离：在 copy-on-write 优先的 live-home 副本上完成 target preflight，previous 停止后才按哈希绑定计划原子 quarantine；target 失败时先保留其替代内容、恢复 previous 原字节再启动旧宿主，任何无法证明的回滚都会停机等待用户
 - 重启凭证改为执行证据：CLI `record` 默认拒绝自我声明，`--run -- PROGRAM ...` 以原样 argv 执行并只在 exit 0、HEAD 不变且工作树全净时记录；任何 staged/unstaged/untracked 输入都会让 verify/restart/canary 拒绝
 - checkpoint 在干净树上直接记录现有 HEAD，不再造空提交；脏树默认拒绝，复核后显式 `--include-dirty` 才用临时 index 提交完整快照，hook/commit 失败不污染调用者 staging area
 - `schedule-exit` 无存活 watchdog 时从警告升级为硬拒绝；稳定态从耐久 active launch spec 取 repo/harness/profile/port，并拒绝冲突参数或过期 supervisor command，防止复活已拒绝的启动配置

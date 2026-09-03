@@ -120,6 +120,7 @@ dsh-ankh-guard reconfigure \
   --start "<完整目标命令>" \
   --repo "<目标凭证/回滚仓库>" \
   --harness-root "<目标宿主根>" \
+  --transition-file "<可选的状态迁移计划.json>" \
   --on-failure restore-previous \
   --browser-handoff required \
   --state-dir "$DSH_HOME/state"
@@ -129,7 +130,9 @@ dsh-ankh-guard reconfigure \
 
 目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0。浏览器端改用插件同源路由上的持有式长轮询，不再永久每 500ms 请求：已证明的 previous listener 只落盘每标签页随机 capability 的哈希，并让所有仍响应的已登记标签页进入等待。只有在 ownership-stable 服务就绪和 canary 成功后，final listener 才在 Cookie 有效时通知各页刷新，或在收到 401 时把该最终进程的同源一次性 URL 返回内存，由页面执行 `location.replace()`；已认证页面回传 ACK 后，会丢弃 query/fragment 并回到原来的安全 pathname。一个真实 ACK 解除 terminal ready 门禁，其他尚未 ACK 的已登记页面在状态压缩后仍可恢复。没有原标签页登记或都未在超时内确认时，watchdog 才请求一次 system open 兜底，并继续等待新页面回传已认证 ACK；opener 的 exit 0 本身永远不算交接成功。服务端 readiness/canary 与浏览器交接分别记录，所需证据全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器；原始 capability 和 bearer URL 均不进入状态文件、耐久日志或回执。`launch-cutover.json` 记录脱敏配置摘要、新旧 supervisor/child/listener identity、旧 supervisor 让权、认证就绪、浏览器 ACK 渠道、稳定性证明、分角色失败计数、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 显式授权停止已证明的 target 并恢复完整 previous spec。两个动作分别使用原子 marker，读取时 restore 永远优先，因此并发会话的晚到 abort 也不能降级 restore。
 
-当前 `reconfigure` 不会在停止 previous 与启动 target 之间执行宿主状态 schema transition。如果 candidate acceptance 要求这类 remediation，本版不得切换：继续保留 previous，并使用单独评审的 transition 事务；启动 wrapper 无法提供原子回滚证据，不能当替代品。
+candidate 无法读取旧宿主留下的可重建投影或缓存时，`--transition-file` 可以提交一份经过评审的 schema-v1 隔离计划。计划只接受 `home` 下互不重叠、没有符号链接且不包含 guard state 的相对路径，以及显式的 `quarantine` 操作；它不内置任何宿主版本或文件名知识。示例：`{"schemaVersion":1,"home":"/absolute/dsh-home","operations":[{"kind":"quarantine","path":"storages/<可重建缓存>","expect":"present"}]}`。每项 `expect` 必须是 `present` 或 `absent`，副本 preflight 与 live apply 都必须观察到相同状态，否则在停 previous 前或启动 target 前拒绝。计划既要覆盖 target 启动前必须移开的旧路径，也要覆盖 target 失败后 previous 启动前必须清走的新输出路径；后者即使准备时不存在也必须用 `expect: "absent"` 显式列出。权威日志、凭据或不可重建数据不得借此移出；需要内容转换的格式应使用独立、可逆且另行评审的迁移工具。
+
+guard 先以 copy-on-write 优先的方式复制 live home，在副本中执行相同隔离后运行 target composition preflight；副本无法准备或 target 无法 boot 时，previous 继续运行且 live home 不变。successor 取得监督所有权、停止并复核 previous 进程树以后，才按照哈希绑定的耐久计划用同文件系统 rename 隔离原路径。target 被拒绝时，watchdog 必须先停止其已证明的进程，再把它在同路径产生的替代内容保留到 `launch-transitions/<cutover>/rejected-target/`，恢复 previous 原字节并写入回执，最后才允许 previous 启动；任一步无法证明完成都会停在 `awaiting-user`，不会让旧宿主读取混合状态。target 成功后，旧内容仍保存在 cutover 目录，等待 operator 后续处置，不会自动删除。
 
 **重启报告自动到达模型——并只等它的主人。** 计划重启后（存在未确认的 `last-restart.json` 记录），插件通过 `agent.followup` 把报告排入下一回合，agent 无需任何用户消息即可回报重启结果。重启后的会话恢复是 lazy 的（只有 UI 或 RPC 碰到某个会话，它的 agent 才会被创建），所以完整报告只发给发起重启的会话（`schedule-exit` 把 `$DSH_SESSION_ID` 记为 initiator），等它何时恢复何时送达——其他会话永远不会为了报告被唤醒；记录保持未确认，直到发起会话恢复或下一次重启替换它（新 `exitAt`）。没有 initiator 的记录由首个创建的根 agent 领走。仅根 agent、仅一次（送达即确认）。配置 `reportRestartContext`：`followup`（默认，自主）、`step`（骑在下一次回合的第一步上）、或 `off`。
 

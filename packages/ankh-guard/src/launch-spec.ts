@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { stateFile } from './state-files.ts'
+import type { TransitionReference } from './transition.ts'
 
 export type CutoverRecoveryPolicy = 'restore-previous' | 'wait-for-user'
 export type BrowserHandoffPolicy = 'required' | 'off'
@@ -45,6 +46,8 @@ export interface CutoverLaunchState {
   selected: LaunchRole
   previous: LaunchSpec
   target: LaunchSpec
+  /** Immutable, cutover-scoped filesystem transition prepared before takeover. */
+  transition?: TransitionReference
 }
 
 export type LaunchState = StableLaunchState | CutoverLaunchState
@@ -106,6 +109,14 @@ export interface LaunchCutoverReceipt {
   initiator?: string
   previous: LaunchSpecSummary
   target: LaunchSpecSummary
+  /** Redacted transition evidence; the plan paths live only in launch state. */
+  transition?: {
+    planSha256: string
+    operationCount: number
+    phase: 'pending' | 'applied' | 'rolled-back' | 'failed'
+    failureOperation?: 'apply' | 'rollback'
+    detail?: string
+  }
   supervisor: {
     previousPid: number
     previousStartToken: string
@@ -182,6 +193,15 @@ function isLaunchSpec(value: unknown): value is LaunchSpec {
     && typeof spec.profile === 'string' && spec.profile !== ''
 }
 
+function isTransitionReference(value: unknown): value is TransitionReference {
+  if (typeof value !== 'object' || value === null) return false
+  const reference = value as Partial<TransitionReference>
+  return reference.version === 1
+    && typeof reference.planPath === 'string' && reference.planPath !== ''
+    && typeof reference.planSha256 === 'string' && /^[a-f0-9]{64}$/.test(reference.planSha256)
+    && Number.isInteger(reference.operationCount) && (reference.operationCount ?? 0) > 0
+}
+
 /** Read the selected launch state, or null for a deployment predating this protocol. */
 export function readLaunchState(stateDir: string): LaunchState | null {
   try {
@@ -190,7 +210,8 @@ export function readLaunchState(stateDir: string): LaunchState | null {
     if (parsed.mode === 'stable' && isLaunchSpec(parsed.active)) return parsed as StableLaunchState
     if (parsed.mode === 'cutover' && typeof parsed.cutoverId === 'string'
       && (parsed.selected === 'target' || parsed.selected === 'previous')
-      && isLaunchSpec(parsed.previous) && isLaunchSpec(parsed.target)) {
+      && isLaunchSpec(parsed.previous) && isLaunchSpec(parsed.target)
+      && (parsed.transition === undefined || isTransitionReference(parsed.transition))) {
       return parsed as CutoverLaunchState
     }
     return null
@@ -237,6 +258,12 @@ export function summarizeLaunchState(state: LaunchState | null): unknown {
     selected: state.selected,
     previous: summarizeLaunchSpec(state.previous),
     target: summarizeLaunchSpec(state.target),
+    ...(state.transition === undefined ? {} : {
+      transition: {
+        planSha256: state.transition.planSha256,
+        operationCount: state.transition.operationCount,
+      },
+    }),
   }
 }
 
@@ -328,6 +355,7 @@ export function prepareLaunchCutover(stateDir: string, input: {
   previousSupervisorPid: number
   previousSupervisorStartToken: string
   previousOwnership: CutoverProcessOwnership
+  transition?: TransitionReference
   initiator?: string
   now: number
 }): LaunchCutoverReceipt {
@@ -347,6 +375,12 @@ export function prepareLaunchCutover(stateDir: string, input: {
   if (input.previous.port !== input.target.port) {
     throw new Error('online cutover requires previous and target to use the same port')
   }
+  if (input.transition !== undefined) {
+    if (!isTransitionReference(input.transition)) throw new Error('invalid transition reference')
+    if (input.previous.home !== input.target.home) {
+      throw new Error('filesystem transition requires previous and target to share one home')
+    }
+  }
   // A terminal transaction normally clears these. Remove any abandoned
   // marker before creating a new ID so precedence is scoped to this cutover.
   for (const role of ['cutoverRestorePrevious', 'cutoverAbort', 'cutoverControl'] as const) {
@@ -363,6 +397,13 @@ export function prepareLaunchCutover(stateDir: string, input: {
     ...(input.initiator !== undefined && input.initiator !== '' ? { initiator: input.initiator } : {}),
     previous: summarizeLaunchSpec(input.previous),
     target: summarizeLaunchSpec(input.target),
+    ...(input.transition === undefined ? {} : {
+      transition: {
+        planSha256: input.transition.planSha256,
+        operationCount: input.transition.operationCount,
+        phase: 'pending' as const,
+      },
+    }),
     supervisor: {
       previousPid: input.previousSupervisorPid,
       previousStartToken: input.previousSupervisorStartToken,
@@ -389,6 +430,7 @@ export function prepareLaunchCutover(stateDir: string, input: {
     selected: 'target',
     previous: input.previous,
     target: input.target,
+    ...(input.transition === undefined ? {} : { transition: input.transition }),
   } satisfies CutoverLaunchState)
   return receipt
 }
@@ -475,6 +517,12 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       const childPid = pidAt(2, 'child pid')
       const childStartToken = args[3]
       if (childStartToken === undefined || childStartToken === '') throw new Error('child-started: child start identity is required')
+      if (role === 'target' && receipt.transition !== undefined && receipt.transition.phase !== 'applied') {
+        throw new Error('child-started: target transition has not been applied')
+      }
+      if (role === 'previous' && receipt.transition !== undefined && receipt.transition.phase !== 'rolled-back') {
+        throw new Error('child-started: previous transition has not been rolled back')
+      }
       receipt.phase = role === 'target' ? 'target-starting' : 'restoring'
       if (role === 'target') receipt.child.targetPid = childPid
       else receipt.child.restoredPid = childPid
@@ -603,6 +651,9 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       break
     }
     case 'restoring':
+      if (receipt.transition !== undefined && receipt.transition.phase !== 'rolled-back') {
+        throw new Error('restoring: filesystem transition has not been rolled back')
+      }
       receipt.phase = 'restoring'
       receipt.recovery.detail = args.join(' ')
       // Authentication belongs to one concrete launch attempt. Do not let a
@@ -625,6 +676,28 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
         atomicWriteJson(stateFile(stateDir, 'launchSpec'), { ...state, selected: 'previous' } satisfies CutoverLaunchState)
       }
       break
+    case 'transition': {
+      if (receipt.transition === undefined) throw new Error('transition: cutover has no transition plan')
+      const outcome = args[0]
+      const planSha256 = args[1]
+      if (planSha256 !== receipt.transition.planSha256) throw new Error('transition: plan digest does not match')
+      if (outcome === 'applied') {
+        if (receipt.transition.phase === 'rolled-back') throw new Error('transition: a rolled-back plan cannot be applied')
+        receipt.transition = { ...receipt.transition, phase: 'applied' }
+      } else if (outcome === 'rolled-back') {
+        receipt.transition = { ...receipt.transition, phase: 'rolled-back' }
+      } else if (outcome === 'apply-failed' || outcome === 'rollback-failed') {
+        receipt.transition = {
+          ...receipt.transition,
+          phase: 'failed',
+          failureOperation: outcome === 'apply-failed' ? 'apply' : 'rollback',
+          ...(args.length > 2 ? { detail: args.slice(2).join(' ') } : {}),
+        }
+      } else {
+        throw new Error('transition: invalid outcome')
+      }
+      break
+    }
     case 'canary': {
       const outcome = args[0]
       if (outcome !== 'pass' && outcome !== 'fail') throw new Error('canary: invalid outcome')
@@ -650,6 +723,12 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       }
       if (role === 'target' && receipt.canary?.outcome !== 'pass') {
         throw new Error('ready: target canary has not passed')
+      }
+      if (role === 'target' && receipt.transition !== undefined && receipt.transition.phase !== 'applied') {
+        throw new Error('ready: target transition is not applied')
+      }
+      if (role === 'previous' && receipt.transition !== undefined && receipt.transition.phase !== 'rolled-back') {
+        throw new Error('ready: previous transition is not rolled back')
       }
       if (receipt.authentication.launchUrlObserved === true && receipt.browserHandoff.required
         && receipt.browserHandoff.status !== 'acknowledged') {

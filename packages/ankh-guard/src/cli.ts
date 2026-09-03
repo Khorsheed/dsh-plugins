@@ -40,6 +40,10 @@ import {
   selectedLaunchSpec, summarizeLaunchState, writeCutoverControl, writeStableLaunchSpec,
   type BrowserHandoffPolicy, type CutoverRecoveryPolicy, type LaunchSpec,
 } from './launch-spec.ts'
+import {
+  applyTransition, createTransitionPreflightSnapshot, prepareTransition, rollbackTransition,
+  validateTransitionPlan, type TransitionPlan,
+} from './transition.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
@@ -75,6 +79,7 @@ interface CliOptions {
   includeDirty: boolean
   takeoverFrom: number | undefined
   cutoverId: string | undefined
+  transitionFile: string | undefined
 }
 
 /** stdout/stderr sink (injected so tests capture output). */
@@ -264,11 +269,13 @@ commands:
   record-composition-recovery [--state-dir DIR]   # watchdog-facing: record a composition-rollback recovery
   configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] --harness-root DIR [--profile NAME] [--if-absent]
   launch-status [--state-dir DIR]
+  transition-apply CUTOVER_ID [--state-dir DIR]      # watchdog-facing: apply the prepared transition
+  transition-rollback CUTOVER_ID [--state-dir DIR]   # watchdog-facing: restore previous state before previous starts
   abort-cutover [--state-dir DIR]      # apply the recovery policy approved by reconfigure
   restore-previous [--state-dir DIR]   # explicit new authorization to restore the complete previous spec
   reconfigure --start "CMD" --on-failure restore-previous|wait-for-user [--port N]
           [--home DIR] [--repo DIR] [--harness-root DIR] [--profile NAME] [--browser-handoff required|off]
-          [--delay-ms MS] [--supervisor-yield-timeout-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
+          [--transition-file FILE] [--delay-ms MS] [--supervisor-yield-timeout-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   schedule-exit [--port N] --delay-ms MS [--initiator ID] [--log FILE] [--profile NAME]
@@ -319,6 +326,10 @@ flags:
                    root announces a same-authority launch URL, readiness requires
                    303 cookie exchange and authenticated / = 200; browser handoff
                    separately requires an original/fallback page acknowledgement
+  --transition-file FILE  reconfigure: a schema-v1 reversible quarantine plan.
+                   The guard validates and preflights it on an isolated home,
+                   then applies it only after previous stops; recovery retains
+                   target-created replacements before restoring previous bytes.
   --if-absent      configure-launch: initialize only; keep an existing selected spec
   --force          restart/schedule-exit/supervise/reconfigure: override the sandbox probe refusal
   --sync           restart: run the whole loop in-process (debug/tests; the default
@@ -338,7 +349,7 @@ export function parse(
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined, supervisorYieldTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
-    onFailure: undefined, browserHandoff: 'required', ifAbsent: false, trustCommand: false, includeDirty: false, takeoverFrom: undefined, cutoverId: undefined,
+    onFailure: undefined, browserHandoff: 'required', ifAbsent: false, trustCommand: false, includeDirty: false, takeoverFrom: undefined, cutoverId: undefined, transitionFile: undefined,
   }
   const positionals: string[] = []
   let i = 0
@@ -452,6 +463,7 @@ export function parse(
           break
         }
         case '--cutover-id': options.cutoverId = flagValue(arg, true) ?? ''; i++; break
+        case '--transition-file': options.transitionFile = flagValue(arg, true) ?? ''; i++; break
         case '--if-absent': options.ifAbsent = true; break
         case '--rollback': options.rollback = true; break
         case '--force': options.force = true; break
@@ -741,9 +753,12 @@ function redactLaunchCommand(command: string): string {
  * @param profile - the dsh profile to dry-run.
  * @param timeoutMs - bound on the whole subprocess run; a timeout kills it.
  * @param harnessRoot - harness checkout for the runner (default: DSH_HARNESS / ~/code/deepseek-harness).
+ * @param home - dsh home the dry-run must read instead of ambient process state.
  * @returns the classified outcome.
  */
-export async function runPreflightCheck(profile: string, timeoutMs: number, harnessRoot?: string): Promise<PreflightOutcome> {
+export async function runPreflightCheck(
+  profile: string, timeoutMs: number, harnessRoot?: string, home?: string,
+): Promise<PreflightOutcome> {
   const override = process.env.DSH_PREFLIGHT_COMMAND
   let command: string
   let usingRunner = false
@@ -767,9 +782,12 @@ export async function runPreflightCheck(profile: string, timeoutMs: number, harn
     let timedOut = false
     // The runner resolves the live harness from DSH_HARNESS; pin it so the
     // subprocess agrees with the gate even when the caller's env differs.
-    const child = usingRunner
-      ? spawn(command, { shell: true, env: { ...process.env, DSH_HARNESS: harnessForRunner } })
-      : spawn(command, { shell: true })
+    const preflightEnv = {
+      ...process.env,
+      DSH_HARNESS: harnessForRunner,
+      ...(home === undefined ? {} : { DSH_HOME: home }),
+    }
+    const child = spawn(command, { shell: true, env: preflightEnv })
     const append = (chunk: Buffer): void => {
       if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
     }
@@ -933,10 +951,13 @@ function summarizeOutput(output: string): string {
  * @param timeoutMs - bound on the preflight subprocess.
  * @param io - output sinks.
  * @param harnessRoot - harness checkout for the standalone runner.
+ * @param home - dsh home to dry-run.
  * @returns whether the verb may proceed.
  */
-async function preflightGate(verb: string, profile: string, timeoutMs: number, io: CliIo, harnessRoot?: string): Promise<boolean> {
-  const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot)
+async function preflightGate(
+  verb: string, profile: string, timeoutMs: number, io: CliIo, harnessRoot?: string, home?: string,
+): Promise<boolean> {
+  const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot, home)
   switch (outcome.kind) {
     case 'pass':
       io.stdout(`composition preflight PASS (profile ${JSON.stringify(profile)})\n`)
@@ -1201,6 +1222,73 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       io.stdout(`${JSON.stringify({ launch: summarizeLaunchState(readLaunchState(stateDir)), receipt: readCutoverReceipt(stateDir) }, null, 2)}\n`)
       return 0
     }
+    case 'transition-apply':
+    case 'transition-rollback': {
+      const id = positionals[0]
+      if (id === undefined || positionals.length !== 1) {
+        io.stderr(`${command} requires one CUTOVER_ID\n`)
+        return 2
+      }
+      const transaction = activeCutover(stateDir)
+      if (transaction === null || transaction.receipt.id !== id || transaction.state.transition === undefined) {
+        io.stderr(`${command} refused: cutover ${id} has no active prepared transition\n`)
+        return 1
+      }
+      const reference = transaction.state.transition
+      const identityIsLive = (pid: number | undefined, startToken: string | undefined): boolean => (
+        pid !== undefined && startToken !== undefined && processIdentityMatches({ pid, startToken })
+      )
+      if (command === 'transition-apply') {
+        if (transaction.state.selected !== 'target') {
+          io.stderr('transition-apply refused: the target launch specification is not selected\n')
+          return 1
+        }
+        const previous = transaction.receipt.ownership.previous
+        if (identityIsLive(previous.childPid, previous.childStartToken)
+          || identityIsLive(previous.listenerPid, previous.listenerStartToken)) {
+          io.stderr('transition-apply refused: the proven previous process is still alive\n')
+          return 1
+        }
+        try {
+          const result = applyTransition(reference, transaction.state.previous.home, stateDir, id)
+          recordCutoverEvent(stateDir, id, 'transition', ['applied', reference.planSha256], Date.now())
+          io.stdout(`transition applied (${result.changed.length} changed, ${result.unchanged.length} unchanged)\n`)
+          return 0
+        } catch (error) {
+          try {
+            recordCutoverEvent(stateDir, id, 'transition', [
+              'apply-failed', reference.planSha256, error instanceof Error ? error.message : String(error),
+            ], Date.now())
+          } catch { /* the original transition failure remains authoritative */ }
+          io.stderr(`transition-apply failed: ${String(error)}\n`)
+          return 1
+        }
+      }
+      const liveTarget = transaction.receipt.attempts.some(attempt => (
+        attempt.role === 'target' && identityIsLive(attempt.childPid, attempt.childStartToken)
+      ))
+      const targetOwnership = transaction.receipt.ownership.target
+      if (liveTarget || (targetOwnership !== undefined
+        && (identityIsLive(targetOwnership.childPid, targetOwnership.childStartToken)
+          || identityIsLive(targetOwnership.listenerPid, targetOwnership.listenerStartToken)))) {
+        io.stderr('transition-rollback refused: a proven target process is still alive\n')
+        return 1
+      }
+      try {
+        const result = rollbackTransition(reference, transaction.state.previous.home, stateDir, id)
+        recordCutoverEvent(stateDir, id, 'transition', ['rolled-back', reference.planSha256], Date.now())
+        io.stdout(`transition rolled back (${result.changed.length} changed, ${result.unchanged.length} unchanged)\n`)
+        return 0
+      } catch (error) {
+        try {
+          recordCutoverEvent(stateDir, id, 'transition', [
+            'rollback-failed', reference.planSha256, error instanceof Error ? error.message : String(error),
+          ], Date.now())
+        } catch { /* the original transition failure remains authoritative */ }
+        io.stderr(`transition-rollback failed: ${String(error)}\n`)
+        return 1
+      }
+    }
     case 'abort-cutover':
     case 'restore-previous': {
       const transaction = activeCutover(stateDir)
@@ -1428,6 +1516,23 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('reconfigure refused: target launch specification is identical to the active specification\n')
         return 2
       }
+      let transitionPlan: TransitionPlan | undefined
+      if (options.transitionFile !== undefined) {
+        let raw: unknown
+        try {
+          raw = JSON.parse(readFileSync(resolve(options.transitionFile), 'utf8')) as unknown
+        } catch (error) {
+          io.stderr(`reconfigure refused: transition plan is unreadable: ${String(error)}\n`)
+          return 2
+        }
+        try {
+          transitionPlan = validateTransitionPlan(raw, previous.home, stateDir)
+          validateTransitionPlan(raw, target.home, stateDir)
+        } catch (error) {
+          io.stderr(`reconfigure refused: ${String(error)}\n`)
+          return 2
+        }
+      }
       const previousSupervisorPid = liveWatchdogPid(stateDir)
       if (previousSupervisorPid === null) {
         io.stderr('reconfigure refused: no live watchdog owns the old instance. Establish supervision first; an online handoff cannot promise continuity without an old supervisor.\n')
@@ -1439,10 +1544,29 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 1
       }
       if (!sandboxGate('reconfigure', options, io)) return 1
-      if (!(await preflightGate(
-        'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
-        io, target.harnessRoot,
-      ))) return 1
+      if (transitionPlan === undefined) {
+        if (!(await preflightGate(
+          'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
+          io, target.harnessRoot, target.home,
+        ))) return 1
+      } else {
+        let snapshot: ReturnType<typeof createTransitionPreflightSnapshot>
+        try {
+          snapshot = createTransitionPreflightSnapshot(transitionPlan)
+        } catch (error) {
+          io.stderr(`reconfigure refused: could not prepare an isolated transitioned home: ${String(error)}\n`)
+          return 1
+        }
+        try {
+          if (!(await preflightGate(
+            'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
+            io, target.harnessRoot, snapshot.home,
+          ))) return 1
+          io.stdout('filesystem transition preflight PASS on an isolated copy of the live home\n')
+        } finally {
+          snapshot.cleanup()
+        }
+      }
 
       const lock = acquireRestartLock(stateDir)
       if (!lock.ok) {
@@ -1468,6 +1592,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         if (!processIdentityMatches(previousSupervisor)) {
           throw new Error(`watchdog ${previousSupervisorPid} changed while ownership was captured; refusing a recycled-PID takeover`)
         }
+        const transition = transitionPlan === undefined
+          ? undefined
+          : prepareTransition(transitionPlan, previous.home, stateDir, cutoverId)
         prepareLaunchCutover(stateDir, {
           id: cutoverId,
           previous,
@@ -1482,6 +1609,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             listenerPid: previousOwned.listener.pid,
             listenerStartToken: previousOwned.listener.startToken,
           },
+          ...(transition === undefined ? {} : { transition }),
           ...(initiator !== undefined ? { initiator } : {}),
           now: Date.now(),
         })
@@ -1906,6 +2034,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           WD_PREVIOUS_CHILD_START: previousOwnership.childStartToken,
           WD_PREVIOUS_LISTENER_PID: String(previousOwnership.listenerPid),
           WD_PREVIOUS_LISTENER_START: previousOwnership.listenerStartToken,
+          ...(transaction.state.transition === undefined ? {} : {
+            WD_TRANSITION_PLAN_SHA256: transaction.state.transition.planSha256,
+          }),
         } : {}),
       }
       if (options.foreground) {

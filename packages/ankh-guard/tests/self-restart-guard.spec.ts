@@ -457,6 +457,59 @@ describe('durable launch cutover state', () => {
     })
   })
 
+  it('gates target and previous launch events on the filesystem transition phase', () => {
+    const stateDir = tmpDir('guard-cutover-transition-')
+    const previous = spec('node previous-host.js', stateDir)
+    const target = spec('node target-host.js', stateDir)
+    const transition = {
+      version: 1 as const,
+      planPath: join(stateDir, 'launch-transitions/cutover-transition/plan.json'),
+      planSha256: 'a'.repeat(64),
+      operationCount: 1,
+    }
+    prepareLaunchCutover(stateDir, {
+      id: 'cutover-transition', previous, target, transition,
+      recoveryPolicy: 'restore-previous', browserHandoff: 'off',
+      previousSupervisorPid: 1001, previousSupervisorStartToken: 'supervisor-start-1001',
+      previousOwnership: fakeOwnership(1002, 1003), now: NOW,
+    })
+
+    expect(() => recordCutoverEvent(
+      stateDir, 'cutover-transition', 'child-started', ['target', '1', '1004', 'target-start-1004'], NOW + 1,
+    )).toThrow(/transition has not been applied/)
+    expect(() => recordCutoverEvent(
+      stateDir, 'cutover-transition', 'transition', ['applied', 'b'.repeat(64)], NOW + 2,
+    )).toThrow(/digest does not match/)
+    recordCutoverEvent(stateDir, 'cutover-transition', 'transition', ['applied', transition.planSha256], NOW + 3)
+    recordCutoverEvent(
+      stateDir, 'cutover-transition', 'child-started', ['target', '1', '1004', 'target-start-1004'], NOW + 4,
+    )
+    recordCutoverEvent(
+      stateDir, 'cutover-transition', 'attempt-failed', ['target', '1', 'target failed'], NOW + 5,
+    )
+    expect(() => recordCutoverEvent(
+      stateDir, 'cutover-transition', 'restoring', ['approved recovery'], NOW + 6,
+    )).toThrow(/has not been rolled back/)
+
+    recordCutoverEvent(stateDir, 'cutover-transition', 'transition', ['rolled-back', transition.planSha256], NOW + 7)
+    expect(() => recordCutoverEvent(
+      stateDir, 'cutover-transition', 'transition', ['applied', transition.planSha256], NOW + 8,
+    )).toThrow(/cannot be applied/)
+    recordCutoverEvent(stateDir, 'cutover-transition', 'restoring', ['approved recovery'], NOW + 9)
+    recordCutoverEvent(
+      stateDir, 'cutover-transition', 'child-started', ['previous', '1', '1005', 'previous-start-1005'], NOW + 10,
+    )
+
+    expect(readCutoverReceipt(stateDir)).toMatchObject({ transition: {
+      planSha256: transition.planSha256,
+      operationCount: 1,
+      phase: 'rolled-back',
+    } })
+    const rendered = JSON.stringify(summarizeLaunchState(readLaunchState(stateDir)))
+    expect(rendered).not.toContain(transition.planPath)
+    expect(rendered).toContain(transition.planSha256)
+  })
+
   it('summarizes launch state without exposing either command', () => {
     const stateDir = tmpDir('guard-cutover-')
     const previous = spec('do-not-print-previous-command', stateDir)
@@ -2572,6 +2625,85 @@ const timer = setInterval(() => {
       env.restore()
     }
   }, 45_000)
+
+  it('applies a live-home transition only after takeover and rolls it back before restoring previous', async () => {
+    const env = supervisedEnv()
+    const repo = makeRepo()
+    const stateDir = join(env.home, 'state')
+    const port = await freePort()
+    const legacyState = join(env.home, 'storages/session_projcache.json')
+    const targetState = join(env.home, 'storages/session_projcache')
+    mkdirSync(join(env.home, 'storages'), { recursive: true })
+    writeFileSync(legacyState, 'previous-version-3')
+    const previousStart = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('previous-with-v3')).listen(${port},'127.0.0.1')"`
+    const failingTarget = join(env.home, 'target-writes-v5.cjs')
+    writeFileSync(failingTarget, `
+const fs = require('fs')
+const path = ${JSON.stringify(join(targetState, 'sessions/rebuilt.json'))}
+fs.mkdirSync(require('path').dirname(path), { recursive: true })
+fs.writeFileSync(path, 'rejected-target-version-5')
+process.stderr.write('target boot failed after writing v5\\n')
+process.exit(1)
+`)
+    const transitionFile = join(env.home, 'transition-plan.json')
+    writeFileSync(transitionFile, `${JSON.stringify({
+      schemaVersion: 1,
+      home: env.home,
+      operations: [
+        { kind: 'quarantine', path: 'storages/session_projcache.json', expect: 'present' },
+        { kind: 'quarantine', path: 'storages/session_projcache', expect: 'absent' },
+      ],
+    }, null, 2)}\n`)
+    try {
+      expect(await runCli([
+        'supervise', '--port', String(port), '--start', previousStart,
+        '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+      await waitForPort(port)
+      expect(await fetchBody(port)).toBe('previous-with-v3')
+      expect(readFileSync(legacyState, 'utf8')).toBe('previous-version-3')
+      expect(await runCli([
+        'record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo,
+      ], io().io)).toBe(0)
+      stubPreflight('test ! -e "$DSH_HOME/storages/session_projcache.json"')
+      stubSandboxProbe(false)
+
+      const result = io()
+      expect(await runCli([
+        'reconfigure', '--start', `"${process.execPath}" ${JSON.stringify(failingTarget)}`,
+        '--transition-file', transitionFile,
+        '--on-failure', 'restore-previous', '--browser-handoff', 'off',
+        '--delay-ms', '500', '--state-dir', stateDir, '--repo', repo,
+      ], result.io)).toBe(0)
+      expect(result.out.join('')).toContain('filesystem transition preflight PASS on an isolated copy')
+
+      const deadline = Date.now() + 35_000
+      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < deadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      }
+      const receipt = readCutoverReceipt(stateDir)
+      const log = readFileSync(join(stateDir, STATE_FILES.watchdogLog), 'utf8')
+      expect(receipt?.phase, `${JSON.stringify(receipt, null, 2)}\n${log.slice(-12000)}`).toBe('restored')
+      expect(receipt).toMatchObject({
+        transition: { phase: 'rolled-back', operationCount: 2 },
+        recovery: { policy: 'restore-previous', result: 'restored' },
+      })
+      expect(receipt?.events.filter(event => event.kind === 'transition').map(event => event.detail)).toEqual([
+        expect.stringMatching(/^applied [a-f0-9]{64}$/),
+        expect.stringMatching(/^rolled-back [a-f0-9]{64}$/),
+      ])
+      expect(await fetchBody(port)).toBe('previous-with-v3')
+      expect(readFileSync(legacyState, 'utf8')).toBe('previous-version-3')
+      expect(readFileSync(join(
+        stateDir, 'launch-transitions', receipt!.id,
+        'rejected-target/storages/session_projcache/sessions/rebuilt.json',
+      ), 'utf8')).toBe('rejected-target-version-5')
+    } finally {
+      env.stop()
+      await killListener(port)
+      env.restore()
+    }
+  }, 50_000)
 
   it('does not accept a stale 200 when the target reports EADDRINUSE, and counts failures before restoring previous', async () => {
     const env = supervisedEnv()

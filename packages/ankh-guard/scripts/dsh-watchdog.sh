@@ -52,6 +52,9 @@
 #   WD_PREVIOUS_LISTENER_*=PID/start token listener inside that old child tree
 #   WD_READY_STABILITY_SECONDS=N unchanged child/listener proof window (default 3)
 #   WD_BROWSER_HANDOFF=required|off after an authenticated launch-URL exchange
+#   WD_TRANSITION_PLAN_SHA256=SHA-256 signals a prepared filesystem transition
+#                      bound to the active cutover; the guard CLI reads the
+#                      durable plan and journal rather than trusting this value
 #   WD_BROWSER_HANDOFF_TIMEOUT_SECONDS=N wait for original-tab acknowledgement,
 #                      then (after fallback open) for fallback acknowledgement
 #   WD_TEST_FAKE=1     launch a throwaway http server instead of the instance
@@ -89,6 +92,7 @@ BROWSER_HANDOFF="${WD_BROWSER_HANDOFF:-off}"
 TARGET_FAILURE_LIMIT="${WD_TARGET_FAILURE_LIMIT:-2}"
 READY_STABILITY_SECONDS="${WD_READY_STABILITY_SECONDS:-3}"
 BROWSER_HANDOFF_TIMEOUT_SECONDS="${WD_BROWSER_HANDOFF_TIMEOUT_SECONDS:-8}"
+TRANSITION_PLAN_SHA256="${WD_TRANSITION_PLAN_SHA256:-}"
 # Every marker, the pidfile, and the attempt log live in ONE state directory:
 # WD_STATE_DIR when the guard CLI names it (its --state-dir), else the
 # conventional <home>/state. Deriving it here as <home>/state while the guard
@@ -716,6 +720,14 @@ select_previous_spec() {
   local reason=$1
   [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
     && [ -n "$PREVIOUS_HARNESS_ROOT" ] || return 1
+  if [ -n "$TRANSITION_PLAN_SHA256" ]; then
+    if ! guard_cmd transition-rollback "$CUTOVER_ID" --state-dir "$STATE_DIR"; then
+      wd_log "filesystem transition rollback failed — refusing to start previous over target state" >&2
+      return 1
+    fi
+    transition_rolled_back=1
+    wd_log "filesystem transition rolled back; rejected target output retained in cutover quarantine"
+  fi
   cutover_event_required restoring "$reason"
   START_CMD="$PREVIOUS_START"
   DSH_ROOT="$PREVIOUS_HOME"
@@ -1101,6 +1113,8 @@ yielded=0
 comp_restore_done=0
 comp_restored=0
 comp_restore_detail=''
+transition_applied=0
+transition_rolled_back=0
 
 trap 'retry_on_usrs' USR1
 
@@ -1278,18 +1292,9 @@ else
 fi
 
 while true; do
-  if [ -n "$CUTOVER_ID" ] && handle_cutover_control; then
-    if [ "$control_result" = "wait" ]; then
-      park_cutover "operator abort follows wait-for-user policy"
-      continue
-    fi
-    wd_log "operator control selected the previous complete launch specification"
-  fi
-  # Self-heal the ownership claim FIRST: if the state dir (or the pidfile) was
-  # cleaned underneath a live watchdog, reclaim it; if another LIVE watchdog
-  # now holds it, yield — two supervisors on one port reap each other's
-  # instance (observed: stale watchdog + deleted pidfile → second watchdog
-  # spawned → both fought over the port).
+  # Self-heal the ownership claim before processing control or changing live
+  # state. If another supervisor owns the pidfile, this process has no
+  # authority to apply or roll back a filesystem transition.
   if [ "$SUPERVISE" = "1" ]; then
     if [ ! -f "$PIDFILE" ]; then (set -C; echo $$ > "$PIDFILE") 2>/dev/null || true; fi
     pidowner=$(cat "$PIDFILE" 2>/dev/null)
@@ -1300,6 +1305,39 @@ while true; do
       # reads the newly selected durable spec, then waits behind the successor.
       # A detached parent simply observes the code and is unaffected.
       exit 75
+    fi
+  fi
+  if [ -n "$CUTOVER_ID" ] && handle_cutover_control; then
+    if [ "$control_result" = "wait" ]; then
+      park_cutover "operator abort follows wait-for-user policy"
+      continue
+    fi
+    wd_log "operator control selected the previous complete launch specification"
+  fi
+  if [ -n "$TRANSITION_PLAN_SHA256" ]; then
+    if [ "$CUTOVER_ROLE" = "target" ] && [ "$transition_applied" = "0" ]; then
+      if guard_cmd transition-apply "$CUTOVER_ID" --state-dir "$STATE_DIR"; then
+        transition_applied=1
+        wd_log "filesystem transition applied after previous stopped and before target start"
+      else
+        wd_log "filesystem transition apply failed — target will not start" >&2
+        if [ "$CUTOVER_POLICY" = "restore-previous" ] \
+          && select_previous_spec "filesystem transition failed before target start; restoring previous spec"; then
+          continue
+        fi
+        cutover_event_required awaiting-user "filesystem transition failed; target was not started and previous was not restored"
+        park_cutover "filesystem transition failed; inspect the cutover transition journal"
+        continue
+      fi
+    elif [ "$CUTOVER_ROLE" = "previous" ] && [ "$transition_rolled_back" = "0" ]; then
+      if guard_cmd transition-rollback "$CUTOVER_ID" --state-dir "$STATE_DIR"; then
+        transition_rolled_back=1
+        wd_log "filesystem transition rollback verified before previous start"
+      else
+        cutover_event_required awaiting-user "filesystem transition rollback failed; previous was not started"
+        park_cutover "filesystem transition rollback failed; previous remains stopped"
+        continue
+      fi
     fi
   fi
   # Snapshot BEFORE this boot rewrites it: the stamp exists iff this
@@ -1458,7 +1496,11 @@ while true; do
         && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
         && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
         wd_log "target launch failed after $failures attempt(s) — restoring the approved previous launch specification"
-        select_previous_spec "target failed after $failures attempt(s); restoring previous spec"
+        if select_previous_spec "target failed after $failures attempt(s); restoring previous spec"; then
+          continue
+        fi
+        cutover_event_required awaiting-user "target failed and filesystem transition rollback did not complete; previous was not started"
+        park_cutover "target failed; previous restore is blocked by filesystem transition rollback"
         continue
       fi
       wd_log "launch cutover cannot become ready — approved policy is ${CUTOVER_POLICY:-wait-for-user}; parking for user action"
@@ -1544,7 +1586,11 @@ while true; do
           && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
           kill_current_owned_attempt
           wait "$child" 2>/dev/null || true
-          select_previous_spec "target canary passed but browser handoff failed; restoring previous spec"
+          if select_previous_spec "target canary passed but browser handoff failed; restoring previous spec"; then
+            continue
+          fi
+          cutover_event_required awaiting-user "browser handoff failed and filesystem transition rollback did not complete; previous was not started"
+          park_cutover "browser handoff failed; previous restore is blocked by filesystem transition rollback"
           continue
         fi
         if [ "$CUTOVER_ROLE" = "previous" ]; then
@@ -1579,7 +1625,11 @@ while true; do
           && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
           kill_current_owned_attempt
           wait "$child" 2>/dev/null || true
-          select_previous_spec "target became ready but canary failed; restoring previous spec"
+          if select_previous_spec "target became ready but canary failed; restoring previous spec"; then
+            continue
+          fi
+          cutover_event_required awaiting-user "target canary failed and filesystem transition rollback did not complete; previous was not started"
+          park_cutover "target canary failed; previous restore is blocked by filesystem transition rollback"
           continue
         fi
         if [ "$CUTOVER_ROLE" = "previous" ]; then
