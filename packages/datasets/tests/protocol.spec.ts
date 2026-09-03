@@ -11,11 +11,16 @@ import { descriptorWarnings, validateDescriptor } from '../src/dataset.ts'
 
 const DOCS = join(__dirname, '../../../docs')
 
-/** Extract the ```json fenced blocks of a markdown document. */
+/** Extract the ```json fenced blocks of the §2 chapter (where dataset.json examples live). */
 function jsonBlocks(path: string): unknown[] {
   const text = readFileSync(path, 'utf8')
+  const start = text.search(/^## 2\./m)
+  if (start === -1) return []
+  const section = text.slice(start)
+  const end = section.search(/^## 3\./m)
+  const slice = end === -1 ? section : section.slice(0, end)
   const blocks: unknown[] = []
-  for (const match of text.matchAll(/```json\n([\s\S]*?)```/g)) {
+  for (const match of slice.matchAll(/```json\n([\s\S]*?)```/g)) {
     blocks.push(JSON.parse(match[1] ?? ''))
   }
   return blocks
