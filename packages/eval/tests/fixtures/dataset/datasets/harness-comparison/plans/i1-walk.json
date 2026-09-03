@@ -1,0 +1,37 @@
+{
+  "schema": "dataseek.plan/1",
+  "dataset": {
+    "repo": "~/dsh-eval-t1-fixture-repo-absent",
+    "commit": null,
+    "id": "harness-comparison",
+    "items": [
+      "P0-placeholder"
+    ]
+  },
+  "conditions": [
+    "dsh-exec"
+  ],
+  "reps": 1,
+  "stages": [
+    "stage1",
+    "stage2"
+  ],
+  "order": {
+    "seed": 42,
+    "interleave": false
+  },
+  "budget": {
+    "activeMinutes": 60,
+    "turns": 10
+  },
+  "judge": {
+    "conditions": [],
+    "samples": 0
+  },
+  "expectedNs": [
+    "script",
+    "llm-draft",
+    "human-final"
+  ],
+  "notes": "I1 手写示例，单格走通。null / 空字段：dataset.commit（snapshot 在 run 启动时钉，run.meta 记实际值）；conditions 是 id 不是 sha——条件哈希要 dsh-eval conditions hash（I2 T2）才有工具；judge 为空——本格只做 script 判定，llm-draft 与 human-final 按 expectedNs 如实标缺失。无 template 字段：模板由题集 manifest 生成（I2 T5），现阶段手写 templates/bench-v1.json。"
+}

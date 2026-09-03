@@ -1,0 +1,45 @@
+{
+  "type": "object",
+  "required": ["design_decisions", "out_of_scope", "host_change_risks", "acceptance_criteria"],
+  "properties": {
+    "design_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["aspect", "decision", "rationale"],
+        "properties": {
+          "aspect": { "type": "string" },
+          "decision": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["item", "reason"],
+        "properties": {
+          "item": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "host_change_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["interaction", "why_risky", "tradeoff"],
+        "properties": {
+          "interaction": { "type": "string" },
+          "why_risky": { "type": "string" },
+          "tradeoff": { "enum": ["drop", "reshape", "worth-the-cost"] }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

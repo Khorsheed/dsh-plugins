@@ -1,0 +1,13 @@
+{
+  "schema": "dataseek.condition/1",
+  "harness": { "name": "dsh", "version": null, "drive": "exec" },
+  "model": { "declared": null, "endpoint": null },
+  "reasoning": { "effort": "default" },
+  "permissions": "unrestricted",
+  "instructions": "none",
+  "preset": null,
+  "skills": { "pack": null },
+  "home": { "sha": null },
+  "env": { "keys": ["DEEPSEEK_API_KEY"] },
+  "notes": "I1 手写示例。null 字段：harness.version（无版本探测）、model.declared / endpoint（dsh 走宿主默认）、home.sha（provision 未建，I2 的 conditions hash / I4 的 provision 落地后回算）。permissions 写 unrestricted 对应冻结决策 3 的「dsh 无限制」。"
+}
