@@ -301,8 +301,8 @@ function currentReadyOwnership(
   const role = receipt.readiness.role
   const ownership = role === 'target' ? receipt.ownership.target : receipt.ownership.restored
   const canarySettled = role === 'target'
-    ? receipt.canary?.outcome === 'pass'
-    : receipt.canary !== undefined
+    ? receipt.targetValidation?.canary?.outcome === 'pass'
+    : receipt.recovery.validation?.canary !== undefined
   if (!ownershipMatches(ownership, pid, identityMatches)
     || !canarySettled
     || receipt.readiness.listenerPid !== ownership.listenerPid

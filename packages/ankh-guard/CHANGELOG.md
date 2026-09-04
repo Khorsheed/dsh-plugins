@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- preflight 执行面成为 launch spec 的显式契约：持久化 source/built、runner 可执行方式/路径/内容 SHA、实际 dsh 安装锚点与 target command SHA；`reconfigure` 在隔离 home 先运行与该 SHA 绑定的一等 candidate command probe，再用同一 source/npm-built 模块面做 composition preflight，不再从 `process.execArgv` 猜测或误读 checkout source
+- cutover 回执把 target 的 readiness/canary 保留在 `targetValidation`，previous 恢复验证单列在 `recovery.validation`；只有 target-scoped credential 时明确记录 recovery canary skipped 并继续要求稳定 ownership，不再把 target canary fail 与 restored/previous readiness 混成一个字段
 - `reconfigure --transition-file` 新增版本无关的可逆状态隔离：在 copy-on-write 优先的 live-home 副本上完成 target preflight，previous 停止后才按哈希绑定计划原子 quarantine；target 失败时先保留其替代内容、恢复 previous 原字节再启动旧宿主，任何无法证明的回滚都会停机等待用户
 - 重启凭证改为执行证据：CLI `record` 默认拒绝自我声明，`--run -- PROGRAM ...` 以原样 argv 执行并只在 exit 0、HEAD 不变且工作树全净时记录；任何 staged/unstaged/untracked 输入都会让 verify/restart/canary 拒绝
 - checkpoint 在干净树上直接记录现有 HEAD，不再造空提交；脏树默认拒绝，复核后显式 `--include-dirty` 才用临时 index 提交完整快照，hook/commit 失败不污染调用者 staging area

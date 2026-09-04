@@ -20,6 +20,31 @@ export type BrowserHandoffPolicy = 'required' | 'off'
 export type LaunchRole = 'target' | 'previous'
 export type CutoverControlAction = 'abort' | 'restore-previous'
 
+export type PreflightSurface = 'source' | 'built'
+
+/**
+ * Immutable execution binding for composition preflight. The runner and host
+ * installation are explicit because the guarded checkout and the successor's
+ * npm toolchain may be different module graphs.
+ */
+export interface LaunchPreflightSpec {
+  version: 1
+  surface: PreflightSurface
+  runnerExecutable: string
+  runnerRuntimeArgs: string[]
+  runnerPath: string
+  runnerSha256: string
+  /** package.json used as createRequire()'s anchor for a built successor. */
+  installAnchor: string
+  installAnchorSha256: string
+  hostPackageVersion: string
+  /** Full digest of the launch command this preflight contract approves. */
+  targetCommandSha256: string
+  /** One-shot candidate command that validates the target CLI/argv contract. */
+  candidateProbeCommand?: string
+  candidateProbeSha256?: string
+}
+
 /** Everything needed to launch one supervised instance. The state directory is the transaction anchor. */
 export interface LaunchSpec {
   version: 1
@@ -31,6 +56,8 @@ export interface LaunchSpec {
   /** dsh host checkout used by preflight and exported as DSH_HARNESS. */
   harnessRoot: string
   profile: string
+  /** Absent only on launch state written before execution binding existed. */
+  preflight?: LaunchPreflightSpec
 }
 
 export interface StableLaunchState {
@@ -71,6 +98,18 @@ export interface LaunchSpecSummary {
   credentialRepo: string
   harnessRoot: string
   profile: string
+  preflight?: {
+    surface: PreflightSurface
+    runnerExecutable: string
+    runnerRuntimeArgs: string[]
+    runnerPath: string
+    runnerSha256: string
+    installAnchor: string
+    installAnchorSha256: string
+    hostPackageVersion: string
+    targetCommandSha256: string
+    candidateProbeSha256?: string
+  }
 }
 
 export interface CutoverAttempt {
@@ -153,6 +192,26 @@ export interface LaunchCutoverReceipt {
   }
   /** Browser acknowledgement is independent of server transport/readiness/canary. */
   browserHandoff: CutoverBrowserHandoff
+  /** Candidate and composition checks completed before the previous host stopped. */
+  preflight?: {
+    surface: PreflightSurface
+    runnerExecutable: string
+    runnerRuntimeArgs: string[]
+    runnerPath: string
+    runnerSha256: string
+    installAnchor: string
+    installAnchorSha256: string
+    hostPackageVersion: string
+    targetCommandSha256: string
+    candidateProbeSha256: string
+    candidateProbe: 'pass'
+    composition: 'pass'
+  }
+  /** Target evidence is retained even if recovery later becomes terminal. */
+  targetValidation?: {
+    readiness?: LaunchCutoverReceipt['readiness']
+    canary?: { outcome: 'pass' | 'fail'; detail?: string }
+  }
   canary?: { outcome: 'pass' | 'fail'; detail?: string }
   attempts: CutoverAttempt[]
   failureCount: { target: number; previous: number }
@@ -160,6 +219,10 @@ export interface LaunchCutoverReceipt {
     policy: CutoverRecoveryPolicy
     result: 'pending' | 'not-needed' | 'restored' | 'waiting-for-user' | 'prepare-failed'
     detail?: string
+    validation?: {
+      readiness?: LaunchCutoverReceipt['readiness']
+      canary?: { outcome: 'pass' | 'fail' | 'skipped'; detail?: string }
+    }
   }
   events: Array<{ at: number; kind: string; detail?: string }>
 }
@@ -191,6 +254,30 @@ function isLaunchSpec(value: unknown): value is LaunchSpec {
     && typeof spec.credentialRepo === 'string' && spec.credentialRepo !== ''
     && typeof spec.harnessRoot === 'string' && spec.harnessRoot !== ''
     && typeof spec.profile === 'string' && spec.profile !== ''
+    && (spec.preflight === undefined || isLaunchPreflightSpec(spec.preflight))
+}
+
+function isLaunchPreflightSpec(value: unknown): value is LaunchPreflightSpec {
+  if (typeof value !== 'object' || value === null) return false
+  const spec = value as Partial<LaunchPreflightSpec>
+  return spec.version === 1
+    && (spec.surface === 'source' || spec.surface === 'built')
+    && typeof spec.runnerExecutable === 'string' && spec.runnerExecutable !== ''
+    && Array.isArray(spec.runnerRuntimeArgs) && spec.runnerRuntimeArgs.every(arg => typeof arg === 'string')
+    && typeof spec.runnerPath === 'string' && spec.runnerPath !== ''
+    && typeof spec.runnerSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.runnerSha256)
+    && typeof spec.installAnchor === 'string' && spec.installAnchor !== ''
+    && typeof spec.installAnchorSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.installAnchorSha256)
+    && typeof spec.hostPackageVersion === 'string' && spec.hostPackageVersion !== ''
+    && typeof spec.targetCommandSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.targetCommandSha256)
+    && (spec.candidateProbeCommand === undefined
+      ? spec.candidateProbeSha256 === undefined
+      : typeof spec.candidateProbeCommand === 'string' && spec.candidateProbeCommand !== ''
+        && typeof spec.candidateProbeSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.candidateProbeSha256))
+}
+
+export function commandSha256(command: string): string {
+  return createHash('sha256').update(command).digest('hex')
 }
 
 function isTransitionReference(value: unknown): value is TransitionReference {
@@ -236,12 +323,27 @@ export function writeStableLaunchSpec(stateDir: string, spec: LaunchSpec, ifAbse
 
 export function summarizeLaunchSpec(spec: LaunchSpec): LaunchSpecSummary {
   return {
-    commandSha256: createHash('sha256').update(spec.command).digest('hex').slice(0, 16),
+    commandSha256: commandSha256(spec.command).slice(0, 16),
     port: spec.port,
     home: spec.home,
     credentialRepo: spec.credentialRepo,
     harnessRoot: spec.harnessRoot,
     profile: spec.profile,
+    ...(spec.preflight === undefined ? {} : {
+      preflight: {
+        surface: spec.preflight.surface,
+        runnerExecutable: spec.preflight.runnerExecutable,
+        runnerRuntimeArgs: spec.preflight.runnerRuntimeArgs,
+        runnerPath: spec.preflight.runnerPath,
+        runnerSha256: spec.preflight.runnerSha256,
+        installAnchor: spec.preflight.installAnchor,
+        installAnchorSha256: spec.preflight.installAnchorSha256,
+        hostPackageVersion: spec.preflight.hostPackageVersion,
+        targetCommandSha256: spec.preflight.targetCommandSha256,
+        ...(spec.preflight.candidateProbeSha256 === undefined
+          ? {} : { candidateProbeSha256: spec.preflight.candidateProbeSha256 }),
+      },
+    }),
   }
 }
 
@@ -286,6 +388,23 @@ export function readCutoverReceipt(stateDir: string): LaunchCutoverReceipt | nul
         status,
       }
       if (legacy === 'accepted') receipt.authentication.browserHandoff = status
+    }
+    // Rolling migration for an in-flight receipt from the single canary
+    // field era. Attribute it only when the current readiness role makes the
+    // provenance unambiguous; new recovery receipts never reuse that field.
+    if (receipt.readiness?.role === 'target') {
+      receipt.targetValidation ??= {}
+      receipt.targetValidation.readiness ??= receipt.readiness
+      if (receipt.targetValidation.canary === undefined && receipt.canary !== undefined) {
+        receipt.targetValidation.canary = receipt.canary
+      }
+    } else if (receipt.readiness?.role === 'previous') {
+      receipt.recovery.validation ??= {}
+      receipt.recovery.validation.readiness ??= receipt.readiness
+      if (receipt.recovery.validation.canary === undefined && receipt.canary !== undefined) {
+        receipt.recovery.validation.canary = receipt.canary
+        delete receipt.canary
+      }
     }
     return receipt
   } catch {
@@ -417,6 +536,22 @@ export function prepareLaunchCutover(stateDir: string, input: {
       required: input.browserHandoff === 'required',
       status: input.browserHandoff === 'required' ? 'pending' : 'off',
     },
+    ...(input.target.preflight?.candidateProbeSha256 === undefined ? {} : {
+      preflight: {
+        surface: input.target.preflight.surface,
+        runnerExecutable: input.target.preflight.runnerExecutable,
+        runnerRuntimeArgs: input.target.preflight.runnerRuntimeArgs,
+        runnerPath: input.target.preflight.runnerPath,
+        runnerSha256: input.target.preflight.runnerSha256,
+        installAnchor: input.target.preflight.installAnchor,
+        installAnchorSha256: input.target.preflight.installAnchorSha256,
+        hostPackageVersion: input.target.preflight.hostPackageVersion,
+        targetCommandSha256: input.target.preflight.targetCommandSha256,
+        candidateProbeSha256: input.target.preflight.candidateProbeSha256,
+        candidateProbe: 'pass' as const,
+        composition: 'pass' as const,
+      },
+    }),
     attempts: [],
     failureCount: { target: 0, previous: 0 },
     recovery: { policy: input.recoveryPolicy, result: 'pending' },
@@ -539,6 +674,8 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
       delete receipt.readiness
       delete receipt.canary
+      if (role === 'target') receipt.targetValidation = {}
+      else receipt.recovery.validation = {}
       receipt.attempts.push({ role, number: attempt, childPid, childStartToken, startedAt: now })
       break
     }
@@ -568,6 +705,13 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
         role, childPid: ownership.childPid, listenerPid: ownership.listenerPid,
         stableWindowMs, retryCount,
       }
+      if (role === 'target') {
+        receipt.targetValidation ??= {}
+        receipt.targetValidation.readiness = receipt.readiness
+      } else {
+        receipt.recovery.validation ??= {}
+        receipt.recovery.validation.readiness = receipt.readiness
+      }
       break
     }
     case 'transport':
@@ -595,10 +739,10 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
           throw new Error('browser-handoff: invalid acknowledgement evidence')
         }
         if (receipt.readiness === undefined) throw new Error('browser-handoff: server readiness is not proven')
-        if (receipt.readiness.role === 'target' && receipt.canary?.outcome !== 'pass') {
+        if (receipt.readiness.role === 'target' && receipt.targetValidation?.canary?.outcome !== 'pass') {
           throw new Error('browser-handoff: target canary has not passed')
         }
-        if (receipt.readiness.role === 'previous' && receipt.canary === undefined) {
+        if (receipt.readiness.role === 'previous' && receipt.recovery.validation?.canary === undefined) {
           throw new Error('browser-handoff: restored-previous canary has not settled')
         }
         receipt.browserHandoff = {
@@ -617,10 +761,10 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
     }
     case 'browser-fallback-opened':
       if (!receipt.browserHandoff.required) throw new Error('browser-fallback-opened: handoff is disabled')
-      if (receipt.readiness?.role === 'target' && receipt.canary?.outcome !== 'pass') {
+      if (receipt.readiness?.role === 'target' && receipt.targetValidation?.canary?.outcome !== 'pass') {
         throw new Error('browser-fallback-opened: target canary has not passed')
       }
-      if (receipt.readiness?.role === 'previous' && receipt.canary === undefined) {
+      if (receipt.readiness?.role === 'previous' && receipt.recovery.validation?.canary === undefined) {
         throw new Error('browser-fallback-opened: restored-previous canary has not settled')
       }
       receipt.browserHandoff = { required: true, status: 'fallback-opened' }
@@ -670,6 +814,7 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       rmSync(stateFile(stateDir, 'browserHandoffAck'), { force: true })
       delete receipt.readiness
       delete receipt.canary
+      receipt.recovery.validation = {}
       {
         const state = readLaunchState(stateDir)
         if (state?.mode !== 'cutover' || state.cutoverId !== id) throw new Error('restoring: cutover launch state is missing')
@@ -699,9 +844,33 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
       break
     }
     case 'canary': {
-      const outcome = args[0]
-      if (outcome !== 'pass' && outcome !== 'fail') throw new Error('canary: invalid outcome')
-      receipt.canary = { outcome, ...(args.length > 1 ? { detail: args.slice(1).join(' ') } : {}) }
+      // New writers name the role. Legacy two-word events are still accepted
+      // and attributed to the current proven readiness role during rollout.
+      const explicitRole = args[0] === 'target' || args[0] === 'previous' ? args[0] : undefined
+      const role = explicitRole ?? receipt.readiness?.role
+      const outcomeIndex = explicitRole === undefined ? 0 : 1
+      const outcome = args[outcomeIndex]
+      if ((role !== 'target' && role !== 'previous')
+        || (outcome !== 'pass' && outcome !== 'fail' && outcome !== 'skipped')) {
+        throw new Error('canary: invalid role or outcome')
+      }
+      if (role === 'target' && outcome === 'skipped') throw new Error('canary: target canary cannot be skipped')
+      const detail = args.slice(outcomeIndex + 1).join(' ')
+      const canary: { outcome: 'pass' | 'fail' | 'skipped'; detail?: string } = {
+        outcome,
+        ...(detail === '' ? {} : { detail }),
+      }
+      if (role === 'target') {
+        receipt.targetValidation ??= {}
+        receipt.targetValidation.canary = canary as { outcome: 'pass' | 'fail'; detail?: string }
+        // Compatibility view for a successful target receipt. Recovery clears
+        // it so target failure cannot masquerade as previous readiness.
+        receipt.canary = canary as { outcome: 'pass' | 'fail'; detail?: string }
+      } else {
+        receipt.recovery.validation ??= {}
+        receipt.recovery.validation.canary = canary
+        delete receipt.canary
+      }
       break
     }
     case 'ready': {
@@ -721,8 +890,11 @@ export function recordCutoverEvent(stateDir: string, id: string, kind: string, a
         || found.childStartToken !== ownership.childStartToken) {
         throw new Error(`ready: ${role} ownership does not match the active attempt`)
       }
-      if (role === 'target' && receipt.canary?.outcome !== 'pass') {
+      if (role === 'target' && receipt.targetValidation?.canary?.outcome !== 'pass') {
         throw new Error('ready: target canary has not passed')
+      }
+      if (role === 'previous' && receipt.recovery.validation?.canary === undefined) {
+        throw new Error('ready: restored-previous canary has not settled')
       }
       if (role === 'target' && receipt.transition !== undefined && receipt.transition.phase !== 'applied') {
         throw new Error('ready: target transition is not applied')

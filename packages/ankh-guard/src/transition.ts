@@ -541,25 +541,35 @@ export function readTransitionRecord(
  * @param plan - Validated live-home plan.
  * @returns Isolated transitioned home and an idempotent cleanup callback.
  */
-export function createTransitionPreflightSnapshot(plan: TransitionPlan): { home: string; cleanup(): void } {
+export function createPreflightSnapshot(sourceHome: string): { home: string; root: string; cleanup(): void } {
   const root = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
   const home = join(root, 'home')
   try {
-    cpSync(plan.home, home, {
+    cpSync(sourceHome, home, {
       recursive: true,
       dereference: false,
       preserveTimestamps: true,
       verbatimSymlinks: false,
       mode: constants.COPYFILE_FICLONE,
     })
-    const stateDir = join(root, 'guard-state')
-    mkdirSync(stateDir, { recursive: true, mode: 0o700 })
-    const rebound: TransitionPlan = { ...plan, home }
-    const reference = prepareTransition(rebound, home, stateDir, 'preflight')
-    applyTransition(reference, home, stateDir, 'preflight')
-    return { home, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
+    return { home, root, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
   } catch (error) {
     rmSync(root, { recursive: true, force: true })
+    throw error
+  }
+}
+
+export function createTransitionPreflightSnapshot(plan: TransitionPlan): { home: string; cleanup(): void } {
+  const snapshot = createPreflightSnapshot(plan.home)
+  try {
+    const stateDir = join(snapshot.root, 'guard-state')
+    mkdirSync(stateDir, { recursive: true, mode: 0o700 })
+    const rebound: TransitionPlan = { ...plan, home: snapshot.home }
+    const reference = prepareTransition(rebound, snapshot.home, stateDir, 'preflight')
+    applyTransition(reference, snapshot.home, stateDir, 'preflight')
+    return { home: snapshot.home, cleanup: snapshot.cleanup }
+  } catch (error) {
+    snapshot.cleanup()
     throw error
   }
 }

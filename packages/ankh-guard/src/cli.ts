@@ -19,6 +19,7 @@
  *              instance restart killed the session that used to own it.
  */
 import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
@@ -38,10 +39,12 @@ import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeCo
 import {
   activeCutover, prepareLaunchCutover, readCutoverReceipt, readLaunchState, recordCutoverEvent,
   selectedLaunchSpec, summarizeLaunchState, writeCutoverControl, writeStableLaunchSpec,
-  type BrowserHandoffPolicy, type CutoverRecoveryPolicy, type LaunchSpec,
+  commandSha256,
+  type BrowserHandoffPolicy, type CutoverRecoveryPolicy, type LaunchPreflightSpec, type LaunchSpec,
+  type PreflightSurface,
 } from './launch-spec.ts'
 import {
-  applyTransition, createTransitionPreflightSnapshot, prepareTransition, rollbackTransition,
+  applyTransition, createPreflightSnapshot, createTransitionPreflightSnapshot, prepareTransition, rollbackTransition,
   validateTransitionPlan, type TransitionPlan,
 } from './transition.ts'
 
@@ -72,6 +75,10 @@ interface CliOptions {
   initiator: string | undefined
   profile: string | undefined
   preflightTimeoutMs: number | undefined
+  preflightSurface: PreflightSurface | undefined
+  preflightRunner: string | undefined
+  preflightInstallAnchor: string | undefined
+  candidateProbeCommand: string | undefined
   onFailure: CutoverRecoveryPolicy | undefined
   browserHandoff: BrowserHandoffPolicy
   ifAbsent: boolean
@@ -264,10 +271,12 @@ commands:
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
   check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
   preflight [--profile NAME] [--harness-root DIR] [--timeout-ms MS]
+          [--preflight-surface source|built --preflight-install-anchor FILE] [--preflight-runner FILE]
   record-unexpected-exit [--state-dir DIR]   # watchdog-facing: record an unplanned-exit recovery
   record-adoption [--initiator ID] [--state-dir DIR]   # watchdog-facing: record the first (adoption) takeover
   record-composition-recovery [--state-dir DIR]   # watchdog-facing: record a composition-rollback recovery
-  configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] --harness-root DIR [--profile NAME] [--if-absent]
+  configure-launch --port N --start "CMD" [--home DIR] [--repo DIR] --harness-root DIR [--profile NAME]
+          --preflight-surface source|built [--preflight-runner FILE] --preflight-install-anchor FILE [--if-absent]
   launch-status [--state-dir DIR]
   transition-apply CUTOVER_ID [--state-dir DIR]      # watchdog-facing: apply the prepared transition
   transition-rollback CUTOVER_ID [--state-dir DIR]   # watchdog-facing: restore previous state before previous starts
@@ -275,6 +284,8 @@ commands:
   restore-previous [--state-dir DIR]   # explicit new authorization to restore the complete previous spec
   reconfigure --start "CMD" --on-failure restore-previous|wait-for-user [--port N]
           [--home DIR] [--repo DIR] [--harness-root DIR] [--profile NAME] [--browser-handoff required|off]
+          --preflight-surface source|built [--preflight-runner FILE] --preflight-install-anchor FILE
+          --candidate-probe-command "CMD"
           [--transition-file FILE] [--delay-ms MS] [--supervisor-yield-timeout-ms MS] [--preflight-timeout-ms MS] [--state-dir DIR]
   restart --port N --start "CMD" [--pid PID] [--timeout-ms MS] [--delay-ms MS] [--stop-timeout-ms MS] [--rollback]
           [--profile NAME] [--harness-root DIR] [--preflight-timeout-ms MS] [--state-dir DIR] [--repo DIR] [--max-age MIN]
@@ -318,6 +329,10 @@ flags:
   --profile NAME   preflight/schedule-exit/restart/reconfigure: the dsh profile to dry-run (default:
                    $DSH_PROFILE, else "web")
   --preflight-timeout-ms MS  schedule-exit/restart: bound on the composition preflight (default 120000)
+  --preflight-surface MODE  configure-launch/reconfigure: explicit successor module surface, source or built
+  --preflight-runner FILE  runner file to bind by absolute path and SHA-256 (default: this package's matching face)
+  --preflight-install-anchor FILE  the exact successor dsh package.json; built imports resolve from this npm toolchain
+  --candidate-probe-command CMD  reconfigure: required one-shot probe of target CLI/argv, durably bound to --start SHA-256
   --rollback       restart: on failure, git reset --hard to the recorded checkpoint
   --on-failure POLICY  reconfigure: REQUIRED pre-approved recovery policy:
                    restore-previous (restore the complete previous launch spec) or
@@ -349,6 +364,7 @@ export function parse(
     start: undefined, pid: undefined, timeoutMs: undefined, delayMs: undefined, stopTimeoutMs: undefined, supervisorYieldTimeoutMs: undefined,
     log: undefined,
     foreground: false, rollback: false, force: false, sync: false, initiator: undefined, profile: undefined, preflightTimeoutMs: undefined,
+    preflightSurface: undefined, preflightRunner: undefined, preflightInstallAnchor: undefined, candidateProbeCommand: undefined,
     onFailure: undefined, browserHandoff: 'required', ifAbsent: false, trustCommand: false, includeDirty: false, takeoverFrom: undefined, cutoverId: undefined, transitionFile: undefined,
   }
   const positionals: string[] = []
@@ -440,6 +456,16 @@ export function parse(
           i++
           break
         }
+        case '--preflight-surface': {
+          const value = flagValue(arg, true)
+          if (value !== 'source' && value !== 'built') throw new Error('--preflight-surface must be source or built')
+          options.preflightSurface = value
+          i++
+          break
+        }
+        case '--preflight-runner': options.preflightRunner = flagValue(arg, true) ?? ''; i++; break
+        case '--preflight-install-anchor': options.preflightInstallAnchor = flagValue(arg, true) ?? ''; i++; break
+        case '--candidate-probe-command': options.candidateProbeCommand = flagValue(arg, true) ?? ''; i++; break
         case '--on-failure': {
           const value = flagValue(arg, true)
           if (value !== 'restore-previous' && value !== 'wait-for-user') throw new Error('--on-failure must be restore-previous or wait-for-user')
@@ -676,7 +702,90 @@ export function resolveRunnerCommand(harnessRoot: string): string | undefined {
       ? join(here, 'preflight-runner.js')
       : undefined
   if (runner === undefined) return undefined
-  return `node --import ${shellQuote(tsx)} ${shellQuote(runner)}`
+  return `node --import ${shellQuote(tsx)} ${shellQuote(runner)} --host-surface source --install-anchor ${shellQuote(join(harnessRoot, 'apps', 'cli', 'package.json'))}`
+}
+
+function fileSha256(file: string): string {
+  return createHash('sha256').update(readFileSync(file)).digest('hex')
+}
+
+function killSpawnGroup(pid: number | undefined): void {
+  if (pid === undefined) return
+  try { process.kill(-pid, 'SIGKILL') } catch { /* already exited or platform lacks process groups */ }
+}
+
+function defaultPreflightRunner(surface: PreflightSurface): string | undefined {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const names = surface === 'source'
+    ? [
+        join(here, 'preflight-runner.ts'), join(here, '..', 'src', 'preflight-runner.ts'),
+        join(here, 'preflight-runner.js'), join(here, '..', 'lib', 'preflight-runner.js'),
+      ]
+    : [join(here, 'preflight-runner.js'), join(here, '..', 'lib', 'preflight-runner.js')]
+  return names.find(file => existsSync(file))
+}
+
+/** Build and validate the explicit preflight contract persisted with a launch spec. */
+function resolvePreflightSpec(
+  options: CliOptions,
+  command: string,
+  harnessRoot: string,
+  requireCandidate: boolean,
+): LaunchPreflightSpec {
+  if (options.preflightSurface === undefined) {
+    throw new Error('--preflight-surface source|built is required; the guard will not infer the successor execution surface')
+  }
+  if (options.preflightInstallAnchor === undefined || options.preflightInstallAnchor === '') {
+    throw new Error('--preflight-install-anchor FILE is required and must name the successor dsh package.json')
+  }
+  const installAnchor = resolve(options.preflightInstallAnchor)
+  let manifest: { name?: unknown; version?: unknown }
+  try {
+    manifest = JSON.parse(readFileSync(installAnchor, 'utf8')) as { name?: unknown; version?: unknown }
+  } catch (error) {
+    throw new Error(`preflight install anchor is unreadable: ${String(error)}`)
+  }
+  if (manifest.name !== '@deepseek-ai/dsh') {
+    throw new Error('preflight install anchor must be @deepseek-ai/dsh/package.json')
+  }
+  if (typeof manifest.version !== 'string' || manifest.version === '') {
+    throw new Error('preflight install anchor must declare the dsh package version')
+  }
+  const configuredRunner = options.preflightRunner ?? defaultPreflightRunner(options.preflightSurface)
+  if (configuredRunner === undefined || configuredRunner === '') {
+    throw new Error(`no ${options.preflightSurface} preflight runner exists; build ankh-guard or pass --preflight-runner FILE`)
+  }
+  const runnerPath = resolve(configuredRunner)
+  if (!existsSync(runnerPath)) throw new Error(`preflight runner does not exist: ${runnerPath}`)
+  if (options.preflightSurface === 'built' && !runnerPath.endsWith('.js')) {
+    throw new Error('built preflight requires a JavaScript runner')
+  }
+  const runnerRuntimeArgs: string[] = []
+  if (options.preflightSurface === 'source') {
+    const tsx = join(harnessRoot, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs')
+    if (!existsSync(tsx)) throw new Error(`source preflight requires the target checkout's tsx runtime: ${tsx}`)
+    runnerRuntimeArgs.push('--import', tsx)
+  }
+  const candidateProbeCommand = options.candidateProbeCommand
+  if (requireCandidate && (candidateProbeCommand === undefined || candidateProbeCommand.trim() === '')) {
+    throw new Error('--candidate-probe-command CMD is required; it must validate the exact target CLI/argv before the previous host stops')
+  }
+  return {
+    version: 1,
+    surface: options.preflightSurface,
+    runnerExecutable: process.execPath,
+    runnerRuntimeArgs,
+    runnerPath,
+    runnerSha256: fileSha256(runnerPath),
+    installAnchor,
+    installAnchorSha256: fileSha256(installAnchor),
+    hostPackageVersion: manifest.version,
+    targetCommandSha256: commandSha256(command),
+    ...(candidateProbeCommand === undefined || candidateProbeCommand.trim() === '' ? {} : {
+      candidateProbeCommand,
+      candidateProbeSha256: commandSha256(candidateProbeCommand),
+    }),
+  }
 }
 
 /**
@@ -757,12 +866,38 @@ function redactLaunchCommand(command: string): string {
  * @returns the classified outcome.
  */
 export async function runPreflightCheck(
-  profile: string, timeoutMs: number, harnessRoot?: string, home?: string,
+  profile: string, timeoutMs: number, harnessRoot?: string, home?: string, binding?: LaunchPreflightSpec,
 ): Promise<PreflightOutcome> {
-  const override = process.env.DSH_PREFLIGHT_COMMAND
-  let command: string
+  const override = binding === undefined ? process.env.DSH_PREFLIGHT_COMMAND : undefined
+  let command: string | undefined
+  let executable: string | undefined
+  let argv: string[] = []
   let usingRunner = false
-  if (override !== undefined && override !== '') {
+  if (binding !== undefined) {
+    let runnerSha: string
+    try { runnerSha = fileSha256(binding.runnerPath) } catch {
+      return { kind: 'infra-failed', output: '', detail: `the bound preflight runner is unavailable: ${binding.runnerPath}` }
+    }
+    if (runnerSha !== binding.runnerSha256) {
+      return { kind: 'infra-failed', output: '', detail: 'the bound preflight runner changed after launch configuration' }
+    }
+    try {
+      if (fileSha256(binding.installAnchor) !== binding.installAnchorSha256) {
+        return { kind: 'infra-failed', output: '', detail: 'the bound dsh install anchor changed after launch configuration' }
+      }
+    } catch {
+      return { kind: 'infra-failed', output: '', detail: `the bound dsh install anchor is unavailable: ${binding.installAnchor}` }
+    }
+    executable = binding.runnerExecutable
+    argv = [
+      ...binding.runnerRuntimeArgs,
+      binding.runnerPath,
+      '--host-surface', binding.surface,
+      '--install-anchor', binding.installAnchor,
+      '--profile', profile,
+    ]
+    usingRunner = true
+  } else if (override !== undefined && override !== '') {
     command = override
   } else {
     const root = harnessRoot ?? resolveHarnessRoot(undefined)
@@ -787,7 +922,9 @@ export async function runPreflightCheck(
       DSH_HARNESS: harnessForRunner,
       ...(home === undefined ? {} : { DSH_HOME: home }),
     }
-    const child = spawn(command, { shell: true, env: preflightEnv })
+    const child = executable === undefined
+      ? spawn(command ?? '', { shell: true, env: preflightEnv })
+      : spawn(executable, argv, { shell: false, env: preflightEnv })
     const append = (chunk: Buffer): void => {
       if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
     }
@@ -820,6 +957,53 @@ export async function runPreflightCheck(
       } else {
         resolvePromise({ kind: 'infra-failed', output, detail: `preflight exited with unexpected code ${String(code)}` })
       }
+    })
+  })
+}
+
+/** Execute the cutover's one-shot target CLI/argv probe under the same home/root. */
+async function runCandidateProbe(
+  binding: LaunchPreflightSpec,
+  targetCommand: string,
+  timeoutMs: number,
+  harnessRoot: string,
+  home: string,
+): Promise<PreflightOutcome> {
+  if (binding.targetCommandSha256 !== commandSha256(targetCommand)) {
+    return { kind: 'infra-failed', output: '', detail: 'candidate probe is bound to a different target launch command' }
+  }
+  if (binding.candidateProbeCommand === undefined || binding.candidateProbeSha256 === undefined
+    || commandSha256(binding.candidateProbeCommand) !== binding.candidateProbeSha256) {
+    return { kind: 'infra-failed', output: '', detail: 'candidate probe command is missing or changed after binding' }
+  }
+  return await new Promise(resolvePromise => {
+    let output = ''
+    let timedOut = false
+    const child = spawn(binding.candidateProbeCommand!, {
+      shell: true,
+      detached: true,
+      env: {
+        ...process.env,
+        DSH_HARNESS: harnessRoot,
+        DSH_HOME: home,
+        ANKH_TARGET_COMMAND_SHA256: binding.targetCommandSha256,
+      },
+    })
+    const append = (chunk: Buffer): void => {
+      if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
+    }
+    child.stdout.on('data', append)
+    child.stderr.on('data', append)
+    const timer = setTimeout(() => {
+      timedOut = true
+      killSpawnGroup(child.pid)
+      child.kill('SIGKILL')
+    }, timeoutMs)
+    child.on('close', code => {
+      clearTimeout(timer)
+      if (timedOut) resolvePromise({ kind: 'infra-failed', output, detail: `candidate probe timed out after ${timeoutMs} ms` })
+      else if (code === 0) resolvePromise({ kind: 'pass', output })
+      else resolvePromise({ kind: 'composition-failed', output, detail: `candidate probe exited ${String(code)}` })
     })
   })
 }
@@ -860,6 +1044,7 @@ function launchSpec(input: {
   credentialRepo: string
   harnessRoot: string
   profile: string
+  preflight?: LaunchPreflightSpec
 }): LaunchSpec {
   return {
     version: 1,
@@ -869,6 +1054,7 @@ function launchSpec(input: {
     credentialRepo: resolve(input.credentialRepo),
     harnessRoot: resolve(input.harnessRoot),
     profile: input.profile,
+    ...(input.preflight === undefined ? {} : { preflight: input.preflight }),
   }
 }
 
@@ -876,6 +1062,7 @@ function sameLaunchSpec(left: LaunchSpec, right: LaunchSpec): boolean {
   return left.command === right.command && left.port === right.port && left.home === right.home
     && left.credentialRepo === right.credentialRepo && left.harnessRoot === right.harnessRoot
     && left.profile === right.profile
+    && JSON.stringify(left.preflight) === JSON.stringify(right.preflight)
 }
 
 /** Resolve supervise's complete spec; a post-wait refresh always prefers durable state. */
@@ -923,6 +1110,7 @@ function resolveSuperviseSpec(
     profile: !preferDurable && options.profile !== undefined && options.profile !== ''
       ? options.profile
       : selected?.profile ?? resolveProfileName(options),
+    ...(selected?.preflight === undefined || selected.command !== command ? {} : { preflight: selected.preflight }),
   })
 }
 
@@ -937,7 +1125,10 @@ function resolvePreviousSpec(stateDir: string, io: CliIo): LaunchSpec | undefine
 /** The first ~40 lines of captured preflight output, newline-terminated, or empty. */
 function summarizeOutput(output: string): string {
   if (output.trim() === '') return ''
-  const lines = output.split('\n')
+  // A failed candidate or composition can print its one-time browser launch
+  // URL. Diagnostics may name the authority/path, never the bearer value.
+  const redacted = output.replace(/([?&](?:token|grant)=)[^\s&#"']+/gi, '$1<redacted>')
+  const lines = redacted.split('\n')
   const kept = lines.length > 41 ? [...lines.slice(0, 40), `… (${lines.length - 40} more lines)`] : lines
   return `${kept.join('\n').replace(/\n+$/, '')}\n`
 }
@@ -956,8 +1147,9 @@ function summarizeOutput(output: string): string {
  */
 async function preflightGate(
   verb: string, profile: string, timeoutMs: number, io: CliIo, harnessRoot?: string, home?: string,
+  binding?: LaunchPreflightSpec,
 ): Promise<boolean> {
-  const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot, home)
+  const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot, home, binding)
   switch (outcome.kind) {
     case 'pass':
       io.stdout(`composition preflight PASS (profile ${JSON.stringify(profile)})\n`)
@@ -978,6 +1170,29 @@ async function preflightGate(
       }manual override: stop the instance by hand (\`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)\`) and let the watchdog respawn it, or fix the preflight failure and retry.\n`)
       return false
   }
+}
+
+async function candidateProbeGate(
+  target: LaunchSpec,
+  timeoutMs: number,
+  io: CliIo,
+  home: string,
+): Promise<boolean> {
+  if (target.preflight === undefined) {
+    io.stderr('reconfigure refused: target has no explicit candidate probe binding\n')
+    return false
+  }
+  const outcome = await runCandidateProbe(
+    target.preflight, target.command, timeoutMs, target.harnessRoot, home,
+  )
+  if (outcome.kind === 'pass') {
+    io.stdout(`candidate command probe PASS (target command ${target.preflight.targetCommandSha256.slice(0, 16)})\n`)
+    return true
+  }
+  io.stderr(`reconfigure refused: candidate command probe ${outcome.kind === 'composition-failed' ? 'failed' : 'could not execute'}${
+    outcome.detail === undefined ? '' : ` — ${outcome.detail}`
+  }:\n${summarizeOutput(outcome.output)}`)
+  return false
 }
 
 /** Same-launch verbs follow the durable host root unless explicitly overridden. */
@@ -1185,6 +1400,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return 0
     }
     case 'configure-launch': {
+      if (options.ifAbsent && readLaunchState(stateDir) !== null) {
+        io.stdout('launch specification already exists — kept it unchanged (--if-absent)\n')
+        return 0
+      }
       if (options.port === undefined || options.start === undefined || options.start === '') {
         io.stderr(`configure-launch requires --port N and --start "CMD"\n\n${USAGE}`)
         return 2
@@ -1199,6 +1418,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stderr('configure-launch requires --harness-root DIR or DSH_HARNESS; --repo names the independent credential/rollback repository\n')
         return 2
       }
+      let preflight: LaunchPreflightSpec
+      try {
+        preflight = resolvePreflightSpec(options, options.start, harnessRoot, false)
+      } catch (error) {
+        io.stderr(`configure-launch refused: ${error instanceof Error ? error.message : String(error)}\n`)
+        return 2
+      }
       const spec = launchSpec({
         command: options.start,
         port: options.port,
@@ -1206,6 +1432,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         credentialRepo: repoDir,
         harnessRoot,
         profile: resolveProfileName(options),
+        preflight,
       })
       const written = writeStableLaunchSpec(stateDir, spec, options.ifAbsent)
       if (written) {
@@ -1385,10 +1612,23 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       return ok ? 0 : 1
     }
     case 'preflight': {
+      const harnessRoot = resolveHarnessRoot(options.harnessRoot)
+      let binding: LaunchPreflightSpec | undefined
+      if (options.preflightSurface !== undefined || options.preflightInstallAnchor !== undefined
+        || options.preflightRunner !== undefined) {
+        try {
+          binding = resolvePreflightSpec(options, 'standalone-preflight', harnessRoot, false)
+        } catch (error) {
+          io.stderr(`preflight refused: ${error instanceof Error ? error.message : String(error)}\n`)
+          return 2
+        }
+      }
       const outcome = await runPreflightCheck(
         resolveProfileName(options),
         options.timeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
-        resolveHarnessRoot(options.harnessRoot),
+        harnessRoot,
+        undefined,
+        binding,
       )
       if (outcome.kind === 'unavailable') {
         io.stderr('preflight unavailable outside the dsh app layout\n')
@@ -1500,7 +1740,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       const previous = resolvePreviousSpec(stateDir, io)
       if (previous === undefined) return 2
-      const target = launchSpec({
+      let target = launchSpec({
         command: options.start,
         port: options.port ?? previous.port,
         home: options.home !== '' ? options.home : previous.home,
@@ -1508,6 +1748,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         harnessRoot: options.harnessRoot !== '' ? options.harnessRoot : previous.harnessRoot,
         profile: options.profile !== undefined && options.profile !== '' ? options.profile : previous.profile,
       })
+      try {
+        target = { ...target, preflight: resolvePreflightSpec(options, target.command, target.harnessRoot, true) }
+      } catch (error) {
+        io.stderr(`reconfigure refused: ${error instanceof Error ? error.message : String(error)}\n`)
+        return 2
+      }
       if (target.port !== previous.port) {
         io.stderr(`reconfigure refused: online supervisor handoff keeps one authority and port (${previous.port}); target requested ${target.port}. Move ports as a separately supervised deployment, then cut traffic over.\n`)
         return 2
@@ -1544,28 +1790,25 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 1
       }
       if (!sandboxGate('reconfigure', options, io)) return 1
-      if (transitionPlan === undefined) {
+      let snapshot: { home: string; cleanup(): void }
+      try {
+        snapshot = transitionPlan === undefined
+          ? createPreflightSnapshot(target.home)
+          : createTransitionPreflightSnapshot(transitionPlan)
+      } catch (error) {
+        io.stderr(`reconfigure refused: could not prepare an isolated${transitionPlan === undefined ? '' : ' transitioned'} home: ${String(error)}\n`)
+        return 1
+      }
+      try {
+        const timeout = options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS
+        if (!(await candidateProbeGate(target, timeout, io, snapshot.home))) return 1
         if (!(await preflightGate(
-          'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
-          io, target.harnessRoot, target.home,
+          'reconfigure', target.profile, timeout,
+          io, target.harnessRoot, snapshot.home, target.preflight,
         ))) return 1
-      } else {
-        let snapshot: ReturnType<typeof createTransitionPreflightSnapshot>
-        try {
-          snapshot = createTransitionPreflightSnapshot(transitionPlan)
-        } catch (error) {
-          io.stderr(`reconfigure refused: could not prepare an isolated transitioned home: ${String(error)}\n`)
-          return 1
-        }
-        try {
-          if (!(await preflightGate(
-            'reconfigure', target.profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS,
-            io, target.harnessRoot, snapshot.home,
-          ))) return 1
-          io.stdout('filesystem transition preflight PASS on an isolated copy of the live home\n')
-        } finally {
-          snapshot.cleanup()
-        }
+        io.stdout(`${transitionPlan === undefined ? 'candidate' : 'filesystem transition'} preflight PASS on an isolated copy of the live home\n`)
+      } finally {
+        snapshot.cleanup()
       }
 
       const lock = acquireRestartLock(stateDir)
@@ -2125,6 +2368,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
       if (!(await preflightGate(
         'schedule-exit', profile, options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, harnessRoot,
+        durableSpec?.home, durableSpec?.preflight,
       ))) {
         return 1
       }

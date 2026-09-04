@@ -1571,7 +1571,7 @@ while true; do
   if [ -f "$RESTART_MARKER" ]; then
     canary_proven=0
     if guard_verify && current_ownership_matches; then
-      cutover_event_required canary pass
+      cutover_event_required canary "$CUTOVER_ROLE" pass
       # Persisting canary evidence can take long enough for a short-lived child
       # to exit. Recheck after the event and before the terminal ready event.
       if current_ownership_matches; then canary_proven=1; fi
@@ -1619,7 +1619,20 @@ while true; do
     else
       if [ -n "$CUTOVER_ID" ]; then
         wd_log "canary/ownership FAIL during launch cutover"
-        cutover_event_required canary fail "credential/head verification or child/listener identity failed after readiness"
+        if [ "$CUTOVER_ROLE" = "target" ]; then
+          cutover_event_required canary target fail "credential/head verification or child/listener identity failed after readiness"
+        elif current_ownership_matches; then
+          # The singleton restart credential normally belongs to the rejected
+          # target repo. Do not relabel that target credential failure as a
+          # previous-host canary failure: stable process/listener ownership is
+          # the explicit recovery proof when no previous-scoped credential is
+          # available.
+          cutover_event_required canary previous skipped \
+            "target-scoped credential is not previous recovery evidence; stable ownership remained proven"
+        else
+          cutover_event_required canary previous fail \
+            "restored child/listener identity failed after readiness"
+        fi
         if [ "$CUTOVER_ROLE" = "target" ] && [ "$CUTOVER_POLICY" = "restore-previous" ] \
           && [ -n "$PREVIOUS_START" ] && [ -n "$PREVIOUS_HOME" ] && [ -n "$PREVIOUS_REPO" ] \
           && [ -n "$PREVIOUS_HARNESS_ROOT" ]; then
@@ -1633,6 +1646,14 @@ while true; do
           continue
         fi
         if [ "$CUTOVER_ROLE" = "previous" ]; then
+          if ! current_ownership_matches; then
+            failures=$((failures + 1))
+            cutover_event_required attempt-failed previous "$current_attempt" \
+              "restored previous ownership changed after readiness"
+            cutover_event_required awaiting-user "restored previous host lost child/listener ownership"
+            wait_cutover_with_live_child
+            continue
+          fi
           # The previous service is restored and ready; a credential tied to a
           # different target repo may legitimately fail. Browser acknowledgement
           # is still required before this recovery becomes terminal.

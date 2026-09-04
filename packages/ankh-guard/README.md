@@ -120,15 +120,20 @@ dsh-ankh-guard reconfigure \
   --start "<完整目标命令>" \
   --repo "<目标凭证/回滚仓库>" \
   --harness-root "<目标宿主根>" \
+  --preflight-surface built \
+  --preflight-install-anchor "<实际 npm toolchain>/node_modules/@deepseek-ai/dsh/package.json" \
+  --candidate-probe-command "<以同一 target argv 做一次性验证的命令>" \
   --transition-file "<可选的状态迁移计划.json>" \
   --on-failure restore-previous \
   --browser-handoff required \
   --state-dir "$DSH_HOME/state"
 ```
 
-恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port，当前选中侧保存在 mode-0600 的 `launch-spec.json`；原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`。准备事务时 guard 同时固化旧 supervisor、直接 child 与 listener 的 PID/启动 identity；successor 按 identity 有界等待旧 supervisor 正常让权（默认 15 秒，可用 `--supervisor-yield-timeout-ms` 调整），等待期间持续消费 abort/restore。超时只会在先冻结并复核旧 supervisor identity 后终止其精确进程树。successor 随后只停止已证明的旧 child/listener 并确认端口释放，绝不凭端口反查后杀任意监听者。因此 PID 复用、卡死 watchdog、短命 `reconfigure` 调用者、外层 launchd/systemd 等待者或嵌套 shell 都不会模糊所有权或无限悬挂切换。
+恢复选择是必填项，因而会在旧宿主停止前获批：`restore-previous` 恢复上一份**完整**启动配置；`wait-for-user` 不重置任何仓库，原地停留等用户处理。完整 previous/target 对分别保存 command、home、credential repo、harness root、profile 与 port。每份新配置还固化 composition preflight 的 `source|built` 面、runner 可执行方式/路径/内容 SHA、实际 `@deepseek-ai/dsh/package.json` 安装锚点和 target command SHA；built successor 从其 npm toolchain 解析模块，绝不因 guard 自己恰由 tsx 启动就误选 checkout source。`reconfigure` 另要求一条与 target command SHA 同时提交的一次性 `--candidate-probe-command`，先在隔离 home 验证真实 CLI/argv，再跑同一执行面上的 composition preflight；任一失败都发生在 previous 停止之前。当前选中侧保存在 mode-0600 的 `launch-spec.json`；回执只写各摘要和 PASS 结果，不写 probe/start 命令或 bearer URL。
 
-目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0。浏览器端改用插件同源路由上的持有式长轮询，不再永久每 500ms 请求：已证明的 previous listener 只落盘每标签页随机 capability 的哈希，并让所有仍响应的已登记标签页进入等待。只有在 ownership-stable 服务就绪和 canary 成功后，final listener 才在 Cookie 有效时通知各页刷新，或在收到 401 时把该最终进程的同源一次性 URL 返回内存，由页面执行 `location.replace()`；已认证页面回传 ACK 后，会丢弃 query/fragment 并回到原来的安全 pathname。一个真实 ACK 解除 terminal ready 门禁，其他尚未 ACK 的已登记页面在状态压缩后仍可恢复。没有原标签页登记或都未在超时内确认时，watchdog 才请求一次 system open 兜底，并继续等待新页面回传已认证 ACK；opener 的 exit 0 本身永远不算交接成功。服务端 readiness/canary 与浏览器交接分别记录，所需证据全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器；原始 capability 和 bearer URL 均不进入状态文件、耐久日志或回执。`launch-cutover.json` 记录脱敏配置摘要、新旧 supervisor/child/listener identity、旧 supervisor 让权、认证就绪、浏览器 ACK 渠道、稳定性证明、分角色失败计数、canary 与恢复结果；`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 显式授权停止已证明的 target 并恢复完整 previous spec。两个动作分别使用原子 marker，读取时 restore 永远优先，因此并发会话的晚到 abort 也不能降级 restore。
+原子切换选中侧是配置提交点。缺少完整耐久 previous 时必须先用当前真实值运行 `configure-launch`，并显式给出它的 preflight surface/install anchor；旧 `instance-launch.json` 不足以推断，目标 `--repo` 也绝不会倒填 previous。随后替代 watchdog 会在旧宿主仍对外服务时原子取得 `watchdog.pid`。准备事务时 guard 同时固化旧 supervisor、直接 child 与 listener 的 PID/启动 identity；successor 按 identity 有界等待旧 supervisor 正常让权（默认 15 秒，可用 `--supervisor-yield-timeout-ms` 调整），等待期间持续消费 abort/restore。超时只会在先冻结并复核旧 supervisor identity 后终止其精确进程树。successor 随后只停止已证明的旧 child/listener 并确认端口释放，绝不凭端口反查后杀任意监听者。因此 PID 复用、卡死 watchdog、短命 `reconfigure` 调用者、外层 launchd/systemd 等待者或嵌套 shell 都不会模糊所有权或无限悬挂切换。
+
+目标受保护时，watchdog 只接受最终进程输出、且 authority 与被监督 loopback 完全一致的启动 URL，不依赖任何查询参数名。它用临时 jar 证明 303 Cookie 交换和认证后根路径 200，再在默认 3 秒稳定窗口内持续证明 child 存活、唯一 listener 属于该 child 树、PID/启动 identity 不变且 retry 为 0。浏览器端改用插件同源路由上的持有式长轮询，不再永久每 500ms 请求：已证明的 previous listener 只落盘每标签页随机 capability 的哈希，并让所有仍响应的已登记标签页进入等待。只有在 ownership-stable 服务就绪和 canary 成功后，final listener 才在 Cookie 有效时通知各页刷新，或在收到 401 时把该最终进程的同源一次性 URL 返回内存，由页面执行 `location.replace()`；已认证页面回传 ACK 后，会丢弃 query/fragment 并回到原来的安全 pathname。一个真实 ACK 解除 terminal ready 门禁，其他尚未 ACK 的已登记页面在状态压缩后仍可恢复。没有原标签页登记或都未在超时内确认时，watchdog 才请求一次 system open 兜底，并继续等待新页面回传已认证 ACK；opener 的 exit 0 本身永远不算交接成功。服务端 readiness/canary 与浏览器交接分别记录，所需证据全部完成后才释放会话唤醒。裸 401、旧 listener 的 200、target 的短暂 200 或随后退出都不会成为 ready，也不会把已拒绝 target 的 URL 交给浏览器；原始 capability 和 bearer URL 均不进入状态文件、耐久日志或回执。`launch-cutover.json` 记录脱敏配置摘要、新旧 supervisor/child/listener identity、旧 supervisor 让权、认证就绪、浏览器 ACK 渠道、稳定性证明与分角色失败计数；target 的 readiness/canary 保留在 `targetValidation`，previous 的恢复 readiness 以及可用、失败或因只有 target-scoped credential 而明确跳过的恢复 canary 单独写在 `recovery.validation`，不会再出现 previous 已恢复却挂着一个无主语的 target canary fail。`launch-status` 输出该回执且不暴露两边命令。事务进行中可运行 `abort-cutover --state-dir "$DSH_HOME/state"` 执行事前批准的恢复策略；`restore-previous --state-dir "$DSH_HOME/state"` 显式授权停止已证明的 target 并恢复完整 previous spec。两个动作分别使用原子 marker，读取时 restore 永远优先，因此并发会话的晚到 abort 也不能降级 restore。
 
 candidate 无法读取旧宿主留下的可重建投影或缓存时，`--transition-file` 可以提交一份经过评审的 schema-v1 隔离计划。计划只接受 `home` 下互不重叠、没有符号链接且不包含 guard state 的相对路径，以及显式的 `quarantine` 操作；它不内置任何宿主版本或文件名知识。示例：`{"schemaVersion":1,"home":"/absolute/dsh-home","operations":[{"kind":"quarantine","path":"storages/<可重建缓存>","expect":"present"}]}`。每项 `expect` 必须是 `present` 或 `absent`，副本 preflight 与 live apply 都必须观察到相同状态，否则在停 previous 前或启动 target 前拒绝。计划既要覆盖 target 启动前必须移开的旧路径，也要覆盖 target 失败后 previous 启动前必须清走的新输出路径；后者即使准备时不存在也必须用 `expect: "absent"` 显式列出。权威日志、凭据或不可重建数据不得借此移出；需要内容转换的格式应使用独立、可逆且另行评审的迁移工具。
 
@@ -150,7 +155,8 @@ guard 先以 copy-on-write 优先的方式复制 live home，在副本中执行�
 # 安装器只初始化一次；此后每次 KeepAlive 启动都服从耐久选中配置：
 dsh-ankh-guard configure-launch --if-absent --port 3093 --start "<start command>" \
   --home "$DSH_HOME" --state-dir "$DSH_HOME/state" \
-  --repo "<credential repo>" --harness-root "<host root>" &&
+  --repo "<credential repo>" --harness-root "<host root>" \
+  --preflight-surface built --preflight-install-anchor "<dsh package.json>" &&
 exec dsh-ankh-guard supervise --foreground --state-dir "$DSH_HOME/state"
 ```
 

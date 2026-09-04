@@ -387,18 +387,26 @@ describe('durable launch cutover state', () => {
       previousSupervisorPid: 301, previousSupervisorStartToken: 'supervisor-start-301', previousOwnership: fakeOwnership(300), now: NOW,
     })
     recordCutoverEvent(stateDir, 'cutover-restore', 'child-started', ['target', '1', '302', 'target-start-302'], NOW + 1)
-    recordCutoverEvent(stateDir, 'cutover-restore', 'attempt-failed', ['target', '1', 'readiness failed'], NOW + 2)
-    recordCutoverEvent(stateDir, 'cutover-restore', 'restoring', ['approved full-spec recovery'], NOW + 3)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'ownership-stable', ['target', '302', 'target-start-302', '305', 'listener-start-305', '3000', '0'], NOW + 2)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'canary', ['target', 'fail', 'target credential rejected'], NOW + 3)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'attempt-failed', ['target', '1', 'readiness failed'], NOW + 4)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'restoring', ['approved full-spec recovery'], NOW + 5)
     expect(readLaunchState(stateDir)).toMatchObject({ mode: 'cutover', selected: 'previous' })
-    recordCutoverEvent(stateDir, 'cutover-restore', 'child-started', ['previous', '1', '303', 'previous-start-303'], NOW + 4)
-    recordCutoverEvent(stateDir, 'cutover-restore', 'ownership-stable', ['previous', '303', 'previous-start-303', '304', 'listener-start-304', '3000', '0'], NOW + 5)
-    recordCutoverEvent(stateDir, 'cutover-restore', 'ready', ['previous'], NOW + 6)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'child-started', ['previous', '1', '303', 'previous-start-303'], NOW + 6)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'ownership-stable', ['previous', '303', 'previous-start-303', '304', 'listener-start-304', '3000', '0'], NOW + 7)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'canary', ['previous', 'skipped', 'target credential is unrelated'], NOW + 8)
+    recordCutoverEvent(stateDir, 'cutover-restore', 'ready', ['previous'], NOW + 9)
 
     expect(readLaunchState(stateDir)).toEqual({ version: 1, mode: 'stable', active: previous })
     expect(readCutoverReceipt(stateDir)).toMatchObject({
       phase: 'restored', child: { restoredPid: 303 },
-      recovery: { policy: 'restore-previous', result: 'restored' },
+      recovery: {
+        policy: 'restore-previous', result: 'restored',
+        validation: { canary: { outcome: 'skipped' }, readiness: { role: 'previous' } },
+      },
+      targetValidation: { canary: { outcome: 'fail', detail: 'target credential rejected' } },
     })
+    expect(readCutoverReceipt(stateDir)?.canary).toBeUndefined()
     expect(JSON.parse(readFileSync(join(stateDir, STATE_FILES.lastRestart), 'utf8')).cutover.outcome).toBe('restored')
   })
 
@@ -609,6 +617,24 @@ function stubPreflightRunner(resolveRunner: (harnessRoot: string) => string | un
   cleanups.push(() => { preflightInternals.resolveRunner = original })
 }
 
+/** Explicit built-surface binding for reconfigure tests that do not exercise the real runner. */
+function boundPreflightArgs(candidateProbeCommand = 'true', observedHarnessFile?: string): string[] {
+  const root = tmpDir('guard-bound-preflight-')
+  const installAnchor = join(root, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+  const runner = join(root, 'preflight-runner.js')
+  mkdirSync(join(root, 'node_modules', '@deepseek-ai', 'dsh'), { recursive: true })
+  writeFileSync(installAnchor, JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.0.0-test' }))
+  writeFileSync(runner, observedHarnessFile === undefined
+    ? 'process.exit(0)\n'
+    : `require('node:fs').writeFileSync(${JSON.stringify(observedHarnessFile)}, process.env.DSH_HARNESS ?? '')\n`)
+  return [
+    '--preflight-surface', 'built',
+    '--preflight-runner', runner,
+    '--preflight-install-anchor', installAnchor,
+    '--candidate-probe-command', candidateProbeCommand,
+  ]
+}
+
 /** Fake the sandbox probe, restored after the test. */
 function stubSandboxProbe(sandboxed: boolean): void {
   const original = envInternals.sandboxedByProbe
@@ -629,13 +655,20 @@ describe('CLI', () => {
       'configure-launch', '--port', '3080', '--start', firstCommand,
       '--home', home, '--profile', 'web', '--state-dir', stateDir, '--repo', repo,
       '--harness-root', join(home, 'host-current'),
+      ...boundPreflightArgs(),
     ], io().io)).toBe(0)
     expect(await runCli([
       'configure-launch', '--if-absent', '--port', '3080', '--start', replacementCommand,
       '--home', home, '--profile', 'web', '--state-dir', stateDir, '--repo', repo,
       '--harness-root', join(home, 'host-replacement'),
+      ...boundPreflightArgs(),
     ], io().io)).toBe(0)
     expect(selectedLaunchSpec(readLaunchState(stateDir)!).command).toBe(firstCommand)
+    expect(selectedLaunchSpec(readLaunchState(stateDir)!).preflight).toMatchObject({
+      surface: 'built',
+      targetCommandSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      runnerSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
 
     const status = io()
     expect(await runCli(['launch-status', '--state-dir', stateDir], status.io)).toBe(0)
@@ -643,6 +676,8 @@ describe('CLI', () => {
     expect(text).not.toContain(firstCommand)
     expect(text).not.toContain(replacementCommand)
     expect(text).toContain('commandSha256')
+    expect(text).toContain('targetCommandSha256')
+    expect(text).toContain('runnerSha256')
   })
 
   it('refuses to invent a complete previous spec from the legacy instance-launch record', async () => {
@@ -688,25 +723,50 @@ describe('CLI', () => {
     writeFileSync(join(stateDir, STATE_FILES.restartLock), String(process.pid))
     stubSandboxProbe(false)
     stubPreflight(undefined)
-    let observedHarness = ''
-    stubPreflightRunner((root) => {
-      observedHarness = root
-      return 'true'
-    })
+    const observedHarnessFile = join(stateDir, 'observed-harness')
 
     const result = io()
     expect(await runCli([
       'reconfigure', '--start', 'target-command', '--on-failure', 'restore-previous',
       '--repo', targetRepo, '--harness-root', targetHarness,
       '--state-dir', stateDir,
+      ...boundPreflightArgs('true', observedHarnessFile),
     ], result.io)).toBe(1)
     expect(result.out.join('')).toContain('composition preflight PASS')
     expect(result.err.join('')).toContain('restart is in flight')
-    expect(observedHarness).toBe(targetHarness)
+    expect(readFileSync(observedHarnessFile, 'utf8')).toBe(targetHarness)
     expect(selectedLaunchSpec(readLaunchState(stateDir)!)).toMatchObject({
       credentialRepo: previousRepo,
       harnessRoot: previousHarness,
     })
+  })
+
+  it('binds a candidate command probe to the target command and refuses before cutover when target argv is invalid', async () => {
+    const stateDir = tmpDir('guard-candidate-probe-')
+    const repo = makeRepo()
+    const home = tmpDir('guard-candidate-home-')
+    writeStableLaunchSpec(stateDir, {
+      version: 1, command: 'previous-command', port: 3080, home,
+      credentialRepo: repo, harnessRoot: home, profile: 'web',
+    })
+    recordCredential(stateDir, {
+      scope: 'target build+test', revision: currentHead(repo)!, command: 'pnpm test',
+    }, Date.now())
+    markLiveWatchdog(stateDir)
+    stubSandboxProbe(false)
+
+    const result = io()
+    expect(await runCli([
+      'reconfigure', '--start', 'dsh web --profile web-target',
+      '--on-failure', 'restore-previous', '--state-dir', stateDir, '--repo', repo,
+      ...boundPreflightArgs(`"${process.execPath}" -e "console.error('unknown option --profile http://127.0.0.1:3080/?token=one-time-secret'); process.exit(2)"`),
+    ], result.io)).toBe(1)
+    expect(result.err.join('')).toContain('candidate command probe failed')
+    expect(result.err.join('')).toContain('unknown option --profile')
+    expect(result.err.join('')).toContain('token=<redacted>')
+    expect(result.err.join('')).not.toContain('one-time-secret')
+    expect(readLaunchState(stateDir)).toMatchObject({ mode: 'stable', active: { command: 'previous-command' } })
+    expect(readCutoverReceipt(stateDir)).toBeNull()
   })
 
   it('schedule-exit rejects flags or an instance record that diverge from the durable active launch spec', async () => {
@@ -2341,6 +2401,7 @@ describe('supervise', () => {
           'reconfigure', '--start', targetStart,
           '--on-failure', 'restore-previous', '--browser-handoff', 'off',
           '--delay-ms', '3000', '--state-dir', stateDir, '--repo', repo,
+          ...boundPreflightArgs(),
         ], result.io)).toBe(0)
       } finally {
         if (previousPath === undefined) delete process.env.PATH
@@ -2370,6 +2431,11 @@ describe('supervise', () => {
       expect(await fetchBody(port)).toBe('target-host')
       expect(settledReceipt, `cutover did not settle; marker=${existsSync(join(stateDir, STATE_FILES.restartRequested))}\n${cutoverLog.slice(-8000)}`).toMatchObject({
         phase: 'ready',
+        preflight: {
+          surface: 'built', candidateProbe: 'pass', composition: 'pass',
+          targetCommandSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+          runnerSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
         authentication: { transportStatus: 200, browserHandoff: 'off' },
         readiness: { role: 'target', stableWindowMs: 3000, retryCount: 0 },
         canary: { outcome: 'pass' },
@@ -2481,6 +2547,7 @@ const timer = setInterval(() => {
         'reconfigure', '--start', targetStart,
         '--on-failure', 'restore-previous', '--browser-handoff', 'required',
         '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
       const deadline = Date.now() + 30_000
@@ -2543,6 +2610,7 @@ const timer = setInterval(() => {
         '--on-failure', 'wait-for-user', '--browser-handoff', 'off',
         '--delay-ms', '200', '--supervisor-yield-timeout-ms', '3000',
         '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
       // Model a wedged old watchdog after the replacement has atomically
@@ -2604,6 +2672,7 @@ const timer = setInterval(() => {
         'reconfigure', '--start', brokenTarget,
         '--on-failure', 'restore-previous', '--browser-handoff', 'off',
         '--delay-ms', '500', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
       const deadline = Date.now() + 35_000
@@ -2674,6 +2743,7 @@ process.exit(1)
         '--transition-file', transitionFile,
         '--on-failure', 'restore-previous', '--browser-handoff', 'off',
         '--delay-ms', '500', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], result.io)).toBe(0)
       expect(result.out.join('')).toContain('filesystem transition preflight PASS on an isolated copy')
 
@@ -2738,6 +2808,7 @@ exit 1
         'reconfigure', '--start', `/bin/bash ${JSON.stringify(targetScript)}`,
         '--on-failure', 'restore-previous', '--browser-handoff', 'off',
         '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
       const deadline = Date.now() + 35_000
@@ -2808,6 +2879,7 @@ setTimeout(() => process.exit(23), 1800)
           'reconfigure', '--start', shortTarget,
           '--on-failure', 'restore-previous', '--browser-handoff', 'required',
           '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+          ...boundPreflightArgs(),
         ], io().io)).toBe(0)
       } finally {
         if (previousOpenCommand === undefined) delete process.env.WD_BROWSER_OPEN_COMMAND
@@ -2856,6 +2928,7 @@ setTimeout(() => process.exit(23), 1800)
         'reconfigure', '--start', pendingTarget,
         '--on-failure', 'wait-for-user', '--browser-handoff', 'off',
         '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
       const targetDeadline = Date.now() + 15_000
       while (readCutoverReceipt(stateDir)?.phase !== 'target-starting' && Date.now() < targetDeadline) {
@@ -2908,6 +2981,7 @@ setTimeout(() => process.exit(23), 1800)
         'reconfigure', '--start', pendingTarget,
         '--on-failure', 'wait-for-user', '--browser-handoff', 'off',
         '--delay-ms', '200', '--state-dir', stateDir, '--repo', repo,
+        ...boundPreflightArgs(),
       ], io().io)).toBe(0)
       const targetDeadline = Date.now() + 15_000
       while (readCutoverReceipt(stateDir)?.phase !== 'target-starting' && Date.now() < targetDeadline) {
