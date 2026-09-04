@@ -8,8 +8,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import {
-  chmodSync, constants, cpSync, lstatSync, mkdirSync, mkdtempSync,
-  readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
+  chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync,
+  readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -536,22 +536,86 @@ export function readTransitionRecord(
   return loadTransition(reference, expectedHome, stateDir, cutoverId).record
 }
 
+function materializationError(source: string, error: unknown): Error {
+  const code = (error as NodeJS.ErrnoException).code
+  if (code === 'ELOOP') return new Error(`preflight snapshot refused a symbolic-link cycle at ${source}`)
+  return new Error(`preflight snapshot could not safely materialize ${source}: ${String(error)}`)
+}
+
 /**
- * Clone a live home and apply the plan to the clone for target preflight.
- * @param plan - Validated live-home plan.
- * @returns Isolated transitioned home and an idempotent cleanup callback.
+ * Copy one entry without ever creating a symbolic link in the destination.
+ * Symlink targets are followed as read sources and materialized as independent
+ * files/directories; an ancestor identity set makes directory cycles fail
+ * before a candidate process can touch the snapshot.
+ */
+function materializeSnapshotEntry(source: string, destination: string, ancestors: Set<string>): void {
+  let metadata: ReturnType<typeof statSync>
+  let canonical: string
+  try {
+    metadata = statSync(source)
+    canonical = realpathSync(source)
+  } catch (error) {
+    throw materializationError(source, error)
+  }
+
+  if (metadata.isDirectory()) {
+    if (ancestors.has(canonical)) {
+      throw new Error(`preflight snapshot refused a symbolic-link directory cycle at ${source}`)
+    }
+    mkdirSync(destination, { mode: 0o700 })
+    ancestors.add(canonical)
+    try {
+      for (const name of readdirSync(source)) {
+        materializeSnapshotEntry(join(source, name), join(destination, name), ancestors)
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('preflight snapshot ')) throw error
+      throw materializationError(source, error)
+    } finally {
+      ancestors.delete(canonical)
+    }
+    chmodSync(destination, metadata.mode & 0o7777)
+    utimesSync(destination, metadata.atime, metadata.mtime)
+    return
+  }
+
+  if (!metadata.isFile()) {
+    throw new Error(`preflight snapshot cannot safely materialize a non-file entry at ${source}`)
+  }
+  try {
+    copyFileSync(source, destination, constants.COPYFILE_FICLONE)
+    chmodSync(destination, metadata.mode & 0o7777)
+    utimesSync(destination, metadata.atime, metadata.mtime)
+  } catch (error) {
+    throw materializationError(source, error)
+  }
+}
+
+/** Prove the completed candidate tree contains only independent files/directories. */
+function assertMaterializedSnapshot(path: string): void {
+  const metadata = lstatSync(path)
+  if (metadata.isSymbolicLink()) {
+    throw new Error(`preflight snapshot retained an unsafe symbolic link at ${path}`)
+  }
+  if (metadata.isDirectory()) {
+    for (const name of readdirSync(path)) assertMaterializedSnapshot(join(path, name))
+    return
+  }
+  if (!metadata.isFile()) throw new Error(`preflight snapshot retained an unsafe non-file entry at ${path}`)
+}
+
+/**
+ * Clone a live home for target preflight without retaining links to live or
+ * external bytes. Every source symlink is materialized, not copied as a link.
+ * @param sourceHome - Live dsh home to read.
+ * @returns Isolated home and an idempotent cleanup callback.
  */
 export function createPreflightSnapshot(sourceHome: string): { home: string; root: string; cleanup(): void } {
   const root = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
   const home = join(root, 'home')
   try {
-    cpSync(sourceHome, home, {
-      recursive: true,
-      dereference: false,
-      preserveTimestamps: true,
-      verbatimSymlinks: false,
-      mode: constants.COPYFILE_FICLONE,
-    })
+    materializeSnapshotEntry(sourceHome, home, new Set())
+    assertMaterializedSnapshot(home)
     return { home, root, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
   } catch (error) {
     rmSync(root, { recursive: true, force: true })

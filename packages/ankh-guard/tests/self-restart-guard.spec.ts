@@ -7,7 +7,7 @@
  * reads the clock; git calls run against throwaway repositories.
  */
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import { tmpdir, homedir } from 'node:os'
@@ -666,6 +666,7 @@ describe('CLI', () => {
     expect(selectedLaunchSpec(readLaunchState(stateDir)!).command).toBe(firstCommand)
     expect(selectedLaunchSpec(readLaunchState(stateDir)!).preflight).toMatchObject({
       surface: 'built',
+      candidateProbeProvenance: 'caller-supplied',
       targetCommandSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       runnerSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     })
@@ -767,6 +768,36 @@ describe('CLI', () => {
     expect(result.err.join('')).not.toContain('one-time-secret')
     expect(readLaunchState(stateDir)).toMatchObject({ mode: 'stable', active: { command: 'previous-command' } })
     expect(readCutoverReceipt(stateDir)).toBeNull()
+  })
+
+  it('refuses an unsafe snapshot before running the candidate or stopping previous', async () => {
+    const stateDir = tmpDir('guard-snapshot-cycle-state-')
+    const repo = makeRepo()
+    const home = tmpDir('guard-snapshot-cycle-home-')
+    const candidateMarker = join(stateDir, 'candidate-ran')
+    writeStableLaunchSpec(stateDir, {
+      version: 1, command: 'previous-command', port: 3080, home,
+      credentialRepo: repo, harnessRoot: home, profile: 'web',
+    })
+    recordCredential(stateDir, {
+      scope: 'target build+test', revision: currentHead(repo)!, command: 'pnpm test',
+    }, Date.now())
+    markLiveWatchdog(stateDir)
+    symlinkSync('.', join(home, 'loop'))
+    stubSandboxProbe(false)
+
+    const result = io()
+    expect(await runCli([
+      'reconfigure', '--start', 'target-command',
+      '--on-failure', 'restore-previous', '--state-dir', stateDir, '--repo', repo,
+      ...boundPreflightArgs(`touch ${JSON.stringify(candidateMarker)}`),
+    ], result.io)).toBe(1)
+    expect(result.err.join('')).toContain('could not prepare an isolated home')
+    expect(result.err.join('')).toContain('symbolic-link directory cycle')
+    expect(existsSync(candidateMarker)).toBe(false)
+    expect(readLaunchState(stateDir)).toMatchObject({ mode: 'stable', active: { command: 'previous-command' } })
+    expect(readCutoverReceipt(stateDir)).toBeNull()
+    expect(Number(readFileSync(join(stateDir, STATE_FILES.watchdogPid), 'utf8'))).toBe(process.pid)
   })
 
   it('schedule-exit rejects flags or an instance record that diverge from the durable active launch spec', async () => {
@@ -2433,6 +2464,7 @@ describe('supervise', () => {
         phase: 'ready',
         preflight: {
           surface: 'built', candidateProbe: 'pass', composition: 'pass',
+          candidateProbeProvenance: 'caller-supplied',
           targetCommandSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
           runnerSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
         },

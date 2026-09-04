@@ -332,7 +332,7 @@ flags:
   --preflight-surface MODE  configure-launch/reconfigure: explicit successor module surface, source or built
   --preflight-runner FILE  runner file to bind by absolute path and SHA-256 (default: this package's matching face)
   --preflight-install-anchor FILE  the exact successor dsh package.json; built imports resolve from this npm toolchain
-  --candidate-probe-command CMD  reconfigure: required one-shot probe of target CLI/argv, durably bound to --start SHA-256
+  --candidate-probe-command CMD  reconfigure: caller-supplied one-shot probe, durably co-bound with --start SHA-256
   --rollback       restart: on failure, git reset --hard to the recorded checkpoint
   --on-failure POLICY  reconfigure: REQUIRED pre-approved recovery policy:
                    restore-previous (restore the complete previous launch spec) or
@@ -768,7 +768,7 @@ function resolvePreflightSpec(
   }
   const candidateProbeCommand = options.candidateProbeCommand
   if (requireCandidate && (candidateProbeCommand === undefined || candidateProbeCommand.trim() === '')) {
-    throw new Error('--candidate-probe-command CMD is required; it must validate the exact target CLI/argv before the previous host stops')
+    throw new Error('--candidate-probe-command CMD is required; the caller must derive it from the target executable/argv before the previous host stops')
   }
   return {
     version: 1,
@@ -784,6 +784,7 @@ function resolvePreflightSpec(
     ...(candidateProbeCommand === undefined || candidateProbeCommand.trim() === '' ? {} : {
       candidateProbeCommand,
       candidateProbeSha256: commandSha256(candidateProbeCommand),
+      candidateProbeProvenance: 'caller-supplied' as const,
     }),
   }
 }
@@ -961,7 +962,7 @@ export async function runPreflightCheck(
   })
 }
 
-/** Execute the cutover's one-shot target CLI/argv probe under the same home/root. */
+/** Execute the caller-supplied one-shot probe under the target home/root. */
 async function runCandidateProbe(
   binding: LaunchPreflightSpec,
   targetCommand: string,

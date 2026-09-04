@@ -1,11 +1,11 @@
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  applyTransition, createTransitionPreflightSnapshot, prepareTransition,
+  applyTransition, createPreflightSnapshot, createTransitionPreflightSnapshot, prepareTransition,
   readTransitionRecord, rollbackTransition, validateTransitionPlan,
   type TransitionPlan,
 } from '../src/transition.ts'
@@ -172,5 +172,42 @@ describe('filesystem transition', () => {
       snapshot.cleanup()
     }
     expect(existsSync(snapshot.home)).toBe(false)
+  })
+
+  it('materializes relative link targets so writes through the copied paths cannot reach live bytes', () => {
+    const root = temporaryDirectory('ankh-snapshot-links-')
+    const home = join(root, 'home')
+    const external = join(root, 'external.txt')
+    mkdirSync(home)
+    writeFileSync(join(home, 'internal.txt'), 'live-internal')
+    writeFileSync(external, 'live-external')
+    symlinkSync('internal.txt', join(home, 'internal-link'))
+    symlinkSync('../external.txt', join(home, 'external-link'))
+
+    const snapshot = createPreflightSnapshot(home)
+    try {
+      expect(lstatSync(join(snapshot.home, 'internal-link')).isSymbolicLink()).toBe(false)
+      expect(lstatSync(join(snapshot.home, 'external-link')).isSymbolicLink()).toBe(false)
+      writeFileSync(join(snapshot.home, 'internal-link'), 'candidate-internal')
+      writeFileSync(join(snapshot.home, 'external-link'), 'candidate-external')
+      expect(readFileSync(join(home, 'internal.txt'), 'utf8')).toBe('live-internal')
+      expect(readFileSync(external, 'utf8')).toBe('live-external')
+    } finally {
+      snapshot.cleanup()
+    }
+  })
+
+  it('fails closed when a link is dangling or introduces a directory cycle', () => {
+    const root = temporaryDirectory('ankh-snapshot-cycle-')
+    const home = join(root, 'home')
+    mkdirSync(home)
+    symlinkSync('.', join(home, 'loop'))
+
+    expect(() => createPreflightSnapshot(home)).toThrow(/symbolic-link directory cycle/)
+
+    const danglingHome = join(root, 'dangling-home')
+    mkdirSync(danglingHome)
+    symlinkSync('missing', join(danglingHome, 'dangling'))
+    expect(() => createPreflightSnapshot(danglingHome)).toThrow(/could not safely materialize/)
   })
 })

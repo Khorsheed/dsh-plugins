@@ -43,6 +43,8 @@ export interface LaunchPreflightSpec {
   /** One-shot candidate command that validates the target CLI/argv contract. */
   candidateProbeCommand?: string
   candidateProbeSha256?: string
+  /** Guard binds and runs this caller assertion; it does not derive the probe. */
+  candidateProbeProvenance?: 'caller-supplied'
 }
 
 /** Everything needed to launch one supervised instance. The state directory is the transaction anchor. */
@@ -109,6 +111,7 @@ export interface LaunchSpecSummary {
     hostPackageVersion: string
     targetCommandSha256: string
     candidateProbeSha256?: string
+    candidateProbeProvenance?: 'caller-supplied'
   }
 }
 
@@ -204,6 +207,7 @@ export interface LaunchCutoverReceipt {
     hostPackageVersion: string
     targetCommandSha256: string
     candidateProbeSha256: string
+    candidateProbeProvenance: 'caller-supplied'
     candidateProbe: 'pass'
     composition: 'pass'
   }
@@ -271,9 +275,10 @@ function isLaunchPreflightSpec(value: unknown): value is LaunchPreflightSpec {
     && typeof spec.hostPackageVersion === 'string' && spec.hostPackageVersion !== ''
     && typeof spec.targetCommandSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.targetCommandSha256)
     && (spec.candidateProbeCommand === undefined
-      ? spec.candidateProbeSha256 === undefined
+      ? spec.candidateProbeSha256 === undefined && spec.candidateProbeProvenance === undefined
       : typeof spec.candidateProbeCommand === 'string' && spec.candidateProbeCommand !== ''
-        && typeof spec.candidateProbeSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.candidateProbeSha256))
+        && typeof spec.candidateProbeSha256 === 'string' && /^[a-f0-9]{64}$/.test(spec.candidateProbeSha256)
+        && (spec.candidateProbeProvenance === undefined || spec.candidateProbeProvenance === 'caller-supplied'))
 }
 
 export function commandSha256(command: string): string {
@@ -341,7 +346,10 @@ export function summarizeLaunchSpec(spec: LaunchSpec): LaunchSpecSummary {
         hostPackageVersion: spec.preflight.hostPackageVersion,
         targetCommandSha256: spec.preflight.targetCommandSha256,
         ...(spec.preflight.candidateProbeSha256 === undefined
-          ? {} : { candidateProbeSha256: spec.preflight.candidateProbeSha256 }),
+          ? {} : {
+              candidateProbeSha256: spec.preflight.candidateProbeSha256,
+              candidateProbeProvenance: 'caller-supplied' as const,
+            }),
       },
     }),
   }
@@ -548,6 +556,7 @@ export function prepareLaunchCutover(stateDir: string, input: {
         hostPackageVersion: input.target.preflight.hostPackageVersion,
         targetCommandSha256: input.target.preflight.targetCommandSha256,
         candidateProbeSha256: input.target.preflight.candidateProbeSha256,
+        candidateProbeProvenance: 'caller-supplied' as const,
         candidateProbe: 'pass' as const,
         composition: 'pass' as const,
       },

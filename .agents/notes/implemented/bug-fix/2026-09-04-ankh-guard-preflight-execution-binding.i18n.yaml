@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-04-ankh-guard-preflight-execution-binding.md
-.agents/notes/implemented/bug-fix/2026-09-04-ankh-guard-preflight-execution-binding.md: 2be7b67c5b14660d202eb35d56b4834662b6249f
-.agents/notes/implemented/bug-fix/2026-09-04-ankh-guard-preflight-execution-binding.zh.md: ef8da2a3cffe36da9c265610af1d6febfa4db6e9
+.agents/notes/implemented/bug-fix/2026-09-04-ankh-guard-preflight-execution-binding.md: 711326ebb442374c72978d2c459fd35635dd488e
+.agents/notes/implemented/bug-fix/2026-09-04-ankh-guard-preflight-execution-binding.zh.md: 335305695899a9901b0cab114c4eff93d58ca9f1
