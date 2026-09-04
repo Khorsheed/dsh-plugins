@@ -770,10 +770,10 @@ describe('CLI', () => {
     expect(readCutoverReceipt(stateDir)).toBeNull()
   })
 
-  it('refuses an unsafe snapshot before running the candidate or stopping previous', async () => {
-    const stateDir = tmpDir('guard-snapshot-cycle-state-')
+  it('refuses a dangling snapshot link before running the candidate or stopping previous', async () => {
+    const stateDir = tmpDir('guard-snapshot-dangling-state-')
     const repo = makeRepo()
-    const home = tmpDir('guard-snapshot-cycle-home-')
+    const home = tmpDir('guard-snapshot-dangling-home-')
     const candidateMarker = join(stateDir, 'candidate-ran')
     writeStableLaunchSpec(stateDir, {
       version: 1, command: 'previous-command', port: 3080, home,
@@ -783,7 +783,7 @@ describe('CLI', () => {
       scope: 'target build+test', revision: currentHead(repo)!, command: 'pnpm test',
     }, Date.now())
     markLiveWatchdog(stateDir)
-    symlinkSync('.', join(home, 'loop'))
+    symlinkSync('missing-target', join(home, 'dangling'))
     stubSandboxProbe(false)
 
     const result = io()
@@ -793,7 +793,7 @@ describe('CLI', () => {
       ...boundPreflightArgs(`touch ${JSON.stringify(candidateMarker)}`),
     ], result.io)).toBe(1)
     expect(result.err.join('')).toContain('could not prepare an isolated home')
-    expect(result.err.join('')).toContain('symbolic-link directory cycle')
+    expect(result.err.join('')).toContain('could not safely copy')
     expect(existsSync(candidateMarker)).toBe(false)
     expect(readLaunchState(stateDir)).toMatchObject({ mode: 'stable', active: { command: 'previous-command' } })
     expect(readCutoverReceipt(stateDir)).toBeNull()

@@ -1,5 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -174,7 +175,7 @@ describe('filesystem transition', () => {
     expect(existsSync(snapshot.home)).toBe(false)
   })
 
-  it('materializes relative link targets so writes through the copied paths cannot reach live bytes', () => {
+  it('rebuilds relative links inside the snapshot so linked writes cannot reach live bytes', () => {
     const root = temporaryDirectory('ankh-snapshot-links-')
     const home = join(root, 'home')
     const external = join(root, 'external.txt')
@@ -183,13 +184,18 @@ describe('filesystem transition', () => {
     writeFileSync(external, 'live-external')
     symlinkSync('internal.txt', join(home, 'internal-link'))
     symlinkSync('../external.txt', join(home, 'external-link'))
+    symlinkSync('../external.txt', join(home, 'external-link-again'))
 
     const snapshot = createPreflightSnapshot(home)
     try {
-      expect(lstatSync(join(snapshot.home, 'internal-link')).isSymbolicLink()).toBe(false)
-      expect(lstatSync(join(snapshot.home, 'external-link')).isSymbolicLink()).toBe(false)
+      expect(lstatSync(join(snapshot.home, 'internal-link')).isSymbolicLink()).toBe(true)
+      expect(lstatSync(join(snapshot.home, 'external-link')).isSymbolicLink()).toBe(true)
+      expect(realpathSync(join(snapshot.home, 'internal-link'))).toBe(realpathSync(join(snapshot.home, 'internal.txt')))
+      expect(realpathSync(join(snapshot.home, 'external-link')).startsWith(realpathSync(snapshot.root))).toBe(true)
+      expect(realpathSync(join(snapshot.home, 'external-link-again'))).toBe(realpathSync(join(snapshot.home, 'external-link')))
       writeFileSync(join(snapshot.home, 'internal-link'), 'candidate-internal')
       writeFileSync(join(snapshot.home, 'external-link'), 'candidate-external')
+      expect(readFileSync(join(snapshot.home, 'external-link-again'), 'utf8')).toBe('candidate-external')
       expect(readFileSync(join(home, 'internal.txt'), 'utf8')).toBe('live-internal')
       expect(readFileSync(external, 'utf8')).toBe('live-external')
     } finally {
@@ -197,17 +203,34 @@ describe('filesystem transition', () => {
     }
   })
 
-  it('fails closed when a link is dangling or introduces a directory cycle', () => {
+  it('allows contained directory cycles but fails closed on dangling links', () => {
     const root = temporaryDirectory('ankh-snapshot-cycle-')
     const home = join(root, 'home')
     mkdirSync(home)
     symlinkSync('.', join(home, 'loop'))
 
-    expect(() => createPreflightSnapshot(home)).toThrow(/symbolic-link directory cycle/)
+    const snapshot = createPreflightSnapshot(home)
+    try {
+      expect(lstatSync(join(snapshot.home, 'loop')).isSymbolicLink()).toBe(true)
+      expect(realpathSync(join(snapshot.home, 'loop'))).toBe(realpathSync(snapshot.home))
+    } finally {
+      snapshot.cleanup()
+    }
 
     const danglingHome = join(root, 'dangling-home')
     mkdirSync(danglingHome)
     symlinkSync('missing', join(danglingHome, 'dangling'))
-    expect(() => createPreflightSnapshot(danglingHome)).toThrow(/could not safely materialize/)
+    expect(() => createPreflightSnapshot(danglingHome)).toThrow(/could not safely copy/)
+  })
+
+  it('fails closed on special filesystem entries', () => {
+    const mkfifo = ['/usr/bin/mkfifo', '/bin/mkfifo'].find(existsSync)
+    if (mkfifo === undefined) return
+    const root = temporaryDirectory('ankh-snapshot-special-')
+    const home = join(root, 'home')
+    mkdirSync(home)
+    execFileSync(mkfifo, [join(home, 'pipe')])
+
+    expect(() => createPreflightSnapshot(home)).toThrow(/special filesystem entry/)
   })
 })

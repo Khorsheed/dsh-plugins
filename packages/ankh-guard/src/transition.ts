@@ -9,10 +9,10 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync,
-  readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync,
+  readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const MAX_OPERATIONS = 64
 const CUTOVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/
@@ -536,77 +536,189 @@ export function readTransitionRecord(
   return loadTransition(reference, expectedHome, stateDir, cutoverId).record
 }
 
-function materializationError(source: string, error: unknown): Error {
+function snapshotCopyError(source: string, error: unknown): Error {
   const code = (error as NodeJS.ErrnoException).code
-  if (code === 'ELOOP') return new Error(`preflight snapshot refused a symbolic-link cycle at ${source}`)
-  return new Error(`preflight snapshot could not safely materialize ${source}: ${String(error)}`)
+  if (code === 'ELOOP') return new Error(`preflight snapshot refused an unresolvable symbolic-link cycle at ${source}`)
+  return new Error(`preflight snapshot could not safely copy ${source}: ${String(error)}`)
 }
 
-/**
- * Copy one entry without ever creating a symbolic link in the destination.
- * Symlink targets are followed as read sources and materialized as independent
- * files/directories; an ancestor identity set makes directory cycles fail
- * before a candidate process can touch the snapshot.
- */
-function materializeSnapshotEntry(source: string, destination: string, ancestors: Set<string>): void {
-  let metadata: ReturnType<typeof statSync>
-  let canonical: string
+interface SnapshotLink {
+  source: string
+  destination: string
+}
+
+interface SnapshotDirectoryMetadata {
+  destination: string
+  mode: number
+  atime: Date
+  mtime: Date
+}
+
+interface SnapshotCopyContext {
+  externalRoot: string
+  destinations: Map<string, string>
+  pendingLinks: SnapshotLink[]
+  directories: SnapshotDirectoryMetadata[]
+}
+
+function canonicalSnapshotSource(source: string): string {
   try {
-    metadata = statSync(source)
-    canonical = realpathSync(source)
+    return realpathSync(source)
   } catch (error) {
-    throw materializationError(source, error)
+    throw snapshotCopyError(source, error)
+  }
+}
+
+function createContainedSnapshotLink(destination: string, target: string, directory: boolean): void {
+  const targetFromLink = relative(dirname(destination), target) || '.'
+  symlinkSync(targetFromLink, destination, directory ? 'dir' : 'file')
+}
+
+/** Copy physical entries once; source symlinks become deferred graph edges. */
+function copySnapshotNode(source: string, destination: string, context: SnapshotCopyContext): void {
+  let linkMetadata: ReturnType<typeof lstatSync>
+  try {
+    linkMetadata = lstatSync(source)
+  } catch (error) {
+    throw snapshotCopyError(source, error)
   }
 
-  if (metadata.isDirectory()) {
-    if (ancestors.has(canonical)) {
-      throw new Error(`preflight snapshot refused a symbolic-link directory cycle at ${source}`)
-    }
+  if (linkMetadata.isSymbolicLink()) {
+    context.pendingLinks.push({ source, destination })
+    return
+  }
+
+  if (!linkMetadata.isDirectory() && !linkMetadata.isFile()) {
+    throw new Error(`preflight snapshot refused a special filesystem entry at ${source}`)
+  }
+
+  const canonical = canonicalSnapshotSource(source)
+  const existing = context.destinations.get(canonical)
+  if (existing !== undefined) {
+    createContainedSnapshotLink(destination, existing, linkMetadata.isDirectory())
+    return
+  }
+  context.destinations.set(canonical, destination)
+
+  if (linkMetadata.isDirectory()) {
     mkdirSync(destination, { mode: 0o700 })
-    ancestors.add(canonical)
+    context.directories.push({
+      destination,
+      mode: linkMetadata.mode & 0o7777,
+      atime: linkMetadata.atime,
+      mtime: linkMetadata.mtime,
+    })
     try {
-      for (const name of readdirSync(source)) {
-        materializeSnapshotEntry(join(source, name), join(destination, name), ancestors)
+      for (const name of readdirSync(canonical)) {
+        copySnapshotNode(join(canonical, name), join(destination, name), context)
       }
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('preflight snapshot ')) throw error
-      throw materializationError(source, error)
-    } finally {
-      ancestors.delete(canonical)
+      throw snapshotCopyError(source, error)
     }
-    chmodSync(destination, metadata.mode & 0o7777)
-    utimesSync(destination, metadata.atime, metadata.mtime)
     return
   }
 
-  if (!metadata.isFile()) {
-    throw new Error(`preflight snapshot cannot safely materialize a non-file entry at ${source}`)
-  }
   try {
-    copyFileSync(source, destination, constants.COPYFILE_FICLONE)
-    chmodSync(destination, metadata.mode & 0o7777)
-    utimesSync(destination, metadata.atime, metadata.mtime)
+    copyFileSync(canonical, destination, constants.COPYFILE_FICLONE)
+    chmodSync(destination, linkMetadata.mode & 0o7777)
+    utimesSync(destination, linkMetadata.atime, linkMetadata.mtime)
   } catch (error) {
-    throw materializationError(source, error)
+    throw snapshotCopyError(source, error)
   }
-}
-
-/** Prove the completed candidate tree contains only independent files/directories. */
-function assertMaterializedSnapshot(path: string): void {
-  const metadata = lstatSync(path)
-  if (metadata.isSymbolicLink()) {
-    throw new Error(`preflight snapshot retained an unsafe symbolic link at ${path}`)
-  }
-  if (metadata.isDirectory()) {
-    for (const name of readdirSync(path)) assertMaterializedSnapshot(join(path, name))
-    return
-  }
-  if (!metadata.isFile()) throw new Error(`preflight snapshot retained an unsafe non-file entry at ${path}`)
 }
 
 /**
- * Clone a live home for target preflight without retaining links to live or
- * external bytes. Every source symlink is materialized, not copied as a link.
+ * Preserve Node's ancestor node_modules lookup for an external package while
+ * avoiding one copy per package link. Other external targets are materialized
+ * individually and still deduplicated by canonical path.
+ */
+function externalMaterializationAnchor(target: string): { source: string; destination: string } {
+  const parsed = resolve(target).split(sep)
+  const nodeModulesIndex = parsed.indexOf('node_modules')
+  if (nodeModulesIndex >= 0) {
+    const prefix = parsed.slice(0, nodeModulesIndex + 1).join(sep) || sep
+    return { source: prefix, destination: 'node_modules' }
+  }
+  return { source: target, destination: basename(target) || 'target' }
+}
+
+function resolveSnapshotLinks(context: SnapshotCopyContext): void {
+  for (let index = 0; index < context.pendingLinks.length; index++) {
+    const link = context.pendingLinks[index]!
+    const target = canonicalSnapshotSource(link.source)
+    let metadata: ReturnType<typeof statSync>
+    try {
+      metadata = statSync(target)
+    } catch (error) {
+      throw snapshotCopyError(link.source, error)
+    }
+    if (!metadata.isDirectory() && !metadata.isFile()) {
+      throw new Error(`preflight snapshot refused a link to a special filesystem entry at ${link.source}`)
+    }
+
+    let mapped = context.destinations.get(target)
+    if (mapped === undefined) {
+      const anchor = externalMaterializationAnchor(target)
+      const canonicalAnchor = canonicalSnapshotSource(anchor.source)
+      mapped = context.destinations.get(target)
+      if (mapped === undefined) {
+        mkdirSync(context.externalRoot, { recursive: true, mode: 0o700 })
+        const anchorDestination = join(
+          context.externalRoot,
+          sha256(Buffer.from(canonicalAnchor)),
+          anchor.destination,
+        )
+        mkdirSync(dirname(anchorDestination), { recursive: true, mode: 0o700 })
+        copySnapshotNode(canonicalAnchor, anchorDestination, context)
+        mapped = context.destinations.get(target)
+      }
+    }
+    if (mapped === undefined) {
+      throw new Error(`preflight snapshot could not map symbolic-link target for ${link.source}`)
+    }
+    createContainedSnapshotLink(link.destination, mapped, metadata.isDirectory())
+  }
+}
+
+function pathIsWithin(root: string, path: string): boolean {
+  const offset = relative(root, path)
+  return offset === '' || (!isAbsolute(offset) && offset !== '..' && !offset.startsWith(`..${sep}`))
+}
+
+/** Prove every retained link resolves to a writable target inside the snapshot. */
+function assertSnapshotLinksContained(path: string, canonicalRoot: string): void {
+  const metadata = lstatSync(path)
+  if (metadata.isSymbolicLink()) {
+    const target = canonicalSnapshotSource(path)
+    if (!pathIsWithin(canonicalRoot, target)) {
+      throw new Error(`preflight snapshot retained a writable link escape at ${path}`)
+    }
+    const targetMetadata = statSync(target)
+    if (!targetMetadata.isDirectory() && !targetMetadata.isFile()) {
+      throw new Error(`preflight snapshot retained a link to a special filesystem entry at ${path}`)
+    }
+    return
+  }
+  if (metadata.isDirectory()) {
+    for (const name of readdirSync(path)) assertSnapshotLinksContained(join(path, name), canonicalRoot)
+    return
+  }
+  if (!metadata.isFile()) throw new Error(`preflight snapshot retained a special filesystem entry at ${path}`)
+}
+
+function finalizeSnapshotDirectories(context: SnapshotCopyContext): void {
+  for (const directory of [...context.directories].reverse()) {
+    chmodSync(directory.destination, directory.mode)
+    utimesSync(directory.destination, directory.atime, directory.mtime)
+  }
+}
+
+/**
+ * Clone a live home while retaining a contained package-link graph. Internal
+ * links are rebuilt against copied nodes; external targets are deduplicated in
+ * a snapshot-owned materialization area. No retained link resolves outside the
+ * snapshot root, so writes through pnpm/Cordis links cannot reach live bytes.
  * @param sourceHome - Live dsh home to read.
  * @returns Isolated home and an idempotent cleanup callback.
  */
@@ -614,8 +726,17 @@ export function createPreflightSnapshot(sourceHome: string): { home: string; roo
   const root = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
   const home = join(root, 'home')
   try {
-    materializeSnapshotEntry(sourceHome, home, new Set())
-    assertMaterializedSnapshot(home)
+    const source = canonicalDirectory(sourceHome, 'preflight source home')
+    const context: SnapshotCopyContext = {
+      externalRoot: join(root, 'materialized'),
+      destinations: new Map(),
+      pendingLinks: [],
+      directories: [],
+    }
+    copySnapshotNode(source, home, context)
+    resolveSnapshotLinks(context)
+    assertSnapshotLinksContained(root, realpathSync(root))
+    finalizeSnapshotDirectories(context)
     return { home, root, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
   } catch (error) {
     rmSync(root, { recursive: true, force: true })
