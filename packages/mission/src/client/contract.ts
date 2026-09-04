@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   MissionDetail, MissionExportPlanRequest, MissionExportPlanView, MissionExportRequest,
   MissionExportResultView, MissionGetRequest, MissionQueueRequest, MissionQueueResult, MissionRefRequest,
+  MissionRetryRequest,
 } from '../types.ts'
 import type { createMissionsViewStore } from './store.ts'
 
@@ -25,7 +26,7 @@ export interface MissionsViewInjected {
   /** One mission's full detail (the row panel). */
   fetchMission: (sessionId: SessionId, request: MissionGetRequest) => Promise<RemoteResult<MissionDetail>>
   /** Re-run: open a new attempt (human gesture). */
-  retryMission: (sessionId: SessionId, request: MissionRefRequest) => Promise<RemoteResult<{ attempt: number }>>
+  retryMission: (sessionId: SessionId, request: MissionRetryRequest) => Promise<RemoteResult<{ attempt: number }>>
   /** The release check. */
   checkReleasable: (sessionId: SessionId, request: MissionRefRequest) => Promise<RemoteResult<{ releasable: boolean }>>
   /** The export dialog's plan step: guarded layers to confirm. */

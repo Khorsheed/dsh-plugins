@@ -11,6 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { MissionService } from './service.ts'
+import { RETRY_CATEGORIES } from './types.ts'
 
 /**
  * Tag model-visible tools with their origin (AGENTS.md § Tool origin tagging;
@@ -202,7 +203,8 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
     description: 'Submit outputs of the current attempt: files are appended into the attempt\'s run-data '
       + 'directory (append-only — same bytes are a no-op, different bytes at an existing path fail), '
       + 'indexed as artifacts, and a NO-REF checkpoint is registered. A `json` payload is validated '
-      + 'against every schema-check guard leaving the current state BEFORE anything is written.',
+      + 'against the intended `to` edge BEFORE anything is written; `to` is required when several '
+      + 'submission schema-check edges leave the current state.',
     parameters: {
       mission_id: { type: 'string', required: true, description: 'Mission id.' },
       files: {
@@ -219,6 +221,7 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         description: 'Files to append into the run-data directory.',
       },
       json: { type: 'json', description: 'Structured payload recorded as the attempt\'s submission (schema-checked).' },
+      to: { type: 'string', description: 'Intended outgoing target for submit-time schema validation.' },
       checkpoint: { type: 'string', description: 'Checkpoint name (default "submit").' },
       run_id: { type: 'string', description: 'Disambiguate when the id exists in several runs.' },
     },
@@ -230,6 +233,7 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
       return await service.submit(args.mission_id, {
         ...(args.files !== undefined ? { files: args.files } : {}),
         ...(args.json !== undefined ? { json: args.json } : {}),
+        ...(args.to !== undefined ? { to: args.to } : {}),
         ...(args.checkpoint !== undefined ? { checkpoint: args.checkpoint } : {}),
         ...(args.run_id !== undefined ? { runId: args.run_id } : {}),
         by: by(exec),
@@ -279,15 +283,20 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
 
   ctx.tools.register(definePluginTool(defineTool({
     name: 'mission_retry',
-    description: 'Re-run a mission: opens a NEW attempt at the initial state. The old attempt stays '
-      + 'immutable — annotations, artifacts, and checkpoints carry their attempt number.',
+    description: 'Re-run a mission for an explicit reason: opens a NEW attempt at the initial state. '
+      + 'The old attempt stays immutable; the reason, category, caller, and time are recorded on the '
+      + 'new attempt and in its history.',
     parameters: {
       mission_id: { type: 'string', required: true, description: 'Mission id.' },
+      reason: { type: 'string', required: true, description: 'Non-empty free-text reason for opening a fresh attempt.' },
+      category: { type: 'string', required: true, enum: RETRY_CATEGORIES, description: 'Domain-neutral retry category.' },
       run_id: { type: 'string', description: 'Disambiguate when the id exists in several runs.' },
     },
     output: jsonOutput(v => `attempt ${(v as { attempt: number }).attempt} opened`),
     async execute(args, exec) {
       return await service.retry(args.mission_id, {
+        reason: args.reason,
+        category: args.category,
         ...(args.run_id !== undefined ? { runId: args.run_id } : {}),
         by: by(exec),
       }) as unknown as JsonValue

@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runCli, type CliIo } from '../src/cli-core.ts'
 import { install } from '../src/invariant.ts'
+import { resolveCliDataDir, resolveDataDir } from '../src/defaults.ts'
 import { MissionService } from '../src/service.ts'
 
 const execFileAsync = promisify(execFile)
@@ -103,6 +104,59 @@ describe('CLI semantics', () => {
     const c = capture()
     expect(await runCli(['transition', 'only-one', '--data-dir', dir], c.io)).toBe(2)
     expect(await runCli(['nonsense', '--data-dir', dir], c.io)).toBe(2)
+  })
+
+  it('retry requires reason/category and records the same metadata as the service face', async () => {
+    const service = new MissionService(dir)
+    await service.create({ id: 'm' })
+    const missing = capture()
+    expect(await runCli(['retry', 'm', '--data-dir', dir], missing.io)).toBe(2)
+    expect(missing.err()).toMatch(/--reason is required/)
+
+    const invalid = capture()
+    expect(await runCli([
+      'retry', 'm', '--reason', 'requested another pass', '--category', 'other', '--data-dir', dir,
+    ], invalid.io)).toBe(2)
+    expect(invalid.err()).toMatch(/category must be one of/)
+
+    const valid = capture()
+    expect(await runCli([
+      'retry', 'm', '--reason', 'resource interrupted', '--category', 'infrastructure', '--data-dir', dir,
+    ], valid.io)).toBe(0)
+    expect(service.get('m').mission.attempts[1]?.retry).toMatchObject({
+      reason: 'resource interrupted', category: 'infrastructure', by: 'cli',
+    })
+  })
+
+  it('CLI data-root precedence is --data-dir, DSH_MISSION_DATA_DIR, DSH_HOME, cwd', async () => {
+    const envDir = join(dir, 'env-root')
+    const explicitDir = join(dir, 'explicit-root')
+    const dshHome = join(dir, 'dsh-home')
+    const previousMission = process.env.DSH_MISSION_DATA_DIR
+    const previousDshHome = process.env.DSH_HOME
+    process.env.DSH_MISSION_DATA_DIR = envDir
+    process.env.DSH_HOME = dshHome
+    try {
+      const c = capture()
+      expect(await runCli(['create', '--id', 'from-env'], c.io)).toBe(0)
+      expect(new MissionService(envDir).get('from-env').mission.id).toBe('from-env')
+      expect(resolveDataDir(undefined)).toBe(join(dshHome, 'state', 'mission'))
+
+      expect(await runCli(['create', '--id', 'explicit', '--data-dir', explicitDir], c.io)).toBe(0)
+      expect(new MissionService(explicitDir).get('explicit').mission.id).toBe('explicit')
+      expect(() => new MissionService(envDir).get('explicit')).toThrow(/does not exist/)
+
+      delete process.env.DSH_MISSION_DATA_DIR
+      expect(await runCli(['create', '--id', 'from-home'], c.io)).toBe(0)
+      expect(new MissionService(join(dshHome, 'state', 'mission')).get('from-home').mission.id).toBe('from-home')
+      delete process.env.DSH_HOME
+      expect(resolveCliDataDir(undefined)).toBe(join(process.cwd(), '.dsh-mission'))
+    } finally {
+      if (previousMission === undefined) delete process.env.DSH_MISSION_DATA_DIR
+      else process.env.DSH_MISSION_DATA_DIR = previousMission
+      if (previousDshHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousDshHome
+    }
   })
 })
 

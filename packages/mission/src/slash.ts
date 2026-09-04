@@ -21,14 +21,14 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { renderStatus } from './cli-core.ts'
 import { renderNsReport } from './export.ts'
 import type { MissionService, RunSummary } from './service.ts'
-import type { Bucket, MissionView } from './types.ts'
+import { RETRY_CATEGORIES, type Bucket, type MissionView, type RetryCategory } from './types.ts'
 
 const USAGE = `usage:
   /mission queue [--run ID] [--bucket ready|scheduled|blocked|active|done] [--all]
   /mission run list
   /mission run status RUN_ID
   /mission run create --template FILE [--id ID] [--meta JSON]
-  /mission retry MISSION_ID [--run ID]
+  /mission retry MISSION_ID --reason TEXT --category infrastructure|operator|outcome [--run ID]
   /mission export RUN_ID --out DIR [--layer NAME]... [--guarded NAME]... [--snapshot-dir DIR]
          [--snapshot-repo R --snapshot-commit C [--snapshot-dataset ID]]
          (guarded layers are refused here — the confirmation gate needs a TTY: dsh-mission export)`
@@ -67,7 +67,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--run', '--bucket', '--template', '--id', '--meta', '--out', '--snapshot-dir', '--snapshot-repo', '--snapshot-commit', '--snapshot-dataset', '--layer', '--guarded'])
+  const VALUE_FLAGS = new Set(['--run', '--bucket', '--template', '--id', '--meta', '--out', '--snapshot-dir', '--snapshot-repo', '--snapshot-commit', '--snapshot-dataset', '--layer', '--guarded', '--reason', '--category'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -346,7 +346,14 @@ export async function handleMissionCommand(
           return { kind: 'error', text: `retry requires a MISSION_ID\n\n${USAGE}` }
         }
         const runId = flagOf(args, '--run')
+        const reason = flagOf(args, '--reason')
+        const category = flagOf(args, '--category')
+        if (reason === undefined || category === undefined || !RETRY_CATEGORIES.includes(category as RetryCategory)) {
+          return { kind: 'error', text: `retry requires --reason TEXT and --category ${RETRY_CATEGORIES.join('|')}\n\n${USAGE}` }
+        }
         const result = await service.retry(id, {
+          reason,
+          category: category as RetryCategory,
           ...(runId !== undefined ? { runId } : {}),
           by: `slash:${sessionIdOf(invocation)}`,
         })
@@ -389,7 +396,7 @@ export function registerMissionSlash(ctx: Context, service: MissionService): voi
     name: 'mission',
     description: 'Mission queue and runs: five-bucket queue view, run list/status/create, retry, export '
       + '(guarded layers refuse here — the leak gate needs a TTY: dsh-mission export).',
-    input: { hint: 'queue [--run ID] [--bucket B] [--all] | run list|status RUN_ID|create --template F | retry MISSION_ID | export RUN_ID --out DIR' },
+    input: { hint: 'queue [--run ID] [--bucket B] [--all] | run list|status RUN_ID|create --template F | retry MISSION_ID --reason TEXT --category CATEGORY | export RUN_ID --out DIR' },
     handler: invocation => handleMissionCommand(service, invocation, { resolveNonModelFacing }),
   })
 }

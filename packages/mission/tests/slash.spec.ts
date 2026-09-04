@@ -213,7 +213,7 @@ describe('/mission retry', () => {
   it('opens a new attempt and keeps the old one immutable', async () => {
     await seed('a')
     await service.transition('a', 'active', { by: 'test' })
-    const result = await run('retry a')
+    const result = await run('retry a --reason "requested another pass" --category operator')
     expect(result).toMatchObject({ kind: 'success', text: 'attempt 2 opened' })
 
     const { mission } = service.get('a')
@@ -224,10 +224,11 @@ describe('/mission retry', () => {
 
   it('records the slash caller in later history attribution', async () => {
     await seed('a')
-    await run('retry a')
+    await run('retry a --reason "resource interrupted" --category infrastructure')
     await service.transition('a', 'active', { by: 'test' })
     const { mission } = service.get('a')
-    expect(mission.attempts[1]?.history[0]?.by).toBe('test')
+    expect(mission.attempts[1]?.history[0]?.by).toBe('slash:sess-1')
+    expect(mission.attempts[1]?.history[1]?.by).toBe('test')
   })
 
   it('without an id is a usage error; an unknown mission is an error', async () => {
@@ -235,7 +236,7 @@ describe('/mission retry', () => {
     expect(usage.kind).toBe('error')
     expect((usage as { text: string }).text).toMatch(/retry requires a MISSION_ID/)
 
-    const missing = await run('retry nope')
+    const missing = await run('retry nope --reason "requested another pass" --category operator')
     expect(missing.kind).toBe('error')
     expect((missing as { text: string }).text).toMatch(/mission nope does not exist/)
   })
@@ -243,11 +244,11 @@ describe('/mission retry', () => {
   it('--run disambiguates a mission id present in several runs', async () => {
     await seed('dup')
     await service.create({ id: 'dup', originSession: 'other', by: 'test' })
-    const ambiguous = await run('retry dup')
+    const ambiguous = await run('retry dup --reason "requested another pass" --category operator')
     expect(ambiguous.kind).toBe('error')
     expect((ambiguous as { text: string }).text).toMatch(/several runs/)
 
-    const result = await run('retry dup --run session-other')
+    const result = await run('retry dup --run session-other --reason "resource interrupted" --category infrastructure')
     expect(result).toMatchObject({ kind: 'success', text: 'attempt 2 opened' })
   })
 })

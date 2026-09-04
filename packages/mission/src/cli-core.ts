@@ -10,10 +10,10 @@
  * 2 usage error.
  */
 import { readFileSync } from 'node:fs'
-import { resolveDataDir } from './defaults.ts'
+import { resolveCliDataDir } from './defaults.ts'
 import { expectedNsOfMeta, renderNsReport } from './export.ts'
-import { MissionService } from './service.ts'
-import type { AttemptRefs, MissionView, RunRecord } from './types.ts'
+import { MissionService, MissionUsageError } from './service.ts'
+import { RETRY_CATEGORIES, type AttemptRefs, type MissionView, type RetryCategory, type RunRecord } from './types.ts'
 
 /** stdout/stderr sink (injected so tests capture output). */
 export interface CliIo {
@@ -31,10 +31,10 @@ commands:
   list [--run ID] [--bucket B] [--label k=v]...
   get MISSION_ID [--run ID]
   transition MISSION_ID TO [--note N] [--run ID]
-  submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file F] [--checkpoint NAME] [--run ID]
+  submit MISSION_ID [--file SRC[:DEST]]... [--json JSON | --json-file F] [--to TO] [--checkpoint NAME] [--run ID]
   annotate MISSION_ID --ns NS --payload JSON [--run ID]
   attest MISSION_ID --key K [--note N] [--run ID]
-  retry MISSION_ID [--run ID]
+  retry MISSION_ID --reason TEXT --category infrastructure|operator|outcome [--run ID]
   set-refs MISSION_ID [--resource R] [--fingerprint F] [--session S]... [--run ID]
   add-artifact MISSION_ID --path P --kind K [--run ID]
   add-checkpoint MISSION_ID --name N [--ref R] [--artifact A]... [--run ID]
@@ -44,7 +44,8 @@ commands:
                                                 self-contained bundle; guarded (modelFacing: false) layers
                                                 require interactive TTY confirmation — non-TTY is refused
 flags:
-  --data-dir DIR   data root (default: $DSH_HOME/state/mission, else <cwd>/.dsh-mission)
+  --data-dir DIR   data root (default: $DSH_MISSION_DATA_DIR, then $DSH_HOME/state/mission,
+                   else <cwd>/.dsh-mission)
 `
 
 /** Parsed invocation. */
@@ -214,7 +215,7 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
     io.stderr(`${String(error)}\n`)
     return 2
   }
-  const service = new MissionService(resolveDataDir(parsed.dataDir))
+  const service = new MissionService(resolveCliDataDir(parsed.dataDir))
   const runId = flag(parsed, '--run')
   try {
     switch (parsed.command.join(' ')) {
@@ -340,10 +341,12 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
           ? parseJson(jsonRaw, '--json')
           : jsonFile !== undefined ? parseJson(readFileSync(jsonFile, 'utf8'), jsonFile) : undefined
         const checkpoint = flag(parsed, '--checkpoint')
+        const to = flag(parsed, '--to')
         const result = await service.submit(id, {
           ...(files.length > 0 ? { files } : {}),
           ...(json !== undefined ? { json } : {}),
           ...(checkpoint !== undefined ? { checkpoint } : {}),
+          ...(to !== undefined ? { to } : {}),
           ...(runId !== undefined ? { runId } : {}),
           by: 'cli',
         })
@@ -384,7 +387,17 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
           io.stderr(`retry requires a MISSION_ID\n\n${USAGE}`)
           return 2
         }
-        const result = await service.retry(id, { ...(runId !== undefined ? { runId } : {}), by: 'cli' })
+        const reason = requireFlag(parsed, '--reason')
+        const category = requireFlag(parsed, '--category')
+        if (!RETRY_CATEGORIES.includes(category as RetryCategory)) {
+          throw new UsageError(`--category must be one of: ${RETRY_CATEGORIES.join(', ')}\n\n${USAGE}`)
+        }
+        const result = await service.retry(id, {
+          reason,
+          category: category as RetryCategory,
+          ...(runId !== undefined ? { runId } : {}),
+          by: 'cli',
+        })
         io.stdout(`attempt ${result.attempt} opened\n`)
         return 0
       }
@@ -509,6 +522,6 @@ export async function runCli(argv: readonly string[], io: CliIo, tty: CliTty = {
     }
   } catch (error) {
     io.stderr(`${String(error)}\n`)
-    return error instanceof UsageError ? 2 : 1
+    return error instanceof UsageError || error instanceof MissionUsageError ? 2 : 1
   }
 }

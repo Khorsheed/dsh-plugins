@@ -26,7 +26,7 @@ import type { MissionService } from './service.ts'
 import type {
   MissionDetail, MissionExportPlanRequest, MissionExportPlanView, MissionExportRequest,
   MissionExportResultView, MissionGetRequest, MissionQueueRequest, MissionQueueResult, MissionQueueRun,
-  MissionRefRequest, MissionView,
+  MissionRefRequest, MissionRetryRequest, MissionView,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -101,8 +101,10 @@ export class MissionRemoteService extends TypertRemoteService<never> {
    * @returns the new attempt number.
    */
   @Remote('retry')
-  async retry(agent: Agent, request: MissionRefRequest): Promise<{ attempt: number }> {
+  async retry(agent: Agent, request: MissionRetryRequest): Promise<{ attempt: number }> {
     return await this.mission.retry(request.missionId, {
+      reason: request.reason,
+      category: request.category,
       ...(request.runId !== undefined ? { runId: request.runId } : {}),
       by: `tab:${String(agent.session.id)}`,
     })
@@ -112,7 +114,7 @@ export class MissionRemoteService extends TypertRemoteService<never> {
    * The release check: may this mission's resources be destroyed?
    * @param agent - owning live agent.
    * @param request - the mission.
-   * @returns the releasable verdict.
+   * @returns the releasable result.
    */
   @Remote('isReleasable')
   isReleasable(agent: Agent, request: MissionRefRequest): { releasable: boolean } {

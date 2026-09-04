@@ -80,8 +80,12 @@ describe('mission client apply', () => {
     await face.fetchMission('s1', { missionId: 'm', runId: 'r' })
     expect(remote.get).toHaveBeenCalledWith('s1', { missionId: 'm', runId: 'r' })
 
-    await face.retryMission('s1', { missionId: 'm', runId: 'r' })
-    expect(remote.retry).toHaveBeenCalledWith('s1', { missionId: 'm', runId: 'r' })
+    await face.retryMission('s1', {
+      missionId: 'm', runId: 'r', reason: 'requested another pass', category: 'operator',
+    })
+    expect(remote.retry).toHaveBeenCalledWith('s1', {
+      missionId: 'm', runId: 'r', reason: 'requested another pass', category: 'operator',
+    })
 
     await face.checkReleasable('s1', { missionId: 'm' })
     expect(remote.isReleasable).toHaveBeenCalledWith('s1', { missionId: 'm' })
