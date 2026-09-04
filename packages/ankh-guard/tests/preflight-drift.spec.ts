@@ -44,6 +44,29 @@ const builtDshCli = [
 ].find(path => path !== undefined && existsSync(path))
 
 describe('preflight composition drift tripwire', () => {
+  it('refuses a missing source entry instead of importing a stale built fallback', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ankh-source-preflight-'))
+    const packageRoot = join(root, 'packages', 'boot', 'app-boot')
+    const fixtureHome = join(root, 'home')
+    try {
+      mkdirSync(join(packageRoot, 'lib'), { recursive: true })
+      mkdirSync(fixtureHome)
+      writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({
+        name: '@deepseek-ai/dsh-app-boot',
+        type: 'module',
+        main: 'lib/index.js',
+      }, null, 2)}\n`)
+      writeFileSync(join(packageRoot, 'lib', 'index.js'), "throw new Error('stale built fallback executed')\n")
+
+      await expect(composePreflightPatches('web', [], root, fixtureHome, {
+        surface: 'source',
+        installAnchor: join(root, 'apps', 'cli', 'package.json'),
+      })).rejects.toThrow(/harness source entry does not exist/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   const test = harnessPresent && profilePresent ? it : it.skip
   test(`the runner composes the same entry ids as the launcher dump-config (home ${home})`, async () => {
     // cwd matters: the dump must resolve the harness's workspace packages,

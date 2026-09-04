@@ -34,7 +34,7 @@
  * @module @khorsheed/dsh-ankh-guard/preflight-runner
  */
 
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
@@ -131,20 +131,17 @@ async function loadHarnessPackage(
   if (relative === undefined) throw new Error(`no known harness layout entry for ${name}`)
   const base = join(root, relative)
   const source = join(base, 'src', 'index.ts')
-  if (existsSync(source)) {
-    try {
-      return await import(pathToFileURL(source).href) as Record<string, unknown>
-    } catch (error) {
-      // A broken source import (syntax error, unresolved workspace dep) is
-      // EXACTLY what the next source boot would hit — surface it as a
-      // composition verdict, never silently fall back to a stale build.
-      throw new Error(`harness source ${source} failed to import (this is what a source boot would hit): ${String(error)}`, { cause: error })
-    }
+  if (!existsSync(source)) {
+    throw new Error(`harness source entry does not exist: ${source}`)
   }
-  const manifest = JSON.parse(readFileSync(join(base, 'package.json'), 'utf8')) as { main?: string }
-  const entry = manifest.main ?? 'lib/index.js'
-  const module = await import(pathToFileURL(join(base, entry)).href)
-  return module as Record<string, unknown>
+  try {
+    return await import(pathToFileURL(source).href) as Record<string, unknown>
+  } catch (error) {
+    // A broken source import (syntax error, unresolved workspace dep) is
+    // EXACTLY what the next source boot would hit — surface it as a
+    // composition verdict, never silently fall back to a stale build.
+    throw new Error(`harness source ${source} failed to import (this is what a source boot would hit): ${String(error)}`, { cause: error })
+  }
 }
 
 /** Thrown for harness-side load failures — preflight infrastructure, never a composition verdict. */
