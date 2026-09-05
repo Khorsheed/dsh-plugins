@@ -33,7 +33,7 @@ PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 # dependency), then the providers, then the independents.
 UNPUBLISHED_DIRS="local-agent local-agent-tool-subagent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
-capability-catalog datasets inline-html-render lab local-files mission"
+capability-catalog datasets eval inline-html-render lab local-files mission"
 
 SOURCE=""
 while [ $# -gt 0 ]; do
@@ -136,7 +136,7 @@ dsh plugin --profile web-eval install
 DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Distinct @khorsheed names, not raw matches: the composed dump repeats each
 # member (layer header + entry row) and tool-subagent appears only through its
-# per-provider entries — distinct names is the member invariant (22).
+# per-provider entries — distinct names is the member invariant (23).
 MEMBERS=$(printf '%s\n' "$DUMP" | grep -o '@khorsheed/[a-z0-9-]*' | sort -u | wc -l | tr -d ' ')
 ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 trap - 0
