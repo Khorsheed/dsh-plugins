@@ -7,6 +7,7 @@ interface ProvideSpy {
   provided: Map<string, unknown>
   provide: (name: string, service: unknown) => void
   eval?: EvalService
+  commands?: { register: (command: { name: string; handler: unknown }) => unknown }
   invariants?: { register: (pkg: string, install: unknown) => () => void }
 }
 
@@ -17,11 +18,20 @@ describe('the plugin surface', () => {
     expect(invariantCompanion.name).toBe('eval-invariant')
   })
 
-  it('apply provides ctx.eval with the offline kernel and no inject', () => {
-    const ctx: ProvideSpy = { provided: new Map(), provide(name, service) { this.provided.set(name, service) } }
+  it('apply provides ctx.eval, registers /eval, and requires only the command registry', () => {
+    const registered: string[] = []
+    const ctx: ProvideSpy = {
+      provided: new Map(),
+      provide(name, service) { this.provided.set(name, service) },
+      commands: { register: (command) => { registered.push(command.name) } },
+    }
     entry.apply(ctx as never)
     const service = ctx.provided.get('eval')
     expect(service).toBeInstanceOf(EvalService)
+    expect(registered).toEqual(['eval'])
+    // The slash face is the ONLY reason a host service is injected; the
+    // upstream evaluation services are probed per run call, never injected.
+    expect(entry.inject).toEqual(['commands'])
   })
 
   it('the invariant companion registers package ownership', () => {

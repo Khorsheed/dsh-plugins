@@ -1,7 +1,8 @@
 # eval bundle patch: inserts the eval row into the composing profile,
 # so `dsh plugin --profile <name> add @khorsheed/dsh-eval` reconciles it
-# into the bundles layer (apps/cli plugin.ts reconcilePlugins). The row is a
-# bare mount — the offline verbs (validate / conditions hash) need no config.
+# into the bundles layer (apps/cli plugin.ts reconcilePlugins). The row has
+# no config; it injects only `commands` (the /eval slash face) and probes
+# its upstream services (datasets / mission / localAgent) per run call.
 #
 # NOTE: a composition must mount this row id exactly once. Official images
 # (the published npm line and upstream master) mount no eval row, so

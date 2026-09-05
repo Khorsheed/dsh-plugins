@@ -1,0 +1,91 @@
+{
+  "name": "bench-v1",
+  "states": [
+    "pending",
+    "ws-ready",
+    "stage-1",
+    "stage-2",
+    "judged",
+    "halted",
+    "archived",
+    "releasable",
+    "released"
+  ],
+  "transitions": [
+    {
+      "from": "pending",
+      "to": "ws-ready",
+      "guard": {
+        "type": "schema-check",
+        "schemaPath": "../schemas/run-meta.json",
+        "inputFrom": "run-meta"
+      }
+    },
+    {
+      "from": "ws-ready",
+      "to": "stage-1"
+    },
+    {
+      "from": "stage-1",
+      "to": "stage-2",
+      "guard": {
+        "type": "schema-check",
+        "schemaPath": "../schemas/stage1.json"
+      }
+    },
+    {
+      "from": "stage-2",
+      "to": "judged",
+      "guard": {
+        "type": "schema-check",
+        "schemaPath": "../schemas/stage2.json"
+      }
+    },
+    {
+      "from": "judged",
+      "to": "archived"
+    },
+    {
+      "from": "halted",
+      "to": "archived"
+    },
+    {
+      "from": "archived",
+      "to": "releasable",
+      "guard": {
+        "type": "file-check",
+        "dir": "archive",
+        "expectedFiles": [
+          "workspace/",
+          "verdicts/"
+        ]
+      }
+    },
+    {
+      "from": "releasable",
+      "to": "released"
+    },
+    {
+      "from": "stage-2",
+      "to": "halted",
+      "guard": {
+        "type": "schema-check",
+        "schemaPath": "../schemas/stage2-halted.json"
+      }
+    }
+  ],
+  "releasableStates": [
+    "releasable"
+  ],
+  "missions": [
+    {
+      "id": "p0-dsh-exec-rep1",
+      "title": "P0-placeholder × dsh-exec × rep1",
+      "labels": {
+        "task": "P0-placeholder",
+        "condition": "dsh-exec",
+        "rep": "1"
+      }
+    }
+  ]
+}
