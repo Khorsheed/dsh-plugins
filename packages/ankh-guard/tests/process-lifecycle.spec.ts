@@ -1,11 +1,23 @@
 import { spawn } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { findPidsOnPort, processIdentityMatches } from '../src/processes.ts'
-import { TEST_RUN_DIR_ENV, TEST_RUN_TOKEN_ENV } from '../src/test-seam.ts'
-import { formatMachineLeaseReport, inspectMachineTestLeases, TestProcessLifecycle } from './helpers/process-lifecycle.ts'
+import {
+  findPidsOnPort, processIdentity, processIdentityMatches, type ProcessIdentity,
+} from '../src/processes.ts'
+import { TEMP_ARTIFACT_OWNER_FILE } from '../src/temp-artifact.ts'
+import {
+  TEST_RUN_DIR_ENV, TEST_RUN_TOKEN_ENV, type TestProcessLeaseRecord,
+} from '../src/test-seam.ts'
+import {
+  formatMachineLeaseReport, inspectMachineTestLeases, reclaimMachineTestLeases,
+  TestProcessLifecycle,
+} from './helpers/process-lifecycle.ts'
 
 const registerBin = fileURLToPath(new URL('../lib/test-seam-cli.js', import.meta.url))
 
@@ -16,6 +28,37 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<b
     await new Promise(resolve => setTimeout(resolve, 25))
   }
   return false
+}
+
+async function captureGoneIdentity(): Promise<ProcessIdentity> {
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    detached: true,
+    stdio: 'ignore',
+  })
+  if (child.pid === undefined) throw new Error('identity fixture spawn returned no pid')
+  let identity: ProcessIdentity | null = null
+  try {
+    expect(await waitUntil(() => {
+      identity = processIdentity(child.pid!)
+      return identity !== null
+    })).toBe(true)
+  } finally {
+    try { process.kill(child.pid, 'SIGTERM') } catch { /* already gone */ }
+    await new Promise<void>(resolve => child.once('close', () => { resolve() }))
+  }
+  return identity!
+}
+
+function writeJson(file: string, value: unknown): void {
+  writeFileSync(file, `${JSON.stringify(value)}\n`, { flag: 'wx', mode: 0o600 })
+}
+
+function unusedFixturePort(root: string, excluded: ReadonlySet<number> = new Set()): number {
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    const port = 50_000 + Math.floor(Math.random() * 15_000)
+    if (!excluded.has(port) && !existsSync(join(root, 'ports', `${port}.json`))) return port
+  }
+  throw new Error('could not select an unused fixture port record')
 }
 
 describe('watchdog test process lifecycle', () => {
@@ -140,6 +183,97 @@ worker & wait`], {
     } finally {
       await second.teardown()
       await first.teardown()
+    }
+  })
+
+  it('reclaims only old identity-proven runs and marked snapshots without following unsafe paths', async () => {
+    const root = inspectMachineTestLeases().root
+    const dead = await captureGoneIdentity()
+    const old = Date.now() - 2 * 24 * 60 * 60_000
+    const runToken = randomUUID()
+    const runDir = join(root, 'runs', runToken)
+    const processDir = join(runDir, 'processes')
+    const tempRoot = mkdtempSync(join(tmpdir(), 'guard-reclaim-test-'))
+    const nestedTempRoot = join(tempRoot, 'state')
+    const port = unusedFixturePort(root)
+    const portFile = join(root, 'ports', `${port}.json`)
+    const livePort = unusedFixturePort(root, new Set([port]))
+    const livePortFile = join(root, 'ports', `${livePort}.json`)
+    const outsideRoot = mkdtempSync(join(process.cwd(), 'guard-reclaim-outside-'))
+    const outsideSentinel = join(outsideRoot, 'sentinel.txt')
+    const unsafeToken = randomUUID()
+    const unsafeRunDir = join(root, 'runs', unsafeToken)
+    const liveToken = randomUUID()
+    const liveRunDir = join(root, 'runs', liveToken)
+    const snapshotRoot = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
+    const legacySnapshotRoot = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
+    const canonicalTempRoot = realpathSync(tempRoot)
+    const canonicalSnapshotRoot = realpathSync(snapshotRoot)
+    mkdirSync(nestedTempRoot, { recursive: true })
+    writeFileSync(join(nestedTempRoot, 'payload.txt'), 'dead-run')
+    writeFileSync(outsideSentinel, 'must-survive')
+    mkdirSync(processDir, { recursive: true })
+    mkdirSync(join(root, 'ports'), { recursive: true })
+    mkdirSync(join(unsafeRunDir, 'processes'), { recursive: true })
+    const runRecord = { version: 1, runToken, createdAt: old, owner: dead, cwd: process.cwd() }
+    const processRecord: TestProcessLeaseRecord = {
+      version: 1, runToken, role: 'reclaim-dead-child', ...dead,
+      pgid: dead.pid, groupRoot: true, registeredAt: old,
+      source: 'parent-observer', tempRoot: nestedTempRoot, port,
+    }
+    const unsafeProcessRecord: TestProcessLeaseRecord = {
+      ...processRecord, runToken: unsafeToken, role: 'reclaim-unsafe-child', tempRoot: outsideRoot,
+    }
+    writeJson(join(runDir, 'run.json'), runRecord)
+    writeJson(join(processDir, `${dead.pid}-dead.json`), processRecord)
+    writeJson(portFile, { version: 1, runToken, port, createdAt: old, owner: dead, runDir })
+    writeJson(join(unsafeRunDir, 'run.json'), { ...runRecord, runToken: unsafeToken })
+    writeJson(join(unsafeRunDir, 'processes', `${dead.pid}-unsafe.json`), unsafeProcessRecord)
+    writeJson(join(snapshotRoot, TEMP_ARTIFACT_OWNER_FILE), {
+      version: 1, kind: 'preflight-snapshot', createdAt: old, owner: dead,
+    })
+    writeFileSync(join(snapshotRoot, 'payload.txt'), 'marked-snapshot')
+    writeFileSync(join(legacySnapshotRoot, 'payload.txt'), 'legacy-snapshot')
+
+    try {
+      const result = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000)
+      expect(result.lock).toBe('acquired')
+      expect(result.errors.filter(item => [runDir, portFile, tempRoot, snapshotRoot].some(path => item.path.startsWith(path)))).toEqual([])
+      expect(result.removedRuns).toContain(runDir)
+      expect(result.removedPortLeases).toContain(portFile)
+      expect(result.removedTempRoots).toEqual(expect.arrayContaining([canonicalTempRoot, canonicalSnapshotRoot]))
+      expect(existsSync(runDir)).toBe(false)
+      expect(existsSync(portFile)).toBe(false)
+      expect(existsSync(tempRoot)).toBe(false)
+      expect(existsSync(snapshotRoot)).toBe(false)
+      expect(existsSync(unsafeRunDir)).toBe(true)
+      expect(readFileSync(outsideSentinel, 'utf8')).toBe('must-survive')
+      expect(existsSync(legacySnapshotRoot)).toBe(true)
+
+      const mine = processIdentity(process.pid)
+      expect(mine).not.toBeNull()
+      mkdirSync(liveRunDir, { recursive: true })
+      writeJson(join(liveRunDir, 'run.json'), {
+        version: 1, runToken: liveToken, createdAt: old, owner: mine, cwd: process.cwd(),
+      })
+      writeJson(livePortFile, {
+        version: 1, runToken: liveToken, port: livePort, createdAt: old, owner: mine, runDir: liveRunDir,
+      })
+      const second = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000)
+      expect(second.errors.filter(item => item.path.startsWith(liveRunDir))).toEqual([])
+      expect(existsSync(liveRunDir)).toBe(true)
+      expect(existsSync(livePortFile)).toBe(true)
+      rmSync(liveRunDir, { recursive: true, force: true })
+    } finally {
+      rmSync(runDir, { recursive: true, force: true })
+      rmSync(unsafeRunDir, { recursive: true, force: true })
+      rmSync(liveRunDir, { recursive: true, force: true })
+      rmSync(tempRoot, { recursive: true, force: true })
+      rmSync(snapshotRoot, { recursive: true, force: true })
+      rmSync(legacySnapshotRoot, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+      rmSync(portFile, { force: true })
+      rmSync(livePortFile, { force: true })
     }
   })
 })

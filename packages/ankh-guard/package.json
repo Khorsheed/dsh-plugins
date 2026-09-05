@@ -83,9 +83,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
-    "test": "pnpm run build && node scripts/run-test-lane.mjs all",
+    "test": "pnpm run build && pnpm run test:reclaim && node scripts/run-test-lane.mjs all",
     "test:unit": "node scripts/run-test-lane.mjs unit",
-    "test:integration": "pnpm run build && node scripts/run-test-lane.mjs integration",
+    "test:integration": "pnpm run build && pnpm run test:reclaim && node scripts/run-test-lane.mjs integration",
+    "test:reclaim": "tsx scripts/report-test-leaks.ts --reclaim --age-ms 86400000 --summary",
     "test:leaks": "tsx scripts/report-test-leaks.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "prepare": "npm run build && node scripts/on-install.js",

@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { writeTempArtifactOwner } from './temp-artifact.ts'
 
 const MAX_OPERATIONS = 64
 const CUTOVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/
@@ -731,6 +732,7 @@ export function createPreflightSnapshot(sourceHome: string): { home: string; roo
   const root = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
   const home = join(root, 'home')
   try {
+    writeTempArtifactOwner(root, 'preflight-snapshot')
     const source = canonicalDirectory(sourceHome, 'preflight source home')
     const context: SnapshotCopyContext = {
       externalRoot: join(root, 'materialized'),
