@@ -9,8 +9,13 @@
  * (verifyTarball) is what makes this a gate and not just a batch job.
  *
  * Usage:
- *   pnpm exec tsx scripts/pack-all-dist.ts            # pack all to /tmp/pack-all-dist
- *   pnpm exec tsx scripts/pack-all-dist.ts --out DIR  # explicit output dir
+ *   pnpm exec tsx scripts/pack-all-dist.ts               # pack all to /tmp/pack-all-dist
+ *   pnpm exec tsx scripts/pack-all-dist.ts --out DIR     # explicit output dir
+ *   pnpm exec tsx scripts/pack-all-dist.ts --only a,b    # only these package dirs
+ *
+ * `--only` exists for the scoped local gate, which packs the packages a change
+ * touched instead of all 26. CI and release waves pass no filter and keep the
+ * whole-repo guarantee — a subset never becomes the default for either.
  * @module scripts/pack-all-dist
  */
 
@@ -21,9 +26,14 @@ import { join, resolve } from 'node:path'
 const outIdx = process.argv.indexOf('--out')
 const outDir = resolve(outIdx === -1 ? '/tmp/pack-all-dist' : process.argv[outIdx + 1]!)
 
+const onlyIdx = process.argv.indexOf('--only')
+/** Package directory names to pack; empty means every bundle package. */
+const only = new Set(onlyIdx === -1 ? [] : (process.argv[onlyIdx + 1] ?? '').split(',').filter(n => n !== ''))
+
 let packed = 0
 for (const entry of readdirSync('packages', { withFileTypes: true })) {
   if (!entry.isDirectory()) continue
+  if (only.size > 0 && !only.has(entry.name)) continue
   const manifestPath = join('packages', entry.name, 'package.json')
   if (!existsSync(manifestPath)) continue
   const pkg = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -39,4 +49,5 @@ for (const entry of readdirSync('packages', { withFileTypes: true })) {
   packed++
   process.stdout.write(`pack-all-dist: ${pkg.name}@${pkg.version} ✓\n`)
 }
-process.stdout.write(`pack-all-dist: ${packed} package(s) packed and verified into ${outDir}\n`)
+const scope = only.size > 0 ? ` (filtered to ${only.size} requested)` : ''
+process.stdout.write(`pack-all-dist: ${packed} package(s) packed and verified into ${outDir}${scope}\n`)
