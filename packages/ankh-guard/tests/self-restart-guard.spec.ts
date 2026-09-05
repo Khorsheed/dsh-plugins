@@ -4092,7 +4092,10 @@ http.createServer((req, res) => {
       let log = ''
       while (Date.now() < deadline) {
         log = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
-        if (log.includes('other than the supervised')) break
+        // The classification line is written before the generic counted-
+        // failure line. Under load, observing only the first is not a settled
+        // attempt and used to race the assertion immediately below.
+        if (log.includes('other than the supervised') && log.includes('instance failed to come up')) break
         await new Promise((resolve) => { setTimeout(resolve, 300) })
       }
       expect(log).toContain('other than the supervised')
