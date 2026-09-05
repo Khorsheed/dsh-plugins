@@ -18,6 +18,10 @@ web-eval profile 的公平性冻结基线（决策 2 到 4：全 exec 驱动、�
 
 顺带把 kimi apply 路径的权限引导改为链在 config 预置之后。两者此前并发 fire-and-forget；在全新 home 上引导可能读到 ENOENT 而早退，`Bash(*)` 放行规则直到下次重启都写不进去——首次启动的委派回答但不执行工具。链式化让引导注释（「预置会带着规则写出」）从愿望变成事实。
 
+## 延伸：已配置模型进入快照
+
+web-eval 的条件契约要求 `model.declared`，就绪检查要把声明与各轮真正会跑的模型比对——快照因此增加可选的 `model` 字段，读取纪律与其余字段相同（实时读、各读各家配置面）：kimi 读作用域 config 的顶层 `default_model`，codex 读作用域 config 的 `model`，claude-code 读作用域 `settings.json` 的 `model`，dsh 读无头子 dsh 所继承的宿主 `agentDefaultModel.currentSelection()`（格式 `provider/model`）。缺位规则不变且是关键：harness 没有点名的模型绝不代填猜测的默认值（claude 的默认模型归 CLI 所有；dsh 读不到选择就什么都不报）——就绪检查要么比对真实配置值、要么检测到缺位，绝不能比对一个编造值。读取使 local-agent-dsh 增加对 `@deepseek-ai/dsh-agent-default-model` 的可选 peer 依赖（仅类型；服务在运行时仍可选，缺位降级为字段缺位）。不加模型选择、不加 CLI 参数、不改任何默认行为——本节只是读取侧。
+
 ## 已考虑的替代方案
 
 **只报插件配置值（回声而非实时读）。** 否决：mirrored-config 路径意味着配置项与作用域文件经常分歧（用户真实 config 被镜像进来时不带任何 effort 键）；快照报配置项等于哈希一个各轮从未使用的值。

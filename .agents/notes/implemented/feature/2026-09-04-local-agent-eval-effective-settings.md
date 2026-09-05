@@ -18,6 +18,10 @@ The web-eval profile's frozen fairness baseline (decisions 2 to 4: exec drive, t
 
 Along the way, kimi's apply path chains the permission bootstrap after config provisioning. Both used to fire concurrently; on a fresh home the bootstrap could read ENOENT and return early, leaving the `Bash(*)` allow rule unwritten until the next boot — first-boot delegations answered without executing tools. The chain makes the bootstrap comment ("provisioning will write one with the rules when it runs") true instead of aspirational.
 
+## Extension: the configured model joins the snapshot
+
+The web-eval condition contract requires `model.declared`, and the readiness check compares the declaration against the model a round would actually run with — so the snapshot gains an optional `model` field, read from each harness's own configuration surface with the same live-read discipline as every other field: kimi reads its scoped config's top-level `default_model`, codex its scoped config's `model`, claude-code its scoped `settings.json`'s `model`, and dsh the host `agentDefaultModel.currentSelection()` the headless sub-dsh inherits (formatted `provider/model`). The absence rule is unchanged and load-bearing: a model the harness has not named is NOT substituted with a guessed default (claude's default model belongs to the CLI; dsh without a readable selection reports nothing), because the readiness check must compare the declaration against a real configured value or detect its absence, never against an invented one. Reading adds an optional peer dependency on `@deepseek-ai/dsh-agent-default-model` to local-agent-dsh (type-only; the service stays optional at runtime and degrades to an absent field). No model selection, no CLI arguments, and no default behavior change anywhere — this is the read side only.
+
 ## Alternatives considered
 
 **Report only plugin-config values (echo, not live read).** Rejected: the mirrored-config path means the config item and the scoped file diverge routinely (a user's real config mirrors in without any effort key); a snapshot of the item would hash a value the rounds never used.
