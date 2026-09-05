@@ -40,6 +40,8 @@ describe('claude-cli-provider member bridge injection', () => {
       get: () => ({ displayName: 'Claude Code' }),
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       reportRunProgress: () => {},
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
       bindMemberRunPid: vi.fn(),
@@ -153,6 +155,8 @@ describe('claude-cli-provider member bridge injection', () => {
       homeDir: () => '/tmp/claude-home',
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       reportRunProgress: () => {},
     })
     const provider = new ClaudeCliProvider(ctx, 'skip')

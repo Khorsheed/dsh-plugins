@@ -11,7 +11,7 @@ Delegate coding tasks to a locally installed Claude Code from any dsh agent pres
 - **Guided login, one command** — `/claude-code login` answers with the exact command to run in your own terminal (claude ≥2.1 prints its OAuth URL only on a TTY, so the host no longer spawns and scrapes) and watches the scoped home for the credential; `sessions`/`status`/`logout` and a Settings → 本地 Agent panel complete the family.
 - **Resume a delegation** — pass back the result's `resume` handle to continue the same Claude session, with per-round accounting.
 - **Live stream mirror** — the child session mirrors Claude's thinking, tool calls, and replies live; aborting keeps the partial transcript and real token usage.
-
+- **Model readback and per-cell working directory** — every settled round reads back the model from stream-json’s system/init into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 ## Install
 
 Prerequisites: a running dsh profile, and the Claude Code CLI (`claude`) on `PATH` — the plugin does not install it. Install the family core together with this bundle (`dsh plugin add` reconciles only *direct* dependencies, so name both):
@@ -58,6 +58,8 @@ Optional fields on the bundle row:
 
 <details>
 <summary>Internals (click to expand)</summary>
+
+**Model readback and the cwd override.** After every settled round the provider reports the actual model from the stream-json `system` (init) event's `model` field (e.g. `claude-opus-5[1m]`, verbatim — context-variant suffixes included) through the `settled` run-progress event, and merges it into the delegation record's `observedModel` field; absence is recorded, never guessed. An orchestrator may also pass a per-round working directory through the facade's `DelegationCallOptions.cwd` (recorded as the record's `cwd`); when a resume round resolves to a different directory than the recorded first round, it fails loud before any process spawns — a CLI session continues in the directory its first round ran in.
 
 ```
 src/index.ts                harness registration, /claude-code command family, config schema

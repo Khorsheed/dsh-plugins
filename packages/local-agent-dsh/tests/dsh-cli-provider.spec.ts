@@ -72,6 +72,8 @@ function mount(options: {
     homeDir: () => homeDir,
     takeDelegationIntent: () => options.intent,
     recordDelegation: records,
+    getDelegation: () => undefined,
+    recordRoundSettled: () => {},
     get: () => undefined,
     acquireResumeLock: (id: string) => {
       locks.acquired.push(id)
@@ -156,12 +158,14 @@ describe('dsh-cli-provider fresh run', () => {
     expect(argv).toContain('--profile')
     expect(argv).toContain('headless-local-agent-dsh')
     expect(argv[argv.length - 1]).toBe('建个文件')
-    // The delegation record maps the child session to the SAME sub-dsh id.
+    // The delegation record maps the child session to the SAME sub-dsh id,
+    // anchoring the round's resolved cwd for the resume-consistency check.
     expect(records).toHaveBeenCalledWith({
       childSessionId: sessionId,
       provider: 'dsh-cli',
       parentSessionId: 'parent-1',
       cliSessionId: sessionId,
+      cwd: '/tmp',
     })
     await run.dispose()
   })
@@ -173,6 +177,7 @@ describe('dsh-cli-provider fresh run', () => {
     ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
     const reports: { id: string; progress: { kind: string; text?: string; mirroredLines?: number } }[] = []
     ctx.provide('localAgent', {
+      recordRoundSettled: () => {},
       reportRunProgress: (id: string, progress: { kind: string; text?: string; mirroredLines?: number }) => {
         reports.push({ id, progress })
       },
@@ -412,5 +417,120 @@ describe('dsh-cli-provider abort path', () => {
     await run.dispose()
     expect(hanging.terminated()).toBe(true)
     await hanging.done
+  })
+})
+
+describe('dsh-cli-provider observed model and cwd', () => {
+  /** A stub sub-dsh child that prints an answer and exits 0. */
+  function exitChild(): SubprocessHandle {
+    const stdout = new Readable({ read() {} })
+    stdout.push('final answer\n')
+    stdout.push(null)
+    const stderr = new Readable({ read() {} })
+    stderr.push('')
+    stderr.push(null)
+    return {
+      pid: 4251,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done: new Promise((resolve) => { setImmediate(() => { resolve({ exitCode: 0, signal: null }) }) }),
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+  }
+
+  /** Write a one-round sub-dsh session; `withModel` toggles the source attribution. */
+  function writeSubSession(homeDir: string, id: string, withModel: boolean): void {
+    const dir = join(homeDir, 'sessions', 'wd_test', id)
+    mkdirSync(dir, { recursive: true })
+    const source = withModel ? { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' } : undefined
+    writeFileSync(join(dir, 'session.jsonl'), [
+      JSON.stringify({ type: 'session', version: 0, id }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+      JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' } }),
+      JSON.stringify({
+        type: 'assistant/message', seq: 2, time: 3,
+        data: {
+          turn: 1, step: 1,
+          message: { content: [{ type: 'text', text: '第一条回复' }], ...(source === undefined ? {} : { source }) },
+          usage: { inputTokens: 100, outputTokens: 10 },
+        },
+      }),
+    ].join('\n') + '\n')
+  }
+
+  /** Mount a minimal exec run: real session log on disk, spy on the observation channel. */
+  async function mountObservation(withModel: boolean) {
+    const homeDir = mkdtempSync(join(tmpdir(), 'dsh-obs-'))
+    const child = Session.create(SessionId('child-obs-dsh'))
+    const ctx = new Context()
+    ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
+    const settled = vi.fn()
+    ctx.provide('localAgent', { recordRoundSettled: settled, reportRunProgress: () => {} } as never)
+    ctx.provide('subprocess', { spawn: () => exitChild() })
+    writeSubSession(homeDir, 'sub-obs-1', withModel)
+    const run = await startDshCliRun(request() as never, {
+      cwd: '/tmp',
+      homeDir,
+      childSession: child,
+      sessionId: 'sub-obs-1',
+      config: {},
+      ctx,
+    })
+    return { run, child, settled }
+  }
+
+  it('reports the settled observation: provider/model plus the round usage', async () => {
+    const { run, child, settled } = await mountObservation(true)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(child.id, {
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    })
+  })
+
+  it('leaves the observation absent when the sub-dsh session names no model', async () => {
+    const { run, child, settled } = await mountObservation(false)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(child.id, { usage: { inputTokens: 100, outputTokens: 10 } })
+  })
+
+  it('spawns the fresh round in the staged cwd override and records it', async () => {
+    const { ctx, capture, records } = mount({ key: 'sk-test', intent: { kind: 'fresh', cwd: '/cell-a' } })
+    const provider = new DshCliProvider(ctx, {})
+    const run = await provider.start(request() as never)
+    await run.result
+    await run.dispose()
+    expect(capture.cwd).toBe('/cell-a')
+    expect(records).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/cell-a' }))
+  })
+
+  it('rejects a resume whose cwd differs from the recorded first-round cwd', async () => {
+    const ctx = new Context()
+    const liveChild = Session.create(SessionId('child-1'))
+    liveChild.append('turn/start', { turn: 1 })
+    ctx.provide('sessions', { get: (id: SessionId) => (id === SessionId('child-1') ? liveChild : undefined) } as never)
+    ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
+    ctx.provide('localAgent', {
+      homeDir: () => mkdtempSync(join(tmpdir(), 'dsh-cwd-')),
+      takeDelegationIntent: () => ({ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'child-1', cwd: '/elsewhere' }),
+      recordDelegation: () => {},
+      getDelegation: () => ({ childSessionId: 'child-1', provider: 'dsh-cli', parentSessionId: 'parent-1', cliSessionId: 'child-1', cwd: '/tmp' }),
+      recordRoundSettled: () => {},
+      get: () => undefined,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+      reportRunProgress: () => {},
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+    const provider = new DshCliProvider(ctx, {})
+    await expect(provider.start(request() as never)).rejects.toThrow(/differs from the first round's/)
   })
 })

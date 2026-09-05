@@ -35,7 +35,12 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import {
+  assertResumeCwdUnchanged,
+  delegationEnv,
+  resolveChildCwd,
+  subagentDelegationLabel,
+} from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
@@ -163,25 +168,31 @@ export class ClaudeCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const parentCwd = request.parent.session.header.cwd
-    if (parentCwd === undefined) {
-      throw new Error('subagent-claude: the parent session has no working directory to run the CLI in')
-    }
     const homeDir = this.ctx.localAgent.homeDir('claude-code')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded session inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
-    if (intent !== undefined && intent.kind === 'resume') {
-      return this.startClaudeResume(request, intent, parentCwd, homeDir)
+    // The effective cwd: the caller's override (the staged intent's `cwd`,
+    // riding DelegationCallOptions.cwd) when present, else the parent
+    // session's workspace — the behavior before overrides existed.
+    const cwd = resolveChildCwd(request.parent.session.header.cwd, intent?.cwd)
+    if (cwd === undefined) {
+      throw new Error('subagent-claude: the parent session has no working directory to run the CLI in')
     }
-    return this.startClaudeFresh(request, parentCwd, homeDir)
+    if (intent !== undefined && intent.kind === 'resume') {
+      // A CLI session continues in the directory its first round ran in; a
+      // round resolving elsewhere is rejected before any process spawns.
+      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-claude')
+      return this.startClaudeResume(request, intent, cwd, homeDir)
+    }
+    return this.startClaudeFresh(request, cwd, homeDir)
   }
 
   /** Fresh round: record the child session, spawn `claude -p`, append after settle. */
   private async startClaudeFresh(
     request: ResolvedSubagentStartRequest,
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
@@ -193,7 +204,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       }
       childSession = sessions.create(runId, {
         meta: {
-          cwd: parentCwd,
+          cwd,
           parentSession: request.parent.session.id,
           origin: 'subagent',
           delegationDepth: (request.parent.session.header.delegationDepth ?? 0) + 1,
@@ -222,7 +233,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
-          cwd: parentCwd,
+          cwd,
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
@@ -234,6 +245,9 @@ export class ClaudeCliProvider implements SubagentProvider {
               provider: this.name,
               parentSessionId: request.parent.session.id,
               cliSessionId: sessionId,
+              // The round's resolved working directory anchors the
+              // resume-consistency check.
+              cwd,
             })
           },
         })
@@ -247,7 +261,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startClaudeCliRun(request, {
-        cwd: parentCwd,
+        cwd,
         env: delegationEnv({
           CLAUDE_CONFIG_DIR: homeDir,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
@@ -273,7 +287,15 @@ export class ClaudeCliProvider implements SubagentProvider {
             provider: this.name,
             parentSessionId: request.parent.session.id,
             cliSessionId: sessionId,
+            // The round's resolved working directory anchors the
+            // resume-consistency check.
+            cwd,
           })
+        },
+        // Every settled round reports its observed model and usage through the
+        // registry's observation channel (record merge + `settled` event).
+        onRoundSettled: (round) => {
+          this.ctx.localAgent.recordRoundSettled(runId, round)
         },
       })
       // The member-channel token dies with the run, whatever its stop reason.
@@ -289,7 +311,7 @@ export class ClaudeCliProvider implements SubagentProvider {
   private async startClaudeResume(
     request: ResolvedSubagentStartRequest,
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
@@ -316,7 +338,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
-            cwd: parentCwd,
+            cwd,
             homeDir,
             childSession,
             parentSessionId: request.parent.session.id,
@@ -340,7 +362,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       let run: SubagentRun
       try {
         run = await startClaudeCliRun(request, {
-          cwd: parentCwd,
+          cwd,
           env: delegationEnv({
             CLAUDE_CONFIG_DIR: homeDir,
             ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
@@ -358,6 +380,11 @@ export class ClaudeCliProvider implements SubagentProvider {
           childSession,
           ctx: this.ctx,
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          // Every settled round reports its observed model and usage through
+          // the registry's observation channel.
+          onRoundSettled: (round) => {
+            this.ctx.localAgent.recordRoundSettled(intent.childSessionId, round)
+          },
         })
       } catch (error) {
         member?.release()
@@ -433,6 +460,15 @@ export interface ClaudeCliRunSpec {
    * record the delegation so a later resume round can continue the session.
    */
   readonly onSessionId?: ((sessionId: string | undefined) => void) | undefined
+  /**
+   * Called once per settled round, after the output stream has been fully
+   * parsed and mirrored: the round's observed model identifier and token
+   * usage, each absent when the stream yielded none. The provider wires this
+   * to the registry's observation channel (`recordRoundSettled` — the
+   * delegation record's `observedModel` merge and the `settled` run-progress
+   * event). Fires for fresh and resume rounds alike, on every terminal state.
+   */
+  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -482,6 +518,12 @@ interface ClaudeStreamFoldState {
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
+  /**
+   * The model identifier the stream named: the `model` field on the
+   * `system` init event (verified against claude 2.x stream-json) or on the
+   * terminal `result` event. Absent when neither carries one.
+   */
+  model: string | undefined
   error: string | undefined
   /** Whether the stream's terminal `result` event was folded. */
   completed: boolean
@@ -550,6 +592,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   if (line === '') return
   let event: {
     type?: string
+    model?: unknown
     message?: { content?: unknown[]; type?: string }
     is_error?: unknown
     error?: unknown
@@ -564,6 +607,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   }
   if (event.type === 'system' && typeof event.session_id === 'string') {
     state.sessionId = event.session_id
+    if (typeof event.model === 'string' && event.model !== '') state.model = event.model
     return
   }
   if (event.type === 'result') {
@@ -576,6 +620,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
         : 'claude -p reported an error'
     }
     if (typeof event.session_id === 'string') state.sessionId = event.session_id
+    if (typeof event.model === 'string' && event.model !== '') state.model = event.model
     if (event.usage !== undefined) state.usage = usageFromClaude(event.usage)
     return
   }
@@ -653,6 +698,7 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
   text: string | undefined
   usage: TokenUsage | undefined
   sessionId: string | undefined
+  model: string | undefined
   error: string | undefined
   completed = false
   todos: TodoItem[] | undefined
@@ -669,16 +715,17 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
 
 /**
  * Parse a `claude -p --verbose --output-format stream-json` NDJSON stream.
- * Each line is one event: `system` init (carries the session id), `assistant`
- * (content blocks: `text`, `tool_use`, `thinking`), `user` (a `tool_result`
- * block), and a terminal `result` (final usage, error flag, session id).
- * Content blocks fold into an ordered transcript (thinking, reply text, tool
- * calls with results), the last assistant `text` becomes the run output, and
- * the `result` event's usage/session id ride the parse. A malformed stream or
- * an `is_error` result yields the error instead.
+ * Each line is one event: `system` init (carries the session id and the
+ * model), `assistant` (content blocks: `text`, `tool_use`, `thinking`), `user`
+ * (a `tool_result` block), and a terminal `result` (final usage, error flag,
+ * session id). Content blocks fold into an ordered transcript (thinking,
+ * reply text, tool calls with results), the last assistant `text` becomes the
+ * run output, and the `result` event's usage/session id ride the parse. The
+ * model identifier comes from the init (or result) event's `model` field. A
+ * malformed stream or an `is_error` result yields the error instead.
  * @param output - the collected stdout NDJSON text.
- * @returns the ordered transcript, final answer text, usage, session id, and
- *   the error when the run reported one.
+ * @returns the ordered transcript, final answer text, usage, session id, the
+ *   observed model, and the error when the run reported one.
  */
 export function parseClaudeStreamJson(output: string): {
   lines: readonly ClaudeTranscriptLine[]
@@ -686,6 +733,7 @@ export function parseClaudeStreamJson(output: string): {
   usage?: TokenUsage
   error?: string
   sessionId?: string
+  model?: string
   /** The stream's last TodoWrite translation, when one was folded. */
   todos?: TodoItem[]
   /** Whether a shape-skewed TodoWrite degraded to the text fold. */
@@ -697,6 +745,7 @@ export function parseClaudeStreamJson(output: string): {
     text: undefined,
     usage: undefined,
     sessionId: undefined,
+    model: undefined,
     error: undefined,
     completed: false,
     todos: undefined,
@@ -709,6 +758,7 @@ export function parseClaudeStreamJson(output: string): {
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.error === undefined ? {} : { error: state.error },
     ...state.sessionId === undefined ? {} : { sessionId: state.sessionId },
+    ...state.model === undefined ? {} : { model: state.model },
     ...state.todos === undefined ? {} : { todos: state.todos },
     ...state.todoSkew === false ? {} : { todoSkew: true },
   }
@@ -1298,6 +1348,13 @@ async function mirrorClaudeAfterExit(
     if (parsed.todos !== undefined) appendTodosIfChanged(childSession, parsed.todos)
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
+    // The round's settled observation rides out even when nothing streamed:
+    // an empty stream is still a settled round. The model comes from the
+    // stream's init/result events; absent when the stream carried none.
+    spec.onRoundSettled?.({
+      ...parsed.model === undefined ? {} : { observedModel: parsed.model },
+      ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+    })
     // Nothing streamed at all (e.g. the CLI died before the first event):
     // keep the pre-live-mirror behavior of recording nothing. A todos-only
     // stream still mirrors its snapshot (handled above).

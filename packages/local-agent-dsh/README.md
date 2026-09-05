@@ -11,7 +11,7 @@
 - **跨轮续接**——把子会话 id 传回即可续接同一个子 dsh 会话。
 - **无需单独登录**——通过父级的 `DEEPSEEK_API_KEY` 认证，无 device-code 流程。
 - **DeepSeek 开关，默认关**——在 设置 → 本地 Agent 打开开关之前，模型看不到任何委派工具。
-
+- **模型回读与独立工作目录**——每轮从子会话事件的 source 回读实际模型（`provider/model`），写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 ## 安装
 
 家族核心与本 bundle 必须在同一条命令里指名，然后重启 profile：
@@ -59,6 +59,8 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 
 <details>
 <summary>内部结构（点击展开）</summary>
+
+**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 从子会话事件自身读取实际模型：本轮最后一个 `assistant/message` 事件的 `message.source`，格式化为 `provider/model`（与 effectiveSettings 快照报告已配置模型的形状一致）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 **DeepSeek 开关。** 与其他家族 harness 不同，本包默认不挂载任何模型可见的东西。互斥开关位于 dsh harness 行的动作区内（设置 → 本地 Agent，namespace `local-agent-dsh`，默认 off）：OFF 时委派走官方 in-process subagent 工具；ON 时注册 `dsh` harness、`dsh-cli` 委派 provider 与家族工具 `subagent_dsh`，与官方工具并存——两种委派形态语义不同（in-process continuable vs. 独立 CLI 进程），家族工具描述让模型可以区分。开关经 settings watcher 实时翻转组合。
 

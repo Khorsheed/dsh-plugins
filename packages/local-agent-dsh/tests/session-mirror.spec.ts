@@ -204,10 +204,17 @@ describe('mirrorDshSession', () => {
     ])
     const child = childWithRounds('child-4', 1)
     const first = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
-    expect(first).toEqual({ texts: ['第一轮任务', 'thinking 1第一条回复'], total: 2 })
+    expect(first).toEqual({
+      texts: ['第一轮任务', 'thinking 1第一条回复'],
+      total: 2,
+      // The round's own span names the model and sums the assistant usage.
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    })
 
     // The live pass returned; the log grows (second reply), and the next pass
     // mirrors only the delta — the settle-time pass after it is a pure no-op.
+    // The observation stays span-derived: the grown round sums BOTH replies.
     writeSubDshSession(home, 'child-4', [
       { type: 'session', version: 0, id: 'x' },
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
@@ -217,9 +224,19 @@ describe('mirrorDshSession', () => {
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
-    expect(second).toEqual({ texts: ['thinking 1第二条回复'], total: 3 })
+    expect(second).toEqual({
+      texts: ['thinking 1第二条回复'],
+      total: 3,
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 200, outputTokens: 20 },
+    })
     const third = await mirrorDshSession(fakeCtx(), child, home, 'child-4')
-    expect(third).toEqual({ texts: [], total: 3 })
+    expect(third).toEqual({
+      texts: [],
+      total: 3,
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 200, outputTokens: 20 },
+    })
 
     const assistant = child.events.filter(event => event.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
@@ -253,7 +270,12 @@ describe('mirrorDshSession', () => {
     // A repeat pass over an unchanged log is a pure no-op — no duplicate
     // identical snapshot lands in the child log.
     const repeat = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
-    expect(repeat).toEqual({ texts: [], total: 3 })
+    expect(repeat).toEqual({
+      texts: [],
+      total: 3,
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    })
     expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(1)
 
     // A CHANGED snapshot (the sub-dsh updated the list) mirrors as the new
@@ -272,7 +294,12 @@ describe('mirrorDshSession', () => {
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const second = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
-    expect(second).toEqual({ texts: [], total: 4 })
+    expect(second).toEqual({
+      texts: [],
+      total: 4,
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 100, outputTokens: 10 },
+    })
     const after = child.events.filter(event => event.type === 'todo/write')
     expect(after).toHaveLength(2)
     expect(after[1]?.data).toEqual(todos2)
@@ -340,7 +367,12 @@ describe('mirrorDshLiveEvent', () => {
       { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ])
     const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-live-parity')
-    expect(delta).toEqual({ texts: ['thinking 1第二条回复'], total: 3 })
+    expect(delta).toEqual({
+      texts: ['thinking 1第二条回复'],
+      total: 3,
+      observedModel: 'deepseek-official/deepseek-v4-flash',
+      usage: { inputTokens: 200, outputTokens: 20 },
+    })
     expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
   })
 })

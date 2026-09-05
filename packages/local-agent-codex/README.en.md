@@ -11,7 +11,7 @@ Delegate coding tasks from any dsh agent preset to your locally installed Codex 
 - **In-session login** — device-code `/codex login`, with auth status and sign-out under Settings → 本地 Agent.
 - **Resume a thread** — pass `resume="<childSessionId>"` to continue the same codex thread in the same dsh child session.
 - **Custom endpoint** — route Codex's LLM requests through your own router via a scoped `config.toml` provider.
-
+- **Model readback and per-cell working directory** — every settled round reads back the model the run actually used (from the rollout `turn_context` when the stream names none) into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 ## Install
 
 Prerequisites: a dsh profile and the Codex CLI (`codex`) on `PATH` — the plugin neither installs it nor logs in for you.
@@ -83,6 +83,8 @@ The last line selects the provider for delegations; keep the rest of the file in
 **Login and credentials.** `/codex login` shows the device-code URL in-session and polls in the background; credentials land in the scoped home on authorization. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.
 
 **Session records.** `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` files — sessions this plugin's delegations created, never your personal ones. The settings section narrows the list to records whose `workDir` matches the session cwd.
+
+**Model readback and the cwd override.** After every settled round the provider reports the model identifier read from its own output side (codex 0.144.0's exec stream events carry no model, so the read falls back to the round's rollout file `turn_context` line — filtered to this round's time window, so a resumed thread's earlier models are never misread) through the `settled` run-progress event, and merges it into the delegation record's `observedModel` field; absence is recorded, never guessed. An orchestrator may also pass a per-round working directory through the facade's `DelegationCallOptions.cwd` (recorded as the record's `cwd`); when a resume round resolves to a different directory than the recorded first round, it fails loud before any process spawns — a CLI session continues in the directory its first round ran in.
 
 **Resume.** The family tool (`@khorsheed/dsh-local-agent-tool-subagent`) adds an optional `resume` parameter to the official `description`/`prompt` subset. A fresh delegation's result self-describes its handle (`追问请带 resume="<childSessionId>"`); passing it back continues the same codex thread (`codex exec --json resume <thread_id>`) in the same dsh child session, with per-round accounting. The handle is read only from the `resume` parameter and resolved by the `localAgent` registry only for the recording parent session and provider — a forged handle is rejected before any CLI process starts.
 

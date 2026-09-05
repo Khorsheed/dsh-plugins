@@ -11,7 +11,8 @@ Delegate a task to dsh itself as a separate local CLI process, sibling to the ki
 - **Resume across rounds** — pass the child session id back to continue the same session.
 - **No separate login** — authenticates through the parent's `DEEPSEEK_API_KEY`; no device-code flow.
 - **DeepSeek toggle, default off** — nothing model-visible until you flip the switch in Settings → 本地 Agent.
-
+- **Model readback and per-cell working directory** — every settled round reads back the model from the sub-session event sources (`provider/model`) into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
+- **Model readback and per-cell working directory** — every settled round reads back the model from the sub-session event sources (`provider/model`) into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 ## Install
 
 The family core and this bundle must be named in one command, then restart the profile:

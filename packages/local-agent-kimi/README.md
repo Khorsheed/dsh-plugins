@@ -13,7 +13,7 @@ local-agent 家族的 Kimi Code harness:每个 agent preset 都获得 `subagent_
 - **device-code 登录**——`/kimi login` 把授权 URL 呈现在会话中;`/kimi logout` 清除作用域凭据,换账号即重新登录。
 - **可续聊的委派**——把结果自述的 `resume` 句柄传回,即继续同一个 Kimi 会话,并按轮记录真实用量与耗时。
 - **会话记录 + 设置界面**——`/kimi sessions` 列出你的委派;设置 → 本地 Agent 显示认证状态与当前工作区的会话。
-
+- **模型回读与独立工作目录**——每轮从 wire.jsonl 的 usage/request 记录回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 ## 安装
 
 需要一个可运行的 dsh profile,且 `PATH` 上有 Kimi Code CLI(`kimi`)——插件既不替你安装,也不替你登录。
@@ -75,6 +75,8 @@ base_url = "https://your-router.example/v1"
 
 <details>
 <summary>内部结构(点击展开)</summary>
+
+**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 wire.jsonl 里 `usage.record`（次选 `llm.request`）事件 `model` 字段的实际模型（最后一个为准——resume 会话后续轮次追加在文件尾部）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 **作用域目录与登录。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。登录只走 device-code:`/kimi login` 把授权 URL 和验证码呈现在会话中,CLI 在后台轮询,凭据写入作用域目录。`/kimi logout` 删除作用域内的凭据与 OAuth 缓存(kimi CLI 没有 logout 命令)。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制,用户没有 config 时则写入最小 managed config——因为没有 provider 与 model 定义 CLI 就拒绝认证;已存在的 config 永不覆盖。
 

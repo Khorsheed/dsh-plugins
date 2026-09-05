@@ -11,7 +11,7 @@
 - **会话内登录**——device-code `/codex login`，设置 → 本地 Agent 显示认证状态并提供退出登录按钮。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程。
 - **自定义端点**——经作用域 `config.toml` 的自定义 provider 把 Codex 的 LLM 请求路由到你自己的路由端点。
-
+- **模型回读与独立工作目录**——每轮从输出侧回读实际模型（流内未标注时读 rollout 的 `turn_context`），写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 ## 安装
 
 前置依赖：一个可运行的 dsh profile 和 `PATH` 上的 Codex CLI（`codex`）——插件不安装它、也不替你登录。
@@ -83,6 +83,8 @@ model_provider = "dsh-router"
 **登录与凭据。** `/codex login` 在会话中显示 device-code URL 并在后台轮询；用户授权后凭据写入作用域目录。首次启动写入一份最小 `config.toml`，固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain，把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效；已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`，之后重新登录即可换账号。
 
 **会话记录。** `/codex sessions` 列出作用域目录的 `sessions/YYYY/MM/DD/rollout-*.jsonl` 文件——仅本插件委派产生的会话，绝不含你的私人会话。设置分区把列表收窄到 `workDir` 与当前会话 cwd 一致的记录。
+
+**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把从自身输出侧读到的模型标识（codex 0.144.0 的 exec 流事件不带 model，回退读本轮 rollout 文件的 `turn_context` 行——按本轮时间窗过滤，resume 线程里先前轮次的模型不会被误读）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 **续聊（resume）。** 家族工具（`@khorsheed/dsh-local-agent-tool-subagent`）在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程（`codex exec --json resume <thread_id>`），按轮记账。句柄只从 `resume` 参数读取，localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
 

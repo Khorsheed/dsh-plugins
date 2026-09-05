@@ -97,6 +97,12 @@ export interface KimiMirrorDelta {
    * combined final message that completes the stream.
    */
   usage?: TokenUsage
+  /**
+   * The model identifier the wire named (a `usage.record` or `llm.request`
+   * `model` field, last one seen) — the delegation's observed-model source.
+   * Absent when the wire carried none.
+   */
+  model?: string
 }
 
 /** Mirror behavior switches shared by the exec and live paths. */
@@ -205,6 +211,7 @@ export async function mirrorKimiSessionDelta(
 
   const newTotal = transcript.lines.length
   const delta = transcript.lines.slice(fromLines)
+  const observedModel = transcript.model
   // No early return on an empty delta: a result that merged into an
   // already-mirrored tool line does not change the line count, and the
   // backfill below still owes that call its `tool/result` event.
@@ -278,7 +285,12 @@ export async function mirrorKimiSessionDelta(
     if (texts.length > 0) {
       await persistIfStandalone(ctx, childSession)
     }
-    return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
+    return {
+      total: newTotal,
+      texts,
+      ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
+      ...observedModel !== undefined ? { model: observedModel } : {},
+    }
   }
   for (let index = 0; index < delta.length; index += 1) {
     const line = delta[index]
@@ -337,7 +349,12 @@ export async function mirrorKimiSessionDelta(
     }
   }
   await persistIfStandalone(ctx, childSession)
-  return { total: newTotal, texts, ...deltaUsage !== undefined ? { usage: deltaUsage } : {} }
+  return {
+    total: newTotal,
+    texts,
+    ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
+    ...observedModel !== undefined ? { model: observedModel } : {},
+  }
 }
 
 /**

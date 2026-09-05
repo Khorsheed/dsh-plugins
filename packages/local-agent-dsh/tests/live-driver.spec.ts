@@ -234,6 +234,8 @@ function mount(options: {
     homeDir: () => homeDir,
     takeDelegationIntent: () => options.intent,
     recordDelegation: records,
+    getDelegation: () => undefined,
+    recordRoundSettled: () => {},
     get: () => undefined,
     acquireResumeLock: () => true,
     releaseResumeLock: () => {},

@@ -11,7 +11,7 @@
 - **一条命令完成登录指引**——`/claude-code login` 在会话中给出需要在你自己终端运行的完整命令(claude ≥2.1 只在 TTY 打印 OAuth URL,宿主不再 spawn 抓取),并监听作用域目录识别登录完成;`sessions`/`status`/`logout` 与 设置 → 本地 Agent 面板构成完整一族。
 - **续聊委派**——把结果自述的 `resume` 句柄传回,即可继续同一个 Claude 会话,并按轮记账。
 - **实时流镜像**——子会话实时镜像 Claude 的思考、工具调用与回复;中止会保留部分转写与真实 token 用量。
-
+- **模型回读与独立工作目录**——每轮从 stream-json 的 system/init 回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 ## 安装
 
 前置依赖:一个可运行的 dsh profile,以及 `PATH` 上的 Claude Code CLI(`claude`)——插件不负责安装。家族 core 与本包一起安装(`dsh plugin add` 只调和**直接**依赖,所以两个包都点名):
@@ -58,6 +58,8 @@ bundle 行接受这些可选字段:
 
 <details>
 <summary>内部结构(点击展开)</summary>
+
+**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 stream-json `system`（init）事件 `model` 字段里的实际模型（如 `claude-opus-5[1m]`，原样回读，上下文变体后缀照留）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 ```
 src/index.ts                harness 注册、/claude-code 命令族、config schema

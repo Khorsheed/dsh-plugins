@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   NO_START_CAPABILITIES,
@@ -27,13 +27,19 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import {
+  assertResumeCwdUnchanged,
+  delegationEnv,
+  resolveChildCwd,
+  subagentDelegationLabel,
+} from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
 import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
 import { readKimiBaseUrl } from './provision.ts'
+import { addTokenUsage } from './session-view.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
@@ -130,25 +136,31 @@ export class KimiCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const parentCwd = request.parent.session.header.cwd
-    if (parentCwd === undefined) {
-      throw new Error('subagent-kimi: the parent session has no working directory to run the CLI in')
-    }
     const homeDir = this.ctx.localAgent.homeDir('kimi')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded kimi session inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
-    if (intent !== undefined && intent.kind === 'resume') {
-      return this.startKimiResume(request, intent, parentCwd, homeDir)
+    // The effective cwd: the caller's override (the staged intent's `cwd`,
+    // riding DelegationCallOptions.cwd) when present, else the parent
+    // session's workspace — the behavior before overrides existed.
+    const cwd = resolveChildCwd(request.parent.session.header.cwd, intent?.cwd)
+    if (cwd === undefined) {
+      throw new Error('subagent-kimi: the parent session has no working directory to run the CLI in')
     }
-    return this.startKimiFresh(request, parentCwd, homeDir)
+    if (intent !== undefined && intent.kind === 'resume') {
+      // A CLI session continues in the directory its first round ran in; a
+      // round resolving elsewhere is rejected before any process spawns.
+      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-kimi')
+      return this.startKimiResume(request, intent, cwd, homeDir)
+    }
+    return this.startKimiFresh(request, cwd, homeDir)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
   private async startKimiFresh(
     request: ResolvedSubagentStartRequest,
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
@@ -162,7 +174,7 @@ export class KimiCliProvider implements SubagentProvider {
       }
       childSession = sessions.create(runId, {
         meta: {
-          cwd: parentCwd,
+          cwd,
           parentSession: request.parent.session.id,
           origin: 'subagent',
           delegationDepth: (request.parent.session.header.delegationDepth ?? 0) + 1,
@@ -195,7 +207,7 @@ export class KimiCliProvider implements SubagentProvider {
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
-          cwd: parentCwd,
+          cwd,
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
@@ -207,6 +219,9 @@ export class KimiCliProvider implements SubagentProvider {
               provider: this.name,
               parentSessionId: request.parent.session.id,
               cliSessionId,
+              // The round's resolved working directory anchors the
+              // resume-consistency check.
+              cwd,
             })
           },
         })
@@ -220,7 +235,7 @@ export class KimiCliProvider implements SubagentProvider {
     const member = this.memberRun(runId, request.parent.session.id, homeDir)
     try {
       const run = await startKimiCliRun(request, {
-        cwd: parentCwd,
+        cwd,
         env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         endpointLabel: baseUrl,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -247,7 +262,15 @@ export class KimiCliProvider implements SubagentProvider {
             provider: this.name,
             parentSessionId: request.parent.session.id,
             cliSessionId,
+            // The round's resolved working directory anchors the
+            // resume-consistency check.
+            cwd,
           })
+        },
+        // Every settled round reports its observed model and usage through the
+        // registry's observation channel (record merge + `settled` event).
+        onRoundSettled: (round) => {
+          this.ctx.localAgent.recordRoundSettled(runId, round)
         },
       })
       // The member-channel token dies with the run, whatever its stop reason.
@@ -263,7 +286,7 @@ export class KimiCliProvider implements SubagentProvider {
   private async startKimiResume(
     request: ResolvedSubagentStartRequest,
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
@@ -291,7 +314,7 @@ export class KimiCliProvider implements SubagentProvider {
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
-            cwd: parentCwd,
+            cwd,
             homeDir,
             childSession,
             parentSessionId: request.parent.session.id,
@@ -315,7 +338,7 @@ export class KimiCliProvider implements SubagentProvider {
       let run: SubagentRun
       try {
         run = await startKimiCliRun(request, {
-          cwd: parentCwd,
+          cwd,
           env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
           endpointLabel: baseUrl,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -334,6 +357,11 @@ export class KimiCliProvider implements SubagentProvider {
           homeDir,
           ctx: this.ctx,
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          // Every settled round reports its observed model and usage through
+          // the registry's observation channel.
+          onRoundSettled: (round) => {
+            this.ctx.localAgent.recordRoundSettled(intent.childSessionId, round)
+          },
         })
       } catch (error) {
         member?.release()
@@ -397,6 +425,16 @@ export interface KimiCliRunSpec {
    * delegation so a later resume round can continue the session.
    */
   readonly onCliSessionId?: ((cliSessionId: string | undefined) => void) | undefined
+  /**
+   * Called once per settled round, after the wire log has been fully mirrored:
+   * the round's observed model identifier (the wire's `usage.record` /
+   * `llm.request` `model`) and token usage (the round's mirror windows summed),
+   * each absent when the wire yielded none. The provider wires this to the
+   * registry's observation channel (`recordRoundSettled` — the delegation
+   * record's `observedModel` merge and the `settled` run-progress event).
+   * Fires for fresh and resume rounds alike, on every terminal state.
+   */
+  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
   /**
    * Live-mirror poll interval during the run; absent disables nothing — the
    * default ({@link DEFAULT_LIVE_MIRROR_INTERVAL_MS}) applies. Tests inject a
@@ -489,12 +527,16 @@ export async function mirrorKimiDelta(
  * (fresh rounds) so a later resume can continue the session.
  * @param spec - the run spec carrying the child session, home, and context.
  * @param stderr - the collected CLI stderr (the resume hint lives here).
+ * @returns this pass's observation — the wire's model identifier and the
+ *   window's usage — or undefined when nothing was mirrored; the caller sums
+ *   the window usage into the round total and reports the round's settled
+ *   observation.
  */
 async function mirrorKimiAfterExit(
   spec: KimiCliRunSpec,
   stderr: string,
-): Promise<void> {
-  if (spec.childSession === undefined || spec.homeDir === undefined || spec.ctx === undefined) return
+): Promise<{ model?: string; usage?: TokenUsage } | undefined> {
+  if (spec.childSession === undefined || spec.homeDir === undefined || spec.ctx === undefined) return undefined
   try {
     const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
     if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
@@ -502,8 +544,13 @@ async function mirrorKimiAfterExit(
     // Report the final mirrored-line count even when the live mirror already
     // advanced the offset (empty delta): the settle report is authoritative.
     spec.ctx.get('localAgent')?.reportRunProgress(spec.childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+    return {
+      ...delta.model === undefined ? {} : { model: delta.model },
+      ...delta.usage === undefined ? {} : { usage: delta.usage },
+    }
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
+    return undefined
   }
 }
 
@@ -551,6 +598,15 @@ export function startKimiCliRun(
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
+  // The round's usage accumulates across mirror passes: each pass (live poll,
+  // settle) folds a disjoint transcript window and reports that window's
+  // accounting, so the disjoint windows sum to the round's total — exactly
+  // once, whatever the poll/settle split turned out to be.
+  let roundUsage: TokenUsage | undefined
+  const addRoundUsage = (usage: TokenUsage | undefined): void => {
+    roundUsage = addTokenUsage(roundUsage, usage)
+  }
+
   // Live transcript mirroring: poll the kimi wire log while the run is in
   // flight and mirror the delta through the SAME folding path the settle-time
   // mirror uses, so a caller watching the child session sees progress instead
@@ -574,6 +630,7 @@ export function startKimiCliRun(
       const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
       if (kimiSessionId === undefined) return
       const delta = await mirrorKimiDelta(mirrorCtx, childSession, homeDir, kimiSessionId)
+      addRoundUsage(delta.usage)
       if (delta.texts.length > 0) {
         mirrorCtx.get('localAgent')?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
       }
@@ -713,7 +770,17 @@ export function startKimiCliRun(
           spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
         }
       }
-      enqueueMirror(() => mirrorKimiAfterExit(spec, stderr))
+      // The settle pass runs last on the mirror queue: it sums its window's
+      // usage into the round total, then reports the round's settled
+      // observation — the wire's model plus the round's accumulated usage.
+      enqueueMirror(async () => {
+        const settled = await mirrorKimiAfterExit(spec, stderr)
+        addRoundUsage(settled?.usage)
+        spec.onRoundSettled?.({
+          ...settled?.model === undefined ? {} : { observedModel: settled.model },
+          ...roundUsage === undefined ? {} : { usage: roundUsage },
+        })
+      })
     },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )

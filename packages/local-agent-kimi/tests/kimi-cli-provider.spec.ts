@@ -340,6 +340,8 @@ describe('kimi-cli-provider child session record', () => {
       // No staged intent: the provider starts a fresh round.
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
@@ -377,6 +379,8 @@ describe('kimi-cli-provider child session record', () => {
       homeDir: () => '/tmp/kimi-home',
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
@@ -420,6 +424,8 @@ describe('kimi-cli-provider resume round', () => {
         cliSessionId: 'run-1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
@@ -484,6 +490,8 @@ describe('kimi-cli-provider resume round', () => {
         cliSessionId: 'session_run-legacy',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => 0,
@@ -527,6 +535,8 @@ describe('kimi-cli-provider resume round', () => {
         cliSessionId: 'run-1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => undefined,
@@ -568,6 +578,8 @@ describe('kimi-cli-provider resume round', () => {
         cliSessionId: 'run-1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
@@ -649,6 +661,8 @@ describe('kimi-cli-provider resume round', () => {
         cliSessionId: 'run-1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       reportRunProgress: () => {},
       kimiMirroredLines: () => 2,
@@ -815,5 +829,122 @@ describe('kimi-cli-provider abort path', () => {
     await expect(run.dispose()).resolves.toBeUndefined()
     await expect(run.dispose()).resolves.toBeUndefined()
     await hanging.done
+  })
+})
+
+describe('kimi-cli-provider observed model and cwd', () => {
+  const OBS_REQUEST = {
+    label: '任务',
+    prompt: [{ type: 'text', text: '建个文件' }],
+    parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
+    signal: new AbortController().signal,
+    descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '任务' },
+  } as unknown as Parameters<KimiCliProvider['start']>[0]
+
+  /** A scoped home whose wire names the model in its usage.record events. */
+  function wireHomeWithModel(sessionId: string): string {
+    const home = mkdtempSync(join(tmpdir(), 'kimi-provider-'))
+    const dir = join(home, 'sessions', 'wd_tmp_abc', `session_${sessionId}`)
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '建个文件' }] } }),
+      JSON.stringify({ type: 'usage.record', model: 'kimi-code/k3', usage: { inputOther: 10, output: 5, inputCacheRead: 3, inputCacheCreation: 2 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', part: { type: 'text', text: '任务完成。' } } }),
+    ].join('\n'))
+    return home
+  }
+
+  async function mountObserved(options: {
+    homeDir: string
+    intent?: unknown
+    recorded?: Record<string, unknown> | undefined
+  }) {
+    const ctx = new Context()
+    const records = vi.fn()
+    const settled = vi.fn()
+    const spawnSpecs: { argv: readonly string[]; cwd: string }[] = []
+    const liveChild = Session.create(SessionId('child-1'))
+    liveChild.append('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '任务' })
+    liveChild.append('turn/start', { turn: 1 })
+    liveChild.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', {
+      create: (id: SessionId) => Session.create(id),
+      get: (id: SessionId) => (id === SessionId('child-1') ? liveChild : undefined),
+    } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => options.homeDir,
+      get: () => ({ displayName: 'kimi' }),
+      takeDelegationIntent: () => options.intent,
+      recordDelegation: records,
+      getDelegation: () => options.recorded,
+      recordRoundSettled: settled,
+      reportRunProgress: () => {},
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: readonly string[]; cwd: string }) => {
+        spawnSpecs.push(spec)
+        return stubChild('0aaaa1111').handle
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+    return { provider: new KimiCliProvider(ctx), records, settled, spawnSpecs }
+  }
+
+  it('records the wire-named model and the round usage on settle', async () => {
+    const { provider, settled } = await mountObserved({ homeDir: wireHomeWithModel('0aaaa1111') })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // The model comes verbatim from the wire's usage.record; the round usage
+    // is the per-request records summed over the round's window.
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'kimi-code/k3',
+      usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 3, cacheWriteTokens: 2 },
+    })
+  })
+
+  it('leaves observedModel absent when the wire names no model', async () => {
+    const { provider, settled } = await mountObserved({ homeDir: wireHome('0aaaa1111') })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // The fixture wire carries no usage.record either: both fields stay absent.
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {})
+  })
+
+  it('spawns the fresh round in the staged cwd override and records it', async () => {
+    const { provider, records, spawnSpecs } = await mountObserved({
+      homeDir: wireHome('0aaaa1111'),
+      intent: { kind: 'fresh', cwd: '/cell-a' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/cell-a')
+    await vi.waitFor(() => { expect(records).toHaveBeenCalled() })
+    expect(records.mock.calls[0]?.[0]).toMatchObject({ cliSessionId: '0aaaa1111', cwd: '/cell-a' })
+  })
+
+  it('rejects a resume whose cwd differs from the recorded first-round cwd', async () => {
+    const { provider } = await mountObserved({
+      homeDir: wireHome('0aaaa1111'),
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 'run-1', cwd: '/elsewhere' },
+      recorded: { childSessionId: 'child-1', provider: 'kimi-cli', parentSessionId: 'parent-1', cliSessionId: 'run-1', cwd: '/tmp' },
+    })
+    await expect(provider.start(OBS_REQUEST)).rejects.toThrow(/differs from the first round's/)
+  })
+
+  it('accepts a resume repeating the recorded first-round cwd', async () => {
+    const { provider, spawnSpecs } = await mountObserved({
+      homeDir: wireHome('0aaaa1111'),
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 'run-1', cwd: '/tmp' },
+      recorded: { childSessionId: 'child-1', provider: 'kimi-cli', parentSessionId: 'parent-1', cliSessionId: 'run-1', cwd: '/tmp' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/tmp')
   })
 })

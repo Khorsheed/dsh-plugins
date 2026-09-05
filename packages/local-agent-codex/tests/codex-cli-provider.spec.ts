@@ -388,6 +388,8 @@ describe('codex-cli-provider child session record', () => {
       get: () => ({ displayName: 'Codex' }),
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       setKimiMirroredLines: () => {},
       kimiMirroredLines: () => undefined,
     } as never)
@@ -437,6 +439,8 @@ describe('codex-cli-provider resume round', () => {
         cliSessionId: 't1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
     } as never)
@@ -484,6 +488,7 @@ describe('codex-cli-provider resume round', () => {
         cliSessionId: 't1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
     } as never)
@@ -523,6 +528,8 @@ describe('codex-cli-provider resume lock', () => {
         cliSessionId: 't1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       acquireResumeLock: (childSessionId: string) => {
         if (locked !== undefined) return false
         locked = childSessionId
@@ -807,5 +814,178 @@ describe('codex-cli-provider abort path', () => {
       expect(assistant[0]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })
     await hanging.done
+  })
+})
+
+/** A stub child that emits a CUSTOM NDJSON stream then exits 0. */
+function stubChildWith(stream: string): SubprocessHandle {
+  const stdout = new Readable({ read() {} })
+  stdout.push(stream + '\n')
+  stdout.push(null)
+  const stderr = new Readable({ read() {} })
+  stderr.push('')
+  stderr.push(null)
+  return {
+    pid: 4243,
+    stdin: undefined,
+    stdout,
+    stderr,
+    collected: {
+      stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+    },
+    done: new Promise((resolve) => { setImmediate(() => { resolve({ exitCode: 0, signal: null }) }) }),
+    terminate: () => undefined,
+    waitForExit: async () => true,
+  }
+}
+
+/** Write a rollout file naming `model` in its turn_context line, keyed by thread id. */
+function writeRollout(homeDir: string, threadId: string, model: string): void {
+  const dir = join(homeDir, 'sessions', '2026', '09', '06')
+  mkdirSync(dir, { recursive: true })
+  const lines = [
+    { timestamp: new Date().toISOString(), type: 'session_meta', payload: { id: threadId, cwd: '/tmp' } },
+    { timestamp: new Date().toISOString(), type: 'turn_context', payload: { turn_id: 'turn-1', cwd: '/tmp', model } },
+  ]
+  writeFileSync(join(dir, `rollout-2026-09-06T00-00-00-${threadId}.jsonl`), lines.map(line => JSON.stringify(line)).join('\n') + '\n')
+}
+
+describe('codex-cli-provider observed model and cwd', () => {
+  const OBS_REQUEST = {
+    label: '任务',
+    prompt: [{ type: 'text', text: '建个文件' }],
+    parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
+    signal: new AbortController().signal,
+    descriptor: { version: 2, mode: 'one-shot', provider: 'codex-local', label: '任务' },
+  } as unknown as Parameters<CodexCliProvider['start']>[0]
+
+  /** The real 0.144.0 wire shape: thread.started and turn.completed carry no model. */
+  const PLAIN_STREAM = [
+    { type: 'thread.started', thread_id: 't-obs' },
+    { type: 'turn.started' },
+    { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'done' } },
+    { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 4 } },
+  ].map(event => JSON.stringify(event)).join('\n')
+
+  /**
+   * Mount a provider whose CLI prints `stream`, whose scoped home is a temp
+   * dir (optionally seeded with a rollout), and whose staged intent and
+   * recorded delegation come from the options.
+   */
+  async function mountObserved(options: {
+    stream: string
+    rollout?: (homeDir: string) => void
+    intent?: unknown
+    recorded?: Record<string, unknown> | undefined
+  }) {
+    const homeDir = mkdtempSync(join(tmpdir(), 'codex-obs-'))
+    options.rollout?.(homeDir)
+    const ctx = new Context()
+    const records = vi.fn()
+    const settled = vi.fn()
+    const spawnSpecs: { argv: readonly string[]; cwd: string }[] = []
+    const liveChild = Session.create(SessionId('child-1'))
+    liveChild.append('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'codex-local', label: '任务' })
+    liveChild.append('turn/start', { turn: 1 })
+    liveChild.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', {
+      create: (id: SessionId) => Session.create(id),
+      get: (id: SessionId) => (id === SessionId('child-1') ? liveChild : undefined),
+    } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => homeDir,
+      get: () => ({ displayName: 'Codex' }),
+      takeDelegationIntent: () => options.intent,
+      recordDelegation: records,
+      getDelegation: () => options.recorded,
+      recordRoundSettled: settled,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: readonly string[]; cwd: string }) => {
+        spawnSpecs.push(spec)
+        return stubChildWith(options.stream)
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+    return { provider: new CodexCliProvider(ctx, 'read-only'), records, settled, spawnSpecs }
+  }
+
+  it('records the stream-named model and the round usage on settle', async () => {
+    const stream = [
+      { type: 'thread.started', thread_id: 't-obs', model: 'gpt-5.6-sol' },
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'done' } },
+      { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 4 } },
+    ].map(event => JSON.stringify(event)).join('\n')
+    const { provider, settled } = await mountObserved({ stream })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // The observation rides the registry channel: model from the stream,
+    // usage from turn.completed (uncached = 10 − 0).
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'gpt-5.6-sol',
+      usage: { inputTokens: 10, outputTokens: 4 },
+    })
+  })
+
+  it('falls back to the rollout turn_context model when the stream names none', async () => {
+    const { provider, settled } = await mountObserved({
+      stream: PLAIN_STREAM,
+      rollout: homeDir => { writeRollout(homeDir, 't-obs', 'gpt-5.6-sol') },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'gpt-5.6-sol',
+      usage: { inputTokens: 10, outputTokens: 4 },
+    })
+  })
+
+  it('leaves observedModel absent when neither the stream nor a rollout names one', async () => {
+    const { provider, settled } = await mountObserved({ stream: PLAIN_STREAM })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // Absence is the honest observation — no model key, never a guess.
+    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 10, outputTokens: 4 } })
+  })
+
+  it('spawns the fresh round in the staged cwd override and records it', async () => {
+    const { provider, records, spawnSpecs } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'fresh', cwd: '/cell-a' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/cell-a')
+    await vi.waitFor(() => { expect(records).toHaveBeenCalled() })
+    expect(records.mock.calls[0]?.[0]).toMatchObject({ cliSessionId: 't-obs', cwd: '/cell-a' })
+  })
+
+  it('rejects a resume whose cwd differs from the recorded first-round cwd', async () => {
+    const { provider } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 't1', cwd: '/elsewhere' },
+      recorded: { childSessionId: 'child-1', provider: 'codex-local', parentSessionId: 'parent-1', cliSessionId: 't1', cwd: '/tmp' },
+    })
+    await expect(provider.start(OBS_REQUEST)).rejects.toThrow(/differs from the first round's/)
+  })
+
+  it('accepts a resume repeating the recorded first-round cwd', async () => {
+    const { provider, spawnSpecs } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 't1', cwd: '/tmp' },
+      recorded: { childSessionId: 'child-1', provider: 'codex-local', parentSessionId: 'parent-1', cliSessionId: 't1', cwd: '/tmp' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/tmp')
   })
 })

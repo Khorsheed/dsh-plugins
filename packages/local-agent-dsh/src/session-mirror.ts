@@ -33,6 +33,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
@@ -114,6 +115,75 @@ export interface DshMirrorDelta {
   texts: string[]
   /** Total round events mirrored into the child session after this pass. */
   total: number
+  /**
+   * The round's observed model identifier, read from the sub-dsh session's
+   * own assistant events: the `message.source` of the round's LAST
+   * `assistant/message`, formatted `provider/model` (the same shape the
+   * effectiveSettings snapshot reports the configured model in) or the bare
+   * model when no provider is named. Absent when the round's events name no
+   * model — absence is recorded, never guessed.
+   */
+  observedModel?: string
+  /**
+   * The round's token usage: the span's assistant events' own `usage` fields
+   * summed (each event carries one LLM call's accounting, the same caliber
+   * the tokenUsage projection sums). Absent when the round recorded none.
+   */
+  usage?: TokenUsage
+}
+
+/**
+ * Sum one more assistant event's usage into a running round total. Each
+ * sub-dsh assistant event carries ONE LLM call's accounting; the round's
+ * windows (live polls, settle pass) recompute it from the round's span, so
+ * the total is span-derived and never double counts across passes.
+ */
+function addEventUsage(total: TokenUsage | undefined, usage: unknown): TokenUsage | undefined {
+  const raw = usage as { inputTokens?: unknown; outputTokens?: unknown; cacheReadTokens?: unknown; cacheWriteTokens?: unknown } | undefined
+  if (raw === undefined || typeof raw !== 'object') return total
+  const num = (value: unknown): number => {
+    const n = Number(value)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+  const merged: TokenUsage = {
+    inputTokens: (total?.inputTokens ?? 0) + num(raw.inputTokens),
+    outputTokens: (total?.outputTokens ?? 0) + num(raw.outputTokens),
+  }
+  const cacheRead = (total?.cacheReadTokens ?? 0) + num(raw.cacheReadTokens)
+  const cacheWrite = (total?.cacheWriteTokens ?? 0) + num(raw.cacheWriteTokens)
+  if (cacheRead > 0) merged.cacheReadTokens = cacheRead
+  if (cacheWrite > 0) merged.cacheWriteTokens = cacheWrite
+  return merged
+}
+
+/**
+ * Extract the round's observed model and token usage from its event span:
+   the LAST assistant event's `message.source` names the model that ran, and
+ * the assistant events' `usage` fields sum to the round's accounting.
+ */
+function roundObservation(span: readonly SessionEvent[]): { observedModel?: string; usage?: TokenUsage } {
+  let observedModel: string | undefined
+  let usage: TokenUsage | undefined
+  for (const event of span) {
+    if (event.type !== 'assistant/message') continue
+    const data = event.data as {
+      message?: { source?: { provider?: unknown; model?: unknown } }
+      usage?: unknown
+    }
+    const source = data.message?.source
+    if (source !== undefined && typeof source === 'object') {
+      const model = typeof source.model === 'string' && source.model !== '' ? source.model : undefined
+      if (model !== undefined) {
+        const provider = typeof source.provider === 'string' && source.provider !== '' ? source.provider : undefined
+        observedModel = provider === undefined ? model : `${provider}/${model}`
+      }
+    }
+    usage = addEventUsage(usage, data.usage)
+  }
+  return {
+    ...observedModel === undefined ? {} : { observedModel },
+    ...usage === undefined ? {} : { usage },
+  }
 }
 
 /** How much of the live event stream crosses into the child session. */
@@ -299,13 +369,13 @@ export async function mirrorDshSession(
         event.type === 'user/message' || event.type === 'assistant/message'
         || event.type === 'tool/call' || event.type === 'tool/result')
       .length
-    const span = events.slice(start, end)
+    const roundSpan = events.slice(start, end)
       .filter(event =>
         (event.type === 'user/message' && event.data.source.kind === 'user')
         || event.type === 'assistant/message'
         || event.type === 'tool/call'
         || event.type === 'tool/result')
-      .slice(mirrored)
+    const span = roundSpan.slice(mirrored)
     const texts: string[] = []
     for (const event of span) {
       texts.push(
@@ -314,6 +384,11 @@ export async function mirrorDshSession(
           : appendMirroredMessageEvent(childSession, event),
       )
     }
+    // The round's observation comes from the round's OWN window (the
+    // pre-skip roundSpan, not the delta): the last assistant event names the
+    // model that ran, and the assistant events' usage sums to the round's
+    // accounting, whatever the live-poll / settle split was.
+    const observation = roundObservation(roundSpan)
     // todo/write passthrough, counted independently of the message prefix
     // skip: the snapshot is a standing whole list (last-wins), so a pass
     // appends the round's latest snapshot only when it differs from the
@@ -333,7 +408,11 @@ export async function mirrorDshSession(
     if (texts.length > 0 || todosAppended > 0) {
       await persistIfStandalone(ctx, childSession)
     }
-    return { texts, total: mirrored + mirroredTodos.length + texts.length + todosAppended }
+    return {
+      texts,
+      total: mirrored + mirroredTodos.length + texts.length + todosAppended,
+      ...observation,
+    }
   } catch (error) {
     ctx.logger.warn(`subagent-dsh: session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
     return empty
