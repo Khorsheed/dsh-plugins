@@ -56,7 +56,11 @@ interface Mount {
   resolveLive: (childSessionId: string) => DshLiveDriver | undefined
 }
 
-function mount(initial: Partial<DshLiveSettings> = {}, config: Record<string, unknown> = {}): Mount {
+function mount(
+  initial: Partial<DshLiveSettings> = {},
+  config: Record<string, unknown> = {},
+  extraProvides: Record<string, unknown> = {},
+): Mount {
   const ctx = new Context()
   const registered: LocalAgentHarness[] = []
   const providers: unknown[] = []
@@ -81,6 +85,7 @@ function mount(initial: Partial<DshLiveSettings> = {}, config: Record<string, un
   ctx.provide('credentials', { resolve: async () => undefined })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('logger', { warn: () => {}, info: () => {} })
+  for (const [name, service] of Object.entries(extraProvides)) ctx.provide(name, service)
   ctx.provide('settings', settings.service)
   ctx.plugin = ((plugin: unknown, pluginConfig: unknown) => {
     mountedTools.push({ plugin, config: pluginConfig })
@@ -110,6 +115,34 @@ describe('local-agent-dsh toggle controller', () => {
     // snapshot's drive on the next read.
     settings.set({ live: true })
     expect(await harness.effectiveSettings!()).toEqual({ drive: 'live', baseUrlSet: false })
+  })
+
+  it('reports the inherited host model selection as provider/model', async () => {
+    // The sub-dsh agent loader reads the same agentDefaultModel service, so
+    // this selection is what a delegation round actually runs with.
+    const { registered } = mount({ enabled: true }, {}, {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) },
+    })
+    const harness = registered[0]!
+    expect(await harness.effectiveSettings!()).toEqual({
+      drive: 'exec',
+      baseUrlSet: false,
+      model: 'deepseek/deepseek-chat',
+    })
+  })
+
+  it('omits the model field when no selection is readable', async () => {
+    // Service present but empty-handed, and the service absent entirely: both
+    // must leave the field out rather than guessing an identifier.
+    const { registered } = mount({ enabled: true }, {}, {
+      agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: '' }) },
+    })
+    const harness = registered[0]!
+    expect('model' in (await harness.effectiveSettings!())).toBe(false)
+
+    const bare = mount({ enabled: true })
+    const bareHarness = bare.registered[0]!
+    expect('model' in (await bareHarness.effectiveSettings!())).toBe(false)
   })
 
   it('registers the harness, provider, and tool while on, and the watch toggles them live', () => {
