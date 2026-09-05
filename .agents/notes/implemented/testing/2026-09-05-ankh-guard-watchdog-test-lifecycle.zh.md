@@ -38,6 +38,8 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 夹具观察使用具名谓词轮询，不假设服务响应出现时异步 report 或 receipt 已经耐久落盘。adoption、unplanned-exit、composition snapshot/recovery 与浏览器终态各有独立的有界预算；超时会输出完整生命周期 ledger。首次双 worktree 压力运行暴露了残留的 5–15 秒 report 窗口；验收重跑前，这些窗口已全部替换为具名等待。
 
+三条 transition 一线的终态谓词——hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算与 90 秒 Vitest 外层预算。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
+
 包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 54 个 unit、128 个 integration，共 182 个测试。
 
 lane runner 只有在子进程触发 `close` 后才消费 shard，而不再使用 `exit`，因为 `exit` 可能早于 stdout/stderr 管道最后一次读取。spawn 错误会被明确报告。这关闭了一次高负载观察：该次只看到 161/182，因为最后一个 21-test 汇总尚未读入；inventory tripwire 当场拒绝了不完整观察，没有产生假绿。
@@ -58,10 +60,13 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 完整 integration 结束后，machine lease 报告中的 active 与 over-age live identity 都为零。
 - 回归覆盖 detached 进程组清理、TERM→KILL、macOS Bash 后台函数 identity、生产 sleep 不缩放、dead/over-age 分类和独立机器命名空间端口 lease。
 - control writer、composition recovery、stale-200/EADDRINUSE、foreground waiter 与 pidfile replacement 用例均在新 ledger 下通过。
+- hung-previous、目标失败 reconfigure 与 live-home transition 用例保留对终态 receipt 的断言，并使用容忍负载的具名轮询；超时时仍处于中间 phase 依然会携带生命周期诊断响亮失败。
 
 ## Alternatives considered
 
 **只增加 Vitest timeout。** 否决，因为它不能回收泄漏进程、关闭 readiness 竞态、防止跨 worktree 端口冲突，也不能缩短六分钟反馈周期。
+
+**在测试中缩放产品墙钟 cutover 和稳定 deadline。** 否决，因为这些窗口是正在验证的所有权与认证协议一部分。只为三条已有高负载证据的路径放宽夹具外层观察余量。
 
 **继续按最新 pidfile 或当前端口 owner 清理。** 否决，因为两者都是可变观察。端口只能证明泄漏，不能授权信号；takeover 本就会替换 pidfile owner。
 

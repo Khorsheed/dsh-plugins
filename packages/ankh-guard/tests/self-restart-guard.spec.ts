@@ -2770,10 +2770,11 @@ const timer = setInterval(() => {
       expect(await fetchBody(port)).toBe('previous-after-hung-supervisor')
       expect(await runCli(['restore-previous', '--state-dir', stateDir], io().io)).toBe(0)
 
-      const restoredDeadline = Date.now() + 20_000
-      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < restoredDeadline) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
+      await waitForCondition(
+        'hung-previous cutover to restore the previous launch',
+        () => readCutoverReceipt(stateDir)?.phase === 'restored',
+        60_000,
+      )
       const receipt = readCutoverReceipt(stateDir)
       expect(receipt?.phase, `${JSON.stringify(receipt, null, 2)}\n${readFileSync(logFile, 'utf8').slice(-12000)}`).toBe('restored')
       expect(receipt).toMatchObject({
@@ -2794,7 +2795,7 @@ const timer = setInterval(() => {
       await killListener(port)
       env.restore()
     }
-  }, 45_000)
+  }, 90_000)
 
   it('reconfigure restores the complete previous spec after target readiness failures', async () => {
     const env = supervisedEnv()
@@ -2819,10 +2820,12 @@ const timer = setInterval(() => {
         ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
-      const deadline = Date.now() + 35_000
-      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < deadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
-      }
+      await waitForCondition(
+        'failed reconfigure target to restore the complete previous launch spec',
+        () => readCutoverReceipt(stateDir)?.phase === 'restored',
+        60_000,
+        200,
+      )
       expect(await fetchBody(port)).toBe('previous-restored')
       const receipt = readCutoverReceipt(stateDir)
       expect(receipt).toMatchObject({
@@ -2837,7 +2840,7 @@ const timer = setInterval(() => {
       await killListener(port)
       env.restore()
     }
-  }, 45_000)
+  }, 90_000)
 
   it('applies a live-home transition only after takeover and rolls it back before restoring previous', async () => {
     const env = supervisedEnv()
@@ -2891,10 +2894,12 @@ process.exit(1)
       ], result.io)).toBe(0)
       expect(result.out.join('')).toContain('filesystem transition preflight PASS on an isolated copy')
 
-      const deadline = Date.now() + 35_000
-      while (readCutoverReceipt(stateDir)?.phase !== 'restored' && Date.now() < deadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
-      }
+      await waitForCondition(
+        'transition rollback to restore the previous launch',
+        () => readCutoverReceipt(stateDir)?.phase === 'restored',
+        60_000,
+        200,
+      )
       const receipt = readCutoverReceipt(stateDir)
       const log = readFileSync(join(stateDir, STATE_FILES.watchdogLog), 'utf8')
       expect(receipt?.phase, `${JSON.stringify(receipt, null, 2)}\n${log.slice(-12000)}`).toBe('restored')
@@ -2917,7 +2922,7 @@ process.exit(1)
       await killListener(port)
       env.restore()
     }
-  }, 50_000)
+  }, 90_000)
 
   it('does not accept a stale 200 when the target reports EADDRINUSE, and counts failures before restoring previous', async () => {
     const env = supervisedEnv()
