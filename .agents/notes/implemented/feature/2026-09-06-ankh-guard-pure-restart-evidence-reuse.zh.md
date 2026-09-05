@@ -35,3 +35,11 @@ Status: implemented
 指纹需要读取 profile 直接安装包与源归档字节，所以快速路径并非零成本；它被刻意设计为远低于重建并测试宿主。harness root 必须由 git 管理，并具备显式 preflight 执行绑定；缺少这些输入的部署仍可运行，但不能复用证据。
 
 测试固定了旧状态迁移边界、过期 credential 复用、credential 替换失效、profile 与安装包漂移、外部符号链接目标漂移，以及授权 SHA 复核。3080 验收还会先完成一次全量种子重启，再以刻意过期的新鲜窗口执行一次同启动配置重启。
+
+## 验证
+
+- 包级门禁通过全部 189 个测试（60 个单元测试、129 个集成测试），包含进程所有权与生命周期套件。
+- 全仓 `pnpm gate --all` 的 11 个阶段全部通过，耗时 434 秒；ankh-guard 最长分片为 119.7 秒，24 个包归档全部通过验证。
+- 生产部署流程在 179 秒内完成，目标是干净的官方 `0.1.1-rc.2` harness revision `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`。持久 launch spec 明确选择 source 执行面与已安装的 built preflight runner。
+- 使用新鲜 credential 的种子重启在 canary 后晋升部署指纹 `95d92ffce81aabb5024e4b90d0b04d5026023f071d15b50b3cc3efc750b94e52`。随后把 `max-age` 刻意降到一分钟，同启动配置的 `schedule-exit` 选择了 `proven-deployment`，在 restart marker 中写入匹配的 evidence SHA，约十秒完成并返回 HTTP 200，同时保留原证明的时间戳与指纹。第二次重启没有运行 harness build 或 test 进程。
+- 在证明复用演练前，外层 launchd supervisor、watchdog 与 listener 已被替换并确认为一条权威进程链。另有一项独立安装器后续：强制轮换 launchd 时，脚本在 job 稳定可见前就输出成功，实际需要显式 bootstrap/kickstart；该可观测性问题不影响本次证据复用结论。

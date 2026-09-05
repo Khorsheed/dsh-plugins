@@ -35,3 +35,11 @@ A later pure restart of an unchanged supervised deployment no longer pays the fu
 Fingerprinting direct profile packages and their source archives reads deployed bytes, so the fast path is not free; it is deliberately much cheaper than rebuilding and testing the host. Git-backed harness roots and explicit preflight execution bindings are required. Deployments without those inputs continue to work but cannot use evidence reuse.
 
 Coverage fixes the migration boundary, stale-credential reuse, credential replacement invalidation, profile and installed-package drift, external symlink-target drift, and authorization SHA revalidation. The 3080 acceptance additionally performs a full seed restart followed by a deliberately stale-window same-launch restart.
+
+## Verification
+
+- The package gate passed all 189 tests (60 unit and 129 integration), including the process-ownership and lifecycle suites.
+- The repository-wide `pnpm gate --all` passed all 11 stages in 434 seconds. The longest ankh-guard shard took 119.7 seconds, and all 24 package archives passed verification.
+- The production deployment flow completed in 179 seconds against the clean official `0.1.1-rc.2` harness revision `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`. The persisted launch specification explicitly selects the source execution surface and the installed built preflight runner.
+- A fresh-credential seed restart promoted deployment fingerprint `95d92ffce81aabb5024e4b90d0b04d5026023f071d15b50b3cc3efc750b94e52` after canary. With `max-age` deliberately reduced to one minute, a later same-launch `schedule-exit` selected `proven-deployment`, stored the matching evidence SHA in the restart marker, settled in about ten seconds, returned HTTP 200, and retained the original proof timestamp and fingerprint. No harness build or test process ran on that second restart.
+- The outer launchd supervisor, watchdog, and listener were replaced and observed as one authoritative chain before the proof-reuse run. A separate installer follow-up remains: the forced launchd rotation printed success before the job was durably visible and required an explicit bootstrap/kickstart. That observability issue did not affect the evidence-reuse result.
