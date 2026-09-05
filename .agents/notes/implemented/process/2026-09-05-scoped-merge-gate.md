@@ -6,9 +6,11 @@ Status: implemented
 
 `pnpm gate` ran the whole repository every time: 26 packages built, 25 test suites, 26 tarballs packed — about nine minutes on an 8-core/16GB machine, during which the machine is saturated and the developer cannot touch the tree (an edit mid-run made the doc gates fail against a sidecar the run had already read).
 
-Measurement, once the gate was instrumented, showed the cost was not evenly spread. Of 409 serial test-seconds, **ankh-guard alone was 250** — 61% of the test phase and 46% of the whole gate — concentrated in one spec file (118 tests, 247s) whose slowest cases wait on real process lifecycles: boot timeouts, port-bind retries, give-up backoff. One case waits 48.8 seconds.
+Measurement suggested the cost was concentrated: one package's process-spawning suite read 250 of 409 summed test-seconds. **That framing was wrong in two ways, and the correction matters more than the original number.**
 
-Two consequences followed. Every change paid that cost, including changes touching no package source at all. And because a critical path cannot be shortened by parallelism, no concurrency tuning could help: while that file runs, the test phase cannot finish faster than 247 seconds.
+The reading predated that package sharding its own suite; it has since split the slow specs across four concurrent shards and injected a test-only sleep scale, and the package's own measurements put it far lower. And the statistic itself was unsound: summing each sub-vitest's reported `Duration` counts concurrent work as if it were serial. A later run made the error plain — a test step whose wall clock was 240 seconds reported a 1085-second "serial sum", overstating by 4.5×.
+
+What survives the correction is the structural point, which never depended on the number: **a change touching no package source should not build 26 packages.** The distribution of cost decides how much scoping is worth, not whether it is right.
 
 ## Decision
 
@@ -24,7 +26,7 @@ Three smaller additions ride along, all from the same run:
 
 ## Alternatives considered
 
-**Cap concurrency instead.** The instinctive fix, and it does not work here: the dominant term is a critical path, not contention. Capping cannot make the test phase shorter than its longest suite. It remains worth doing separately for memory stability — 16GB against 4-way workspace concurrency each spawning a vitest pool — but as a stability measure, not a speed one, and only with a measured number rather than a guessed one.
+**Cap concurrency instead.** Still worth doing separately, for memory stability — 16GB against 4-way workspace concurrency each spawning a vitest pool — but as a stability measure, not a speed one, and only with a number measured under both idle and loaded conditions rather than guessed. The first attempt to reason about it from a single reading produced the mismeasurement above; single wall-clock readings on a contended machine are noise, and a run whose failures came from a second gate running concurrently is not evidence about anything.
 
 **Fix the slow suite and keep the gate whole-repo.** The highest-leverage change by far, and it is happening — but it belongs to ankh-guard's owner (package-level tests are owner-owned per docs/development.md), and it does not remove the structural point: a change touching no package source should not build 26 packages. The two fixes are independent and both worth having.
 
@@ -36,5 +38,10 @@ Three smaller additions ride along, all from the same run:
 
 - A typical package change now pays for its own package and its dependents instead of all 26.
 - A scoped pass is weaker evidence than a full pass, by construction. The split is stated in the gate's own output (`scoped; pnpm gate --all before pushing`) and mirrors the ownership split already in force: owners iterate scoped, mainline sweeps before pushing, CI is unconditional.
+- Every uncertainty in scope resolution resolves to the whole repo: a failed base-ref lookup, an unreadable diff or status, and — the one that would otherwise be a silent false green — a package filter that **errors**, which is indistinguishable from one that matched nothing unless failure is distinguished from empty output.
+- The base ref is local `main`, not `origin/main`. Pushes are batched, so origin lags by tens of commits whose accumulated shared-layer changes would force every owner's run back to the whole repo — scoping that never scopes. `--since origin/main` is the right base for mainline's own pre-push sweep, and is how that sweep is expressed.
+- Renames are read at both ends. `R  old -> new` prefix-checked as one string tests only the old path, so a file moved INTO a shared layer would not have triggered the fallback.
+- The working-tree fingerprint hashes content, not the status listing: a file already reported as ` M path` keeps that line unchanged while its contents keep changing.
+- `scripts/gate.spec.ts` drives scope resolution through an injected runner, so command failure, rename, untracked, invalid `--since`, empty scope and `--all` are all reachable without a repository.
 - The `GLOBAL_PATHS` list is load-bearing and will rot silently if a new shared-layer path appears outside it. It is short and lives beside the reasoning; a future shared-layer directory must be added to it in the same change that creates it.
 - `pack-all-dist` grew an `--only` filter for the scoped path. CI and release waves pass no filter, so the whole-repo packing guarantee is unchanged for both.

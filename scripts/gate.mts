@@ -34,10 +34,11 @@
  * @module scripts/gate
  */
 import { execFileSync, execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '..')
 const argv = process.argv.slice(2)
@@ -50,51 +51,84 @@ function sh(command: string): void {
   execSync(command, { cwd: root, stdio: 'inherit', shell: '/bin/bash' })
 }
 
-function capture(command: string): string {
+/** A command's outcome, with failure distinguished from empty output.
+ * Collapsing the two is how a scoping bug becomes a false green: a `pnpm
+ * --filter` that errors looks exactly like "nothing changed". */
+export interface Outcome { readonly ok: boolean; readonly out: string }
+
+export type Runner = (command: string) => Outcome
+
+const gitRunner: Runner = (command) => {
   try {
-    return execSync(command, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return { ok: true, out: execSync(command, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
   } catch {
-    return ''
+    return { ok: false, out: '' }
   }
 }
 
-/** The ref changes are measured against. `origin/main` is the honest base for
- * a gate whose whole point is "is this safe to merge and push"; a checkout
- * without it falls back to local main. */
-function baseRef(): string | undefined {
-  for (const ref of [requestedBase, 'origin/main', 'main']) {
-    if (ref !== undefined && capture(`git rev-parse --verify --quiet ${ref}`) !== '') return ref
+/** Every path a porcelain line refers to. A rename prints `R  old -> new`, and
+ * checking only the head of that string tests the OLD path — so a file renamed
+ * INTO a shared layer would not trigger the fallback. */
+export function porcelainPaths(porcelain: string): string[] {
+  const paths: string[] = []
+  for (const line of porcelain.split('\n')) {
+    if (line.length < 4) continue
+    const rest = line.slice(3)
+    const arrow = rest.indexOf(' -> ')
+    if (arrow === -1) paths.push(rest)
+    else paths.push(rest.slice(0, arrow), rest.slice(arrow + 4))
   }
-  return undefined
+  return paths.map((p) => p.replace(/^"|"$/g, ''))
 }
 
-/** Paths that invalidate scoping: they change how every package builds or
- * tests, while touching no package directory, so pnpm's changed-package
- * selector reports nothing. A shared vitest preset edit that skipped every
- * test would be a silent false green — the one failure mode scoping must
- * not have. */
-const GLOBAL_PATHS = ['build/', 'scripts/', 'tsconfig.base.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'package.json', '.github/']
+/** Paths that change how every package builds or tests while touching no
+ * package directory. pnpm reports no changed package for them, so scoping
+ * would skip every test and report green — the one failure mode scoping must
+ * not have. Checked before pnpm is consulted at all. */
+export const GLOBAL_PATHS = ['build/', 'scripts/', 'tsconfig.base.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'package.json', '.github/']
 
-interface Scope { readonly filter: string | undefined; readonly dirs: string[]; readonly why: string }
+export interface Scope { readonly filter: string | undefined; readonly dirs: string[]; readonly why: string }
 
-function resolveScope(): Scope {
-  if (all) return { filter: undefined, dirs: [], why: '--all: whole repo' }
-  const base = baseRef()
-  if (base === undefined) return { filter: undefined, dirs: [], why: 'no base ref found — falling back to whole repo' }
+/** Resolve what to build, test and pack.
+ *
+ * The base defaults to LOCAL `main`, not `origin/main`: pushes are batched by
+ * the human, so local main runs far ahead (64 commits when this was written)
+ * and its accumulated shared-layer commits would push every owner's gate back
+ * to a whole-repo run — scoping that never scopes. `origin/main` remains the
+ * right base for mainline's own pre-push sweep, via `--since`.
+ *
+ * Every uncertainty resolves to the whole repo. A scope that is wrong in the
+ * narrowing direction is a false green; one that is wrong in the widening
+ * direction only costs time.
+ */
+export function resolveScope(run: Runner, opts: { all: boolean; since?: string }): Scope {
+  if (opts.all) return { filter: undefined, dirs: [], why: '--all: whole repo' }
 
-  const changed = capture(`git diff --name-only ${base}...HEAD`).split('\n').filter((p) => p !== '')
-  const dirty = capture('git status --porcelain').split('\n').filter((l) => l !== '').map((l) => l.slice(3))
-  const touched = [...new Set([...changed, ...dirty])]
+  const base = [opts.since, 'main', 'origin/main']
+    .find((ref) => ref !== undefined && run(`git rev-parse --verify --quiet ${ref}`).ok)
+  if (base === undefined) return { filter: undefined, dirs: [], why: 'whole repo — no base ref resolved' }
 
+  const diff = run(`git diff --name-only ${base}...HEAD`)
+  const status = run('git status --porcelain')
+  if (!diff.ok || !status.ok) return { filter: undefined, dirs: [], why: `whole repo — could not read changes against ${base}` }
+
+  const touched = [...new Set([...diff.out.split('\n').filter((p) => p !== ''), ...porcelainPaths(status.out)])]
   const global = touched.filter((p) => GLOBAL_PATHS.some((g) => p.startsWith(g)))
   if (global.length > 0) {
-    return { filter: undefined, dirs: [], why: `whole repo — shared-layer paths changed (${global.slice(0, 3).join(', ')}${global.length > 3 ? ', …' : ''})` }
+    const shown = global.slice(0, 3).join(', ')
+    return { filter: undefined, dirs: [], why: `whole repo — shared-layer paths changed (${shown}${global.length > 3 ? ', …' : ''})` }
   }
 
   const selector = `...[${base}]`
-  const listed = capture(`pnpm --filter "${selector}" list --depth -1 --parseable`)
-    .split('\n').filter((p) => p !== '' && p !== root)
-  const dirs = listed.map((p) => p.split('/').pop()!).sort()
+  const listed = run(`pnpm --filter "${selector}" list --depth -1 --parseable`)
+  // Fail closed: a filter that errored is indistinguishable from one that
+  // matched nothing, and guessing "nothing" skips the entire build.
+  if (!listed.ok) return { filter: undefined, dirs: [], why: `whole repo — the package filter failed against ${base}` }
+
+  const dirs = listed.out.split('\n')
+    .filter((p) => p !== '' && p !== root)
+    .map((p) => p.split('/').pop()!)
+    .sort()
   if (dirs.length === 0) return { filter: 'NONE', dirs: [], why: `no package changed since ${base}` }
   return { filter: selector, dirs, why: `${dirs.length} package(s) changed since ${base} (with dependents): ${dirs.join(', ')}` }
 }
@@ -139,6 +173,26 @@ function installFreshness(): void {
   process.stdout.write('  = every declared dependency resolves\n')
 }
 
+/** A fingerprint that moves when the tree's CONTENT moves, not merely when its
+ * status listing does. A file already reported as ` M path` keeps that exact
+ * line while its contents keep changing — so hashing the porcelain alone misses
+ * the likeliest edit of all: another save to the file you are working on. */
+function treeFingerprint(): string {
+  const hash = createHash('sha1')
+  hash.update(gitRunner('git rev-parse HEAD').out)
+  const status = gitRunner('git status --porcelain').out
+  hash.update(status)
+  hash.update(gitRunner('git diff HEAD').out)
+  for (const path of porcelainPaths(status)) {
+    const abs = join(root, path)
+    if (!existsSync(abs)) continue
+    const stat = statSync(abs)
+    if (stat.isDirectory()) continue
+    hash.update(`${path}:${stat.size}:${stat.mtimeMs}`)
+  }
+  return hash.digest('hex')
+}
+
 /** The harness ref CI pins, read from the workflow so the two cannot drift. */
 function ciHarnessRef(): string | undefined {
   return /^\s*ref:\s*(\S+)\s*$/m.exec(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'))?.[1]
@@ -154,28 +208,40 @@ function harnessAdvisory(): void {
     process.stdout.write(`  ! DSH_HARNESS not found at ${harness} — typert/test resolution will fall back\n`)
     return
   }
-  const described = capture(`git -C ${harness} describe --tags`) || '(untagged)'
+  const described = gitRunner(`git -C ${harness} describe --tags`).out || '(untagged)'
   const aligned = pinned !== undefined && described === pinned
   process.stdout.write(`  ${aligned ? '=' : '!'} harness ${described}${aligned ? '' : ` vs CI's ${pinned ?? '(unpinned)'}`}\n`)
 }
 
-/** Run the test step through a tee so the per-package durations can be ranked
- * afterwards. Without this the slowest package is invisible and everyone
- * blames "the gate" instead of the one suite that is 46% of it. */
+/** Run the test step through a tee so per-package durations can be reported.
+ *
+ * What is reported is deliberately NOT called wall time. A package that shards
+ * its suite (ankh-guard runs four supervise shards concurrently) emits one
+ * `Duration` per shard, and summing those counts parallel work as if it were
+ * serial: a run whose test step took 240 seconds reported a 1085-second
+ * "serial sum". Per-package wall time is not recoverable from this output at
+ * all — packages themselves run concurrently — so the summary states what it
+ * actually has: the longest shard, and how many there were.
+ *
+ * The step's own wall time is in the step timings below, and that number is
+ * real.
+ */
 function testStep(scope: Scope): void {
   const log = join(mkdtempSync(join(tmpdir(), 'gate-')), 'test.log')
   const filter = scope.filter === undefined ? '-r' : `--filter "${scope.filter}"`
   try {
     sh(`set -o pipefail; pnpm ${filter} --if-present run test 2>&1 | tee ${log}`)
   } finally {
-    const durations = [...readFileSync(log, 'utf8').matchAll(/^packages\/([a-z-]+) test: +Duration +([0-9.]+)s/gm)]
-      .map(([, pkg, secs]) => ({ pkg: pkg!, secs: Number(secs) }))
-      .sort((a, b) => b.secs - a.secs)
-    if (durations.length > 0) {
-      const total = durations.reduce((sum, d) => sum + d.secs, 0)
-      process.stdout.write(`\n  slowest suites (serial sum ${total.toFixed(0)}s across ${durations.length}):\n`)
-      for (const d of durations.slice(0, 5)) {
-        process.stdout.write(`    ${d.secs.toFixed(1).padStart(7)}s  ${d.pkg}  (${((d.secs / total) * 100).toFixed(0)}%)\n`)
+    const byPackage = new Map<string, number[]>()
+    for (const [, pkg, secs] of readFileSync(log, 'utf8').matchAll(/^packages\/([a-z0-9-]+) test: +Duration +([0-9.]+)s/gm)) {
+      byPackage.set(pkg!, [...(byPackage.get(pkg!) ?? []), Number(secs)])
+    }
+    const rows = [...byPackage].map(([pkg, runs]) => ({ pkg, longest: Math.max(...runs), runs: runs.length }))
+      .sort((a, b) => b.longest - a.longest)
+    if (rows.length > 0) {
+      process.stdout.write(`\n  longest suite per package (not wall time — packages and shards run concurrently):\n`)
+      for (const r of rows.slice(0, 5)) {
+        process.stdout.write(`    ${r.longest.toFixed(1).padStart(7)}s  ${r.pkg}${r.runs > 1 ? `  (longest of ${r.runs} shards)` : ''}\n`)
       }
     }
     rmSync(join(log, '..'), { recursive: true, force: true })
@@ -193,14 +259,14 @@ function actStep(): void {
 }
 
 export function main(): void {
-  const scope = resolveScope()
+  const scope = resolveScope(gitRunner, { all, since: requestedBase })
   const filter = scope.filter === undefined ? '-r' : `--filter "${scope.filter}"`
   const skipPackages = scope.filter === 'NONE'
 
   // Recorded now, re-checked at the end: a nine-minute gate reads the working
   // tree the whole way through, so an edit mid-run produces a verdict about
   // neither the state it started on nor the one it ended on.
-  const treeAtStart = createHash('sha1').update(`${capture('git rev-parse HEAD')}\n${capture('git status --porcelain')}`).digest('hex')
+  const treeAtStart = treeFingerprint()
 
   const steps: { name: string; run: () => void }[] = [
     { name: 'install freshness', run: installFreshness },
@@ -252,7 +318,7 @@ export function main(): void {
     if (t.secs >= 1) process.stdout.write(`  ${t.secs.toFixed(0).padStart(5)}s  ${t.name}\n`)
   }
 
-  const treeAtEnd = createHash('sha1').update(`${capture('git rev-parse HEAD')}\n${capture('git status --porcelain')}`).digest('hex')
+  const treeAtEnd = treeFingerprint()
   if (treeAtEnd !== treeAtStart) {
     process.stderr.write('\ngate WARNING: the working tree changed while the gate ran.\n'
       + '  This result describes neither the state it started on nor the one it ended on. Re-run.\n')
@@ -264,4 +330,6 @@ export function main(): void {
     + `${scope.filter !== undefined && scope.filter !== 'NONE' ? ' — scoped; `pnpm gate --all` before pushing' : ''}\n`)
 }
 
-main()
+// Importable for the spec — without this guard, importing the module runs the
+// entire gate (which is exactly what happened the first time the spec ran).
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main()
