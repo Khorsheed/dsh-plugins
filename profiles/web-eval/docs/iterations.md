@@ -56,8 +56,8 @@
 | codex `sandbox`、claude `permissionMode` 可配 | 配置 | ✅ | — | 冻结决策 3 |
 | kimi 推理强度可配 | 配置 | ✅ | I1 · T3 | 冻结决策 4；默认仍为 high |
 | `effectiveSettings(harness)` 只读快照 | 服务面 + status | ✅ | I1 · T3 | condition 的取证来源，不含凭证 |
-| 已配置模型进 effectiveSettings 快照 | 服务面 + status | ⬜ | I1 · T3b | condition.model.declared 的就绪比对来源；只读不选 |
-| headless 不被 `plugin install` 挂进宿主 bundles（G3） | 打包 | ⬜ | I1 · T6 | 全新 profile boot 报 duplicate code-runtime |
+| 已配置模型进 effectiveSettings 快照 | 服务面 + status | ✅ | I1 · T3b | condition.model.declared 的就绪比对来源；只读不选 |
+| headless 不被 `plugin install` 挂进宿主 bundles（G3） | 打包 | ✅ | I1 · T6 | headless 撤 dsh.bundle 声明，provision 按文件名读 patch |
 | 模型回读：从四家输出流记录实际模型 | 服务面 + 记录 | ⬜ | I2 | 冻结决策 5 的后半 |
 | 容器内 exec 包装，或 CLI 驱动抽成独立包 | 架构 | ⬜ | I3 | 二选一，I3 开头决定 |
 | 每次委派可覆盖 scoped home / 配置（每条件一个 home） | 服务面 | ⬜ | I4 | 同 harness 多条件的前提 |
@@ -98,7 +98,7 @@
 |---|---|---|---|---|
 | 目录、脚本、README、CHANGELOG | profile | ✅ | I0 | |
 | 评测 pin 进 pack 自带 patch 层还是用户层 | profile | ⬜ | I1 决定 | |
-| 安装路径：未发布成员 tarball + overrides（G5、G6） | profile | ⬜ | I1 · T5 | T1 实测 npm 路径装不通 |
+| 安装路径：未发布成员 tarball + overrides（G5、G6） | profile | ✅ | I1 · T5 | `install.sh --source <checkout>`；npm 模式字节不变 |
 | eval preset：不挂 Bash 与 docker | profile | ⬜ | I3 | 冻结决策 12，容器出现时才有意义 |
 | 独立 `$DSH_HOME` 的评测实例 | 运维 | ✅ | — | `docs/ops.md` 已有规程 |
 | 镜像仓 + agent 照 README 安装验证 | 分发 | ⬜ | I6 | |
@@ -138,20 +138,20 @@
 | T2 ✅ | 代码 | `packages/eval` 骨架；三份 schema 进协议；`validate` 与 `conditions hash`；哈希规则含拒绝清单 | 无 | 合入 main `094a46b`；越界的 ankh-guard 测试提交剥离到分支 `test/ankh-guard-supervise-load` 待 owner 评审 |
 | T3 ✅ | 代码 | local-agent：kimi effort 可配；`effectiveSettings`；status 面附带快照 | 无 | 合入 main `85c485a`；一次打回（测试读宿主 env），补丁 `fafe35f` |
 | T4 ✅ | 代码 | mission：`retry` reason + 类别；ns 报告 `writtenBy`；G1 submit 按意向边；G2 目录非空；G4 数据根环境变量 | T1 | 合入 main `e0ad2fb` |
-| T5 | 代码 | web-eval 安装路径：未发布成员 tarball + overrides，install.sh 源码模式（G5、G6） | T1 | 分支 `feat/web-eval-install` |
-| T6 | 代码 | local-agent-dsh-headless 不被 reconcile 挂进宿主 bundles（G3） | T1 | 分支 `fix/local-agent-dsh-headless-reconcile` |
+| T5 ✅ | 代码 | web-eval 安装路径：未发布成员 tarball + overrides，install.sh 源码模式（G5、G6） | T1 | 合入 main `de90120`；全新 DSH_HOME 端到端 22 成员 |
+| T6 ✅ | 代码 | local-agent-dsh-headless 不被 reconcile 挂进宿主 bundles（G3） | T1 | 合入 main `6a67517`；根因是 headless 的 dsh.bundle 声明，已撤 |
 | T1b ✅ | 数据 | 题库：bench-v1 带回 halted guard 并 lint；manifest output_schema 改引用 schemas 文件；用合入后的 mission 重放 submit --to | T2 T4 | 题库 `i1-walk` @ `954b7af` |
-| T3b | 代码 | local-agent：effectiveSettings 带已配置模型（只读，不加选择） | T3 | 分支 `feat/local-agent-eval-model-snapshot` |
+| T3b ✅ | 代码 | local-agent：effectiveSettings 带已配置模型（只读，不加选择） | T3 | 合入 main `47972ba` |
 
 **I1 走通结果（2026-09-03，T1 验收通过）**：一格全流程在宿主上手工走通，两次委派的 prompt 与参考拼接逐字节一致（冻结决策 6 在现有机制上成立），反例在 submit 预校验即被拒，file-check 拒绝过一次后放行，bundle 导出且 ns 报告如实标出缺失的 llm-draft 与 human-final。合计约 5 小时，其中环境搭建与调试约 2.5 小时、纯评测流约 1.5 小时。发现的缺口按严重度：G1 mission submit 对全部出边合取校验（已绕行，T4 修）；G2 file-check 空目录放行（T4）；G3 headless 被 reconcile 挂进宿主（T6）；G4 CLI 与实例数据根割裂（T4 顺带）；G5、G6 模板成员 npm 状态与 overrides（T5）；G7 到 G10 体验项记入走通日志不单独立任务。契约侧填不出的字段与词表问题已写成 T2 的「字段决定」。
 
 T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份示例作夹具。
 
-**验收记录（2026-09-05）**：T4、T2、T3 依次合入 main（`e0ad2fb`、`094a46b`、`85c485a`），三个 worktree 的测试都在验收机上重跑过。T2 携带的 ankh-guard 测试加固提交越界，剥离到 `test/ankh-guard-supervise-load` 等 owner 评审；datasets 协议夹具的提取范围限定是 §6 加入后的必然后果，接受。T3 有一处测试读宿主的 `ANTHROPIC_BASE_URL`，打回后以 `fafe35f` 补丁合入。T1b 已把 halted guard 带回、完成 manifest 迁移并用新 mission 重放了 submit --to。T5、T6、T3b 进行中。
+**验收记录（2026-09-05）**：T4、T2、T3 依次合入 main（`e0ad2fb`、`094a46b`、`85c485a`），三个 worktree 的测试都在验收机上重跑过。T2 携带的 ankh-guard 测试加固提交越界，剥离到 `test/ankh-guard-supervise-load` 等 owner 评审；datasets 协议夹具的提取范围限定是 §6 加入后的必然后果，接受。T3 有一处测试读宿主的 `ANTHROPIC_BASE_URL`，打回后以 `fafe35f` 补丁合入。T1b 已把 halted guard 带回、完成 manifest 迁移并用新 mission 重放了 submit --to。T5、T6、T3b 于 2026-09-05 合入（`de90120`、`6a67517`、`47972ba`），三个 worktree 的测试与独立性检查都在验收机上重跑过。**I1 收口。**
 
 验收：README「迭代计划」I1 行的三条已达成；T2 到 T6 与 T3b 各自的完成判据；`pnpm gate` 全绿（ankh-guard 的偶发 flake 由其 owner 处理，不计入本线）。
 
-进入 I2 的信号：T5、T6、T3b 合入 main（T2、T3、T4 已合入，T1b 已完成）。
+进入 I2 的信号：已达成（2026-09-05）。遗留给 owner 的一件事：`test/ankh-guard-supervise-load` 分支上的 ankh-guard 测试加固待其 owner 评审。
 
 ### I2 · 编排器 v0 + pilot A
 
@@ -159,15 +159,15 @@ T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份�
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
-| T7 | 代码 | eval：`generateTemplate`（manifest → 模板，须复现 T1 手写模板） | T1 T2 | |
-| T8 | 代码 | eval：run 循环 v0（阶段一二、宿主目录、随机交错、超时与取消、prompt 哈希、orchestrator ns、retry 策略） | T2 T4 | `dsh-eval run` |
+| T7 | 代码 | eval：`generateTemplate`（manifest → 模板，须复现 T1 手写模板）。**并入 T8 的交付**，不单独派发 | T1 T2 | |
+| T8 | 代码 | eval：模板生成 + run 循环 v0（阶段一二、宿主目录、随机交错、超时与取消、prompt 哈希、orchestrator ns、retry 策略；`/eval run` 为人的发起动作，CLI 只 dry-run） | T2 T4 T11 | `/eval run`、`dsh-eval run --dry-run`、`dsh-eval template` |
 | T9 | 代码 | eval：判官委派（去指纹、判官条件、双采样、verdict 解析入 llm-draft） | T8 | |
 | T10 | 代码 | eval：`report`（results.jsonl、summary.md、四条不变量核对、配对差值、n 与置信区间、判官一致性、样本不足拒绝排名） | T8 | |
-| T11 | 代码 | local-agent：四家模型回读，写入委派记录与进度事件 | T3 | |
+| T11 | 代码 | local-agent：四家模型回读，写入委派记录与进度事件；门面 start / resume 的 cwd 选项（T8 的每格独立目录依赖它） | T3 | |
 | T12 | 代码 | datasets：金丝雀字段 + validate；`tools` 分组配置 | 无 | |
 | T13 | 代码 | mission：`tools` 分组配置 | 无 | |
 | T14 | 代码 | eval：只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status` | T8 | |
-| T15 | 运维 | pilot A：F2 + F3 × 四家 × 3 rep，阶段一二，每格独立 cwd；bundle + report；把结论与保留条款写成 methodology.md | T7–T13 | 第一份结论 |
+| T15 | 运维 | pilot A：step 0 把评测 pin 写进 web-eval 的 cordis.patch.yml 并决定该文件归 pack；F2 + F3 × 四家 × 3 rep，阶段一二，每格独立 cwd；bundle + report；把结论与保留条款写成 methodology.md | T8–T14 | 第一份结论 |
 
 验收：README I2 行的三条；report 开头四条不变量全部成立；判官一致性有数字。
 
@@ -232,200 +232,182 @@ T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份�
 
 ## 三、指引文案
 
-可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。T1 已完成（2026-09-03，题库仓库 `i1-walk` @ `3173651`），其文案保留作记录。
+可直接转发给实施 agent。每段自包含，含分支与 worktree 要求。
 
-### T1 · 手工走通一格（已完成）
+### I1 的文案（已全部完成）
 
-原文见 git 历史（`profiles/web-eval/docs/iterations.md` 在 `a1581e4`），走通结果见本文第二节 I1 小节。
+T1 到 T6 与 T1b、T3b 的原文见 git 历史（本文件在 `a1581e4`、`3cd87b3`、`a5abb7d` 三次提交中的版本）；结果与合入记录见第二节 I1 小节。
 
-### T2 · `packages/eval` 骨架 + 三份契约定稿 + `dsh-eval validate`
+I1 已收口（2026-09-05）。I2 的目标：一格全自动跑完；F2 + F3 × 四家 × 3 rep 出第一份带保留条款的结论。分两波：**第一波** T8、T10、T11、T12、T13 互不依赖可并行；**第二波** T9、T14、T15 在 T8 落地后发，它们的形状取决于 T8 实际产出的 run 记录与 ns 载荷。下面是第一波的五段文案。
+
+### T8 · eval 编排器 v0：模板生成 + 阶段一二的 run 循环（宿主目录）
 
 ```text
-# 任务 T2：新建插件 @khorsheed/dsh-eval（离线动词）+ 三份契约定稿
+# 任务 T8：@khorsheed/dsh-eval 编排器 v0——模板生成 + 阶段一二的 run 循环
 
 ## 背景
-评测 profile web-eval 需要一个编排器包，本轮只做离线部分：契约 schema、校验器、条件哈希、就绪检查。T1 已手工走通一格，它手写的契约示例在题库仓库 ~/.dsh/scratch/dataseek-eval 的 i1-walk 分支：datasets/harness-comparison/conditions/dsh-exec.json、plans/i1-walk.json、templates/bench-v1.json、schemas/*.json。你的 schema 必须让这两份示例通过，或明确说明为什么改字段。
+I1 已把一格评测在宿主上手工走通（题库仓库 ~/.dsh/scratch/dataseek-eval 的 docs/i1-walk-log.md 逐步记了耗时与人肉动作），三份契约与 validate 已落地（packages/eval）。你的任务是把手工走通的那条路变成程序：读 plan，生成 run 模板，展开矩阵，逐格委派、提交、推进、归档、导出。本轮只覆盖阶段一二（写文档的两个阶段）、宿主目录代替容器、不做判官（T9）、不做报告（T10）。
 
 ## 先读
-AGENTS.md「Package conventions」、docs/development.md、profiles/web-eval/README.md「契约层的三份 schema」「工具按域开放」、profiles/web-eval/docs/architecture.md、docs/dataset-authoring-protocol.md、packages/lab（host-only 骨架模板）、packages/mission/src/schema.ts（手写 JSON Schema 子集校验器，不引 ajv）、packages/datasets 的 validate 动词；题库仓库 i1-walk 分支的上述文件与 docs/i1-walk-log.md 里「契约」相关段落。
+AGENTS.md、docs/development.md、profiles/web-eval/README.md（理想流程、冻结决策）、profiles/web-eval/docs/architecture.md（第二节轨迹表第 8 到 18 步、第五节四条不变量）、profiles/web-eval/docs/iterations.md、docs/dataset-authoring-protocol.md §6（契约）、packages/eval 现有源码、packages/mission/README.md 与 src/service.ts（runCreate / submit --to / transition / annotate / retry / export）、packages/datasets/src/service.ts（snapshot / worktree_path / read）、packages/local-agent/src/index.ts 的门面 start / resume / cancel 与 LocalAgentRunProgress、proposals/active/2026-08-18-local-agent-delegation-api.md；题库仓库 i1-walk 分支：templates/bench-v1.json、schemas/、manifest.yml、visible/prompts/、docs/i1-walk-log.md。scripts/integration-triad.mts 是同类驱动的先例。
 
 ## 分支
-dsh-plugins：从 main 开 worktree ../dsh-plugins-wt-eval-validate，分支 feat/eval-validate。显式路径 stage，不 push。题库仓库只读。
+从 main 开 worktree ../dsh-plugins-wt-eval-run，分支 feat/eval-run-v0。显式 stage，不 push。题库仓库只读，需要的模板与示例从 i1-walk 分支读。
 
-## T1 已定下的字段决定（照此实现）
-1. condition 的 harness.version、model.declared、model.endpoint、home.sha 允许为 null；validate 把它们列为「未解析」而不是 error，run 前的就绪检查才拦。
-2. permissions 用协议给定词表：dsh 为 unrestricted；claude 为 skip 或 normal；codex 为 danger-full-access、workspace-write 或 read-only；kimi 为 auto-approve。validate 检查值在词表内。
-3. plan.conditions 写 condition 的 id，不写 sha；sha 从 conditions/<id>.lock.json 解析，缺 lock 即「未就绪」。run.meta 记录解析后的 sha。
-4. plan.judge 可缺省；缺省时 expectedNs 不得含 llm-draft（validate 交叉检查）。
-5. plan 不含 template 字段，模板由 manifest 生成（I2）。
-6. 契约文件在题库里的位置是题集级透传区 templates/、schemas/、conditions/、plans/，写进协议；datasets validate 对它们报 UNREGISTERED_FILES 属预期，协议注明。
-7. 阶段的 structured schema 以 schemas/<stage>.json 为权威（JSON Schema 子集），manifest 的 output_schema 改为引用文件名，不再自创 type: enum 与 markdown 记法；协议写明，题库侧的改动由后续任务做，你只定协议。
+## 已定决定（照此实现）
+1. run 的发起是人的动作：slash `/eval run <plan.json> [--concurrency N] [--dry-run]` 在 web-eval 实例的会话里执行，该会话即 originSession，也是所有委派的父会话。CLI `dsh-eval run` 只做 `--dry-run`：校验、生成模板、展开矛阵、打印顺序，不委派（CLI 进程外没有活的父 Agent）。不注册任何 run 类模型工具。
+2. 模板由 manifest 生成：`generateTemplate(manifestPath, opts)` 读 stages，生成 pending → ws-ready → stage-<id>… → judged / halted → archived → releasable → released 的状态机，stage 转移带 schema-check（schemaPath 指向 manifest 引用的 schemas 文件），halt_on 生成 halted 边及其 const 校验，进入 releasable 带 file-check [workspace/, verdicts/]，最早转移带 run-meta schema-check（datasetId、commit）。生成结果必须与题库 i1-walk 的 templates/bench-v1.json 等价（状态、转移、guard 逐项相同，允许键序不同），写一个对比测试钉住。
+3. 每格独立 cwd：`$DSH_HOME/state/eval/cells/<runId>/<missionId>/attempt-<N>/`，物化 = datasets.worktree_path（显式 visible 层）后复制该题的 visible 内容进去，写 materialization.json（排序后逐文件 sha256 + 整体 sha）并 addArtifact(kind materialization)。委派时把这个目录作为子代理 cwd（依赖 T11 给门面加的 cwd 选项；T11 未合入前用临时分支联调或先 mock）。
+4. prompt 逐字节：题集级 visible 层 prompts/<stage>.md 的字节 + 一个换行 + 该题 task.md 的字节；sha256 记入 orchestrator ns。母 agent 不参与，编排器直接调 `ctx.localAgent.start` 或 `resume`。
+5. harness → provider：从 condition.harness.name 经 local-agent 注册表解析 delegationProvider；条件的 drive 必须是 exec，否则拒绝启动。
+6. 每次委派记一条 orchestrator ns 注解：{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, model: {declared, observed}}；observed 来自 T11 的回读，未合入前置 null。
+7. 阶段推进：委派返回后从 cell 目录收 stage<N>.json 与 stage<N>.md，`submit({to, json, files})`，`transition(to)`；halt_on 命中走 halted。schema 违规不重试：记 orchestrator ns {kind: 'submission-rejected', violations}，该格停在当前态。
+8. 失败策略：委派 spawn 失败、门面报错、超时取消 → `retry(reason, category: 'infrastructure')` 后重做该格，上限 plan.retry.infrastructure（缺省 1）；超限记 orchestrator ns 并跳过。超时 = plan.budget.activeMinutes 的每格累计委派时长，到点 `cancel(childSessionId)`。
+9. 顺序：按 plan.order.seed 对（题 × 条件 × rep）洗牌，同一条件不连续排列优先；`--concurrency` 缺省 1；顺序与并发数写进 run.meta。
+10. run.meta：{planSha, planPath, evalVersion（包版本 + 仓库 HEAD 短 sha，取不到则包版本）, snapshot, conditions: [{id, sha}], order: {seed, sequence}, concurrency, startedAt}；进入 releasable 前把 cell 目录拷到 attempt 的 archive/workspace/，verdicts/ 在 T9 前放一个 .keep 之外的占位文件会违背 G2，所以本轮 released 由 `--finalize` 显式触发且要求 verdicts/ 非空，默认停在 archived。
+11. 结束时 export bundle 到 plan.exports 目录（缺省题库仓库 exports/），只收 visible 层。
+12. 服务面 `ctx.eval.run(plan, {parentSessionId, concurrency, dryRun})` 是本体；slash 与 CLI 是薄封装。缺 datasets / mission / localAgent 任一服务即拒绝启动并列出缺哪个。
 
 ## 交付
-1. packages/eval 骨架：身份三角（cordis.patch.yml 引号 name、src/invariant.ts 的 PACKAGE_NAME）、dsh.bundle、dsh.compat、双语 README + README.i18n.yaml、tests。无 client 半。
-2. 服务面 ctx.eval：validatePlan(planPath)、hashCondition(conditionPath)、readiness(planPath)；CLI dsh-eval validate <plan.json> 与 dsh-eval conditions hash <condition.json>；退出码 0/1/2 与 lab 一致；数据走 stdout JSON，诊断走 stderr。
-3. 三份 schema 进 docs/dataset-authoring-protocol.md 新章节（dataseek.condition/1、dataseek.plan/1、dataseek.verdict/1）；协议里的每个 JSON 示例直接作为校验器夹具；T1 的两份示例经补全后也进夹具。
-4. 哈希规则写进协议：条件哈希 = 规范化 JSON（键排序、无空白）的 sha256；home.sha 由 scoped home 目录内容算，拒绝清单（auth.json、credentials/、oauth/、sessions、任何含 token 或 key 的文件），只哈希配置类文件，绝不读入或打印内容。
-5. 同步更新 profiles/web-eval/README.md 与 README.en.md 里的三份示例（对应上面第 1 到 5 条），重记 README.i18n.yaml。
-6. schema 集中在一个模块。
+1. packages/eval：generateTemplate、expandMatrix、run 循环、slash `/eval run`、CLI `dsh-eval run --dry-run`、`dsh-eval template <manifest>` 打印生成的模板。
+2. 测试：用假的 datasets / mission / localAgent 服务面跑完整一格（含 halt 分支、schema 违规、基础设施重试、超时取消、顺序种子可复现）；模板等价测试；dry-run 输出快照测试。真实集成不在单测里。
+3. README 双语、compat、Agent Note；profiles/web-eval/README.md 的成员表把 dsh-eval 加进 22 个成员后的第 23 行，中英与 sidecar 同步。
+4. 在 ~/.dsh-lab 的 web-eval 实例上真跑一次 P0 × dsh × rep 1（照 I1 的环境，T5 的 install.sh --source 装最新成员），回报实际耗时与卡点。
 
 ## 约束
-不 import 任何 @khorsheed 包，不 inject；不改 mission、datasets、lab；带 Agent Note（proposed 或 implemented/feature）。
+不 import 任何 @khorsheed 包，四个上游只经 ctx.get 探测；不改 mission / datasets / local-agent 的代码，需要它们加东西的写进回报；不碰 3080；不进容器。
 
 ## 完成判据
-题库 i1-walk 的 plans/i1-walk.json 与 conditions/dsh-exec.json 经 validate 通过，未解析字段以 warning 列出；同一 condition 两次 hash 相同；pnpm run build && pnpm run test 绿；pnpm check:plugins 零违规；pnpm gate 通过。
+假服务面下一格全自动跑完且十二条决定各有测试；模板等价测试通过；真实实例上 P0 × dsh 一格自动跑到 archived 并导出 bundle；pnpm run build && pnpm run test 绿；check:plugins 零违规；pnpm gate 通过。
 
 ## 回报
-commit、worktree 路径、Agent Note 路径、gate 输出、validate 对 i1-walk 两份示例的实际输出。
+commit、worktree、Agent Note、真实一格的 run.json 摘要（脱敏）与耗时、对 T9 / T14 的接口建议（run 记录里哪些字段是稳定的）。
 ```
 
-### T3 · local-agent 评测 pin
+### T10 · eval 报告：results.jsonl + summary.md
 
 ```text
-# 任务 T3：local-agent 评测 pin，把公平性相关的旋钮全部显式化并可读回
+# 任务 T10：dsh-eval report——从 bundle 出配对报告
 
 ## 背景
-评测要把每个 harness 当前生效的设置写进条件哈希，现状是各 provider 的设置散在各自配置里，kimi 的推理强度还写死在 provision 里。不做模型参数，那是 I4。
+mission export 的 bundle 是自包含的（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），judge 与人终评的结果以 verdict 记录住在 script / llm-draft / human-final 三个 ns 里。你的任务是把 bundle 变成两样东西：一行一个判定的 results.jsonl，和一份按题配对的 summary.md。方法论已经定死在 profiles/web-eval/README.md「把它当对照实验来设计」和冻结决策 9 到 11。
 
 ## 先读
-AGENTS.md、profiles/web-eval/README.md「冻结决策」2 到 4、packages/local-agent 与四个 provider 包的 README、packages/local-agent-kimi/src/provision.ts（thinking.effort 写死 high）、packages/local-agent-codex/src/index.ts（sandbox 配置）、packages/local-agent-claude-code/src/index.ts（permissionMode、baseUrl）、packages/local-agent-dsh/src/index.ts（live）。
+AGENTS.md、profiles/web-eval/README.md、profiles/web-eval/docs/architecture.md 第五节四条不变量、docs/dataset-authoring-protocol.md §6（condition / plan / verdict 契约）、packages/mission/src/export.ts（bundle 结构、nsReport、writtenBy）、packages/eval 现有源码、题库仓库 ~/.dsh/scratch/dataseek-eval 的 exports/i1-walk-bundle（真实样本）与 datasets/harness-comparison/docs/dimensions.md（效率指标为什么并列不合成）。
 
 ## 分支
-从 main 开 worktree ../dsh-plugins-wt-local-agent-eval-pins，分支 feat/local-agent-eval-pins。显式 stage，不 push。
+从 main 开 worktree ../dsh-plugins-wt-eval-report，分支 feat/eval-report。显式 stage，不 push。
 
 ## 交付
-1. kimi：thinking 的 effort 变成 provider 配置项，默认值保持现状 high，不改行为；README 与 dsh.compat 说明。
-2. 注册表新增只读方法 effectiveSettings(harnessName)，返回该 harness 当前生效的公平性相关设置的纯 JSON：drive（exec 或 live）、沙箱或权限模式、推理强度、baseUrl 是否设置（只给布尔或主机名）、CLI 版本（若已有探测则复用）。绝不包含凭证。四家各自在注册时提供自己的快照。
-3. 现有 status 面（slash 的 status 与 Remote 的 LocalAgentStatus）附带这份快照，字段增量添加，不破坏现有客户端。
+1. `dsh-eval report <bundleDir> [--out DIR]` 与服务面 `ctx.eval.report(bundleDir)`；输出 `report/results.jsonl`（每行 = {task, condition, conditionSha, rep, attempt, stage, ns, criterion, pass, weight?, evidence, by}）与 `report/summary.md`。
+2. summary.md 开头先核四条不变量：题面一致（同题各格 materialization 哈希相同）、环境一致（refs.fingerprint 同 run 相同，缺失时如实写「本 run 无指纹」）、受试对象一致（labels.condition 的 sha 与 run.meta.conditions 一致；model.observed 与 declared 一致）、程序一致（run.meta.evalVersion 与 planSha 存在）。任一项不成立，报告只输出事实表，不输出比较。
+3. 因子由 condition diff 推出：把 run.meta.conditions 对应的 condition 文档两两 diff，只差一项即该项为因子名（harness / model / preset / skills）；差多项则标「多因子」并只做描述统计。
+4. 配对比较：以题为区组，对每对条件输出逐题差值（通过的 criterion 数、加权分若 rubric 提供 weight）、n（rep 数）、自助法 95% 置信区间（重采样 rep）；n 小于 3 或不变量不成立时打印「不可排名」并拒绝输出名次。
+5. 判官一致性：llm-draft 有多次采样时按 criterion 算一致率与 Cohen κ；human-final 存在时算 llm-draft 对 human-final 的一致率。
+6. 效率并列不合成：每条件的活跃时长（orchestrator ns 的 durationMs 之和）、标价成本（若 plan 或 condition 给了单价，否则留空）、委派轮次（只在双方都完成的题上比）。token 只在同模型内比，跨模型列「不适用」。
+7. writtenBy 若显示 expectedNs 里某 ns 全由 tool: 写入，summary 顶部红字标出。
+8. 测试用合成 bundle 夹具覆盖：单条件、两条件单因子、多因子、不变量失败、n 不足、缺 human-final、判官双采样。
 
 ## 约束
-不改任何 provider 的默认行为；家族内按既有 sanctioned 边改；Agent Note；双语 README 与 compat 同步。
+不 import 任何 @khorsheed 包；只读 bundle，不读 mission 数据根；不引入统计库，自助法与 κ 手写并有测试；不出图（Pareto 图到 I5 的界面）。
 
 ## 完成判据
-四家 effectiveSettings 各有单测；kimi effort 配置有单测；pnpm run build && pnpm run test 绿；pnpm check:plugins 零违规；pnpm gate 通过。
+对 exports/i1-walk-bundle 跑通并输出「单条件、不可比较」的事实表；合成夹具全部测试通过；pnpm run build && pnpm run test 绿；check:plugins 零违规；pnpm gate 通过。
 
 ## 回报
-commit、worktree 路径、Agent Note 路径、四家快照的一份示例输出（脱敏）。
+commit、worktree、Agent Note、对 i1-walk bundle 的 summary.md 全文。
 ```
 
-### T3b · effectiveSettings 快照带上已配置的模型
+### T11 · local-agent：模型回读 + 委派 cwd 选项
 
 ```text
-# 任务 T3b：effectiveSettings 快照带上已配置的模型
+# 任务 T11：local-agent 模型回读 + 委派 cwd 选项
 
 ## 背景
-T3 的 effectiveSettings 快照（已合入 main 85c485a）报了 drive、沙箱或权限模式、推理强度、端点，但没有模型。评测的 condition 契约里 model.declared 是必填字段之一（T1 走通时四个未解析字段之一），就绪检查要拿「已配置的模型」和声明比对；dev 域的设置卡将来也要显示它。本任务只加读取，不加选择，不改任何默认行为。
+评测要证明「实际跑的模型 = 声明的模型」（冻结决策 5），现在四家的输出流里都有模型标识但没人记；编排器（T8）还需要把每格的独立目录作为子代理的 cwd，而门面现在只用父会话的 cwd。两件都是门面与 provider 的增量，无行为变化。
 
 ## 先读
-AGENTS.md、profiles/web-eval/README.md「冻结决策」5、packages/local-agent/src/types.ts 的 LocalAgentEffectiveSettings、四个 provider 的 effectiveSettings 实现与配置读取器（kimi 与 codex 的 provision.ts 已有 section-aware 的行扫描读取器，照同款写）、.agents/notes/implemented/feature/2026-09-04-local-agent-eval-effective-settings.md。
+AGENTS.md、profiles/web-eval/README.md「冻结决策」5 与 6、packages/local-agent/src/index.ts（门面 start / resume、DelegationCallOptions、recordDelegation、delegations.jsonl）、四个 provider 的流解析（claude 的 system/init 与 result、codex 的 thread / turn 事件、kimi 的 wire.jsonl、dsh 的 session 事件）、docs 里 engineering.md 提到的 resolveChildCwd 第二参数（~/.dsh/scratch/dataseek-eval/datasets/harness-comparison/docs/engineering.md ①）、T3 / T3b 的 Agent Note。
 
 ## 分支
-从 main 开 worktree ../dsh-plugins-wt-local-agent-eval-model，分支 feat/local-agent-eval-model-snapshot。显式 stage，不 push。
+从 main 开 worktree ../dsh-plugins-wt-local-agent-observed-model，分支 feat/local-agent-observed-model-cwd。显式 stage，不 push。
 
 ## 交付
-1. LocalAgentEffectiveSettings 增加可选字段 model?: string：该 harness 委派时实际会用的已配置模型标识。来源按家：kimi 读 scoped config.toml 的 default_model；codex 读 scoped config.toml 的 model，无则缺位；claude 读 scoped CLAUDE_CONFIG_DIR 下 settings.json 的 model，无则缺位（claude 的默认模型由 CLI 自己决定，不要猜一个值）；dsh 读宿主 agentDefaultModel.currentSelection() 的 provider 与 model（子 dsh 继承它，见 local-agent-dsh-headless/src/agent-loader.ts）。
-2. 缺位即诚实：读不到就不给字段，绝不填默认值猜测。
-3. status 面与 Remote 自动带上，沿用 T3 的传递路径，无需新接线。
-4. 测试：四家各一条「配置里有模型则快照带 model」与「没有则字段缺位」；claude 的用例用 vi.stubEnv 与临时 CLAUDE_CONFIG_DIR 密闭，不读宿主。
-5. 四包 README 的 effectiveSettings 字段表补 model；Agent Note 在 T3 那篇上追加一节，同一决定的延伸，不新开。
+1. 模型回读：每家 provider 从自己的输出流取实际模型标识（claude：system/init 或 result 的 model；codex：thread 或 turn 事件里的 model；kimi：wire.jsonl 的 usage 或 request 记录里的 model；dsh：子会话事件里的 model），写进委派记录 delegations.jsonl 的新字段 observedModel，并随 LocalAgentRunProgress 增加一种 {kind: 'settled', observedModel?, usage?} 事件；门面新增只读 `delegationOf(childSessionId)` 返回记录（不含 cliSessionId）。取不到即缺位，不猜。
+2. cwd 选项：DelegationCallOptions 增加 `cwd?: string`，start 与 resume 都接受；provider 用它替代父会话 cwd（resolveChildCwd 的覆盖位）；缺省行为一字不变。resume 时若与首轮 cwd 不同，fail loud。
+3. 测试：四家各一条「流里有模型则记录 observedModel」与「没有则缺位」；cwd 覆盖生效与 resume 不一致被拒的测试；旧 delegations.jsonl 无该字段照常读。
+4. 四包 README 与 compat 同步；Agent Note 新开一篇（这是新能力，不是 T3 的延伸）。
 
 ## 约束
-不加模型选择、不加 CLI 参数、不改默认行为；不 spawn 任何 CLI 去探测；不读宿主 ~/.claude、~/.codex 等全局配置。
+不改任何默认行为；不 spawn 额外进程；observedModel 不进 prompt、不进模型可见面；家族内按既有 sanctioned 边改。
 
 ## 完成判据
-五包 build + test 绿；pnpm check:plugins 零违规；pnpm gate 通过（ankh-guard 的偶发 flake 若再拦，注明并给出单包全绿证据）。
+五包 build + test 绿；check:plugins 零违规；pnpm gate 通过（ankh-guard 偶发 flake 注明即可）。
 
 ## 回报
-commit、worktree 路径、Agent Note 路径、四家快照示例（脱敏）。
+commit、worktree、Agent Note、四家 observedModel 的一份真实样本（脱敏）。
 ```
 
-### T4 · mission 四项：retry 原因、writtenBy、G1 submit 预校验、G2 file-check 非空
+### T12 · datasets：金丝雀 + 工具分组配置
 
 ```text
-# 任务 T4：mission 四项改动（retry 原因、writtenBy、G1 submit 预校验、G2 file-check 非空）
+# 任务 T12：datasets 金丝雀字段 + 工具分组配置
 
 ## 背景
-T1 手工走通一格时确认了 mission 的两个机制缺口，记录在题库仓库 ~/.dsh/scratch/dataseek-eval 的 i1-walk 分支 docs/i1-walk-log.md 的 G1、G2；加上评测线原本要的两项，四项都在 mission 包内，一起做。
+两件小事，都是评测域的机制需要、对 dev 域零影响。金丝雀：Terminal-Bench 的做法，每道题的 visible 文件里埋一个全局唯一字符串，将来在模型输出里搜到它就证明题库进过训练语料，成本几乎为零。工具分组：eval 域的规划 agent 只该有读类与作者类工具，而 preset 挑不掉 profile 层注册的工具，只能由插件按组注册。
 
 ## 先读
-AGENTS.md、packages/mission/README.md、proposals/active/2026-08-19-mission-tasks.md、packages/mission/src/service.ts（submit 的预校验循环约在 462 到 476 行；file-check 约在 365 到 376 行；retry 在 538 行起）、src/export.ts 的 ns 完整性报告、src/cli-core.ts；题库仓库 i1-walk 分支的 docs/i1-walk-log.md 与 datasets/harness-comparison/templates/bench-v1.json（G1 的绕行是把 stage-2 到 halted 这条边的 guard 去掉，你修好后这条边要能带回 guard）。
+AGENTS.md、profiles/web-eval/README.md「工具按域开放」、docs/dataset-authoring-protocol.md（§2 descriptor、§5 自验）、packages/datasets/src/index.ts（工具注册）、src/dataset.ts（descriptor 校验与警告）、tests/validate.spec.ts、tests/protocol.spec.ts（协议示例即夹具，注意 T2 把提取范围限定到了 §2）。
 
 ## 分支
-从 main 开 worktree ../dsh-plugins-wt-mission-retry-reason，分支 feat/mission-retry-reason。显式 stage，不 push。
+从 main 开 worktree ../dsh-plugins-wt-datasets-canary-tools，分支 feat/datasets-canary-tools。显式 stage，不 push。
 
 ## 交付
-1. G1：submit 的预校验现在对当前状态所有出边的 schema-check（inputFrom 为 submission）做合取，分支互斥的状态机（judged 与 halted）永远提交不了合法 payload。改为：submit 增加可选的意向转移参数 to；给了 to 只按那条边校验；没给 to 时，若当前状态只有一条 schema-check 出边照旧，多条则要求 to，用法错误的报错文本列出候选边。transition 时的 guard 校验不变，作为兜底。服务面、工具、CLI --to 三面同语义。
-2. G2：file-check 的 expectedFiles 以 / 结尾的目录项要求非空，至少一个常规文件，递归；错误文本区分「缺失」与「为空」。
-3. retry 必须带 reason：自由文本 reason 加通用类别枚举（建议 infrastructure、operator、outcome，不得用评测词汇），记录在新 attempt 上并进 history；服务面、工具、CLI 的 --reason 与 --category 三面同语义；缺 reason 即用法错误。
-4. ns 完整性报告（run status 与 export manifest）每格每 ns 增加 writtenBy：该 ns 所有注解 by 的前缀集合（tool: 、cli、service、slash:）；expectedNs 里某 ns 的写入者全是 tool: 时如实标出，不做判断。
-5. G4 顺带：CLI 的数据根支持环境变量 DSH_MISSION_DATA_DIR 作为 --data-dir 的缺省，优先级为 --data-dir、环境变量、$DSH_HOME/state/mission、cwd；README 写明实例 patch 的 dataDir 对 CLI 不可见，CLI 与实例共用数据根要显式指定。
-6. README 双语与 compat 同步；通用性 grep 通过（源码不出现 stage、rubric、score、verdict、player、judgment、contestant）。
+1. 金丝雀：dataset.json 可选字段 `canary: string`（建议格式含 dataset id 与一个 uuid）；validate 新增警告 CANARY_MISSING：声明了 canary 时，visible 层（modelFacing true 的层）里每个文本文件（按扩展名白名单：md / txt / yml / yaml / json / 无扩展名）都必须包含该字符串，缺的逐文件报。未声明 canary 不报。协议 §2 与 §5 同步，示例进夹具。
+2. 工具分组配置 `tools: 'all' | 'read' | 'authoring' | 'none'`（默认 all，行为不变）：read = list / show / describe / read / snapshot / validate；authoring = read + put_item；all = authoring + worktree_path。配置在 schema 里声明，README 写明 eval 域建议 authoring。
+3. 测试：三档注册的工具集合各一条；canary 的四种情形（未声明、全有、缺一、非文本文件跳过）。
+4. README 双语、compat、Agent Note。
 
 ## 约束
-不新增依赖；存储格式向后兼容（旧 run 文件无 reason 照常读）；Agent Note。
+不改默认行为；不引入依赖；不改 mission / eval。
 
 ## 完成判据
-G1：用 i1-walk 的 bench-v1 模板（halted 边恢复 guard）建 run，feasible 为 true 的 payload 带 to=judged 可提交、不带 to 报错并列出两条候选边、feasible 为 false 带 to=halted 可提交，各有测试。G2：空目录被拒的测试。retry 无 reason 被拒与三面一致的测试。writtenBy 含「仅 tool: 写入」情形的测试。旧格式回归测试。pnpm run build && pnpm run test 绿；pnpm gate 通过。
+datasets build + test 绿；check:plugins 零违规；对题库 i1-walk 分支跑 validate，未声明 canary 时零新增警告；pnpm gate 通过。
 
 ## 回报
-commit、worktree 路径、Agent Note 路径、gate 输出。
+commit、worktree、Agent Note。
 ```
 
-### T5 · web-eval 的安装路径可用（G5、G6）
+### T13 · mission：工具分组配置
 
 ```text
-# 任务 T5：web-eval 的安装路径可用（G5、G6）
+# 任务 T13：mission 工具分组配置
 
 ## 背景
-T1 按 profiles/web-eval 模板装 profile 时发现两处问题，记录在题库仓库 ~/.dsh/scratch/dataseek-eval 的 i1-walk 分支 docs/i1-walk-log.md 的 G5、G6：package.json 里 capability-catalog、inline-html-render、local-files 三个成员标着 npm 范围但实际未发布；未发布成员从 tarball 装时传递依赖走 registry 404，需要 pnpm overrides，deploy-3080 已有同款模式。web-dev 模板同样有此问题，本任务只改 web-eval。
+eval 域的规划 agent 不能有 mission 的写工具：一个能 mission_transition 的 agent 就能绕过编排器改账，mission_attest 更是直接放行 guard（路线图待决「attest 的人机边界」的答案就是在 eval 域不给这个工具）。preset 挑不掉 profile 层注册的工具，只能由插件按组注册。
 
 ## 先读
-AGENTS.md、docs/development.md、docs/ops.md、docs/publishing.md、scripts/deploy-3080.mts 里 overrides 的写法、scripts/pack-dist.ts 的 --family 用法、profiles/web-eval/README.md「安装」、profiles/web-basic 与 web-dev 的 install.sh；题库仓库 i1-walk 的 docs/i1-walk-log.md 第 1 步的记录。
+AGENTS.md、profiles/web-eval/README.md「工具按域开放」、packages/mission/src/index.ts 与 src/tools.ts（12 个工具的注册）、packages/mission/README.md、T4 的 Agent Note。
 
 ## 分支
-从 main 开 worktree ../dsh-plugins-wt-web-eval-install，分支 feat/web-eval-install。只改 profiles/web-eval/ 下的文件；根目录 scripts/ 是共享层归 mainline，不碰。显式 stage，不 push。
+从 main 开 worktree ../dsh-plugins-wt-mission-tools-config，分支 feat/mission-tools-config。显式 stage，不 push。
 
 ## 交付
-1. profiles/web-eval/package.json：未发布成员的处理方式与 README 一致，要么 file: tarball 占位并注明，要么保留 npm 范围但 install.sh 在源码模式下改写。选一种，Agent Note 说明取舍。
-2. profiles/web-eval/scripts/install.sh 增加「源码模式」：给定 dsh-plugins 检出路径时，build、按 --family 打全部未发布成员的 tarball、写入 overrides、再 dsh plugin --profile web-eval install；npm 模式行为不变。
-3. README 双语「安装」节改写为两条路径，重记 sidecar。
-4. 用 mktemp 的 DSH_HOME 从零装一遍，不碰 3080，不碰 ~/.dsh-lab 的现有 profile；--dump-config 里 @khorsheed 成员 22 行。
+1. 配置 `tools: 'all' | 'read' | 'none'`（默认 all，行为不变）：read = run_list / run_status / list / get；all = 全部 12 个。系统提示词段（tool:mission）按档位只描述实际注册的工具。
+2. 测试：三档注册集合各一条；read 档下 systemPrompt 段不提写工具。
+3. README 双语、compat、Agent Note（可作为 T4 那篇的延伸小节，或新开，自定）。
+
+## 约束
+不改默认行为；服务面、CLI、slash、tab 不受影响；不出现评测词汇。
 
 ## 完成判据
-一次性 DSH_HOME 全新安装一次通过，行数正确；若撞上 G3 的 headless 重复行，记录并等 T6，不要在本任务里绕。pnpm gate 通过。
+mission build + test 绿；pnpm gate 通过。
 
 ## 回报
-commit、worktree 路径、Agent Note 路径、--dump-config 的成员行清单。
+commit、worktree、Agent Note。
 ```
 
-### T6 · headless 被 plugin install 挂进宿主 bundles（G3）
-
-```text
-# 任务 T6：dsh-local-agent-dsh-headless 被 plugin install 挂进宿主 bundles（G3）
-
-## 背景
-T1 在全新 profile 上 dsh plugin install 后 boot 失败，报 duplicate code-runtime。原因是 @khorsheed/dsh-local-agent-dsh-headless 声明了 dsh.bundle，宿主的 reconcile 把它当成可挂载插件追加进 bundles，而它其实是给子 dsh 的 headless profile 用的组合，与 web-app 的行重复。prod 3080 的做法是「装作依赖、不挂 bundles 行」，靠人手删。记录在题库仓库 ~/.dsh/scratch/dataseek-eval 的 i1-walk 分支 docs/i1-walk-log.md 的 G3。
-
-## 先读
-AGENTS.md、docs/development.md、packages/local-agent-dsh/README.md、packages/local-agent-dsh/cordis.patch.yml、packages/local-agent-dsh-headless/package.json 与 cordis.patch.yml、packages/local-agent-dsh/src/provision.ts（headlessBundleDir 如何解析 headless 包）、~/code/deepseek-harness 里 reconcilePlugins 的实现（只读，apps/cli/src/plugin.ts）。
-
-## 分支
-从 main 开 worktree ../dsh-plugins-wt-headless-reconcile，分支 fix/local-agent-dsh-headless-reconcile。显式 stage，不 push。
-
-## 交付
-1. 先定根因：headless 是否应该成为 profile 的直接依赖；它的 dsh.bundle 声明是否应该存在（provision 是按路径读 patch 还是按 dsh.bundle 字段）。写进 Agent Note。
-2. 按根因修其一：headless 不再声明 dsh.bundle 并让 provision 按已知文件名读 patch；或 local-agent-dsh 以 workspace 依赖携带 headless，使其不成为 profile 直接依赖；或两者。不改 harness。
-3. 验证：一次性 DSH_HOME 里 dsh plugin add local-agent-dsh 的 tarball 后 --dump-config 无 headless 行、boot 成功、dsh 家的委派仍能 provision 出子 profile 并跑一轮（可照 T1 走通日志的做法）。
-4. README 与 compat 同步；pnpm check:plugins 零违规。
-
-## 完成判据
-全新 profile 装 local-agent-dsh 后 boot 无 duplicate 行；子 dsh 委派一轮成功；pnpm gate 通过。
-
-## 回报
-commit、worktree 路径、Agent Note 路径、根因结论一句话、gate 输出。
-```
-
-I2 及以后的指引文案在 I1 收口时再写：每个迭代的卡点会改写下一迭代的任务，提前写只会过期。
+第二波（T8 合入后发）：T9 判官委派（去指纹、判官条件、双采样、objective 判据的确定性评估、verdict 入 llm-draft）；T14 只读工具 eval_conditions / eval_plan_validate / eval_run_status；T15 pilot A（含把评测 pin 写进 web-eval 的 cordis.patch.yml：mission tools read、datasets tools authoring、四家 live false、codex sandbox、claude permissionMode、kimi effort，并决定该文件归 pack 所有）。
 
 ## 四、验收规程
 

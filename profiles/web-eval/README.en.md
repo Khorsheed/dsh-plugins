@@ -4,7 +4,7 @@
 
 **Run controlled comparisons from one screen: hand the same batch of tasks to different harnesses, models, presets, or skills, and compare them paired by task.** Task sets, conditions, and plans are reviewed in git; execution is driven by a deterministic orchestrator; verdicts come from three sources (scripts, LLM draft, human final) that never overwrite each other; conclusions leave as a self-contained bundle. The base experience and the local-agent family are included.
 
-> **Status**: I1 walked one cell by hand; I2 is under way. The offline half of the orchestrator `@khorsheed/dsh-eval` has landed (the three contract schemas, `dsh-eval validate`, `dsh-eval conditions hash`); the executing half (run / report) follows the iterations. This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan). The roadmap's "dsh-eval pack" is this profile.
+> **Status**: I1 closed (2026-09-05): the three contracts and `dsh-eval validate`, the mission and local-agent evaluation changes, and the source install path are all merged to main, and one evaluation cell has been walked end to end by hand on the host. I2 is in progress: orchestrator v0 and the first pilot. This document first fixes the target architecture, member plugins, target flow, and final UI, then approaches them iteration by iteration, with each iteration's done criteria pinned in the [iteration plan](#iteration-plan); per-task status and briefs live in [docs/iterations.md](docs/iterations.md) (Chinese). The roadmap's "dsh-eval pack" is this profile.
 
 ## Positioning
 

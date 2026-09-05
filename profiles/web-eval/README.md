@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：I1 已手工走通一格，I2 进行中。编排器 `@khorsheed/dsh-eval` 的离线一半已落地（三份契约 schema、`dsh-eval validate`、`dsh-eval conditions hash`），执行半（run / report）按迭代推进。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I1 已收口（2026-09-05）：三份契约与 `dsh-eval validate`、mission 与 local-agent 的评测改动、源码安装路径全部合入 main，一格评测已在宿主上手工走通。I2 进行中：编排器 v0 与第一次 pilot。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
