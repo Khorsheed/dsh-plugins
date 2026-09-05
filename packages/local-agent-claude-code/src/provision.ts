@@ -52,6 +52,31 @@ export async function provisionClaudeHome(homeDir: string, proxyUrl?: string): P
 }
 
 /**
+ * Read the scoped settings' configured model: the `model` key of
+ * `<homeDir>/settings.json` — the model a delegation round pins when the
+ * scoped settings name one at all. Claude's own default model is decided by
+ * the CLI and is deliberately NOT guessed here. Only the scoped file is
+ * consulted (never the host's `~/.claude`); absent or malformed content
+ * yields undefined.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns the configured model identifier, or undefined when none is set.
+ */
+export async function readClaudeConfiguredModel(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, SCOPED_SETTINGS), 'utf8')
+  } catch {
+    return undefined
+  }
+  try {
+    const settings = JSON.parse(text) as { model?: unknown }
+    return typeof settings.model === 'string' && settings.model !== '' ? settings.model : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Sign out of the scoped account: remove the scoped config file, so
  * `/<name> status` reports not authenticated and the next login authorizes
  * a fresh account. The macOS keychain entry (a hashed

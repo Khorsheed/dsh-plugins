@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexReasoningEffort } from '../src/provision.ts'
+import { codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from '../src/provision.ts'
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), 'codex-provision-'))
@@ -32,6 +32,32 @@ describe('readCodexReasoningEffort', () => {
       '',
     ].join('\n'))
     await expect(readCodexReasoningEffort(home)).resolves.toBeUndefined()
+  })
+})
+
+describe('readCodexModel', () => {
+  it('returns undefined when the config is absent', async () => {
+    await expect(readCodexModel(tempHome())).resolves.toBeUndefined()
+  })
+
+  it('reads the top-level model key', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, 'config.toml'), [
+      'model = "gpt-5.2"',
+      'model_reasoning_effort = "high"',
+      '',
+    ].join('\n'))
+    await expect(readCodexModel(home)).resolves.toBe('gpt-5.2')
+  })
+
+  it('ignores keys inside table sections', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, 'config.toml'), [
+      '[profiles.fast]',
+      'model = "gpt-5-mini"',
+      '',
+    ].join('\n'))
+    await expect(readCodexModel(home)).resolves.toBeUndefined()
   })
 })
 

@@ -60,7 +60,7 @@ model_provider = "dsh-router"
 
 ⚠️ **凭据暴露**：作用域 `auth.json` token 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)、已配置模型(读作用域 config 的顶层 `model`,没有就不给字段)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

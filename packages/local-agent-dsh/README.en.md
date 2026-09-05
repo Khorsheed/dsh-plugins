@@ -44,7 +44,7 @@ The scoped home (`$DSH_HOME/local-agent/dsh`) is kept on purpose — it holds th
 | `liveIdleMs` | `1800000` (30 min) | idle lifetime of a resident runtime before reclaim |
 | `liveMirrorGranularity` | `event` | live mirror granularity; `token` additionally appends `assistant/chunk` deltas to the child session (write amplification — opt-in) |
 
-**Evaluation snapshot (`effectiveSettings`).** The harness's fairness snapshot carries just the drive (exec/live) and the no-pinned-endpoint flag: a headless sub-dsh has no sandbox or permission knob (the web-eval frozen baseline calls this harness unrestricted — the absent fields are themselves the honest condition-hash input), and the endpoint is the host instance's model config, which this provider never overrides. `/dsh status` and the `LocalAgentStatus` Remote attach the same snapshot.
+**Evaluation snapshot (`effectiveSettings`).** The harness's fairness snapshot carries the drive (exec/live), the no-pinned-endpoint flag, and the configured model (the host `agentDefaultModel` selection the sub-dsh inherits, formatted `provider/model`; when the service is absent or the selection unreadable the field drops out — never guessed): a headless sub-dsh has no sandbox or permission knob (the web-eval frozen baseline calls this harness unrestricted — the absent fields are themselves the honest condition-hash input), and the endpoint is the host instance's model config, which this provider never overrides. `/dsh status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility
 

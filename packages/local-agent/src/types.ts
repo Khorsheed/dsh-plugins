@@ -64,8 +64,8 @@ export interface LocalAgentStatus {
  * only — a URL's path could carry tenant or project ids).
  *
  * A field the harness has no knob for stays ABSENT (`sandbox`,
- * `permissionMode`, `autoApprove`, `reasoningEffort`, `cliVersion`): absence
- * means "this harness has no such knob", which is itself the honest
+ * `permissionMode`, `autoApprove`, `reasoningEffort`, `model`, `cliVersion`):
+ * absence means "this harness has no such knob", which is itself the honest
  * condition-hash input (the web-eval frozen baseline calls the dsh harness
  * unrestricted because no knob exists). `drive` and `baseUrlSet` are always
  * present.
@@ -107,6 +107,16 @@ export interface LocalAgentEffectiveSettings {
    * the field is reserved so a later probe is additive.
    */
   cliVersion?: string
+  /**
+   * The configured model identifier a delegation round would run with — read
+   * from the harness's own configuration surface, never guessed: kimi reads
+   * its scoped config's `default_model`, codex its scoped config's `model`,
+   * claude-code its scoped `settings.json`'s `model` (the CLI's own default
+   * stays unnamed), and dsh the host `agentDefaultModel` selection it
+   * inherits, formatted `provider/model`. Absent when nothing is configured
+   * or readable — absence is the honest answer, never a substituted default.
+   */
+  model?: string
 }
 
 /**

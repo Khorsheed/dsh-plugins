@@ -60,7 +60,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ⚠️ **Credential exposure**: the scoped `auth.json` token is sent to whatever endpoint serves the request — only use endpoints you control or trust. Each delegation logs the effective endpoint at info level.
 
-**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), and whether a custom endpoint is pinned (read from the scoped config's provider, hostname only). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), whether a custom endpoint is pinned (read from the scoped config's provider, hostname only), and the configured model (the scoped config's top-level `model`; absent when none is set — never guessed). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility
 

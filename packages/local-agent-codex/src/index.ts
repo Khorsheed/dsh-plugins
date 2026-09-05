@@ -21,7 +21,7 @@ import { CodexCliProvider } from './codex-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
-import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexReasoningEffort } from './provision.ts'
+import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-codex'
@@ -124,13 +124,14 @@ export function apply(ctx: Context, config: Config): void {
       credentialStamp: codexCredentialStamp,
       logout: codexLogout,
       // The eval snapshot: the sandbox policy comes from the plugin config
-      // (it rides every spawn argv); effort and endpoint are read live from
-      // the scoped config, which codex itself reads — a person-edited value
-      // is exactly what the rounds run with.
+      // (it rides every spawn argv); effort, model, and endpoint are read
+      // live from the scoped config, which codex itself reads — a
+      // person-edited value is exactly what the rounds run with.
       effectiveSettings: async () => {
-        const [reasoningEffort, baseUrl] = await Promise.all([
+        const [reasoningEffort, baseUrl, model] = await Promise.all([
           readCodexReasoningEffort(homeDir).catch(() => undefined),
           readCodexBaseUrl(homeDir).catch(() => undefined),
+          readCodexModel(homeDir).catch(() => undefined),
         ])
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined
         return {
@@ -139,6 +140,7 @@ export function apply(ctx: Context, config: Config): void {
           ...reasoningEffort !== undefined ? { reasoningEffort } : {},
           baseUrlSet: baseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
+          ...model !== undefined ? { model } : {},
         }
       },
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {

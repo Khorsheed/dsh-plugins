@@ -25,6 +25,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -145,11 +146,33 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // has no such knob (the web-eval frozen baseline calls this harness
       // unrestricted — absence IS the honest condition-hash input). The
       // endpoint is the host instance's model config, which this provider
-      // never overrides, so no custom endpoint is ever pinned.
-      effectiveSettings: () => ({
-        drive: scope.get().live ? 'live' : 'exec',
-        baseUrlSet: false,
-      }),
+      // never overrides, so no custom endpoint is ever pinned. The model is
+      // the host's default selection the sub-dsh inherits (the headless agent
+      // loader reads the same service), reported as `provider/model`; a
+      // composition without the service — or a selection that fails to read —
+      // reports no model rather than a guessed identifier.
+      effectiveSettings: () => {
+        let model: string | undefined
+        try {
+          const defaultModel = ctx.get('agentDefaultModel') as
+            | { currentSelection?: () => { provider?: string; model?: string } }
+            | undefined
+          const selection = defaultModel?.currentSelection?.()
+          if (typeof selection?.model === 'string' && selection.model !== '') {
+            model = typeof selection.provider === 'string' && selection.provider !== ''
+              ? `${selection.provider}/${selection.model}`
+              : selection.model
+          }
+        } catch {
+          // Degrade: an unreadable selection reports no model instead of
+          // breaking the status surface.
+        }
+        return {
+          drive: scope.get().live ? 'live' : 'exec',
+          baseUrlSet: false,
+          ...model !== undefined ? { model } : {},
+        }
+      },
     }
     const homeDir = ctx.localAgent.homeDir('dsh')
 
