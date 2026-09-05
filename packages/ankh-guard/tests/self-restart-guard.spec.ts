@@ -2544,6 +2544,11 @@ describe('supervise', () => {
       ], io().io)).toBe(0)
       await waitForPort(port)
       expect(await fetchBody(port)).toBe('old-host')
+      await waitForCondition(
+        'initial previous watchdog to finish its healthy boot',
+        () => lastGoodBootRevision(stateDir) === currentHead(repo),
+        30_000,
+      )
       expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
       stubPreflight('true')
       stubSandboxProbe(false)
@@ -2576,9 +2581,18 @@ describe('supervise', () => {
       // host continuously available until the committed successor stops it.
       expect(await fetchBody(port)).toBe('old-host')
 
-      const deadline = Date.now() + 25_000
-      while (readCutoverReceipt(stateDir)?.phase !== 'ready' && Date.now() < deadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
+      try {
+        await waitForCondition(
+          'successful reconfigure target to settle its ready receipt',
+          () => readCutoverReceipt(stateDir)?.phase === 'ready',
+          60_000,
+          200,
+        )
+      } catch (error) {
+        const receipt = readCutoverReceipt(stateDir)
+        const logFile = join(stateDir, STATE_FILES.watchdogLog)
+        const log = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '<watchdog log absent>'
+        throw new Error(`${String(error)}\n${JSON.stringify(receipt, null, 2)}\n${log.slice(-12000)}`)
       }
       const settledReceipt = readCutoverReceipt(stateDir)
       const cutoverLog = readFileSync(join(stateDir, STATE_FILES.watchdogLog), 'utf8')
@@ -2613,7 +2627,7 @@ describe('supervise', () => {
       await killListener(port)
       env.restore()
     }
-  }, 45_000)
+  }, 120_000)
 
   it('settles a protected previous-watchdog → candidate-watchdog cutover only after page acknowledgement', async () => {
     const env = supervisedEnv()

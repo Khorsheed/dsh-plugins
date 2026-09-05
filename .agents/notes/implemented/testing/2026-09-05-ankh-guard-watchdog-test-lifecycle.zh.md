@@ -38,7 +38,7 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 夹具观察使用具名谓词轮询，不假设服务响应出现时异步 report 或 receipt 已经耐久落盘。adoption、unplanned-exit、composition snapshot/recovery 与浏览器终态各有独立的有界预算；超时会输出完整生命周期 ledger。首次双 worktree 压力运行暴露了残留的 5–15 秒 report 窗口；验收重跑前，这些窗口已全部替换为具名等待。
 
-三条 transition 一线的终态谓词——hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算与 90 秒 Vitest 外层预算。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
+四条 transition 一线的终态谓词——成功的 supervision 交接、hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算；恢复用例的 Vitest 外层预算为 90 秒，成功交接为 120 秒，因为它会先证明 previous watchdog 已完成健康启动。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态。一份保留的成功交接失败账本显示：target listener 在 21.4 秒时登记，所有权稳定在 29.5 秒时完成，33.0 秒时仍有 receipt writer 运行；旧的 25 秒夹具观察预算在事务仍持续前进时已到期。`target-starting` 有意覆盖 child start、transport、所有权稳定、canary 和终态 ready 落盘的全过程，因此它的 `updatedAt` 不是“无进展停留时长”。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
 
 包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 54 个 unit、128 个 integration，共 182 个测试。
 
@@ -64,8 +64,9 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 完整 integration 结束后，machine lease 报告中的 active 与 over-age live identity 都为零。
 - 回归覆盖 detached 进程组清理、TERM→KILL、macOS Bash 后台函数 identity、生产 sleep 不缩放、dead/over-age 分类和独立机器命名空间端口 lease。
 - control writer、composition recovery、stale-200/EADDRINUSE、foreground waiter 与 pidfile replacement 用例均在新 ledger 下通过。
-- hung-previous、目标失败 reconfigure 与 live-home transition 用例保留对终态 receipt 的断言，并使用容忍负载的具名轮询；超时时仍处于中间 phase 依然会携带生命周期诊断响亮失败。
+- 成功交接、hung-previous、目标失败 reconfigure 与 live-home transition 用例保留对终态 receipt 的断言，并使用容忍负载的具名轮询；超时时仍处于中间 phase 依然会携带生命周期诊断响亮失败。
 - 后续修复完成后，unit 以 54/54 通过，integration 以 128/128 通过，并发总入口以 182/182 通过。pack smoke 在 runner 预算内完成；确定性的 hung-previous 用例在 integration-only 与总入口两次运行中都通过。最终 leak report 仍为 active、over-age-live、unreadable 全部为零。
+- 补上成功交接用例遗漏的 previous 稳态屏障与具名终态等待后，连续三轮 integration 均以 128/128 通过；交接用例分别用时 24.6、22.0 和 21.0 秒。随后的包级总入口以 182/182 通过，交接用例用时 23.3 秒；在记录的一分钟 load average 约为 8.0 时，最慢 supervisor shard 为 128.3 秒。
 
 ## Alternatives considered
 
