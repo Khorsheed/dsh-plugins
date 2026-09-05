@@ -121,6 +121,18 @@ function spawnPortRuntime(command: string, args: readonly string[], port: number
   })
 }
 
+/** Freeze one captured identity for a fixture without ever leaving a reused PID stopped. */
+function freezeFixtureIdentity(identity: NonNullable<ReturnType<typeof processIdentity>>): 'frozen' | 'gone' | 'mismatch' {
+  try {
+    process.kill(identity.pid, 'SIGSTOP')
+  } catch {
+    return 'gone'
+  }
+  if (processIdentityMatches(identity)) return 'frozen'
+  try { process.kill(identity.pid, 'SIGCONT') } catch { /* already gone */ }
+  return 'mismatch'
+}
+
 function tmpDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix))
   cleanups.push(() => { rmSync(dir, { recursive: true, force: true }) })
@@ -2749,6 +2761,13 @@ const timer = setInterval(() => {
       expect(await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)).toBe(0)
       stubPreflight('true')
       stubSandboxProbe(false)
+
+      // Establish the wedged-previous precondition before the successor can
+      // retire it. The previous host is a separate child and keeps serving;
+      // the successor must still claim supervision, consume restore while it
+      // waits, and retire exactly this frozen identity after the bound yield.
+      expect(freezeFixtureIdentity(previousSupervisor!)).toBe('frozen')
+      expect(await fetchBody(port)).toBe('previous-after-hung-supervisor')
       expect(await runCli([
         'reconfigure', '--start', targetStart,
         '--on-failure', 'wait-for-user', '--browser-handoff', 'off',
@@ -2757,9 +2776,6 @@ const timer = setInterval(() => {
         ...boundPreflightArgs(),
       ], io().io)).toBe(0)
 
-      // Model a wedged old watchdog after the replacement has atomically
-      // claimed the pidfile. Its host child keeps serving while it is stopped.
-      process.kill(previousPid, 'SIGSTOP')
       const logFile = join(stateDir, STATE_FILES.watchdogLog)
       const waitingDeadline = Date.now() + 5_000
       while ((!existsSync(logFile) || !readFileSync(logFile, 'utf8').includes('waiting up to 3000ms'))

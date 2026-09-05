@@ -79,6 +79,10 @@ if (lane !== 'unit') {
 }
 
 const maxParallel = lane === 'unit' ? 2 : 4
+// Match the repository preset for spawn-heavy tests without adding a package
+// vitest.config.ts: the public ankh-guard mirror owns its standalone config.
+// Individual lifecycle cases keep their larger explicit budgets.
+const defaultTestTimeoutMs = 30_000
 let cursor = 0
 let failed = false
 let passed = 0
@@ -87,7 +91,7 @@ async function worker() {
   while (cursor < tasks.length) {
     const task = tasks[cursor++]
     const started = performance.now()
-    const child = spawn(process.execPath, [vitest, 'run', ...task.args], {
+    const child = spawn(process.execPath, [vitest, 'run', '--testTimeout', String(defaultTestTimeoutMs), ...task.args], {
       env: { ...process.env, ...task.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
