@@ -162,4 +162,43 @@ describe('LocalAgentRegistry delegation persistence', () => {
     second.registry.register(harness('fake-cli'))
     expect(second.registry.kimiMirroredLines('child-1')).toBe(20)
   })
+  it('loads records carrying observedModel and cwd, and old records without them', async () => {
+    const homesRoot = mkdtempSync(join(tmpdir(), 'delegation-persist-'))
+    const first = await mountRegistry(homesRoot)
+    first.registry.register(harness('fake-cli'))
+    first.registry.recordDelegation({
+      childSessionId: 'child-new', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_42',
+      cwd: '/cell-a', observedModel: 'gpt-5.6-sol',
+    })
+    // A record written before the fields existed loads unchanged — absence
+    // stays absence, no guessing.
+    appendFileSync(join(homesRoot, 'fake', DELEGATIONS_FILENAME), `${JSON.stringify({
+      childSessionId: 'child-old', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_7',
+    })}\n`)
+
+    const second = await mountRegistry(homesRoot)
+    second.registry.register(harness('fake-cli'))
+
+    expect(second.registry.delegationOf('child-new')).toEqual({
+      childSessionId: 'child-new', provider: 'fake-cli', parentSessionId: 'parent-1',
+      cwd: '/cell-a', observedModel: 'gpt-5.6-sol',
+    })
+    expect(second.registry.delegationOf('child-old')).toEqual({
+      childSessionId: 'child-old', provider: 'fake-cli', parentSessionId: 'parent-1',
+    })
+  })
+
+  it('persists a settled observedModel merge with the record', async () => {
+    const homesRoot = mkdtempSync(join(tmpdir(), 'delegation-persist-'))
+    const first = await mountRegistry(homesRoot)
+    first.registry.register(harness('fake-cli'))
+    first.registry.recordDelegation({
+      childSessionId: 'child-1', provider: 'fake-cli', parentSessionId: 'parent-1', cliSessionId: 'session_42',
+    })
+    first.registry.recordRoundSettled('child-1', { observedModel: 'claude-opus-5[1m]' })
+
+    const second = await mountRegistry(homesRoot)
+    second.registry.register(harness('fake-cli'))
+    expect(second.registry.delegationOf('child-1')).toMatchObject({ observedModel: 'claude-opus-5[1m]' })
+  })
 })

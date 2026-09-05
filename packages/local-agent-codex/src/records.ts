@@ -297,22 +297,21 @@ export interface CodexRolloutUsageLocator {
 }
 
 /**
- * Recover the last `token_count` usage of ONE run's rollout file. Walks the
- * scoped home's `sessions/YYYY/MM/DD/` tree reading each file's head (the
- * same bounded walk as {@link listCodexSessions}), then prefers the file
- * whose session id equals `locator.threadId`; otherwise — or when the id
- * matched nothing — the file whose start falls in the window around
- * `locator.windowStart`, newest first. Reads only the located file's tail.
+ * Locate ONE run's rollout file. Walks the scoped home's `sessions/YYYY/MM/DD/`
+ * tree reading each file's head (the same bounded walk as
+ * {@link listCodexSessions}), then prefers the file whose session id equals
+ * `locator.threadId`; otherwise — or when the id matched nothing — the file
+ * whose start falls in the window around `locator.windowStart`, newest first.
+ * Shared by the usage recovery ({@link codexRolloutUsage}) and the model
+ * observation ({@link codexRolloutTurnModel}).
  * @param homeDir - the `codex` harness's scoped home.
  * @param locator - the thread id and/or the run's start-time window.
- * @returns the mapped last token_count usage, or undefined when nothing
- *   locates or the file holds no token_count (hard-killed before any turn
- *   boundary writes one).
+ * @returns the located file path, or undefined when nothing locates.
  */
-export async function codexRolloutUsage(
+async function locateCodexRolloutFile(
   homeDir: string,
   locator: CodexRolloutUsageLocator,
-): Promise<TokenUsage | undefined> {
+): Promise<string | undefined> {
   const candidates: RolloutCandidate[] = []
   let years: string[]
   try {
@@ -385,9 +384,91 @@ export async function codexRolloutUsage(
       .sort((left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0))
     chosen = inWindow[0]
   }
-  if (chosen === undefined) return undefined
+  return chosen?.path
+}
+
+/**
+ * Recover the last `token_count` usage of ONE run's rollout file. The file is
+ * located by {@link locateCodexRolloutFile}; only its tail is read.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @param locator - the thread id and/or the run's start-time window.
+ * @returns the mapped last token_count usage, or undefined when nothing
+ *   locates or the file holds no token_count (hard-killed before any turn
+ *   boundary writes one).
+ */
+export async function codexRolloutUsage(
+  homeDir: string,
+  locator: CodexRolloutUsageLocator,
+): Promise<TokenUsage | undefined> {
+  const path = await locateCodexRolloutFile(homeDir, locator)
+  if (path === undefined) return undefined
   try {
-    return await rolloutFileTokenUsage(chosen.path)
+    return await rolloutFileTokenUsage(path)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * How far before the run's spawn moment a `turn_context` timestamp may sit and
+ * still count as THIS run's turn (sub-second ordering between the host's
+ * spawn clock and the CLI's own stamps).
+ */
+const ROLLOUT_CONTEXT_SLACK_MS = 2_000
+
+/**
+ * Read ONE run's model identifier from its rollout file: the LAST
+ * `turn_context` line whose top-level `timestamp` falls inside the run's
+ * window (`windowStart` onward) — the turn codex actually started for this
+ * round, so a resumed thread's earlier rounds' models are never misread, and
+ * a round killed mid-turn still observes the model it started with. A tail
+ * scan suffices (later turns append later lines); a torn final line is
+ * skipped. Absent when nothing locates, the window holds no turn_context
+ * (the round never started a turn), or the payload names no model — absence
+ * is recorded, never guessed.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @param locator - the thread id and/or the run's start-time window.
+ * @returns the observed model identifier, or undefined.
+ */
+export async function codexRolloutTurnModel(
+  homeDir: string,
+  locator: CodexRolloutUsageLocator,
+): Promise<string | undefined> {
+  const path = await locateCodexRolloutFile(homeDir, locator)
+  if (path === undefined) return undefined
+  const windowStart = locator.windowStart === undefined
+    ? undefined
+    : locator.windowStart - ROLLOUT_CONTEXT_SLACK_MS
+  try {
+    const handle = await open(path, 'r')
+    try {
+      const { size } = await handle.stat()
+      if (size === 0) return undefined
+      const tailLength = Math.min(TAIL_BYTES, size)
+      const buffer = Buffer.alloc(tailLength)
+      const { bytesRead } = await handle.read(buffer, 0, tailLength, size - tailLength)
+      let model: string | undefined
+      for (const raw of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
+        const line = raw.trim()
+        if (line === '') continue
+        let event: { type?: unknown; timestamp?: unknown; payload?: unknown }
+        try {
+          event = JSON.parse(line) as typeof event
+        } catch {
+          continue
+        }
+        if (event.type !== 'turn_context' || typeof event.payload !== 'object' || event.payload === null) continue
+        if (windowStart !== undefined) {
+          const stamped = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : undefined
+          if (stamped === undefined || !Number.isFinite(stamped) || stamped < windowStart) continue
+        }
+        const candidate = (event.payload as { model?: unknown }).model
+        if (typeof candidate === 'string' && candidate !== '') model = candidate
+      }
+      return model
+    } finally {
+      await handle.close()
+    }
   } catch {
     return undefined
   }

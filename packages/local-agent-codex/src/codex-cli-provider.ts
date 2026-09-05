@@ -33,12 +33,17 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import {
+  assertResumeCwdUnchanged,
+  delegationEnv,
+  resolveChildCwd,
+  subagentDelegationLabel,
+} from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
-import { codexRolloutUsage, usageFromCodex } from './records.ts'
+import { codexRolloutUsage, codexRolloutTurnModel, usageFromCodex } from './records.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
 // rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
@@ -165,25 +170,31 @@ export class CodexCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const parentCwd = request.parent.session.header.cwd
-    if (parentCwd === undefined) {
-      throw new Error('subagent-codex: the parent session has no working directory to run the CLI in')
-    }
     const homeDir = this.ctx.localAgent.homeDir('codex')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded thread inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
-    if (intent !== undefined && intent.kind === 'resume') {
-      return this.startCodexResume(request, intent, parentCwd, homeDir)
+    // The effective cwd: the caller's override (the staged intent's `cwd`,
+    // riding DelegationCallOptions.cwd) when present, else the parent
+    // session's workspace — the behavior before overrides existed.
+    const cwd = resolveChildCwd(request.parent.session.header.cwd, intent?.cwd)
+    if (cwd === undefined) {
+      throw new Error('subagent-codex: the parent session has no working directory to run the CLI in')
     }
-    return this.startCodexFresh(request, parentCwd, homeDir)
+    if (intent !== undefined && intent.kind === 'resume') {
+      // A CLI session continues in the directory its first round ran in; a
+      // round resolving elsewhere is rejected before any process spawns.
+      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-codex')
+      return this.startCodexResume(request, intent, cwd, homeDir)
+    }
+    return this.startCodexFresh(request, cwd, homeDir)
   }
 
   /** Fresh round: record the child session, spawn `codex exec`, append after settle. */
   private async startCodexFresh(
     request: ResolvedSubagentStartRequest,
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
@@ -195,7 +206,7 @@ export class CodexCliProvider implements SubagentProvider {
       }
       childSession = sessions.create(runId, {
         meta: {
-          cwd: parentCwd,
+          cwd,
           parentSession: request.parent.session.id,
           origin: 'subagent',
           delegationDepth: (request.parent.session.header.delegationDepth ?? 0) + 1,
@@ -223,7 +234,7 @@ export class CodexCliProvider implements SubagentProvider {
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
-          cwd: parentCwd,
+          cwd,
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
@@ -235,6 +246,9 @@ export class CodexCliProvider implements SubagentProvider {
               provider: this.name,
               parentSessionId: request.parent.session.id,
               cliSessionId: threadId,
+              // The round's resolved working directory anchors the
+              // resume-consistency check.
+              cwd,
             })
           },
         })
@@ -248,7 +262,7 @@ export class CodexCliProvider implements SubagentProvider {
     const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startCodexCliRun(request, {
-        cwd: parentCwd,
+        cwd,
         env: delegationEnv({ CODEX_HOME: homeDir }),
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
@@ -271,7 +285,15 @@ export class CodexCliProvider implements SubagentProvider {
             provider: this.name,
             parentSessionId: request.parent.session.id,
             cliSessionId: threadId,
+            // The round's resolved working directory anchors the
+            // resume-consistency check.
+            cwd,
           })
+        },
+        // Every settled round reports its observed model and usage through the
+        // registry's observation channel (record merge + `settled` event).
+        onRoundSettled: (round) => {
+          this.ctx.localAgent.recordRoundSettled(runId, round)
         },
       })
       // The member-channel token dies with the run, whatever its stop reason.
@@ -287,7 +309,7 @@ export class CodexCliProvider implements SubagentProvider {
   private async startCodexResume(
     request: ResolvedSubagentStartRequest,
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
@@ -317,7 +339,7 @@ export class CodexCliProvider implements SubagentProvider {
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
-            cwd: parentCwd,
+            cwd,
             homeDir,
             childSession,
             parentSessionId: request.parent.session.id,
@@ -339,7 +361,7 @@ export class CodexCliProvider implements SubagentProvider {
       let run: SubagentRun
       try {
         run = await startCodexCliRun(request, {
-          cwd: parentCwd,
+          cwd,
           env: delegationEnv({ CODEX_HOME: homeDir }),
           endpointLabel: baseUrl,
           sandbox: this.sandbox,
@@ -354,6 +376,11 @@ export class CodexCliProvider implements SubagentProvider {
           childSession,
           ctx: this.ctx,
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+          // Every settled round reports its observed model and usage through
+          // the registry's observation channel.
+          onRoundSettled: (round) => {
+            this.ctx.localAgent.recordRoundSettled(intent.childSessionId, round)
+          },
         })
       } catch (error) {
         member?.release()
@@ -424,6 +451,16 @@ export interface CodexCliRunSpec {
    * the delegation so a later resume round can continue the thread.
    */
   readonly onThreadId?: ((threadId: string | undefined) => void) | undefined
+  /**
+   * Called once per settled round, after the output stream has been fully
+   * parsed and mirrored: the round's observed model identifier and token
+   * usage, each absent when the stream (and the rollout fallback) yielded
+   * none. The provider wires this to the registry's observation channel
+   * (`recordRoundSettled` — the delegation record's `observedModel` merge and
+   * the `settled` run-progress event). Fires for fresh and resume rounds
+   * alike, on every terminal state.
+   */
+  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -471,6 +508,14 @@ interface CodexStreamFoldState {
   text: string | undefined
   usage: TokenUsage | undefined
   threadId: string | undefined
+  /**
+   * The model identifier the stream itself named (a `model` field on
+   * `thread.started` or `turn.completed`), when the CLI emits one. codex
+   * 0.144.0's exec stream carries none — the model then comes from the
+   * rollout's turn_context at settle — but the fold accepts it so a CLI that
+   * starts naming the model in the stream needs no parser change.
+   */
+  model: string | undefined
   /** Whether the stream's terminal `turn.completed` event was folded. */
   completed: boolean
 }
@@ -486,6 +531,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   if (line === '') return
   let event: {
     type?: string
+    model?: unknown
     item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string }
     usage?: unknown
     thread_id?: unknown
@@ -497,11 +543,13 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   }
   if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
     state.threadId = event.thread_id
+    if (typeof event.model === 'string' && event.model !== '') state.model = event.model
     return
   }
   if (event.type === 'turn.completed') {
     state.completed = true
     if (event.usage !== undefined) state.usage = usageFromCodex(event.usage)
+    if (typeof event.model === 'string' && event.model !== '') state.model = event.model
     return
   }
   if (event.type !== 'item.completed' || event.item === undefined) return
@@ -560,6 +608,7 @@ export class CodexStreamParser implements CodexStreamFoldState {
   text: string | undefined
   usage: TokenUsage | undefined
   threadId: string | undefined
+  model: string | undefined
   completed = false
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
@@ -574,28 +623,33 @@ export class CodexStreamParser implements CodexStreamFoldState {
 /**
  * Parse a `codex exec --json` NDJSON event stream into an ordered transcript
  * (thinking, agent text, tool/command activity in event order), plus the final
- * answer text, token usage, and the thread id a later resume round continues.
- * Item types covered: `reasoning` (thinking), `agent_message` (reply text),
- * `command_execution` (shell command with aggregated output), `web_search_call`,
- * and `function_call_output`. The last `agent_message` wins as the run output
- * (the final answer), and `turn.completed` carries the turn's usage. Malformed
- * lines are skipped.
+ * answer text, token usage, the thread id a later resume round continues, and
+ * the model identifier the stream named (usually absent — codex 0.144.0 does
+ * not put one on the wire; the settle path then reads the rollout's
+ * turn_context). Item types covered: `reasoning` (thinking), `agent_message`
+ * (reply text), `command_execution` (shell command with aggregated output),
+ * `web_search_call`, and `function_call_output`. The last `agent_message`
+ * wins as the run output (the final answer), and `turn.completed` carries the
+ * turn's usage. Malformed lines are skipped.
  * @param stream - the collected stdout NDJSON text.
- * @returns the ordered transcript, final answer text, usage, and thread id.
+ * @returns the ordered transcript, final answer text, usage, thread id, and
+ *   any stream-named model.
  */
 export function parseCodexJsonStream(stream: string): {
   lines: readonly CodexTranscriptLine[]
   text?: string
   usage?: TokenUsage
   threadId?: string
+  model?: string
 } {
-  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, completed: false }
+  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false }
   for (const raw of stream.split('\n')) foldCodexStreamLine(state, raw)
   return {
     lines: state.lines,
     ...state.text === undefined ? {} : { text: state.text },
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.threadId === undefined ? {} : { threadId: state.threadId },
+    ...state.model === undefined ? {} : { model: state.model },
   }
 }
 
@@ -1112,6 +1166,14 @@ async function appendCodexResponse(
  * The fallback is best-effort and silent: no rollout file, an unreadable
  * home, or a hard kill that wrote no token_count leaves the child without
  * usage, exactly as before.
+ *
+ * **Model observation**: the exec --json wire carries no model field (codex
+ * 0.144.0), so the run's model identifier is read from the located rollout
+ * file's LAST `turn_context` line whose timestamp falls inside this run's
+ * window — the turn codex actually started for this round. When the stream
+ * itself names a model (a future CLI), the stream wins. Absent on any miss;
+ * the observation rides {@link CodexCliRunSpec.onRoundSettled} along with the
+ * round's usage.
  * @param spec - the run spec carrying the child session and host context.
  * @param task - the one-shot task text (the user prompt).
  * @param turn - the round's turn number.
@@ -1132,23 +1194,33 @@ async function mirrorCodexAfterExit(
     if (spec.resume === undefined) spec.onThreadId?.(parsed.threadId)
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
-    // Nothing streamed at all (e.g. the CLI died before the first item): keep
-    // the pre-live-mirror behavior of recording nothing.
-    if (parsed.lines.length === 0 && !userMirrored) return
     // Non-completed terminal states (aborted/error) never emit turn.completed,
     // so parsed.usage is absent; recover this run's last token_count from its
     // rollout file (scoped home via the spawn env, located by thread id or
     // the run's start-time window). A completed run keeps its stream usage.
+    // The same located file names the run's model in its turn_context line.
     let usage = parsed.usage
-    if (usage === undefined) {
-      const homeDir = spec.env['CODEX_HOME']
-      if (homeDir !== undefined && homeDir !== '') {
-        usage = await codexRolloutUsage(homeDir, {
-          threadId: parsed.threadId,
-          windowStart: startedAtMs,
-        })
+    let observedModel = parsed.model
+    const homeDir = spec.env['CODEX_HOME']
+    if ((usage === undefined || observedModel === undefined) && homeDir !== undefined && homeDir !== '') {
+      const locator = { threadId: parsed.threadId, windowStart: startedAtMs }
+      if (usage === undefined) {
+        usage = await codexRolloutUsage(homeDir, locator)
+      }
+      if (observedModel === undefined) {
+        observedModel = await codexRolloutTurnModel(homeDir, locator)
       }
     }
+    // The round's settled observation rides out even when nothing streamed:
+    // an empty stream is still a settled round, and the rollout may already
+    // name the model and the spend.
+    spec.onRoundSettled?.({
+      ...observedModel === undefined ? {} : { observedModel },
+      ...usage === undefined ? {} : { usage },
+    })
+    // Nothing streamed at all (e.g. the CLI died before the first item): keep
+    // the pre-live-mirror behavior of recording nothing.
+    if (parsed.lines.length === 0 && !userMirrored) return
     await appendCodexResponse(spec, task, turn, {
       lines: parsed.lines,
       output: collectOutputBlocks(parsed.text),

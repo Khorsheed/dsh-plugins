@@ -350,6 +350,8 @@ describe('claude-cli-provider resume round', () => {
         cliSessionId: 's1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
     } as never)
@@ -397,6 +399,8 @@ describe('claude-cli-provider resume round', () => {
         cliSessionId: 's1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
     } as never)
@@ -436,6 +440,8 @@ describe('claude-cli-provider resume lock', () => {
         cliSessionId: 's1',
       }),
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       acquireResumeLock: (childSessionId: string) => {
         if (locked !== undefined) return false
         locked = childSessionId
@@ -591,5 +597,140 @@ describe('claude-cli-provider abort path', () => {
     const calls = child.events.filter(event => event.type === 'tool/call')
     expect(calls[0]!.data).toMatchObject({ name: 'Bash', arguments: 'echo hi' })
     await hanging.done
+  })
+})
+
+/** A stub child that emits a CUSTOM stream-json stream then exits 0. */
+function stubChildWith(stream: string): SubprocessHandle {
+  const stdout = new Readable({ read() {} })
+  stdout.push(stream + '\n')
+  stdout.push(null)
+  const stderr = new Readable({ read() {} })
+  stderr.push('')
+  stderr.push(null)
+  return {
+    pid: 4245,
+    stdin: undefined,
+    stdout,
+    stderr,
+    collected: {
+      stdout: { readFrom: () => ({ text: stream + '\n', nextOffset: 0, lossy: false }) },
+      stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+    },
+    done: new Promise((resolve) => { setImmediate(() => { resolve({ exitCode: 0, signal: null }) }) }),
+    terminate: () => undefined,
+    waitForExit: async () => true,
+  }
+}
+
+describe('claude-cli-provider observed model and cwd', () => {
+  const OBS_REQUEST = {
+    label: '任务',
+    prompt: [{ type: 'text', text: '建个文件' }],
+    parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
+    signal: new AbortController().signal,
+    descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '任务' },
+  } as unknown as Parameters<ClaudeCliProvider['start']>[0]
+
+  /** The init event names the model on the real 2.x wire. */
+  const INIT_STREAM = [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 's-obs', model: 'claude-opus-5[1m]' }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } }),
+    JSON.stringify({ type: 'result', is_error: false, session_id: 's-obs', usage: { input_tokens: 2, output_tokens: 5 } }),
+  ].join('\n')
+
+  /** The old fixture shape: init names no model. */
+  const PLAIN_STREAM = [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 's-obs' }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } }),
+    JSON.stringify({ type: 'result', is_error: false, session_id: 's-obs', usage: { input_tokens: 2, output_tokens: 5 } }),
+  ].join('\n')
+
+  async function mountObserved(options: { stream: string; intent?: unknown; recorded?: Record<string, unknown> | undefined }) {
+    const ctx = new Context()
+    const records = vi.fn()
+    const settled = vi.fn()
+    const spawnSpecs: { argv: readonly string[]; cwd: string }[] = []
+    const liveChild = Session.create(SessionId('child-1'))
+    liveChild.append('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'claude-local', label: '任务' })
+    liveChild.append('turn/start', { turn: 1 })
+    liveChild.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.provide('sessions', {
+      create: (id: SessionId) => Session.create(id),
+      get: (id: SessionId) => (id === SessionId('child-1') ? liveChild : undefined),
+    } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/claude-home',
+      get: () => ({ displayName: 'Claude Code' }),
+      takeDelegationIntent: () => options.intent,
+      recordDelegation: records,
+      getDelegation: () => options.recorded,
+      recordRoundSettled: settled,
+      acquireResumeLock: () => true,
+      releaseResumeLock: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
+    ctx.provide('subprocess', {
+      spawn: (spec: { argv: readonly string[]; cwd: string }) => {
+        spawnSpecs.push(spec)
+        return stubChildWith(options.stream)
+      },
+    } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+    return { provider: new ClaudeCliProvider(ctx), records, settled, spawnSpecs }
+  }
+
+  it('records the init-named model and the round usage on settle', async () => {
+    const { provider, settled } = await mountObserved({ stream: INIT_STREAM })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // The model comes verbatim from the stream's system/init event — the
+    // context-variant suffix included.
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'claude-opus-5[1m]',
+      usage: { inputTokens: 2, outputTokens: 5 },
+    })
+  })
+
+  it('leaves observedModel absent when the stream names no model', async () => {
+    const { provider, settled } = await mountObserved({ stream: PLAIN_STREAM })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 2, outputTokens: 5 } })
+  })
+
+  it('spawns the fresh round in the staged cwd override and records it', async () => {
+    const { provider, records, spawnSpecs } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'fresh', cwd: '/cell-a' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/cell-a')
+    await vi.waitFor(() => { expect(records).toHaveBeenCalled() })
+    expect(records.mock.calls[0]?.[0]).toMatchObject({ cliSessionId: 's-obs', cwd: '/cell-a' })
+  })
+
+  it('rejects a resume whose cwd differs from the recorded first-round cwd', async () => {
+    const { provider } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 's1', cwd: '/elsewhere' },
+      recorded: { childSessionId: 'child-1', provider: 'claude-local', parentSessionId: 'parent-1', cliSessionId: 's1', cwd: '/tmp' },
+    })
+    await expect(provider.start(OBS_REQUEST)).rejects.toThrow(/differs from the first round's/)
+  })
+
+  it('accepts a resume repeating the recorded first-round cwd', async () => {
+    const { provider, spawnSpecs } = await mountObserved({
+      stream: PLAIN_STREAM,
+      intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 's1', cwd: '/tmp' },
+      recorded: { childSessionId: 'child-1', provider: 'claude-local', parentSessionId: 'parent-1', cliSessionId: 's1', cwd: '/tmp' },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    expect(spawnSpecs[0]?.cwd).toBe('/tmp')
   })
 })

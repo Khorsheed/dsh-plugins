@@ -6,6 +6,8 @@
  * @module @khorsheed/dsh-local-agent/types
  */
 
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+
 /** One session record a harness's records adapter lists. */
 export interface LocalAgentSessionRecord {
   /** Harness session id. */
@@ -155,8 +157,28 @@ export interface LocalAgentDelegationRecord {
   provider: string
   /** The delegating parent session id that created the child. */
   parentSessionId: string
-  /** The CLI's own session/thread id, used to build the resume command. */
+  /**
+   * The CLI's own session/thread id, used to build the resume command.
+   */
   cliSessionId: string
+  /**
+   * The resolved working directory the FIRST round ran in — the anchor the
+   * resume-consistency check compares a later round's effective cwd against.
+   * Recorded by the provider at the delegation's first-round record point;
+   * absent on records written before the field existed (they opt out of the
+   * check rather than guess).
+   */
+  cwd?: string
+  /**
+   * The model identifier the provider observed in its own output stream for
+   * the latest settled round (claude's stream-json init, codex's rollout
+   * turn_context, kimi's wire usage/request records, the sub-dsh session's
+   * assistant source). Read back verbatim, never guessed: absent when the
+   * stream yielded none. This is the observed half of the evaluation's
+   * "declared model == actually-run model" check (web-eval frozen decision
+   * 5); it never enters any prompt or model-visible face.
+   */
+  observedModel?: string
   /**
    * Kimi transcript lines already mirrored into the child session. The kimi
    * provider advances this after every round so a resumed round mirrors only
@@ -164,6 +186,15 @@ export interface LocalAgentDelegationRecord {
    */
   kimiMirroredLines?: number
 }
+
+/**
+ * One delegation's record WITHOUT the CLI-session resume handle — the
+ * read-only projection {@link LocalAgentRegistry.delegationOf} returns for
+ * surfaces that need a delegation's facts (provider, parent, observed model,
+ * first-round cwd) but must never see the resume handle, which stays a
+ * first-class parameter plus the intent channel.
+ */
+export type LocalAgentDelegationInfo = Omit<LocalAgentDelegationRecord, 'cliSessionId'>
 
 /**
  * The member-channel view of one delegation, projected by the gateway's
@@ -277,13 +308,27 @@ export interface LocalAgentMemberRun {
  * under parallel delegation.
  */
 export type LocalAgentDelegationIntent =
-  | { readonly kind: 'fresh' }
+  | {
+    readonly kind: 'fresh'
+    /**
+     * The working directory the round's CLI process runs in, when the caller
+     * supplied one (the `cwd` call option riding the staged intent). Absent
+     * means the provider's default — the parent session's cwd.
+     */
+    readonly cwd?: string
+  }
   | {
     readonly kind: 'resume'
     /** The dsh child session id to continue (the resume handle). */
     readonly childSessionId: string
     /** The CLI session id the resume command continues. */
     readonly cliSessionId: string
+    /**
+     * The working directory the caller asks the resume round to run in, when
+     * supplied. The provider compares it (or the parent-session default)
+     * against the recorded first-round cwd and fails loud on a mismatch.
+     */
+    readonly cwd?: string
   }
 
 /**
@@ -308,6 +353,18 @@ export type LocalAgentRunProgress =
     readonly kind: 'delta'
     /** A live transcript increment (M3; not yet emitted by any provider). */
     readonly text: string
+  }
+  | {
+    readonly kind: 'settled'
+    /**
+     * The model identifier the provider observed in its own output stream for
+     * this round, when the stream carried one — absent otherwise, never
+     * guessed. The observed half of the evaluation's declared-vs-run model
+     * check; never enters any prompt or model-visible face.
+     */
+    readonly observedModel?: string
+    /** The settled round's token usage, when the harness reported one. */
+    readonly usage?: TokenUsage
   }
 
 /**
@@ -339,4 +396,14 @@ export interface DelegationCallOptions {
    * pre-facade behavior — leaving the absent session untouched.
    */
   readonly reattach?: boolean
+  /**
+   * The working directory the CLI round runs in. On a fresh delegation it
+   * replaces the parent session's cwd (the `resolveChildCwd` override — an
+   * orchestrator giving each cell its own directory); on a resume it must
+   * match the first round's recorded cwd or the call fails loud, since the
+   * CLI conversation continues in the directory its earlier rounds ran in.
+   * Absent everywhere means the parent session's cwd — the behavior before
+   * this option existed, unchanged.
+   */
+  readonly cwd?: string
 }

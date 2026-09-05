@@ -13,7 +13,7 @@ The Kimi Code harness of the local-agent family: every agent preset gains a `sub
 - **Device-code login** — `/kimi login` shows the auth URL in the session; `/kimi logout` clears scoped credentials for a fresh account.
 - **Resumable delegations** — pass back the self-described `resume` handle to continue the same Kimi session, with real per-round usage and timing.
 - **Session records + settings UI** — `/kimi sessions` lists your delegations; Settings → 本地 Agent shows auth status and the current workspace's sessions.
-
+- **Model readback and per-cell working directory** — every settled round reads back the model from the wire.jsonl usage/request records into the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 ## Install
 
 Requires a running dsh profile and the Kimi Code CLI (`kimi`) on `PATH` — the plugin installs neither and never logs in on your behalf.
@@ -81,6 +81,8 @@ Plugin config of its own (optional, in the profile patch layer):
 **Mounting.** The bundle patch registers the `kimi` harness and mounts the `subagent_kimi` tool at the profile root; the `kimi-cli` one-shot provider spawns `kimi -p` under the scoped home. The family core (`local-agent` row, shared scoped-homes root) ships in `@khorsheed/dsh-local-agent`'s own patch, declared here as a dependency; the browser settings section ships with the family core's `./client` half.
 
 **Session records.** `/kimi sessions` lists the scoped home's `session_index.jsonl` — this harness's delegations, never the user's personal sessions. The settings section renders the same list narrowed to records whose `workDir` matches the current session's cwd, and keeps re-probing auth status while a login is pending.
+
+**Model readback and the cwd override.** After every settled round the provider reports the actual model from the wire.jsonl `usage.record` (falling back to `llm.request`) events' `model` field — last one seen, since a resumed session's later rounds append later records — through the `settled` run-progress event, and merges it into the delegation record's `observedModel` field; absence is recorded, never guessed. An orchestrator may also pass a per-round working directory through the facade's `DelegationCallOptions.cwd` (recorded as the record's `cwd`); when a resume round resolves to a different directory than the recorded first round, it fails loud before any process spawns — a CLI session continues in the directory its first round ran in.
 
 **Resume.** A fresh delegation's result text self-describes the handle (`追问请带 resume="<childSessionId>"`); passing it back as the tool's optional `resume` parameter continues the same kimi session (`kimi -S session_<id> -p`) inside the same dsh child session. The handle never rides the prompt: it is resolved through the `localAgent` delegation registry only for the same parent session and provider that recorded the delegation — a forged handle is rejected before any CLI process starts.
 

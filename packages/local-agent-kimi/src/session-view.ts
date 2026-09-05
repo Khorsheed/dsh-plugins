@@ -46,6 +46,13 @@ export interface KimiSessionTranscript {
    * whose position falls inside the delta it appends.
    */
   usageRecords: readonly { readonly line: number; readonly usage: TokenUsage }[]
+  /**
+   * The model identifier the wire named: the `model` field of a `usage.record`
+   * or `llm.request` event, LAST one seen (a resumed session's later rounds
+   * append later records, so the last record is the latest round's). Absent
+   * when the wire named none — older kimi releases omit it.
+   */
+  model?: string
 }
 
 /** The wire event log path for a session directory. */
@@ -117,6 +124,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage }[] = []
+  let model: string | undefined
   // Wire turns are 0-based on loop events; a `turn.prompt` also opens a new
   // round. The transcript uses 1-based turns matching the dsh child session's
   // turn/start numbering.
@@ -145,8 +153,17 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       continue
     }
     if (event.type === 'usage.record') {
+      // The record's own `model` field is the observed model identifier
+      // (verified against kimi 0.39.x wires); the `llm.request` fallback
+      // below covers wires whose usage records omit it. Last one seen wins:
+      // a resumed session's later rounds append later records.
+      if (typeof event.model === 'string' && event.model !== '') model = event.model
       const usage = usageFromWire(event.usage)
       if (usage !== undefined) usageRecords.push({ line: lines.length, usage })
+      continue
+    }
+    if (event.type === 'llm.request') {
+      if (typeof event.model === 'string' && event.model !== '') model = event.model
       continue
     }
     if (event.type === 'turn.prompt') {
@@ -248,7 +265,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       }
     }
   }
-  return { sessionId, lines, usageRecords }
+  return { sessionId, lines, usageRecords, ...model === undefined ? {} : { model } }
 }
 
 /**
@@ -307,6 +324,28 @@ export function sumUsageRecords(
   if (cacheRead > 0) usage.cacheReadTokens = cacheRead
   if (cacheWrite > 0) usage.cacheWriteTokens = cacheWrite
   return usage
+}
+
+/**
+ * Merge two usage windows into one running total — the delegation run's
+ * per-round accumulator: each mirror pass (live poll, settle) returns its
+ * own window's accounting, and the disjoint windows sum to the round's
+ * total. `undefined` operands pass through, so callers accumulate without
+ * absence checks.
+ * @param left - the running total, or undefined before the first window.
+ * @param right - the next window's usage, or undefined when it had none.
+ * @returns the merged total, or undefined when both operands are absent.
+ */
+export function addTokenUsage(
+  left: TokenUsage | undefined,
+  right: TokenUsage | undefined,
+): TokenUsage | undefined {
+  if (left === undefined) return right
+  if (right === undefined) return left
+  return sumUsageRecords([
+    { line: 0, usage: left },
+    { line: 0, usage: right },
+  ])
 }
 
 /** Render a transcript as command-reply text. */

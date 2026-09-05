@@ -27,13 +27,14 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
+  LocalAgentDelegationInfo,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentEffectiveSettings,
@@ -54,6 +55,7 @@ export const inject = ['commands']
 
 export type {
   DelegationCallOptions,
+  LocalAgentDelegationInfo,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentDelegationView,
@@ -323,6 +325,8 @@ function parseDelegationLine(
   if (typeof parentSessionId !== 'string' || parentSessionId === '') return undefined
   if (typeof cliSessionId !== 'string' || cliSessionId === '') return undefined
   const kimiMirroredLines = record['kimiMirroredLines']
+  const observedModel = record['observedModel']
+  const cwd = record['cwd']
   return {
     childSessionId,
     provider,
@@ -331,6 +335,55 @@ function parseDelegationLine(
     ...typeof kimiMirroredLines === 'number' && Number.isFinite(kimiMirroredLines)
       ? { kimiMirroredLines }
       : {},
+    // Optional observations: records written before the fields existed (and
+    // lines that never observed them) load unchanged — absence stays absence.
+    ...typeof observedModel === 'string' && observedModel !== '' ? { observedModel } : {},
+    ...typeof cwd === 'string' && cwd !== '' ? { cwd } : {},
+  }
+}
+
+/**
+ * Resolve the working directory one CLI delegation round runs in: the caller's
+ * override when supplied (the {@link DelegationCallOptions.cwd} position —
+ * an orchestrator giving each evaluation cell its own directory), otherwise
+ * the parent session's cwd. Returns `undefined` when neither is present — the
+ * caller fails loud on that, exactly as it did before overrides existed.
+ * Named after the seam the official ACP provider uses for the same override;
+ * the future container-workdir layer (web-eval I3) lands here too.
+ * @param parentCwd - the parent session's cwd, when the session has one.
+ * @param override - the caller-supplied cwd, when one was passed.
+ * @returns the effective cwd, or undefined when neither source has one.
+ */
+export function resolveChildCwd(
+  parentCwd: string | undefined,
+  override: string | undefined,
+): string | undefined {
+  if (override !== undefined && override !== '') return override
+  return parentCwd
+}
+
+/**
+ * Enforce the resume-cwd consistency rule: a CLI session continues in the
+ * directory its earlier rounds ran in, so a round whose effective cwd differs
+ * from the recorded first-round cwd is rejected instead of resuming the
+ * conversation somewhere else. Records written before the `cwd` field existed
+ * carry no anchor and opt out — absence is the honest state, never a guess.
+ * @param record - the delegation's persisted record, when one exists.
+ * @param effectiveCwd - the round's resolved working directory.
+ * @param provider - the provider name, for the error message.
+ * @throws when the record anchors a different first-round cwd.
+ */
+export function assertResumeCwdUnchanged(
+  record: LocalAgentDelegationRecord | undefined,
+  effectiveCwd: string,
+  provider: string,
+): void {
+  if (record?.cwd === undefined) return
+  if (record.cwd !== effectiveCwd) {
+    throw new Error(
+      `${provider}: resume cwd ${effectiveCwd} differs from the first round's ${record.cwd}; `
+      + `a CLI session continues in the directory its earlier rounds ran in — repeat the first round's cwd`,
+    )
   }
 }
 
@@ -844,6 +897,56 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Read-only lookup of one delegation's facts by its dsh child session id,
+   * WITHOUT the CLI-session resume handle — the orchestrator-facing read side
+   * (the evaluation reads a cell's recorded `observedModel` and first-round
+   * `cwd` through it). Same never-throws contract as
+   * {@link getDelegation}; the record's optional fields stay absent when the
+   * stream never yielded them.
+   * @param childSessionId - the dsh child session id.
+   * @returns the record without `cliSessionId`, or undefined when this child
+   *   was never delegated through the family.
+   */
+  delegationOf(childSessionId: string): LocalAgentDelegationInfo | undefined {
+    const record = this.delegations.get(childSessionId)
+    if (record === undefined) return undefined
+    const { cliSessionId: _resumeHandle, ...info } = record
+    return info
+  }
+
+  /**
+   * Record one delegation round's settled observation: merge `observedModel`
+   * into the delegation record when present (in memory and `delegations.jsonl`,
+   * same replace semantics as {@link recordDelegation}) and report the
+   * `settled` run-progress event with the round's observed model and usage.
+   * Providers call it once per settled round, at the point their output
+   * stream has been fully parsed; fields the stream did not yield stay absent
+   * — absence is recorded, never guessed. A record that does not exist yet
+   * (the round failed before the CLI session was learned) is skipped for the
+   * merge; the event still reports.
+   * @param childSessionId - the dsh child session id of the settled round.
+   * @param round - the round's observed model and/or usage, either optional.
+   */
+  recordRoundSettled(
+    childSessionId: string,
+    round: { readonly observedModel?: string; readonly usage?: TokenUsage },
+  ): void {
+    if (round.observedModel !== undefined) {
+      const record = this.delegations.get(childSessionId)
+      if (record !== undefined) {
+        const updated = { ...record, observedModel: round.observedModel }
+        this.delegations.set(childSessionId, updated)
+        this.persistDelegation(updated)
+      }
+    }
+    this.reportRunProgress(childSessionId, {
+      kind: 'settled',
+      ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
+      ...round.usage === undefined ? {} : { usage: round.usage },
+    })
+  }
+
+  /**
    * Acquire the resume lock for one child session. A dsh child session may
    * have only one in-flight resume: the provider takes the lock before
    * spawning the resume CLI and releases it when the run settles, so a second
@@ -982,7 +1085,13 @@ export class LocalAgentRegistry {
     const subagents = this.requireSubagents()
     this.requireProvider(subagents, provider)
     const parent = this.requireLiveParent(parentSessionId)
-    const intent: LocalAgentDelegationIntent = { kind: 'fresh' }
+    // The cwd override rides the staged intent, not the host seam (the
+    // SubagentStartRequest contract has no cwd field and must not grow one):
+    // the provider consumes it as the resolveChildCwd override.
+    const intent: LocalAgentDelegationIntent = {
+      kind: 'fresh',
+      ...options?.cwd === undefined ? {} : { cwd: options.cwd },
+    }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
     let run: SubagentRun
@@ -1087,7 +1196,15 @@ export class LocalAgentRegistry {
     } else {
       await this.reattachChildSession(childSessionId)
     }
-    const intent: LocalAgentDelegationIntent = { kind: 'resume', childSessionId, cliSessionId }
+    // The cwd override rides the staged intent (see start): the provider
+    // compares the round's effective cwd against the recorded first-round one
+    // and fails loud on a mismatch.
+    const intent: LocalAgentDelegationIntent = {
+      kind: 'resume',
+      childSessionId,
+      cliSessionId,
+      ...options?.cwd === undefined ? {} : { cwd: options.cwd },
+    }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
     let run: SubagentRun

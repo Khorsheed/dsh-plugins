@@ -545,3 +545,81 @@ describe('LocalAgentRegistry delegation facade', () => {
     })
   })
 })
+
+describe('delegation cwd option and observation read side', () => {
+  it('rides the cwd override into the staged fresh and resume intents', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a' })
+
+    h.registry.recordDelegation({
+      childSessionId: 'child-cwd', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-1', cwd: '/cell-a',
+    })
+    await h.registry.resume(PARENT, PROVIDER, 'child-cwd', PROMPT, { cwd: '/cell-a' })
+    expect(h.consumed[1]).toEqual({
+      kind: 'resume', childSessionId: 'child-cwd', cliSessionId: 'cli-1', cwd: '/cell-a',
+    })
+  })
+
+  it('stages no cwd when the option is absent — the default intent is unchanged', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT)
+    expect(h.consumed[0]).toEqual({ kind: 'fresh' })
+    expectNothingStaged(h.registry)
+  })
+
+  it('delegationOf projects the record without the CLI-session resume handle', async () => {
+    const h = await mountFacade()
+    h.registry.recordDelegation({
+      childSessionId: 'child-obs', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-2',
+      cwd: '/cell-b', observedModel: 'gpt-5.6-sol',
+    })
+    expect(h.registry.delegationOf('child-obs')).toEqual({
+      childSessionId: 'child-obs',
+      provider: PROVIDER,
+      parentSessionId: PARENT,
+      cwd: '/cell-b',
+      observedModel: 'gpt-5.6-sol',
+    })
+    // Absent observations stay absent, and unknown children return undefined.
+    h.registry.recordDelegation({
+      childSessionId: 'child-bare', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-3',
+    })
+    expect(h.registry.delegationOf('child-bare')).toEqual({
+      childSessionId: 'child-bare', provider: PROVIDER, parentSessionId: PARENT,
+    })
+    expect(h.registry.delegationOf('nope')).toBeUndefined()
+  })
+
+  it('recordRoundSettled merges observedModel into the record and reports the settled event', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    h.registry.recordDelegation({
+      childSessionId: 'child-obs', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-9',
+    })
+    const cordisEvents: [string, LocalAgentRunProgress][] = []
+    h.ctx.on('localAgent/run-progress', (id, progress) => { cordisEvents.push([id, progress]) })
+
+    h.registry.recordRoundSettled('child-obs', {
+      observedModel: 'gpt-5.6-sol', usage: { inputTokens: 10, outputTokens: 4 },
+    })
+    expect(h.registry.delegationOf('child-obs')?.observedModel).toBe('gpt-5.6-sol')
+    expect(cordisEvents.at(-1)).toEqual([
+      'child-obs',
+      { kind: 'settled', observedModel: 'gpt-5.6-sol', usage: { inputTokens: 10, outputTokens: 4 } },
+    ])
+
+    // Absent fields stay absent — no keys, never guesses. A later round with
+    // no model leaves the earlier observation standing.
+    h.registry.recordRoundSettled('child-obs', {})
+    expect(cordisEvents.at(-1)).toEqual(['child-obs', { kind: 'settled' }])
+    expect(h.registry.delegationOf('child-obs')?.observedModel).toBe('gpt-5.6-sol')
+
+    // An unknown child has nothing to merge, but the event still reports.
+    expect(() => h.registry.recordRoundSettled('child-unknown', { observedModel: 'm' })).not.toThrow()
+    expect(h.registry.delegationOf('child-unknown')).toBeUndefined()
+    expect(cordisEvents.at(-1)).toEqual(['child-unknown', { kind: 'settled', observedModel: 'm' }])
+  })
+})

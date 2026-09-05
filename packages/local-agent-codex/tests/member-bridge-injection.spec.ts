@@ -48,6 +48,8 @@ describe('codex-cli-provider member bridge injection', () => {
       get: () => ({ displayName: 'Codex' }),
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       reportRunProgress: () => {},
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
       bindMemberRunPid: vi.fn(),

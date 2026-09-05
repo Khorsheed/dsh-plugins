@@ -44,6 +44,8 @@ describe('dsh-cli-provider member bridge injection', () => {
       get: () => undefined,
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       reportRunProgress: () => {},
       registerMemberRun: vi.fn(() => 'token-xyz-1234'),
       bindMemberRunPid: vi.fn(),
@@ -142,6 +144,8 @@ describe('dsh-cli-provider member bridge injection', () => {
       get: () => undefined,
       takeDelegationIntent: () => undefined,
       recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
       reportRunProgress: () => {},
     })
     const provider = new DshCliProvider(ctx, {})

@@ -30,7 +30,12 @@ import {
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, subagentDelegationLabel } from '@khorsheed/dsh-local-agent'
+import {
+  assertResumeCwdUnchanged,
+  delegationEnv,
+  resolveChildCwd,
+  subagentDelegationLabel,
+} from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
@@ -147,25 +152,31 @@ export class DshCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const parentCwd = request.parent.session.header.cwd
-    if (parentCwd === undefined) {
-      throw new Error('subagent-dsh: the parent session has no working directory to run the CLI in')
-    }
     const homeDir = this.ctx.localAgent.homeDir('dsh')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded sub-dsh session inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
-    if (intent !== undefined && intent.kind === 'resume') {
-      return this.startDshResume(request, intent, parentCwd, homeDir)
+    // The effective cwd: the caller's override (the staged intent's `cwd`,
+    // riding DelegationCallOptions.cwd) when present, else the parent
+    // session's workspace — the behavior before overrides existed.
+    const cwd = resolveChildCwd(request.parent.session.header.cwd, intent?.cwd)
+    if (cwd === undefined) {
+      throw new Error('subagent-dsh: the parent session has no working directory to run the CLI in')
     }
-    return this.startDshFresh(request, parentCwd, homeDir)
+    if (intent !== undefined && intent.kind === 'resume') {
+      // A CLI session continues in the directory its first round ran in; a
+      // round resolving elsewhere is rejected before any process spawns.
+      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-dsh')
+      return this.startDshResume(request, intent, cwd, homeDir)
+    }
+    return this.startDshFresh(request, cwd, homeDir)
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
   private async startDshFresh(
     request: ResolvedSubagentStartRequest,
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
@@ -179,7 +190,7 @@ export class DshCliProvider implements SubagentProvider {
       }
       childSession = sessions.create(runId, {
         meta: {
-          cwd: parentCwd,
+          cwd,
           parentSession: request.parent.session.id,
           origin: 'subagent',
           delegationDepth: (request.parent.session.header.delegationDepth ?? 0) + 1,
@@ -208,6 +219,9 @@ export class DshCliProvider implements SubagentProvider {
       provider: this.name,
       parentSessionId: request.parent.session.id,
       cliSessionId: runId,
+      // The round's resolved working directory anchors the
+      // resume-consistency check.
+      cwd,
     })
     // Live driver: the round goes to the resident serve process (one per
     // member). A channel that fails at spawn/handshake marks itself broken and
@@ -218,7 +232,7 @@ export class DshCliProvider implements SubagentProvider {
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
-          cwd: parentCwd,
+          cwd,
           homeDir,
           childSession,
           sessionId: runId,
@@ -235,7 +249,7 @@ export class DshCliProvider implements SubagentProvider {
     const member = this.memberRun(runId, request.parent.session.id)
     try {
       const run = await startDshCliRun(request, {
-        cwd: parentCwd,
+        cwd,
         homeDir,
         childSession,
         sessionId: runId,
@@ -258,7 +272,7 @@ export class DshCliProvider implements SubagentProvider {
   private async startDshResume(
     request: ResolvedSubagentStartRequest,
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
-    parentCwd: string,
+    cwd: string,
     homeDir: string,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
@@ -286,7 +300,7 @@ export class DshCliProvider implements SubagentProvider {
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
-            cwd: parentCwd,
+            cwd,
             homeDir,
             childSession,
             sessionId: intent.cliSessionId,
@@ -308,7 +322,7 @@ export class DshCliProvider implements SubagentProvider {
       const member = this.memberRun(intent.childSessionId, request.parent.session.id)
       try {
         const run = await startDshCliRun(request, {
-          cwd: parentCwd,
+          cwd,
           homeDir,
           childSession,
           sessionId: intent.cliSessionId,
@@ -498,6 +512,16 @@ export async function startDshCliRun(
       localAgent.reportRunProgress(childSession.id, { kind: 'delta', text })
     }
     localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
+    if (alwaysReport) {
+      // The settle pass also reports the round's settled observation — the
+      // sub-dsh session's own model attribution and the round's token usage —
+      // through the registry's observation channel: the delegation record's
+      // `observedModel` merge plus the `settled` run-progress event.
+      localAgent.recordRoundSettled(childSession.id, {
+        ...delta.observedModel === undefined ? {} : { observedModel: delta.observedModel },
+        ...delta.usage === undefined ? {} : { usage: delta.usage },
+      })
+    }
   }
   if (spec.childSession !== undefined) {
     const childSession = spec.childSession
