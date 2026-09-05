@@ -25,17 +25,17 @@
 | 能力项 | 层 | 现状 | 落地 | 说明 |
 |---|---|---|---|---|
 | runCreate / lint / transition / submit / annotate / attest / retry / setRefs / addArtifact / addCheckpoint / isReleasable / get / runStatus | 服务面 | ✅ | — | 编排器的账本 |
-| `retry` 必须带 reason 与通用类别 | 服务面 + 工具 + CLI | ⬜ | I1 · T4 | 报告分开计数基础设施失败与结果失败 |
-| ns 完整性报告带 `writtenBy` | 导出 | ⬜ | I1 · T4 | `human-final` 若由 `tool:` 写入，报告标出 |
+| `retry` 必须带 reason 与通用类别 | 服务面 + 工具 + CLI | ✅ | I1 · T4 | 报告分开计数基础设施失败与结果失败 |
+| ns 完整性报告带 `writtenBy` | 导出 | ✅ | I1 · T4 | `human-final` 若由 `tool:` 写入，报告标出 |
 | 12 个 `mission_*` 工具 | 工具 | ✅ | — | eval 域只开 4 个读工具 |
 | 工具分组配置 `tools: all / read / none` | 配置 | ⬜ | I2 | 同 datasets |
 | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | CLI | ✅ | — | |
 | missions tab（队列、详情、重跑、释放检查、导出对话框） | UI | ✅ | — | 格子详情大半靠它 |
 | run.meta 承载 planSha / evalVersion / snapshot | 数据 | ✅ | — | meta 不透明，无需改 |
 | schema-check `inputFrom: run-meta` 钉快照 | guard | ✅ | — | 生成的模板在最早转移上用它 |
-| submit 预校验按意向边（G1） | 服务面 + 工具 + CLI | ⬜ | I1 · T4 | 现对当前态全部出边合取，分支状态机无法提交 |
-| file-check 目录项要求非空（G2） | guard | ⬜ | I1 · T4 | 现只查存在性，空目录放行 |
-| CLI 数据根环境变量缺省（G4） | CLI | ⬜ | I1 · T4 | 实例 patch 的 dataDir 对 CLI 不可见 |
+| submit 预校验按意向边（G1） | 服务面 + 工具 + CLI | ✅ | I1 · T4 | 现对当前态全部出边合取，分支状态机无法提交 |
+| file-check 目录项要求非空（G2） | guard | ✅ | I1 · T4 | 现只查存在性，空目录放行 |
+| CLI 数据根环境变量缺省（G4） | CLI | ✅ | I1 · T4 | 实例 patch 的 dataDir 对 CLI 不可见 |
 
 ### lab
 
@@ -54,13 +54,14 @@
 | start / resume / cancel 门面 | 服务面 | ✅ | — | 编排器委派用 |
 | exec / live 可配（live 默认关） | 配置 | ✅ | — | 冻结决策 2 |
 | codex `sandbox`、claude `permissionMode` 可配 | 配置 | ✅ | — | 冻结决策 3 |
-| kimi 推理强度可配（现写死 high） | 配置 | ⬜ | I1 · T3 | 冻结决策 4 |
-| `effectiveSettings(harness)` 只读快照 | 服务面 + status | ⬜ | I1 · T3 | condition 的取证来源，不含凭证 |
+| kimi 推理强度可配 | 配置 | ✅ | I1 · T3 | 冻结决策 4；默认仍为 high |
+| `effectiveSettings(harness)` 只读快照 | 服务面 + status | ✅ | I1 · T3 | condition 的取证来源，不含凭证 |
+| 已配置模型进 effectiveSettings 快照 | 服务面 + status | ⬜ | I1 · T3b | condition.model.declared 的就绪比对来源；只读不选 |
 | headless 不被 `plugin install` 挂进宿主 bundles（G3） | 打包 | ⬜ | I1 · T6 | 全新 profile boot 报 duplicate code-runtime |
 | 模型回读：从四家输出流记录实际模型 | 服务面 + 记录 | ⬜ | I2 | 冻结决策 5 的后半 |
 | 容器内 exec 包装，或 CLI 驱动抽成独立包 | 架构 | ⬜ | I3 | 二选一，I3 开头决定 |
 | 每次委派可覆盖 scoped home / 配置（每条件一个 home） | 服务面 | ⬜ | I4 | 同 harness 多条件的前提 |
-| 每 provider 的模型参数 | 服务面 | ⬜ | I4 | 冻结决策 5 的前半 |
+| 每 provider 的模型参数：首轮委派指定、成员内固定、resume 不换；provider 设置卡「默认模型」 | 服务面 + 工具 + UI | ⬜ | I4 · T24 | 冻结决策 5 的前半；dev 域直接受益；候选不硬编码目录 |
 | `subagent_<harness>` 工具 | 工具 | ✅ | — | 规划 agent 不需要 |
 | slash `status / login / records` | CLI | ✅ | — | |
 | 设置卡、成员 dock、成员续聊 | UI | ✅ | — | |
@@ -77,8 +78,8 @@
 
 | 能力项 | 层 | 现状 | 落地 | 说明 |
 |---|---|---|---|---|
-| 包骨架、`validatePlan`、`hashCondition`、就绪检查（对既有 home） | 服务面 | ⬜ | I1 · T2 | 三份 schema 同步进协议 |
-| `dsh-eval validate` / `conditions hash` | CLI | ⬜ | I1 · T2 | |
+| 包骨架、`validatePlan`、`hashCondition`、就绪检查（对既有 home） | 服务面 | ✅ | I1 · T2 | 三份 schema 同步进协议 |
+| `dsh-eval validate` / `conditions hash` | CLI | ✅ | I1 · T2 | |
 | `generateTemplate`：题集 manifest → run 模板 | 服务面 | ⬜ | I2 | 模板不再手写 |
 | run 循环 v0：阶段一二，宿主目录代替容器 | 服务面 + CLI | ⬜ | I2 | 探测四个上游，缺一即拒 |
 | 判官委派：去指纹 + 判官条件 + verdict 解析 | 服务面 | ⬜ | I2 | 判官 ≠ 选手，双采样 |
@@ -86,7 +87,7 @@
 | 只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status` | 工具 | ⬜ | I2 | 不开 run |
 | 容器路径：acquire / populate / checkpoint / verify / archive 交 lab | 服务面 | ⬜ | I3 | |
 | `conditions provision`：创建每条件 home 并回算哈希 | CLI + 服务面 | ⬜ | I4 | 依赖 local-agent 的 home 覆盖 |
-| 条件注册表数据面（Remote） | UI 数据 | ⬜ | I4 | |
+| 条件注册表数据面（Remote）：模型等因子只展示、可 diff，不给选 | UI 数据 | ⬜ | I4 · T25 | 选模型即新建 condition，走 provision 与批准 |
 | `eval-planning` skill | 引导 | ⬜ | I5 | |
 | 实验台 / 计划审阅 / 判官台 / 报告视图 | UI | ⬜ | I5 | client 半 |
 | 外部评测集适配脚本 | 脚本 | ⬜ | I6 | |
@@ -102,8 +103,8 @@
 | 独立 `$DSH_HOME` 的评测实例 | 运维 | ✅ | — | `docs/ops.md` 已有规程 |
 | 镜像仓 + agent 照 README 安装验证 | 分发 | ⬜ | I6 | |
 | 题库：P0 / F2 / F3 三层内容 | 数据 | ✅ | — | 私有仓库 |
-| 题库：bench 模板、stage schema JSON、题集级 `prompts/` | 数据 | ⬜ | I1 · T1 | |
-| 题库：`conditions/` 与 `plans/` 目录 | 数据 | ⬜ | I1 · T1 起 | |
+| 题库：bench 模板、stage schema JSON、题集级 `prompts/`；manifest 引用 schema 文件 | 数据 | ✅ | I1 · T1、T1b | |
+| 题库：`conditions/` 与 `plans/` 目录 | 数据 | ✅ | I1 · T1 | lock 文件待 I4 provision |
 | 题库：verify 探针脚本、题集级镜像验证、四家 Linux CLI | 数据 + 运维 | ⬜ | I3 | |
 
 ### 运行环境
@@ -134,19 +135,23 @@
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T1 ✅ | 运维 + 数据 | P0 × dsh × 阶段一二手工走通；bench 模板、stage schema、`prompts/`；操作手册更新；走通日志 | 无 | 题库 `i1-walk` @ `3173651`、`exports/i1-walk-bundle/`、`docs/i1-walk-log.md` |
-| T2 | 代码 | `packages/eval` 骨架；三份 schema 进协议；`validate` 与 `conditions hash`；哈希规则含拒绝清单 | 无 | 分支 `feat/eval-validate` |
-| T3 | 代码 | local-agent：kimi effort 可配；`effectiveSettings`；status 面附带快照 | 无 | 分支 `feat/local-agent-eval-pins` |
-| T4 | 代码 | mission：`retry` reason + 类别；ns 报告 `writtenBy`；G1 submit 按意向边；G2 目录非空；G4 数据根环境变量 | T1 | 分支 `feat/mission-retry-reason` |
+| T2 ✅ | 代码 | `packages/eval` 骨架；三份 schema 进协议；`validate` 与 `conditions hash`；哈希规则含拒绝清单 | 无 | 合入 main `094a46b`；越界的 ankh-guard 测试提交剥离到分支 `test/ankh-guard-supervise-load` 待 owner 评审 |
+| T3 ✅ | 代码 | local-agent：kimi effort 可配；`effectiveSettings`；status 面附带快照 | 无 | 合入 main `85c485a`；一次打回（测试读宿主 env），补丁 `fafe35f` |
+| T4 ✅ | 代码 | mission：`retry` reason + 类别；ns 报告 `writtenBy`；G1 submit 按意向边；G2 目录非空；G4 数据根环境变量 | T1 | 合入 main `e0ad2fb` |
 | T5 | 代码 | web-eval 安装路径：未发布成员 tarball + overrides，install.sh 源码模式（G5、G6） | T1 | 分支 `feat/web-eval-install` |
 | T6 | 代码 | local-agent-dsh-headless 不被 reconcile 挂进宿主 bundles（G3） | T1 | 分支 `fix/local-agent-dsh-headless-reconcile` |
+| T1b ✅ | 数据 | 题库：bench-v1 带回 halted guard 并 lint；manifest output_schema 改引用 schemas 文件；用合入后的 mission 重放 submit --to | T2 T4 | 题库 `i1-walk` @ `954b7af` |
+| T3b | 代码 | local-agent：effectiveSettings 带已配置模型（只读，不加选择） | T3 | 分支 `feat/local-agent-eval-model-snapshot` |
 
 **I1 走通结果（2026-09-03，T1 验收通过）**：一格全流程在宿主上手工走通，两次委派的 prompt 与参考拼接逐字节一致（冻结决策 6 在现有机制上成立），反例在 submit 预校验即被拒，file-check 拒绝过一次后放行，bundle 导出且 ns 报告如实标出缺失的 llm-draft 与 human-final。合计约 5 小时，其中环境搭建与调试约 2.5 小时、纯评测流约 1.5 小时。发现的缺口按严重度：G1 mission submit 对全部出边合取校验（已绕行，T4 修）；G2 file-check 空目录放行（T4）；G3 headless 被 reconcile 挂进宿主（T6）；G4 CLI 与实例数据根割裂（T4 顺带）；G5、G6 模板成员 npm 状态与 overrides（T5）；G7 到 G10 体验项记入走通日志不单独立任务。契约侧填不出的字段与词表问题已写成 T2 的「字段决定」。
 
 T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份示例作夹具。
 
-验收：README「迭代计划」I1 行的三条已达成；T2 到 T6 各自的完成判据；`pnpm gate` 全绿。
+**验收记录（2026-09-05）**：T4、T2、T3 依次合入 main（`e0ad2fb`、`094a46b`、`85c485a`），三个 worktree 的测试都在验收机上重跑过。T2 携带的 ankh-guard 测试加固提交越界，剥离到 `test/ankh-guard-supervise-load` 等 owner 评审；datasets 协议夹具的提取范围限定是 §6 加入后的必然后果，接受。T3 有一处测试读宿主的 `ANTHROPIC_BASE_URL`，打回后以 `fafe35f` 补丁合入。T1b 已把 halted guard 带回、完成 manifest 迁移并用新 mission 重放了 submit --to。T5、T6、T3b 进行中。
 
-进入 I2 的信号：五条分支合入 main；T4 修好后题库的 bench-v1 模板把 halted 边的 guard 带回并重跑 lint。
+验收：README「迭代计划」I1 行的三条已达成；T2 到 T6 与 T3b 各自的完成判据；`pnpm gate` 全绿（ankh-guard 的偶发 flake 由其 owner 处理，不计入本线）。
+
+进入 I2 的信号：T5、T6、T3b 合入 main（T2、T3、T4 已合入，T1b 已完成）。
 
 ### I2 · 编排器 v0 + pilot A
 
@@ -191,8 +196,8 @@ T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份�
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T23 | 代码 | local-agent：每次委派可覆盖 scoped home / 配置 | T3 | |
-| T24 | 代码 | local-agent：每 provider 的模型参数（codex / claude / kimi / dsh） | T23 | |
-| T25 | 代码 | eval：`conditions provision` + 条件注册表数据面 | T23 | |
+| T24 | 代码 | local-agent：每 provider 的模型参数，首轮委派指定、成员内固定、resume 不换；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | T23 T3b | |
+| T25 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选） | T23 | |
 | T26 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
 | T27 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T23–T26 | 三份配对结果 |
 
@@ -301,6 +306,37 @@ AGENTS.md、profiles/web-eval/README.md「冻结决策」2 到 4、packages/loca
 
 ## 回报
 commit、worktree 路径、Agent Note 路径、四家快照的一份示例输出（脱敏）。
+```
+
+### T3b · effectiveSettings 快照带上已配置的模型
+
+```text
+# 任务 T3b：effectiveSettings 快照带上已配置的模型
+
+## 背景
+T3 的 effectiveSettings 快照（已合入 main 85c485a）报了 drive、沙箱或权限模式、推理强度、端点，但没有模型。评测的 condition 契约里 model.declared 是必填字段之一（T1 走通时四个未解析字段之一），就绪检查要拿「已配置的模型」和声明比对；dev 域的设置卡将来也要显示它。本任务只加读取，不加选择，不改任何默认行为。
+
+## 先读
+AGENTS.md、profiles/web-eval/README.md「冻结决策」5、packages/local-agent/src/types.ts 的 LocalAgentEffectiveSettings、四个 provider 的 effectiveSettings 实现与配置读取器（kimi 与 codex 的 provision.ts 已有 section-aware 的行扫描读取器，照同款写）、.agents/notes/implemented/feature/2026-09-04-local-agent-eval-effective-settings.md。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-local-agent-eval-model，分支 feat/local-agent-eval-model-snapshot。显式 stage，不 push。
+
+## 交付
+1. LocalAgentEffectiveSettings 增加可选字段 model?: string：该 harness 委派时实际会用的已配置模型标识。来源按家：kimi 读 scoped config.toml 的 default_model；codex 读 scoped config.toml 的 model，无则缺位；claude 读 scoped CLAUDE_CONFIG_DIR 下 settings.json 的 model，无则缺位（claude 的默认模型由 CLI 自己决定，不要猜一个值）；dsh 读宿主 agentDefaultModel.currentSelection() 的 provider 与 model（子 dsh 继承它，见 local-agent-dsh-headless/src/agent-loader.ts）。
+2. 缺位即诚实：读不到就不给字段，绝不填默认值猜测。
+3. status 面与 Remote 自动带上，沿用 T3 的传递路径，无需新接线。
+4. 测试：四家各一条「配置里有模型则快照带 model」与「没有则字段缺位」；claude 的用例用 vi.stubEnv 与临时 CLAUDE_CONFIG_DIR 密闭，不读宿主。
+5. 四包 README 的 effectiveSettings 字段表补 model；Agent Note 在 T3 那篇上追加一节，同一决定的延伸，不新开。
+
+## 约束
+不加模型选择、不加 CLI 参数、不改默认行为；不 spawn 任何 CLI 去探测；不读宿主 ~/.claude、~/.codex 等全局配置。
+
+## 完成判据
+五包 build + test 绿；pnpm check:plugins 零违规；pnpm gate 通过（ankh-guard 的偶发 flake 若再拦，注明并给出单包全绿证据）。
+
+## 回报
+commit、worktree 路径、Agent Note 路径、四家快照示例（脱敏）。
 ```
 
 ### T4 · mission 四项：retry 原因、writtenBy、G1 submit 预校验、G2 file-check 非空
