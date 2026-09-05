@@ -36,6 +36,7 @@ import type {
   DelegationCallOptions,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
+  LocalAgentEffectiveSettings,
   LocalAgentMemberRun,
   LocalAgentRosterRow,
   LocalAgentRunProgress,
@@ -56,6 +57,7 @@ export type {
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentDelegationView,
+  LocalAgentEffectiveSettings,
   LocalAgentMemberRun,
   LocalAgentPromptResult,
   LocalAgentRosterRow,
@@ -217,6 +219,18 @@ export interface LocalAgentHarness {
     input: string,
     invocation: CommandInvocation,
   ) => Promise<CommandResult> | CommandResult | undefined
+  /**
+   * The harness's fairness-relevant effective settings — the read side of an
+   * evaluation condition hash (the web-eval frozen baseline: every factor
+   * must be hashable). The registry's {@link LocalAgentRegistry.effectiveSettings}
+   * resolves it, and both status surfaces (the `/<name> status` reply and the
+   * `LocalAgentStatus` Remote) attach it. The snapshot is a LIVE read — it
+   * reflects what the harness would use right now, including scoped-config
+   * values a person edited. Pure JSON, never credentials; see
+   * {@link LocalAgentEffectiveSettings} for the field vocabulary and the
+   * absence-is-a-knob-absent rule.
+   */
+  effectiveSettings?: () => LocalAgentEffectiveSettings | Promise<LocalAgentEffectiveSettings>
 }
 
 /** Plugin config: the shared scoped-homes root and the login prompt wait. */
@@ -389,6 +403,21 @@ function renderSessions(harness: LocalAgentHarness, records: readonly LocalAgent
   return `${harness.displayName} sessions (${records.length}):\n${lines.join('\n')}`
 }
 
+/** Render one effective-settings snapshot as `key: value` status lines. */
+function renderEffectiveSettings(settings: LocalAgentEffectiveSettings): string[] {
+  return [
+    `drive: ${settings.drive}`,
+    ...settings.sandbox !== undefined ? [`sandbox: ${settings.sandbox}`] : [],
+    ...settings.permissionMode !== undefined ? [`permissionMode: ${settings.permissionMode}`] : [],
+    ...settings.autoApprove !== undefined ? [`autoApprove: ${settings.autoApprove ? 'yes' : 'no'}`] : [],
+    ...settings.reasoningEffort !== undefined ? [`reasoningEffort: ${settings.reasoningEffort}`] : [],
+    settings.baseUrlSet
+      ? `baseUrl: set${settings.baseUrlHost !== undefined ? ` (${settings.baseUrlHost})` : ''}`
+      : 'baseUrl: default',
+    ...settings.cliVersion !== undefined ? [`cliVersion: ${settings.cliVersion}`] : [],
+  ]
+}
+
 /** Render the status reply: one `key: value` line per fact. */
 function renderStatus(status: LocalAgentStatus): string {
   return [
@@ -396,6 +425,7 @@ function renderStatus(status: LocalAgentStatus): string {
     `authenticated: ${status.authenticated ? 'yes' : 'no'}`,
     `homeDir: ${status.homeDir}`,
     ...status.delegationProvider !== undefined ? [`provider: ${status.delegationProvider}`] : [],
+    ...status.effectiveSettings !== undefined ? renderEffectiveSettings(status.effectiveSettings) : [],
   ].join('\n')
 }
 
@@ -615,6 +645,17 @@ export class LocalAgentRegistry {
       const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
       authenticated = stamp !== undefined && stamp > failedAt
     }
+    // Degrade, don't explode: the snapshot reads scoped-config files, and a
+    // read failure must not break the status surface — the field drops out
+    // and the failure is logged instead.
+    let effectiveSettings: LocalAgentEffectiveSettings | undefined
+    try {
+      effectiveSettings = await harness.effectiveSettings?.()
+    } catch (error: unknown) {
+      this.ctx.logger.warn(
+        `localAgent: ${name} effective-settings snapshot failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
     return {
       name: harness.name,
       displayName: harness.displayName,
@@ -627,7 +668,24 @@ export class LocalAgentRegistry {
       logoutable: harness.logout !== undefined,
       ...this.logins.get(name)?.awaitingCode === true ? { loginAwaitingCode: true } : {},
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
+      ...effectiveSettings !== undefined ? { effectiveSettings } : {},
     }
+  }
+
+  /**
+   * One harness's fairness-relevant effective settings — the evaluation
+   * condition hash's read side (web-eval frozen decisions 2 to 4: drive,
+   * approval boundary, reasoning effort, endpoint route). Read-only: the
+   * snapshot reflects the settings in force right now, whatever layer set
+   * them (plugin config, scoped-home config a person edited, process env).
+   * Pure JSON and credential-free by contract; see
+   * {@link LocalAgentEffectiveSettings}.
+   * @param name - the harness name.
+   * @returns the snapshot, or undefined when the harness declares none.
+   */
+  async effectiveSettings(name: string): Promise<LocalAgentEffectiveSettings | undefined> {
+    const harness = this.requireHarness(name)
+    return harness.effectiveSettings?.()
   }
 
   /**

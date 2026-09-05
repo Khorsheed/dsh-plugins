@@ -22,16 +22,30 @@ const CREDENTIALS_DIR = 'credentials'
 /** OAuth token cache directory inside the scoped home. */
 const OAUTH_DIR = 'oauth'
 
+/**
+ * The managed provider's endpoint, written into a fresh scoped config and the
+ * baseline the eval snapshot compares against: a scoped config still pointing
+ * here routes through kimi's own service, i.e. no custom endpoint is in force.
+ */
+export const KIMI_MANAGED_BASE_URL = 'https://api.kimi.com/coding/v1'
+
+/**
+ * The reasoning effort a fresh scoped config gets when the plugin config does
+ * not override it — the value the pre-config-item provisioning hardcoded, so
+ * the default is behavior-preserving.
+ */
+export const DEFAULT_THINKING_EFFORT = 'high'
+
 /** Minimal managed config for a fresh home with no user config to mirror. */
-function minimalConfig(model: string): string {
+function minimalConfig(model: string, thinkingEffort: string): string {
   return `default_model = "${model}"
 
 [thinking]
 enabled = true
-effort = "high"
+effort = "${thinkingEffort}"
 
 [providers."managed:kimi-code"]
-base_url = "https://api.kimi.com/coding/v1"
+base_url = "${KIMI_MANAGED_BASE_URL}"
 type = "kimi"
 api_key = ""
 
@@ -46,7 +60,7 @@ max_context_size = 1048576
 capabilities = [ "thinking", "always_thinking", "image_in", "video_in", "tool_use" ]
 display_name = "${model}"
 support_efforts = [ "low", "high", "max" ]
-default_effort = "high"
+default_effort = "${thinkingEffort}"
 `
 }
 
@@ -66,11 +80,15 @@ export function redactApiKeys(config: string): string {
  * config is respected untouched (a person may have edited it); otherwise the
  * user's own real config is copied redacted so the scoped home mirrors the
  * user's models; with no real config, a minimal kimi-managed config is
- * written.
+ * written. `thinkingEffort` feeds the minimal config's `[thinking] effort`
+ * (and the model's `default_effort`) — it applies at provision time only,
+ * never retroactively to an existing config.
  * @param homeDir - the `kimi` harness's scoped home.
+ * @param model - the kimi-managed model id for a fresh minimal config.
+ * @param thinkingEffort - the reasoning effort a fresh minimal config pins.
  * @returns true when a config was written, false when one already existed.
  */
-export async function provisionKimiConfig(homeDir: string, model: string): Promise<boolean> {
+export async function provisionKimiConfig(homeDir: string, model: string, thinkingEffort: string): Promise<boolean> {
   try {
     await readFile(join(homeDir, 'config.toml'))
     return false
@@ -78,7 +96,7 @@ export async function provisionKimiConfig(homeDir: string, model: string): Promi
     // No config yet: fall through to provisioning.
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
-  let config = minimalConfig(model)
+  let config = minimalConfig(model, thinkingEffort)
   try {
     config = redactApiKeys(await readFile(REAL_CONFIG, 'utf8'))
   } catch (error) {
@@ -126,6 +144,65 @@ export async function readKimiBaseUrl(homeDir: string): Promise<string | undefin
     }
   }
   return undefined
+}
+
+/**
+ * Read the scoped config's effective reasoning effort: the `[thinking] effort`
+ * key, falling back to a `[models."…"]` section's `default_effort` when the
+ * thinking table carries none (the CLI resolves effort the same way). A
+ * missing or malformed config, or no effort key anywhere, yields undefined —
+ * the honest "unknown", never a guessed default. Read-only: the config is
+ * authoritative, a user-edited value is reported as-is.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns the effective effort, or undefined when it cannot be determined.
+ */
+export async function readKimiReasoningEffort(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  // Section-aware line scan (same shape as readKimiBaseUrl): effort must be
+  // found wherever it sits in its section, and only the thinking table's own
+  // effort counts before any model default does.
+  let section = ''
+  let thinkingEffort: string | undefined
+  let modelDefaultEffort: string | undefined
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    const key = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (key === null) continue
+    if (section === 'thinking' && key[1] === 'effort' && thinkingEffort === undefined) thinkingEffort = key[2]
+    if (section.startsWith('models.') && key[1] === 'default_effort' && modelDefaultEffort === undefined) {
+      modelDefaultEffort = key[2]
+    }
+  }
+  return thinkingEffort ?? modelDefaultEffort
+}
+
+/**
+ * Whether the scoped config's permission rules auto-approve the subagent's
+ * tool use: the `Bash(*)` allow rule the provisioning gate
+ * ({@link ensureKimiPermissions}) keys on, detected with the exact same
+ * substring so the snapshot and the provisioning can never disagree about
+ * the same file.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns whether the auto-approve rule is present.
+ */
+export async function readKimiAutoApprove(homeDir: string): Promise<boolean> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return false
+  }
+  return text.includes('pattern = "Bash(*)')
 }
 
 /** Permission rule block letting the kimi subagent run shell commands. */

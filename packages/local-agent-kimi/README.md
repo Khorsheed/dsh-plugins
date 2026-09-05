@@ -51,10 +51,13 @@ base_url = "https://your-router.example/v1"
 ```yaml
 - id: local-agent-kimi
   config:
+    thinkingEffort: high       # 推理强度;写入"全新"作用域 config.toml 的 [thinking] effort 与模型 default_effort(low/high/max,默认 high)。仅预置期生效——已存在的 config 永不覆盖
     live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
     liveMirrorGranularity: event  # live 镜像粒度;token 额外把 ACP chunk 写成 assistant/chunk(写放大,opt-in)
 ```
+
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
 
 ## Compatibility
 

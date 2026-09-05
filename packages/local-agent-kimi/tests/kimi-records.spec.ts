@@ -5,6 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { kimiAuthenticated, listKimiSessions } from '../src/records.ts'
 import { kimiLogout, provisionKimiConfig, redactApiKeys } from '../src/provision.ts'
 
+// The user's real ~/.kimi-code/config.toml must never leak into these tests:
+// the provision mirror path copies it (redacted) whenever it exists, which
+// would make the fresh-minimal-config assertions machine-dependent. Pin
+// homedir to a location with no kimi config so the minimal path is
+// deterministic.
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, homedir: () => '/nonexistent-kimi-provision-test' }
+})
+
 function tempHome(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
@@ -52,19 +62,32 @@ describe('provisionKimiConfig', () => {
     expect(out).toBe('api_key = ""\napi_key = ""')
   })
 
-  it('writes the minimal managed config into a fresh home', async () => {
+  it('writes the minimal managed config into a fresh home, effort high by default', async () => {
     const home = tempHome('kimi-provision-min-')
-    const written = await provisionKimiConfig(home, 'kimi-code/k3')
+    const written = await provisionKimiConfig(home, 'kimi-code/k3', 'high')
     expect(written).toBe(true)
     const text = await (await import('node:fs/promises')).readFile(join(home, 'config.toml'), 'utf8')
     expect(text).toContain('default_model = "kimi-code/k3"')
     expect(text).toContain('[providers."managed:kimi-code"]')
+    // The historical default: effort "high" in both the thinking table and
+    // the model's default_effort.
+    expect(text).toContain('effort = "high"')
+    expect(text).toContain('default_effort = "high"')
+  })
+
+  it('pins the configured thinking effort into a fresh minimal config', async () => {
+    const home = tempHome('kimi-provision-effort-')
+    const written = await provisionKimiConfig(home, 'kimi-code/k3', 'max')
+    expect(written).toBe(true)
+    const text = await (await import('node:fs/promises')).readFile(join(home, 'config.toml'), 'utf8')
+    expect(text).toContain('effort = "max"')
+    expect(text).toContain('default_effort = "max"')
   })
 
   it('does not overwrite an existing config', async () => {
     const home = tempHome('kimi-provision-exist-')
     writeFileSync(join(home, 'config.toml'), 'default_model = "mine"')
-    const written = await provisionKimiConfig(home, 'kimi-code/k3')
+    const written = await provisionKimiConfig(home, 'kimi-code/k3', 'high')
     expect(written).toBe(false)
     expect(await (await import('node:fs/promises')).readFile(join(home, 'config.toml'), 'utf8')).toBe('default_model = "mine"')
   })

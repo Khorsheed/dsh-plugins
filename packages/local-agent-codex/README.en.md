@@ -60,6 +60,8 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ⚠️ **Credential exposure**: the scoped `auth.json` token is sent to whatever endpoint serves the request — only use endpoints you control or trust. Each delegation logs the effective endpoint at info level.
 
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), and whether a custom endpoint is pinned (read from the scoped config's provider, hostname only). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.

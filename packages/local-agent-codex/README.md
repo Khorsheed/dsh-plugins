@@ -60,6 +60,8 @@ model_provider = "dsh-router"
 
 ⚠️ **凭据暴露**：作用域 `auth.json` token 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。

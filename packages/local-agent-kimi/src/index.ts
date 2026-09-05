@@ -15,12 +15,22 @@ import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
+import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
-import { ensureKimiPermissions, kimiLogout, provisionKimiConfig } from './provision.ts'
+import {
+  DEFAULT_THINKING_EFFORT,
+  ensureKimiPermissions,
+  kimiLogout,
+  KIMI_MANAGED_BASE_URL,
+  provisionKimiConfig,
+  readKimiAutoApprove,
+  readKimiBaseUrl,
+  readKimiReasoningEffort,
+} from './provision.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -33,6 +43,14 @@ export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 export interface Config {
   /** Kimi-managed model id; used only when no user config exists to mirror. */
   model?: string
+  /**
+   * Reasoning effort a FRESH scoped home's config.toml pins (`[thinking]
+   * effort` and the model's `default_effort`). Provision-time only: an
+   * existing config is respected untouched, exactly like the mirrored model.
+   * Default 'high' — the value the pre-config-item provisioning hardcoded,
+   * so the default changes nothing.
+   */
+  thinkingEffort?: 'low' | 'high' | 'max'
   /**
    * Live driver: keep one resident `kimi acp` process per member and drive
    * turns over ACP (runtime-level graceful cancel, push-triggered mirroring)
@@ -52,6 +70,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   model: z.string(),
+  thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
@@ -111,20 +130,25 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => {
     const homeDir = ctx.localAgent.homeDir('kimi')
     // The ACP server refuses to authenticate without provider/model config;
-    // provision a redacted config once so the scoped home stands alone.
-    void provisionKimiConfig(homeDir, config.model ?? 'kimi-code/k3').catch((error: unknown) => {
-      ctx.logger.warn(`local-agent-kimi: config.toml provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
-    })
+    // provision a redacted config once so the scoped home stands alone. The
+    // reasoning effort rides the same provisioning (fresh homes only).
+    const thinkingEffort = config.thinkingEffort ?? DEFAULT_THINKING_EFFORT
     // Earlier versions bootstrapped <base>-kimi preset variants; the tool row
     // now mounts at the profile root, so remove the leftovers once.
     void removeLegacyVariants(ctx).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-kimi: legacy preset cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
     })
     // The one-shot CLI provider delegates through `kimi -p` in the scoped
-    // home; ensure the scoped config allows the subagent's tool use.
-    void ensureKimiPermissions(homeDir).catch((error: unknown) => {
-      ctx.logger.warn(`local-agent-kimi: permission provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
-    })
+    // home; ensure the scoped config allows the subagent's tool use. Chained
+    // AFTER provisioning: both used to fire concurrently and the permission
+    // bootstrap raced the config write — on a fresh home it could read
+    // ENOENT and return early, leaving the Bash(*) allow rule unwritten
+    // until the next boot (first-boot delegations answered without tools).
+    void provisionKimiConfig(homeDir, config.model ?? 'kimi-code/k3', thinkingEffort)
+      .then(() => ensureKimiPermissions(homeDir))
+      .catch((error: unknown) => {
+        ctx.logger.warn(`local-agent-kimi: config provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
     // The live driver is settings-driven: the settings card's toggle (user
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
@@ -150,6 +174,29 @@ export function apply(ctx: Context, config: Config): void {
       credentialStamp: kimiCredentialStamp,
       logout: kimiLogout,
       subcommand: handleSubcommand,
+      // The eval snapshot reads the scoped config as-is — it is authoritative
+      // once provisioned, so a person-edited (or user-mirrored) effort and
+      // endpoint report what actually applies, not what the config item
+      // would have written. Provisioning-time values only ever reach a home
+      // that had none.
+      effectiveSettings: async () => {
+        const [reasoningEffort, baseUrl, autoApprove] = await Promise.all([
+          readKimiReasoningEffort(homeDir).catch(() => undefined),
+          readKimiBaseUrl(homeDir).catch(() => undefined),
+          readKimiAutoApprove(homeDir).catch(() => false),
+        ])
+        // The managed endpoint IS kimi's own service — routing through it is
+        // the default, not a pinned custom route.
+        const custom = baseUrl !== undefined && baseUrl !== KIMI_MANAGED_BASE_URL
+        const baseUrlHost = custom ? endpointHost(baseUrl) : undefined
+        return {
+          drive: scope.get().live ? 'live' : 'exec',
+          autoApprove,
+          ...reasoningEffort !== undefined ? { reasoningEffort } : {},
+          baseUrlSet: custom,
+          ...baseUrlHost !== undefined ? { baseUrlHost } : {},
+        }
+      },
     })
     return () => {
       disposeProvider()

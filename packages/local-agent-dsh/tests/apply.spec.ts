@@ -100,6 +100,18 @@ describe('local-agent-dsh toggle controller', () => {
     expect(mountedTools).toHaveLength(0)
   })
 
+  it('the harness snapshot reports the drive and no pinned endpoint', async () => {
+    const { registered, settings } = mount({ enabled: true, live: false })
+    const harness = registered[0]!
+    expect(harness.effectiveSettings).toBeTypeOf('function')
+    // Synchronous on purpose: nothing to read from disk.
+    expect(await harness.effectiveSettings!()).toEqual({ drive: 'exec', baseUrlSet: false })
+    // The live preference rides the same namespace; flipping it flips the
+    // snapshot's drive on the next read.
+    settings.set({ live: true })
+    expect(await harness.effectiveSettings!()).toEqual({ drive: 'live', baseUrlSet: false })
+  })
+
   it('registers the harness, provider, and tool while on, and the watch toggles them live', () => {
     const { registered, providers, mountedTools, settings } = mount({ enabled: true })
 

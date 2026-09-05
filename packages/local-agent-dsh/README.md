@@ -42,6 +42,8 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 | `liveIdleMs` | `1800000`（30 分钟） | 长驻 runtime 的空闲回收时限 |
 | `liveMirrorGranularity` | `event` | live 镜像粒度；`token` 额外把 `assistant/chunk` 增量写入子会话（写放大，opt-in） |
 
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照只有 drive(exec/live)与端点未固定：无头子 dsh 没有沙箱或权限旋钮（web-eval 冻结基线称其无限制——字段缺位本身就是诚实的条件输入），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.1-rc.2`）：✅ 完整——rc.8→0.1.1-rc.1 API 审计（2026-08-21）确认本插件消费的所有面无变化或纯增量（ProjectionDefinition 重构、cacheHitPercent 返回值变更、credentials/updated 事件改名均不涉及本包），无需改动源码；rc.1→rc.2 复核（2026-08-22）：消费面无变化，全量构建测试通过。

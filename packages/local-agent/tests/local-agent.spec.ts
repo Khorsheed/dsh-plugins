@@ -209,6 +209,72 @@ describe('LocalAgentRegistry', () => {
     void ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
   })
 
+  it('resolves the harness effective-settings snapshot through the registry', async () => {
+    const { ctx } = await harnessMount({ homesRoot: tempDir('eval-pin-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    registry.register(harness({
+      effectiveSettings: () => ({ drive: 'exec', sandbox: 'workspace-write', baseUrlSet: false }),
+    }))
+    await expect(registry.effectiveSettings('fake')).resolves.toEqual({
+      drive: 'exec',
+      sandbox: 'workspace-write',
+      baseUrlSet: false,
+    })
+  })
+
+  it('effectiveSettings is undefined for a harness without a snapshot; unknown names fail loud', async () => {
+    const { ctx } = await harnessMount({ homesRoot: tempDir('eval-pin-none-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    registry.register(harness())
+    await expect(registry.effectiveSettings('fake')).resolves.toBeUndefined()
+    await expect(registry.effectiveSettings('ghost')).rejects.toThrow('unknown harness ghost')
+  })
+
+  it('attaches the effective-settings snapshot to the status surfaces', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('eval-pin-status-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    registry.register(harness({
+      effectiveSettings: async () => ({
+        drive: 'exec',
+        permissionMode: 'skip',
+        autoApprove: true,
+        reasoningEffort: 'high',
+        baseUrlSet: true,
+        baseUrlHost: 'proxy.example.com',
+      }),
+    }))
+    const status = await registry.statusOf('fake')
+    expect(status.effectiveSettings).toEqual({
+      drive: 'exec',
+      permissionMode: 'skip',
+      autoApprove: true,
+      reasoningEffort: 'high',
+      baseUrlSet: true,
+      baseUrlHost: 'proxy.example.com',
+    })
+    const execution = await ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
+    expectSuccess(execution, 'drive: exec')
+    expectSuccess(execution, 'permissionMode: skip')
+    expectSuccess(execution, 'autoApprove: yes')
+    expectSuccess(execution, 'reasoningEffort: high')
+    expectSuccess(execution, 'baseUrl: set (proxy.example.com)')
+  })
+
+  it('drops a failing effective-settings snapshot from the status instead of breaking it', async () => {
+    const { ctx, agent } = await harnessMount({ homesRoot: tempDir('eval-pin-fail-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    registry.register(harness({
+      effectiveSettings: async () => { throw new Error('config exploded') },
+    }))
+    const status = await registry.statusOf('fake')
+    expect(status.effectiveSettings).toBeUndefined()
+    expect(status.authenticated).toBe(false)
+    const execution = await ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
+    expectSuccess(execution, 'authenticated: no')
+    const result = execution?.result
+    if (result?.kind === 'success') expect(result.text).not.toContain('drive:')
+  })
+
   it('rejects an unknown subcommand', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('bogus-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry

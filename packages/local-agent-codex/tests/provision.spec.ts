@@ -2,11 +2,38 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { codexLogout, provisionCodexConfig, readCodexBaseUrl } from '../src/provision.ts'
+import { codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexReasoningEffort } from '../src/provision.ts'
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), 'codex-provision-'))
 }
+
+describe('readCodexReasoningEffort', () => {
+  it('returns undefined when the config is absent', async () => {
+    await expect(readCodexReasoningEffort(tempHome())).resolves.toBeUndefined()
+  })
+
+  it('reads the top-level model_reasoning_effort key', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, 'config.toml'), [
+      'model = "gpt-5.2"',
+      'model_reasoning_effort = "high"',
+      'cli_auth_credentials_store = "file"',
+      '',
+    ].join('\n'))
+    await expect(readCodexReasoningEffort(home)).resolves.toBe('high')
+  })
+
+  it('ignores keys inside table sections', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, 'config.toml'), [
+      '[profiles.deep]',
+      'model_reasoning_effort = "low"',
+      '',
+    ].join('\n'))
+    await expect(readCodexReasoningEffort(home)).resolves.toBeUndefined()
+  })
+})
 
 describe('codex scoped-home provisioning', () => {
   it('writes a file-credential config into a fresh home', async () => {

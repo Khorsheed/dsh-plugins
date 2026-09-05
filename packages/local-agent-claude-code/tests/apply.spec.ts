@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentHarness, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 import { apply } from '../src/index.ts'
@@ -150,5 +150,56 @@ describe('local-agent-claude-code apply', () => {
     const driver = resolveLive('child-x')
     settings.set({ live: true, liveMirrorGranularity: 'token' })
     expect(resolveLive('child-x')).toBe(driver)
+  })
+
+  it('snapshots the defaults: exec drive, skip permission mode, no pinned endpoint', async () => {
+    // Hermetic: the snapshot's env fallback is real product behavior (the
+    // child CLI genuinely routes through the host's ANTHROPIC_BASE_URL), so
+    // a host shell that exports it changes the honest answer. The defaults
+    // case pins the env empty; the env-set behavior has its own test below.
+    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
+    const { registered } = mount()
+    const harness = registered[0]!
+    expect(harness.effectiveSettings).toBeTypeOf('function')
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      permissionMode: 'skip',
+      baseUrlSet: false,
+    })
+  })
+
+  it('reports the configured permission mode, live drive, and pinned endpoint', async () => {
+    const { registered } = mount({ live: true }, { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' })
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'live',
+      permissionMode: 'normal',
+      baseUrlSet: true,
+      baseUrlHost: 'proxy.example.com',
+    })
+  })
+
+  it('the host environment supplies the endpoint when the config item is absent', async () => {
+    const { registered } = mount()
+    vi.stubEnv('ANTHROPIC_BASE_URL', 'https://relay.example.com/v1')
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+      baseUrlSet: true,
+      baseUrlHost: 'relay.example.com',
+    })
+  })
+
+  it('the config endpoint wins over the host environment', async () => {
+    const { registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
+    vi.stubEnv('ANTHROPIC_BASE_URL', 'https://env.example.com/v1')
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+      baseUrlSet: true,
+      baseUrlHost: 'config.example.com',
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 })

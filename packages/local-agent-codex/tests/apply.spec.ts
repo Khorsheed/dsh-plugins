@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -141,5 +141,50 @@ describe('local-agent-codex apply', () => {
     const driver = resolveLive('child-x')
     settings.set({ live: true, liveMirrorGranularity: 'token' })
     expect(resolveLive('child-x')).toBe(driver)
+  })
+
+  it('snapshots the defaults: exec drive, workspace-write sandbox, no pinned endpoint', async () => {
+    const { registered } = mount()
+    const harness = registered[0]!
+    expect(harness.effectiveSettings).toBeTypeOf('function')
+    // The snapshot reads the scoped config only for keys the minimal one
+    // never writes, so its answer is independent of provisioning timing.
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      sandbox: 'workspace-write',
+      baseUrlSet: false,
+    })
+  })
+
+  it('reports the configured sandbox policy and the live drive', async () => {
+    const { registered } = mount({ live: true }, { sandbox: 'danger-full-access' })
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+      drive: 'live',
+      sandbox: 'danger-full-access',
+    })
+  })
+
+  it('reads reasoning effort and endpoint live from the scoped config', async () => {
+    const { home, registered } = mount()
+    // A person-edited scoped config: codex itself reads these keys, so the
+    // snapshot must report them as-is (provision never touches them).
+    writeFileSync(join(home, 'config.toml'), [
+      'model_reasoning_effort = "high"',
+      'cli_auth_credentials_store = "file"',
+      '',
+      '[model_providers.router]',
+      'base_url = "https://proxy.example.com/v1"',
+      '',
+      'model_provider = "router"',
+    ].join('\n'))
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      sandbox: 'workspace-write',
+      reasoningEffort: 'high',
+      baseUrlSet: true,
+      baseUrlHost: 'proxy.example.com',
+    })
   })
 })

@@ -1,12 +1,21 @@
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentHarness, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 import { apply } from '../src/index.ts'
 import { KimiAcpLiveDriver } from '../src/live-driver.ts'
 import type { KimiLiveSettings } from '../src/live-switch.ts'
+
+// The user's real ~/.kimi-code/config.toml must never leak into these tests:
+// the provision mirror path copies it (redacted) whenever it exists, which
+// would make every fresh-home assertion machine-dependent. Pin homedir to a
+// location with no kimi config so the minimal-config path is deterministic.
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, homedir: () => '/nonexistent-kimi-provision-test' }
+})
 
 /** A fake settings service: register captures the scope; set() drives watch. */
 function fakeSettings(initial: KimiLiveSettings) {
@@ -41,6 +50,8 @@ interface Mount {
   ctx: Context
   registered: LocalAgentHarness[]
   settings: ReturnType<typeof fakeSettings>
+  /** The scoped home the fake registry hands out (the provision target). */
+  home: string
   /** The resolver the provider was constructed with (private face). */
   resolveLive: (childSessionId: string) => KimiAcpLiveDriver | undefined
 }
@@ -68,7 +79,7 @@ function mount(initial: Partial<KimiLiveSettings> = {}, config: Record<string, u
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('settings', settings.service)
   apply(ctx, config as never)
-  return { ctx, registered, settings, resolveLive: id => resolveLive(id) }
+  return { ctx, registered, settings, home, resolveLive: id => resolveLive(id) }
 }
 
 describe('local-agent-kimi apply', () => {
@@ -136,5 +147,64 @@ describe('local-agent-kimi apply', () => {
     const driver = resolveLive('child-x')
     settings.set({ live: true, liveMirrorGranularity: 'token' })
     expect(resolveLive('child-x')).toBe(driver)
+  })
+
+  it('snapshots a fresh home: exec drive, effort high, auto-approve, managed endpoint', async () => {
+    const { registered, home } = mount()
+    const harness = registered[0]!
+    expect(harness.effectiveSettings).toBeTypeOf('function')
+    // Provisioning and permission bootstrap are fire-and-forget at apply;
+    // the snapshot is a live read, so wait for them to land.
+    await vi.waitFor(() => {
+      expect(existsSync(join(home, 'config.toml'))).toBe(true)
+      expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('effort = "high"')
+      expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('pattern = "Bash(*)')
+    })
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      autoApprove: true,
+      reasoningEffort: 'high',
+      baseUrlSet: false,
+    })
+  })
+
+  it('pins the configured thinkingEffort into a fresh home and reports it', async () => {
+    const { registered, home } = mount({}, { thinkingEffort: 'max' })
+    const harness = registered[0]!
+    await vi.waitFor(() => {
+      expect(readFileSync(join(home, 'config.toml'), 'utf8')).toContain('effort = "max"')
+    })
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ reasoningEffort: 'max' })
+  })
+
+  it('reports the live driver preference as the drive', async () => {
+    const { registered } = mount({ live: true })
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ drive: 'live' })
+  })
+
+  it('a pre-existing scoped config is authoritative over the config item', async () => {
+    const { registered, home } = mount({}, { thinkingEffort: 'max' })
+    // A home provisioned earlier (or mirrored from the user's config): the
+    // config item must not leak into the snapshot — the scoped file governs.
+    writeFileSync(join(home, 'config.toml'), [
+      '[thinking]',
+      'enabled = true',
+      'effort = "low"',
+      '',
+      '[providers."managed:kimi-code"]',
+      'base_url = "https://proxy.example.com/anthropic"',
+      'type = "kimi"',
+      'api_key = ""',
+      '',
+    ].join('\n'))
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      autoApprove: false,
+      reasoningEffort: 'low',
+      baseUrlSet: true,
+      baseUrlHost: 'proxy.example.com',
+    })
   })
 })
