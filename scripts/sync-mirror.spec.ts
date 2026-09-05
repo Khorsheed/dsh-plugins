@@ -11,19 +11,24 @@ import { mirrorFiles } from './sync-mirror.mts'
 
 const root = join(import.meta.dirname, '..')
 
-function isTracked(path: string): boolean {
-  try {
-    execFileSync('git', ['ls-files', '--error-unmatch', '--', path], { cwd: root, stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
+/** Every tracked path, read once. The obvious spelling — `git ls-files
+ * --error-unmatch` per candidate — spawns a subprocess per file and pushed
+ * this spec past vitest's 5s default at around ninety files. The set is built
+ * lazily so the cost lands in the first test that needs it, not at import. */
+let trackedCache: Set<string> | undefined
+function tracked(): Set<string> {
+  trackedCache ??= new Set(
+    execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+      .split('\0')
+      .filter((path) => path !== ''),
+  )
+  return trackedCache
 }
 
 describe('mirrorFiles', () => {
   it('emits only files git tracks — no gitignored local state', () => {
     for (const [kind, name] of [['package', 'ankh-guard'], ['profile', 'web-basic'], ['skill', 'self-upgrade']] as const) {
-      const untracked = mirrorFiles(kind, name).filter((f: string) => !isTracked(`${kind}s/${name}/${f}`))
+      const untracked = mirrorFiles(kind, name).filter((f: string) => !tracked().has(`${kind}s/${name}/${f}`))
       expect(untracked, `${kind}s/${name} would ship untracked files`).toEqual([])
     }
   })
