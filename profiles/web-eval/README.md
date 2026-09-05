@@ -125,16 +125,15 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-22 个成员，四组：
+23 个成员，四组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
 | 基础体验 | 与 web-dev 相同的 12 个 | ✅ / 🔶 | 无 |
 | 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装，或把 CLI 驱动抽成独立包。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
-| 评测机制 | `datasets` / `mission` / `lab` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针 |
-| 运维守护 | `ankh-guard` | ✅ | 无；评测实例独立 `$DSH_HOME` |
+| 评测机制 | `datasets` / `mission` / `lab` / `eval` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
-已建一半的：**`@khorsheed/dsh-eval`**（编排器）。离线核心已随 I2·T2 落地为 packages/eval：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome` 服务面与 `dsh-eval` CLI（validate / conditions hash）。宿主插件 + `dsh-eval` CLI + `eval-planning` skill 的全貌是：读 plan，驱动四个服务面，管计时、取消、重试原因、prompt 哈希、模型回读，写 `script` 与 `orchestrator` 两个 ns，出报告。它是 `scripts/integration-triad.mts` 长大后的样子。执行动词按 I2 任务补齐。
+第 23 个成员是 **`@khorsheed/dsh-eval`**（编排器，I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
 
 `capability-catalog` 在这里多一个用途：它按 preset 的 standing scope 读注册表，是「这个条件下 agent 有哪些工具和 skill」的取证来源，I4 让它输出可哈希的能力清单。
 
@@ -267,7 +266,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
-`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 22（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 23（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 

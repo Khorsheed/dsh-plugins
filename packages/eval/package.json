@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-eval",
-  "description": "Offline half of the web-eval orchestrator: the dataseek contract schemas (condition / plan / verdict), the plan and condition validator, deterministic condition & scoped-home hashing, and the bundle report (results.jsonl + summary.md with the four-invariant gate and paired comparison) — declares and checks, never executes a run",
+  "description": "The web-eval orchestrator: dataseek contract schemas, plan/condition validation, deterministic hashing, run-template generation from a suite manifest, the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, archive gate, bundle export), and the bundle report (results.jsonl + summary.md behind the four-invariant gate)",
   "version": "0.1.0-rc.1",
   "publishConfig": {
     "access": "public"
@@ -35,6 +35,9 @@
     "cordis.patch.yml"
   ],
   "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.3.1"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6"
@@ -46,7 +49,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-commands": "^0.1.1-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.1",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
@@ -72,7 +77,7 @@
     "compat": {
       "minHost": "0.1.0-rc.6",
       "verifiedHost": "0.1.1-rc.2",
-      "notes": "offline verbs plus the bundle report (validatePlan / hashCondition / hashHome / report): nothing beyond Context.provide is consumed, no inject, no client half; the executing verbs (run / readiness / provision) are still I2"
+      "notes": "injects commands (the /eval slash face); the run verb probes datasets / mission / localAgent via ctx.get and refuses naming any missing one — never a boot failure; report only reads bundles and consumes no host capability; the delegation cwd option and usage / model.observed read-back are consumed from the local-agent family (T11) — pending the orchestrator's adoption they are recorded as null"
     }
   },
   "bin": {

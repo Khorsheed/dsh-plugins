@@ -125,16 +125,16 @@ The plan's `conditions` and `judge.conditions` carry **condition ids** (never sh
 
 ## Member plugins
 
-22 members in four groups:
+23 members in four groups:
 
 | Group | Members | Status | Changes this profile needs |
 |---|---|---|---|
 | Base experience | the same 12 as web-dev | ✅ / 🔶 | none |
 | Local-agent family | `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi) and the effectiveSettings snapshot (including the configured model). I2: model read-back, recording the model actually used. I3: in-container exec wrapping, or the CLI driver extracted into its own package. I4: per-condition model parameter (set on the first delegation, fixed within a member, unchanged on resume) and scoped-home override, plus a "default model" field on each provider's settings card |
-| Evaluation mechanisms | `datasets` / `mission` / `lab` | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers |
+| Evaluation mechanisms | `datasets` / `mission` / `lab` / `eval` | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers. `eval`: the run loop's judge (T9), report (T10), read-only tools (T14), and the full readiness gate |
 | Ops guard | `ankh-guard` | ✅ | none; the eval instance gets its own `$DSH_HOME` |
 
-Half-built: **`@khorsheed/dsh-eval`** (the orchestrator). Its offline core landed as packages/eval with I2·T2: the three contract schemas, the `validatePlan` / `hashCondition` / `hashHome` service face, and the `dsh-eval` CLI (validate / conditions hash). The full shape — host plugin + `dsh-eval` CLI + an `eval-planning` skill — reads the plan, drives the four service faces, owns timing, cancellation, retry reasons, prompt hashes, and model read-back, writes the `script` and `orchestrator` namespaces, and produces the report. It is what `scripts/integration-triad.mts` looks like when grown up. The executing verbs follow the I2 tasks.
+The 23rd member is **`@khorsheed/dsh-eval`** (the orchestrator, joined with I2·T8). Landed: the three contract schemas, `validatePlan` / `hashCondition` / `hashHome`, `generateTemplate` (manifest → run template, item-for-item equivalent to the I1 hand-written bench-v1), the run loop v0 (stages one-two, host directories, per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export), the `/eval run` slash command, and the `dsh-eval` CLI (validate / run --dry-run / template / conditions hash). To come: judge delegation (T9), `dsh-eval report` (T10), the read-only tools `eval_conditions` / `eval_plan_validate` / `eval_run_status` (T14).
 
 `capability-catalog` gains one more use here: it reads the registry by the preset's standing scope, so it is the evidence source for "which tools and skills does the agent have under this condition"; I4 makes it emit a hashable capability manifest.
 
@@ -267,7 +267,7 @@ Explicitly out of scope for this period (I0 through I2): new surfaces, lab's mod
 
 The eval instance needs its own `$DSH_HOME`, sharing neither sessions nor credentials with the dev instance (environment isolation is a basic evaluation requirement; see the environment topology in `docs/ops.md`). I1 through I2 run the four CLIs directly on the host and need only node, git, and the CLIs themselves; from I3 on docker is required, and the checklist for the suite-level image, the local package mirror, the allowlist proxy, and credential volumes is in the "runtime environment" section of [docs/architecture.md](docs/architecture.md).
 
-`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 22 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
+`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 23 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
 
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):
 

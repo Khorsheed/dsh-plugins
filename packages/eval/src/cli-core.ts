@@ -28,6 +28,17 @@ const USAGE = `dsh-eval <verb> [options]
                                     declarations, locks, stage schemas.
                                     Report as stdout JSON; exit 0 when valid
                                     (warnings allowed), 1 when errors remain.
+  run <plan.json> --dry-run         Offline rehearsal: validate, generate the
+                                    run template, expand the matrix, print the
+                                    seeded execution order. Without --dry-run
+                                    the CLI REFUSES: a run starts from a live
+                                    session (/eval run) — outside one there is
+                                    no parent agent to delegate through.
+  template <manifest.yml>           Print the run template generated from a
+                                    dataset-suite manifest (stages, guards,
+                                    archive gate) as stdout JSON. [--stages
+                                    a,b] selects a subset (default: every
+                                    manifest stage).
   conditions hash <condition.json>  sha256 of the condition document's
                                     canonical JSON (notes excluded); the file
                                     must be a valid dataseek.condition/1.
@@ -81,6 +92,37 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.stdout(`${JSON.stringify(report, null, 2)}\n`)
         io.stderr(`dsh-eval: ${report.ok ? 'valid' : 'INVALID'} — ${report.errors.length} error(s), ${report.warnings.length} warning(s)\n`)
         return report.ok ? 0 : 1
+      }
+      case 'run': {
+        const [planPath, ...extra] = rest
+        if (planPath === undefined) throw new UsageError('run wants a plan path')
+        const dryRun = extra.includes('--dry-run')
+        const leftovers = extra.filter(token => token !== '--dry-run')
+        if (leftovers.length > 0) {
+          throw new UsageError(`unexpected argument(s) for run: ${leftovers.join(' ')} — the CLI runs --dry-run only (a live run starts from a session: /eval run)`)
+        }
+        if (!dryRun) {
+          io.stderr(`dsh-eval: refusing: a run starts from a live session (/eval run) — outside one there is no parent agent to delegate through. Re-run with --dry-run for the offline rehearsal.\n`)
+          return 1
+        }
+        const report = await service.run(planPath, { dryRun: true })
+        io.stdout(`${JSON.stringify({ planSha: report.meta.planSha, conditions: report.meta.conditions, order: report.meta.order, concurrency: report.meta.concurrency, template: report.template }, null, 2)}\n`)
+        const sequence = (report.meta.order as { sequence: string[] }).sequence
+        io.stderr(`dsh-eval: dry-run ok — ${sequence.length} cell(s), order seeded (order.sequence)\n`)
+        return 0
+      }
+      case 'template': {
+        const [manifestPath, ...extra] = rest
+        if (manifestPath === undefined) throw new UsageError('template wants a manifest path')
+        const stagesFlag = extra.indexOf('--stages')
+        const leftovers = extra.filter((token, i) => token !== '--stages' && extra[i - 1] !== '--stages')
+        if (leftovers.length > 0) throw new UsageError(`unexpected argument(s): ${leftovers.join(' ')}`)
+        const stages = stagesFlag >= 0 ? (extra[stagesFlag + 1] ?? '').split(',').map(s => s.trim()).filter(s => s !== '') : undefined
+        if (stages !== undefined && stages.length === 0) throw new UsageError('--stages wants a comma-separated stage list')
+        const template = await service.generateTemplate(manifestPath, ...(stages !== undefined ? [{ stages }] : []))
+        io.stdout(`${JSON.stringify(template, null, 2)}\n`)
+        io.stderr(`dsh-eval: template generated from ${manifestPath} (${template.states.length} states, ${template.transitions.length} transitions)\n`)
+        return 0
       }
       case 'conditions': {
         const [sub, target, ...extra] = rest

@@ -112,7 +112,7 @@ describe('dsh-eval usage', () => {
   })
 
   it('unknown verbs and missing arguments exit 2 with usage on stderr', async () => {
-    const unknown = await run(['run', 'x'])
+    const unknown = await run(['frobnicate'])
     expect(unknown.code).toBe(2)
     expect(unknown.stderr).toContain('unknown verb')
 
@@ -131,5 +131,181 @@ describe('dsh-eval usage', () => {
     const extra = await run(['validate', T1_PLAN, 'extra'])
     expect(extra.code).toBe(2)
     expect(extra.stderr).toContain('unexpected argument')
+  })
+})
+
+describe('dsh-eval run --dry-run', () => {
+  it('rehearses offline: plan sha, resolved conditions, seeded order, and the template on stdout', async () => {
+    const { code, stdout, stderr } = await run(['run', T1_PLAN, '--dry-run'])
+    expect(code).toBe(0)
+    const out = JSON.parse(stdout) as {
+      planSha: string
+      conditions: Array<{ id: string; sha: string }>
+      order: { seed: number; sequence: string[] }
+      concurrency: number
+      template: { states: string[]; transitions: unknown[]; releasableStates: string[] }
+    }
+    expect(out.planSha).toMatch(/^[0-9a-f]{64}$/)
+    expect(out.conditions).toHaveLength(1)
+    expect(out.conditions[0]?.id).toBe('dsh-exec')
+    expect(out.order).toEqual({ seed: 42, sequence: ['p0-placeholder-dsh-exec-rep1'] })
+    expect(out.concurrency).toBe(1)
+    expect(out.template.states).toContain('stage-1')
+    expect(stderr).toContain('dry-run ok — 1 cell(s)')
+  })
+
+  it('the dry-run report is a stable snapshot for the same plan', async () => {
+    const { stdout } = await run(['run', T1_PLAN, '--dry-run'])
+    const out = JSON.parse(stdout) as Record<string, unknown>
+    // Deterministic end to end: the plan sha, the condition hash, the seeded
+    // order, and the generated template. Any drift shows here.
+    expect(out).toMatchInlineSnapshot(`
+      {
+        "concurrency": 1,
+        "conditions": [
+          {
+            "id": "dsh-exec",
+            "sha": "3afb40c930e0eaff946f7ee920b8b50db03a4db4e77a9a2cf896fdc01a328b55",
+          },
+        ],
+        "order": {
+          "seed": 42,
+          "sequence": [
+            "p0-placeholder-dsh-exec-rep1",
+          ],
+        },
+        "planSha": "67e3b85dabf68c63ca5a682ee443c3cd8a3fd2d583aedb3bf3167529335f2b3d",
+        "template": {
+          "missions": [
+            {
+              "id": "p0-placeholder-dsh-exec-rep1",
+              "labels": {
+                "condition": "dsh-exec",
+                "rep": "1",
+                "task": "P0-placeholder",
+              },
+              "title": "P0-placeholder × dsh-exec × rep1",
+            },
+          ],
+          "name": "harness-comparison-v1",
+          "releasableStates": [
+            "releasable",
+          ],
+          "states": [
+            "pending",
+            "ws-ready",
+            "stage-1",
+            "stage-2",
+            "judged",
+            "halted",
+            "archived",
+            "releasable",
+            "released",
+          ],
+          "transitions": [
+            {
+              "from": "pending",
+              "guard": {
+                "inputFrom": "run-meta",
+                "schemaPath": "../schemas/run-meta.json",
+                "type": "schema-check",
+              },
+              "to": "ws-ready",
+            },
+            {
+              "from": "ws-ready",
+              "to": "stage-1",
+            },
+            {
+              "from": "stage-1",
+              "guard": {
+                "schemaPath": "../schemas/stage1.json",
+                "type": "schema-check",
+              },
+              "to": "stage-2",
+            },
+            {
+              "from": "stage-2",
+              "guard": {
+                "schemaPath": "../schemas/stage2.json",
+                "type": "schema-check",
+              },
+              "to": "judged",
+            },
+            {
+              "from": "judged",
+              "to": "archived",
+            },
+            {
+              "from": "halted",
+              "to": "archived",
+            },
+            {
+              "from": "archived",
+              "guard": {
+                "dir": "archive",
+                "expectedFiles": [
+                  "workspace/",
+                  "verdicts/",
+                ],
+                "type": "file-check",
+              },
+              "to": "releasable",
+            },
+            {
+              "from": "releasable",
+              "to": "released",
+            },
+            {
+              "from": "stage-2",
+              "guard": {
+                "schemaPath": "../schemas/stage2-halted.json",
+                "type": "schema-check",
+              },
+              "to": "halted",
+            },
+          ],
+        },
+      }
+    `)
+  })
+
+  it('without --dry-run the CLI refuses: a run starts from a live session', async () => {
+    const { code, stdout, stderr } = await run(['run', T1_PLAN])
+    expect(code).toBe(1)
+    expect(stdout).toBe('')
+    expect(stderr).toContain('refusing')
+    expect(stderr).toContain('/eval run')
+  })
+
+  it('unknown flags to run exit 2', async () => {
+    const { code, stderr } = await run(['run', T1_PLAN, '--dry-run', '--boom'])
+    expect(code).toBe(2)
+    expect(stderr).toContain('--boom')
+  })
+})
+
+describe('dsh-eval template', () => {
+  it('generates the manifest template; a stage subset matches the hand-written bench-v1 machine', async () => {
+    const { code, stdout, stderr } = await run(['template', join(FIXTURE_DATASET, 'manifest.yml'), '--stages', 'stage1,stage2'])
+    expect(code).toBe(0)
+    const template = JSON.parse(stdout) as { states: string[]; transitions: Array<Record<string, unknown>>; releasableStates: string[] }
+    const bench = JSON.parse(readFileSync(join(FIXTURE_DATASET, 'templates', 'bench-v1.json'), 'utf8')) as {
+      states: string[]
+      transitions: Array<Record<string, unknown>>
+      releasableStates: string[]
+    }
+    expect(template.states).toEqual(bench.states)
+    expect(template.transitions).toEqual(bench.transitions)
+    expect(template.releasableStates).toEqual(bench.releasableStates)
+    expect(stderr).toContain('9 states')
+  })
+
+  it('the full manifest refuses: stage3/stage4 still carry the retired inline draft notation', async () => {
+    const { code, stdout, stderr } = await run(['template', join(FIXTURE_DATASET, 'manifest.yml')])
+    expect(code).toBe(1)
+    expect(stdout).toBe('')
+    expect(stderr).toContain('stage3')
+    expect(stderr).toContain('structured schema file reference')
   })
 })

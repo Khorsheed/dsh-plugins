@@ -12,6 +12,7 @@
     "@khorsheed/dsh-file-preview": "^0.1.1",
     "@khorsheed/dsh-inline-html-render": "^0.1.13",
     "@khorsheed/dsh-lab": "^0.1.0",
+    "@khorsheed/dsh-eval": "^0.1.0",
     "@khorsheed/dsh-local-agent": "^0.1.0",
     "@khorsheed/dsh-local-agent-claude-code": "^0.1.0",
     "@khorsheed/dsh-local-agent-codex": "^0.1.0",
@@ -51,6 +52,7 @@
         "@khorsheed/dsh-datasets",
         "@khorsheed/dsh-mission",
         "@khorsheed/dsh-lab",
+        "@khorsheed/dsh-eval",
         "@khorsheed/dsh-ankh-guard"
       ]
     }

@@ -1,0 +1,87 @@
+schema_version: dataseek.suite_manifest/1
+suite_id: harness-comparison
+taxonomy_schema: dataseek_taxonomy/1
+
+description: >
+  同一个产品需求分别交给四个 harness（codex / claude-code / kimi / dsh），
+  比较从产品理解到实现落地的表现。题目全部来自已验证可实现的真实插件，
+  因此「判定不可实现」即为错误答案。
+
+# ─────────────────────────────────────────────────────────────
+# 阶段结构 —— 属于 dataset，不属于 mission。
+# mission 只需知道：当前第几阶段、耗时、产出在哪、能否进下一阶段。
+# ─────────────────────────────────────────────────────────────
+stages:
+  - id: stage1
+    name: 产品交互设计
+    concurrency: parallel        # 只读源码写文档，四家可并发
+    time_limit_min: 60
+    gives: [task.visible, workspace]
+    wants: [stage1.structured, stage1.narrative]
+
+  - id: stage2
+    name: 技术方案与迭代拆解
+    concurrency: parallel
+    time_limit_min: 60
+    gives: [task.visible, standards.full, workspace]   # 给固定标准，不用它 stage1 列的那份
+    wants: [stage2.structured, stage2.narrative]
+    halt_on: {field: feasible, equals: false}          # 判定做不了 → 止步，不进 stage3
+
+  - id: stage3
+    name: 限时落地
+    concurrency: exclusive       # 构建部署吃 3-4GB，必须独占
+    observation_at_min: 90       # 到点发一次「部署当前进度」，返回即观测
+    wants: [iteration_reports, deployment]
+
+  - id: stage4
+    name: 完整落地
+    concurrency: exclusive
+    time_limit_min: 360          # 与 stage3 是同一次连续开发的两个观测点
+    wants: [iteration_reports, deployment, self_tests]
+
+# ─────────────────────────────────────────────────────────────
+# 表头 schema —— 产出即校验。
+# 两段式：structured 由 mission 做确定性校验，narrative 给人和 LLM 评。
+# 只要结构不要叙述，评测会退化成填表考试。
+# ─────────────────────────────────────────────────────────────
+output_schema:
+  # 协议 v1-rev2 §6.6：阶段 structured schema 以题集级 schemas/<stage>.json 为权威，
+  # manifest 只引用文件名，不再内联。字段的人话说明在 visible/prompts/<stage>.md。
+  stage1:
+    structured: schemas/stage1.json
+    narrative:
+      file: stage1.md
+  stage2:
+    structured: schemas/stage2.json
+    narrative:
+      file: stage2.md
+
+  # stage3_4 尚无 schemas/ 文件（I3 · T17 随探针落地），沿用内联草记；
+  # 迁移到引用形式时同步补 schemas/stage3_4.json。
+  stage3_4:
+    structured:
+      iteration_reports:
+        type: array
+        required: true
+        note: 每个委派返回点一条
+        items:
+          n:                   {type: integer, required: true}
+          delivered:           {type: string, required: true}
+          standards_covered:   {type: array, items: string, required: true}
+          deviation_from_plan: {type: string, required: false}
+      self_tests:
+        type: object
+        required: true
+        note: 选手自写测试是交付物的一部分
+        fields:
+          path:    {type: string, required: true}
+          count:   {type: integer, required: true}
+          passing: {type: integer, required: true}
+      known_gaps:
+        type: array
+        required: true
+        note: 自述未完成项；与判定结果对照，看它是否清楚自己的边界
+    narrative:
+      file: delivery.md
+visibility:
+  defined_by: ../dataset.json
