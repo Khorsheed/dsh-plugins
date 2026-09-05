@@ -83,7 +83,7 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
 - `1`——组合结论：重启将要 boot 的树是坏的；输出会指明坏在哪一层。
 - `3`——preflight 自身没能执行（缺 app 布局、基础设施崩溃）——**不是**对组合的结论。
 
-`schedule-exit`、`restart` 和 `reconfigure` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。闸门按 `--harness-root` → 耐久选中 launch spec → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；凭证 `--repo` 永不参与宿主定位。全部都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。随时可手动跑：`dsh-ankh-guard preflight --profile web --harness-root "$DSH_HARNESS"`。
+`schedule-exit`、`restart` 和 `reconfigure` 在凭证检查之后、停止任何东西之前运行这道闸门。组合失败会带着 preflight 的诊断拒绝；基础设施失败同样拒绝——措辞不同，并附手动绕行路径（手动停实例，让 watchdog 重新拉起）——因为 guard 不会停掉一个它无法证明能回来的健康实例。CLI 在等待前立即输出 `composition preflight START`，完成后才输出 PASS 或拒绝。闸门按 `--harness-root` → 耐久选中 launch spec → `DSH_HARNESS` → 约定路径 `~/code/deepseek-harness` 的顺序定位用于干跑的 dsh app；凭证 `--repo` 永不参与宿主定位。全部都解析不到时（没有 harness 检出的纯 npm 部署）没有引擎可以 boot 这棵树，闸门警告一行后放行。参数：`--profile NAME`（默认 `$DSH_PROFILE`，否则 `web`）和 `--preflight-timeout-ms MS`（默认 120000）；`DSH_PREFLIGHT_COMMAND` 整体替换解析出的 app bin（测试钩子）。调用它的托管 shell/tool 还必须有更长的独立等待预算：默认 preflight 下使用至少 180000 ms；自定义时至少比 `--preflight-timeout-ms` 多 30000 ms。调用方超时不是 guard 拒绝，且没有 `exit scheduled` 就没有获准重启；重试前先检查耐久 marker/回执。随时可手动跑：`dsh-ankh-guard preflight --profile web --harness-root "$DSH_HARNESS"`。
 
 ### 自我重启协议
 
@@ -109,7 +109,7 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 它以 `--wait-owner` 模式 detached 拉起随包发布的 `scripts/dsh-watchdog.sh`：watchdog 在当前实例运行期间待机，实例退出（有意重启或崩溃）后接管端口、重新拉起，有意重启时跑 guard canary（读 `restart-requested.json` 标记），通过后清除标记。连续 2 次起不来→回滚到最后已知可用版本：健康启动戳（`last-good-boot.json`，每次实例成功启动时重写，指向本部署里最近一次真正跑起来的版本）优先，其次是 guard checkpoint，最后是凭证 HEAD；但仅当启动失败的错误主体路径在仓库内。主体在仓库之外时（坏掉的 profile overlay 或已装插件），回滚检出修不好，watchdog 改为恢复上次健康的 **profile 组合**：健康启动时快照的组合输入（`last-good-composition/`）覆盖回 live 的 bundles 层与清单，最新插件变更被卸载，故障输入保留在 `composition-backup-*`，恢复报告会点名被卸载的内容。启动命令没有绑到被监督端口时同样豁免：启动窗口超时而实例正监听在别处、或以点名了本 watchdog 并不拥有的端口的 `EADDRINUSE` 失败时，watchdog 会点名实际绑定的端口并跳过两种回滚——重置文件改不了命令行参数。发生在被监督端口上的 `EADDRINUSE` 保留原本的释放并重试逃生口，现在以五次为上限。任何路径的 reset（watchdog、CLI、service）都会先为被丢弃的 HEAD 和未提交改动创建 `guard-backup-*` 分支锚点，恢复不依赖 reflog。4 次失败→在端口上提供带重试按钮的崩溃页（SIGUSR1 通知 watchdog）。`watchdog-stop` 标记让 watchdog 彻底退出。实例可以在自我重启前自行采用监督——用户永远不需要手动启动 watchdog。
 
-已有 watchdog 监督时，重启触发用 `schedule-exit`：它从耐久 active launch spec 取得端口、凭证仓库、宿主根与 profile，拒绝任何冲突的显式参数，并核对 supervisor 写下的完整命令后才写 restart 标记、spawn detached 退出代理（输出明确标为 `exit-agent pid`）。托管 shell 的进程组回收不到它，所以计划中的 kill 会在调度回合结束后真实落地。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报；watchdog 生命周期日志均带时间戳。没有存活 watchdog 时 `schedule-exit` 硬拒绝，只能先建立监督或使用拥有单次完整循环的 `restart`。
+已有 watchdog 监督时，重启触发用 `schedule-exit`：它从耐久 active launch spec 取得端口、凭证仓库、宿主根与 profile，拒绝任何冲突的显式参数，并核对 supervisor 写下的完整命令后才写 restart 标记、spawn detached 退出代理（输出明确标为 `exit-agent pid`）。从 agent 的 Bash/tool 调用时应把该调用的 `timeoutMs` 设为 180000；这不是 CLI 参数，而是保证调用方不会先于 120 秒 preflight 闸门退出的等待契约。托管 shell 的进程组回收不到退出代理，所以计划中的 kill 会在调度回合结束后真实落地。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报；watchdog 生命周期日志均带时间戳。没有存活 watchdog 时 `schedule-exit` 硬拒绝，只能先建立监督或使用拥有单次完整循环的 `restart`。
 
 ### reconfigure：启动配置事务切换
 
