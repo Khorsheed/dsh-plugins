@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-headless-no-dsh-bundle-declaration.md
+.agents/notes/implemented/bug-fix/2026-09-05-headless-no-dsh-bundle-declaration.md: 2ec0bd719ccf58c964ecdae4c493e858b1dba77d
+.agents/notes/implemented/bug-fix/2026-09-05-headless-no-dsh-bundle-declaration.zh.md: 618d44ef45e50c819701d39ef88f0c156aa59571

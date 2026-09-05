@@ -22,6 +22,8 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-age
 
 No login step needed — `/dsh status` reports whether the parent's `DEEPSEEK_API_KEY` resolves.
 
+Tarball installs (family packages unpublished on npm) need an `overrides:` block in the profile's `pnpm-workspace.yaml` pinning each family name to a `file:` tarball — inside a tarball the family edges are registry ranges, and the pin resolves headless and its siblings as **transitive** dependencies (headless itself declares no `dsh.bundle`, so even a mistaken direct-dependency install would mount nothing — but none is needed).
+
 Uninstall:
 
 ```sh
@@ -64,7 +66,7 @@ The scoped home (`$DSH_HOME/local-agent/dsh`) is kept on purpose — it holds th
 
 **Live driver (`live: true`).** Replaces the per-round spawn: the member's first delegation brings up one resident `--serve` sub-dsh process, and every later round is a `turn/start` request to that living runtime over the family-internal stdio JSON-RPC wire (the headless package's `src/wire.ts`). Session events stream back as `session/event` notifications and mirror into the child session event-by-event (same fold rules as the file mirror, which runs once more at settle as reconciliation), and `cancel` lands as a runtime-level `turn/interrupt` (in-process `Agent.cancel`) — the process survives and the session stays continuable. Runtimes are reclaimed after an idle timeout (wire `shutdown`, then the SIGTERM ladder); after a crash the next round re-spawns and `agents.resume`s the on-disk session; a spawn/handshake failure marks the channel broken and permanently falls back to the exec path.
 
-**Auth & provisioning.** No device-code login: the sub-dsh authenticates through the parent's `DEEPSEEK_API_KEY` credential (`apiKeyRef` config); `/dsh status` reports whether the credential resolves, `/dsh sessions` lists the sub-dsh's own sessions from its scoped-home store. The sub-profile lives at `profiles/headless-local-agent-dsh`: a manifest (`@deepseek-ai/dsh-base` + the family headless bundle), an empty user layer, and one symlink resolving the headless bundle — everything else resolves from the dsh installation anchor, so provisioning costs no pnpm install and is idempotent. The parent replicates its own launch (or a configured `cliLaunch`) so the sub-dsh runs the same dsh build.
+**Auth & provisioning.** No device-code login: the sub-dsh authenticates through the parent's `DEEPSEEK_API_KEY` credential (`apiKeyRef` config); `/dsh status` reports whether the credential resolves, `/dsh sessions` lists the sub-dsh's own sessions from its scoped-home store. The sub-profile lives at `profiles/headless-local-agent-dsh`: a manifest (listing only `@deepseek-ai/dsh-base`), the headless package's patch copied byte-for-byte as the profile's own patch layer, and one symlink resolving the headless bundle (for the loader's insert rows) — everything else resolves from the dsh installation anchor, so provisioning costs no pnpm install and is idempotent, rewriting automatically on content drift (upgrades and old-format healing). The parent replicates its own launch (or a configured `cliLaunch`) so the sub-dsh runs the same dsh build.
 
 </details>
 

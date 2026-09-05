@@ -51,11 +51,18 @@ export interface Finding {
 }
 
 /**
- * Packages deliberately NOT self-mounting: family-internal row packages that
- * provider patches mount as config-bearing rows (see AGENTS.md "Package
- * conventions" and the tool-subagent README "Install" section).
+ * Packages deliberately NOT self-mounting: family-internal row packages whose
+ * composition is mounted on their behalf — provider patches mount
+ * config-bearing rows (tool-subagent), and the local-agent-dsh provisioner
+ * copies the headless patch into the provisioned sub-profile's own patch
+ * layer (a `dsh.bundle` declaration there would hand the host's `dsh plugin`
+ * reconcile a mount trigger for a sub-dsh-only composition; see AGENTS.md
+ * "Package conventions" and the two packages' README "Install" sections).
  */
-export const NO_OWN_PATCH: ReadonlyArray<string> = ['local-agent-tool-subagent']
+export const NO_OWN_PATCH: ReadonlyArray<string> = [
+  'local-agent-tool-subagent',
+  'local-agent-dsh-headless',
+]
 
 /**
  * Sanctioned cross-package edges (AGENTS.md: the local-agent core/companion
