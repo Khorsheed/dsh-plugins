@@ -19,7 +19,7 @@ import { Button, Input, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitive
 import type {
   MissionExportPlanView, MissionQueueRun,
 } from '../types.ts'
-import type { Bucket, MissionView } from '../types.ts'
+import { RETRY_CATEGORIES, type Bucket, type MissionView, type RetryCategory } from '../types.ts'
 import type { MissionsViewProps } from './contract.ts'
 import type { RunScope } from './store.ts'
 import css from './MissionsView.module.css'
@@ -254,6 +254,8 @@ export function MissionsView(props: MissionsViewProps) {
   const detailError = useStore(s => s.detailError)
   const notice = useStore(s => s.notice)
   const [exportOpen, setExportOpen] = useState(false)
+  const [retryReason, setRetryReason] = useState('')
+  const [retryCategory, setRetryCategory] = useState<RetryCategory>('infrastructure')
   const now = Date.now()
 
   // Fetch the queue on mount and whenever the filters or refreshRev move.
@@ -289,9 +291,16 @@ export function MissionsView(props: MissionsViewProps) {
   }, [sessionId, selection, refreshRev, actions, fetchMission])
 
   const retry = (): void => {
-    if (selection === null) return
-    void retryMission(sessionId, { missionId: selection.missionId, runId: selection.runId }).then((result) => {
+    const reason = retryReason.trim()
+    if (selection === null || reason === '') return
+    void retryMission(sessionId, {
+      missionId: selection.missionId,
+      runId: selection.runId,
+      reason,
+      category: retryCategory,
+    }).then((result) => {
       if (result.ok) {
+        setRetryReason('')
         actions.setNotice(t('notice.retried', { attempt: result.value.attempt }))
         actions.refresh()
       } else {
@@ -397,7 +406,20 @@ export function MissionsView(props: MissionsViewProps) {
                 {' · '}{t('detail.annotations')} {detail.annotations.length}
               </div>
               <div className={css.detailActions}>
-                <Button size="sm" onClick={retry}>{t('action.retry')}</Button>
+                <select
+                  value={retryCategory}
+                  onChange={event => { setRetryCategory(event.target.value as RetryCategory) }}
+                  aria-label={t('retry.category')}
+                >
+                  {RETRY_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                </select>
+                <Input
+                  value={retryReason}
+                  onChange={event => { setRetryReason(event.target.value) }}
+                  placeholder={t('retry.reason')}
+                  aria-label={t('retry.reason')}
+                />
+                <Button size="sm" disabled={retryReason.trim() === ''} onClick={retry}>{t('action.retry')}</Button>
                 <Button size="sm" onClick={releasable}>{t('action.releasable')}</Button>
                 <Button size="sm" variant="outline" onClick={() => { setExportOpen(true) }}>{t('action.export')}</Button>
               </div>

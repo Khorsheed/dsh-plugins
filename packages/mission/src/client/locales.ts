@@ -30,6 +30,8 @@ export type MissionKey =
   | 'action.retry'
   | 'action.releasable'
   | 'action.export'
+  | 'retry.reason'
+  | 'retry.category'
   | 'notice.retried'
   | 'notice.releasable'
   | 'notice.notReleasable'
@@ -84,6 +86,8 @@ export const en: Record<MissionKey, string> = {
   'action.retry': 'Retry',
   'action.releasable': 'Release check',
   'action.export': 'Export bundle',
+  'retry.reason': 'Reason for retry',
+  'retry.category': 'Retry category',
   'notice.retried': 'attempt {attempt} opened',
   'notice.releasable': '{id}: releasable — resources may be destroyed',
   'notice.notReleasable': '{id}: NOT releasable',
@@ -132,6 +136,8 @@ export const zh: Record<MissionKey, string> = {
   'action.retry': '重跑',
   'action.releasable': '释放检查',
   'action.export': '导出 bundle',
+  'retry.reason': '重跑原因',
+  'retry.category': '重跑类别',
   'notice.retried': '已开 attempt {attempt}',
   'notice.releasable': '{id}：可释放——资源可以销毁',
   'notice.notReleasable': '{id}：不可释放',

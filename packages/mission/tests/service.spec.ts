@@ -59,7 +59,7 @@ describe('annotations: ns isolation and append-only', () => {
   it('annotations carry their attempt number across a retry', async () => {
     await service.create({ id: 'm' })
     await service.annotate('m', 'script', { round: 1 })
-    await service.retry('m')
+    await service.retry('m', { reason: 'resource was unavailable', category: 'infrastructure' })
     await service.annotate('m', 'script', { round: 2 })
     const { mission } = service.get('m')
     expect(mission.annotations.map(a => [a.attempt, a.payload])).toEqual([
@@ -76,12 +76,50 @@ describe('attempt vs checkpoint', () => {
     await service.addCheckpoint('m', { name: 'mid', ref: 'tag-1' })
     let attempt = currentAttempt(service.get('m').mission)
     expect(attempt.checkpoints.map(c => c.name)).toEqual(['submit', 'mid'])
-    await service.retry('m')
+    await service.retry('m', { reason: 'requested a fresh pass', category: 'operator' })
     attempt = currentAttempt(service.get('m').mission)
     expect(attempt.attempt).toBe(2)
     expect(attempt.checkpoints).toEqual([])
     // Attempt 1 is immutable: its checkpoints survive untouched.
     expect(service.get('m').mission.attempts[0]?.checkpoints).toHaveLength(2)
+  })
+
+  it('retry requires a reason and records its category on the new attempt and in history', async () => {
+    await service.create({ id: 'm' })
+    await expect(service.retry('m', undefined as never)).rejects.toThrow(/requires a non-empty reason/)
+    await expect(service.retry('m', { reason: '', category: 'operator' })).rejects.toThrow(/non-empty reason/)
+    await expect(service.retry('m', { reason: 'try again', category: 'invalid' as never })).rejects.toThrow(/category must be one of/)
+    await service.retry('m', {
+      reason: 'resource interrupted', category: 'infrastructure', by: 'tool:s-1', now: 1234,
+    })
+    const fresh = service.get('m').mission.attempts[1]
+    expect(fresh?.retry).toEqual({
+      reason: 'resource interrupted', category: 'infrastructure', by: 'tool:s-1', at: 1234,
+    })
+    expect(fresh?.history).toEqual([{
+      kind: 'retry', reason: 'resource interrupted', category: 'infrastructure', by: 'tool:s-1', at: 1234,
+    }])
+  })
+
+  it('reads a legacy run with no retry metadata and appends a compatible new attempt', async () => {
+    mkdirSync(join(dir, 'data', 'runs'), { recursive: true })
+    writeFileSync(join(dir, 'data', 'runs', 'legacy.json'), JSON.stringify({
+      id: 'legacy', createdAt: 1, state: 'active', meta: {},
+      stateMachine: {
+        states: ['queued', 'done'], transitions: [{ from: 'queued', to: 'done' }], releasableStates: [],
+      },
+      missions: [{
+        id: 'm', labels: {}, currentAttempt: 1, annotations: [], attempts: [{
+          attempt: 1, state: 'queued', refs: {}, enteredAt: { queued: 1 }, checkpoints: [], history: [],
+          artifacts: [], attestations: [],
+        }],
+      }],
+    }))
+    expect(service.get('m', 'legacy').mission.attempts[0]?.retry).toBeUndefined()
+    await service.retry('m', { runId: 'legacy', reason: 'requested another pass', category: 'operator' })
+    expect(service.get('m', 'legacy').mission.attempts[1]?.retry).toMatchObject({
+      reason: 'requested another pass', category: 'operator', by: 'service',
+    })
   })
 
   it('submit registers a NO-REF checkpoint; addCheckpoint with a ref MERGES into it — never a duplicate', async () => {

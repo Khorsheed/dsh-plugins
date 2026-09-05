@@ -17,7 +17,7 @@ export type Guard =
     type: 'file-check'
     /** Relative to the attempt's run-data directory; absolute paths and `..` are rejected. */
     dir: string
-    /** Entries ending in `/` must be directories; the rest must be plain files. */
+    /** Entries ending in `/` must recursively contain a regular file; the rest must be plain files. */
     expectedFiles: string[]
   }
   | {
@@ -103,6 +103,26 @@ export interface HistoryEntry {
   note?: string
 }
 
+/** Why a caller opened a fresh attempt. Kept deliberately domain-neutral. */
+export const RETRY_CATEGORIES = ['infrastructure', 'operator', 'outcome'] as const
+export type RetryCategory = typeof RETRY_CATEGORIES[number]
+
+/** Retry metadata recorded on the fresh attempt itself. */
+export interface RetryRecord {
+  reason: string
+  category: RetryCategory
+  at: number
+  by: string
+}
+
+/** A retry event in the fresh attempt's history. */
+export interface RetryHistoryEntry extends RetryRecord {
+  kind: 'retry'
+}
+
+/** Old run files contain transition-only entries; new retries add retry events. */
+export type AttemptHistoryEntry = HistoryEntry | RetryHistoryEntry
+
 /** An artifact index entry; `path` lives inside the attempt's run-data directory. */
 export interface ArtifactRecord {
   path: string
@@ -128,11 +148,13 @@ export interface SubmissionRecord {
 export interface AttemptRecord {
   attempt: number
   state: string
+  /** Present only on attempts opened by retry; absent on first and legacy attempts. */
+  retry?: RetryRecord
   refs: AttemptRefs
   /** state → first entry timestamp (epoch ms). */
   enteredAt: Record<string, number>
   checkpoints: CheckpointRecord[]
-  history: HistoryEntry[]
+  history: AttemptHistoryEntry[]
   artifacts: ArtifactRecord[]
   attestations: AttestationRecord[]
   submission?: SubmissionRecord
@@ -254,6 +276,12 @@ export interface MissionDetail {
 export interface MissionRefRequest {
   missionId: string
   runId?: string
+}
+
+/** `retry` request: every fresh attempt must carry an auditable reason. */
+export interface MissionRetryRequest extends MissionRefRequest {
+  reason: string
+  category: RetryCategory
 }
 
 /** `exportPlan` request: what the export dialog needs before confirming. */

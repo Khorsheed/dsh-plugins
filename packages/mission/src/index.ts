@@ -45,7 +45,7 @@ export const name = 'mission'
 export const inject = ['commands', 'tools', 'systemPrompt']
 
 /** Cross-call guidance: after the bash band, beside the other tool sections. */
-const MISSION_PROMPT = `Missions track multi-step work. mission_create queues a work item — without a run it lands in this session's implicit run (simple template: queued → active → done | failed); mission_transition moves it along DECLARED edges only, with guards enforced; mission_submit records outputs into the attempt's append-only run-data directory; mission_annotate appends a namespaced, append-only note; mission_retry opens a fresh attempt (the old one stays immutable); mission_is_releasable checks whether held resources may be destroyed. For batch work, mission_run_create with a template; mission_list / mission_run_status project the queue into five buckets (ready / scheduled / blocked / active / done). dependsOn and scheduledAt are plan data only — they change the projection, they never fire anything. Exporting a run bundle is a human decision and intentionally has no tool.`
+const MISSION_PROMPT = `Missions track multi-step work. mission_create queues a work item — without a run it lands in this session's implicit run (simple template: queued → active → done | failed); mission_transition moves it along DECLARED edges only, with guards enforced; mission_submit records outputs into the attempt's append-only run-data directory (pass to when several submission schema edges leave the state); mission_annotate appends a namespaced, append-only note; mission_retry opens a fresh attempt and requires a reason plus category (the old one stays immutable); mission_is_releasable checks whether held resources may be destroyed. For batch work, mission_run_create with a template; mission_list / mission_run_status project the queue into five buckets (ready / scheduled / blocked / active / done). dependsOn and scheduledAt are plan data only — they change the projection, they never fire anything. Exporting a run bundle is a human decision and intentionally has no tool.`
 
 /**
  * Mount the mission service, its tools, the slash command, and its prompt section.
@@ -66,13 +66,13 @@ export { MissionService } from './service.ts'
 export { MissionRemoteService } from './remote.ts'
 export { MissionStore } from './store.ts'
 export { handleMissionCommand, registerMissionSlash } from './slash.ts'
-export { resolveDataDir } from './defaults.ts'
+export { resolveCliDataDir, resolveDataDir } from './defaults.ts'
 export { lintTemplate, loadTemplateFile, parseTemplate, deriveShape, SIMPLE_TEMPLATE } from './template.ts'
 export { bucketOf, viewOf, currentAttempt, releasableClosure } from './projection.ts'
 export { validateJson, assertSchemaSubset, schemaSubsetProblems, jsonEquals } from './schema.ts'
 export type * from './types.ts'
 export type { LintResult, LoadedTemplate, MachineShape } from './template.ts'
 export type {
-  CallOptions, MissionCreateOptions, RunCreateOptions, RunStatus, RunSummary, SubmitFile, SubmitOptions,
+  CallOptions, MissionCreateOptions, RetryOptions, RunCreateOptions, RunStatus, RunSummary, SubmitFile, SubmitOptions,
   SubmitResult, TransitionResult,
 } from './service.ts'

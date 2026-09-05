@@ -12,7 +12,7 @@
  * the target state, identical annotation payload, same attestation key,
  * same-name checkpoint, same submission bytes).
  */
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { exportRun, nsCompleteness, planExport, type ExportPlan, type ExportRequest, type ExportResult, type NsCellReport } from './export.ts'
 import { currentAttempt, viewOf } from './projection.ts'
@@ -23,8 +23,10 @@ import {
   type LintResult, type LoadedTemplate,
 } from './template.ts'
 import type {
-  AnnotationRecord, AttemptRecord, AttemptRefs, Guard, MissionRecord, MissionView, RunRecord, TemplateMission,
+  AnnotationRecord, AttemptRecord, AttemptRefs, Guard, MissionRecord, MissionView, RetryCategory, RetryRecord,
+  RunRecord, TemplateMission, TransitionDecl,
 } from './types.ts'
+import { RETRY_CATEGORIES } from './types.ts'
 
 /** Who performs a call — recorded into history/attestations/annotations. */
 export type Caller = string
@@ -65,9 +67,20 @@ export interface SubmitFile {
 export interface SubmitOptions extends CallOptions {
   files?: SubmitFile[]
   json?: unknown
+  /** Intended outgoing edge for submit-time schema pre-validation. */
+  to?: string
   /** Checkpoint name for this submission (default `submit`). Never carries a ref. */
   checkpoint?: string
 }
+
+export interface RetryOptions extends CallOptions {
+  runId?: string
+  reason: string
+  category: RetryCategory
+}
+
+/** Invalid call shape rather than a failed mission operation. */
+export class MissionUsageError extends Error {}
 
 export interface RunSummary {
   id: string
@@ -100,17 +113,32 @@ export interface SubmitResult {
   checkpoint: string
 }
 
-function newAttempt(attempt: number, initialState: string, now: number): AttemptRecord {
-  return {
+function newAttempt(attempt: number, initialState: string, now: number, retry?: RetryRecord): AttemptRecord {
+  const record: AttemptRecord = {
     attempt,
     state: initialState,
     refs: {},
     enteredAt: { [initialState]: now },
     checkpoints: [],
-    history: [],
+    history: retry === undefined ? [] : [{ kind: 'retry', ...retry }],
     artifacts: [],
     attestations: [],
   }
+  if (retry !== undefined) record.retry = retry
+  return record
+}
+
+/** A directory expectation is non-empty only when it contains a regular file recursively. */
+function containsRegularFile(dir: string): boolean {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile()) return true
+    if (entry.isDirectory() && containsRegularFile(resolveInside(dir, entry.name, 'file-check directory entry'))) return true
+  }
+  return false
+}
+
+function edgeLabel(edge: TransitionDecl): string {
+  return `${edge.from} → ${edge.to}`
 }
 
 function templateMissionToRecord(m: TemplateMission, initialState: string, now: number): MissionRecord {
@@ -364,6 +392,7 @@ export class MissionService {
         }
         const base = resolveInside(this.store.attemptDataDir(run.id, mission.id, attempt.attempt), guard.dir, 'file-check dir')
         const missing: string[] = []
+        const empty: string[] = []
         for (const expected of guard.expectedFiles) {
           const target = resolveInside(base, expected, 'file-check expected file')
           if (!existsSync(target)) {
@@ -371,10 +400,18 @@ export class MissionService {
             continue
           }
           const stat = statSync(target)
-          if (expected.endsWith('/') ? !stat.isDirectory() : !stat.isFile()) missing.push(expected)
+          if (expected.endsWith('/')) {
+            if (!stat.isDirectory()) missing.push(expected)
+            else if (!containsRegularFile(target)) empty.push(expected)
+          } else if (!stat.isFile()) {
+            missing.push(expected)
+          }
         }
-        if (missing.length > 0) {
-          throw new Error(`mission: file-check guard failed for ${mission.id} attempt ${attempt.attempt}: missing under ${guard.dir}/: ${missing.join(', ')}`)
+        if (missing.length > 0 || empty.length > 0) {
+          const problems: string[] = []
+          if (missing.length > 0) problems.push(`missing under ${guard.dir}/: ${missing.join(', ')}`)
+          if (empty.length > 0) problems.push(`empty under ${guard.dir}/: ${empty.join(', ')}`)
+          throw new Error(`mission: file-check guard failed for ${mission.id} attempt ${attempt.attempt}: ${problems.join('; ')}`)
         }
         return
       }
@@ -444,9 +481,9 @@ export class MissionService {
   }
 
   /**
-   * Record a submission: validate the JSON payload against every
-   * submission-input schema-check guard leaving the current state FIRST (a
-   * failure writes nothing), then append the files into the attempt's
+   * Record a submission: select its intended outgoing edge when the current
+   * state has several submission-input schema guards, validate that one FIRST
+   * (a failure writes nothing), then append the files into the attempt's
    * run-data directory, index them as artifacts, and register a NO-REF
    * checkpoint (the resource holder's own `addCheckpoint` fills the ref
    * later — same name merges, never duplicates).
@@ -458,11 +495,28 @@ export class MissionService {
       const storedRun = stored as RunRecord
       const mission = storedRun.missions.find(m => m.id === missionId) as MissionRecord
       const attempt = currentAttempt(mission)
+      const outgoing = storedRun.stateMachine.transitions.filter(t => t.from === attempt.state)
+      const schemaEdges = outgoing.filter(t => t.guard?.type === 'schema-check' && t.guard.inputFrom !== 'run-meta')
+      let edgesToValidate: TransitionDecl[]
+      if (options.to !== undefined) {
+        const intended = outgoing.find(t => t.to === options.to)
+        if (intended === undefined) {
+          throw new MissionUsageError(
+            `mission: submit --to ${JSON.stringify(options.to)} is not an outgoing edge from ${attempt.state}; candidates: ${outgoing.map(edgeLabel).join(', ') || '(none)'}`,
+          )
+        }
+        edgesToValidate = intended.guard?.type === 'schema-check' && intended.guard.inputFrom !== 'run-meta' ? [intended] : []
+      } else if (schemaEdges.length > 1) {
+        throw new MissionUsageError(
+          `mission: submit from ${attempt.state} has multiple submission schema-check edges; pass to/--to with one candidate: ${schemaEdges.map(edgeLabel).join(', ')}`,
+        )
+      } else {
+        edgesToValidate = schemaEdges
+      }
       if (options.json !== undefined) {
-        for (const t of storedRun.stateMachine.transitions) {
-          // run-meta guards validate the run's meta at transition time — a
-          // submission payload is not their input, so submit skips them.
-          if (t.from !== attempt.state || t.guard?.type !== 'schema-check' || t.guard.inputFrom === 'run-meta') continue
+        for (const t of edgesToValidate) {
+          // Narrowed above: only submission-input schema guards are selected.
+          if (t.guard?.type !== 'schema-check') continue
           const schemaFile = resolveSchemaPath(t.guard.schemaPath, storedRun.templateDir)
           let schema: unknown
           try {
@@ -535,15 +589,27 @@ export class MissionService {
    * immutable (annotations/artifacts/checkpoints carry their attempt number).
    * By nature NOT idempotent — every call is a real new attempt.
    */
-  async retry(missionId: string, options?: CallOptions & { runId?: string }): Promise<{ attempt: number }> {
-    const { run } = this.locate(missionId, options?.runId)
+  async retry(missionId: string, options: RetryOptions): Promise<{ attempt: number }> {
+    if (typeof options?.reason !== 'string' || options.reason.trim() === '') {
+      throw new MissionUsageError('mission: retry requires a non-empty reason')
+    }
+    if (!RETRY_CATEGORIES.includes(options.category)) {
+      throw new MissionUsageError(`mission: retry category must be one of: ${RETRY_CATEGORIES.join(', ')}`)
+    }
+    const { run } = this.locate(missionId, options.runId)
     const now = this.now(options)
     return await this.store.update(run.id, (stored) => {
       const storedRun = stored as RunRecord
       const mission = storedRun.missions.find(m => m.id === missionId) as MissionRecord
       const initial = deriveShape(storedRun.stateMachine).initials[0] as string
       const next = mission.currentAttempt + 1
-      mission.attempts.push(newAttempt(next, initial, now))
+      const retry: RetryRecord = {
+        reason: options.reason,
+        category: options.category,
+        at: now,
+        by: this.by(options),
+      }
+      mission.attempts.push(newAttempt(next, initial, now, retry))
       mission.currentAttempt = next
       return { run: storedRun, result: { attempt: next } }
     })

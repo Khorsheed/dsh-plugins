@@ -118,6 +118,10 @@ describe('guards', () => {
     const archive = service.store.attemptDataDir('g1', 'm', 1)
     mkdirSync(join(archive, 'archive', 'logs'), { recursive: true })
     writeFileSync(join(archive, 'archive', 'workspace.tgz'), 'bytes')
+    await expect(service.transition('m', 'releasable', { runId: 'g1' }))
+      .rejects.toThrow(/empty under archive\/: logs\//)
+    mkdirSync(join(archive, 'archive', 'logs', 'nested'), { recursive: true })
+    writeFileSync(join(archive, 'archive', 'logs', 'nested', 'run.txt'), 'ok')
     const result = await service.transition('m', 'releasable', { runId: 'g1' })
     expect(result.changed).toBe(true)
   })
@@ -152,6 +156,7 @@ describe('guards', () => {
     const archive = service.store.attemptDataDir('g1', 'm', 1)
     mkdirSync(join(archive, 'archive', 'logs'), { recursive: true })
     writeFileSync(join(archive, 'archive', 'workspace.tgz'), 'bytes')
+    writeFileSync(join(archive, 'archive', 'logs', 'run.txt'), 'ok')
     await service.transition('m', 'releasable', { runId: 'g1' })
 
     await expect(service.transition('m', 'released', { runId: 'g1' })).rejects.toThrow(/has not been attested/)
@@ -163,6 +168,101 @@ describe('guards', () => {
     const { mission } = service.get('m', 'g1')
     expect(mission.attempts[0]?.attestations).toHaveLength(1)
     expect(mission.attempts[0]?.attestations[0]).toMatchObject({ key: 'human-ok', by: 'cli' })
+  })
+})
+
+describe('submit intent for mutually exclusive schema edges', () => {
+  const TRUE_PAYLOAD = {
+    feasible: true,
+    mechanisms_considered: [],
+    stage1_risks_resolved: [],
+    iterations: [],
+  }
+
+  beforeEach(() => {
+    mkdirSync(join(dir, 'bench', 'templates'), { recursive: true })
+    mkdirSync(join(dir, 'bench', 'schemas'), { recursive: true })
+    writeFileSync(join(dir, 'bench', 'schemas', 'run-meta.json'), JSON.stringify({ type: 'object' }))
+    writeFileSync(join(dir, 'bench', 'schemas', 'stage1.json'), JSON.stringify({ type: 'object' }))
+    writeFileSync(join(dir, 'bench', 'schemas', 'stage2.json'), JSON.stringify({
+      type: 'object',
+      required: ['feasible', 'mechanisms_considered', 'stage1_risks_resolved', 'iterations'],
+      properties: {
+        feasible: { type: 'boolean' },
+        mechanisms_considered: { type: 'array', items: { type: 'object' } },
+        stage1_risks_resolved: { type: 'array', items: { type: 'object' } },
+        iterations: { type: 'array', items: { type: 'object' } },
+      },
+    }))
+    writeFileSync(join(dir, 'bench', 'schemas', 'stage2-halted.json'), JSON.stringify({
+      type: 'object', required: ['feasible'], properties: { feasible: { const: false } },
+    }))
+    writeFileSync(join(dir, 'bench', 'templates', 'bench-v1.json'), JSON.stringify({
+      name: 'bench-v1',
+      states: ['pending', 'ws-ready', 'stage-1', 'stage-2', 'judged', 'halted', 'archived', 'releasable', 'released'],
+      transitions: [
+        { from: 'pending', to: 'ws-ready', guard: { type: 'schema-check', schemaPath: '../schemas/run-meta.json', inputFrom: 'run-meta' } },
+        { from: 'ws-ready', to: 'stage-1' },
+        { from: 'stage-1', to: 'stage-2', guard: { type: 'schema-check', schemaPath: '../schemas/stage1.json' } },
+        { from: 'stage-2', to: 'judged', guard: { type: 'schema-check', schemaPath: '../schemas/stage2.json' } },
+        { from: 'stage-2', to: 'halted', guard: { type: 'schema-check', schemaPath: '../schemas/stage2-halted.json' } },
+        { from: 'judged', to: 'archived' },
+        { from: 'halted', to: 'archived' },
+        { from: 'archived', to: 'releasable', guard: { type: 'file-check', dir: 'archive', expectedFiles: ['workspace/', 'verdicts/'] } },
+        { from: 'releasable', to: 'released' },
+      ],
+      releasableStates: ['releasable'],
+    }))
+  })
+
+  async function atBranch(id: string): Promise<void> {
+    await service.create({ runId: 'bench', id })
+    await service.transition(id, 'ws-ready', { runId: 'bench' })
+    await service.transition(id, 'stage-1', { runId: 'bench' })
+    await service.submit(id, { runId: 'bench', json: {} })
+    await service.transition(id, 'stage-2', { runId: 'bench' })
+  }
+
+  beforeEach(async () => {
+    await service.runCreate({
+      templatePath: join(dir, 'bench', 'templates', 'bench-v1.json'),
+      runId: 'bench',
+      meta: {},
+    })
+  })
+
+  it('requires an intent and lists both candidates when several schema edges leave the state', async () => {
+    await atBranch('ambiguous')
+    const before = service.get('ambiguous', 'bench').mission.attempts[0]?.submission
+    await expect(service.submit('ambiguous', { runId: 'bench', json: TRUE_PAYLOAD }))
+      .rejects.toThrow(/stage-2 → judged[\s\S]*stage-2 → halted/)
+    expect(service.get('ambiguous', 'bench').mission.attempts[0]?.submission).toEqual(before)
+  })
+
+  it('accepts the feasible payload for the intended judged edge and the transition guard re-checks it', async () => {
+    await atBranch('yes')
+    await service.submit('yes', { runId: 'bench', to: 'judged', json: TRUE_PAYLOAD })
+    await expect(service.transition('yes', 'judged', { runId: 'bench' })).resolves.toMatchObject({ changed: true })
+  })
+
+  it('accepts the infeasible payload for the intended halted edge', async () => {
+    await atBranch('no')
+    await service.submit('no', { runId: 'bench', to: 'halted', json: { feasible: false } })
+    await expect(service.transition('no', 'halted', { runId: 'bench' })).resolves.toMatchObject({ changed: true })
+  })
+
+  it('CLI --to uses the same intent selection and reports ambiguity as usage', async () => {
+    await atBranch('cli')
+    const output: string[] = []
+    const io = { stdout: (line: string) => output.push(line), stderr: (line: string) => output.push(line) }
+    expect(await runCli([
+      'submit', 'cli', '--run', 'bench', '--json', JSON.stringify(TRUE_PAYLOAD), '--data-dir', join(dir, 'data'),
+    ], io)).toBe(2)
+    expect(output.join('')).toMatch(/stage-2 → judged[\s\S]*stage-2 → halted/)
+    expect(await runCli([
+      'submit', 'cli', '--run', 'bench', '--to', 'judged', '--json', JSON.stringify(TRUE_PAYLOAD), '--data-dir', join(dir, 'data'),
+    ], io)).toBe(0)
+    await expect(service.transition('cli', 'judged', { runId: 'bench' })).resolves.toMatchObject({ changed: true })
   })
 })
 

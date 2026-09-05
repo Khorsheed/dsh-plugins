@@ -122,7 +122,9 @@ describe('DAG composition (layered chain) and retry semantics', () => {
     await service.annotate('dwd-clean', 'script', { verdict: 'clean' }, { runId: 'dag' })
     await service.submit('dwd-clean', { runId: 'dag', files: [{ path: 'out.txt', content: 'v1' }] })
 
-    const { attempt } = await service.retry('ods-extract', { runId: 'dag' })
+    const { attempt } = await service.retry('ods-extract', {
+      runId: 'dag', reason: 'resource interrupted', category: 'infrastructure',
+    })
     expect(attempt).toBe(2)
     const upstream = service.get('ods-extract', 'dag').mission
     expect(upstream.attempts).toHaveLength(2)
@@ -131,7 +133,9 @@ describe('DAG composition (layered chain) and retry semantics', () => {
     expect(upstream.attempts[0]?.history).toHaveLength(2)
     // New attempt starts fresh at the initial state.
     expect(currentAttempt(upstream).state).toBe('queued')
-    expect(currentAttempt(upstream).history).toEqual([])
+    expect(currentAttempt(upstream).history).toEqual([expect.objectContaining({
+      kind: 'retry', reason: 'resource interrupted', category: 'infrastructure',
+    })])
     // Downstream records are untouched — a backfill is a human decision.
     const downstream = service.get('dwd-clean', 'dag').mission
     expect(currentAttempt(downstream).state).toBe('active')

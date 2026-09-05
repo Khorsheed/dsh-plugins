@@ -70,9 +70,13 @@ describe('MissionRemoteService', () => {
     const detail = remote.get(agentOf('s1'), { missionId: 'mine' })
     expect(detail.runId).toBe('session-s1')
     expect(detail.attempts).toHaveLength(1)
-    const { attempt } = await remote.retry(agentOf('s1'), { missionId: 'mine' })
+    const { attempt } = await remote.retry(agentOf('s1'), {
+      missionId: 'mine', reason: 'requested another pass', category: 'operator',
+    })
     expect(attempt).toBe(2)
-    expect(service.get('mine', 'session-s1').mission.currentAttempt).toBe(2)
+    const fresh = service.get('mine', 'session-s1').mission.attempts[1]
+    expect(fresh?.retry).toMatchObject({ reason: 'requested another pass', category: 'operator', by: 'tab:s1' })
+    expect(fresh?.history[0]).toMatchObject({ kind: 'retry', reason: 'requested another pass', category: 'operator', by: 'tab:s1' })
   })
 
   it('isReleasable mirrors the service verdict', async () => {

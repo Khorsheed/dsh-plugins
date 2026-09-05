@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import missionRemote from '@khorsheed/dsh-mission/remote'
 import type {
   MissionExportPlanRequest, MissionExportRequest, MissionGetRequest, MissionQueueRequest, MissionRefRequest,
+  MissionRetryRequest,
 } from '../types.ts'
 import type { MissionRemote, MissionsViewInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
@@ -68,7 +69,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     inject: (_sessionId: SessionId): MissionsViewInjected => ({
       fetchQueue: (sid: SessionId, request: MissionQueueRequest) => remote.queue(sid, request),
       fetchMission: (sid: SessionId, request: MissionGetRequest) => remote.get(sid, request),
-      retryMission: (sid: SessionId, request: MissionRefRequest) => remote.retry(sid, request),
+      retryMission: (sid: SessionId, request: MissionRetryRequest) => remote.retry(sid, request),
       checkReleasable: (sid: SessionId, request: MissionRefRequest) => remote.isReleasable(sid, request),
       planExport: (sid: SessionId, request: MissionExportPlanRequest) => remote.exportPlan(sid, request),
       exportRun: (sid: SessionId, request: MissionExportRequest) => remote.exportRun(sid, request),

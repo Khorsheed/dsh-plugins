@@ -228,7 +228,16 @@
 
 .detailActions {
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.detailActions select {
+  min-height: 28px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
 }
 
 .exportForm {

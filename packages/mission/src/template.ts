@@ -267,7 +267,7 @@ export function resolveSchemaPath(schemaPath: string, templateDir: string | unde
   return resolve(templateDir, schemaPath)
 }
 
-/** Lint verdict for one template. */
+/** Lint result for one template. */
 export interface LintResult {
   errors: string[]
   warnings: string[]

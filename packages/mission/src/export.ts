@@ -65,6 +65,8 @@ export interface NsCellReport {
   missing: string[]
   /** Annotations exist but NONE from expectedNs — "only a draft" style cells. */
   onlyUnlisted: boolean
+  /** Namespace -> sorted set of writer origins (`tool:`, `cli`, `service`, `slash:`, ...). */
+  writtenBy: Record<string, string[]>
 }
 
 /** The export plan: what a bundle would contain, before anything is written. */
@@ -120,6 +122,19 @@ export function nsCompleteness(run: RunRecord): NsCellReport[] | null {
         .map(a => a.ns),
     )].sort()
     const expectedPresent = expected.filter(ns => present.includes(ns))
+    const writtenBy = Object.fromEntries(
+      [...new Set([...expected, ...present])].map(ns => [
+        ns,
+        [...new Set(
+          mission.annotations
+            .filter(a => a.attempt === mission.currentAttempt && a.ns === ns)
+            .map(a => {
+              const colon = a.by.indexOf(':')
+              return colon < 0 ? a.by : a.by.slice(0, colon + 1)
+            }),
+        )].sort(),
+      ]),
+    )
     return {
       missionId: mission.id,
       attempt: mission.currentAttempt,
@@ -127,6 +142,7 @@ export function nsCompleteness(run: RunRecord): NsCellReport[] | null {
       expectedPresent,
       missing: expected.filter(ns => !present.includes(ns)),
       onlyUnlisted: present.length > 0 && expectedPresent.length === 0,
+      writtenBy,
     }
   })
 }
@@ -136,12 +152,15 @@ export function renderNsReport(expected: string[], report: NsCellReport[]): stri
   const lines = [`ns completeness (expectedNs: ${expected.join(', ')}):`]
   for (const cell of report) {
     const head = `  ${cell.missionId} attempt ${cell.attempt}:`
+    const writers = Object.entries(cell.writtenBy)
+      .map(([ns, origins]) => `${ns}=[${origins.join(', ')}]`)
+      .join(' ')
     if (cell.missing.length === 0) {
-      lines.push(`${head} complete [${cell.present.join(', ')}]`)
+      lines.push(`${head} complete [${cell.present.join(', ')}]${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
     } else if (cell.onlyUnlisted) {
-      lines.push(`${head} only unlisted ns present [${cell.present.join(', ')}] — missing: ${cell.missing.join(', ')}`)
+      lines.push(`${head} only unlisted ns present [${cell.present.join(', ')}] — missing: ${cell.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
     } else {
-      lines.push(`${head} present [${cell.expectedPresent.join(', ') || '—'}] — missing: ${cell.missing.join(', ')}`)
+      lines.push(`${head} present [${cell.expectedPresent.join(', ') || '—'}] — missing: ${cell.missing.join(', ')}${writers === '' ? '' : ` — writtenBy: ${writers}`}`)
     }
   }
   return lines

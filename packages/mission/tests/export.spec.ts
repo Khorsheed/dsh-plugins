@@ -47,9 +47,10 @@ async function seedRun(): Promise<void> {
   await service.create({ runId: 'r1', id: 'cell-1' })
   await service.create({ runId: 'r1', id: 'cell-2' })
   await service.submit('cell-1', { runId: 'r1', files: [{ path: 'out.txt', content: 'v1' }] })
-  await service.annotate('cell-1', 'script', { ok: true }, { runId: 'r1' })
-  await service.annotate('cell-1', 'human-final', { ok: true }, { runId: 'r1' })
-  await service.annotate('cell-2', 'llm-draft', { ok: 'maybe' }, { runId: 'r1' })
+  await service.annotate('cell-1', 'script', { ok: true }, { runId: 'r1', by: 'cli' })
+  await service.annotate('cell-1', 'human-final', { ok: true }, { runId: 'r1', by: 'tool:session-1' })
+  await service.annotate('cell-1', 'human-final', { ok: 'again' }, { runId: 'r1', by: 'tool:session-2' })
+  await service.annotate('cell-2', 'llm-draft', { ok: 'maybe' }, { runId: 'r1', by: 'slash:session-1' })
 }
 
 describe('bundle export', () => {
@@ -70,6 +71,8 @@ describe('bundle export', () => {
     expect(manifest['runId']).toBe('r1')
     expect(manifest['snapshot']).toEqual({ repo: '/repo', commit: 'abc123', dataset: 'suite-a' })
     expect(manifest['guardedLayers']).toEqual([])
+    const nsReport = manifest['nsReport'] as Array<{ missionId: string; writtenBy: Record<string, string[]> }>
+    expect(nsReport.find(cell => cell.missionId === 'cell-1')?.writtenBy['human-final']).toEqual(['tool:'])
     const layers = manifest['layers'] as Array<{ name: string; contentHash: string; files: number }>
     expect(layers).toHaveLength(1)
     expect(layers[0]?.name).toBe('visible')
@@ -81,7 +84,7 @@ describe('bundle export', () => {
     const attempt = JSON.parse(readFileSync(join(bundle, 'missions', 'cell-1', 'attempt-1', 'meta.json'), 'utf8')) as { state: string }
     expect(attempt.state).toBe('pending')
     const annotations = JSON.parse(readFileSync(join(bundle, 'missions', 'cell-1', 'attempt-1', 'annotations.json'), 'utf8')) as unknown[]
-    expect(annotations).toHaveLength(2)
+    expect(annotations).toHaveLength(3)
     expect(readFileSync(join(bundle, 'missions', 'cell-1', 'attempt-1', 'artifacts', 'out.txt'), 'utf8')).toBe('v1')
     expect(readFileSync(join(bundle, 'dataset', 'visible', 'task.md'), 'utf8')).toBe('# task\n')
     expect(existsSync(join(bundle, 'methodology.md'))).toBe(true)
@@ -94,10 +97,16 @@ describe('bundle export', () => {
     const report = plan.nsReport
     expect(report).not.toBeNull()
     const cell1 = report?.find(c => c.missionId === 'cell-1')
-    expect(cell1).toMatchObject({ expectedPresent: ['script', 'human-final'], missing: [], onlyUnlisted: false })
+    expect(cell1).toMatchObject({
+      expectedPresent: ['script', 'human-final'], missing: [], onlyUnlisted: false,
+      writtenBy: { script: ['cli'], 'human-final': ['tool:'] },
+    })
     const cell2 = report?.find(c => c.missionId === 'cell-2')
     // Only an unlisted ns present — flagged, not counted as covered.
-    expect(cell2).toMatchObject({ present: ['llm-draft'], missing: ['script', 'human-final'], onlyUnlisted: true })
+    expect(cell2).toMatchObject({
+      present: ['llm-draft'], missing: ['script', 'human-final'], onlyUnlisted: true,
+      writtenBy: { script: [], 'human-final': [], 'llm-draft': ['slash:'] },
+    })
   })
 
   it('run status prints the per-cell missing report', async () => {
@@ -108,7 +117,9 @@ describe('bundle export', () => {
     await runCli(['run', 'status', 'r1', '--data-dir', join(dir, 'data')], c.io)
     expect(c.out()).toMatch(/ns completeness \(expectedNs: script, human-final\)/)
     expect(c.out()).toMatch(/cell-1 attempt 1: complete/)
+    expect(c.out()).toMatch(/human-final=\[tool:\]/)
     expect(c.out()).toMatch(/cell-2 attempt 1: only unlisted ns present \[llm-draft\] — missing: script, human-final/)
+    expect(c.out()).toMatch(/cell-2[^\n]*writtenBy: script=\[\] human-final=\[\] llm-draft=\[slash:\]/)
   })
 
   it('refuses to overwrite an existing bundle', async () => {

@@ -181,9 +181,15 @@ describe('MissionsView', () => {
     expect(await screen.findByText(/detail\.attempt/)).toBeTruthy()
     expect(h.fetchMission).toHaveBeenCalledWith('s1', { missionId: '12', runId: 'session-s1' })
 
-    fireEvent.click(screen.getByText('action.retry'))
+    const retryButton = screen.getByText('action.retry').closest('button')!
+    expect(retryButton.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('retry.category'), { target: { value: 'operator' } })
+    fireEvent.change(screen.getByLabelText('retry.reason'), { target: { value: 'requested another pass' } })
+    fireEvent.click(retryButton)
     await waitFor(() => {
-      expect(h.retryMission).toHaveBeenCalledWith('s1', { missionId: '12', runId: 'session-s1' })
+      expect(h.retryMission).toHaveBeenCalledWith('s1', {
+        missionId: '12', runId: 'session-s1', reason: 'requested another pass', category: 'operator',
+      })
     })
     expect(await screen.findByText(/notice\.retried/)).toBeTruthy()
 
