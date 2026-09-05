@@ -267,19 +267,32 @@ Explicitly out of scope for this period (I0 through I2): new surfaces, lab's mod
 
 The eval instance needs its own `$DSH_HOME`, sharing neither sessions nor credentials with the dev instance (environment isolation is a basic evaluation requirement; see the environment topology in `docs/ops.md`). I1 through I2 run the four CLIs directly on the host and need only node, git, and the CLIs themselves; from I3 on docker is required, and the checklist for the suite-level image, the local package mirror, the allowlist proxy, and credential volumes is in the "runtime environment" section of [docs/architecture.md](docs/architecture.md).
 
+`install.sh` has two paths; both print the composed composition stats at the end, and `dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` should be 22 (distinct members — the dump repeats each member as a layer header plus entry rows, and tool-subagent appears only through its per-provider entries).
+
+**npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):
+
 ```sh
 git clone https://github.com/Khorsheed/dsh-web-eval.git
 DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh
 DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
 ```
 
-`install.sh` prints the composed row count at the end; `dsh --profile web-eval --dump-config | grep -c "@khorsheed"` should be 22. Among the members, `datasets` / `mission` / `lab` and the local-agent family are not on npm yet and need tarballs built from the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) source.
+**Source mode** (`--source <dsh-plugins checkout>`) — the working path today. Given a buildable [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) checkout (dependencies installed, building green per its AGENTS.md; building and type resolution need a deepseek-harness checkout), the script builds every unpublished member, packs the tarballs with `--family` into the profile's `tarballs/`, writes pnpm overrides to pin the family edges, leaves published members to npm, and then runs the standard install:
+
+```sh
+git clone https://github.com/Khorsheed/dsh-web-eval.git
+git clone https://github.com/Khorsheed/dsh-plugins.git && pnpm --dir dsh-plugins install
+DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh --source "$PWD/dsh-plugins"
+DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
+```
+
+Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$DSH_HOME/profiles/web-eval"`) removes them too, and re-running `install.sh --source` after the checkout moves swaps in fresh tarballs (remove the profile directory first, same as any reinstall).
 
 The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference; I1 decides whether they live in a patch layer shipped by the pack or in the user's `cordis.patch.yml`.
 
 ## Update, switch, add or remove a member, uninstall
 
-Same as [dsh-web-dev](../web-dev/README.en.md#update): `update.sh` only overwrites the member list and lockfile and never touches `cordis.patch.yml`; switching is a same-port handoff; `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile.
+Same as [dsh-web-dev](../web-dev/README.en.md#update): `update.sh` only overwrites the member list and lockfile and never touches `cordis.patch.yml`; switching is a same-port handoff; `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile. Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
 
 ## Related documents
 

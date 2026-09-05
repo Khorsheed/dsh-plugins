@@ -267,19 +267,32 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 22（去重成员数——dump 里每个成员出现多次：层头加条目行，tool-subagent 只经 provider 条目出现）。
+
+**npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
+
 ```sh
 git clone https://github.com/Khorsheed/dsh-web-eval.git
 DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh
 DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 ```
 
-`install.sh` 末尾打印组合的行数；`dsh --profile web-eval --dump-config | grep -c "@khorsheed"` 应为 22。成员里 `datasets` / `mission` / `lab` 与本地 Agent 家族尚未上架 npm，需从 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 源码打 tarball 安装。
+**源码模式**——当前的可用路径。给定一个可构建的 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 检出（已 `pnpm install`、按其 AGENTS.md 构建绿；构建与类型解析需要 deepseek-harness 检出），脚本构建全部未上架成员、按 `--family` 打 tarball 进 profile 的 `tarballs/`、写 pnpm overrides 钉住家族边，已上架成员仍走 npm，然后标准安装：
+
+```sh
+git clone https://github.com/Khorsheed/dsh-web-eval.git
+git clone https://github.com/Khorsheed/dsh-plugins.git && pnpm --dir dsh-plugins install
+DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh --source "$PWD/dsh-plugins"
+DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
+```
+
+源码模式的 tarball 落在 profile 目录内：`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载时一并清掉；检出更新后重跑 `install.sh --source` 即换新 tarball（同样先删 profile 目录）。
 
 评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，I1 决定它们进 pack 自带的 patch 层还是 `cordis.patch.yml` 用户层。
 
 ## 更新、切换、装卸单个成员、卸载
 
-与 [dsh-web-dev](../web-dev/README.md#更新) 同款：`update.sh` 只覆盖成员清单与 lockfile，不动 `cordis.patch.yml`；切换是同端口交接；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile。
+与 [dsh-web-dev](../web-dev/README.md#更新) 同款：`update.sh` 只覆盖成员清单与 lockfile，不动 `cordis.patch.yml`；切换是同端口交接；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
 
 ## 相关文档
 
