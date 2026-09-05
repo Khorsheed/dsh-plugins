@@ -16,9 +16,10 @@ gate 默认按变更分片。build、test、pack 走 `pnpm --filter "...[<base>]
 
 **只要改动碰到"会改变所有包如何构建或测试"的路径，就拒绝分片**——`build/`、`scripts/`、`tsconfig.base.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`、根 `package.json`、`.github/`。这些路径不构成 pnpm 眼中的"包变更"，所以改一次共享 vitest 预设本会被分片成零个包、跳过全部测试并报绿。**这是分片唯一不能有的失败模式**，因此这道守卫是一份在咨询 pnpm 之前就先检查的路径清单。
 
-另外两项小改动同源于这次事故：
+另外三项小改动同源于这一次运行：
 
 - **分步计时，以及最慢的五个套件**及其占比。本文里每个数字都是从过往运行的子命令输出里挖出来的，因为 gate 当时只报总时长。**看不见的开销会被算到"gate 头上"，而不是算到真正拥有它的那个套件头上。**
+- **声明依赖检查,置于最前且致命。** 一次加了依赖的合并会让热检出的 `node_modules` 落后,构建随后在几分钟后死于一个既不说原因也不说修法的无法解析 import——就发生在这次运行里:197 秒才走到一个 `TS2307`,而 `pnpm install --frozen-lockfile` 五秒就清掉了。pnpm 自己的 `verify-deps-before-run` 覆盖不到:它比对的是各 manifest 与 lockfile,而当时 lockfile 本就是对的,短缺的只有 `node_modules`。因此这道检查直接查构建真正需要的东西——每个声明的 `dependencies`/`devDependencies` 都有目录可解析。peer 跳过,因为本仓对官方包的惯例就是宽松的可选 peer。**只报告、绝不自动修复**:并发 agent 下的仓库根 `pnpm install` 会解析出多个 peer 变体(冲突规则 3),所以只说清修法,交给知道此刻还有谁在构建的人去执行。
 - **工作区指纹**（HEAD 加 `git status --porcelain`），开始时记录、结束时复查。树动过就明确失败：这次结论既不属于它开始时的状态，也不属于结束时的状态。
 
 ## Alternatives considered

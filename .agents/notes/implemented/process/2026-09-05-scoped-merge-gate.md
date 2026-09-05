@@ -16,9 +16,10 @@ The gate scopes to the change by default. Build, test and pack run against `pnpm
 
 Scoping is refused whenever the change touches a path that alters how every package builds or tests — `build/`, `scripts/`, `tsconfig.base.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, root `package.json`, `.github/`. Those change nothing pnpm counts as a package, so a shared vitest preset edit would otherwise scope to zero packages and skip every test while reporting green. That is the one failure mode scoping must not have, so the guard is a path list checked before pnpm is consulted at all.
 
-Two smaller additions ride along, both from the same incident:
+Three smaller additions ride along, all from the same run:
 
 - **Per-step timings, and the five slowest suites** with their share of the total. Every number in this note came from mining sub-command output of past runs, because the gate reported only a grand total. A cost nobody can see gets attributed to "the gate" rather than to the suite that owns it.
+- **A declared-dependency check, first and fatal.** A merge that adds a dependency leaves a warm checkout's `node_modules` behind, and the build then dies minutes later on an unresolvable import naming neither cause nor fix — observed in this very run, 197 seconds to reach a `TS2307` that `pnpm install --frozen-lockfile` cleared in five. pnpm's own `verify-deps-before-run` does not cover it: that compares manifests against the lockfile, and the lockfile was already correct; only `node_modules` was short. The check is therefore what the build actually needs — every declared `dependencies`/`devDependencies` entry has a directory to resolve. Peers are skipped, since wide optional peers on official packages are the convention here. It reports and never repairs: a repo-root `pnpm install` under concurrent agents resolves multiple peer variants (conflict rule 3), so the fix is named and left to a human who knows who else is mid-build.
 - **A working-tree fingerprint** (HEAD plus `git status --porcelain`) taken at the start and re-checked at the end. If the tree moved, the run is failed with an explicit message: the verdict describes neither the state it started on nor the one it ended on.
 
 ## Alternatives considered

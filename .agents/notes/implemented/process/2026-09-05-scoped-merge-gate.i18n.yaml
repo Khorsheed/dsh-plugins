@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-05-scoped-merge-gate.md
-.agents/notes/implemented/process/2026-09-05-scoped-merge-gate.md: f62be67476879cd490e3dede809bc3764b20b5c0
-.agents/notes/implemented/process/2026-09-05-scoped-merge-gate.zh.md: e17bd54df003b4ba55304ef48002cb81f66cfb26
+.agents/notes/implemented/process/2026-09-05-scoped-merge-gate.md: 8783c651244e31524479ad57441c00b79f2129f4
+.agents/notes/implemented/process/2026-09-05-scoped-merge-gate.zh.md: 8c84d7b445dd01bf908528c3c000fff98e1ea979

@@ -34,7 +34,7 @@
  * @module scripts/gate
  */
 import { execFileSync, execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -97,6 +97,46 @@ function resolveScope(): Scope {
   const dirs = listed.map((p) => p.split('/').pop()!).sort()
   if (dirs.length === 0) return { filter: 'NONE', dirs: [], why: `no package changed since ${base}` }
   return { filter: selector, dirs, why: `${dirs.length} package(s) changed since ${base} (with dependents): ${dirs.join(', ')}` }
+}
+
+/** A merge that adds a dependency leaves this checkout's node_modules behind,
+ * and the build then fails minutes later as an unresolvable import — a message
+ * naming neither the cause nor the fix (observed 2026-09-05: a merge declared
+ * `@deepseek-ai/dsh-agent-default-model`, the build died on TS2307 after 197
+ * seconds, `pnpm install --frozen-lockfile` fixed it in five).
+ *
+ * pnpm's own `verify-deps-before-run` does not cover this: it compares each
+ * manifest against the lockfile, and the lockfile was already correct — only
+ * node_modules was short. So the check is what the build actually needs, done
+ * cheaply: every declared non-optional dependency has a directory to resolve.
+ *
+ * Peers are skipped. The convention here is wide optional peers on official
+ * packages (AGENTS.md), so an absent peer is legal; `dependencies` and
+ * `devDependencies` are not.
+ *
+ * Reported, never repaired: a repo-root `pnpm install` under concurrent agents
+ * resolves multiple peer variants and produces `constraint 'never'` errors
+ * (docs/development.md conflict rule 3), so the fix is named and left to a
+ * human who knows whether anyone else is mid-build.
+ */
+function installFreshness(): void {
+  const missing: string[] = []
+  for (const dir of readdirSync(join(root, 'packages'))) {
+    const manifest = join(root, 'packages', dir, 'package.json')
+    if (!existsSync(manifest)) continue
+    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+      if (!existsSync(join(root, 'packages', dir, 'node_modules', name))) missing.push(`${dir} → ${name}`)
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`${missing.length} declared dependenc(ies) are not installed — run: pnpm install --frozen-lockfile\n  `
+      + missing.slice(0, 5).join('\n  ') + (missing.length > 5 ? `\n  … and ${missing.length - 5} more` : ''))
+  }
+  process.stdout.write('  = every declared dependency resolves\n')
 }
 
 /** The harness ref CI pins, read from the workflow so the two cannot drift. */
@@ -163,6 +203,7 @@ export function main(): void {
   const treeAtStart = createHash('sha1').update(`${capture('git rev-parse HEAD')}\n${capture('git status --porcelain')}`).digest('hex')
 
   const steps: { name: string; run: () => void }[] = [
+    { name: 'install freshness', run: installFreshness },
     { name: 'harness ref (advisory)', run: harnessAdvisory },
     { name: 'workflow refs', run: () => sh('pnpm exec tsx scripts/check-workflow-refs.ts') },
     { name: 'build scripts declared', run: () => sh('pnpm exec tsx scripts/check-build-scripts-declared.ts') },
@@ -197,8 +238,10 @@ export function main(): void {
     const stepStart = Date.now()
     try {
       step.run()
-    } catch {
-      process.stderr.write(`\ngate FAILED at: ${step.name} (after ${((Date.now() - stepStart) / 1000).toFixed(0)}s)\n`)
+    } catch (error) {
+      const detail = error instanceof Error && error.message !== '' && !error.message.startsWith('Command failed')
+        ? `\n  ${error.message}` : ''
+      process.stderr.write(`\ngate FAILED at: ${step.name} (after ${((Date.now() - stepStart) / 1000).toFixed(0)}s)${detail}\n`)
       process.exit(1)
     }
     timings.push({ name: step.name, secs: (Date.now() - stepStart) / 1000 })
