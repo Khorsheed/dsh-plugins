@@ -130,7 +130,7 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
 | 基础体验 | 与 web-dev 相同的 12 个 | ✅ / 🔶 | 无 |
-| 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装，或把 CLI 驱动抽成独立包。I4：每条件的模型参数与 scoped home 覆盖 |
+| 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装，或把 CLI 驱动抽成独立包。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
 | 评测机制 | `datasets` / `mission` / `lab` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针 |
 | 运维守护 | `ankh-guard` | ✅ | 无；评测实例独立 `$DSH_HOME` |
 
@@ -202,7 +202,7 @@ pending → ws-ready → stage-1 → stage-2 → iterating ⇄ checkpoint-N → 
 | 面 | 作用 | 状态 |
 |---|---|---|
 | **实验台 tab**（`eval`） | 矩阵板：题 × 条件，格内显示 rep 进度、阶段、桶、物化哈希是否一致、卡格告警；run 范围与五桶复用 missions tab 的投影 | ⬜ I5 |
-| **条件注册表** | 条件列表、两条件 diff（只差哪一项）、哈希、来源（scoped home / 镜像 / skill 包） | ⬜ I4 数据、I5 界面 |
+| **条件注册表** | 条件列表、两条件 diff（只差哪一项）、哈希、来源（scoped home / 镜像 / skill 包）；模型等因子只展示与 diff，不给选，选模型即新建条件 | ⬜ I4 数据、I5 界面 |
 | **计划审阅** | agent 产出的 plan 呈现为「快照 @commit · N 条件 · M 题 · R rep · 顺序」+ validate 结果 + 批准按钮；批准是人的动作 | ⬜ I5 |
 | **格子详情** | 成员子会话 transcript、verify 原样输出、checkpoint 与 tag、产物、三源注解分栏 | 🔶 missions tab 详情 + 成员 dock 已有大半 |
 | **判官台** | 盲评队列、去指纹产物、llm-draft 与 human-final 并排、一致性统计；human-final 的唯一写入口 | ⬜ I5 |

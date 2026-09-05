@@ -130,7 +130,7 @@ The plan's `conditions` and `judge.conditions` carry **condition ids** (never sh
 | Group | Members | Status | Changes this profile needs |
 |---|---|---|---|
 | Base experience | the same 12 as web-dev | ✅ / 🔶 | none |
-| Local-agent family | `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi). I2: model read-back, recording the model actually used. I3: in-container exec wrapping, or the CLI driver extracted into its own package. I4: per-condition model parameter and scoped-home override |
+| Local-agent family | `local-agent` + the kimi / codex / claude-code / dsh providers + `tool-subagent` | 🔶 | I1: evaluation pins (all exec, codex full-access inside containers, explicit reasoning effort for claude and kimi) and the effectiveSettings snapshot (including the configured model). I2: model read-back, recording the model actually used. I3: in-container exec wrapping, or the CLI driver extracted into its own package. I4: per-condition model parameter (set on the first delegation, fixed within a member, unchanged on resume) and scoped-home override, plus a "default model" field on each provider's settings card |
 | Evaluation mechanisms | `datasets` / `mission` / `lab` | 🔶 rc | `mission`: retry carries a reason; the ns report carries writtenBy. `lab`: composite fingerprint (image + resource limits + mount layout + env keys). `datasets`: canary field; item-level external source pointers |
 | Ops guard | `ankh-guard` | ✅ | none; the eval instance gets its own `$DSH_HOME` |
 
@@ -202,7 +202,7 @@ Seven surfaces, four existing and three to build:
 | Surface | Purpose | Status |
 |---|---|---|
 | **Bench tab** (`eval`) | matrix board: task × condition; each cell shows rep progress, stage, bucket, whether the materialization hash matches, stuck-cell warnings; run scope and the five buckets reuse the missions tab's projection | ⬜ I5 |
-| **Condition registry** | the list of conditions, a diff of two conditions (which single item differs), hashes, provenance (scoped home / image / skill pack) | ⬜ I4 data, I5 surface |
+| **Condition registry** | the list of conditions, a diff of two conditions (which single item differs), hashes, provenance (scoped home / image / skill pack); factors such as the model are displayed and diffed, never chosen here, since choosing a model means creating a new condition | ⬜ I4 data, I5 surface |
 | **Plan review** | the agent's plan rendered as "snapshot @commit · N conditions · M tasks · R reps · order" + validate result + an approve button; approval is the human's action | ⬜ I5 |
 | **Cell detail** | the member child session's transcript, verify output verbatim, checkpoints and tags, artifacts, the three annotation sources side by side | 🔶 mostly there in the missions tab detail + member dock |
 | **Judge console** | the blind-review queue, de-fingerprinted artifacts, llm-draft and human-final side by side, agreement statistics; the only write entry for human-final | ⬜ I5 |
