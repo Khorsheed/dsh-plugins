@@ -38,6 +38,8 @@ The watchdog's internal polling and backoff use `wd_sleep`. Durations are unchan
 
 Fixture observations use named predicate polling rather than assuming that a service response means its asynchronous report or receipt is already durable. Adoption, unplanned-exit, composition-snapshot/recovery, and browser terminal-state predicates have separate bounded budgets and emit the complete lifecycle ledger on timeout. A first dual-worktree stress run exposed the remaining 5–15 second report windows; these named waits replaced them before the acceptance run was repeated.
 
+The three transition-line terminal predicates—hung-previous recovery, failed-target reconfigure recovery, and live-home transition rollback—use named 60-second observation budgets with 90-second Vitest envelopes. Loaded gates had reached correct intermediate `target-starting` or `restoring` states near the former 20–35 second limits. These are fixture observation budgets only: they do not scale or alter the watchdog's production cutover, ownership-stability, authentication, or recovery deadlines.
+
 The package exposes `test:unit`, `test:integration`, and the umbrella `test`. Integration always builds first. The umbrella builds once and schedules both inventories together. Four isolated Vitest processes execute deterministically balanced supervisor shards, while machine-wide leases coordinate their ports. An inventory assertion prevents a name filter or shard change from silently dropping coverage: the current split is 54 unit tests and 128 integration tests, 182 total.
 
 The lane runner consumes a shard only after the child `close` event, not `exit`, because `exit` can precede the final stdout/stderr pipe reads. Spawn errors are reported explicitly. This closes a high-load observation in which one run saw only 161/182 tests because the final 21-test summary was absent; the inventory tripwire correctly rejected that incomplete observation instead of reporting false success.
@@ -58,10 +60,13 @@ This change does not alter the product contract of `abort-cutover` or `restore-p
 - The full integration run ended with zero active or over-age live identities in the machine lease report.
 - Regressions cover detached group cleanup, TERM-to-KILL escalation, macOS Bash background-function identity, unscaled production sleep, dead-versus-over-age reporting, and independent machine-namespace port leases.
 - The control-writer, composition-recovery, stale-200/EADDRINUSE, foreground-waiter, and pidfile-replacement cases pass with the new ledger.
+- The hung-previous, failed-target reconfigure, and live-home transition cases retain their terminal receipt assertions with load-tolerant named polling; an intermediate phase at timeout remains a loud failure with lifecycle diagnostics.
 
 ## Alternatives considered
 
 **Only increase Vitest timeouts.** Rejected because it would not reclaim leaked processes, close the readiness race, prevent cross-worktree port collision, or reduce the six-minute feedback loop.
+
+**Scale the product wall-clock cutover and stability deadlines in tests.** Rejected because those windows are part of the ownership and authentication protocol being exercised. Only the fixture's outer observation allowance is wider for the three demonstrated loaded-gate paths.
 
 **Keep cleanup based on the latest pidfile or current port owner.** Rejected because both are mutable observations. A port proves a leak but cannot authorize a signal, and takeover intentionally replaces pidfile ownership.
 
