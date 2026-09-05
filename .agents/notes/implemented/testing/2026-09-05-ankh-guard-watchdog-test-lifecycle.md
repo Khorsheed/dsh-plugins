@@ -36,6 +36,8 @@ The fake control watchdog publishes its pidfile only after installing `SIGUSR2`,
 
 The watchdog's internal polling and backoff use `wd_sleep`. Durations are unchanged in production. They scale to five percent only when the explicit test run coordinates and test scale are both present; a regression proves that the scale variable alone cannot shorten production behavior. Wall-clock cutover/stability deadlines remain real, so shortening polling does not bypass ownership or authentication windows.
 
+Fixture observations use named predicate polling rather than assuming that a service response means its asynchronous report or receipt is already durable. Adoption, unplanned-exit, composition-snapshot/recovery, and browser terminal-state predicates have separate bounded budgets and emit the complete lifecycle ledger on timeout. A first dual-worktree stress run exposed the remaining 5–15 second report windows; these named waits replaced them before the acceptance run was repeated.
+
 The package exposes `test:unit`, `test:integration`, and the umbrella `test`. Integration always builds first. The umbrella builds once and schedules both inventories together. Four isolated Vitest processes execute deterministically balanced supervisor shards, while machine-wide leases coordinate their ports. An inventory assertion prevents a name filter or shard change from silently dropping coverage: the current split is 54 unit tests and 128 integration tests, 182 total.
 
 The integration runner prints CPU count, Node/package-manager versions, load average, external gate-process count, git HEAD, built CLI path, and SHA-256. Composition recovery now uses the common ledger and, on failure, reports its exact deadline, before/after composition hashes, repo HEAD, listener identity, receipt, watchdog log tail, and lifecycle timeline. Its stale-listener scenario releases from an explicit previous-attempt event rather than a wall-clock guess.
@@ -50,6 +52,7 @@ This change does not alter the product contract of `abort-cutover` or `restore-p
 - A complete integration run with no other gate process active passed 128/128 in 113.08 seconds on an 8-logical-CPU machine at load averages near 4.0.
 - The unit lane passed 54/54 in about 9 seconds; the umbrella inventory requires 182 tests.
 - The final package-level umbrella gate passed all 182/182 tests in about 115 seconds with zero external gate processes at its recorded baseline.
+- Two independent `test:integration` commands running concurrently from separate worktrees then passed 128/128 each; their slowest supervisor shard was about 136 seconds under contention.
 - The full integration run ended with zero active or over-age live identities in the machine lease report.
 - Regressions cover detached group cleanup, TERM-to-KILL escalation, macOS Bash background-function identity, unscaled production sleep, dead-versus-over-age reporting, and independent machine-namespace port leases.
 - The control-writer, composition-recovery, stale-200/EADDRINUSE, foreground-waiter, and pidfile-replacement cases pass with the new ledger.

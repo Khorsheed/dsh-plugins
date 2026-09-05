@@ -36,6 +36,8 @@ composition recovery 也曾在全量 gate 中偶发失败、隔离运行却通�
 
 watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不变；只有同时持有显式测试 run 坐标和测试 scale 时才缩放到 5%。回归测试证明，仅设置 scale 变量不能缩短生产行为。cutover/stability 的墙钟 deadline 仍然真实，所以缩短轮询不会绕过所有权或认证窗口。
 
+夹具观察使用具名谓词轮询，不假设服务响应出现时异步 report 或 receipt 已经耐久落盘。adoption、unplanned-exit、composition snapshot/recovery 与浏览器终态各有独立的有界预算；超时会输出完整生命周期 ledger。首次双 worktree 压力运行暴露了残留的 5–15 秒 report 窗口；验收重跑前，这些窗口已全部替换为具名等待。
+
 包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 54 个 unit、128 个 integration，共 182 个测试。
 
 integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average、外部 gate 进程数、git HEAD、built CLI 路径和 SHA-256。composition recovery 使用统一 ledger；失败时报告精确 deadline、前后 composition hash、repo HEAD、listener identity、receipt、watchdog 日志尾部和生命周期时间线。其 stale-listener 场景由明确的 previous-attempt 事件释放，不再猜墙钟。
@@ -50,6 +52,7 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 在没有其他 gate 进程的 8 逻辑核机器上，一次完整 integration 以 128/128 通过，耗时 113.08 秒；当时 load average 约 4.0。
 - unit 以 54/54 通过，约 9 秒；总入口清单强制要求 182 项。
 - 最终包级总入口 gate 以 182/182 全部通过，耗时约 115 秒；其记录的基线显示没有外部 gate 进程。
+- 随后从两个独立 worktree 并发运行的 `test:integration` 各以 128/128 通过；竞争负载下最慢 supervisor 分片约 136 秒。
 - 完整 integration 结束后，machine lease 报告中的 active 与 over-age live identity 都为零。
 - 回归覆盖 detached 进程组清理、TERM→KILL、macOS Bash 后台函数 identity、生产 sleep 不缩放、dead/over-age 分类和独立机器命名空间端口 lease。
 - control writer、composition recovery、stale-200/EADDRINUSE、foreground waiter 与 pidfile replacement 用例均在新 ledger 下通过。

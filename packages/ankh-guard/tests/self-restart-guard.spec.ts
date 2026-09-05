@@ -1728,6 +1728,31 @@ async function waitForPort(port: number, timeoutMs = 10_000): Promise<void> {
   throw new Error(`port ${port} never listened`)
 }
 
+/** Poll a lifecycle predicate with a named, load-resilient deadline. */
+async function waitForCondition(
+  description: string,
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 20_000,
+  intervalMs = 100,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let lastError: unknown
+  while (Date.now() < deadline) {
+    try {
+      if (await predicate()) return
+      lastError = undefined
+    } catch (error) {
+      lastError = error
+    }
+    await new Promise(resolve => setTimeout(resolve, intervalMs))
+  }
+  throw new Error(
+    `timed out after ${timeoutMs} ms waiting for ${description}`
+    + `${lastError === undefined ? '' : `; last observation error: ${String(lastError)}`}`
+    + `\n${lifecycle.diagnostics()}`,
+  )
+}
+
 /** GET the body from a local http server. */
 async function fetchBody(port: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -1828,10 +1853,7 @@ describe('supervise', () => {
       // test's env). The no-false-positive guard covers the first-EVER boot
       // (no owner), asserted by the next test.
       const record = join(env.home, 'state', 'last-restart.json')
-      const recordDeadline = Date.now() + 5000
-      while (!existsSync(record) && Date.now() < recordDeadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
-      }
+      await waitForCondition('the adoption report record', () => existsSync(record))
       const outcome = JSON.parse(readFileSync(record, 'utf8'))
       expect(outcome.unexpected).toBeUndefined()
       expect(typeof outcome.exitAt).toBe('number')
@@ -1840,7 +1862,7 @@ describe('supervise', () => {
       await killListener(port)
       env.restore()
     }
-  }, 30_000)
+  }, 60_000)
 
   it('a first-EVER boot (no previous owner) files no report record', async () => {
     const env = supervisedEnv()
@@ -2235,17 +2257,14 @@ describe('supervise', () => {
       }
       expect(await fetchBody(port)).toBe('new')
       const crashRecord = join(env.home, 'state', 'last-restart.json')
-      const recordDeadline = Date.now() + 5000
-      while (!existsSync(crashRecord) && Date.now() < recordDeadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
-      }
+      await waitForCondition('the unplanned-exit report record', () => existsSync(crashRecord))
       expect(JSON.parse(readFileSync(crashRecord, 'utf8')).unexpected).toBe(true)
     } finally {
       env.stop()
       await killListener(port)
       env.restore()
     }
-  }, 30_000)
+  }, 60_000)
 
   it('record-unexpected-exit writes once and never overwrites a pending record', async () => {
     const stateDir = tmpDir('guard-cli-')
@@ -2325,10 +2344,7 @@ describe('supervise', () => {
       await waitForPort(port)
       // Healthy boot snapshotted the composition.
       const snap = join(stateDir, 'last-good-composition', 'cordis.patch.yml')
-      const snapDeadline = Date.now() + 5000
-      while (!existsSync(snap) && Date.now() < snapDeadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 100) })
-      }
+      await waitForCondition('the healthy composition snapshot', () => existsSync(snap))
       expect(readFileSync(snap, 'utf8')).toContain('good composition')
       // A plugin install lands a bad row, then the instance stops (any cause).
       writeFileSync(join(profileDir, 'cordis.patch.yml'), '# good composition\n# + bad-plugin row\n')
@@ -2336,7 +2352,7 @@ describe('supervise', () => {
       await killListener(port)
       // The watchdog fails to boot the bad composition, rolls the composition
       // back to the snapshot, and comes up — service recovered, plugin unmounted.
-      const upDeadline = Date.now() + 30_000
+      const upDeadline = Date.now() + 45_000
       let recovered = false
       while (Date.now() < upDeadline) {
         if ((await portListening(port)) && readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8').includes('bad-plugin') === false) {
@@ -2349,7 +2365,7 @@ describe('supervise', () => {
       const diagnostic = {
         message: 'the watchdog restored the healthy composition and the instance came up',
         deadlineAt: upDeadline,
-        deadlineMs: 30_000,
+        deadlineMs: 45_000,
         rejectedCompositionSha256,
         currentCompositionSha256: createHash('sha256').update(readFileSync(join(profileDir, 'cordis.patch.yml'))).digest('hex'),
         repoHead: currentHead(repo),
@@ -2366,10 +2382,7 @@ describe('supervise', () => {
       expect(readFileSync(join(stateDir, backups[0]!, 'cordis.patch.yml'), 'utf8')).toContain('bad-plugin')
       // The record write trails the port by the CLI spawn — wait for it.
       const recordFile = join(stateDir, 'last-restart.json')
-      const recordDeadline = Date.now() + 5000
-      while (!existsSync(recordFile) && Date.now() < recordDeadline) {
-        await new Promise((resolve) => { setTimeout(resolve, 200) })
-      }
+      await waitForCondition('the composition-recovery report record', () => existsSync(recordFile))
       const record = JSON.parse(readFileSync(recordFile, 'utf8'))
       expect(record.compositionRecovered).toBe(true)
       expect(record.detail).toContain('回滚 profile patch 层变更')
@@ -2378,7 +2391,7 @@ describe('supervise', () => {
       await killListener(port)
       env.restore()
     }
-  }, 45_000)
+  }, 90_000)
 
   it('record-adoption carries the initiator and never overwrites a pending record', async () => {
     const stateDir = tmpDir('guard-cli-')
@@ -3377,13 +3390,8 @@ http.createServer((req, res) => {
     watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
     watchdog.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
     try {
-      const deadline = Date.now() + 15_000
-      while (!output.includes('no page acknowledgement') && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
-      while (readCutoverReceipt(stateDir)?.phase !== 'awaiting-user' && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
+      await waitForCondition('the browser handoff failure output', () => output.includes('no page acknowledgement'), 30_000)
+      await waitForCondition('the terminal awaiting-user receipt', () => readCutoverReceipt(stateDir)?.phase === 'awaiting-user', 30_000, 50)
       expect(existsSync(opened), output).toBe(true)
       expect(output).toContain('browser fallback open requested')
       expect(output).toContain('browser handoff failed: no page acknowledgement')
@@ -3397,7 +3405,7 @@ http.createServer((req, res) => {
     } finally {
       await killListener(port)
     }
-  }, 20_000)
+  }, 75_000)
 
   it('reclaims a pidfile deleted underneath it, and yields to a live replacement owner', async () => {
     // The state dir cleaned under a RUNNING watchdog must not fork
