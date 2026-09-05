@@ -13,6 +13,8 @@
  *   checkpoint — record clean HEAD, or explicitly commit a reviewed dirty snapshot
  *   reset    — `git reset --hard` to a checkpoint commit (rollback)
  *   canary   — post-restart probe: verify (+ optional TCP port check)
+ *   verify-restart — watchdog-facing validation of a scheduled authorization
+ *   record-proven-deployment — watchdog-facing promotion after canary
  *   restart  — DETACHED restart: gate → stop → start → probe → canary.
  *              Owns the whole loop in a process that outlives the restarted
  *              instance, so the post-restart canary runs even though the
@@ -30,6 +32,10 @@ import { commitCheckpoint, currentHead, isWorkingTreeClean, resetToCheckpoint, w
 import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
 } from './state.ts'
+import {
+  proveCurrentDeployment, verifyRestartAuthorization, verifyRestartEvidence,
+  type RestartAuthorization, type RestartEvidenceResult,
+} from './deployment-proof.ts'
 import { lastGoodBootRevision, stateFile } from './state-files.ts'
 import {
   discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree,
@@ -303,6 +309,8 @@ commands:
   checkpoint [--message MSG] [--include-dirty] [--repo DIR] [--state-dir DIR]
   reset <sha> [--repo DIR]
   canary [--port N] [--state-dir DIR] [--repo DIR] [--max-age MIN]
+  verify-restart [--state-dir DIR]   # watchdog-facing: revalidate the scheduled authorization
+  record-proven-deployment [--state-dir DIR]   # watchdog-facing: promote/retain proof after canary
   check-env [--state-dir DIR] [--repo DIR]   # sandbox / watchdog / git readiness probe
   preflight [--profile NAME] [--harness-root DIR] [--timeout-ms MS]
           [--preflight-surface source|built --preflight-install-anchor FILE] [--preflight-runner FILE]
@@ -657,6 +665,33 @@ const DEFAULT_PREFLIGHT_TIMEOUT_MS = 120_000
 /** A pending restart marker older than this is stale — its watchdog died mid-flow. */
 const RESTART_MARKER_TTL_MS = 15 * 60_000
 
+interface RestartRequestMarker {
+  requestedAt?: number
+  authorization?: RestartAuthorization
+}
+
+function isRestartAuthorization(value: unknown): value is RestartAuthorization {
+  if (typeof value !== 'object' || value === null) return false
+  const authorization = value as Partial<RestartAuthorization>
+  return authorization.version === 1
+    && (authorization.kind === 'fresh-credential' || authorization.kind === 'proven-deployment')
+    && typeof authorization.revision === 'string' && authorization.revision !== ''
+    && typeof authorization.evidenceSha256 === 'string' && /^[a-f0-9]{64}$/.test(authorization.evidenceSha256)
+}
+
+function readRestartRequestMarker(stateDir: string): RestartRequestMarker | null {
+  try {
+    const marker = JSON.parse(readFileSync(stateFile(stateDir, 'restartRequested'), 'utf8')) as RestartRequestMarker
+    if (typeof marker !== 'object' || marker === null) return null
+    return {
+      ...(typeof marker.requestedAt === 'number' ? { requestedAt: marker.requestedAt } : {}),
+      ...(isRestartAuthorization(marker.authorization) ? { authorization: marker.authorization } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * The restart marker's state. Every verb that can stop the instance must
  * consult this (and the restart lock) — a stop right invisible to the other
@@ -665,12 +700,8 @@ const RESTART_MARKER_TTL_MS = 15 * 60_000
 function restartMarkerState(stateDir: string): 'none' | 'fresh' | 'stale' {
   const file = stateFile(stateDir, 'restartRequested')
   if (!existsSync(file)) return 'none'
-  try {
-    const marker = JSON.parse(readFileSync(file, 'utf8')) as { requestedAt?: number }
-    return typeof marker.requestedAt === 'number' && Date.now() - marker.requestedAt <= RESTART_MARKER_TTL_MS ? 'fresh' : 'stale'
-  } catch {
-    return 'stale' // unparseable is stale by definition
-  }
+  const marker = readRestartRequestMarker(stateDir)
+  return marker?.requestedAt !== undefined && Date.now() - marker.requestedAt <= RESTART_MARKER_TTL_MS ? 'fresh' : 'stale'
 }
 
 /** Captured preflight output is diagnostics, not a log — cap it before it can grow without bound. */
@@ -1363,7 +1394,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 
   switch (command) {
     case 'verify': {
-      const result = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
+      const launch = readLaunchState(stateDir)
+      const result = launch?.mode === 'stable'
+        && resolve(launch.active.credentialRepo) === resolve(repoDir)
+        ? verifyRestartEvidence(stateDir, launch.active, options.maxAgeMinutes)
+        : verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
       io.stdout(`${result.reason}\n`)
       if (result.ok) {
         io.stdout(FULL_ACCESS_HINT)
@@ -1662,6 +1697,56 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       io.stdout(ok ? 'canary PASS\n' : 'canary FAIL\n')
       return ok ? 0 : 1
+    }
+    case 'verify-restart': {
+      if (restartMarkerState(stateDir) !== 'fresh') {
+        io.stderr('restart authorization is missing or stale\n')
+        return 1
+      }
+      const launch = readLaunchState(stateDir)
+      if (launch === null) {
+        io.stderr('restart authorization cannot be verified without durable launch state\n')
+        return 1
+      }
+      const spec = selectedLaunchSpec(launch)
+      const marker = readRestartRequestMarker(stateDir)
+      const verdict = marker?.authorization === undefined
+        ? verifyRepoCredential(stateDir, spec.credentialRepo, options.maxAgeMinutes)
+        : verifyRestartAuthorization(stateDir, spec, marker.authorization)
+      io.stdout(`${verdict.ok ? 'restart evidence PASS' : 'restart evidence FAIL'} — ${verdict.reason}\n`)
+      return verdict.ok ? 0 : 1
+    }
+    case 'record-proven-deployment': {
+      if (restartMarkerState(stateDir) !== 'fresh') {
+        io.stderr('deployment proof refused: restart authorization is missing or stale\n')
+        return 1
+      }
+      const launch = readLaunchState(stateDir)
+      if (launch === null || launch.mode !== 'stable') {
+        io.stderr('deployment proof refused: no stable durable launch specification is selected\n')
+        return 1
+      }
+      const marker = readRestartRequestMarker(stateDir)
+      let authorization = marker?.authorization
+      if (authorization === undefined) {
+        const state = loadState(stateDir)
+        const credential = state.credential
+        const fresh = verifyRepoCredential(stateDir, launch.active.credentialRepo, options.maxAgeMinutes)
+        if (!fresh.ok || credential === undefined) {
+          io.stderr(`deployment proof refused: ${fresh.reason}\n`)
+          return 1
+        }
+        authorization = {
+          version: 1,
+          kind: 'fresh-credential',
+          revision: credential.revision,
+          evidenceSha256: commandSha256(credential.command),
+        }
+      }
+      const result = proveCurrentDeployment(stateDir, launch.active, authorization)
+      const sink = result.ok ? io.stdout : io.stderr
+      sink(`${result.ok ? 'deployment proof PASS' : 'deployment proof FAIL'} — ${result.reason}\n`)
+      return result.ok ? 0 : 1
     }
     case 'preflight': {
       const harnessRoot = resolveHarnessRoot(options.harnessRoot)
@@ -2418,11 +2503,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 1
       }
       // THE GATE: never schedule an exit on a denial.
-      const gate = verifyRepoCredential(stateDir, credentialRepo, options.maxAgeMinutes)
+      // A same-launch restart may reuse an exact deployment proof written
+      // only after a previous readiness + canary success. Fresh credentials
+      // remain the first choice; all launch/profile/runtime drift fails closed.
+      const gate: RestartEvidenceResult = durableSpec === null
+        ? verifyRepoCredential(stateDir, credentialRepo, options.maxAgeMinutes)
+        : verifyRestartEvidence(stateDir, durableSpec, options.maxAgeMinutes)
       if (!gate.ok) {
         io.stderr(`schedule-exit refused: ${gate.reason}\n`)
         return 1
       }
+      io.stdout(`restart evidence PASS — ${gate.reason}\n`)
       // THE ENVIRONMENT GATE: the detached exit agent must outlive this turn.
       if (!sandboxGate('schedule-exit', options, io)) return 1
       // THE COMPOSITION GATE: a green build does not prove the profile boots.
@@ -2472,6 +2563,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           `${JSON.stringify({
             reason: 'scheduled self-restart',
             requestedAt: Date.now(),
+            ...(gate.authorization === undefined ? {} : { authorization: gate.authorization }),
             ...(initiator !== undefined ? { initiator } : {}),
           })}\n`)
         // A DETACHED exit agent (setsid via node spawn): it cannot be reaped by

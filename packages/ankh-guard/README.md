@@ -19,6 +19,8 @@ guard 以 `record --run -- PROGRAM ...` 亲自执行构建/测试并观察 exit 
 3. 当前 HEAD 和记录凭证时的 commit 一不一致；
 4. 工作树是否完全干净——staged、unstaged、untracked 任一种输入都会让凭证失效。
 
+这个 10 分钟窗口约束的是**尚未启动验证过的构建证据**，不是让完全相同的已部署产物每隔十分钟重新测试。一次 watchdog 重启只有在 ownership/readiness、composition preflight 与 post-restart canary 全部通过后，才把该凭证晋升为耐久的 `provenDeployment`。以后 `schedule-exit` 遇到过期凭证时，可以复用这份证明，但必须重新计算并逐项匹配 credential repo 与 harness 的干净 HEAD、完整 launch spec、profile 配置、直接安装包与 `file:` 归档、宿主安装元数据及显式绑定的 source/built preflight runner/anchor；任一字节、链接目标、启动配置或仓库状态漂移都 fail closed，退回重新 build + test。旧版 `last-good-boot.json` 不会自动获得这种资格，首次启用仍需完整门禁和一次成功 canary。
+
 这条规则能拦住一整类事故：改坏了构建、漏注册配置、导错模块——这些全都会让构建/类型检查失败，于是没有凭证，重启在造成伤害之前就被拒绝。
 
 但绿色构建证明不了 profile 组合能起来：坏掉的 patch YAML、缺失的构建产物、重复的 loader entry id、typert manifest 归属不匹配、apply 时抛错的插件——这些只在 boot 阶段才爆。于是第二道闸门在凭证检查之后、停任何东西之前运行：`preflight` 在子进程里对完全相同的组合做深度干跑（整个插件树走同一个引擎完整 boot 一遍，然后 dispose），组合起不来就绝不停止运行中的实例。见 [preflight：组合闸门](#preflight-the-composition-gate)。
@@ -87,13 +89,13 @@ dsh-ankh-guard reconfigure --start "NEW CMD" --repo "<credential repo>" \
 
 ### 自我重启协议
 
-改完代码安全重启的六步（纯重启没有任何文件/依赖/profile/启动配置变化时跳过第 1 步；只是“不制造空 checkpoint commit”，其余门禁一个不少）：
+改完代码安全重启的六步。纯重启没有任何文件/依赖/profile/已安装产物/启动配置变化时跳过第 1 步；若已有新版 guard 在一次成功 canary 后写出的同指纹 `provenDeployment`，第 3–4 步也可由 `schedule-exit` 自动复用。没有证明、证明来自旧协议或指纹漂移时仍必须完整执行：
 
 1. **checkpoint**——干净树记录现有 HEAD；脏树默认拒绝，复核且批准完整快照后才加 `--include-dirty`：`dsh-ankh-guard checkpoint --message "<批次>"`
 2. **修改**——做完改动；注册它需要的每个面（聚合、paths、bundle 行、依赖）。
 3. **构建 + 测试**——改动面的完整定向集；没有绿色就没有凭证。
 4. **record**——让 guard 执行并观察证据命令：`dsh-ankh-guard record build+test --run -- sh -c 'pnpm run build && pnpm run test'`
-5. **verify**——`dsh-ankh-guard verify` 必须 exit 0；拒绝（缺凭证/过期/HEAD 不匹配/工作树脏）就清理后重建重录。
+5. **verify**——`dsh-ankh-guard verify` 必须 exit 0；它优先接受新鲜凭证，仅在耐久 launch spec 稳定且完整部署指纹相同时接受已验证部署。拒绝（缺证明、指纹漂移、HEAD 不匹配/工作树脏）就清理后重建重录。
 6. **重启 + canary**——新实例起来后 `dsh-ankh-guard canary --port N` 确认。
 
 ### supervise：无感重启
@@ -109,7 +111,7 @@ dsh-ankh-guard supervise --port 3080 --start "CMD" --state-dir "$DSH_HOME/state"
 
 它以 `--wait-owner` 模式 detached 拉起随包发布的 `scripts/dsh-watchdog.sh`：watchdog 在当前实例运行期间待机，实例退出（有意重启或崩溃）后接管端口、重新拉起，有意重启时跑 guard canary（读 `restart-requested.json` 标记），通过后清除标记。连续 2 次起不来→回滚到最后已知可用版本：健康启动戳（`last-good-boot.json`，每次实例成功启动时重写，指向本部署里最近一次真正跑起来的版本）优先，其次是 guard checkpoint，最后是凭证 HEAD；但仅当启动失败的错误主体路径在仓库内。主体在仓库之外时（坏掉的 profile overlay 或已装插件），回滚检出修不好，watchdog 改为恢复上次健康的 **profile 组合**：健康启动时快照的组合输入（`last-good-composition/`）覆盖回 live 的 bundles 层与清单，最新插件变更被卸载，故障输入保留在 `composition-backup-*`，恢复报告会点名被卸载的内容。启动命令没有绑到被监督端口时同样豁免：启动窗口超时而实例正监听在别处、或以点名了本 watchdog 并不拥有的端口的 `EADDRINUSE` 失败时，watchdog 会点名实际绑定的端口并跳过两种回滚——重置文件改不了命令行参数。发生在被监督端口上的 `EADDRINUSE` 保留原本的释放并重试逃生口，现在以五次为上限。任何路径的 reset（watchdog、CLI、service）都会先为被丢弃的 HEAD 和未提交改动创建 `guard-backup-*` 分支锚点，恢复不依赖 reflog。4 次失败→在端口上提供带重试按钮的崩溃页（SIGUSR1 通知 watchdog）。`watchdog-stop` 标记让 watchdog 彻底退出。实例可以在自我重启前自行采用监督——用户永远不需要手动启动 watchdog。
 
-已有 watchdog 监督时，重启触发用 `schedule-exit`：它从耐久 active launch spec 取得端口、凭证仓库、宿主根与 profile，拒绝任何冲突的显式参数，并核对 supervisor 写下的完整命令后才写 restart 标记、spawn detached 退出代理（输出明确标为 `exit-agent pid`）。从 agent 的 Bash/tool 调用时应把该调用的 `timeoutMs` 设为 180000；这不是 CLI 参数，而是保证调用方不会先于 120 秒 preflight 闸门退出的等待契约。托管 shell 的进程组回收不到退出代理，所以计划中的 kill 会在调度回合结束后真实落地。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报；watchdog 生命周期日志均带时间戳。没有存活 watchdog 时 `schedule-exit` 硬拒绝，只能先建立监督或使用拥有单次完整循环的 `restart`。
+已有 watchdog 监督时，重启触发用 `schedule-exit`：它从耐久 active launch spec 取得端口、凭证仓库、宿主根与 profile，拒绝任何冲突的显式参数，并核对 supervisor 写下的完整命令后才写 restart 标记、spawn detached 退出代理（输出明确标为 `exit-agent pid`）。它优先使用 10 分钟内的新鲜 credential；credential 过期时，只允许精确匹配的 `provenDeployment` 走纯重启快速路径，并把所选证据 SHA 写入短寿命 restart marker。新 watchdog 在 canary 时再次核对同一 SHA 与现场指纹，防止检查后、停止前的证据替换。通过后才晋升或保留部署证明。从 agent 的 Bash/tool 调用时应把该调用的 `timeoutMs` 设为 180000；这不是 CLI 参数，而是保证调用方不会先于 120 秒 preflight 闸门退出的等待契约。托管 shell 的进程组回收不到退出代理，所以计划中的 kill 会在调度回合结束后真实落地。watchdog 重新拉起、跑 canary，新实例经 `last-restart.json` 回报；watchdog 生命周期日志均带时间戳。没有存活 watchdog 时 `schedule-exit` 硬拒绝，只能先建立监督或使用拥有单次完整循环的 `restart`；后者没有相同的 durable supervisor/launch ownership，因此仍要求新鲜 credential。
 
 ### reconfigure：启动配置事务切换
 

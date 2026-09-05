@@ -16,6 +16,7 @@ const selfSpec = 'tests/self-restart-guard.spec.ts'
 const pureSpecs = [
   'tests/browser-handoff.client.spec.ts',
   'tests/browser-handoff.spec.ts',
+  'tests/deployment-proof.spec.ts',
   'tests/patch.spec.ts',
   'tests/preset-derive.spec.ts',
   'tests/state-files.spec.ts',
@@ -117,7 +118,7 @@ async function worker() {
 }
 
 await Promise.all(Array.from({ length: Math.min(maxParallel, tasks.length) }, () => worker()))
-const expected = lane === 'unit' ? 54 : lane === 'integration' ? 129 : 183
+const expected = lane === 'unit' ? 60 : lane === 'integration' ? 129 : 189
 if (passed !== expected) {
   process.stderr.write(`\n${lane} lane inventory mismatch: expected ${expected} passing tests, observed ${passed}\n`)
   failed = true

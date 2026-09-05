@@ -1007,7 +1007,10 @@ guard_cmd() {
 }
 
 guard_verify() {
-  guard_cmd verify --repo "$REPO" --state-dir "$STATE_DIR" >/dev/null 2>&1
+  # Revalidate the exact short-lived authorization selected before the stop.
+  # A same-launch proof may outlive the original build credential's freshness,
+  # but only while every fingerprinted deployment input remains identical.
+  guard_cmd verify-restart --repo "$REPO" --state-dir "$STATE_DIR" >/dev/null 2>&1
 }
 
 guard_reset() {
@@ -1684,12 +1687,18 @@ while true; do
         page_pid=''
         continue
       fi
-      wd_log "canary PASS — browser handoff settled; clearing restart marker"
-      rm -f "$RESTART_MARKER"
+      wd_log "canary PASS — browser handoff settled; recording deployment proof"
       if [ -n "$CUTOVER_ID" ]; then
         cutover_event_required ready "$CUTOVER_ROLE"
         CUTOVER_ID=''
       fi
+      if ! guard_cmd record-proven-deployment --repo "$REPO" --state-dir "$STATE_DIR"; then
+        # Proof persistence is an optimization for a later pure restart. This
+        # boot already passed readiness, ownership, and canary; keep it up but
+        # force the next restart back through fresh build/test evidence.
+        wd_log "deployment proof unavailable — the next restart requires fresh build/test evidence" >&2
+      fi
+      rm -f "$RESTART_MARKER"
     else
       if [ -n "$CUTOVER_ID" ]; then
         wd_log "canary/ownership FAIL during launch cutover"
