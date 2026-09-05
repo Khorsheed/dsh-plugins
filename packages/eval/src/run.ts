@@ -253,7 +253,15 @@ async function runCellOnce(
     files: materialized,
     sha256: overall.digest('hex'),
   }
-  writeFileSync(join(cellDir, 'materialization.json'), `${JSON.stringify(materialization, null, 2)}\n`, 'utf8')
+  const materializationText = `${JSON.stringify(materialization, null, 2)}\n`
+  writeFileSync(join(cellDir, 'materialization.json'), materializationText, 'utf8')
+  // The artifact index points INTO the mission run-data tree (bundle export
+  // copies from there), so the record lands in both places: the cell working
+  // directory (what the child sees) and the attempt's run-data directory
+  // (what addArtifact requires and the bundle carries).
+  const attemptDataDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${env.attempt}`)
+  mkdirSync(attemptDataDir, { recursive: true })
+  writeFileSync(join(attemptDataDir, 'materialization.json'), materializationText, 'utf8')
   await mission.addArtifact(missionId, { path: 'materialization.json', kind: 'materialization' }, { runId: env.runId, by: env.by })
 
   // Stage loop: one delegation round per stage (fresh start in round one,
@@ -416,8 +424,7 @@ async function runCellOnce(
   // archive/workspace/ before leaving archived (decision 10); verdicts/ is
   // empty until the judge lands (T9), so the default run STOPS at archived.
   const current = mission.get(missionId, env.runId)
-  const attemptDataDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${current.mission.currentAttempt}`)
-  const archiveDir = join(attemptDataDir, 'archive')
+  const archiveDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${current.mission.currentAttempt}`, 'archive')
   mkdirSync(join(archiveDir, 'verdicts'), { recursive: true })
   cpSync(cellDir, join(archiveDir, 'workspace'), { recursive: true })
   await mission.addArtifact(missionId, { path: 'archive', kind: 'archive' }, { runId: env.runId, by: env.by })

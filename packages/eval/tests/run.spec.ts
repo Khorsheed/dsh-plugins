@@ -273,6 +273,10 @@ class FakeMission implements MissionFace {
   async addArtifact(missionId: string, artifact: { path: string; kind: string }, options?: { runId?: string }): Promise<{ added: boolean }> {
     const { mission: record } = this.locate(missionId, options?.runId)
     const attempt = record.attempts[record.currentAttempt - 1] as FakeAttempt
+    // mission's rule: the indexed path must EXIST under the attempt's run-data directory.
+    if (!existsSync(join(this.attemptDir(options?.runId ?? '', missionId, record.currentAttempt), artifact.path))) {
+      throw new Error(`mission: artifact ${artifact.path} does not exist under the attempt's run-data directory (mission ${missionId}, attempt ${record.currentAttempt})`)
+    }
     attempt.artifacts.push(artifact)
     return { added: true }
   }
