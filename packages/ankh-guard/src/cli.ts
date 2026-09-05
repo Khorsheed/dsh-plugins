@@ -1187,6 +1187,13 @@ async function preflightGate(
   verb: string, profile: string, timeoutMs: number, io: CliIo, harnessRoot?: string, home?: string,
   binding?: LaunchPreflightSpec,
 ): Promise<boolean> {
+  // The runner may legitimately consume most of its timeout while cold-loading
+  // a full profile. Announce the blocking stage before awaiting it so a managed
+  // shell with a shorter caller deadline does not report a misleading
+  // "no output" timeout. This line is deliberately free of paths and runner
+  // output: launch URLs and other credential-shaped diagnostics remain inside
+  // the redacted completion path below.
+  io.stdout(`composition preflight START (profile ${JSON.stringify(profile)}, timeout ${timeoutMs} ms)\n`)
   const outcome = await runPreflightCheck(profile, timeoutMs, harnessRoot, home, binding)
   switch (outcome.kind) {
     case 'pass':

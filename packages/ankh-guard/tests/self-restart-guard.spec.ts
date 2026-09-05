@@ -294,6 +294,8 @@ describe('state core', () => {
     expect(registrations.map(skill => skill.name)).toEqual(['dsh-self-restart-guard'])
     expect(registrations[0]?.description).toContain('restart')
     expect(registrations[0]?.content).toContain('check-env')
+    expect(registrations[0]?.content).toContain('timeoutMs: 180000')
+    expect(registrations[0]?.content).toContain('Caller timeout is not a guard verdict')
     // The shipped skill must not carry machine-specific paths from the
     // development environment it was written on.
     expect(registrations[0]?.content).not.toContain('code/dsh-plugins')
@@ -1619,11 +1621,18 @@ describe('composition preflight gate', () => {
     // exec replaces the shell, so the timeout's SIGKILL kills the sleeper itself.
     stubPreflight('exec sleep 10')
     const out = io()
-    expect(await runCli(
+    const pending = runCli(
       ['schedule-exit', '--port', String(port), '--delay-ms', '100', '--preflight-timeout-ms', '300',
         '--state-dir', stateDir, '--repo', repo],
       out.io,
-    )).toBe(1)
+    )
+    // A caller whose own tool deadline expires while the gate is running must
+    // still see which stage was active and the larger internal budget. The
+    // completion verdict remains absent until the child actually settles.
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 50))
+    expect(out.out.join('')).toContain('composition preflight START (profile "web", timeout 300 ms)')
+    expect(out.out.join('')).not.toContain('composition preflight PASS')
+    expect(await pending).toBe(1)
     expect(out.err.join('')).toContain('preflight timed out after 300 ms')
   }, 15_000)
 

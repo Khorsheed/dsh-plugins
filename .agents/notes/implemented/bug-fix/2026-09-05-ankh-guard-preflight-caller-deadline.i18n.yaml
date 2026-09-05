@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-ankh-guard-preflight-caller-deadline.md
+.agents/notes/implemented/bug-fix/2026-09-05-ankh-guard-preflight-caller-deadline.md: 1bf3ad803bc19b0a6f7fdf89e0abfae789dbc8db
+.agents/notes/implemented/bug-fix/2026-09-05-ankh-guard-preflight-caller-deadline.zh.md: fa2b45c71136434bbc0956dd6372511c4ec5bc96
