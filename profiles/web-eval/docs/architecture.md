@@ -15,7 +15,7 @@
 | **lab** | 全部：`acquire` `populate` `collect` `checkpoint` `verify` `archive` `release` `status` | 无（刻意） | `dsh-lab` 全动词，`status` 进度表 | 无自有 UI；单元状态进实验台（I5） | 只记录不判断；`release` 是闸的执行点 |
 | **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | `subagent_<harness>`（规划 agent 不需要，判官委派由编排器发起） | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
 | **capability-catalog** | 按 preset scope 读注册表 | `list_capabilities` | 无 | catalog tab | I4 输出可哈希的能力清单，作为 condition 的取证 |
-| **eval**（待建） | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验台、计划审阅、判官台、报告（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run` |
+| **eval** | `validatePlan` `hashCondition` `readiness` `generateTemplate` `run` `report` | 只读：`eval_conditions` `eval_plan_validate` `eval_run_status`；不开 `run` | `dsh-eval conditions | validate | run | report`，`provision`（I4） | 实验台、计划审阅、判官台、报告（I5） | 唯一的执行者；对四个上游用 `ctx.get` 探测，缺一即拒绝 `run`。服务键是 `dshEval`，不能叫 `eval`：loader 用 with(ctx) 求值 !!js 表达式，同名属性会遮蔽全局 eval |
 | **ankh-guard** | 守卫重启 | 无 | `restart` | 无 | 不在实验流程内，负责评测实例的切换与看护 |
 
 工具开放的原则：agent 只在规划期与分析期出现，需要的是**读**与**起草**；执行期没有 agent；判官是一次委派而不是一个带工具的会话。写类工具留给编排器（服务面）和人（CLI、tab）。
