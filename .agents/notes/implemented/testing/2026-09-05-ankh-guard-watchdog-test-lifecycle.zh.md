@@ -40,9 +40,9 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 夹具观察使用具名谓词轮询，不假设服务响应出现时异步 report 或 receipt 已经耐久落盘。adoption、unplanned-exit、composition snapshot/recovery 与浏览器终态各有独立的有界预算；超时会输出完整生命周期 ledger。首次双 worktree 压力运行暴露了残留的 5–15 秒 report 窗口；验收重跑前，这些窗口已全部替换为具名等待。
 
-四条 transition 一线的终态谓词——成功的 supervision 交接、hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算；恢复用例的 Vitest 外层预算为 90 秒，成功交接为 120 秒，因为它会先证明 previous watchdog 已完成健康启动。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态。一份保留的成功交接失败账本显示：target listener 在 21.4 秒时登记，所有权稳定在 29.5 秒时完成，33.0 秒时仍有 receipt writer 运行；旧的 25 秒夹具观察预算在事务仍持续前进时已到期。`target-starting` 有意覆盖 child start、transport、所有权稳定、canary 和终态 ready 落盘的全过程，因此它的 `updatedAt` 不是“无进展停留时长”。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
+四条 transition 一线的终态谓词——成功的 supervision 交接、hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算；恢复用例的 Vitest 外层预算为 90 秒，成功交接为 120 秒，因为它会先证明 previous watchdog 已完成健康启动。hung-previous 夹具还允许 replacement 用 30 秒到达明确的有界 yield 日志后再发送 restore；被测 watchdog 的 yield 仍严格为 3 秒。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态，另一次高负载运行仅“认领 supervision 并进入 yield 阶段”就用了 11 秒。一份保留的成功交接失败账本显示：target listener 在 21.4 秒时登记，所有权稳定在 29.5 秒时完成，33.0 秒时仍有 receipt writer 运行；旧的 25 秒夹具观察预算在事务仍持续前进时已到期。`target-starting` 有意覆盖 child start、transport、所有权稳定、canary 和终态 ready 落盘的全过程，因此它的 `updatedAt` 不是“无进展停留时长”。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
 
-包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 54 个 unit、129 个 integration，共 183 个测试。
+包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 60 个 unit、129 个 integration，共 189 个测试。
 
 lane runner 只有在子进程触发 `close` 后才消费 shard，而不再使用 `exit`，因为 `exit` 可能早于 stdout/stderr 管道最后一次读取。spawn 错误会被明确报告。这关闭了一次高负载观察：该次只看到 161/182，因为最后一个 21-test 汇总尚未读入；inventory tripwire 当场拒绝了不完整观察，没有产生假绿。
 

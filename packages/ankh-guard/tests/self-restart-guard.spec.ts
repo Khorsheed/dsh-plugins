@@ -2791,11 +2791,16 @@ const timer = setInterval(() => {
       ], io().io)).toBe(0)
 
       const logFile = join(stateDir, STATE_FILES.watchdogLog)
-      const waitingDeadline = Date.now() + 5_000
-      while ((!existsSync(logFile) || !readFileSync(logFile, 'utf8').includes('waiting up to 3000ms'))
-        && Date.now() < waitingDeadline) {
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
+      // Claiming supervision and reaching the bounded-yield loop traverses
+      // multiple real shell/process observations. A five-second precondition
+      // budget raced that progress under the full gate even though the
+      // production 3 s yield bound itself had not started yet.
+      await waitForCondition(
+        'replacement watchdog to enter the bounded previous-supervisor yield',
+        () => existsSync(logFile) && readFileSync(logFile, 'utf8').includes('waiting up to 3000ms'),
+        30_000,
+        50,
+      )
       expect(readFileSync(logFile, 'utf8')).toContain('waiting up to 3000ms')
       expect(await fetchBody(port)).toBe('previous-after-hung-supervisor')
       expect(await runCli(['restore-previous', '--state-dir', stateDir], io().io)).toBe(0)
