@@ -22,7 +22,7 @@ import { ClaudeCliProvider } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
-import { claudeLogout, provisionClaudeHome } from './provision.ts'
+import { claudeLogout, provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-claude-code'
@@ -163,15 +163,19 @@ export function apply(ctx: Context, config: Config): void {
       // The eval snapshot: the permission mode is the plugin config resolved
       // at apply (it selects the spawn flags); the endpoint mirrors the
       // provider's own resolution order — the config item wins over the host
-      // process environment's ANTHROPIC_BASE_URL.
+      // process environment's ANTHROPIC_BASE_URL. The model is read live
+      // from the scoped settings.json only — the CLI's own default model is
+      // never guessed, so nothing configured means no field.
       effectiveSettings: async () => {
         const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
         const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
+        const model = await readClaudeConfiguredModel(homeDir).catch(() => undefined)
         return {
           drive: scope.get().live ? 'live' : 'exec',
           permissionMode,
           baseUrlSet: effectiveBaseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
+          ...model !== undefined ? { model } : {},
         }
       },
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {

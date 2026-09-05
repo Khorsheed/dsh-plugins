@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -177,6 +177,38 @@ describe('local-agent-claude-code apply', () => {
       baseUrlSet: true,
       baseUrlHost: 'proxy.example.com',
     })
+  })
+
+  it('reports the model configured in the scoped settings.json', async () => {
+    // Hermetic: the model reader must only consult the SCOPED home handed out
+    // by the registry — the host's CLAUDE_CONFIG_DIR is stubbed to a sentinel
+    // that nothing in the code path may read, and the endpoint env is pinned
+    // empty so the base fields stay deterministic on any host shell.
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/nonexistent-claude-host-config')
+    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
+    const { registered, home } = mount()
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }, undefined, 2))
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toEqual({
+      drive: 'exec',
+      permissionMode: 'skip',
+      baseUrlSet: false,
+      model: 'claude-opus-5',
+    })
+  })
+
+  it('omits the model field when the scoped settings name none', async () => {
+    // The CLI's own default model is CLI-decided and never guessed: no model
+    // key in the scoped settings, no model field — even though a host
+    // CLAUDE_CONFIG_DIR exists (stubbed here to prove it is never consulted).
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/nonexistent-claude-host-config')
+    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
+    const { registered, home } = mount()
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ env: {} }, undefined, 2))
+    const harness = registered[0]!
+    const snapshot = await harness.effectiveSettings!()
+    expect(snapshot).toEqual({ drive: 'exec', permissionMode: 'skip', baseUrlSet: false })
+    expect('model' in snapshot).toBe(false)
   })
 
   it('the host environment supplies the endpoint when the config item is absent', async () => {

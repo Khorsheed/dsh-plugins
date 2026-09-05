@@ -187,4 +187,31 @@ describe('local-agent-codex apply', () => {
       baseUrlHost: 'proxy.example.com',
     })
   })
+
+  it('reports the scoped config model when one is configured', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'config.toml'), [
+      'model = "gpt-5.2"',
+      'model_reasoning_effort = "high"',
+      'cli_auth_credentials_store = "file"',
+      '',
+    ].join('\n'))
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!()).resolves.toMatchObject({ model: 'gpt-5.2' })
+  })
+
+  it('omits the model field when the scoped config names no model', async () => {
+    const { home, registered } = mount()
+    // The provisioned minimal config carries no model key; a person-mirrored
+    // config without one must not grow a guessed identifier either.
+    writeFileSync(join(home, 'config.toml'), [
+      'model_reasoning_effort = "high"',
+      'cli_auth_credentials_store = "file"',
+      '',
+    ].join('\n'))
+    const harness = registered[0]!
+    const snapshot = await harness.effectiveSettings!()
+    expect(snapshot).toMatchObject({ drive: 'exec', sandbox: 'workspace-write', reasoningEffort: 'high' })
+    expect('model' in snapshot).toBe(false)
+  })
 })

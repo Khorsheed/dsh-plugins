@@ -99,14 +99,34 @@ export async function readCodexBaseUrl(homeDir: string): Promise<string | undefi
  * @returns the configured effort, or undefined when none is set.
  */
 export async function readCodexReasoningEffort(homeDir: string): Promise<string | undefined> {
+  return readTopLevelConfigString(homeDir, 'model_reasoning_effort')
+}
+
+/**
+ * Read the scoped config's configured model: the top-level `model` key — the
+ * selection a plain `codex exec` round runs with. A missing or malformed
+ * config, or no key, yields undefined — the honest "unknown", never a guessed
+ * default. Read-only: the config is authoritative and a user-edited value is
+ * reported as-is.
+ * @param homeDir - the `codex` harness's scoped home.
+ * @returns the configured model identifier, or undefined when none is set.
+ */
+export async function readCodexModel(homeDir: string): Promise<string | undefined> {
+  return readTopLevelConfigString(homeDir, 'model')
+}
+
+/**
+ * One top-level string key from the scoped config.toml: counts only before
+ * the first table header — the same rule the model_provider scan applies.
+ * Absent file or absent key yields undefined, never a guessed default.
+ */
+async function readTopLevelConfigString(homeDir: string, key: string): Promise<string | undefined> {
   let text: string
   try {
     text = await readFile(join(homeDir, 'config.toml'), 'utf8')
   } catch {
     return undefined
   }
-  // model_reasoning_effort is a top-level key, so it only counts before the
-  // first table header — the same rule the model_provider scan applies.
   let section = ''
   for (const rawLine of text.split('\n')) {
     const line = rawLine.trim()
@@ -116,8 +136,8 @@ export async function readCodexReasoningEffort(homeDir: string): Promise<string 
       continue
     }
     if (section !== '') continue
-    const key = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
-    if (key !== null && key[1] === 'model_reasoning_effort') return key[2]
+    const match = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (match !== null && match[1] === key) return match[2]
   }
   return undefined
 }
