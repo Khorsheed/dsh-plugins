@@ -1,0 +1,8 @@
+{
+  "schema": "dataseek.verdict/1",
+  "task": "F2-multi-agent-room",
+  "criterion": "R3",
+  "pass": true,
+  "evidence": "quorum 在 12:04:11 达成：3/3 成员发出 arrival 事件（probes/dispatch-trace.mjs）",
+  "by": "probes/dispatch-trace.mjs"
+}

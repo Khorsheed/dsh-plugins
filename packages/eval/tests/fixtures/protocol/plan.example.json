@@ -1,0 +1,12 @@
+{
+  "schema": "dataseek.plan/1",
+  "dataset": { "repo": "~/dataseek", "commit": null, "id": "harness-comparison", "items": ["F2-multi-agent-room", "F3-self-restart-report"] },
+  "conditions": ["codex-exec", "claude-exec"],
+  "reps": 3,
+  "stages": ["stage1", "stage2"],
+  "order": { "seed": 42, "interleave": true },
+  "budget": { "activeMinutes": 60, "turns": 10 },
+  "judge": { "conditions": ["judge-claude"], "samples": 2 },
+  "expectedNs": ["script", "llm-draft", "human-final"],
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。"
+}

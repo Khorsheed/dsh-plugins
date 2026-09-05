@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["feasible", "mechanisms_considered", "stage1_risks_resolved", "iterations"],
+  "properties": {
+    "feasible": { "type": "boolean" },
+    "mechanisms_considered": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "verdict", "reason"],
+        "properties": {
+          "name": { "type": "string" },
+          "verdict": { "enum": ["usable", "unusable", "partial", "untested-seam"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "stage1_risks_resolved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["risk", "verdict", "reason"],
+        "properties": {
+          "risk": { "type": "string" },
+          "verdict": { "enum": ["confirmed-blocked", "found-workaround", "was-overcautious"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "iterations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["deliverable", "standards_covered", "estimated_effort"],
+        "properties": {
+          "deliverable": { "type": "string" },
+          "standards_covered": { "type": "array", "items": { "type": "string" } },
+          "estimated_effort": { "type": "string" }
+        }
+      }
+    },
+    "skipped_standards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["standard_id", "reason"],
+        "properties": {
+          "standard_id": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}
