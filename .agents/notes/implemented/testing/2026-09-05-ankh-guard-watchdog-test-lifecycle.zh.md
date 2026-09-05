@@ -44,6 +44,10 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 lane runner 只有在子进程触发 `close` 后才消费 shard，而不再使用 `exit`，因为 `exit` 可能早于 stdout/stderr 管道最后一次读取。spawn 错误会被明确报告。这关闭了一次高负载观察：该次只看到 161/182，因为最后一个 21-test 汇总尚未读入；inventory tripwire 当场拒绝了不完整观察，没有产生假绿。
 
+lane runner 启动的每个 Vitest 子进程都获得仓库统一的 30 秒默认测试预算。Ankh Guard 刻意不在 monorepo 中携带 `vitest.config.ts`：它的公开镜像拥有独立配置；mirror synchronizer 会先因 keep set 保留该文件，但如果 monorepo 开始跟踪同路径文件，随后复制阶段仍会覆盖镜像配置。因此 runner 级预算可以覆盖未来新增的 spawn-heavy 用例，而不改变镜像配置的所有权；需要 45 或 90 秒的生命周期用例继续保留显式预算。真实 tarball 的 pack smoke 在全仓负载下超过 Vitest 默认五秒后，这个补充成为必要。
+
+hung-previous 接管夹具会在 successor 有机会退休 previous watchdog 之前建立前置条件：先冻结已捕获的 previous identity，在 `SIGSTOP` 后复核 identity，并在 PID 不匹配时恢复它，避免留下被误停的无关进程。previous 的宿主子进程继续服务；successor 随后认领 supervision、执行有界 yield 等待、消费 restore，并强制退休已冻结的确切 identity。旧夹具在启动 successor 后向裸 PID 发送 `SIGSTOP`；200 毫秒 grace 不是同步屏障，正确且快速的 successor 可能先退休 previous，测试便以 `ESRCH` 退出而没有真正覆盖目标场景。
+
 integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average、外部 gate 进程数、git HEAD、built CLI 路径和 SHA-256。composition recovery 使用统一 ledger；失败时报告精确 deadline、前后 composition hash、repo HEAD、listener identity、receipt、watchdog 日志尾部和生命周期时间线。其 stale-listener 场景由明确的 previous-attempt 事件释放，不再猜墙钟。
 
 ### 运行时控制语义保持独立
@@ -61,10 +65,15 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 回归覆盖 detached 进程组清理、TERM→KILL、macOS Bash 后台函数 identity、生产 sleep 不缩放、dead/over-age 分类和独立机器命名空间端口 lease。
 - control writer、composition recovery、stale-200/EADDRINUSE、foreground waiter 与 pidfile replacement 用例均在新 ledger 下通过。
 - hung-previous、目标失败 reconfigure 与 live-home transition 用例保留对终态 receipt 的断言，并使用容忍负载的具名轮询；超时时仍处于中间 phase 依然会携带生命周期诊断响亮失败。
+- 后续修复完成后，unit 以 54/54 通过，integration 以 128/128 通过，并发总入口以 182/182 通过。pack smoke 在 runner 预算内完成；确定性的 hung-previous 用例在 integration-only 与总入口两次运行中都通过。最终 leak report 仍为 active、over-age-live、unreadable 全部为零。
 
 ## Alternatives considered
 
-**只增加 Vitest timeout。** 否决，因为它不能回收泄漏进程、关闭 readiness 竞态、防止跨 worktree 端口冲突，也不能缩短六分钟反馈周期。
+**把增大 Vitest timeout 当成生命周期修复。** 否决，因为它不能回收泄漏进程、关闭 readiness 竞态、防止跨 worktree 端口冲突，也不能缩短六分钟反馈周期。在这些机制已经实现后，让包 runner 对齐仓库的 30 秒默认值，仍是修复独立 pack-smoke 预算缺口的合适做法。
+
+**在 monorepo 中给 Ankh Guard 增加 `vitest.config.ts`。** 否决，因为公开镜像拥有该路径下的独立文件。mirror sync 的 keep set 只会保护它不被初始清空；monorepo 一旦跟踪同路径文件，随后复制仍会覆盖它。runner 级默认值只补齐缺失的 timeout 政策，并让镜像的解析配置继续独立。
+
+**捕获 `ESRCH` 或扩大 reconfigure 后的 sleep。** 否决，因为两者都可能让 hung-watchdog 测试在没有真正建立 previous 冻结 identity 的情况下通过。夹具改为在 successor 启动前建立并证明前置条件，而不是扩大调度窗口。
 
 **在测试中缩放产品墙钟 cutover 和稳定 deadline。** 否决，因为这些窗口是正在验证的所有权与认证协议一部分。只为三条已有高负载证据的路径放宽夹具外层观察余量。
 
@@ -80,7 +89,7 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 
 ## Consequences
 
-真实 watchdog 覆盖继续是强制门禁，同时包 gate 已有足够明确的耗时边界供日常运行。失败会保留耐久、带来源的证据；teardown fail closed，不会冒险处理其他 worktree 或生产实例。代价是 built package 内增加少量内部测试代码、机器 lease 目录需要偶尔只读审计，以及需要维护分片清单。新增测试必须更新显式 lane 计数；特别长的 supervisor 用例可能需要主动重新平衡分片。
+真实 watchdog 覆盖继续是强制门禁，同时包 gate 已有足够明确的耗时边界供日常运行。失败会保留耐久、带来源的证据；teardown fail closed，不会冒险处理其他 worktree 或生产实例。代价是 built package 内增加少量内部测试代码、机器 lease 目录需要偶尔只读审计，以及需要维护分片清单。新增测试必须更新显式 lane 计数；特别长的 supervisor 用例可能需要主动重新平衡分片。未显式标注的挂死测试现在最长需要 30 秒而非五秒才会失败，与仓库预设一致；更长的显式生命周期预算仍然是权威值。
 
 113 秒是一次成功目标运行，不是三次统计中位数。后续性能审计应在声明无外部 gate 的窗口对比，并保留 runner 输出的负载元数据。共享 CI workflow 仍归 mainline owner；现有 CI 已通过包的总入口 `test` 覆盖两档。
 

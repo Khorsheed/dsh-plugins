@@ -44,6 +44,10 @@ The package exposes `test:unit`, `test:integration`, and the umbrella `test`. In
 
 The lane runner consumes a shard only after the child `close` event, not `exit`, because `exit` can precede the final stdout/stderr pipe reads. Spawn errors are reported explicitly. This closes a high-load observation in which one run saw only 161/182 tests because the final 21-test summary was absent; the inventory tripwire correctly rejected that incomplete observation instead of reporting false success.
 
+Every Vitest child launched by the lane runner receives the repository's 30-second default test budget. Ankh Guard deliberately has no monorepo `vitest.config.ts`: its public mirror owns a standalone config that the mirror synchronizer preserves, then would overwrite if the monorepo began shipping a file at the same path. The runner-level budget therefore covers future spawn-heavy cases without changing mirror ownership; lifecycle cases that need 45 or 90 seconds retain their explicit budgets. This became necessary when the real-tarball pack smoke grew past Vitest's five-second default under whole-repository load.
+
+The hung-previous takeover fixture establishes its precondition before a successor can retire the previous watchdog: it freezes the captured previous identity, revalidates that identity after `SIGSTOP`, and resumes a mismatched PID instead of leaving an unrelated process stopped. The previous host child remains live while the successor claims supervision, waits its bounded yield, consumes restore, and force-retires the frozen identity. The earlier fixture sent a raw-PID `SIGSTOP` after starting the successor; its 200-millisecond grace was not a synchronization barrier, so a correctly fast successor could retire the previous watchdog first and make the test throw `ESRCH` without exercising the intended scenario.
+
 The integration runner prints CPU count, Node/package-manager versions, load average, external gate-process count, git HEAD, built CLI path, and SHA-256. Composition recovery now uses the common ledger and, on failure, reports its exact deadline, before/after composition hashes, repo HEAD, listener identity, receipt, watchdog log tail, and lifecycle timeline. Its stale-listener scenario releases from an explicit previous-attempt event rather than a wall-clock guess.
 
 ### Runtime control semantics remain separate
@@ -61,10 +65,15 @@ This change does not alter the product contract of `abort-cutover` or `restore-p
 - Regressions cover detached group cleanup, TERM-to-KILL escalation, macOS Bash background-function identity, unscaled production sleep, dead-versus-over-age reporting, and independent machine-namespace port leases.
 - The control-writer, composition-recovery, stale-200/EADDRINUSE, foreground-waiter, and pidfile-replacement cases pass with the new ledger.
 - The hung-previous, failed-target reconfigure, and live-home transition cases retain their terminal receipt assertions with load-tolerant named polling; an intermediate phase at timeout remains a loud failure with lifecycle diagnostics.
+- After the follow-up, unit passed 54/54, integration passed 128/128, and the concurrent umbrella passed 182/182. The pack smoke completed inside the runner budget, and the deterministic hung-previous case passed in both the integration-only and umbrella runs. The final leak report again had zero active, over-age-live, or unreadable records.
 
 ## Alternatives considered
 
-**Only increase Vitest timeouts.** Rejected because it would not reclaim leaked processes, close the readiness race, prevent cross-worktree port collision, or reduce the six-minute feedback loop.
+**Use larger Vitest timeouts as the lifecycle fix.** Rejected because it would not reclaim leaked processes, close the readiness race, prevent cross-worktree port collision, or reduce the six-minute feedback loop. After those mechanisms were implemented, matching the repository's 30-second default in the package runner was still appropriate for the independent pack-smoke budget gap.
+
+**Add a monorepo `vitest.config.ts` to Ankh Guard.** Rejected because the public mirror owns a standalone file at that path. The mirror sync keep set protects it from the initial wipe, but a tracked monorepo file would subsequently copy over it. A runner-level default changes only the missing timeout policy and leaves the mirror's resolution configuration independent.
+
+**Catch `ESRCH` or enlarge the post-reconfigure sleep.** Rejected because either approach can let the hung-watchdog test pass without ever establishing a hung previous identity. The fixture sets up and proves the precondition before the successor starts instead of making a scheduling window wider.
 
 **Scale the product wall-clock cutover and stability deadlines in tests.** Rejected because those windows are part of the ownership and authentication protocol being exercised. Only the fixture's outer observation allowance is wider for the three demonstrated loaded-gate paths.
 
@@ -80,7 +89,7 @@ This change does not alter the product contract of `abort-cutover` or `restore-p
 
 ## Consequences
 
-Real-watchdog coverage remains mandatory while the package gate becomes bounded enough for routine use. Failures retain durable, source-labelled evidence, and teardown fails closed instead of risking another worktree or production instance. The cost is additional internal test-only code in the built package, a machine lease directory that requires occasional read-only audit, and a maintained shard inventory. New tests must update the explicit lane count, and unusually long supervisor cases may need a deliberate shard rebalance.
+Real-watchdog coverage remains mandatory while the package gate becomes bounded enough for routine use. Failures retain durable, source-labelled evidence, and teardown fails closed instead of risking another worktree or production instance. The cost is additional internal test-only code in the built package, a machine lease directory that requires occasional read-only audit, and a maintained shard inventory. New tests must update the explicit lane count, and unusually long supervisor cases may need a deliberate shard rebalance. An unannotated hung test now takes up to 30 seconds rather than five to fail, matching the repository preset; explicit lifecycle budgets remain the authority when they are larger.
 
 The 113-second run is a successful target run, not a three-run statistical median. Future performance audits should compare declared no-external-gate windows and retain the emitted load metadata. Shared CI workflow changes remain with the mainline owner; existing CI already reaches both lanes through the package's umbrella `test` command.
 
