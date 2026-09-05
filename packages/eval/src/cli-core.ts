@@ -31,6 +31,13 @@ const USAGE = `dsh-eval <verb> [options]
   conditions hash <condition.json>  sha256 of the condition document's
                                     canonical JSON (notes excluded); the file
                                     must be a valid dataseek.condition/1.
+  report <bundleDir> [--out DIR]    Build report/results.jsonl (one verdict per
+                                    line) and report/summary.md (four
+                                    invariants, paired comparison) from a
+                                    mission export bundle. --out redirects the
+                                    output directory. Exit 0 when the report
+                                    was written (comparison may still be
+                                    refused by the invariants — read summary.md).
 
 Data goes to stdout as JSON; diagnostics to stderr.
 Exit codes: 0 ok, 1 failure/refused, 2 usage.
@@ -94,6 +101,44 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const { sha, warnings } = service.hashCondition(document)
         io.stdout(`${JSON.stringify({ id, sha, warnings }, null, 2)}\n`)
         io.stderr(`dsh-eval: ${id} sha ${sha.slice(0, 12)}… (${warnings.length} unresolved field(s))\n`)
+        return 0
+      }
+      case 'report': {
+        const positional: string[] = []
+        let outDir: string | undefined
+        for (let i = 0; i < rest.length; i++) {
+          const arg = rest[i] ?? ''
+          if (arg === '--out') {
+            outDir = rest[i + 1]
+            if (outDir === undefined) throw new UsageError('--out wants a directory')
+            i++
+          } else if (arg.startsWith('--out=')) {
+            outDir = arg.slice('--out='.length)
+            if (outDir === '') throw new UsageError('--out wants a directory')
+          } else if (arg.startsWith('--')) {
+            throw new UsageError(`unknown option ${JSON.stringify(arg)}`)
+          } else if (arg.length > 0) {
+            positional.push(arg)
+          }
+        }
+        const [bundleDir, ...extra] = positional
+        if (bundleDir === undefined) throw new UsageError('report wants a bundle directory')
+        if (extra.length > 0) throw new UsageError(`unexpected argument(s): ${extra.join(' ')}`)
+        const options: { out?: string } = {}
+        if (outDir !== undefined) options.out = outDir
+        const result = await service.report(bundleDir, options)
+        const invariants = Object.fromEntries(result.report.invariants.map(check => [check.id, check.status]))
+        io.stdout(`${JSON.stringify({
+          bundleDir: result.bundleDir,
+          outDir: result.outDir,
+          resultsPath: result.resultsPath,
+          summaryPath: result.summaryPath,
+          rows: result.rowCount,
+          comparisonAllowed: result.report.comparisonAllowed,
+          toolOnlyNs: result.report.toolOnlyNs,
+          invariants,
+        }, null, 2)}\n`)
+        io.stderr(`dsh-eval: report → ${result.resultsPath} + ${result.summaryPath} (${result.rowCount} verdict row(s), comparison ${result.report.comparisonAllowed ? 'allowed' : 'REFUSED by invariants'})\n`)
         return 0
       }
       default:

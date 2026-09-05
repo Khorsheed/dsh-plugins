@@ -1,10 +1,12 @@
 /**
  * The eval service face: the offline verbs the orchestrator (and the CLI)
- * are built from. Execution verbs (run / report / readiness / provision)
- * land in I2 and will live beside these; the offline surface is stable.
+ * are built from — contract checking, deterministic hashing, and the bundle
+ * report. Execution verbs (run / readiness / provision) land with the I2
+ * orchestrator; every surface here is read-only over its inputs.
  * @module @khorsheed/dsh-eval
  */
 import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
+import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
 import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 
@@ -56,5 +58,16 @@ export class EvalService {
    */
   hashHome(homeDir: string): Promise<HomeHash> {
     return hashHome(homeDir)
+  }
+
+  /**
+   * Build the paired report for a mission export bundle: `results.jsonl`
+   * (one verdict per line) and `summary.md` (the four invariants first;
+   * comparison and ranking only when all four are established). Writes into
+   * `<bundleDir>/report/` unless `out` names another directory.
+   * @throws Error when the directory is not a bundle (no readable run.json).
+   */
+  report(bundleDir: string, options: { out?: string } = {}): Promise<ReportWrite> {
+    return writeEvalReport(bundleDir, options)
   }
 }
