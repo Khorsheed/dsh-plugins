@@ -69,9 +69,9 @@
 ### S9. `dsh.bundle` 声明把"要被安装"和"要被挂载"绑死
 
 - **需求**：家族内部 bundle（如 `@khorsheed/dsh-local-agent-dsh-headless`）需要声明 patch 供自己的子 profile 引用（app-boot 对 layer 列表里不声明 `dsh.bundle` 的包 fail loud)，但**不能**被 reconcilePlugins 自动挂进交互式组合——reconcile 把声明 `dsh.bundle` 的 profile 直接依赖全部挂进 layer 栈。2026-08-23 P0:headless bundle 作为 prod web profile 直接依赖被自动挂载，其 `code-runtime` insert 行与 web-app 同名行撞 duplicate entry id，全实例 boot 失败。
-- **现状绕行**：纪律 + 哨兵——ops 文档明示"内部 bundle 只作传递依赖"，包内不变量检出 web 组合（`webStartup` 服务存在）即 fail loud,patch 测试钉住撞 id 的行。安装路径不变（传递依赖天然不被挂载）。
-- **退役条件**：官方把声明拆开——例如 `dsh.bundle.autoMount: false`（或 `profileOnly`)，让 reconcilePlugins 跳过这类包；届时内部 bundle 可以放心作直接依赖（例如显式锁定版本），哨兵不变量可留作防御。
-- **状态**：绕行中（@khorsheed/dsh-local-agent-dsh-headless)。
+- **曾用绕行**：纪律 + 哨兵——ops 文档明示"内部 bundle 只作传递依赖"，包内不变量检出 web 组合（`webStartup` 服务存在）即 fail loud,patch 测试钉住撞 id 的行。安装路径不变（传递依赖天然不被挂载）。2026-09-03（i1-walk G3）同一挂载复发。
+- **退役方式**：需求被我方设计变更消除（T6，2026-09-05，commit e2de301）——headless 不再声明 `dsh.bundle`，provisioner 把 patch 从 bundle 目录的已知文件名（`cordis.patch.yml`）拷进子 profile 自己的 patch 层；reconcile 对该包永远返回"非 bundle"，旧 profile 的脏行在升级后自动摘除。哨兵不变量与 patch 测试留作防御。上游拆分（`dsh.bundle.autoMount: false` / `profileOnly`）仍是**未来**任何家族内部 bundle 的一般解法；届时内部 bundle 可放心作直接依赖（例如显式锁定版本）。
+- **状态**：已退役（2026-09-05，@khorsheed/dsh-local-agent-dsh-headless 我方撤声明；非官方落地）。
 
 ### S9. runtime skill 注册的 `source` 只在加载期校验
 

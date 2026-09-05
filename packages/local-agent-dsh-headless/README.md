@@ -41,8 +41,8 @@ dsh --profile headless-local-agent-dsh --serve                              # �
 
 ## 已知限制
 
-- **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。
-- **也绝不要把它列为任何 profile 的直接依赖**——`dsh plugin add` / reconcilePlugins 会把声明 `dsh.bundle` 的直接依赖自动挂进组合的 layer 栈。2026-08-23 P0：它作为 prod web profile 的直接依赖被自动挂载，`code-runtime` 行与 web-app 的同名行撞成 duplicate entry id，全实例 boot 失败。经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可（reconcile 只看直接依赖）；包内不变量对挂进 web 组合（检出 `webStartup` 服务）fail loud。
+- **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`code-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。本包**不声明 `dsh.bundle`**，因此手工加的 bundles 行在 boot 的 `loadProfile` 处直接 fail loud（"declares no dsh.bundle"），这正是一道闸。
+- **它不会被 `dsh plugin add` 自动挂载，也无需如此**——本包曾声明 `dsh.bundle`，而 reconcilePlugins 会把声明该字段的直接依赖自动挂进组合的 layer 栈：2026-08-23 P0（prod web profile 撞 duplicate `code-runtime`）与 2026-09-03 G3 复发都是这一挂。声明已撤（T6），装成直接依赖只会得到一条 "plain dependency" 警告、不挂载——但也没有必要：经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可，父级 provider 会自动 provision。包内不变量对挂进 web 组合（检出 `webStartup` 服务）依旧 fail loud。
 - 子 dsh 会话绝不会出现在父实例的会话列表里（独立的 scoped-home 存储）。
 - 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
 - patch 改动落地前必须做启动级验证（`dsh preflight` 或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败。
@@ -70,7 +70,7 @@ local-agent 家族需要在多次委派之间续接**同一个** dsh 对话：�
     serve: !!js ctx.localAgentDshHeadlessStartup.serve ?? false
 ```
 
-startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume`（或 `--serve`）并发布调用；一次性模式下 runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出，serve 模式下转入常驻 wire 循环（`src/serve.ts`）。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下，并生成自己的 `package.json`、patch 层与 bundle symlink。
+startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume`（或 `--serve`）并发布调用；一次性模式下 runner 通过 `agents.create` / `agents.resume` 创建或续接该会话、驱动任务、打印最终助手文本并退出，serve 模式下转入常驻 wire 循环（`src/serve.ts`）。子 profile 本身由父级 provider 在运行时 provision（`provisionDshSubProfile`）到 dsh harness 的 scoped home 下：manifest 只列 `@deepseek-ai/dsh-base`，本 bundle 的 patch 从包内 `cordis.patch.yml` 逐字节拷贝为该 profile 自己的 patch 层（本包不声明 `dsh.bundle`，见已知限制），另加一条解析本 bundle 的符号链接供 loader 解析 insert 行。
 
 </details>
 
