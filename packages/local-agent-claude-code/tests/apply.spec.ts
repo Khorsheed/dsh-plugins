@@ -153,6 +153,11 @@ describe('local-agent-claude-code apply', () => {
   })
 
   it('snapshots the defaults: exec drive, skip permission mode, no pinned endpoint', async () => {
+    // Hermetic: the snapshot's env fallback is real product behavior (the
+    // child CLI genuinely routes through the host's ANTHROPIC_BASE_URL), so
+    // a host shell that exports it changes the honest answer. The defaults
+    // case pins the env empty; the env-set behavior has its own test below.
+    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
     const { registered } = mount()
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
