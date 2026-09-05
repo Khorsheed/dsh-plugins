@@ -94,10 +94,18 @@ async function worker() {
     const chunks = []
     child.stdout.on('data', chunk => chunks.push(chunk))
     child.stderr.on('data', chunk => chunks.push(chunk))
-    const code = await new Promise(resolve => child.once('exit', value => resolve(value ?? 1)))
+    const result = await new Promise(resolve => {
+      let spawnError
+      child.once('error', error => { spawnError = error })
+      // `exit` can precede the final stdout/stderr pipe reads. `close` is the
+      // lifecycle boundary that proves both the process and its stdio closed.
+      child.once('close', (code, signal) => resolve({ code: code ?? 1, signal, spawnError }))
+    })
+    if (result.spawnError !== undefined) chunks.push(Buffer.from(`\nrunner spawn error: ${String(result.spawnError)}\n`))
     const output = Buffer.concat(chunks).toString('utf8')
-    process.stdout.write(`\n===== ${lane}:${task.name} (${Math.round(performance.now() - started)}ms, exit ${code}) =====\n${output}`)
-    if (code !== 0) failed = true
+    const outcome = result.signal === null ? `exit ${result.code}` : `signal ${result.signal}`
+    process.stdout.write(`\n===== ${lane}:${task.name} (${Math.round(performance.now() - started)}ms, ${outcome}) =====\n${output}`)
+    if (result.code !== 0 || result.spawnError !== undefined) failed = true
     const count = /Tests\s+(\d+) passed/.exec(output)
     if (count === null) failed = true
     else passed += Number(count[1])

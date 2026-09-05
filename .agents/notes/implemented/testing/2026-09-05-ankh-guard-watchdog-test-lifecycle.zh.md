@@ -40,6 +40,8 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 54 个 unit、128 个 integration，共 182 个测试。
 
+lane runner 只有在子进程触发 `close` 后才消费 shard，而不再使用 `exit`，因为 `exit` 可能早于 stdout/stderr 管道最后一次读取。spawn 错误会被明确报告。这关闭了一次高负载观察：该次只看到 161/182，因为最后一个 21-test 汇总尚未读入；inventory tripwire 当场拒绝了不完整观察，没有产生假绿。
+
 integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average、外部 gate 进程数、git HEAD、built CLI 路径和 SHA-256。composition recovery 使用统一 ledger；失败时报告精确 deadline、前后 composition hash、repo HEAD、listener identity、receipt、watchdog 日志尾部和生命周期时间线。其 stale-listener 场景由明确的 previous-attempt 事件释放，不再猜墙钟。
 
 ### 运行时控制语义保持独立
@@ -76,3 +78,5 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 真实 watchdog 覆盖继续是强制门禁，同时包 gate 已有足够明确的耗时边界供日常运行。失败会保留耐久、带来源的证据；teardown fail closed，不会冒险处理其他 worktree 或生产实例。代价是 built package 内增加少量内部测试代码、机器 lease 目录需要偶尔只读审计，以及需要维护分片清单。新增测试必须更新显式 lane 计数；特别长的 supervisor 用例可能需要主动重新平衡分片。
 
 113 秒是一次成功目标运行，不是三次统计中位数。后续性能审计应在声明无外部 gate 的窗口对比，并保留 runner 输出的负载元数据。共享 CI workflow 仍归 mainline owner；现有 CI 已通过包的总入口 `test` 覆盖两档。
+
+另有一条重度竞争下的夹具竞态留给 M4 跟进：四个 shard 满载且同时运行 `test:leaks` 时，stale-200/EADDRINUSE recovery 已进入终态 `restored`，但跑满 35 秒预算后观察到 `failureCount.previous = 0`，而非期望的 `1`。这是失败计数归属窗口，不是另一种超时，也没有证明生产 recovery 失败；当前 lifecycle 诊断已经能够保留调查证据，无需弱化断言。
