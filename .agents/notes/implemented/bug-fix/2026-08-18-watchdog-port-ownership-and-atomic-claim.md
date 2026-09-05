@@ -28,6 +28,7 @@ Three defects, all reachable from a start command that does not bind the supervi
 - The pre-existing `treats EADDRINUSE as a port race` case carried no explicit timeout while waiting on a 20 s deadline, so vitest's 5 s default bounded it; six spawn-and-fail cycles do not fit. It failed identically against the pre-fix script (3/3), and now declares 30 s like its siblings.
 - Full suite 68/68 on two consecutive runs; `typecheck` passes.
 - 2026-08-29 follow-up: the eight-racer case flaked under a four-package deploy gate (zero survivors) via the empty-read cascade now closed above, and the reclaim case's 10 s windows sat below one loaded supervise-loop iteration (~6 s unloaded in fake-instance mode: spawn + health poll + two sleeps), so the reclaim/yield windows were widened to 25 s. The cascade did not reproduce in a 60-round local stress (unloaded, `yes`-saturated, and suite-concurrent runs all clean) — the window is closed by construction, not by measurement.
+- 2026-09-06 follow-up: the foreign-port case now waits for both the ownership classification and the subsequent counted-failure line. Those lines are emitted sequentially, so treating the first line alone as a settled attempt raced the immediately following assertion under load; the production behavior is unchanged.
 
 ## Alternatives considered
 
