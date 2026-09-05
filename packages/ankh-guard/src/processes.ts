@@ -134,6 +134,17 @@ function parentPid(pid: number): number | null {
   }
 }
 
+/** The live POSIX process-group id for one PID, or null when unavailable. */
+export function processGroupId(pid: number): number | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null
+  try {
+    const value = Number(execFileSync(PS, ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8', stdio: 'pipe' }).trim())
+    return Number.isInteger(value) && value > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
 /** Whether candidate is root itself or a live descendant of root. */
 export function pidBelongsToTree(root: number, candidate: number): boolean {
   let cursor = candidate

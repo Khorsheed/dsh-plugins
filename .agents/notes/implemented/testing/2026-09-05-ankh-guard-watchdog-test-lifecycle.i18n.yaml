@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-05-ankh-guard-watchdog-test-lifecycle.md
+.agents/notes/implemented/testing/2026-09-05-ankh-guard-watchdog-test-lifecycle.md: b60f50c2c0a1c01d6c32c33208ae254944ecf6af
+.agents/notes/implemented/testing/2026-09-05-ankh-guard-watchdog-test-lifecycle.zh.md: b820387b6baa4c3759fed32f9844230c86f68b71

@@ -137,8 +137,23 @@ PYTHON_BIN=$(resolve_tool python3 /usr/bin/python3 /opt/homebrew/bin/python3 2>/
 export DSH_HOME="$DSH_ROOT"
 mkdir -p "$STATE_DIR"
 
+# Production sleeps retain their exact durations. A test run may scale only
+# internal polling/backoff after presenting the private run coordinates used
+# by the ownership ledger; the scale is never persisted in a launch spec.
+wd_sleep() {
+  local duration=$1 scale=${ANKH_GUARD_TEST_SLEEP_SCALE:-1}
+  if [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ] && [ -n "${ANKH_GUARD_TEST_RUN_TOKEN:-}" ] \
+    && printf '%s' "$scale" | grep -Eq '^0\.[0-9]+$|^1(\.0+)?$'; then
+    duration=$(/usr/bin/awk -v duration="$duration" -v scale="$scale" \
+      'BEGIN { value=duration*scale; if (value < 0.01) value=0.01; printf "%.3f", value }')
+  fi
+  sleep "$duration"
+}
+
 launch_instance() {
-  if [ "${WD_TEST_BREAK:-0}" = "1" ]; then sleep 1; exit 1; fi
+  test_register_self instance-wrapper
+  test_event_self instance-wrapper process-started
+  if [ "${WD_TEST_BREAK:-0}" = "1" ]; then wd_sleep 1; exit 1; fi
   if [ "${WD_TEST_FAKE:-0}" = "1" ]; then
     node -e "require('http').createServer((q,s)=>s.end('ok')).listen($PORT,'127.0.0.1')"
     exit
@@ -181,7 +196,7 @@ cutover_event_required() {
   [ -n "$CUTOVER_ID" ] || return 0
   while ! cutover_event "$@"; do
     wd_log "could not persist cutover event $1 — retrying; service state is unchanged" >&2
-    sleep 1
+    wd_sleep 1
   done
 }
 
@@ -296,6 +311,10 @@ protected_ready=0
 ready_probe() {
   local status url jar exchange authenticated
   current_owned_listener || return 1
+  # The test fixture records the proven runtime identity as soon as ownership
+  # is established. This is not production discovery or port-based cleanup:
+  # teardown later signals only this immutable PID/start-token lease.
+  test_register_pid "$current_listener_pid" instance-listener
   status=$(http_status)
   current_ownership_matches || return 1
   if [ -n "$status" ] && [ "$status" != "000" ] && [ "$status" != "$last_transport_status" ]; then
@@ -405,7 +424,7 @@ wait_for_browser_ack() {
       browser_ack_authority=${rest#*|}
       return 0
     fi
-    sleep 0.25
+    wd_sleep 0.25
   done
   return 1
 }
@@ -487,7 +506,7 @@ prove_stable_readiness() {
     ready_probe || return 1
     [ "$current_listener_pid" = "$expected_listener" ] \
       && [ "$current_listener_start" = "$expected_listener_start" ] || return 1
-    sleep 0.25
+    wd_sleep 0.25
   done
   current_listener_pid=$expected_listener
   current_listener_start=$expected_listener_start
@@ -536,6 +555,40 @@ process_start_token() {
       process.stdout.write("posix:" + createHash("sha256").update(boot).update("\0").update(base).digest("hex"))
     } catch { process.exit(1) }
   ' "$1" 2>/dev/null
+}
+
+# Test-only birth registration and event sink. The shipped watchdog is inert
+# unless a fixture provides an explicit private run directory, token, and the
+# built registrar path. Each shell/Node child initiates its own record so the
+# outer Vitest process never has to discover a replacement through a mutable
+# pidfile. Registration failure is diagnostic-only and cannot alter production
+# supervision behavior.
+test_register_pid() {
+  [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ] || return 0
+  [ -n "${ANKH_GUARD_TEST_RUN_TOKEN:-}" ] || return 0
+  [ -f "${ANKH_GUARD_TEST_REGISTER_BIN:-}" ] || return 0
+  ANKH_GUARD_TEST_PROCESS_ROLE="$2" node "$ANKH_GUARD_TEST_REGISTER_BIN" register-pid "$1" "$2" >/dev/null 2>&1 || true
+}
+
+test_register_self() {
+  [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ] || return 0
+  [ -n "${ANKH_GUARD_TEST_RUN_TOKEN:-}" ] || return 0
+  [ -f "${ANKH_GUARD_TEST_REGISTER_BIN:-}" ] || return 0
+  ANKH_GUARD_TEST_PROCESS_ROLE="$1" node "$ANKH_GUARD_TEST_REGISTER_BIN" register-parent "$1" >/dev/null 2>&1 || true
+}
+
+test_event_pid() {
+  [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ] || return 0
+  [ -n "${ANKH_GUARD_TEST_RUN_TOKEN:-}" ] || return 0
+  [ -f "${ANKH_GUARD_TEST_REGISTER_BIN:-}" ] || return 0
+  ANKH_GUARD_TEST_PROCESS_ROLE="$2" node "$ANKH_GUARD_TEST_REGISTER_BIN" event-pid "$1" "$2" "$3" >/dev/null 2>&1 || true
+}
+
+test_event_self() {
+  [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ] || return 0
+  [ -n "${ANKH_GUARD_TEST_RUN_TOKEN:-}" ] || return 0
+  [ -f "${ANKH_GUARD_TEST_REGISTER_BIN:-}" ] || return 0
+  ANKH_GUARD_TEST_PROCESS_ROLE="$1" node "$ANKH_GUARD_TEST_REGISTER_BIN" event-parent "$1" "$2" >/dev/null 2>&1 || true
 }
 
 now_ms() {
@@ -662,7 +715,7 @@ stop_previous_owned_tree() {
   # teardown time to drop the socket before separately touching the captured
   # listener PID; a dying process can retain a ps row after its executable
   # identity is already gone.
-  sleep 0.5
+  wd_sleep 0.5
   if pid_is_listener "$PREVIOUS_LISTENER_PID"; then
     stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" TERM || identity_error=1
   fi
@@ -672,7 +725,7 @@ stop_previous_owned_tree() {
       && ! pid_is_listener "$PREVIOUS_LISTENER_PID"; then
       break
     fi
-    sleep 0.2
+    wd_sleep 0.2
   done
   if identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START"; then
     stop_matching_identity "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" KILL || identity_error=1
@@ -680,7 +733,7 @@ stop_previous_owned_tree() {
   if pid_is_listener "$PREVIOUS_LISTENER_PID"; then
     stop_matching_identity "$PREVIOUS_LISTENER_PID" "$PREVIOUS_LISTENER_START" KILL || identity_error=1
   fi
-  sleep 0.2
+  wd_sleep 0.2
   if identity_matches "$PREVIOUS_CHILD_PID" "$PREVIOUS_CHILD_START" \
     || pid_is_listener "$PREVIOUS_LISTENER_PID"; then
     wd_log "captured previous child/listener identity did not exit" >&2
@@ -699,12 +752,12 @@ kill_current_owned_attempt() {
   if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ]; then
     stop_matching_identity "$child" "$child_start_token" TERM || identity_error=1
   fi
-  sleep 0.2
+  wd_sleep 0.2
   if [ -n "${current_listener_pid:-}" ] && [ -n "${current_listener_start:-}" ] \
     && pid_is_listener "$current_listener_pid"; then
     stop_matching_identity "$current_listener_pid" "$current_listener_start" TERM || identity_error=1
   fi
-  sleep 0.2
+  wd_sleep 0.2
   if [ -n "${child:-}" ] && [ -n "${child_start_token:-}" ] \
     && identity_matches "$child" "$child_start_token"; then
     stop_matching_identity "$child" "$child_start_token" KILL || identity_error=1
@@ -782,7 +835,7 @@ handle_cutover_control() {
 wait_cutover_with_live_child() {
   while identity_matches "$child" "$child_start_token"; do
     if handle_cutover_control && [ "$control_result" = "restore" ]; then return 0; fi
-    sleep 2
+    wd_sleep 2
   done
   wait "$child" 2>/dev/null || true
 }
@@ -818,7 +871,7 @@ free_port() {
   if [ -n "$pid" ]; then
     wd_log "freeing :$PORT from pid(s) $pid"
     for p in $pid; do kill_tree "$p" TERM; done
-    sleep 2
+    wd_sleep 2
   fi
 }
 
@@ -965,6 +1018,11 @@ guard_reset() {
 # retry button that signals the watchdog (SIGUSR1) — no terminal needed.
 page_script() {
   cat <<'EOF'
+if (process.env.ANKH_GUARD_TEST_RUN_DIR && process.env.ANKH_GUARD_TEST_RUN_TOKEN
+  && process.env.ANKH_GUARD_TEST_REGISTER_BIN) {
+  require('child_process').spawnSync(process.execPath, [process.env.ANKH_GUARD_TEST_REGISTER_BIN,
+    'register-pid', String(process.pid), 'crash-page'], { stdio: 'ignore', env: process.env });
+}
 const http = require('http');
 const port = Number(process.env.WD_PORT || 3080);
 const wd = Number(process.env.WD_PID);
@@ -1030,6 +1088,10 @@ retry_on_usrs() {
   port_races=0
 }
 
+# Register before the first ownership branch can exit or detach more children.
+test_register_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}"
+test_event_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}" process-started
+
 # --supervise: one watchdog only. The claim must be atomic — a check-then-write
 # (`[ -f ]` + `kill -0`, then `>`) is a TOCTOU window in which two watchdogs
 # starting together both find no live owner, both write, and both supervise the
@@ -1084,7 +1146,7 @@ if [ "$SUPERVISE" = "1" ]; then
         empty_reads=$((empty_reads + 1))
         if [ "$empty_reads" -le 3 ]; then
           attempt=$((attempt - 1))
-          sleep 0.2
+          wd_sleep 0.2
           continue
         fi
       fi
@@ -1098,6 +1160,10 @@ if [ "$SUPERVISE" = "1" ]; then
     wd_log "could not claim $PIDFILE after $attempt attempts" >&2
     exit 1
   fi
+fi
+
+if [ "$SUPERVISE" = "1" ] && [ "$claimed" = "1" ]; then
+  test_event_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}" pidfile-published
 fi
 
 # Graceful launch: let the scheduling turn finish before the adoption bounce.
@@ -1162,6 +1228,14 @@ cutover_control_signal() {
 }
 trap 'cutover_control_signal' USR2
 
+# Test readiness is stronger than pidfile publication: the control handler is
+# installed and the shell has yielded through one scheduler tick. Production
+# readiness remains unchanged; only explicit test event consumers observe it.
+test_event_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}" handler-installed
+if [ -n "${ANKH_GUARD_TEST_RUN_DIR:-}" ]; then wd_sleep 0.01; fi
+test_event_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}" keepalive-first-tick
+test_event_self "${ANKH_GUARD_TEST_PROCESS_ROLE:-watchdog}" ready
+
 write_cutover_restart_marker() {
   node -e '
     const fs = require("fs")
@@ -1201,7 +1275,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
   ' "$cutover_delay") || { wd_log "invalid WD_CUTOVER_DELAY_SECONDS" >&2; exit 1; }
   while [ "$(now_ms)" -lt "$cutover_delay_deadline" ]; do
     consume_takeover_control
-    sleep 0.2
+    wd_sleep 0.2
   done
   # Do not publish the restart marker while the previous watchdog is still
   # alive. Older watchdogs consume that marker themselves; if one wins that
@@ -1229,7 +1303,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
         supervisor_retirement='forced'
         retirement_deadline=$(( $(date +%s) + 3 ))
         while identity_matches "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START" \
-          && [ "$(date +%s)" -lt "$retirement_deadline" ]; do sleep 0.2; done
+          && [ "$(date +%s)" -lt "$retirement_deadline" ]; do wd_sleep 0.2; done
         stop_matching_identity "$WD_TAKEOVER_FROM" "$WD_TAKEOVER_FROM_START" KILL || true
       else
         # The PID changed between the loop predicate and SIGSTOP. The helper
@@ -1239,7 +1313,7 @@ if [ -n "${WD_TAKEOVER_FROM:-}" ]; then
       fi
       break
     fi
-    sleep 0.2
+    wd_sleep 0.2
   done
   if [ "$supervisor_was_live" = "1" ] && [ "$supervisor_timed_out" = "0" ]; then
     supervisor_retirement='yielded'
@@ -1285,7 +1359,7 @@ elif [ -n "$CUTOVER_ID" ]; then
 elif [ "${WD_WAIT_OWNER:-0}" = "1" ]; then
   # Adoption ahead of a self-restart: the current owner exits on its own.
   wd_log "waiting for the current owner of :$PORT to exit"
-  while "$LSOF_BIN" -tiTCP:"$PORT" -sTCP:LISTEN -P >/dev/null 2>&1; do sleep 1; done
+  while "$LSOF_BIN" -tiTCP:"$PORT" -sTCP:LISTEN -P >/dev/null 2>&1; do wd_sleep 1; done
   wd_log "port free — taking over"
 else
   free_port
@@ -1407,7 +1481,7 @@ while true; do
       # to whichever process next answers on the shared port.
       break
     fi
-    sleep 1
+    wd_sleep 1
   done
 
   if [ "$up" = "0" ]; then
@@ -1554,7 +1628,7 @@ while true; do
       continue
     fi
 
-    sleep $((failures * 5))
+    wd_sleep $((failures * 5))
     continue
   fi
 
@@ -1731,7 +1805,7 @@ while true; do
         exit 75
       fi
     fi
-    sleep 2
+    wd_sleep 2
   done
   wait "$child"
 
@@ -1742,7 +1816,7 @@ while true; do
     exit 0
   fi
 
-  sleep 3
+  wd_sleep 3
   if transport_up; then
     free_port
   fi

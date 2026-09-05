@@ -18,7 +18,7 @@
  *              instance, so the post-restart canary runs even though the
  *              instance restart killed the session that used to own it.
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
@@ -47,6 +47,10 @@ import {
   applyTransition, createPreflightSnapshot, createTransitionPreflightSnapshot, prepareTransition, rollbackTransition,
   validateTransitionPlan, type TransitionPlan,
 } from './transition.ts'
+import {
+  appendTestLifecycleEvent, appendTestLifecycleEventForProcess, registerCurrentTestProcess, registerTestProcess,
+  TEST_PROCESS_PORT_ENV, TEST_PROCESS_ROLE_ENV, TEST_PROCESS_TEMP_ROOT_ENV, TEST_RUN_DIR_ENV,
+} from './test-seam.ts'
 
 /** Parsed CLI options; empty stateDir/repoDir mean "use defaults". */
 interface CliOptions {
@@ -196,7 +200,37 @@ function livePidIn(file: string): string | null {
 /** The live supervising watchdog's pid, or null when none is (pidfile + kill 0). */
 function liveWatchdogPid(stateDir: string): number | null {
   const raw = livePidIn(stateFile(stateDir, 'watchdogPid'))
-  return raw === null ? null : Number(raw)
+  const pid = raw === null ? null : Number(raw)
+  appendTestLifecycleEvent('watchdog-liveness-probe', { pid: pid ?? 0, live: pid !== null }, 'parent-observer')
+  return pid
+}
+
+function testChildEnv(
+  role: string,
+  env: NodeJS.ProcessEnv,
+  options: { port?: number; tempRoot?: string } = {},
+): NodeJS.ProcessEnv {
+  if (process.env[TEST_RUN_DIR_ENV] === undefined) return env
+  return {
+    ...env,
+    [TEST_PROCESS_ROLE_ENV]: role,
+    ...(options.port === undefined ? {} : { [TEST_PROCESS_PORT_ENV]: String(options.port) }),
+    ...(options.tempRoot === undefined ? {} : { [TEST_PROCESS_TEMP_ROOT_ENV]: options.tempRoot }),
+  }
+}
+
+function registerSpawnedTestProcess(
+  child: ChildProcess,
+  role: string,
+  options: { port?: number; tempRoot?: string } = {},
+): void {
+  if (child.pid === undefined) return
+  registerTestProcess(child.pid, role, {
+    source: 'parent-observer',
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.tempRoot === undefined ? {} : { tempRoot: options.tempRoot }),
+  })
+  appendTestLifecycleEventForProcess(child.pid, role, 'child-spawned', { childPid: child.pid, role }, 'parent-observer')
 }
 
 /**
@@ -548,9 +582,10 @@ async function runCredentialCommand(
     try {
       child = spawn(executable, argv.slice(1), {
         cwd,
-        env: { ...process.env },
+        env: testChildEnv('credential-command', { ...process.env }, { tempRoot: cwd }),
         stdio: ['ignore', 'pipe', 'pipe'],
       })
+      registerSpawnedTestProcess(child, 'credential-command', { tempRoot: cwd })
     } catch (error) {
       settle({ ok: false, detail: `could not start ${JSON.stringify(executable)}: ${String(error)}` })
       return
@@ -918,14 +953,15 @@ export async function runPreflightCheck(
     let timedOut = false
     // The runner resolves the live harness from DSH_HARNESS; pin it so the
     // subprocess agrees with the gate even when the caller's env differs.
-    const preflightEnv = {
+    const preflightEnv = testChildEnv('composition-preflight', {
       ...process.env,
       DSH_HARNESS: harnessForRunner,
       ...(home === undefined ? {} : { DSH_HOME: home }),
-    }
+    }, { ...(home === undefined ? {} : { tempRoot: home }) })
     const child = executable === undefined
       ? spawn(command ?? '', { shell: true, env: preflightEnv })
       : spawn(executable, argv, { shell: false, env: preflightEnv })
+    registerSpawnedTestProcess(child, 'composition-preflight', { ...(home === undefined ? {} : { tempRoot: home }) })
     const append = (chunk: Buffer): void => {
       if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
     }
@@ -983,13 +1019,14 @@ async function runCandidateProbe(
     const child = spawn(binding.candidateProbeCommand!, {
       shell: true,
       detached: true,
-      env: {
+      env: testChildEnv('candidate-probe', {
         ...process.env,
         DSH_HARNESS: harnessRoot,
         DSH_HOME: home,
         ANKH_TARGET_COMMAND_SHA256: binding.targetCommandSha256,
-      },
+      }, { tempRoot: home }),
     })
+    registerSpawnedTestProcess(child, 'candidate-probe', { tempRoot: home })
     const append = (chunk: Buffer): void => {
       if (output.length < PREFLIGHT_OUTPUT_CAP) output += chunk.toString('utf8')
     }
@@ -1532,7 +1569,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       const requested = command === 'restore-previous' ? 'restore-previous' : 'abort'
       try {
         const control = writeCutoverControl(stateDir, transaction.receipt.id, requested, Date.now())
-        process.kill(watchdogPid, 'SIGUSR2')
+        appendTestLifecycleEvent('control-marker-written', { action: control.action, watchdogPid }, 'parent-observer')
+        try {
+          process.kill(watchdogPid, 'SIGUSR2')
+          appendTestLifecycleEvent('signal-result', { signal: 'SIGUSR2', targetPid: watchdogPid, result: 'sent' }, 'parent-observer')
+        } catch (error) {
+          appendTestLifecycleEvent('signal-result', { signal: 'SIGUSR2', targetPid: watchdogPid, result: String(error) }, 'parent-observer')
+          throw error
+        }
         io.stdout(control.action === 'restore-previous'
           ? `cutover ${control.cutoverId}: explicit restore-previous requested; watchdog ${watchdogPid} will stop only the proven target identity and relaunch the complete previous spec\n`
           : `cutover ${control.cutoverId}: abort requested; watchdog ${watchdogPid} will apply the pre-approved ${transaction.receipt.recovery.policy} policy\n`)
@@ -1874,8 +1918,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const driver = spawn(process.execPath, cliInvocation(driverArgs), {
           detached: true,
           stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-          env: { ...process.env },
+          env: testChildEnv('cutover-supervisor-driver', { ...process.env }, { port: previous.port, tempRoot: stateDir }),
         })
+        registerSpawnedTestProcess(driver, 'cutover-supervisor-driver', { port: previous.port, tempRoot: stateDir })
         driver.unref()
         driverPid = driver.pid
         if (driverPid === undefined) throw new Error('could not detach the replacement supervisor driver')
@@ -1964,8 +2009,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const driver = spawn(process.execPath, cliInvocation(argv), {
           detached: true,
           stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-          env: { ...process.env, DSH_ANKH_RESTART_DRIVER: '1' },
+          env: testChildEnv('restart-driver', { ...process.env, DSH_ANKH_RESTART_DRIVER: '1' }, { port, tempRoot: stateDir }),
         })
+        registerSpawnedTestProcess(driver, 'restart-driver', { port, tempRoot: stateDir })
         driver.unref()
         if (driver.pid === undefined) {
           io.stderr('restart refused: could not detach the restart driver\n')
@@ -2040,7 +2086,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         for (const key of Object.keys(startEnv)) {
           if (key.startsWith('WD_')) delete startEnv[key]
         }
-        const child = spawn(start, { shell: true, detached: true, stdio: 'ignore', env: startEnv })
+        const child = spawn(start, {
+          shell: true, detached: true, stdio: 'ignore',
+          env: testChildEnv('restart-instance-root', startEnv, { port, tempRoot: stateDir }),
+        })
+        registerSpawnedTestProcess(child, 'restart-instance-root', { port, tempRoot: stateDir })
         child.unref()
         io.stdout(`started: ${start}\n`)
         const timeoutMs = options.timeoutMs ?? 60_000
@@ -2290,8 +2340,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // exits with the watchdog so a dead watchdog triggers a restart.
         const child = spawn('bash', [watchdog, '--supervise'], {
           stdio: 'inherit',
-          env,
+          env: testChildEnv('watchdog-foreground', env, { port: spec.port, tempRoot: stateDir }),
         })
+        registerSpawnedTestProcess(child, 'watchdog-foreground', { port: spec.port, tempRoot: stateDir })
         const code = await new Promise<number>((resolve) => {
           child.on('exit', (c) => { resolve(c ?? 1) })
         })
@@ -2302,8 +2353,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       const child = spawn('bash', [watchdog, '--supervise'], {
         detached: true,
         stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-        env,
+        env: testChildEnv('watchdog-detached', env, { port: spec.port, tempRoot: stateDir }),
       })
+      registerSpawnedTestProcess(child, 'watchdog-detached', { port: spec.port, tempRoot: stateDir })
       let spawnError: Error | undefined
       child.once('error', (error) => { spawnError = error })
       child.unref()
@@ -2427,14 +2479,15 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const child = spawn(process.execPath, exitAgentInvocation(), {
           detached: true,
           stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-          env: {
+          env: testChildEnv('schedule-exit-agent', {
             ...process.env,
             WD_PORT: String(port),
             WD_DELAY_MS: String(delayMs),
             WD_RESULT_FILE: resultFile,
             ...(initiator !== undefined ? { WD_INITIATOR: initiator } : {}),
-          },
+          }, { port, tempRoot: stateDir }),
         })
+        registerSpawnedTestProcess(child, 'schedule-exit-agent', { port, tempRoot: stateDir })
         child.unref()
         io.stdout(`exit scheduled in ${delayMs} ms (exit-agent pid ${child.pid ?? 'unknown'}) — watchdog will respawn and run the canary\n`)
         return 0
@@ -2451,6 +2504,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 // Direct invocation (`tsx src/cli.ts ...`) vs import by tests. Symlink-proof
 // (isDirectInvocation): a plain URL compare silently never-fires via /tmp.
 if (isDirectInvocation(import.meta.url)) {
+  registerCurrentTestProcess()
   void runCli(process.argv.slice(2), {
     stdout: line => process.stdout.write(line),
     stderr: line => process.stderr.write(line),

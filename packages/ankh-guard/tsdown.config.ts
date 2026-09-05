@@ -7,5 +7,5 @@
 import { clientBundle } from '../../build/tsdown.client.ts'
 
 export default clientBundle('@khorsheed/dsh-ankh-guard', [
-  'lib/types/{index,invariant,cli,preflight-runner,exit-agent}.js',
+  'lib/types/{index,invariant,cli,preflight-runner,exit-agent,test-seam,test-seam-cli}.js',
 ], { hostPhase: true })

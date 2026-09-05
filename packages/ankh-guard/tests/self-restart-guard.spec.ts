@@ -6,20 +6,21 @@
  * malformed-state check. Deterministic time is injected everywhere the core
  * reads the clock; git calls run against throwaway repositories.
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn as nodeSpawn, type SpawnOptions } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { get as httpGet } from 'node:http'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import { tmpdir, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as selfRestartGuard from '../src/index.ts'
 import { currentHead } from '../src/git.ts'
 import {
-  findOwnedListener, findPidOnPort, killPidTree, processIdentity,
+  findOwnedListener, findPidOnPort, processIdentity,
   processIdentityMatches, signalProcessIdentity,
 } from '../src/processes.ts'
 import { install as installInvariant } from '../src/invariant.ts'
@@ -40,11 +41,85 @@ import {
   verifyCredential, type GuardState,
 } from '../src/state.ts'
 import { lastGoodBootRevision, STATE_FILES } from '../src/state-files.ts'
+import {
+  appendTestLifecycleEventForProcess,
+  TEST_PROCESS_PORT_ENV, TEST_PROCESS_ROLE_ENV, TEST_PROCESS_TEMP_ROOT_ENV,
+} from '../src/test-seam.ts'
+import { TestProcessLifecycle } from './helpers/process-lifecycle.ts'
 
 const cleanups: Array<() => void> = []
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup()
+const gracefulStops: Array<() => void> = []
+let lifecycle: TestProcessLifecycle
+const testRegisterBin = fileURLToPath(new URL('../lib/test-seam-cli.js', import.meta.url))
+const testSeamModule = fileURLToPath(new URL('../lib/test-seam.js', import.meta.url))
+
+function stableShard(title: string, count: number): number {
+  const balancedLongCases: Record<string, number> = {
+    'reconfigure restores the complete previous spec after target readiness failures': 0,
+    'rejects a target that exits after authenticated 200 without handing its URL to the browser, then restores previous': 2,
+  }
+  const balanced = balancedLongCases[title]
+  if (balanced !== undefined && balanced < count) return balanced
+  let hash = 0x811c9dc5
+  for (const byte of Buffer.from(title)) {
+    hash ^= byte
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash % count
+}
+
+const superviseIt = ((title: string, ...args: unknown[]) => {
+  const count = Number(process.env.ANKH_GUARD_TEST_SHARD_COUNT ?? '1')
+  const index = Number(process.env.ANKH_GUARD_TEST_SHARD_INDEX ?? '0')
+  const selected = Number.isInteger(count) && count > 0 && Number.isInteger(index) && index >= 0 && index < count
+    && stableShard(title, count) === index
+  return Reflect.apply(selected ? it : it.skip, undefined, [title, ...args])
+}) as typeof it
+
+beforeEach(() => {
+  lifecycle = new TestProcessLifecycle(testRegisterBin)
 })
+
+afterEach(async (context) => {
+  if (context.task.result?.state === 'fail') lifecycle.retainEvidence()
+  for (const stop of gracefulStops.splice(0)) stop()
+  let lifecycleError: unknown
+  try {
+    await lifecycle.teardown()
+  } catch (error) {
+    lifecycleError = error
+  }
+  for (const cleanup of cleanups.splice(0)) cleanup()
+  if (lifecycleError !== undefined) throw lifecycleError
+})
+
+/** Every child spawned by this file is immediately identity-registered. */
+function spawn(command: string, args: readonly string[], options: SpawnOptions = {}): ReturnType<typeof nodeSpawn> {
+  const role = options.env?.[TEST_PROCESS_ROLE_ENV]
+    ?? `fixture-${command.split('/').pop() ?? 'process'}-${args[0]?.split('/').pop() ?? 'child'}`
+  const portText = options.env?.[TEST_PROCESS_PORT_ENV]
+  const port = portText === undefined ? undefined : Number(portText)
+  const tempRoot = options.env?.[TEST_PROCESS_TEMP_ROOT_ENV]
+  const child = nodeSpawn(command, [...args], {
+    ...options,
+    env: lifecycle.childEnv(role, options.env ?? process.env, {
+      ...(Number.isInteger(port) && (port ?? 0) > 0 ? { port } : {}),
+      ...(tempRoot === undefined || tempRoot === '' ? {} : { tempRoot }),
+    }),
+  })
+  lifecycle.track(child, role, {
+    ...(Number.isInteger(port) && (port ?? 0) > 0 ? { port } : {}),
+    ...(tempRoot === undefined || tempRoot === '' ? {} : { tempRoot }),
+  })
+  return child
+}
+
+function spawnPortRuntime(command: string, args: readonly string[], port: number, options: SpawnOptions = {}): ReturnType<typeof nodeSpawn> {
+  return spawn(command, args, {
+    ...options,
+    env: lifecycle.childEnv('fixture-port-runtime', options.env ?? process.env, { port }),
+  })
+}
 
 function tmpDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix))
@@ -90,13 +165,7 @@ function fakeOwnership(childPid: number, listenerPid = childPid) {
  * red teaches its owners to ignore it.
  */
 async function freePort(): Promise<number> {
-  const server = await new Promise<Server>((resolve) => {
-    const s = createServer(() => {})
-    s.listen(0, '127.0.0.1', () => { resolve(s) })
-  })
-  const port = (server.address() as AddressInfo).port
-  await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
-  return port
+  return await lifecycle.acquirePort()
 }
 
 /**
@@ -114,6 +183,7 @@ function watchdogEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
   return {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WD_'))),
     WD_READY_STABILITY_SECONDS: '1',
+    ...(overrides.WD_PORT === undefined ? {} : { [TEST_PROCESS_PORT_ENV]: overrides.WD_PORT }),
     ...overrides,
   }
 }
@@ -125,9 +195,6 @@ describe('process ownership discovery', () => {
     const wrapperProgram = `const {spawn}=require('child_process');spawn(process.execPath,['-e',${JSON.stringify(serverProgram)}],{stdio:'ignore'});setInterval(()=>{},1000)`
     const supervisorProgram = `const {spawn}=require('child_process');spawn(process.execPath,['-e',${JSON.stringify(wrapperProgram)}],{stdio:'ignore'});setInterval(()=>{},1000)`
     const supervisor = spawn(process.execPath, ['-e', supervisorProgram], { stdio: 'ignore' })
-    cleanups.unshift(() => {
-      if (supervisor.pid !== undefined) killPidTree(supervisor.pid, 'SIGKILL')
-    })
     await waitForPort(port)
     const previousPath = process.env.PATH
     process.env.PATH = '/usr/bin:/bin'
@@ -143,14 +210,13 @@ describe('process ownership discovery', () => {
     } finally {
       if (previousPath === undefined) delete process.env.PATH
       else process.env.PATH = previousPath
-      if (supervisor.pid !== undefined) killPidTree(supervisor.pid, 'SIGKILL')
+      lifecycle.signal(supervisor, 'SIGKILL')
       await killListener(port)
     }
   }, 15_000)
 
   it('freezes and revalidates before signalling an identity mismatch', async () => {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' })
-    cleanups.unshift(() => { child.kill('SIGKILL') })
     await new Promise(resolve => setTimeout(resolve, 100))
     const identity = processIdentity(child.pid!)
     expect(identity).not.toBeNull()
@@ -885,10 +951,38 @@ describe('CLI', () => {
       harnessRoot: join(stateDir, 'harness'),
       profile: 'web',
     }
-    const watchdog = spawn(process.execPath, ['-e', `process.on('SIGUSR2',()=>{});setInterval(()=>{},1000)`], { stdio: 'ignore' })
-    cleanups.unshift(() => { watchdog.kill('SIGKILL') })
-    await new Promise(resolve => setTimeout(resolve, 100))
+    const ready = join(stateDir, 'watchdog-ready')
+    const fakeProgram = `
+      const fs = require('node:fs')
+      const { pathToFileURL } = require('node:url')
+      import(pathToFileURL(${JSON.stringify(testSeamModule)}).href).then(seam => {
+        process.on('SIGUSR2', () => seam.appendTestLifecycleEvent('signal-received', { signal: 'SIGUSR2' }))
+        seam.appendTestLifecycleEvent('handler-installed')
+        setImmediate(() => {
+          seam.appendTestLifecycleEvent('keepalive-first-tick')
+          fs.writeFileSync(${JSON.stringify(ready)}, 'ready')
+          seam.appendTestLifecycleEvent('ready')
+        })
+        setInterval(() => {}, 1000)
+      })
+    `
+    const watchdog = spawn(process.execPath, ['-e', fakeProgram], {
+      stdio: 'ignore',
+      env: lifecycle.childEnv('fake-control-watchdog', process.env, { tempRoot: stateDir }),
+    })
+    const readyDeadline = performance.now() + 10_000
+    while (!existsSync(ready) && performance.now() < readyDeadline) {
+      if (watchdog.pid !== undefined) {
+        let state = 'gone'
+        try { state = execFileSync('/bin/ps', ['-o', 'stat=', '-p', String(watchdog.pid)], { encoding: 'utf8' }).trim() || 'gone' } catch { /* gone */ }
+        appendTestLifecycleEventForProcess(watchdog.pid, 'fake-control-watchdog', 'process-state-observed', { state }, 'ps-sampler')
+        if (state === 'gone') break
+      }
+      await new Promise(resolve => setTimeout(resolve, 25))
+    }
+    if (!existsSync(ready)) throw new Error(`fake watchdog never became ready:\n${lifecycle.diagnostics()}`)
     writeFileSync(join(stateDir, STATE_FILES.watchdogPid), String(watchdog.pid))
+    appendTestLifecycleEventForProcess(watchdog.pid!, 'fake-control-watchdog', 'pidfile-published', undefined, 'parent-observer')
     prepareLaunchCutover(stateDir, {
       id: 'controlled-cutover',
       previous: { ...base, command: 'previous' },
@@ -909,18 +1003,27 @@ describe('CLI', () => {
     // of which CLI process renames its file last.
     rmSync(join(stateDir, STATE_FILES.cutoverAbort), { force: true })
     rmSync(join(stateDir, STATE_FILES.cutoverRestorePrevious), { force: true })
-    const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
-    const tsx = fileURLToPath(new URL('../../../node_modules/tsx/dist/esm/index.mjs', import.meta.url))
+    const cli = fileURLToPath(new URL('../lib/cli.js', import.meta.url))
+    const cliSha256 = createHash('sha256').update(readFileSync(cli)).digest('hex')
     const actions = Array.from({ length: 12 }, (_, index) => index % 2 === 0 ? 'abort-cutover' : 'restore-previous')
-    const writers = actions.map(action => spawn(process.execPath, [
-      '--import', tsx, cli, action, '--state-dir', stateDir,
-    ], { stdio: 'ignore' }))
+    const writers = actions.map((action, index) => spawn(process.execPath, [cli, action, '--state-dir', stateDir], {
+      stdio: 'ignore',
+      env: lifecycle.childEnv(`control-writer-${index}`, process.env, { tempRoot: stateDir }),
+    }))
     const codes = await Promise.all(writers.map(writer => new Promise<number | null>(resolveExit => {
       writer.on('exit', resolveExit)
     })))
-    expect(codes).toEqual(actions.map(() => 0))
+    const finalCliSha256 = createHash('sha256').update(readFileSync(cli)).digest('hex')
+    expect(codes, `built CLI ${cli} sha256=${cliSha256}\n${lifecycle.diagnostics()}`).toEqual(actions.map(() => 0))
+    expect(finalCliSha256).toBe(cliSha256)
     expect(readCutoverControl(stateDir)?.action).toBe('restore-previous')
-  })
+    const childEvents = lifecycle.events().filter(event => event.pid === watchdog.pid)
+    const eventIndex = (name: string): number => childEvents.findIndex(event => event.event === name)
+    expect(eventIndex('handler-installed')).toBeGreaterThanOrEqual(0)
+    expect(eventIndex('keepalive-first-tick')).toBeGreaterThan(eventIndex('handler-installed'))
+    expect(eventIndex('ready')).toBeGreaterThan(eventIndex('keepalive-first-tick'))
+    expect(eventIndex('signal-received')).toBeGreaterThan(eventIndex('ready'))
+  }, 30_000)
 
   it('refuses to resume a legacy active cutover that lacks authoritative child/listener ownership', async () => {
     const repo = makeRepo()
@@ -1148,7 +1251,7 @@ describe('CLI', () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const server = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       const io2 = io()
@@ -1160,7 +1263,6 @@ describe('CLI', () => {
       expect(await portListening(port)).toBe(true)
     } finally {
       await killListener(port)
-      server.kill('SIGKILL')
     }
   })
 
@@ -1168,7 +1270,7 @@ describe('CLI', () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const oldServer = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
@@ -1184,7 +1286,6 @@ describe('CLI', () => {
       expect(await fetchBody(port)).toBe('new')
     } finally {
       await killListener(port)
-      oldServer.kill('SIGKILL')
     }
   })
 
@@ -1193,7 +1294,7 @@ describe('CLI', () => {
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
     const dump = join(stateDir, 'instance-env.txt')
-    const oldServer = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     // Simulate the caller being an agent shell inside a supervised instance:
     // it carries that instance's WD_* environment (the watchdog spawns the
     // instance with its own), and a bare restart must not forward it.
@@ -1216,7 +1317,6 @@ describe('CLI', () => {
       if (previousProbe === undefined) delete process.env.WD_PROBE_LEAK
       else process.env.WD_PROBE_LEAK = previousProbe
       await killListener(port)
-      oldServer.kill('SIGKILL')
     }
   })
 
@@ -1224,7 +1324,7 @@ describe('CLI', () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const server = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
@@ -1242,7 +1342,6 @@ describe('CLI', () => {
       expect(await fetchBody(port)).toBe('new')
     } finally {
       await killListener(port)
-      server.kill('SIGKILL')
     }
   })
 
@@ -1251,7 +1350,7 @@ describe('CLI', () => {
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
     // A listener that swallows SIGTERM: only the SIGKILL escalation can stop it.
-    const stubborn = spawn(process.execPath, ['-e',
+    spawn(process.execPath, ['-e',
       `process.on('SIGTERM', () => {}); require('http').createServer((q, s) => s.end('stubborn')).listen(${port}, '127.0.0.1')`],
     { stdio: 'ignore' })
     try {
@@ -1294,7 +1393,6 @@ tryListen();
       expect(body).toBe('new')
     } finally {
       await killListener(port)
-      stubborn.kill('SIGKILL')
     }
   })
 
@@ -1302,7 +1400,7 @@ tryListen();
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const server = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       const cp = io()
@@ -1323,7 +1421,6 @@ tryListen();
       expect(currentHead(repo)).toBe(sha)
     } finally {
       await killListener(port)
-      server.kill('SIGKILL')
     }
   })
 
@@ -1331,7 +1428,7 @@ tryListen();
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const server = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       // Checkpoint and credential both bind the CURRENT HEAD, but an input
@@ -1353,7 +1450,6 @@ tryListen();
       expect(await portListening(port)).toBe(true)
     } finally {
       await killListener(port)
-      server.kill('SIGKILL')
     }
   })
 })
@@ -1440,11 +1536,12 @@ describe('composition preflight gate', () => {
     // gate must degrade and proceed, not refuse restarts on a phantom verdict.
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
     await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
     markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "console.error(\\"error: unknown command 'preflight'\\"); process.exit(1)"`)
     const out = io()
-    await runCli(['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo], out.io)
+    await runCli(['schedule-exit', '--port', String(port), '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo], out.io)
     expect(out.err.join('')).not.toContain('composition preflight failed')
     expect(out.out.join('')).toContain('unavailable')
   })
@@ -1480,13 +1577,14 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses when the composition preflight fails, quoting the diagnostics', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
     await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
     markLiveWatchdog(stateDir)
     const lines = Array.from({ length: 50 }, (_, i) => `console.error('layer ${i} failed')`).join(';')
     stubPreflight(`"${process.execPath}" -e "${lines}; process.exit(1)"`)
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
+      ['schedule-exit', '--port', String(port), '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
       out.io,
     )).toBe(1)
     expect(out.err.join('')).toContain('schedule-exit refused: composition preflight failed')
@@ -1498,12 +1596,13 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses with the infrastructure wording when preflight exits 3', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
     await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
     markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "process.exit(3)"`)
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
+      ['schedule-exit', '--port', String(port), '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
       out.io,
     )).toBe(1)
     expect(out.err.join('')).toContain('schedule-exit refused: the composition preflight itself failed')
@@ -1514,13 +1613,14 @@ describe('composition preflight gate', () => {
   it('schedule-exit refuses when the preflight times out', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
     await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
     markLiveWatchdog(stateDir)
     // exec replaces the shell, so the timeout's SIGKILL kills the sleeper itself.
     stubPreflight('exec sleep 10')
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '100', '--preflight-timeout-ms', '300',
+      ['schedule-exit', '--port', String(port), '--delay-ms', '100', '--preflight-timeout-ms', '300',
         '--state-dir', stateDir, '--repo', repo],
       out.io,
     )).toBe(1)
@@ -1530,6 +1630,7 @@ describe('composition preflight gate', () => {
   it('schedule-exit warns and proceeds when no sibling dsh app exists (standalone layout)', async () => {
     const repo = makeRepo()
     const home = tmpDir('guard-home-')
+    const port = await freePort()
     const previousHome = process.env.DSH_HOME
     process.env.DSH_HOME = home
     cleanups.push(() => {
@@ -1543,7 +1644,7 @@ describe('composition preflight gate', () => {
     stubPreflightRunner(() => undefined)
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '60000', '--state-dir', join(home, 'state'), '--repo', repo],
+      ['schedule-exit', '--port', String(port), '--delay-ms', '60000', '--state-dir', join(home, 'state'), '--repo', repo],
       out.io,
     )).toBe(0)
     expect(out.out.join('')).toContain('preflight unavailable outside the dsh app layout — proceeding without it')
@@ -1554,7 +1655,7 @@ describe('composition preflight gate', () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
     const port = await freePort()
-    const server = spawnServer(port, 'old')
+    spawnServer(port, 'old')
     try {
       await waitForPort(port)
       await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
@@ -1568,19 +1669,19 @@ describe('composition preflight gate', () => {
       expect(await portListening(port)).toBe(true)
     } finally {
       await killListener(port)
-      server.kill('SIGKILL')
     }
   })
 
   it('caps captured preflight output instead of growing without bound', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-cli-')
+    const port = await freePort()
     await runCli(['record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo], io().io)
     markLiveWatchdog(stateDir)
     stubPreflight(`"${process.execPath}" -e "process.stderr.write('x'.repeat(300000)); process.exit(1)"`)
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
+      ['schedule-exit', '--port', String(port), '--delay-ms', '100', '--state-dir', stateDir, '--repo', repo],
       out.io,
     )).toBe(1)
     // The refusal holds, and the diagnostics are far below the raw 300 KB.
@@ -1598,7 +1699,7 @@ describe('composition preflight gate', () => {
 /** Spawn a detached throwaway http server answering the given body on a port. */
 function spawnServer(port: number, body: string): ReturnType<typeof spawn> {
   const script = `require('http').createServer((q,s)=>s.end(${JSON.stringify(body)})).listen(${port},'127.0.0.1')`
-  const child = spawn(process.execPath, ['-e', script], { detached: true, stdio: 'ignore' })
+  const child = spawnPortRuntime(process.execPath, ['-e', script], port, { detached: true, stdio: 'ignore' })
   child.unref()
   return child
 }
@@ -1650,21 +1751,19 @@ async function fetchStatus(port: number): Promise<number> {
   })
 }
 
-/** Kill whatever listens on a port (lsof), best-effort. */
+/** Stop only runtime identities explicitly bound to this run's port ledger. */
 async function killListener(port: number): Promise<void> {
-  try {
-    const out = execFileSync('lsof', [`-tiTCP:${port}`, '-sTCP:LISTEN', '-P'], { encoding: 'utf8' }).trim()
-    for (const pid of out.split('\n')) {
-      if (pid !== '') {
-        try { process.kill(Number(pid), 'SIGKILL') } catch { /* already gone */ }
-      }
-    }
-  } catch {
-    // nothing listening — fine
+  const stopped = await lifecycle.stopPortProcesses(port)
+  if (stopped === 0 && findPidOnPort(port) !== null) {
+    throw new Error(`port ${port} has a listener but no registered runtime identity; refusing port-based cleanup\n${lifecycle.diagnostics()}`)
   }
 }
 
 describe('supervise', () => {
+  // Separate Vitest processes isolate process.env/mocks while the machine-wide
+  // port lease coordinates their real watchdogs. An ordinary direct run has
+  // count=1 and still executes every case.
+  const it = superviseIt
   const io = cliIo
 
   /** Throwaway DSH_HOME isolation + watchdog cleanup for the spawned supervisor. */
@@ -1679,16 +1778,6 @@ describe('supervise', () => {
       try {
         mkdirSync(join(home, 'state'), { recursive: true })
         writeFileSync(join(home, 'state', 'watchdog-stop'), '')
-        const pidfile = join(home, 'state', 'watchdog.pid')
-        if (existsSync(pidfile)) {
-          const pid = Number(readFileSync(pidfile, 'utf8').trim())
-          if (Number.isInteger(pid)) {
-            // The watchdog is setsid'd, so its process group == its pid; kill
-            // the group so respawned children cannot leak past the test.
-            try { process.kill(-pid, 'SIGKILL') } catch { /* not a group leader */ }
-            try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
-          }
-        }
       } catch { /* best-effort */ }
     }
     const restore = (): void => {
@@ -1697,15 +1786,9 @@ describe('supervise', () => {
       if (previousHarness === undefined) delete process.env.DSH_HARNESS
       else process.env.DSH_HARNESS = previousHarness
     }
-    // A watchdog is setsid'd and detached: nothing reaps it when a test fails
-    // before its own `stop()`, so it outlives the run and keeps respawning a
-    // fake instance forever. Registering here makes teardown unconditional;
-    // `stop` stays on the return value for tests that stop it mid-test (it is
-    // idempotent — killing an already-dead pid is caught).
-    // unshift, not push: `tmpDir` already registered the rmSync of `home`, and
-    // a watchdog that is still alive when its WD_HOME is removed recreates
-    // `state/` under the deleted directory.
-    cleanups.unshift(stop)
+    // Publish the protocol marker before identity-gated TERM→wait→KILL. The
+    // ordinary cleanup list runs later, after no child can recreate the home.
+    gracefulStops.push(stop)
     cleanups.push(restore)
     return { home, restore, stop }
   }
@@ -1728,7 +1811,7 @@ describe('supervise', () => {
       )).toBe(0)
       expect(out.out.join('')).toContain('watchdog spawned')
       // The watchdog waits for the current owner to exit, then takes over.
-      host.kill('SIGTERM')
+      lifecycle.signalExact(host, 'SIGTERM')
       const deadline = Date.now() + 20_000
       let portDown = false
       while (Date.now() < deadline) {
@@ -1754,7 +1837,6 @@ describe('supervise', () => {
       expect(typeof outcome.exitAt).toBe('number')
     } finally {
       env.stop()
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -1836,7 +1918,6 @@ describe('supervise', () => {
       expect(await runCli(['restart', '--sync', '--port', String(port), ...flags], out.io)).toBe(0)
       expect(out.out.join('')).toContain('restart + canary PASS')
       expect(await fetchBody(port)).toBe('new')
-      host.kill('SIGKILL')
       await killListener(port)
     } finally {
       env.restore()
@@ -1871,7 +1952,7 @@ describe('supervise', () => {
       expect(out.err.join()).toContain('schedule-exit')
       expect(out.err.join()).not.toContain('pass --start explicitly')
       rmSync(join(stateDir, 'watchdog.pid'), { force: true })
-      try { process.kill(sleeper.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+      lifecycle.signalExact(sleeper, 'SIGKILL')
       // The instance side never overwrites the supervisor's record.
       expect(writeInstanceLaunch(stateDir, { command: 'echo inner', source: 'instance', recordedAt: Date.now() })).toBe(false)
     } finally {
@@ -1927,9 +2008,9 @@ describe('supervise', () => {
     const port = await freePort()
     try {
       // Unsupervised: warning present, and the start command discovered live.
-      const host = spawn(process.execPath, ['-e',
+      const host = spawnPortRuntime(process.execPath, ['-e',
         `require('http').createServer((q,s)=>s.end('x')).listen(${port},'127.0.0.1')`],
-      { detached: true, stdio: 'ignore', env: { ...process.env, DSH_PROBE_MARKER: 'discovered-1' } })
+      port, { detached: true, stdio: 'ignore', env: { ...process.env, DSH_PROBE_MARKER: 'discovered-1' } })
       host.unref()
       await waitForPort(port)
       const out = io()
@@ -1939,7 +2020,6 @@ describe('supervise', () => {
       expect(text).toContain('leaves the service DOWN')
       expect(text).toContain('live discovery')
       expect(text).toContain(String(port))
-      host.kill('SIGKILL')
       await killListener(port)
       // Supervised: pidfile with a live pid → the chain names the watchdog.
       // (A SLEEPER's pid, never the test worker's own — env.stop() SIGKILLs
@@ -1951,7 +2031,7 @@ describe('supervise', () => {
       const out2 = io()
       expect(await runCli(['check-env', '--state-dir', stateDir, '--repo', repo], out2.io)).toBe(0)
       expect(out2.out.join('')).toContain(`supervised by ankh watchdog (pid ${sleeper.pid})`)
-      try { process.kill(sleeper.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
+      lifecycle.signalExact(sleeper, 'SIGKILL')
     } finally {
       env.restore()
     }
@@ -1977,7 +2057,6 @@ describe('supervise', () => {
       expect(await runCli(['restart', '--sync', '--port', String(port), ...flags], out.io)).toBe(0)
       expect(out.out.join('')).toContain('restart + canary PASS')
       expect(await fetchBody(port)).toBe('new')
-      host.kill('SIGKILL')
       await killListener(port)
     } finally {
       env.restore()
@@ -2031,7 +2110,6 @@ describe('supervise', () => {
       expect(existsSync(lockFile)).toBe(false)
       expect(readFileSync(join(stateDir, 'restart.log'), 'utf8')).toContain('restart + canary PASS')
     } finally {
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -2147,7 +2225,7 @@ describe('supervise', () => {
         ['supervise', '--port', String(port), '--start', startCmd, '--state-dir', join(env.home, 'state'), '--repo', repo],
         io().io,
       )).toBe(0)
-      host.kill('SIGTERM')
+      lifecycle.signalExact(host, 'SIGTERM')
       const deadline = Date.now() + 20_000
       let portDown = false
       while (Date.now() < deadline) {
@@ -2164,7 +2242,6 @@ describe('supervise', () => {
       expect(JSON.parse(readFileSync(crashRecord, 'utf8')).unexpected).toBe(true)
     } finally {
       env.stop()
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -2255,6 +2332,7 @@ describe('supervise', () => {
       expect(readFileSync(snap, 'utf8')).toContain('good composition')
       // A plugin install lands a bad row, then the instance stops (any cause).
       writeFileSync(join(profileDir, 'cordis.patch.yml'), '# good composition\n# + bad-plugin row\n')
+      const rejectedCompositionSha256 = createHash('sha256').update(readFileSync(join(profileDir, 'cordis.patch.yml'))).digest('hex')
       await killListener(port)
       // The watchdog fails to boot the bad composition, rolls the composition
       // back to the snapshot, and comes up — service recovered, plugin unmounted.
@@ -2267,7 +2345,20 @@ describe('supervise', () => {
         }
         await new Promise((resolve) => { setTimeout(resolve, 500) })
       }
-      expect(recovered, 'the watchdog restored the healthy composition and the instance came up').toBe(true)
+      const listenerPid = findPidOnPort(port)
+      const diagnostic = {
+        message: 'the watchdog restored the healthy composition and the instance came up',
+        deadlineAt: upDeadline,
+        deadlineMs: 30_000,
+        rejectedCompositionSha256,
+        currentCompositionSha256: createHash('sha256').update(readFileSync(join(profileDir, 'cordis.patch.yml'))).digest('hex'),
+        repoHead: currentHead(repo),
+        listener: listenerPid === null ? null : processIdentity(Number(listenerPid)),
+        receipt: readCutoverReceipt(stateDir),
+        watchdogLogTail: readFileSync(join(stateDir, STATE_FILES.watchdogLog), 'utf8').slice(-12_000),
+        lifecycle: JSON.parse(lifecycle.diagnostics()),
+      }
+      expect(recovered, JSON.stringify(diagnostic, null, 2)).toBe(true)
       expect(await fetchBody(port)).toBe('ok')
       // The failing inputs were backed up, and the recovery left a report record.
       const backups = readdirSync(stateDir).filter(name => name.startsWith('composition-backup-'))
@@ -2325,7 +2416,7 @@ describe('supervise', () => {
         io().io,
       )).toBe(0)
       // The detached watchdog waits for the owner to exit, then takes over.
-      host.kill('SIGTERM')
+      lifecycle.signalExact(host, 'SIGTERM')
       const record = join(env.home, 'state', 'last-restart.json')
       const deadline = Date.now() + 20_000
       while (!existsSync(record) && Date.now() < deadline) {
@@ -2339,7 +2430,6 @@ describe('supervise', () => {
       if (previousSession === undefined) delete process.env.DSH_SESSION_ID
       else process.env.DSH_SESSION_ID = previousSession
       env.stop()
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -2812,9 +2902,11 @@ process.exit(1)
     const repo = makeRepo()
     const stateDir = join(env.home, 'state')
     const port = await freePort()
-    const previousStart = `"${process.execPath}" -e "require('http').createServer((q,s)=>s.end('previous-after-eaddr')).listen(${port},'127.0.0.1')"`
+    const releaseStale = join(env.home, 'release-stale-listener')
+    const previousProgram = `const fs=require('fs');const server=require('http').createServer((q,s)=>s.end('previous-after-eaddr'));server.on('error',error=>{fs.writeFileSync(${JSON.stringify(releaseStale)},'release');throw error});server.listen(${port},'127.0.0.1')`
+    const previousStart = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(previousProgram)}`
     const staleServer = join(env.home, 'stale-listener.cjs')
-    writeFileSync(staleServer, `const server=require('http').createServer((q,s)=>s.end('stale-old-listener-200'));server.listen(${port},'127.0.0.1');setTimeout(()=>server.close(()=>process.exit(0)),3000)\n`)
+    writeFileSync(staleServer, `const fs=require('fs');const server=require('http').createServer((q,s)=>s.end('stale-old-listener-200'));server.listen(${port},'127.0.0.1');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(releaseStale)})){clearInterval(timer);server.close(()=>process.exit(0))}},25);setTimeout(()=>server.close(()=>process.exit(0)),10000)\n`)
     const orphanLauncher = join(env.home, 'orphan-listener.cjs')
     writeFileSync(orphanLauncher, `const {spawn}=require('child_process');const child=spawn(process.execPath,[${JSON.stringify(staleServer)}],{detached:true,stdio:'ignore'});child.unref()\n`)
     const targetScript = join(env.home, 'target-eaddr.sh')
@@ -3107,7 +3199,7 @@ setTimeout(() => process.exit(23), 1800)
       recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'ownership-stable', ['previous', String(successor.pid), 'waiter-previous-start', String(successor.pid), 'waiter-listener-start', '3000', '0'], NOW + 3)
       recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'canary', ['pass'], NOW + 4)
       recordCutoverEvent(stateDir, 'waiter-refresh-cutover', 'ready', ['previous'], NOW + 5)
-      successor.kill('SIGTERM')
+      lifecycle.signalExact(successor, 'SIGTERM')
 
       const previousDeadline = Date.now() + 15_000
       while (!existsSync(previousMarker) && Date.now() < previousDeadline) {
@@ -3115,6 +3207,7 @@ setTimeout(() => process.exit(23), 1800)
       }
       expect(readFileSync(previousMarker, 'utf8')).toBe(previousHarness)
       expect(existsSync(targetMarker)).toBe(false)
+      await waitForPort(port)
       expect(await fetchBody(port)).toBe('previous-after-wait')
       expect(readLaunchState(stateDir)).toMatchObject({
         mode: 'stable',
@@ -3122,7 +3215,6 @@ setTimeout(() => process.exit(23), 1800)
       })
       expect(waiterOutput.out.join('')).toContain('launch state refreshed after wait')
     } finally {
-      successor.kill('SIGKILL')
       mkdirSync(stateDir, { recursive: true })
       writeFileSync(join(stateDir, STATE_FILES.watchdogStop), '')
       await killListener(port)
@@ -3182,10 +3274,6 @@ server.listen(port, '127.0.0.1', () => {
     })
     watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
     watchdog.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
-    cleanups.unshift(() => {
-      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
-      try { process.kill(watchdog.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
-    })
     try {
       const deadline = Date.now() + 20_000
       while (!output.includes('instance ready') && Date.now() < deadline) {
@@ -3199,7 +3287,6 @@ server.listen(port, '127.0.0.1', () => {
       expect(attempt).not.toContain('?grant=')
       expect(output).not.toContain('?grant=')
     } finally {
-      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
       await killListener(port)
     }
   }, 30_000)
@@ -3289,9 +3376,6 @@ http.createServer((req, res) => {
     })
     watchdog.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
     watchdog.stderr.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
-    cleanups.unshift(() => {
-      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
-    })
     try {
       const deadline = Date.now() + 15_000
       while (!output.includes('no page acknowledgement') && Date.now() < deadline) {
@@ -3311,7 +3395,6 @@ http.createServer((req, res) => {
         failureCount: { target: 1 },
       })
     } finally {
-      try { process.kill(-(watchdog.pid ?? 0), 'SIGKILL') } catch { /* already gone */ }
       await killListener(port)
     }
   }, 20_000)
@@ -3332,10 +3415,6 @@ http.createServer((req, res) => {
     })
     wd.unref()
     const pidfile = join(home, 'state', 'watchdog.pid')
-    cleanups.unshift(() => {
-      try { process.kill(-(wd.pid ?? 0), 'SIGKILL') } catch { /* not a group leader */ }
-      try { process.kill(wd.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
-    })
     const until = async (fn: () => boolean, ms: number): Promise<boolean> => {
       const deadline = Date.now() + ms
       while (Date.now() < deadline) {
@@ -3373,15 +3452,6 @@ http.createServer((req, res) => {
     mkdirSync(join(home, 'home'), { recursive: true })
     const script = fileURLToPath(new URL('../scripts/dsh-watchdog.sh', import.meta.url))
     const port = await freePort()
-    const killTree = (pid: number): void => {
-      let children: number[] = []
-      try {
-        children = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' })
-          .split('\n').map(Number).filter((n) => Number.isInteger(n) && n > 0)
-      } catch { /* pgrep exits 1 when the pid has no children */ }
-      for (const child of children) killTree(child)
-      try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
-    }
     // One launcher backgrounding all racers from a single shell: they reach the
     // claim within the same few milliseconds. Spawning them one-by-one from
     // node staggers them by enough process-setup time that the first racer has
@@ -3390,10 +3460,6 @@ http.createServer((req, res) => {
       env: watchdogEnv({ WD_HOME: home, WD_PORT: String(port), WD_TEST_FAKE: '1' }),
       stdio: 'ignore',
     })
-    // unshift for the same reason as `supervisedEnv`: the survivor must die
-    // before `tmpDir` removes the WD_HOME it keeps writing into. The racers are
-    // NOT setsid'd (they share this process's group), so reap the tree by pid.
-    cleanups.unshift(() => { if (launcher.pid !== undefined) killTree(launcher.pid) })
     const survivors = (): number[] => {
       try {
         return execFileSync('pgrep', ['-P', String(launcher.pid)], { encoding: 'utf8' })
@@ -3437,10 +3503,6 @@ http.createServer((req, res) => {
       detached: true,
     })
     wd.unref()
-    cleanups.unshift(() => {
-      try { process.kill(-(wd.pid ?? 0), 'SIGKILL') } catch { /* not a group leader */ }
-      try { process.kill(wd.pid ?? 0, 'SIGKILL') } catch { /* already gone */ }
-    })
     const attempts = (): number => (readFileSync(wdLog, 'utf8').match(/starting instance/g) ?? []).length
     const until = async (fn: () => boolean, ms: number): Promise<boolean> => {
       const deadline = Date.now() + ms
@@ -3473,10 +3535,10 @@ http.createServer((req, res) => {
       expect(log).toContain('crash page cannot bind')
       try { process.kill(holder.pid ?? 0, 0) } catch { throw new Error('port holder was killed') }
       // SIGUSR1 re-arms the boot loop.
-      process.kill(wd.pid ?? 0, 'SIGUSR1')
+      lifecycle.signalExact(wd, 'SIGUSR1')
       expect(await until(() => attempts() > settled, 15_000), readFileSync(wdLog, 'utf8')).toBe(true)
     } finally {
-      holder?.kill('SIGKILL')
+      if (holder !== undefined) lifecycle.signalExact(holder, 'SIGKILL')
       await new Promise((resolve) => { setTimeout(resolve, 300) })
       await killListener(port)
     }
@@ -3485,10 +3547,11 @@ http.createServer((req, res) => {
   it('schedule-exit refuses without a credential (the gate)', async () => {
     const env = supervisedEnv()
     const repo = makeRepo()
+    const port = await freePort()
     markLiveWatchdog(join(env.home, 'state'))
     const out = io()
     expect(await runCli(
-      ['schedule-exit', '--port', '3099', '--delay-ms', '1000', '--state-dir', join(env.home, 'state'), '--repo', repo],
+      ['schedule-exit', '--port', String(port), '--delay-ms', '1000', '--state-dir', join(env.home, 'state'), '--repo', repo],
       out.io,
     )).toBe(1)
     expect(out.err.join('')).toContain('no green-build credential')
@@ -3646,7 +3709,6 @@ http.createServer((req, res) => {
       expect(readFileSync(join(env.home, 'state', 'last-restart.json'), 'utf8')).toContain('"initiator":"session-scheduler"')
     } finally {
       env.stop()
-      host.kill('SIGKILL')
       await killListener(port)
       env.restore()
     }
@@ -4676,7 +4738,6 @@ describe('restart context injection', () => {
       }
       expect(await portListening(port)).toBe(false)
     } finally {
-      host.kill('SIGKILL')
       await killListener(port)
     }
   })
