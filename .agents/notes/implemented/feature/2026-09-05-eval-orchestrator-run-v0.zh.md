@@ -22,6 +22,10 @@ I1 用人肉把一格评测在宿主上走通（题库仓库 `docs/i1-walk-log.m
 
 `js-yaml` 成为本包第一个运行时依赖（manifest 是 YAML；拒绝清单哈希规则保证凭证不进任何其他路径，manifest 解析读的正是作者在 git 里评审的那份文件）。
 
+## 发现：服务名不能叫 `eval`
+
+真实实例第一次启动即炸：插值 local-agent 的 `!!js dshHomePath(…)` 配置表达式时报 `cannot get property "eval" without inject`。loader 用 `with (ctx) { return eval(expr) }` 求值 `!!js`——ctx 上名为 `eval` 的服务属性会遮蔽该作用域里的全局 `eval`，凡挂载本包的组合，任何 `!!js` 表达式都会炸（挂载顺序救不了：被调名在表达式运行前就已解析）。cordis 服务已改名 `dshEval`；包名、入口 id（`eval`）与 `/eval` slash 命令不受影响。这是对后续服务的命名铁律：不要 provide 任何会被 `with` 作用域遮蔽的名字——尤其是 JavaScript 全局。
+
 ## Alternatives considered
 
 **保留手写模板，校验它与 manifest 一致。** 否：模板是可推导数据（architecture.md 第 7 步明说）；存储它就重新打开走通日志已经踩过的漂移口（G10 的记法迁移），第二事实源还得配自己的 lint。生成 + 等价测试让 bench-v1.json 继续当被钉住的参照物，而不成为输入。

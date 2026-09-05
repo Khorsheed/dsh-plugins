@@ -22,6 +22,10 @@ Two task-brief fields are not expressible in the frozen `dataseek.plan/1` (`addi
 
 `js-yaml` becomes the package's first runtime dependency (manifests are YAML; the deny-list hash rules keep credentials out of every other path, and manifest parsing reads the same files the author reviews in git).
 
+## Finding: the service name could not be `eval`
+
+The first real-instance boot failed loud: `cannot get property "eval" without inject`, raised while interpolating local-agent's `!!js dshHomePath(…)` config expression. The loader evaluates `!!js` with `with (ctx) { return eval(expr) }` — a provided ctx property named `eval` shadows the global `eval` in that scope, so ANY `!!js` expression in ANY composition mounting the plugin dies (mount order cannot save it: the callee name is resolved before the expression runs). The cordis service was renamed `dshEval`; the package name, the loader entry id `eval`, and the `/eval` slash command are unaffected. This is a naming law for future services: never provide a name a `with`-scope could shadow — a JavaScript global above all.
+
 ## Alternatives considered
 
 **Keep the hand-written template and validate it against the manifest.** Rejected: the template is derivable data (architecture.md step 7 says so explicitly); storing it re-opens the drift the walk log already hit (G10's notation migration), and a second source of truth would need its own lint. Generation plus an equivalence test keeps bench-v1.json as the pinned reference without making it an input.

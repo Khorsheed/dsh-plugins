@@ -48,7 +48,9 @@ pending → ws-ready → stage-1 → … → judged → archived → releasable 
 
 每次委派在 orchestrator ns 记 `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, model: {declared, observed}}`；`usage` 与 `observed` 等 local-agent 家族的模型回读（T11）落地前为 null。
 
-## 服务面 `ctx.eval`
+## 服务面 `ctx.dshEval`
+
+服务的 cordis 名是 `dshEval`，**刻意不叫 `eval`**：loader 用 `with (ctx) { return eval(expr) }` 求值配置里的 `!!js` 表达式，ctx 上的 `eval` 属性会遮蔽全局 `eval`，凡挂载本包的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。包名、入口 id（`eval`）与 `/eval` slash 名不受影响。
 
 | 方法 | 作用 |
 |---|---|

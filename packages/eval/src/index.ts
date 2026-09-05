@@ -27,7 +27,10 @@ export const inject = ['commands']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    eval: EvalService
+    /** NOT named `eval`: a ctx property of that name shadows the global
+     * `eval` inside the loader's `with (ctx) { return eval(expr) }` !!js
+     * evaluation and crashes every composition that mounts this plugin. */
+    dshEval: EvalService
   }
 }
 
@@ -37,7 +40,7 @@ declare module '@deepseek-ai/cordis' {
  */
 export function apply(ctx: Context): void {
   const service = new EvalService(ctx)
-  ctx.provide('eval', service)
+  ctx.provide('dshEval', service)
   registerEvalSlash(ctx, service)
 }
 

@@ -48,7 +48,9 @@ Stage states are named by manifest position (`stage1` → `stage-1`); cell outpu
 
 Every delegation records one orchestrator-ns annotation `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, model: {declared, observed}}`; `usage` and `observed` stay null until the local-agent family lands the model read-back (T11).
 
-## Service face `ctx.eval`
+## Service face `ctx.dshEval`
+
+The cordis service name is `dshEval`, deliberately NOT `eval`: the loader evaluates `!!js` config expressions with `with (ctx) { return eval(expr) }`, so a ctx property named `eval` shadows the global `eval` and crashes any composition mounting this plugin the moment a `!!js` expression is interpolated (found live on the 3171 instance). The package name, the loader entry id (`eval`), and the `/eval` slash name are unaffected.
 
 | Method | What it does |
 |---|---|

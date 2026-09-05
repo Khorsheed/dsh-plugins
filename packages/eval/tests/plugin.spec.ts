@@ -18,7 +18,7 @@ describe('the plugin surface', () => {
     expect(invariantCompanion.name).toBe('eval-invariant')
   })
 
-  it('apply provides ctx.eval, registers /eval, and requires only the command registry', () => {
+  it('apply provides ctx.dshEval, registers /eval, and requires only the command registry', () => {
     const registered: string[] = []
     const ctx: ProvideSpy = {
       provided: new Map(),
@@ -26,7 +26,7 @@ describe('the plugin surface', () => {
       commands: { register: (command) => { registered.push(command.name) } },
     }
     entry.apply(ctx as never)
-    const service = ctx.provided.get('eval')
+    const service = ctx.provided.get('dshEval')
     expect(service).toBeInstanceOf(EvalService)
     expect(registered).toEqual(['eval'])
     // The slash face is the ONLY reason a host service is injected; the
