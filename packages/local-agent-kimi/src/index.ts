@@ -29,6 +29,7 @@ import {
   provisionKimiConfig,
   readKimiAutoApprove,
   readKimiBaseUrl,
+  readKimiDefaultModel,
   readKimiReasoningEffort,
 } from './provision.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
@@ -180,10 +181,11 @@ export function apply(ctx: Context, config: Config): void {
       // would have written. Provisioning-time values only ever reach a home
       // that had none.
       effectiveSettings: async () => {
-        const [reasoningEffort, baseUrl, autoApprove] = await Promise.all([
+        const [reasoningEffort, baseUrl, autoApprove, defaultModel] = await Promise.all([
           readKimiReasoningEffort(homeDir).catch(() => undefined),
           readKimiBaseUrl(homeDir).catch(() => undefined),
           readKimiAutoApprove(homeDir).catch(() => false),
+          readKimiDefaultModel(homeDir).catch(() => undefined),
         ])
         // The managed endpoint IS kimi's own service — routing through it is
         // the default, not a pinned custom route.
@@ -195,6 +197,7 @@ export function apply(ctx: Context, config: Config): void {
           ...reasoningEffort !== undefined ? { reasoningEffort } : {},
           baseUrlSet: custom,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
+          ...defaultModel !== undefined ? { model: defaultModel } : {},
         }
       },
     })

@@ -147,6 +147,39 @@ export async function readKimiBaseUrl(homeDir: string): Promise<string | undefin
 }
 
 /**
+ * Read the scoped config's configured default model: the top-level
+ * `default_model` key — the selection a plain `kimi -p` round runs with. A
+ * missing or malformed config, or no key, yields undefined — the honest
+ * "unknown", never a guessed default. Read-only: the config is authoritative
+ * and a user-edited value is reported as-is.
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @returns the configured model identifier, or undefined when none is set.
+ */
+export async function readKimiDefaultModel(homeDir: string): Promise<string | undefined> {
+  let text: string
+  try {
+    text = await readFile(join(homeDir, 'config.toml'), 'utf8')
+  } catch {
+    return undefined
+  }
+  // default_model is a top-level key, so it only counts before the first
+  // table header — the same rule the other readers apply.
+  let section = ''
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    if (section !== '') continue
+    const key = /^(\w+)\s*=\s*"([^"]*)"$/.exec(line)
+    if (key !== null && key[1] === 'default_model') return key[2]
+  }
+  return undefined
+}
+
+/**
  * Read the scoped config's effective reasoning effort: the `[thinking] effort`
  * key, falling back to a `[models."…"]` section's `default_effort` when the
  * thinking table carries none (the CLI resolves effort the same way). A

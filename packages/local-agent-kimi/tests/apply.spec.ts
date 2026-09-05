@@ -149,7 +149,7 @@ describe('local-agent-kimi apply', () => {
     expect(resolveLive('child-x')).toBe(driver)
   })
 
-  it('snapshots a fresh home: exec drive, effort high, auto-approve, managed endpoint', async () => {
+  it('snapshots a fresh home: exec drive, effort high, auto-approve, managed endpoint, configured model', async () => {
     const { registered, home } = mount()
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
@@ -165,6 +165,7 @@ describe('local-agent-kimi apply', () => {
       autoApprove: true,
       reasoningEffort: 'high',
       baseUrlSet: false,
+      model: 'kimi-code/k3',
     })
   })
 
@@ -206,5 +207,27 @@ describe('local-agent-kimi apply', () => {
       baseUrlSet: true,
       baseUrlHost: 'proxy.example.com',
     })
+  })
+
+  it('omits the model field when the scoped config names no default_model', async () => {
+    const { registered, home } = mount()
+    // A mirrored config without a top-level default_model: nothing is
+    // configured, so the snapshot must not invent an identifier. Only the
+    // model-absence is under test — the permission bootstrap may or may not
+    // have appended its rule around this write, so autoApprove is not asserted.
+    writeFileSync(join(home, 'config.toml'), [
+      '[thinking]',
+      'enabled = true',
+      'effort = "high"',
+      '',
+    ].join('\n'))
+    const harness = registered[0]!
+    const snapshot = await harness.effectiveSettings!()
+    expect(snapshot).toMatchObject({
+      drive: 'exec',
+      reasoningEffort: 'high',
+      baseUrlSet: false,
+    })
+    expect('model' in snapshot).toBe(false)
   })
 })
