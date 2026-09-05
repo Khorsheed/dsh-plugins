@@ -31,4 +31,4 @@ I1 的字段决定按原文编码：plan 的 conditions 写 id 不写 sha；sha 
 - I1 示例如今只带 warning 即通过校验，条件哈希是确定性的——I1 的验收判据（「plan 过校验且两次哈希相同」）有了工具。
 - lock 格式已定但还没有写入者（provision 是 I4）；在此之前所有 plan 都报 `LOCK_MISSING`，这正是走通格的诚实状态。
 - schema 演化走协议修订：condition/plan 的新字段以「协议修订中新增可选字段」落地，绝不以未声明键出现（`additionalProperties: false` 全覆盖）。
-- run / report / readiness / generateTemplate / provision 仍未实现；`ctx.eval` 在 I2 扩展它们而不破坏离线面。题库侧 manifest `output_schema`（改为按名引用 `schemas/<stage>.json`）的迁移已写进协议，属题库侧后续工作。
+- run / readiness / generateTemplate / provision 仍未实现；`ctx.eval` 在 I2 扩展它们而不破坏离线面。report 动词已由独立笔记接管：[eval-report-verb](2026-09-05-eval-report-verb.zh.md)。题库侧 manifest `output_schema`（改为按名引用 `schemas/<stage>.json`）的迁移已写进协议，属题库侧后续工作。

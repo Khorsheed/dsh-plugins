@@ -37,6 +37,19 @@ export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiag
 export { conditionDiagnostics, validatePlan } from './validate.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
+export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
+export type {
+  ConditionEfficiency,
+  EvalReport,
+  FactorPair,
+  InvariantCheck,
+  JudgeConsistency,
+  PairComparison,
+  PairTaskDelta,
+  ReportRow,
+  ReportWrite,
+} from './report.ts'
+export { bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32, allEqualRate } from './stats.ts'
 export {
   CONDITION_SCHEMA,
   CONDITION_SCHEMA_ID,
