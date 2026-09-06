@@ -73,6 +73,7 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 后续修复完成后，unit 以 54/54 通过，integration 以 128/128 通过，并发总入口以 182/182 通过。pack smoke 在 runner 预算内完成；确定性的 hung-previous 用例在 integration-only 与总入口两次运行中都通过。最终 leak report 仍为 active、over-age-live、unreadable 全部为零。
 - 补上成功交接用例遗漏的 previous 稳态屏障与具名终态等待后，连续三轮 integration 均以 128/128 通过；交接用例分别用时 24.6、22.0 和 21.0 秒。随后的包级总入口以 182/182 通过，交接用例用时 23.3 秒；在记录的一分钟 load average 约为 8.0 时，最慢 supervisor shard 为 128.3 秒。
 - 隔离的 reclaim 语义测试与确定性的子/父进程锁握手在 lifecycle 分片中一同通过；完整 integration 清单随后以 130/130 通过，再进入双 worktree 验收。
+- 随后两个位于提交 `9a42152` 的独立 worktree 并发运行完整 integration，两边均以 130/130 通过。两边的 lifecycle 分片都通过隔离 reclaim 语义、带 ACK 的跨进程互斥与 hung-previous 覆盖。最终机器报告包含 490 条可回收历史记录，active-live、over-age-live 与 unreadable 均为零。
 
 ## Alternatives considered
 

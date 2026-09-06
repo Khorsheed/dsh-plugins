@@ -73,6 +73,7 @@ This change does not alter the product contract of `abort-cutover` or `restore-p
 - After the follow-up, unit passed 54/54, integration passed 128/128, and the concurrent umbrella passed 182/182. The pack smoke completed inside the runner budget, and the deterministic hung-previous case passed in both the integration-only and umbrella runs. The final leak report again had zero active, over-age-live, or unreadable records.
 - After adding the missing successful-transfer steady-state barrier and named terminal wait, three consecutive integration runs passed 128/128; the transfer case completed in 24.6, 22.0, and 21.0 seconds. A subsequent package umbrella run passed 182/182 with the transfer case at 23.3 seconds and the slowest supervisor shard at 128.3 seconds under a recorded one-minute load average near 8.0.
 - The isolated reclaim semantics and deterministic child/parent lock handshake passed together in the lifecycle shard. The full integration inventory then passed 130/130 before the dual-worktree acceptance run.
+- Two independent worktrees at commit `9a42152` then ran the complete integration lane concurrently and both passed 130/130. Both lifecycle shards passed the isolated reclaim semantics, acknowledged cross-process mutex, and hung-previous coverage. The final machine report contained 490 reclaimable historical records and zero active-live, over-age-live, or unreadable records.
 
 ## Alternatives considered
 
