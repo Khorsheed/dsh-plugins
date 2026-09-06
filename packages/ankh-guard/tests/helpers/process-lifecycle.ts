@@ -69,6 +69,12 @@ export interface MachineLeaseReclaimResult {
   errors: Array<{ path: string; error: string }>
 }
 
+/** Internal-only filesystem scope used to isolate destructive reclaim specs. */
+export interface MachineLeaseReclaimScope {
+  root: string
+  tempBase: string
+}
+
 interface ReclaimLockRecord {
   version: 1
   createdAt: number
@@ -201,21 +207,26 @@ function acquireReclaimLock(root: string): { release(): void } | null {
   return null
 }
 
+/** Test adapter for deterministically holding the same lock used by reclaim. */
+export function acquireReclaimLockForTest(root: string): { release(): void } | null {
+  return acquireReclaimLock(root)
+}
+
 interface OwnedTempRoot {
   root: string
   present: boolean
 }
 
-/** Resolve only direct, mkdtemp-shaped Ankh Guard roots below the real OS temp dir. */
-function safeOwnedTempRoot(path: string): OwnedTempRoot | null {
+/** Resolve only direct, mkdtemp-shaped Ankh Guard roots below the selected temp base. */
+function safeOwnedTempRoot(path: string, tempBase = tmpdir()): OwnedTempRoot | null {
   if (!isAbsolute(path)) return null
   let canonicalBase: string
   try {
-    canonicalBase = realpathSync(tmpdir())
+    canonicalBase = realpathSync(tempBase)
   } catch {
     return null
   }
-  const rawBase = resolve(tmpdir())
+  const rawBase = resolve(tempBase)
   const normalizedPath = resolve(path)
   let selectedBase = rawBase
   let offset = relative(rawBase, normalizedPath)
@@ -661,11 +672,13 @@ export function inspectMachineTestLeases(now = Date.now(), liveReportAgeMs = DEF
 export function reclaimMachineTestLeases(
   now = Date.now(),
   minimumAgeMs = 0,
+  scope?: MachineLeaseReclaimScope,
 ): MachineLeaseReclaimResult {
   if (!Number.isFinite(minimumAgeMs) || minimumAgeMs < 0) {
     throw new Error('minimum reclaim age must be a non-negative finite number')
   }
-  const root = leaseRoot()
+  const root = scope?.root ?? leaseRoot()
+  const tempBase = scope?.tempBase ?? tmpdir()
   const result: MachineLeaseReclaimResult = {
     root, minimumAgeMs, lock: 'busy', removedRuns: [], removedPortLeases: [],
     removedTempRoots: [], skipped: [], errors: [],
@@ -703,7 +716,7 @@ export function reclaimMachineTestLeases(
           let unsafeTempRoot = false
           for (const processRecord of scan.records) {
             if (processRecord.tempRoot === undefined) continue
-            const safe = safeOwnedTempRoot(processRecord.tempRoot)
+            const safe = safeOwnedTempRoot(processRecord.tempRoot, tempBase)
             if (safe === null) {
               unsafeTempRoot = true
               result.skipped.push({ path: processRecord.tempRoot, reason: 'temp root is outside the owned mkdtemp namespace' })
@@ -770,7 +783,7 @@ export function reclaimMachineTestLeases(
           continue
         }
         try {
-          const safe = safeOwnedTempRoot(tempRoot)
+          const safe = safeOwnedTempRoot(tempRoot, tempBase)
           if (safe === null || !safe.present || safe.root !== tempRoot) {
             if (safe !== null && !safe.present) continue
             result.skipped.push({ path: tempRoot, reason: 'temp root changed during reclaim' })
@@ -828,13 +841,13 @@ export function reclaimMachineTestLeases(
 
     // Snapshot roots may outlive their parent before a test run can register
     // them. Only the creator-authored marker grants deletion authority.
-    const tempBase = realpathSync(tmpdir())
-    for (const name of readdirSync(tempBase)) {
+    const canonicalTempBase = realpathSync(tempBase)
+    for (const name of readdirSync(canonicalTempBase)) {
       if (!/^ankh-transition-preflight-[A-Za-z0-9]{6}$/.test(name)) continue
-      const artifactRoot = join(tempBase, name)
+      const artifactRoot = join(canonicalTempBase, name)
       if (protectedTempRoots.has(artifactRoot)) continue
       try {
-        const safe = safeOwnedTempRoot(artifactRoot)
+        const safe = safeOwnedTempRoot(artifactRoot, canonicalTempBase)
         if (safe === null || !safe.present || safe.root !== artifactRoot) {
           result.skipped.push({ path: artifactRoot, reason: 'snapshot root failed owned-temp validation' })
           continue

@@ -1,14 +1,18 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { once } from 'node:events'
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
-  findPidsOnPort, processIdentity, processIdentityMatches, type ProcessIdentity,
+  findPidsOnPort, processIdentity, processIdentityMatches, signalProcessIdentity,
+  type ProcessIdentity,
 } from '../src/processes.ts'
 import { TEMP_ARTIFACT_OWNER_FILE } from '../src/temp-artifact.ts'
 import {
@@ -20,6 +24,8 @@ import {
 } from './helpers/process-lifecycle.ts'
 
 const registerBin = fileURLToPath(new URL('../lib/test-seam-cli.js', import.meta.url))
+const reclaimLockHolder = fileURLToPath(new URL('./fixtures/reclaim-lock-holder.ts', import.meta.url))
+const tsxImport = createRequire(import.meta.url).resolve('tsx/esm')
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<boolean> {
   const deadline = performance.now() + timeoutMs
@@ -186,27 +192,76 @@ worker & wait`], {
     }
   })
 
+  it('serializes reclaim across processes and releases the lock for the next owner', async () => {
+    const scopeRoot = mkdtempSync(join(tmpdir(), 'guard-reclaim-lock-spec-'))
+    const root = join(scopeRoot, 'leases')
+    const scope = { root, tempBase: scopeRoot }
+    const expectedMachineRoot = join(
+      tmpdir(),
+      `dsh-ankh-guard-test-leases-${typeof process.getuid === 'function' ? process.getuid() : 'unknown'}`,
+    )
+    expect(inspectMachineTestLeases().root).toBe(expectedMachineRoot)
+
+    const holder = spawn(process.execPath, ['--import', tsxImport, reclaimLockHolder, root], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const lines = createInterface({ input: holder.stdout! })
+    const closed = once(holder, 'close')
+    let stderr = ''
+    let holderIdentity: ProcessIdentity | null = null
+    holder.stderr?.on('data', chunk => { stderr += chunk.toString() })
+    try {
+      const acquired = once(lines, 'line', { signal: AbortSignal.timeout(15_000) })
+      expect((await acquired)[0], stderr).toBe('acquired')
+      expect(holder.pid).toBeDefined()
+      holderIdentity = processIdentity(holder.pid!)
+      expect(holderIdentity).not.toBeNull()
+
+      const busy = reclaimMachineTestLeases(Date.now(), 0, scope)
+      expect(busy.lock).toBe('busy')
+
+      const released = once(lines, 'line', { signal: AbortSignal.timeout(5_000) })
+      holder.stdin?.end('release\n')
+      expect((await released)[0], stderr).toBe('released')
+      const [code, signal] = await closed
+      expect({ code, signal, stderr }).toEqual({ code: 0, signal: null, stderr: '' })
+
+      const next = reclaimMachineTestLeases(Date.now(), 0, scope)
+      expect(next.lock).toBe('acquired')
+    } finally {
+      lines.close()
+      const cleanupIdentity = holderIdentity ?? (holder.pid === undefined ? null : processIdentity(holder.pid))
+      if (cleanupIdentity !== null && processIdentityMatches(cleanupIdentity)) {
+        signalProcessIdentity(cleanupIdentity, 'SIGKILL')
+        await closed
+      }
+      rmSync(scopeRoot, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('reclaims only old identity-proven runs and marked snapshots without following unsafe paths', async () => {
-    const root = inspectMachineTestLeases().root
+    const scopeRoot = mkdtempSync(join(tmpdir(), 'guard-reclaim-scope-'))
+    const root = join(scopeRoot, 'leases')
+    const scope = { root, tempBase: scopeRoot }
     const dead = await captureGoneIdentity()
     const old = Date.now() - 2 * 24 * 60 * 60_000
     const runToken = randomUUID()
     const runDir = join(root, 'runs', runToken)
     const processDir = join(runDir, 'processes')
-    const tempRoot = mkdtempSync(join(tmpdir(), 'guard-reclaim-test-'))
+    const tempRoot = mkdtempSync(join(scopeRoot, 'guard-reclaim-test-'))
     const nestedTempRoot = join(tempRoot, 'state')
     const port = unusedFixturePort(root)
     const portFile = join(root, 'ports', `${port}.json`)
     const livePort = unusedFixturePort(root, new Set([port]))
     const livePortFile = join(root, 'ports', `${livePort}.json`)
-    const outsideRoot = mkdtempSync(join(process.cwd(), 'guard-reclaim-outside-'))
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'guard-reclaim-outside-'))
     const outsideSentinel = join(outsideRoot, 'sentinel.txt')
     const unsafeToken = randomUUID()
     const unsafeRunDir = join(root, 'runs', unsafeToken)
     const liveToken = randomUUID()
     const liveRunDir = join(root, 'runs', liveToken)
-    const snapshotRoot = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
-    const legacySnapshotRoot = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
+    const snapshotRoot = mkdtempSync(join(scopeRoot, 'ankh-transition-preflight-'))
+    const legacySnapshotRoot = mkdtempSync(join(scopeRoot, 'ankh-transition-preflight-'))
     const canonicalTempRoot = realpathSync(tempRoot)
     const canonicalSnapshotRoot = realpathSync(snapshotRoot)
     mkdirSync(nestedTempRoot, { recursive: true })
@@ -236,7 +291,7 @@ worker & wait`], {
     writeFileSync(join(legacySnapshotRoot, 'payload.txt'), 'legacy-snapshot')
 
     try {
-      const result = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000)
+      const result = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000, scope)
       expect(result.lock).toBe('acquired')
       expect(result.errors.filter(item => [runDir, portFile, tempRoot, snapshotRoot].some(path => item.path.startsWith(path)))).toEqual([])
       expect(result.removedRuns).toContain(runDir)
@@ -259,7 +314,8 @@ worker & wait`], {
       writeJson(livePortFile, {
         version: 1, runToken: liveToken, port: livePort, createdAt: old, owner: mine, runDir: liveRunDir,
       })
-      const second = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000)
+      const second = reclaimMachineTestLeases(Date.now(), 24 * 60 * 60_000, scope)
+      expect(second.lock).toBe('acquired')
       expect(second.errors.filter(item => item.path.startsWith(liveRunDir))).toEqual([])
       expect(existsSync(liveRunDir)).toBe(true)
       expect(existsSync(livePortFile)).toBe(true)
@@ -274,6 +330,7 @@ worker & wait`], {
       rmSync(outsideRoot, { recursive: true, force: true })
       rmSync(portFile, { force: true })
       rmSync(livePortFile, { force: true })
+      rmSync(scopeRoot, { recursive: true, force: true })
     }
   })
 })

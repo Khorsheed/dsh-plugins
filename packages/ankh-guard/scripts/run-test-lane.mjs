@@ -118,7 +118,7 @@ async function worker() {
 }
 
 await Promise.all(Array.from({ length: Math.min(maxParallel, tasks.length) }, () => worker()))
-const expected = lane === 'unit' ? 60 : lane === 'integration' ? 129 : 189
+const expected = lane === 'unit' ? 60 : lane === 'integration' ? 130 : 190
 if (passed !== expected) {
   process.stderr.write(`\n${lane} lane inventory mismatch: expected ${expected} passing tests, observed ${passed}\n`)
   failed = true

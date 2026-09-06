@@ -32,6 +32,8 @@ composition recovery 也曾在全量 gate 中偶发失败、隔离运行却通�
 
 integration 与包级总入口会在启动 worker 前运行同一 reclaimer，最小年龄为 24 小时。这个窗口是证据保留期，而不是立即 teardown：近期失败 run 仍可用于诊断，已证明死亡的旧沙箱则不再无限积累。操作员可用 `pnpm test:leaks -- --reclaim` 立即清理已证明死亡的对象；summary 记录各类别数量，JSON 则记录每个已删除、跳过和失败路径。回收在不同 worktree 间串行执行，不会削弱普通逐测试 teardown。
 
+破坏性的 reclaim 语义测试通过仅供内部使用的 scope 参数同时注入 lease root 与临时产物基目录。它可以在不假定真实机器级 reclaim 锁空闲的前提下，证明 identity、年龄、路径包含、snapshot marker 与 live-owner 规则。面向操作员的脚本不暴露这项覆盖，并始终无参数调用生产 wrapper，因此按用户划分的 `$TMPDIR` 默认根与 `busy` 结果保持不变。互斥由独立的跨进程回归覆盖：子进程通过测试专用 adapter 取得真实锁原语并 ACK，父进程观察到 `busy`；子进程 ACK 释放后，父进程再观察到 `acquired`。重叠顺序不依赖 sleep。
+
 ### Readiness、时钟与测试分档
 
 假控制 watchdog 只有在安装 `SIGUSR2` handler、完成一次 keepalive tick 并写出 ready 事件后才发布 pidfile。十二个 writer 运行刚构建的 `lib/cli.js`；测试固定其 SHA-256，仍要求十二个退出码全部为零，并独立要求耐久 `restore-previous` 保持主导。这里替换而非叠加 `298375b` 的临时改动：该提交把 persist 夹具写 pidfile 前的 100ms 延时替换成 marker，并单独扩大了 idles 的 deadline。
@@ -42,7 +44,7 @@ watchdog 内部轮询与 backoff 统一经过 `wd_sleep`。生产时长完全不
 
 四条 transition 一线的终态谓词——成功的 supervision 交接、hung-previous 恢复、目标失败的 reconfigure 恢复、live-home transition 回滚——使用具名的 60 秒观察预算；恢复用例的 Vitest 外层预算为 90 秒，成功交接为 120 秒，因为它会先证明 previous watchdog 已完成健康启动。hung-previous 夹具还允许 replacement 用 30 秒到达明确的有界 yield 日志后再发送 restore；被测 watchdog 的 yield 仍严格为 3 秒。高负载 gate 曾在原 20–35 秒边界附近处于正确的 `target-starting` 或 `restoring` 中间态，另一次高负载运行仅“认领 supervision 并进入 yield 阶段”就用了 11 秒。一份保留的成功交接失败账本显示：target listener 在 21.4 秒时登记，所有权稳定在 29.5 秒时完成，33.0 秒时仍有 receipt writer 运行；旧的 25 秒夹具观察预算在事务仍持续前进时已到期。`target-starting` 有意覆盖 child start、transport、所有权稳定、canary 和终态 ready 落盘的全过程，因此它的 `updatedAt` 不是“无进展停留时长”。这些只是夹具观察预算：不缩放、不改变 watchdog 的生产 cutover、所有权稳定、认证或恢复 deadline。
 
-包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 60 个 unit、129 个 integration，共 189 个测试。
+包提供 `test:unit`、`test:integration` 和总入口 `test`。integration 总会先构建；总入口只构建一次并统一调度两档。四个隔离 Vitest 进程执行确定性平衡的 supervisor 分片，机器级 lease 协调端口。清单断言防止名字过滤或分片变化静默漏测：当前为 60 个 unit、130 个 integration，共 190 个测试。
 
 lane runner 只有在子进程触发 `close` 后才消费 shard，而不再使用 `exit`，因为 `exit` 可能早于 stdout/stderr 管道最后一次读取。spawn 错误会被明确报告。这关闭了一次高负载观察：该次只看到 161/182，因为最后一个 21-test 汇总尚未读入；inventory tripwire 当场拒绝了不完整观察，没有产生假绿。
 
@@ -70,6 +72,7 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 - 成功交接、hung-previous、目标失败 reconfigure 与 live-home transition 用例保留对终态 receipt 的断言，并使用容忍负载的具名轮询；超时时仍处于中间 phase 依然会携带生命周期诊断响亮失败。
 - 后续修复完成后，unit 以 54/54 通过，integration 以 128/128 通过，并发总入口以 182/182 通过。pack smoke 在 runner 预算内完成；确定性的 hung-previous 用例在 integration-only 与总入口两次运行中都通过。最终 leak report 仍为 active、over-age-live、unreadable 全部为零。
 - 补上成功交接用例遗漏的 previous 稳态屏障与具名终态等待后，连续三轮 integration 均以 128/128 通过；交接用例分别用时 24.6、22.0 和 21.0 秒。随后的包级总入口以 182/182 通过，交接用例用时 23.3 秒；在记录的一分钟 load average 约为 8.0 时，最慢 supervisor shard 为 128.3 秒。
+- 隔离的 reclaim 语义测试与确定性的子/父进程锁握手在 lifecycle 分片中一同通过；完整 integration 清单随后以 130/130 通过，再进入双 worktree 验收。
 
 ## Alternatives considered
 
@@ -85,6 +88,10 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 
 **删除临时目录下所有超龄 `guard-*` 或 `ankh-*` 目录。** 否决，因为名字与年龄不能证明所有权。run 关联根必须有全部死亡的 identity ledger；独立 preflight snapshot 必须有创建者自行写入的 identity marker。未标记历史目录保持可见，但绝不猜测为安全。
 
+**让破坏性语义测试一直重试，直到真实机器级锁空闲。** 否决，因为另一个 worktree 合法持有该锁，无期限等待会把原本独立的 gate 耦合起来。私有文件系统 scope 验证回收规则，另一个带 ACK 的跨进程夹具验证竞争。
+
+**通过普通环境变量选择 reclaim scope。** 否决，因为环境变量可能意外改变操作员清理行为。覆盖只作为测试内部函数参数存在，脚本始终使用默认 scope。
+
 **永远杀记住的进程组。** 否决，因为 PGID 没有 start identity。整组信号需要仍匹配的登记 anchor；否则只能处理精确登记的 member。
 
 **模拟所有 watchdog 路径。** 否决，因为 shell detachment、信号传递、reparent、PID identity 和 listener handoff 已发现纯状态测试无法表示的缺陷。
@@ -95,7 +102,7 @@ integration runner 输出逻辑 CPU 数、Node/包管理器版本、load average
 
 ## Consequences
 
-真实 watchdog 覆盖继续是强制门禁，同时包 gate 已有足够明确的耗时边界供日常运行。失败会保留耐久、带来源的证据；teardown fail closed，不会冒险处理其他 worktree 或生产实例。可证明死亡的证据在 24 小时后自动清理；超龄 live identity、损坏证据、不安全路径和旧版无 marker snapshot 仍需只读审计并由人决定。代价是 built package 内增加少量内部测试代码、preflight snapshot 根增加创建者 marker，以及需要维护分片清单。新增测试必须更新显式 lane 计数；特别长的 supervisor 用例可能需要主动重新平衡分片。未显式标注的挂死测试现在最长需要 30 秒而非五秒才会失败，与仓库预设一致；更长的显式生命周期预算仍然是权威值。
+真实 watchdog 覆盖继续是强制门禁，同时包 gate 已有足够明确的耗时边界供日常运行。失败会保留耐久、带来源的证据；teardown fail closed，不会冒险处理其他 worktree 或生产实例。可证明死亡的证据在 24 小时后自动清理；超龄 live identity、损坏证据、不安全路径和旧版无 marker snapshot 仍需只读审计并由人决定。代价是增加少量内部测试代码，包括 scoped reclaim adapter 与 lock-holder 夹具，preflight snapshot 根增加创建者 marker，以及需要维护分片清单。新增测试必须更新显式 lane 计数；特别长的 supervisor 用例可能需要主动重新平衡分片。未显式标注的挂死测试现在最长需要 30 秒而非五秒才会失败，与仓库预设一致；更长的显式生命周期预算仍然是权威值。
 
 113 秒是一次成功目标运行，不是三次统计中位数。后续性能审计应在声明无外部 gate 的窗口对比，并保留 runner 输出的负载元数据。共享 CI workflow 仍归 mainline owner；现有 CI 已通过包的总入口 `test` 覆盖两档。
 
