@@ -15,7 +15,7 @@ import {
   readBinding, validateBinding, writeBinding, type BindingSession, type DatasetBinding,
 } from './binding.ts'
 import {
-  assertSafeRelativePath, assertValidName, buildRegistry, computePassthrough, datasetDir, DatasetsError,
+  assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir, DatasetsError,
   descriptorWarnings, fieldNameWarnings, itemDir, ITEM_METADATA,
   listDatasetIds, listDatasetLayers, listItems, loadDescriptor, loadItem, registeredFiles, summarizeDataset,
   validateDescriptor, type DatasetDescriptor, type DatasetRegistry, type DatasetSummary, type DescriptorWarning,
@@ -269,7 +269,8 @@ export interface DatasetsService {
   /**
    * Validate one dataset (or all) of a repository: shape errors fail loud per
    * dataset, warnings never block. Author-facing — sees everything
-   * (operator semantics), including the passthrough zone it reports on.
+   * (operator semantics), including the passthrough zone it reports on. It is
+   * also the only path that reads file CONTENT (the canary check).
    */
   validate(scope: DatasetScope, datasetId?: string): Promise<ValidateResult>
   /** Record a binding for a live session (slash/tab path). */
@@ -600,6 +601,13 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
             continue
           }
           if (item.metadata !== undefined) warnings.push(...fieldNameWarnings(itemId, item.metadata))
+        }
+        // The canary, when the descriptor declares one: every text file of a
+        // modelFacing layer must carry it (the leak-detection contract).
+        try {
+          warnings.push(...await canaryWarnings(repo, sha, id, descriptor, registry))
+        } catch (error) {
+          fail(error)
         }
         // Files covered by no layer directory and no register entry fall into
         // the always-visible passthrough zone — the author must see that.

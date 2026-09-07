@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev2** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev3** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -28,6 +28,7 @@ datasets/<id>/
 {
   "id": "harness-comparison",
   "name": "Harness 对比评测集",
+  "canary": "dsh-canary:harness-comparison:6f2a13c8-5d4b-4e77-9a10-2c8be5d4f031",
   "layers": [
     { "name": "visible", "modelFacing": true },
     { "name": "verify", "modelFacing": false },
@@ -45,6 +46,7 @@ datasets/<id>/
 ```
 
 - `id` 必须与目录名一致；`name` 可选；`layers` 非空，每层 `name`（段安全：字母数字与 `._-`，不以点开头）+ 可选 `modelFacing`（缺省 `true`）。
+- `canary` 可选：一个全局唯一字符串，建议格式 `dsh-canary:<dataset-id>:<uuid>`。声明之后，可见层（`modelFacing: true`，题集级与 item 级都算，register 归位的文件按其角色层算）里的每个文本文件都必须逐字包含它；缺的文件由 `validate` 逐条报 `CANARY_MISSING`（见 §5）。它的用途是泄题取证：日后在某个模型的输出里搜到这个串，就证明本题库进过它的训练语料。插件只校验，从不生成也从不注入金丝雀——串由作者自己造、自己埋。
 - `itemMetaSchema` 可选，仅形状校验为对象（插件不做 JSON Schema 全量校验）。
 - `register` 可选：显式把 item 目录内的自由文件注册进 `item`/`层` 角色。**v1 约束**：路径是 item 相对路径、不得越出 item 目录（无绝对路径、无 `..` 段）；glob 仅限单层通配（`*` 不跨 `/`，禁止 `**`）；不得重新注册 `item.json`；与布局形态冲突（同一显示路径同时被约定层目录与 register 覆盖）或精确路径不存在时 fail loud。glob 零命中允许（内容可以后到）。
 - 纪律：每个层必须显式声明 `modelFacing`；混合敏感度数据集里缺键的层会被 warn（见 §5）。
@@ -69,6 +71,7 @@ datasets/<id>/
 
 - `MODELFACING_UNDECLARED`：混合敏感度数据集里未表态的层；
 - `FIELD_NAME_SENSITIVE`：item.json 里出现 note / hint / answer / rubric / grading 词根的键（便宜的字面启发式，专门抓「敏感备注写错地方」）；
+- `CANARY_MISSING`：声明了 `canary` 的数据集里，某个可见层的文本文件没有包含该串。文本按扩展名白名单判定：`.md` / `.txt` / `.yml` / `.yaml` / `.json` 与无扩展名的文件；其余（图片、压缩包等）跳过，`modelFacing: false` 的层与 item.json 也不在检查范围。未声明 `canary` 的数据集完全不做此检查；这是唯一读文件内容的检查，因而只在 `validate` 上跑，不进 list/show 的摘要。
 - `UNREGISTERED_FILES`：未被任何层目录或 register 条目覆盖的文件（漏配的文件会静默掉进透传区变成「永远可见」；glob 单层通配盖不住子目录是高频踩法）。
 - 评测契约目录（§6.1 的 `conditions/`、`plans/`、`schemas/`、`templates/`）被报为 UNREGISTERED_FILES 属预期：它们本来就是题集级透传区，不进层与 register 的语义。
 

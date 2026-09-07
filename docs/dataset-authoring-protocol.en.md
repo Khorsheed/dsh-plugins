@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev2** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev3** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -28,6 +28,7 @@ datasets/<id>/
 {
   "id": "harness-comparison",
   "name": "Harness comparison suite",
+  "canary": "dsh-canary:harness-comparison:6f2a13c8-5d4b-4e77-9a10-2c8be5d4f031",
   "layers": [
     { "name": "visible", "modelFacing": true },
     { "name": "verify", "modelFacing": false },
@@ -45,6 +46,7 @@ datasets/<id>/
 ```
 
 - `id` must equal the directory name; `name` is optional; `layers` is non-empty, each with a segment-safe `name` (alphanumerics plus `._-`, no leading dot) and an optional `modelFacing` (default `true`).
+- `canary` is optional: one globally unique string, recommended shape `dsh-canary:<dataset-id>:<uuid>`. Once declared, every text file of a visible layer (`modelFacing: true`, at both levels; a register-mapped file counts under its role layer) must contain it verbatim, and `validate` reports each file that does not as `CANARY_MISSING` (see §5). Its purpose is leak forensics: finding the string in some model's output later proves this dataset entered that model's training data. The plugin only checks — it never generates or injects a canary; the author mints it and embeds it.
 - `itemMetaSchema` is optional and shape-checked as an object only (the plugin never runs full JSON-Schema validation).
 - `register` is optional: explicitly maps free-form files inside an item's directory onto an `item`/layer role. **v1 constraints**: paths are item-relative and must stay inside the item directory (no absolute paths, no `..` segments); globs are single-level only (`*` never crosses `/`, no `**`); `item.json` may not be re-registered; a conflict with the layout form (the same display path covered by both the convention layer directory and a register entry of the same role) or a dangling exact path fails loud. A zero-match glob is allowed (content may arrive later).
 - Discipline: every layer declares `modelFacing` explicitly; in a mixed-sensitivity dataset, a layer missing the key is warned (see §5).
@@ -69,6 +71,7 @@ When done, run `dsh-datasets validate` (or call the `datasets_validate` tool). S
 
 - `MODELFACING_UNDECLARED`: a layer that left modelFacing undeclared in a mixed-sensitivity dataset;
 - `FIELD_NAME_SENSITIVE`: an item.json key containing a note / hint / answer / rubric / grading root (a cheap literal heuristic that catches "sensitive note written in the wrong place");
+- `CANARY_MISSING`: in a dataset that declares a `canary`, a text file of a visible layer that does not contain the string. Text is decided by an extension whitelist — `.md` / `.txt` / `.yml` / `.yaml` / `.json` and extensionless files; everything else (images, archives) is skipped, as are `modelFacing: false` layers and item.json. A dataset with no `canary` is not checked at all. This is the one rule that reads file content, so it runs on `validate` only and never on the list/show summary.
 - `UNREGISTERED_FILES`: files covered by no layer directory or register entry (they silently fall into the passthrough zone and become always-visible; single-level globs not covering subdirectories is the common trap).
 - The eval contract directories (§6.1's `conditions/`, `plans/`, `schemas/`, `templates/`) are reported as UNREGISTERED_FILES by design: they live in the dataset-level passthrough zone and are outside the layer/register vocabulary.
 

@@ -37,6 +37,44 @@ import {
 } from './service.ts'
 import { DatasetsRemoteService } from './remote.ts'
 
+/**
+ * Which group of model tools the plugin registers. Grouping lives in the
+ * plugin because a preset cannot deselect a tool the profile registered: the
+ * only place that decides is the registration itself.
+ *
+ * - `read` — the read verbs (list / show / describe / read / snapshot / validate);
+ * - `authoring` — read plus `datasets_put_item` (drafting items into the working tree);
+ * - `all` — authoring plus `datasets_worktree_path` (whole-layer materialization). The default;
+ * - `none` — no model tools at all. The service, the CLI, `/datasets` and the
+ *   session tab are unaffected by every setting: they are the human's faces.
+ */
+export type DatasetsToolGroup = 'all' | 'read' | 'authoring' | 'none'
+
+/** The read verbs — every tool that only reads the repository. */
+const READ_TOOLS = [
+  'datasets_list', 'datasets_show', 'datasets_describe', 'datasets_read', 'datasets_snapshot', 'datasets_validate',
+] as const
+
+/** Authoring adds the working-tree draft verb (the plugin still never commits). */
+const AUTHORING_TOOLS = [...READ_TOOLS, 'datasets_put_item'] as const
+
+/** `all` adds whole-layer materialization (it writes a managed worktree). */
+const ALL_TOOLS = [...AUTHORING_TOOLS, 'datasets_worktree_path'] as const
+
+/**
+ * The tools one group registers.
+ * @param group - the configured group.
+ * @returns the admitted tool names (a subset of the eight, in registration order).
+ */
+export function toolsOfGroup(group: DatasetsToolGroup): readonly string[] {
+  switch (group) {
+    case 'none': return []
+    case 'read': return READ_TOOLS
+    case 'authoring': return AUTHORING_TOOLS
+    default: return ALL_TOOLS
+  }
+}
+
 /** Plugin configuration. */
 export interface DatasetsPluginConfig {
   /**
@@ -46,11 +84,18 @@ export interface DatasetsPluginConfig {
   repo?: string
   /** Managed worktree root override ('' = the three-stage default). */
   worktreeRoot?: string
+  /**
+   * Which model tools to register (default `all` — unchanged behavior). An
+   * eval domain, whose agent plans and drafts but never executes, wants
+   * `authoring`.
+   */
+  tools?: DatasetsToolGroup
 }
 
 export const Config: z<DatasetsPluginConfig> = z.object({
   repo: z.string().default(''),
   worktreeRoot: z.string().default(''),
+  tools: z.union([z.const('all'), z.const('read'), z.const('authoring'), z.const('none')]).default('all'),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -121,7 +166,16 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     return error instanceof Error ? error : new Error(String(error))
   }
 
-  ctx.tools.register(definePluginTool(defineTool({
+  // The configured group decides which tools exist at all. Definitions below
+  // are unconditional (one shape, one origin tag); only registration is gated.
+  const admitted = new Set(toolsOfGroup(config.tools ?? 'all'))
+  /** Register one tool when its group admits it. */
+  const registerTool = (definition: ReturnType<typeof defineTool>): void => {
+    if (!admitted.has(definition.name)) return
+    ctx.tools.register(definePluginTool(definition))
+  }
+
+  registerTool(defineTool({
     name: 'datasets_list',
     description:
       'List the datasets in the session\'s bound dataset repository, or one dataset\'s items with their '
@@ -142,9 +196,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_show',
     description:
       'Show one dataset (or one item of it) at a commit: summary, the full descriptor passthrough, and the '
@@ -165,9 +219,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_describe',
     description:
       'Pass one dataset\'s descriptor (dataset.json) through verbatim. The plugin validates its shape but '
@@ -187,9 +241,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_read',
     description:
       'Read one file of one item layer, straight from the git object at the pinned commit (`git show '
@@ -229,9 +283,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_snapshot',
     description:
       'Pin a dataset to its current commit: returns {repoPath, commit, datasetId}. Pass the commit back to '
@@ -251,9 +305,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_worktree_path',
     description:
       'Materialize a whole-layer read-only view: a managed git worktree at the pinned commit, sparse-checkout-'
@@ -284,9 +338,9 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_put_item',
     description:
       'Create or update one item IN THE WORKING TREE: write its metadata (item.json) and/or layer files. '
@@ -328,16 +382,17 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  registerTool(defineTool({
     name: 'datasets_validate',
     description:
       'Validate a dataset repository (or one dataset of it) for authoring hygiene: descriptor shape errors '
       + 'fail loud; warnings never block. Warnings cover undeclared modelFacing on layers of a '
       + 'mixed-sensitivity dataset, sensitive-looking item.json field names (note/hint/answer/rubric/'
-      + 'grading — item.json is always visible), and files covered by no layer directory or register '
-      + 'entry (they sit in the always-visible passthrough zone).',
+      + 'grading — item.json is always visible), files covered by no layer directory or register '
+      + 'entry (they sit in the always-visible passthrough zone), and — when the descriptor declares a '
+      + '`canary` — text files of a modelFacing layer that do not carry that string.',
     parameters: {
       repo: COMMON_REPO_PARAM,
       dataset: { type: 'string', description: 'When given, validate just this dataset.' },
@@ -353,7 +408,7 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
         throw toToolError(error)
       }
     },
-  })))
+  }))
 
   ctx.commands.register({
     name: 'datasets',
@@ -420,18 +475,29 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
 
   // Model guidance, when the deployment assembles prompts (probed: a minimal
   // composition without the systemPrompt service still gets working tools).
+  // The section describes only the tools this group actually registered —
+  // guidance about an absent tool is a wrong instruction, not a harmless one.
   const systemPrompt = ctx.get('systemPrompt') as PromptSections | undefined
-  systemPrompt?.section({
-    name: 'datasets:tools',
-    order: 150,
-    text:
-      'Dataset access goes through the datasets_* tools. They resolve against this session\'s bound dataset '
-      + 'repository; when no binding exists and a call has no explicit `repo`, the tool says so — ask the '
-      + 'human to bind one (/datasets bind). Layers outside the binding\'s whitelist are invisible to you; '
-      + 'never try to reach them through other means. Pin a commit with datasets_snapshot before a read '
-      + 'series; consume whole layers through datasets_worktree_path (read-only, never modify or delete the '
-      + 'returned directory); draft items with datasets_put_item and leave `git commit` to the human.',
-  })
+  if (admitted.size > 0) {
+    systemPrompt?.section({
+      name: 'datasets:tools',
+      order: 150,
+      text:
+        'Dataset access goes through the datasets_* tools. They resolve against this session\'s bound dataset '
+        + 'repository; when no binding exists and a call has no explicit `repo`, the tool says so — ask the '
+        + 'human to bind one (/datasets bind). Layers outside the binding\'s whitelist are invisible to you; '
+        + 'never try to reach them through other means. Pin a commit with datasets_snapshot before a read '
+        + 'series'
+        + (admitted.has('datasets_worktree_path')
+          ? '; consume whole layers through datasets_worktree_path (read-only, never modify or delete the '
+            + 'returned directory)'
+          : '')
+        + (admitted.has('datasets_put_item')
+          ? '; draft items with datasets_put_item and leave `git commit` to the human'
+          : '')
+        + '.',
+    })
+  }
 }
 
 /** Parsed slash flags: `--datasets a,b` / `--layers x,y` plus positionals. */

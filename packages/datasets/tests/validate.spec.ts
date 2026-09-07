@@ -76,6 +76,87 @@ describe('service.validate', () => {
   })
 })
 
+/** The canary fixture's token: the recommended shape is `<dataset id>` + a uuid. */
+const CANARY = 'dsh-canary:canary-demo:8f0b1c2d-4e5a-4b6c-9d7e-0a1b2c3d4e5f'
+
+/** Body of a file that carries the canary. */
+const withCanary = (text: string): string => `${text}\n\n<!-- canary: ${CANARY} -->\n`
+
+/**
+ * A dataset declaring a canary, with one file of every case the check has to
+ * separate: dataset-level and item-level visible layers, a register-mapped
+ * visible file living at the item root, an extensionless text file, a hidden
+ * layer, item.json, and two non-text files. Everything the check covers
+ * carries the canary; nothing else does.
+ */
+function makeCanaryRepo(): string {
+  return scratchRepo({
+    'datasets/canary-demo/dataset.json': `${JSON.stringify({
+      id: 'canary-demo',
+      canary: CANARY,
+      layers: [{ name: 'visible', modelFacing: true }, { name: 'grading', modelFacing: false }],
+      register: [{ item: 'p0', layer: 'visible', files: ['task.md'] }],
+    }, null, 2)}\n`,
+    'datasets/canary-demo/visible/guide.md': withCanary('# shared guide'),
+    'datasets/canary-demo/grading/rubric.md': 'the rubric carries no canary — a hidden layer never leaves\n',
+    'datasets/canary-demo/items/i1/item.json': '{"difficulty":"easy"}\n',
+    'datasets/canary-demo/items/i1/visible/task.md': withCanary('# task one'),
+    'datasets/canary-demo/items/i1/visible/data.yml': withCanary('key: value'),
+    'datasets/canary-demo/items/i1/visible/NOTES': withCanary('extensionless files count as text'),
+    'datasets/canary-demo/items/i1/visible/logo.png': 'PNG-ish bytes, no canary\n',
+    'datasets/canary-demo/items/i1/visible/archive.tar.gz': 'gz-ish bytes, no canary\n',
+    'datasets/canary-demo/items/p0/task.md': withCanary('# p0 task (register-mapped into visible)'),
+  })
+}
+
+/** The CANARY_MISSING files of one validate run, in report order. */
+async function canaryMisses(repoPath: string, datasetId: string): Promise<(string | undefined)[]> {
+  const result = await service().validate({ repo: repoPath, operator: true }, datasetId)
+  return result.datasets[0]?.warnings.filter(warning => warning.code === 'CANARY_MISSING').map(warning => warning.file) ?? []
+}
+
+describe('service.validate: the canary', () => {
+  it('a dataset that declares no canary is never checked', async () => {
+    repo = makeFixtureRepo() // alpha/beta carry no canary and no canary string anywhere
+    const result = await service().validate({ repo: repo.dir, operator: true })
+    const codes = result.datasets.flatMap(dataset => dataset.warnings.map(warning => warning.code))
+    expect(codes).not.toContain('CANARY_MISSING')
+  })
+
+  it('stays silent when every covered file carries the string', async () => {
+    expect(await canaryMisses(makeCanaryRepo(), 'canary-demo')).toEqual([])
+  })
+
+  it('reports one warning per file that lacks it — layer files and register-mapped files alike', async () => {
+    const path = makeCanaryRepo()
+    writeFiles(path, {
+      'datasets/canary-demo/items/i1/visible/data.yml': 'key: value\n', // the canary dropped in an edit
+      'datasets/canary-demo/items/p0/task.md': '# p0 task\n', // …and in the register-mapped file
+    })
+    commitAll(path, 'drop the canary from two files')
+    expect(await canaryMisses(path, 'canary-demo')).toEqual([
+      'items/i1/visible/data.yml',
+      'items/p0/task.md',
+    ])
+    // The warning names the layer that made the file visible.
+    const result = await service().validate({ repo: path, operator: true }, 'canary-demo')
+    const first = result.datasets[0]?.warnings.find(warning => warning.code === 'CANARY_MISSING')
+    expect(first?.layer).toBe('visible')
+  })
+
+  it('skips non-text files, hidden layers and item.json', async () => {
+    const path = makeCanaryRepo()
+    // Strip the canary from a hidden-layer file and from item.json too: only
+    // the extension whitelist inside a modelFacing layer is in scope.
+    writeFiles(path, {
+      'datasets/canary-demo/grading/rubric.md': 'still no canary\n',
+      'datasets/canary-demo/items/i1/item.json': '{"difficulty":"hard"}\n',
+    })
+    commitAll(path, 'hidden layer and item.json stay outside the check')
+    expect(await canaryMisses(path, 'canary-demo')).toEqual([]) // logo.png and archive.tar.gz never entered
+  })
+})
+
 describe('CLI validate', () => {
   const run = async (argv: readonly string[], env: Record<string, string | undefined>) => {
     let out = ''
