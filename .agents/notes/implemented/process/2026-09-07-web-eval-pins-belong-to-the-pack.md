@@ -24,13 +24,15 @@ The file itself carries the reasoning, decision by decision, so an operator read
 | `datasets` | `tools: authoring` | 12 — read plus `put_item`; `worktree_path` stays on the service face |
 | `eval` | `tools: all` | 12 — the package registers only its three read tools, so `all` *is* read-only |
 | `local-agent-codex` | `live: false`, `sandbox: workspace-write` | 2, 3 |
-| `local-agent-claude-code` | `live: false`, `permissionMode: skip` | 2, 3 |
+| `local-agent-claude-code` | `live: false`, `permissionMode: skip`, `baseUrl` | 2, 3, 5 |
 | `local-agent-kimi` | `live: false`, `thinkingEffort: high` | 2, 4 |
 | `local-agent-dsh` | `live: false` | 2 |
 
-Two rows deserve their reasons stated rather than inferred.
+Three rows deserve their reasons stated rather than inferred.
 
 **`kimi thinkingEffort: high` duplicates the package's own default.** Writing it anyway is the point of decision 4: an effort that holds because a package happens to default to it is not pinned, it is unobserved. A default can move in a patch release without anyone noticing; a row in a git-tracked file cannot.
+
+**`claude baseUrl` is pinned at all.** Decision 5 says the proxy endpoint enters the condition when claude runs through one. Without the pin the provider falls back to the host process environment's `ANTHROPIC_BASE_URL`, which makes the endpoint "whatever the shell that launched the instance happened to export" — restarting from another terminal silently swaps the upstream while `run.meta` still records the old one. The pin makes the endpoint apparatus; the condition document copies the same value into `model.endpoint`.
 
 **`codex sandbox: workspace-write`, not `danger-full-access`.** Decision 3 hands the sandbox to the container boundary and calls for `danger-full-access` inside it. I2 runs on the host, where there is no boundary — full access there would put an evaluation's side effects into a real home. The pack therefore ships the narrower tier for the host-direct stage, and each run's `methodology.md` declares the asymmetry as a known deviation. I3's containers restore `danger-full-access`, and only then do the four harnesses actually sit on one tier.
 

@@ -18,6 +18,7 @@
 #                          / dsh 无限制，四家一致
 #   4 推理强度显式 pin    → kimi thinkingEffort（其余三家的 CLI 没有对应旋钮，
 #                          条件文件的 reasoning.effort 记 default）
+#   5 端点进条件         → claude 的第三方代理地址
 #   12 销毁路径唯一       → 工具按域开放（README 的同名小节）
 #
 # 阶段一二在宿主上直跑，没有容器边界，所以 codex 的 sandbox 取
@@ -40,7 +41,7 @@
   config:
     tools: all            # 本包只注册三个读工具，all 即三个读工具
 
-# ── 四家选手的评测 pin（冻结决策 2 / 3 / 4）──────────────────────────
+# ── 四家选手的评测 pin（冻结决策 2 / 3 / 4 / 5）──────────────────────
 
 - id: local-agent-codex
   config:
@@ -51,6 +52,11 @@
   config:
     live: false
     permissionMode: skip
+    # 决策 5：claude 走第三方代理，代理地址是受试对象的一部分，必须进条件。
+    # 不 pin 的话 provider 退回宿主进程环境的同名变量——端点就成了「启动实例
+    # 的那个 shell 碰巧导出了什么」，换个终端重启即静默换上游，而 run.meta
+    # 记的还是旧值。写死在这里，条件文件的 model.endpoint 照抄它。
+    baseUrl: https://openproxy.to/claude
 
 - id: local-agent-kimi
   config:

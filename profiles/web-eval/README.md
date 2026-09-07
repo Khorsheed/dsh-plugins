@@ -291,7 +291,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-web-dev](../web-dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
 
-当前 pin（I2·T15 写入）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
+当前 pin（I2·T15 写入）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——代理地址属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
 
 ## 更新、切换、装卸单个成员、卸载
 
