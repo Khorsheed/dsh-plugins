@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-**The web-eval orchestrator: the dataseek contract schemas, plan/condition validation, deterministic condition & scoped-home hashing, run-template generation from a dataset-suite manifest, and the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export).** Starting a run is a human action (`/eval run` — the invoking session is the parent of every delegation); judging and reporting belong to later tasks (T9 / T10). No sibling-plugin dependencies: the four upstream services (datasets / mission / localAgent) are probed per run via `ctx.get`, and a missing one is a refusal naming it — never a boot failure.
+**The web-eval orchestrator: the dataseek contract schemas, plan/condition validation, deterministic condition & scoped-home hashing, run-template generation from a dataset-suite manifest, and the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export).** Starting a run is a human action (`/eval run` — the invoking session is the parent of every delegation); the agent's model surface is three read tools and nothing else (see "Model tools"); judging belongs to a later task (T9). No sibling-plugin dependencies: the four upstream services (datasets / mission / localAgent) are probed per run via `ctx.get`, and a missing one is a refusal naming it — never a boot failure.
 
 `report` turns a mission export bundle into results.jsonl + summary.md (see "The report"); it only reads the bundle and consumes no host capability.
 
@@ -63,6 +63,8 @@ The cordis service name is `dshEval`, deliberately NOT `eval`: the loader evalua
 | `hashHome(homeDir)` | Scoped-home content hash: config-suffixed files only, credential-shaped paths skipped via the deny list; content feeds the digest and is never returned or printed |
 | `generateTemplate(manifestPath, opts?)` | Generates a run template from a suite manifest (options: `stages` subset, `missions` cell batch, `name`, schema-path prefix). Pure: no schema files probed — probing belongs to mission's runCreate lint |
 | `run(planPath, options?)` | The run-loop body (above). Refuses naming any missing one of datasets / mission / localAgent; the `dryRun` option validates, generates the template, expands, and orders — needing no upstream at all |
+| `conditions({repo?, dataset?, session?})` | Lists the conditions a dataset repository declares: harness, declared model, condition hash, readiness (lock present, still matching, home verified), and the fields still unresolved. Without `repo` it resolves the calling session's datasets binding and honours that binding's dataset whitelist — which datasets an agent may see is the human's decision |
+| `runStatus(runId)` | Projects one run: the run.meta digest (planSha, pinned commit, conditions, seeded order, start time) plus a row per cell (task, condition, rep, attempt, state, bucket, the orchestrator's latest annotation, submission-rejected count). Refuses in words when no mission service is mounted |
 | `report(bundleDir, {out?})` | Turns a self-contained mission export bundle into `results.jsonl` + `summary.md` (next section). Reads only the bundle; writes `<bundleDir>/report/` by default, overwriting on re-run (a report is derived state; the bundle itself stays append-only) |
 
 ## The report (`report`)
@@ -73,6 +75,22 @@ Input: a mission export bundle (manifest.json, run.json, missions/<id>/attempt-N
 - **summary.md** — opens by checking the four invariants (same materialization / same environment fingerprint / same subject / same procedure). **If any one fails or cannot be established, the report prints fact tables only — no comparison.** When comparison is allowed: factors are derived by pairwise-diffing the condition documents recorded in run.meta.conditions (exactly one differing field names the factor; several degrade to 多因子, descriptive only); pairing blocks on tasks and resamples reps for a deterministic seeded bootstrap 95% CI (hand-written statistics, no dependency), reporting per-task deltas (passed criteria and weighted score), n, and refusing to rank when n < 3 or the factor is unknown/multi. Judge consistency reports per-criterion agreement and Cohen's κ across double samples, and llm-draft vs human-final agreement when the final pass exists. Efficiency metrics stay parallel, never summed: active time (summed delegation durationMs), listed price (only when run.meta.pricing records one), delegation rounds (compared only on tasks both sides completed), tokens only within the same model. An expectedNs namespace whose verdicts were all written by `tool:` origins raises a red flag at the top of the summary.
 
 The authoritative verdict source per cell is picked in order (human-final > llm-draft > script, majority across samples per criterion); reps are independent samples and attempts are infrastructure retries — every attempt's verdicts land in results.jsonl, aggregation uses each cell's latest attempt.
+
+## Model tools (read-only, three of them)
+
+The agent appears twice in an evaluation: drafting during planning, reading during analysis. Neither needs to write. So this package registers **exactly three model tools, all reads**, and deliberately no fourth — an agent that could start a run could start one the human never approved.
+
+| Tool | What it answers |
+|---|---|
+| `eval_conditions` | Which conditions the dataset repository declares, each with its hash, readiness, and which fields are still null. Parameters: `repo` (default: the session's datasets binding) and `dataset` (default: every set in the repository) |
+| `eval_plan_validate` | The validation of a plan at a given path: `ok` / `errors` (it cannot run) / `warnings` (not resolved yet) plus the resolved condition shas. Validating starts nothing |
+| `eval_run_status` | One run's run.meta digest and per-cell state; sourced from `mission.runStatus` and the orchestrator ns |
+
+Not one write verb is exposed: a run is started by a person with `/eval run` in their session, and materialize / submit / transition / annotate / archive / export / finalize belong to the orchestrator's service face and the human's CLI (the profile's [tool-opening-by-domain rule](../../profiles/web-eval/README.md#工具按域开放)).
+
+Configuration is `tools: 'all' | 'none'` (default `all`). There is no finer grouping because there is nothing to group: this package registers no write tool at all. Under `none` the plugin keeps only its slash, CLI, and service faces.
+
+Tools join through **deferred injection** (`ctx.inject(['tools'], …)`), not an apply-time `ctx.get('tools')` probe: the probe races the tool registry's own mount order and loses, so the tools silently never register and nothing says so (room and worktrees each shipped this same fix). Deferred injection fires when the registry appears and never fires in a composition without one — such a composition keeps the slash, CLI, and service faces and never fails boot. The `tool:eval` prompt section rides through the same deferred door on `systemPrompt`.
 
 ## slash and CLI
 
@@ -106,11 +124,12 @@ Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure 
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 
+- The three read tools and the `tool:eval` prompt section arrive by deferred injection: in a composition with no tool registry / no systemPrompt they simply do not register — the slash, CLI, and service faces keep working and boot is unaffected.
 - Against a local-agent predating T11: the delegation `cwd` is ignored and the child inherits the parent session's cwd — the cell is then refused honestly at collection (submission-rejected), never mis-attributed; with neither `delegationOf` nor a settled read-back, `usage` and `model.observed` are recorded as null and the report's 受试对象一致 invariant degrades to unverifiable rather than assumed.
 
 ## Status
 
-I2: T2 offline verbs, T8/T8b orchestrator v0 (template generation, matrix expansion, the stage-one/two run loop, cell anchors, T11 read-back backfill, slash, CLI dry-run), and T10 `report` (results.jsonl / summary.md / the four invariants / paired deltas with bootstrap CIs / judge consistency / parallel efficiency) have landed. Judge (T9), read-only tools (T14), provision (I4), UI (I5) follow the web-eval iteration plan.
+I2: T2 offline verbs, T8/T8b orchestrator v0 (template generation, matrix expansion, the stage-one/two run loop, cell anchors, T11 read-back backfill, slash, CLI dry-run), T10 `report` (results.jsonl / summary.md / the four invariants / paired deltas with bootstrap CIs / judge consistency / parallel efficiency), and T14's three read-only model tools have landed. Judge (T9), provision (I4), UI (I5) follow the web-eval iteration plan.
 
 ## License
 

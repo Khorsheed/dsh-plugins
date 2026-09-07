@@ -164,3 +164,41 @@ export interface LocalAgentFace {
   /** T11 read-back: the delegation record without the resume handle; absent when unknown. */
   delegationOf?(childSessionId: string): DelegationInfo | undefined
 }
+
+/**
+ * The datasets verb the READ tools use: which repository this session is
+ * bound to, and which dataset sets its human allowed. Binding WRITES are a
+ * human act (`/datasets bind`); the tools only resolve one.
+ */
+export interface DatasetsBindingFace {
+  binding(session: { id: string }): { repoPath: string; datasets?: string[]; layers?: string[] } | undefined
+}
+
+/** One mission row of a run's projection (mission's `MissionView`, structurally). */
+export interface MissionStatusRow {
+  id: string
+  labels: Record<string, string>
+  state: string
+  bucket: string
+  currentAttempt: number
+}
+
+/**
+ * The mission READ verbs `eval_run_status` projects a run through. Separate
+ * from {@link MissionFace} because the run loop and the read tools need
+ * different slices: the loop needs the current attempt's state, the reader
+ * needs the annotations the loop wrote.
+ */
+export interface MissionReadFace {
+  runStatus(runId: string): {
+    run: { id: string; state: string; createdAt: number; templateName?: string; meta: Record<string, unknown> }
+    rows: MissionStatusRow[]
+    buckets: Record<string, string[]>
+    unreleased: string[]
+  }
+  get(missionId: string, runId?: string): {
+    mission: {
+      annotations: ReadonlyArray<{ ns: string; attempt: number; payload: unknown; createdAt: number }>
+    }
+  }
+}

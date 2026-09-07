@@ -9,6 +9,8 @@ interface ProvideSpy {
   eval?: EvalService
   commands?: { register: (command: { name: string; handler: unknown }) => unknown }
   invariants?: { register: (pkg: string, install: unknown) => () => void }
+  /** Deferred injection; this composition has no tools registry, so it never fires. */
+  inject?: (deps: string[], callback: (ctx: unknown) => void) => void
 }
 
 describe('the plugin surface', () => {
@@ -24,13 +26,17 @@ describe('the plugin surface', () => {
       provided: new Map(),
       provide(name, service) { this.provided.set(name, service) },
       commands: { register: (command) => { registered.push(command.name) } },
+      // No tools registry in this composition: the deferred callback never
+      // fires, and the plugin mounts anyway (degrade, don't explode).
+      inject: () => {},
     }
     entry.apply(ctx as never)
     const service = ctx.provided.get('dshEval')
     expect(service).toBeInstanceOf(EvalService)
     expect(registered).toEqual(['eval'])
-    // The slash face is the ONLY reason a host service is injected; the
-    // upstream evaluation services are probed per run call, never injected.
+    // The slash face is the ONLY reason a host service is STATICALLY injected;
+    // the tool registry joins through deferred injection and the upstream
+    // evaluation services are probed per call — never injected.
     expect(entry.inject).toEqual(['commands'])
   })
 
