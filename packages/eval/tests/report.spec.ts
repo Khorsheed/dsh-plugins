@@ -169,11 +169,13 @@ const matArtifact = (matSha: string): { artifacts: Array<{ path: string; kind: s
 
 /**
  * The materialization record EXACTLY as the run loop writes it: the overall
- * digest is `sha256`, and `source.worktree` is the per-cell directory — so a
- * reader that hashed the bytes instead of reading the field would see a
- * different digest per cell.
+ * digest is `sha256`, and `source` carries per-cell facts — the worktree path
+ * plus `reused`, which is false for the cell that creates the dataset worktree
+ * and true for every cell after it. A reader that hashed the record's bytes
+ * instead of reading the digest field therefore sees a different value per
+ * cell, which is exactly what the first real two-cell bundle did.
  */
-const runLoopMatArtifact = (matSha: string, cellDir: string): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
+const runLoopMatArtifact = (matSha: string, cellDir: string, reused = false): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
   artifacts: [{ path: 'materialization.json', kind: 'materialization' }],
   files: {
     'materialization.json': `${JSON.stringify({
@@ -181,7 +183,7 @@ const runLoopMatArtifact = (matSha: string, cellDir: string): { artifacts: Array
       task: 'P0-placeholder',
       commit: sha('c0'),
       layers: ['visible'],
-      source: { worktree: cellDir, reused: false },
+      source: { worktree: cellDir, reused },
       files: [{ path: 'task.md', sha256: sha('ee') }],
       sha256: matSha,
     }, null, 2)}\n`,
@@ -704,7 +706,7 @@ describe('report — T8b cell anchors', () => {
 })
 
 describe('report — materialization record as the run loop writes it', () => {
-  it('reads the overall sha256 field, not the record bytes (which carry the per-cell worktree)', async () => {
+  it('reads the overall sha256 field, not the record bytes (which carry per-cell source facts)', async () => {
     const bundle = writeBundle(tmpTree(), {
       runId: 'runloop-mat',
       meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
@@ -713,8 +715,9 @@ describe('report — materialization record as the run loop writes it', () => {
         anchor: { task: 'P0-placeholder', condition: 'dsh-exec', rep: rep === 'rep1' ? 1 : 2 },
         attempts: [{
           attempt: 1, state: 'archived', refs: {},
-          // Same content, same digest — but a DIFFERENT worktree per cell.
-          ...runLoopMatArtifact(sha('m9'), `/state/eval/cells/run-x/P0-placeholder-dsh-exec-${rep}/attempt-1`),
+          // Same content, same digest — but per-cell `source` facts, as the
+          // real bundle has: the second cell reused the dataset worktree.
+          ...runLoopMatArtifact(sha('m9'), '/state/eval/cells/run-x/shared-worktree', rep === 'rep2'),
           annotations: [orchestratorNote('stage1', 1, 1000, 100)],
         }],
       })),
