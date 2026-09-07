@@ -18,13 +18,53 @@ I1 walked one evaluation cell through the host by hand (the dataseek-eval repo's
 - **Prompts and advancing are byte-exact and mechanical.** Prompt = `prompts/<stage>.md` bytes + `\n` + `task.md` bytes, sha256 into the orchestrator ns; stage outputs are collected from the cell directory and submitted against the INTENDED edge (`submit --to`), the halt check (`halt_on.field === halt_on.equals`) selects `halted`; usage/observed-model stay null until T11.
 - **Failure taxonomy.** Infrastructure failures (spawn error, facade throw, result rejection, timeout via `cancel` against the per-cell cumulative active budget) open a new attempt with `retry(reason, 'infrastructure')`, budget 1 by default; schema violations and missing stage outputs are `submission-rejected` — no retry, the cell stops in its current state. The default run stops at `archived` (verdicts/ is empty until T9 and G2 refuses empty directories); `released` requires an explicit `--finalize` that the archive gate still polices.
 
-Two task-brief fields are not expressible in the frozen `dataseek.plan/1` (`additionalProperties: false`): `plan.retry.infrastructure` and `plan.exports`. They ride the run options (`retryInfrastructure` default 1, `exportsDir` default `<dataset repo>/exports`) until a protocol revision adds them; run.meta records everything the brief asked for (planSha over the canonical plan document, planPath, evalVersion = package version + repo HEAD short sha, snapshot, condition shas, order seed + sequence, concurrency, startedAt).
+Two task-brief fields had no place in the frozen `dataseek.plan/1` (`additionalProperties: false`): `plan.retry.infrastructure` and `plan.exports`. T8 carried them on the run options alone; the protocol revision below (Wrap-up) adds both as optional plan fields, and the options stay the override. run.meta records everything the brief asked for (planSha over the canonical plan document, planPath, evalVersion = package version + repo HEAD short sha, snapshot, condition shas, order seed + sequence, concurrency, startedAt).
 
 `js-yaml` becomes the package's first runtime dependency (manifests are YAML; the deny-list hash rules keep credentials out of every other path, and manifest parsing reads the same files the author reviews in git).
 
 ## Finding: the service name could not be `eval`
 
 The first real-instance boot failed loud: `cannot get property "eval" without inject`, raised while interpolating local-agent's `!!js dshHomePath(…)` config expression. The loader evaluates `!!js` with `with (ctx) { return eval(expr) }` — a provided ctx property named `eval` shadows the global `eval` in that scope, so ANY `!!js` expression in ANY composition mounting the plugin dies (mount order cannot save it: the callee name is resolved before the expression runs). The cordis service was renamed `dshEval`; the package name, the loader entry id `eval`, and the `/eval` slash command are unaffected. This is a naming law for future services: never provide a name a `with`-scope could shadow — a JavaScript global above all.
+
+## Wrap-up (T8b): the read-back, cell anchors, the protocol fields, and the first two-cell run
+
+T8 shipped with four loose ends; T8b closes them and the first REAL two-cell bundle proves the report's invariants on data no fake produced.
+
+- **The T11 read-back is wired.** The delegation options carry `onProgress`; each round's `settled` event supplies `observedModel` / `usage`, and after settle `delegationOf(childSessionId)` fills whatever the event missed — the round's own event wins, the record is the fallback, null only when neither carried it. Reading the record needs a bounded WAIT, for the ordering reason the first real run exposed (see the finding below); `usage` reaches this loop only through the settled event, so against a facade that clears the tracked run first it stays null and the READMEs say so. A model read back that contradicts the condition's `model.declared` fails the run on the spot (frozen decision 5: the run is misattributed), deliberately NOT through the infrastructure-retry path — retrying a misattribution just produces more of it. The face types the progress callback against the facade's whole event union so a real registry stays assignable at the seam, and keeps `delegationOf` optional so a facade predating T11 degrades to null instead of failing to mount.
+- **Cells carry their identity.** Before any work the run writes one orchestrator-ns `{kind: 'cell', task, condition, conditionSha, rep}` per cell, and each run.meta.conditions entry now carries its full `condition` document. This exists because the report had no honest identity source: an export bundle has no `labels` (they live in the mission record, which the bundle does not copy), and the mission id is lossy — it is lowercased and only splits when the condition list happens to disambiguate it. 受试对象一致 now checks the anchor against run.meta (id present AND hash equal) plus observed-vs-declared; a bundle without anchors leaves the invariant UNVERIFIABLE rather than trusting the id split, which survives only as the coordinate fallback for pre-T8b bundles. The anchor rides attempt 1, so the report propagates a mission's anchor across its attempts — cell identity belongs to the mission, not the attempt.
+- **The protocol carries what the brief always meant.** `dataseek.plan/1` gains optional `retry.infrastructure` and `exports`; both are reviewed defaults that the run options still override, so the plan is what review reads and the options are what a one-off run bends. The schema subset has no `minimum` keyword and no path shape, so the floor and the non-empty check live in validate.ts as `RETRY_INVALID` / `EXPORTS_INVALID` — the established split (schema for shape, validate for semantics) rather than a keyword the mini-validator would silently ignore.
+- **Re-installing no longer ships a stale build.** `install.sh` over an installed profile refuses without `--fresh` and prints why: node_modules, pnpm-lock.yaml and tarballs/ keep freshly packed source tarballs out, so the instance keeps running the old build with nothing to show for it. `--fresh` removes all three first.
+
+## Finding: the read-back arrives after the result settles, into a cleared run
+
+The first real two-cell run recorded `model.observed: null` for every FIRST
+round while `delegations.jsonl` already held the model — a contract gap between
+T11 and this loop that no fake could show, because a fake reports before it
+resolves.
+
+Two facts compose it. A provider records its observation in a settle pass
+chained AFTER the run result (`void result.then(() => child.done).then(…)` in
+the dsh CLI provider, so it also waits for the process to exit and for the
+mirror queue). And the facade clears the tracked run — the entry holding the
+`onProgress` the call options carried — on `run.result.then(clear, clear)`. The
+clear therefore wins, so on a real facade the `settled` event reaches nobody,
+and the record gains its value a beat after the orchestrator has already read
+it. A resumed round hid the bug: by round two the record carried round one's
+observation, so stage2 recorded a model and stage1 did not.
+
+The loop now polls the record for a bounded moment after settle (10s default,
+`readbackWaitMs`), preferring an observation that differs from the one held
+before the round began, and returning the record's current value when the wait
+expires — a resumed round that ran the same model is indistinguishable from a
+carried-over one, and the record means "this delegation's latest observation",
+so reporting it beats discarding real evidence. `durationMs` and the cell's
+active-minute budget are computed before the wait, so waiting never inflates
+either. `usage` travels on the settled event alone and therefore stays null
+against this facade; that is recorded as honest absence, not smoothed over.
+
+## Finding: the report hashed the materialization record's bytes
+
+The first two-cell bundle exposed a T8/T10 seam defect that one cell could never show. The run loop writes the overall digest as `sha256`; the report read `sha` / `overallSha` / `hash` and otherwise fell back to hashing the record's BYTES — and the record also carries `source`, whose `reused` flag is false for the cell that creates the dataset worktree and true for every cell after it. With one cell a byte hash still agrees with itself, so T10's fixtures and the I1 bundle both passed; on the real two-cell bundle the two records differ in exactly that one boolean, so identical materialized content yields two digests and 题面一致 reports VIOLATED. Re-running the shipped report against the real bundle with the fix reverted reproduces it: `出现 2 个不同物化哈希`. The report would have called a correct run broken. The reader now prefers `sha256` (the field the loop actually writes), keeps the other spellings for hand-made bundles, and a test pins the exact record shape the loop emits, differing worktrees included.
 
 ## Alternatives considered
 
