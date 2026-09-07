@@ -1,4 +1,82 @@
-# Your patch layer for this dsh profile, applied after every bundle layer:
-# a top-level YAML array of loader patch entries (id-targeted config
-# overrides, disables, and insert lists; `!!js` expressions allowed).
-[]
+# dsh-web-eval 的评测 pin 层：装置配置，不是个人偏好。
+#
+# 与 web-dev 的 cordis.patch.yml 不同，本文件**归 pack**：install.sh 与
+# update.sh 都覆盖它。理由是这里的每一行都是冻结决策的执行点（README 的
+# 「冻结决策」一节），而冻结决策属于评测装置——它决定两格之间「只差一个
+# 因子」这句话是否成立。留给用户层的后果是：一次 update 之后，实例可能
+# 静默地换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的
+# 「受试对象一致」失去意义。web-dev 没有这个约束，那里的 patch 层是用户的。
+#
+# 要改本文件的任何一行，先开新 run：条件哈希不覆盖 provider 配置（I4 的
+# provision 才把它们收进 home.sha），所以这一层的变化在条件哈希上是隐形的，
+# 只能靠「装置配置进 git、跑完不改」这条纪律兜住。
+#
+# 逐条对照冻结决策：
+#   2 驱动全 exec        → 四家 live: false（live 是常驻进程：空闲回收、
+#                          崩溃续跑、审批自动应答都是额外因子）
+#   3 沙箱交给容器边界    → codex sandbox / claude permissionMode / kimi 自动批准
+#                          / dsh 无限制，四家一致
+#   4 推理强度显式 pin    → kimi thinkingEffort（其余三家的 CLI 没有对应旋钮，
+#                          条件文件的 reasoning.effort 记 default）
+#   5 端点进条件         → claude 的第三方代理地址
+#   12 销毁路径唯一       → 工具按域开放（README 的同名小节）
+#
+# 阶段一二在宿主上直跑，没有容器边界，所以 codex 的 sandbox 取
+# workspace-write 而不是 danger-full-access：宿主上给满权限等于把评测的
+# 副作用放进真实 home。这条不对称写进 methodology.md，I3 容器化后改回
+# danger-full-access，届时四家才真正落在同一档上。
+
+# ── 工具按域开放（README「工具按域开放」）────────────────────────────
+# 执行期没有 agent，写类动词归编排器服务面与人的 CLI。
+
+- id: mission
+  config:
+    tools: read           # run_list / run_status / list / get 四个读工具
+
+- id: datasets
+  config:
+    tools: authoring      # 读类全开 + put_item（出题）；worktree_path 留给服务面
+
+- id: eval
+  config:
+    tools: all            # 本包只注册三个读工具，all 即三个读工具
+
+# ── 四家选手的评测 pin（冻结决策 2 / 3 / 4 / 5）──────────────────────
+
+- id: local-agent-codex
+  config:
+    live: false
+    sandbox: workspace-write   # 宿主直跑阶段；I3 容器内改 danger-full-access
+
+- id: local-agent-claude-code
+  config:
+    live: false
+    permissionMode: skip
+    # 决策 5：claude 的端点是受试对象的一部分，必须进条件。
+    # 不 pin 的话 provider 退回宿主进程环境的同名变量——端点就成了「启动实例
+    # 的那个 shell 碰巧导出了什么」，换个终端重启即静默换上游，而 run.meta
+    # 记的还是旧值。写死在这里，条件文件的 model.endpoint 照抄它。
+    #
+    # 与 3080 生产 profile 同值：官方端点 + 本机代理出网。
+    #
+    # 为什么不是宿主环境里那个第三方地址：那条路认证走 API key，而
+    # delegationEnv 的放行清单只有 25 个变量（PATH/HOME/proxy 那些），
+    # ANTHROPIC_API_KEY 会被 tombstone 掉——provider 也没有传 key 的旋钮，
+    # 所以子进程只可能拿订阅 OAuth，而订阅 OAuth 打第三方端点是 401。
+    # 3080 的 patch 注释把宿主那个值直呼为 stale，并特意 pin 掉它。
+    # docs/players.md 写的 openproxy 路径同样过期，该按实际值更新。
+    #
+    # proxyUrl 不进 spawn env：provider 的 provisionClaudeHome 把它写进
+    # scoped home 的 settings.json 的 env 块（https_proxy/http_proxy），
+    # 因为守护进程拉起的实例没有用户 shell 的代理变量。
+    baseUrl: https://api.anthropic.com
+    proxyUrl: http://127.0.0.1:6152
+
+- id: local-agent-kimi
+  config:
+    live: false
+    thinkingEffort: high       # 与包默认同值，显式写死是为了让它进 git 而不是靠默认
+
+- id: local-agent-dsh
+  config:
+    live: false
