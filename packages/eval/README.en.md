@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-**The web-eval orchestrator: the dataseek contract schemas, plan/condition validation, deterministic condition & scoped-home hashing, run-template generation from a dataset-suite manifest, and the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export).** Starting a run is a human action (`/eval run` — the invoking session is the parent of every delegation); judging and reporting belong to later tasks (T9 / T10). No sibling-plugin dependencies: the four upstream services (datasets / mission / localAgent) are probed per run via `ctx.get`, and a missing one is a refusal naming it — never a boot failure.
+**The web-eval orchestrator: the dataseek contract schemas, plan/condition validation, deterministic condition & scoped-home hashing, run-template generation from a dataset-suite manifest, and the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, the archive gate, bundle export).** Starting a run is a human action (`/eval run` — the invoking session is the parent of every delegation); the two MECHANICAL verdict sources (probes writing `script`, blind LLM judging writing `llm-draft`) land with T9, while `human-final` stays a person's act. No sibling-plugin dependencies: the four upstream services (datasets / mission / localAgent) are probed per run via `ctx.get`, and a missing one is a refusal naming it — never a boot failure.
 
 `report` turns a mission export bundle into results.jsonl + summary.md (see "The report"); it only reads the bundle and consumes no host capability.
 
@@ -45,10 +45,28 @@ Stage states are named by manifest position (`stage1` → `stage-1`); cell outpu
 4. **Per cell** (concurrency default 1): an isolated directory `$DSH_HOME/state/eval/cells/<runId>/<missionId>/attempt-<N>/` receives the item's visible-layer content plus a `materialization.json` (sorted per-file sha256 + overall sha, addArtifact kind `materialization`); each stage's prompt = the dataset-level `prompts/<stage>.md` bytes + one newline + the item's `task.md` bytes, sha256 recorded into the orchestrator ns; the orchestrator calls `ctx.localAgent.start` (first round) / `resume` (later rounds) directly, passing the cell directory as the delegation `cwd` (needs the local-agent family's cwd support, T11).
 5. **Advancing**: after each delegation the stage outputs are collected from the cell directory and `submit({to, json, files})` (intended-edge pre-validation) + `transition(to)` run; a fired `halt_on` diverts to `halted`. Schema violations are never retried: `{kind: 'submission-rejected', violations}` is recorded and the cell stops in its current state.
 6. **Failure policy**: delegation start failures, facade errors, and timeout cancels → `retry(reason, 'infrastructure')` and the cell is redone, budget default 1 (adjustable via `--retries`); past the budget `{kind: 'cell-skipped'}` is recorded and the cell skipped. Timeout = the per-cell cumulative delegation time against `plan.budget.activeMinutes`; on expiry `cancel(childSessionId)` fires.
-7. **Archive**: after the last stage the cell directory is copied into the attempt's run-data `archive/workspace/`, and the run stops after `transition(archived)` — verdicts/ stays empty until the judge (T9) lands, an empty directory cannot pass the file-check, so `released` happens only on an explicit `--finalize` and requires a non-empty verdicts/.
+7. **Judge, then archive**: once the cell parks in its terminal stage state it is judged (next section), the verdicts land in `archive/verdicts/`, the cell directory is copied into `archive/workspace/`, and `transition(archived)` runs. The default run stops at archived; `--finalize` pushes `releasable → released` explicitly, and the file-check requires a non-empty verdicts/ — either source having produced something is enough; with neither, `finalize-refused` is recorded honestly and the cell stays at archived.
 8. **Export**: at the end the bundle is exported to `<dataset repo>/exports/` (override with `--out`), visible layer only (modelFacing:true — no leak-gate confirmation needed).
 
 Every delegation records one orchestrator-ns annotation `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, model: {declared, observed}}`; `usage` and `observed` stay null until the local-agent family lands the model read-back (T11).
+
+## Judging: probes (`script`) and blind LLM judging (`llm-draft`)
+
+Once the cell has finished its stages and parked in its terminal state, the orchestrator runs the two mechanical sources before archiving. The full contract is [protocol §6.7 / §6.8](../../docs/dataset-authoring-protocol.en.md); this is the implementation-side reading.
+
+**Probes (`script`)** — any `.mjs` / `.sh` under a `probes/` segment of the item's verify layer. The invocation is `<probe> --cell <cell dir> --rubric <rubric path> --out <verdicts.json>`: **exit 0 means judged** (including `pass: false`), non-zero means the probe failed and produces no verdict; exiting 0 without a readable `--out` counts as a failure too. The whole verify layer is materialized into a host-side temporary directory used as the cwd, and removed afterwards (from I3 `lab.verify` runs it inside the container; the contract is unchanged). Output goes to the `script` ns and `archive/verdicts/script.json`; an item with no probes writes nothing at all.
+
+**Blind LLM judging (`llm-draft`)** — the judge is itself a condition, named by `plan.judge.conditions`, with `plan.judge.samples` (default 2) samples per judge condition. Three constraints are enforced (frozen decision 9):
+
+- **The judge must not be a contestant**: beyond validate's id-intersection check, the run compares `(harness.name, model.declared)` before executing — two different ids naming the same subject are refused too, and the refusal says which player it collided with.
+- **De-fingerprint first**: harness names, CLI names and self-reported names in `stage1.json` / `stage1.md` / `stage2.json` / `stage2.md` become `<harness>`, and the plan's declared model identifiers become `<model>`; the replacement table and counts are recorded as `{kind: 'deidentify', files, table, total}`, the **originals are untouched**, and the judge only ever sees the copy.
+- **Two samples**: each sample is a **fresh delegation** (a resumed judge would see its own previous answer), in its own cwd — the judge material directory.
+
+The judge prompt = the `kind: llm-draft` criteria of the item's grading-layer rubric (`objective` rows go to the probes, `human` rows to the judge bench; neither is shown) + the de-identified material + the output contract. The judge writes a `dataseek.verdict/1` array into `verdicts.json` in its cwd; an unreadable answer records `{kind: 'judge-parse-failed'}` and is **retried once**, and a second failure drops that sample honestly. One `llm-draft` annotation per sample, `{sample, judgeCondition, judgeSha, promptSha, verdicts}`, plus `archive/verdicts/llm-draft-<judge condition>-<sample>.json`; `task` and `by` are backfilled by the orchestrator (the judging side only echoes them, and getting them wrong would corrupt every join the report performs).
+
+The judge's cost is recorded as `{kind: 'judge', judgeCondition, judgeSha, sample, attempt, childSessionId, promptSha, startedAt, durationMs, usage, model}` — the kind is not `delegation`, so it **stays out of the report's contestant efficiency table**. The judge material directory (`$DSH_HOME/state/eval/judge/<runId>/…`: prompt + de-identified material + the judge's answer) is retained after the run for review; the probe directory is removed as soon as its probes have run.
+
+The grading and verify layers are read through the datasets service face with an explicit single-layer scope (`layers: ['grading']` / `['verify']`) and materialized into host-side directories — **never into a player's cell**.
 
 ## Service face `ctx.dshEval`
 
@@ -104,12 +122,13 @@ Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure 
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 
-- The delegation `cwd` (per-cell directories reaching the child process) depends on the local-agent family's cwd option (T11): before it lands the option is ignored and the child inherits the parent session's cwd — the cell is then refused honestly at collection (submission-rejected), never mis-attributed.
-- `usage` and `model.observed` stay null until T11's read-back lands.
+- The delegation `cwd` (per-cell directories reaching the child process) depends on the local-agent family's cwd option (T11): before it lands the option is ignored and the child inherits the parent session's cwd — the cell is then refused honestly at collection (submission-rejected), never mis-attributed. The judge collects its `verdicts.json` through the same `cwd`; without it the sample is recorded as a parse failure rather than mis-read.
+- `usage` and `model.observed` stay null until T11's read-back lands (backfilling the player side is T8b; the judge side records both as soon as the facade carries them on its result).
+- `human-final` is not written by this package: it arrives only from the judge bench or `dsh-mission annotate --ns human-final` (T20 / I5).
 
 ## Status
 
-I2: T2 offline verbs, T8 orchestrator v0 (template generation, matrix expansion, the stage-one/two run loop, slash, CLI dry-run), and T10 `report` (results.jsonl / summary.md / the four invariants / paired deltas with bootstrap CIs / judge consistency / parallel efficiency) have landed. Judge (T9), read-only tools (T14), provision (I4), UI (I5) follow the web-eval iteration plan.
+I2: T2 offline verbs, T8 orchestrator v0 (template generation, matrix expansion, the stage-one/two run loop, slash, CLI dry-run), T10 `report` (results.jsonl / summary.md / the four invariants / paired deltas with bootstrap CIs / judge consistency / parallel efficiency), and T9 the judge (probe contract, de-fingerprinting, double-sampled blind judging, `--finalize` through the gate) have landed. Read-only tools (T14), provision (I4), UI (I5) follow the web-eval iteration plan.
 
 ## License
 

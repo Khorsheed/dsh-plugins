@@ -491,9 +491,45 @@ describe('report — S7 judge double sampling', () => {
     expect(report.judge.llmKappa ?? 1).toBeCloseTo(0, 10)
     expect(report.judge.humanAgreement).toBeNull()
   })
+
+  it('unwraps the orchestrator\u2019s sample envelope (T9\u2019s llm-draft annotation shape)', async () => {
+    // The orchestrator writes ONE annotation per sample, with the sample's
+    // provenance beside its verdicts. Reading only bare arrays would drop
+    // every LLM sample the judge produced and leave the consistency column
+    // permanently empty.
+    const sample = (n: number, r2: boolean): Record<string, unknown> => ({
+      sample: n,
+      judgeCondition: 'judge-r1',
+      judgeSha: sha('7d'),
+      promptSha: sha('9e'),
+      verdicts: [verdict('P0', 'R1', true, 'judge-r1'), verdict('P0', 'R2', r2, 'judge-r1')],
+    })
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'envelope',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: [{
+        id: 'P0-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [
+            { ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 1, payload: sample(1, true) },
+            { ns: 'llm-draft', by: 'eval-orchestrator', createdAt: 2, payload: sample(2, true) },
+            orchestratorNote('stage1', 1, 1000, 100),
+          ],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.judge.multiSampled).toBe(2)
+    expect(report.judge.llmAgreement).toEqual({ agreed: 2, total: 2 })
+    expect(report.rows.filter(row => row.ns === 'llm-draft')).toHaveLength(4)
+    const { summaryPath } = await writeEvalReport(bundle)
+    expect(readFileSync(summaryPath, 'utf8')).toContain('双采样判据 2 条，完全一致 2 条')
+  })
 })
 
-// --- S8 · writtenBy tool: red flag ---------------------------------------------------
+// --- S8 \u00b7 writtenBy tool: red flag ---------------------------------------------------
 
 describe('report — S8 tool-written expected ns raises the red flag', () => {
   it('flags the ns in the report and at the top of the summary (fallback writtenBy)', async () => {

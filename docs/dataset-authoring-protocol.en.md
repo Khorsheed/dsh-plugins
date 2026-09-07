@@ -554,3 +554,43 @@ Both probe scripts and judges emit this shape; the orchestrator writes it into t
 - **Condition hash** = sha256 (lowercase hex) of the canonical JSON (all keys sorted, no whitespace). `notes` is review commentary and **never a hash input** — editing a comment is not a new condition; any other field change mints a new hash. The same input always yields the same digest.
 - **home.sha** = the scoped home's content hash. Only config-suffixed files (`.json .jsonc .yml .yaml .toml .ini .cfg .conf .xml .properties`) qualify, fed to sha256 as `<relPath>\0<content>\0` in byte-sorted relative-path order. **Deny list**: files named `auth.json` or `.env*`; file names containing `token` / `key` / `credential` / `secret` / `password` / `auth` (case-insensitive); the `credentials/`, `oauth/`, `sessions/`, `keys/`, `secrets/` directories whole; symlinks, non-regular files, and oversize files (> 1 MiB). File content feeds the digest only — it is **never logged and never printed**.
 - **Stage schemas**: a stage's structured schema is authoritative at the dataset level as `schemas/<stage>.json` (the JSON Schema subset: `type` / `required` / `properties` / `items` / `if` / `then` / `const` / `enum` / `additionalProperties`). Both mission's schema-check guard and `dsh-eval validate` accept exactly this subset — anything outside it is an error. The dataset manifest's `output_schema` becomes a **file-name reference** instead of an inline schema; the ad-hoc `type: enum` notation and the markdown notation are retired. Migrating the dataset repos is later work.
+
+### 6.7 The probe contract — how `script` verdicts are produced
+
+`script` is the one deterministic source of the three, and only probes write it. A probe is an executable the item ships **under any `probes/` segment of that item's verify layer**, suffixed `.mjs` or `.sh` (`probes/room-identity.mjs` counts, and so does a register-rehomed `checks/probes/x.sh`).
+
+**The invocation** (the orchestrator runs each probe once the cell has finished its stages and entered `judged`):
+
+```text
+<probe> --cell <cell directory> --rubric <rubric path> --out <verdicts.json>
+```
+
+| Argument | Meaning |
+|---|---|
+| `--cell` | The player's cell working directory. The probe **reads** it — judging does not modify what is being judged |
+| `--rubric` | Host-side copy of the item's grading-layer rubric. **Omitted entirely** when the item ships no rubric |
+| `--out` | Where the probe writes its verdicts |
+
+**The exit code is the contract**: `0` means **judged** — including `pass: false`, because "did it hold?" and "could the probe tell?" are different questions; non-zero means **the probe failed** and produces no verdict at all, with the reason recorded in the orchestrator ns. Exiting `0` without leaving a readable `--out` counts as a probe failure too: it claimed a judgement and then produced nothing checkable.
+
+**The output** is an **array** of §6.5 `dataseek.verdict/1` documents (a lone object is accepted as a one-element array). `task` and `by` are overwritten by the orchestrator (`by` = the probe's display path in the verify layer) whatever the probe wrote: those two are coordinates the orchestrator knows and the judging side only echoes — getting them wrong would corrupt every join the report performs.
+
+**The execution environment**: the orchestrator materializes the item's **whole** verify layer into a host-side temporary directory and uses it as the cwd (so a probe can read the checklist and helpers beside it by relative path), runs `.mjs` under node and `.sh` under `/bin/sh` with a five-minute wall-clock cap each, and removes the directory afterwards — the verify layer is the answer key and does not stay overnight. From I3 this step is executed inside the container by `lab.verify`; **the contract is unchanged**.
+
+**Where it lands**: verdicts go to mission's `script` ns and to `attempt-N/archive/verdicts/script.json`. An item with no probes writes nothing at all — no empty file, no empty annotation.
+
+### 6.8 The judge contract — how `llm-draft` verdicts are produced
+
+`llm-draft` is written by a **judge condition**. The judge is itself a `dataseek.condition/1` (§6.2), not a session with tools; the plan's `judge` block (§6.4) names it and says how many samples to take. Three methodological constraints are enforced by the orchestrator:
+
+1. **The judge must not be a contestant.** The validator refuses an id that appears on both lists; before executing, the orchestrator compares `(harness.name, model.declared)` as well — two different ids naming the same subject is still a judge grading itself.
+2. **De-fingerprint before judging.** In the judged material (`stage1.json` / `stage1.md` / `stage2.json` / `stage2.md`), harness names, CLI names and self-reported assistant names all become `<harness>`, and every model identifier the plan's conditions declare or the delegations read back becomes `<model>`. The replacement table and its counts go to the orchestrator ns; **the originals are never rewritten** — the judge always sees a copy.
+3. **At least two samples.** Each judge condition runs `judge.samples` times independently (default 2), each a **fresh delegation** — a resumed judge would see its own previous answer and stop being an independent sample. The report turns these into an agreement rate and Cohen's κ.
+
+**The judge prompt** is assembled by the orchestrator, never carried by the judge: the `kind: llm-draft` criteria of the item's grading-layer rubric (`objective` rows belong to the probes and `human` rows to the judge bench — neither is shown), plus the de-identified material, plus the output requirement. The rubric is selected as "the grading-layer display path whose file name is `rubric.yml` / `rubric.yaml`, shortest path wins", which covers both item layouts (the conventional `rubric.yml` and a register-rehomed `answers/rubric.yml`).
+
+**The output** has the same shape as a probe's: the judge writes the §6.5 array into `verdicts.json` in its own cwd, and `task` and `by` (= the judge condition id) are backfilled by the orchestrator. An unreadable answer is recorded in the orchestrator ns and **retried exactly once**; a second failure drops that sample honestly rather than inventing one.
+
+**Where it lands**: one `llm-draft` annotation per sample, shaped `{sample, judgeCondition, judgeSha, promptSha, verdicts}` — provenance beside the verdicts, with the report unwrapping the envelope for `verdicts` — plus `attempt-N/archive/verdicts/llm-draft-<judge condition>-<sample>.json`. The judge's usage and duration go to the orchestrator ns under `kind: judge` and are **kept out of the contestants' efficiency table**. The judge material directory (prompt + de-identified material + the judge's answer) is retained after the run for review.
+
+The grading and verify layers are read through the datasets service face with an **explicit single-layer scope** (`layers: ['grading']` / `['verify']`) and materialized into host-side judge and probe directories — **never into a player's cell**.

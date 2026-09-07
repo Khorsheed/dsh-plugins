@@ -5,11 +5,16 @@
  * matrix, creates the mission run, then drives every cell: materialize the
  * item's visible layer into a per-cell directory, delegate each stage's
  * byte-exact prompt through the local-agent facade, collect the stage
- * outputs, submit + transition along the generated state machine, archive,
- * and export the bundle.
+ * outputs, submit + transition along the generated state machine, judge,
+ * archive, and export the bundle.
  *
- * What v0 deliberately does not do (later I2 tasks): no judge (T9), no
- * report (T10), no probes/script verdicts, no containers (I3).
+ * Since I2·T9 the loop also JUDGES: once a cell reaches its terminal stage
+ * state it runs the item's probes (script ns) and delegates the blind LLM
+ * judging (llm-draft ns) through the judge conditions the plan names, so the
+ * archive gate's non-empty `verdicts/` requirement can actually be met and
+ * `--finalize` reaches `released`. What the loop still does not do: containers
+ * (I3 hands probe execution to `lab.verify`) and `human-final` (a person's
+ * act, written from the judge bench).
  *
  * Frozen decisions implemented here: 2 (exec drive only), 5 (model declared
  * recorded, observed read back once the local-agent family lands the field —
@@ -32,6 +37,12 @@ import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValid
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
+import {
+  buildDeidentifyRules, deidentify, discardProbeDir, llmDraftCriteria, mergeReplacements,
+  pickRubricPath, runJudgeSamples, runProbes,
+  DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
+  type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
+} from './judge.ts'
 
 /** Thrown when a run is REFUSED before anything executes (data problems, missing services). */
 export class EvalRunRefused extends Error {
@@ -95,6 +106,8 @@ export interface RunOptions {
   log?: (message: string) => void
   /** Root for the per-cell directories. Default `$DSH_HOME/state/eval`. */
   stateRoot?: string
+  /** Per-probe wall-clock cap. Default 5 minutes (probes are deterministic, not agents). */
+  probeTimeoutMs?: number
 }
 
 /** The resolved upstream faces + host paths the run loop needs. */
@@ -127,6 +140,8 @@ export interface RunCellReport {
   rejected?: { stage: string; violations: string[] }
   /** Set when a halt_on condition diverted the cell to `halted`. */
   halted?: boolean
+  /** Verdicts archived for this cell, by source ns (absent before the judging phase runs). */
+  verdicts?: { script: number; llmDraft: number }
 }
 
 /** The run report (the slash/CLI answer and the run.json summary source). */
@@ -178,8 +193,24 @@ export function defaultStateRoot(): string | undefined {
 interface ResolvedCondition {
   id: string
   sha: string
+  harnessName: string
   declaredModel: string | null
   provider: string
+}
+
+/** The judging inputs one cell needs; shared by every cell of a run. */
+interface JudgeEnv {
+  /** Resolved judge conditions (empty = no LLM judging this run). */
+  judges: ResolvedJudge[]
+  /** Samples per judge condition (decision 9: at least two). */
+  samples: number
+  /** The run-wide de-identification table (harness names + every declared model). */
+  rules: DeidentifyRule[]
+  /** `<stateRoot>/judge/<runId>` — RETAINED after the run, for review. */
+  judgeDirBase: string
+  /** `<stateRoot>/probes/<runId>` — removed per cell once its probes have run. */
+  probeDirBase: string
+  probeTimeoutMs: number
 }
 
 /** Per-cell mutable state carried across infrastructure retries. */
@@ -189,7 +220,192 @@ interface CellState {
   spentMs: number
 }
 
-/** One attempt's execution of one cell (materialize → delegate → submit → archive). */
+
+/**
+ * The judging phase of one cell (architecture steps 16 and 19), run once the
+ * stage loop has parked the cell in its terminal stage state and BEFORE the
+ * archive copy — the verdicts are part of what gets archived, and the archive
+ * gate refuses an empty `verdicts/`.
+ *
+ * Two sources, both mechanical, both honest about absence: an item with no
+ * probes writes no `script.json`, and a run with no judge conditions (or a
+ * rubric with no `llm-draft` rows) writes no `llm-draft-*.json`. Nothing here
+ * throws: a judging failure must not undo a cell that actually ran — it is
+ * recorded in the orchestrator ns and the cell archives with fewer verdicts.
+ * @returns how many verdicts each source contributed.
+ */
+async function judgeCell(
+  faces: { datasets: DatasetsFace; mission: MissionFace; localAgent: LocalAgentFace },
+  env: {
+    runId: string
+    by: string
+    now: () => number
+    log: (message: string) => void
+    missionId: string
+    taskId: string
+    datasetId: string
+    commit: string
+    repo: string
+    cellDir: string
+    archiveDir: string
+    attempt: number
+    parentSessionId: string
+    judge: JudgeEnv
+  },
+): Promise<{ script: number; llmDraft: number }> {
+  const verdictsDir = join(env.archiveDir, 'verdicts')
+  const counts = { script: 0, llmDraft: 0 }
+
+  // The grading layer is read with an EXPLICIT single-layer scope and never
+  // reaches the cell: this listing is how both sources find the rubric.
+  let rubricPath: string | null = null
+  try {
+    const graded = await faces.datasets.show({ repo: env.repo, layers: ['grading'] }, env.datasetId, env.taskId, env.commit)
+    rubricPath = pickRubricPath(graded.items.find(item => item.id === env.taskId)?.layers['grading'] ?? [])
+  } catch (error) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'judge-skipped',
+      reason: `the grading layer could not be listed: ${error instanceof Error ? error.message : String(error)}`,
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+  }
+
+  // ── script ns: the item's probes (protocol §6.7). ─────────────────────
+  const probeDir = join(env.judge.probeDirBase, env.missionId, `attempt-${env.attempt}`)
+  try {
+    const probed = await runProbes({
+      datasets: faces.datasets,
+      repo: env.repo,
+      datasetId: env.datasetId,
+      taskId: env.taskId,
+      commit: env.commit,
+      cellDir: env.cellDir,
+      probeDir,
+      rubricPath,
+      timeoutMs: env.judge.probeTimeoutMs,
+    })
+    if (probed.outcomes.length > 0) {
+      await faces.mission.annotate(env.missionId, 'orchestrator', {
+        kind: 'probes',
+        probes: probed.outcomes.map(outcome => ({
+          probe: outcome.probe,
+          exitCode: outcome.exitCode,
+          ok: outcome.ok,
+          verdicts: outcome.verdicts.length,
+          durationMs: outcome.durationMs,
+          ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+        })),
+      }, { runId: env.runId, by: env.by }).catch(() => {})
+    }
+    if (probed.verdicts.length > 0) {
+      writeFileSync(join(verdictsDir, 'script.json'), `${JSON.stringify(probed.verdicts, null, 2)}\n`, 'utf8')
+      await faces.mission.annotate(env.missionId, 'script', probed.verdicts, { runId: env.runId, by: env.by })
+      counts.script = probed.verdicts.length
+      env.log(`cell ${env.missionId}: ${probed.verdicts.length} script verdict(s) from ${probed.outcomes.filter(o => o.ok).length}/${probed.outcomes.length} probe(s)`)
+    }
+  } catch (error) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'probes-failed',
+      error: error instanceof Error ? error.message : String(error),
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    env.log(`cell ${env.missionId}: probes failed — ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    discardProbeDir(probeDir)
+  }
+
+  // ── llm-draft ns: the blind judging (decision 9). ─────────────────────
+  if (env.judge.judges.length === 0 || env.judge.samples < 1) return counts
+  if (rubricPath === null) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'judge-skipped',
+      reason: `item ${env.taskId} ships no rubric in its grading layer — nothing to judge against`,
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    return counts
+  }
+  let criteria: RubricCriterion[]
+  try {
+    const rubric = await faces.datasets.read({ repo: env.repo, layers: ['grading'] }, {
+      dataset: env.datasetId, item: env.taskId, layer: 'grading', path: rubricPath, commit: env.commit,
+    })
+    criteria = llmDraftCriteria(rubric.content)
+  } catch (error) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'judge-skipped',
+      reason: `the rubric ${rubricPath} could not be read or parsed: ${error instanceof Error ? error.message : String(error)}`,
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    return counts
+  }
+  if (criteria.length === 0) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'judge-skipped',
+      reason: `rubric ${rubricPath} declares no kind: llm-draft criteria — the LLM judge has nothing to answer`,
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    return counts
+  }
+
+  // De-fingerprint the material. The ORIGINALS stay untouched in the cell;
+  // the judge only ever sees these copies (decision 9).
+  const materials: Array<{ path: string; text: string }> = []
+  const tables: ReplacementCount[][] = []
+  for (const rel of JUDGE_MATERIAL_FILES) {
+    const source = join(env.cellDir, rel)
+    if (!existsSync(source)) continue
+    const cleaned = deidentify(readFileSync(source, 'utf8'), env.judge.rules)
+    materials.push({ path: rel, text: cleaned.text })
+    tables.push(cleaned.replacements)
+  }
+  if (materials.length === 0) {
+    await faces.mission.annotate(env.missionId, 'orchestrator', {
+      kind: 'judge-skipped',
+      reason: 'the cell produced none of the judged material files',
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    return counts
+  }
+  const table = mergeReplacements(tables)
+  await faces.mission.annotate(env.missionId, 'orchestrator', {
+    kind: 'deidentify',
+    files: materials.map(material => material.path),
+    table,
+    total: table.reduce((sum, row) => sum + row.count, 0),
+  }, { runId: env.runId, by: env.by }).catch(() => {})
+
+  const judged = await runJudgeSamples({
+    localAgent: faces.localAgent,
+    mission: faces.mission,
+    missionId: env.missionId,
+    runId: env.runId,
+    by: env.by,
+    now: env.now,
+    taskId: env.taskId,
+    parentSessionId: env.parentSessionId,
+    judges: env.judge.judges,
+    samples: env.judge.samples,
+    criteria,
+    materials,
+    judgeDirBase: join(env.judge.judgeDirBase, env.missionId, `attempt-${env.attempt}`),
+    log: env.log,
+  })
+  for (const record of judged.records) {
+    // One annotation per SAMPLE, carrying the sample's provenance around its
+    // verdicts — the report unwraps the envelope and counts the samples.
+    await faces.mission.annotate(env.missionId, 'llm-draft', {
+      sample: record.sample,
+      judgeCondition: record.judgeCondition,
+      judgeSha: record.judgeSha,
+      promptSha: record.promptSha,
+      verdicts: record.verdicts,
+    }, { runId: env.runId, by: env.by })
+    writeFileSync(
+      join(verdictsDir, `llm-draft-${record.judgeCondition}-${record.sample}.json`),
+      `${JSON.stringify(record.verdicts, null, 2)}\n`,
+      'utf8',
+    )
+    counts.llmDraft += record.verdicts.length
+  }
+  env.log(`cell ${env.missionId}: ${judged.records.length}/${env.judge.judges.length * env.judge.samples} judge sample(s) landed${judged.failures.length > 0 ? `, ${judged.failures.length} dropped` : ''}`)
+  return counts
+}
+
+/** One attempt's execution of one cell (materialize → delegate → submit → judge → archive). */
 async function runCellOnce(
   faces: { datasets: DatasetsFace; mission: MissionFace; localAgent: LocalAgentFace },
   env: {
@@ -210,6 +426,7 @@ async function runCellOnce(
     condition: ResolvedCondition
     parentSessionId: string
     finalize: boolean
+    judge: JudgeEnv
   },
   state: CellState,
 ): Promise<RunCellReport> {
@@ -420,12 +637,28 @@ async function runCellOnce(
     if (halted || nextStageId === undefined) break
   }
 
-  // Archive: copy the cell directory into the attempt's run-data
-  // archive/workspace/ before leaving archived (decision 10); verdicts/ is
-  // empty until the judge lands (T9), so the default run STOPS at archived.
+  // Judge, then archive. The order is forced by the gate: `verdicts/` must be
+  // non-empty to leave `archived`, so the two mechanical sources run here,
+  // before the workspace copy (architecture steps 16 and 19).
   const current = mission.get(missionId, env.runId)
   const archiveDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${current.mission.currentAttempt}`, 'archive')
   mkdirSync(join(archiveDir, 'verdicts'), { recursive: true })
+  const verdictCounts = await judgeCell(faces, {
+    runId: env.runId,
+    by: env.by,
+    now: env.now,
+    log: env.log,
+    missionId,
+    taskId: env.cell.labels.task,
+    datasetId: env.datasetId,
+    commit: env.commit,
+    repo: env.repo,
+    cellDir,
+    archiveDir,
+    attempt: current.mission.currentAttempt,
+    parentSessionId: env.parentSessionId,
+    judge: env.judge,
+  })
   cpSync(cellDir, join(archiveDir, 'workspace'), { recursive: true })
   await mission.addArtifact(missionId, { path: 'archive', kind: 'archive' }, { runId: env.runId, by: env.by })
   await mission.transition(missionId, 'archived', { runId: env.runId, by: env.by })
@@ -435,8 +668,9 @@ async function runCellOnce(
       await mission.transition(missionId, 'releasable', { runId: env.runId, by: env.by })
       await mission.transition(missionId, 'released', { runId: env.runId, by: env.by })
     } catch (error) {
-      // The archive gate refused (verdicts/ empty — no judge yet): the cell
-      // stays at archived and the refusal is recorded, not bypassed.
+      // The archive gate refused (an empty verdicts/ — no probes and no judge
+      // produced anything): the cell stays at archived and the refusal is
+      // recorded, not bypassed.
       await mission.annotate(missionId, 'orchestrator', {
         kind: 'finalize-refused',
         error: error instanceof Error ? error.message : String(error),
@@ -456,6 +690,7 @@ async function runCellOnce(
     childSessionIds: state.childSessionIds,
     promptShas: state.promptShas,
     activeMs: state.spentMs,
+    verdicts: { script: verdictCounts.script, llmDraft: verdictCounts.llmDraft },
     ...(diverted ? { halted: true } : {}),
   }
 }
@@ -481,6 +716,7 @@ async function runCellWithRetry(
     condition: ResolvedCondition
     parentSessionId: string
     finalize: boolean
+    judge: JudgeEnv
   },
 ): Promise<RunCellReport> {
   const { mission } = faces
@@ -575,6 +811,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     stages: string[]
     budget: { activeMinutes: number; turns: number }
     order: { seed: number; interleave: boolean }
+    judge?: { conditions?: string[]; samples?: number }
     expectedNs?: string[]
   }
   const planSha = sha256(Buffer.from(canonicalJson(plan), 'utf8'))
@@ -620,9 +857,48 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     conditions.push({
       id: resolution.id,
       sha,
+      harnessName: (document['harness'] as { name?: string } | undefined)?.name ?? '',
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
     })
+  }
+
+  // ── The judge is a condition too, and must not be a contestant. ───────
+  // validate() already refuses an id that appears on both lists; this is the
+  // stronger check the brief asks for — two DIFFERENT ids that name the same
+  // (harness, declared model) are the same subject wearing two hats, and a
+  // judge grading itself is the failure decision 9 exists to prevent.
+  const judgeIds = plan.judge?.conditions ?? []
+  const judgeDocuments = new Map<string, Record<string, unknown>>()
+  const judges: ResolvedJudge[] = []
+  for (const judgeId of judgeIds) {
+    const judgePath = join(datasetRoot, 'conditions', `${judgeId}.json`)
+    if (!existsSync(judgePath)) {
+      throw new EvalRunRefused(`judge condition ${judgeId} does not exist — nothing was executed`, [
+        { code: 'JUDGE_MISSING', message: `conditions/${judgeId}.json is not in the dataset` },
+      ])
+    }
+    const document = JSON.parse(await readFile(judgePath, 'utf8')) as Record<string, unknown>
+    const { errors } = conditionDiagnostics(document)
+    if (errors.length > 0) {
+      throw new EvalRunRefused(`judge condition ${judgeId} violates the contract — nothing was executed`, errors)
+    }
+    const harness = document['harness'] as { name?: string; drive?: string } | undefined
+    const harnessName = harness?.name ?? ''
+    const declaredModel = (document['model'] as { declared: string | null } | undefined)?.declared ?? null
+    const clash = conditions.find(player => player.harnessName === harnessName && player.declaredModel === declaredModel)
+    if (clash !== undefined) {
+      throw new EvalRunRefused(
+        `judge condition ${judgeId} is a contestant — nothing was executed`,
+        [{
+          code: 'JUDGE_IS_PLAYER',
+          message: `${judgeId} declares (harness ${JSON.stringify(harnessName)}, model ${JSON.stringify(declaredModel)}), which is exactly player condition ${clash.id}`
+            + ' — frozen decision 9: the judge must not be one of the players. Give the judge a different harness or a different declared model.',
+        }],
+      )
+    }
+    judgeDocuments.set(judgeId, document)
+    judges.push({ id: judgeId, sha: hashConditionDocument(document), harnessName, declaredModel, provider: '' })
   }
 
   if (options.dryRun === true) {
@@ -635,6 +911,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         conditions: conditions.map(condition => ({ id: condition.id, sha: condition.sha })),
         order: { seed: plan.order.seed, sequence: ordered.map(cell => cell.missionId) },
         concurrency: options.concurrency ?? 1,
+        judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: plan.judge?.samples ?? DEFAULT_JUDGE_SAMPLES },
         ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
       },
       template,
@@ -674,9 +951,31 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     }
     condition.provider = provider
   }
+  for (const judge of judges) {
+    const document = judgeDocuments.get(judge.id) as { harness: { name: string; drive: string } }
+    if (document.harness.drive !== 'exec') {
+      throw new EvalRunRefused(`judge condition ${judge.id}: harness.drive must be exec (frozen decision 2), got ${JSON.stringify(document.harness.drive)}`)
+    }
+    const provider = faces.localAgent.get(document.harness.name)?.delegationProvider
+    if (provider === undefined || provider === '') {
+      throw new EvalRunRefused(`judge condition ${judge.id}: no local-agent harness ${JSON.stringify(document.harness.name)} with a delegation provider is registered`)
+    }
+    judge.provider = provider
+  }
 
   // ── Snapshot (the pin lives in run.meta). ─────────────────────────────
   const snapshot = await faces.datasets.snapshot({ repo: expandHome(plan.dataset.repo) }, plan.dataset.id, plan.dataset.commit ?? undefined)
+
+  // Samples per judge condition: the plan's number, or decision 9's floor of
+  // two when the plan leaves it out. A plan may legitimately say 0 ("no LLM
+  // judging this run") — that is a value, not an omission.
+  const judgeSamples = plan.judge?.samples ?? DEFAULT_JUDGE_SAMPLES
+  // The de-identification table is run-wide: every player's declared model is
+  // a fingerprint in EVERY cell's material, not just its own.
+  const deidentifyRules = buildDeidentifyRules({
+    models: conditions.map(condition => condition.declaredModel),
+    harnesses: conditions.map(condition => condition.harnessName),
+  })
 
   const startedAt = now()
   const meta: Record<string, unknown> = {
@@ -690,6 +989,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     order: { seed: plan.order.seed, sequence: ordered.map(cell => cell.missionId) },
     concurrency: options.concurrency ?? 1,
     budget: { activeMinutes: plan.budget.activeMinutes, turns: plan.budget.turns },
+    judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: judgeSamples },
     ...(plan.expectedNs !== undefined ? { expectedNs: plan.expectedNs } : {}),
     startedAt,
     ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
@@ -740,6 +1040,16 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         condition: conditions.find(condition => condition.id === cell.labels.condition) as ResolvedCondition,
         parentSessionId: options.parentSessionId as string,
         finalize: options.finalize === true,
+        judge: {
+          judges,
+          samples: judgeSamples,
+          rules: deidentifyRules,
+          // Retained after the run: a disputed verdict is re-read from the
+          // prompt and material the judge actually saw (task constraint).
+          judgeDirBase: join(stateRoot, 'judge', runId),
+          probeDirBase: join(stateRoot, 'probes', runId),
+          probeTimeoutMs: options.probeTimeoutMs ?? 300_000,
+        },
       }))
     }
   }

@@ -14,21 +14,35 @@
  * @module @khorsheed/dsh-eval
  */
 
-/** The datasets verbs the run loop uses (all explicit-visible-layer reads). */
+/**
+ * The scope every datasets call carries. The run loop reads the player-facing
+ * `visible` layer with the bare scope (the service's modelFacing floor is
+ * exactly right there); the JUDGE path names its one sensitive layer
+ * EXPLICITLY (`layers: ['grading']` / `['verify']`) — the narrowest thing that
+ * reaches an answer key, and narrower than the operator bypass the
+ * architecture table allows.
+ */
+export interface DatasetsScope {
+  repo: string
+  /** Explicit layer whitelist; absent means the service's modelFacing floor. */
+  layers?: readonly string[]
+}
+
+/** The datasets verbs the run loop uses (all explicit-layer reads). */
 export interface DatasetsFace {
-  snapshot(scope: { repo: string }, datasetId: string, commit?: string): Promise<{
+  snapshot(scope: DatasetsScope, datasetId: string, commit?: string): Promise<{
     repoPath: string
     commit: string
     datasetId: string
   }>
-  worktreePath(scope: { repo: string }, datasetId: string, options?: {
+  worktreePath(scope: DatasetsScope, datasetId: string, options?: {
     commit?: string
     layers?: readonly string[]
   }): Promise<{ path: string; commit: string; layers: string[]; reused: boolean }>
-  show(scope: { repo: string }, datasetId: string, itemId?: string, commit?: string): Promise<{
+  show(scope: DatasetsScope, datasetId: string, itemId?: string, commit?: string): Promise<{
     items: Array<{ id: string; layers: Record<string, string[]> }>
   }>
-  read(scope: { repo: string }, query: {
+  read(scope: DatasetsScope, query: {
     dataset: string
     item?: string
     layer: string
@@ -86,11 +100,20 @@ export interface MissionFace {
   }): { bundleDir: string; files: number }
 }
 
-/** The terminal result of one delegation run (structural SubagentResult). */
+/**
+ * The terminal result of one delegation run (structural SubagentResult).
+ * `usage` and `observedModel` are OPTIONAL supersets of today's result: a
+ * facade that does not carry them leaves the judge's cost record null rather
+ * than inventing one (the player path's read-back is T8b's).
+ */
 export interface DelegationResult {
   stopReason: string
   diagnostic?: string
   output?: unknown
+  /** Normalized token usage, when the facade reports it. */
+  usage?: unknown
+  /** The model that actually served, when the facade reads it back. */
+  observedModel?: string | null
 }
 
 /** One started delegation run (structural SubagentRun). */
