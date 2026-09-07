@@ -6,11 +6,16 @@ DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$DSH_HOME/profiles/web-eval"
 
-# Overwritten on update: the member list and its lockfile are ours to maintain.
-# cordis.patch.yml is deliberately NOT here — that layer is yours, and an
-# update must never touch it. Add new template files HERE as well as in
-# install.sh's PROFILE_FILES.
-UPDATE_FILES="package.json pnpm-workspace.yaml pnpm-lock.yaml"
+# Overwritten on update: the member list, its lockfile, AND cordis.patch.yml.
+# The patch layer belongs to the pack here, unlike dsh-web-dev where it is the
+# user's: every row in it is an execution point of a frozen decision (drive,
+# sandbox tier, reasoning effort, tool-by-domain), and a frozen decision is
+# apparatus, not preference. Leaving it to the user means an update can
+# silently change the sandbox tier or the reasoning effort while run.meta
+# still records the old one — "the subject under test is the same" then means
+# nothing. Keep your own overrides in a preset layer, not here.
+# Add new template files HERE as well as in install.sh's PROFILE_FILES.
+UPDATE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 
 if [ ! -d "$DEST" ]; then
   echo "dsh-web-eval: $DEST not found — run install.sh first" >&2

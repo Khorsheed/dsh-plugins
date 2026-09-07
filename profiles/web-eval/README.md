@@ -289,11 +289,13 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 源码模式的 tarball 落在 profile 目录内：`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载时一并清掉。检出更新后要换新 tarball，重跑时**必须加 `--fresh`**：profile 已装的 `node_modules`、`pnpm-lock.yaml` 与 `tarballs/` 会让新打的 tarball 进不来，实例照旧跑旧构建且没有任何提示；`--fresh` 先清掉这三样再装。不加 `--fresh` 重跑时脚本直接拒绝并把这段原因打出来。
 
-评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，I1 决定它们进 pack 自带的 patch 层还是 `cordis.patch.yml` 用户层。
+评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-web-dev](../web-dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
+
+当前 pin（I2·T15 写入）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
 
 ## 更新、切换、装卸单个成员、卸载
 
-与 [dsh-web-dev](../web-dev/README.md#更新) 同款：`update.sh` 只覆盖成员清单与 lockfile，不动 `cordis.patch.yml`；切换是同端口交接；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+切换是同端口交接；`update.sh` 覆盖成员清单、lockfile **与 `cordis.patch.yml`**——评测 pin 归 pack（见[安装](#安装)），这是与 [dsh-web-dev](../web-dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
 
 ## 相关文档
 
