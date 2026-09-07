@@ -1262,8 +1262,9 @@ describe('runPlan — the LLM judge (frozen decision 9)', () => {
 describe('runPlan — the judge must not be a contestant (frozen decision 9)', () => {
   it('refuses before executing when a judge condition matches a player on (harness, model)', async () => {
     const root = makeDatasetTree()
-    // A different id, the same subject: dsh + the same (null) declared model.
-    writeCondition(root, 'judge-twin')
+    // A different id, the same subject: dsh + the same declared model the
+    // fixture player carries (T8b filled it in from the real dataset).
+    writeCondition(root, 'judge-twin', { model: { declared: DECLARED_MODEL, endpoint: null } })
     const planPath = writeJudgingPlan(root, ['judge-twin'], 2)
     const localAgent = new FakeLocalAgent()
     const mission = new FakeMission(join(root, 'mission'))
