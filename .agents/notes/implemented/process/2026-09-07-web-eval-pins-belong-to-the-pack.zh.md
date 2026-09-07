@@ -24,7 +24,7 @@ dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin �
 | `datasets` | `tools: authoring` | 12 —— 读类加 `put_item`；`worktree_path` 留在服务面 |
 | `eval` | `tools: all` | 12 —— 本包只注册三个读工具，`all` 本身就是只读 |
 | `local-agent-codex` | `live: false`、`sandbox: workspace-write` | 2、3 |
-| `local-agent-claude-code` | `live: false`、`permissionMode: skip`、`baseUrl` | 2、3、5 |
+| `local-agent-claude-code` | `live: false`、`permissionMode: skip`、`baseUrl`、`proxyUrl` | 2、3、5 |
 | `local-agent-kimi` | `live: false`、`thinkingEffort: high` | 2、4 |
 | `local-agent-dsh` | `live: false` | 2 |
 
@@ -32,7 +32,9 @@ dsh-web-eval 继承了同一个文件、同一条规则，而它的评测 pin �
 
 **`kimi thinkingEffort: high` 与包自带的默认值同值。** 照写不误正是决策 4 的用意：一个「因为包碰巧默认如此」才成立的推理强度不叫 pin，叫没人看过。默认值可以在一个补丁版本里挪走而无人察觉，git 里的一行不会。
 
-**`claude baseUrl` 为什么要 pin。** 决策 5 说 claude 走代理时代理地址进条件。不 pin 的话 provider 退回宿主进程环境的 `ANTHROPIC_BASE_URL`，端点就成了「启动实例的那个 shell 碰巧导出了什么」——换个终端重启即静默换上游，而 `run.meta` 记的还是旧值。pin 让端点成为装置的一部分；条件文档的 `model.endpoint` 照抄同一个值。
+**`claude baseUrl` 为什么要 pin，以及为什么 pin 的是官方端点。** 决策 5 说端点进条件。不 pin 的话 provider 退回宿主进程环境的 `ANTHROPIC_BASE_URL`，端点就成了「启动实例的那个 shell 碰巧导出了什么」——换个终端重启即静默换上游，而 `run.meta` 记的还是旧值。pin 让端点成为装置的一部分；条件文档的 `model.endpoint` 照抄同一个值。
+
+**取值**是官方端点加 `proxyUrl` 出网，与 3080 生产 profile 同——这不是偏好，是被逼出来的。宿主环境导出的那个第三方地址，认证走 API key；而 `delegationEnv` 只放行 25 个环境变量名，`ANTHROPIC_API_KEY` 不在其中，provider 也没有传 key 的旋钮。于是一次委派只可能拿着订阅 OAuth 去打，而第三方端点拒收这份授权（实测 401）。`proxyUrl` 不是 spawn 变量——`provisionClaudeHome` 把它写进 scoped home 的 `settings.json` 的 env 块，因为守护进程拉起的实例没有用户 shell 的任何代理变量。
 
 **`codex sandbox: workspace-write`，不是 `danger-full-access`。** 决策 3 把沙箱交给容器边界，并要求容器内取 `danger-full-access`。I2 跑在宿主上，那里没有边界——在宿主上给满权限等于把一次评测的副作用放进真实 home。所以 pack 在宿主直跑阶段发的是更窄的那一档，每次 run 的 `methodology.md` 把这条不对称作为已知偏差声明出来。I3 的容器会把 `danger-full-access` 还回来，届时四家才真正落在同一档上。
 

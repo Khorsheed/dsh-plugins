@@ -57,10 +57,20 @@
     # 的那个 shell 碰巧导出了什么」，换个终端重启即静默换上游，而 run.meta
     # 记的还是旧值。写死在这里，条件文件的 model.endpoint 照抄它。
     #
-    # 走第三方端点，认证走订阅 OAuth 而不是 API key。
-    # 注意与 docs/players.md 的出入：那里写的路径是 /bing，本机在用的是
-    # /claude——记实际值，差异写进 methodology.md。
-    baseUrl: https://openproxy.to/claude
+    # 与 3080 生产 profile 同值：官方端点 + 本机代理出网。
+    #
+    # 为什么不是宿主环境里那个第三方地址：那条路认证走 API key，而
+    # delegationEnv 的放行清单只有 25 个变量（PATH/HOME/proxy 那些），
+    # ANTHROPIC_API_KEY 会被 tombstone 掉——provider 也没有传 key 的旋钮，
+    # 所以子进程只可能拿订阅 OAuth，而订阅 OAuth 打第三方端点是 401。
+    # 3080 的 patch 注释把宿主那个值直呼为 stale，并特意 pin 掉它。
+    # docs/players.md 写的 openproxy 路径同样过期，该按实际值更新。
+    #
+    # proxyUrl 不进 spawn env：provider 的 provisionClaudeHome 把它写进
+    # scoped home 的 settings.json 的 env 块（https_proxy/http_proxy），
+    # 因为守护进程拉起的实例没有用户 shell 的代理变量。
+    baseUrl: https://api.anthropic.com
+    proxyUrl: http://127.0.0.1:6152
 
 - id: local-agent-kimi
   config:
