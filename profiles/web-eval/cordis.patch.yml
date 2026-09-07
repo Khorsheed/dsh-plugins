@@ -52,10 +52,14 @@
   config:
     live: false
     permissionMode: skip
-    # 决策 5：claude 走第三方代理，代理地址是受试对象的一部分，必须进条件。
+    # 决策 5：claude 的端点是受试对象的一部分，必须进条件。
     # 不 pin 的话 provider 退回宿主进程环境的同名变量——端点就成了「启动实例
     # 的那个 shell 碰巧导出了什么」，换个终端重启即静默换上游，而 run.meta
     # 记的还是旧值。写死在这里，条件文件的 model.endpoint 照抄它。
+    #
+    # 走第三方端点，认证走订阅 OAuth 而不是 API key。
+    # 注意与 docs/players.md 的出入：那里写的路径是 /bing，本机在用的是
+    # /claude——记实际值，差异写进 methodology.md。
     baseUrl: https://openproxy.to/claude
 
 - id: local-agent-kimi
