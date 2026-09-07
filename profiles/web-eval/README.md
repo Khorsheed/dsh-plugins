@@ -111,11 +111,13 @@ flowchart TB
   "order": { "seed": 42, "interleave": true },
   "budget": { "activeMinutes": 60, "turns": 10 },
   "judge": { "conditions": ["<judge condition id>"], "samples": 2 },
-  "expectedNs": ["script", "llm-draft", "human-final"]
+  "expectedNs": ["script", "llm-draft", "human-final"],
+  "retry": { "infrastructure": 1 },
+  "exports": "<路径>/exports"
 }
 ```
 
-plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha 由校验器从 `conditions/<id>.lock.json` 解析并随 run.meta 记录）；`judge` 可缺省，缺省时 `expectedNs` 不得含 `llm-draft`；plan 不含 template 字段。run 模板不由人或 agent 手写：它是题集 manifest 的 stages 加归档闸的确定性函数，validate 时生成、lint，随 plan 一起审阅。condition 是声明，`dsh-eval conditions provision` 把它变成实物 scoped home 并回算 `home.sha`，声明与实物不符即「未就绪」，validate 拦住。编排器版本与 plan 哈希一起写进 run.meta，同版本同 plan 即同一套程序。
+plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha 由校验器从 `conditions/<id>.lock.json` 解析并随 run.meta 记录）；`judge` 可缺省，缺省时 `expectedNs` 不得含 `llm-draft`；`retry.infrastructure`（每格基础设施重试预算，缺省 1）与 `exports`（bundle 导出目录，缺省 `<题库仓库>/exports`）也可缺省，它们是**被审阅的默认值**，run 调用选项可覆盖；plan 不含 template 字段。run 模板不由人或 agent 手写：它是题集 manifest 的 stages 加归档闸的确定性函数，validate 时生成、lint，随 plan 一起审阅。condition 是声明，`dsh-eval conditions provision` 把它变成实物 scoped home 并回算 `home.sha`，声明与实物不符即「未就绪」，validate 拦住。编排器版本与 plan 哈希一起写进 run.meta，同版本同 plan 即同一套程序。
 
 **verdict.json：判定输出契约。** 探针脚本与判官都按它输出，编排器写进对应 ns，报告按它做表。
 
