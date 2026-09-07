@@ -84,7 +84,7 @@ export interface DatasetLayerDecl {
   modelFacingDeclared: boolean
 }
 
-export type DescriptorWarningCode = 'MODELFACING_UNDECLARED' | 'FIELD_NAME_SENSITIVE' | 'UNREGISTERED_FILES'
+export type DescriptorWarningCode = 'MODELFACING_UNDECLARED' | 'FIELD_NAME_SENSITIVE' | 'UNREGISTERED_FILES' | 'CANARY_MISSING'
 
 /** A non-fatal validation warning (shape checks fail loud on errors, warn on suspicion). */
 export interface DescriptorWarning {
@@ -92,13 +92,13 @@ export interface DescriptorWarning {
   code: DescriptorWarningCode
   /** Human-readable detail. */
   message: string
-  /** The layer the warning is about (MODELFACING_UNDECLARED). */
+  /** The layer the warning is about (MODELFACING_UNDECLARED, CANARY_MISSING). */
   layer?: string
   /** The item the warning is about (FIELD_NAME_SENSITIVE). */
   item?: string
   /** The item.json field the warning is about (FIELD_NAME_SENSITIVE). */
   field?: string
-  /** The dataset-relative file the warning is about (UNREGISTERED_FILES). */
+  /** The dataset-relative file the warning is about (UNREGISTERED_FILES, CANARY_MISSING). */
   file?: string
 }
 
@@ -163,10 +163,112 @@ export function descriptorWarnings(descriptor: DatasetDescriptor): DescriptorWar
     }))
 }
 
+/**
+ * File extensions the canary check treats as text, plus the extensionless
+ * case (`README`, `Makefile`, a dotfile). Anything else — images, archives,
+ * fixtures a byte matters in — is skipped: a canary string cannot be embedded
+ * there without corrupting the file it is embedded in.
+ */
+export const CANARY_TEXT_EXTENSIONS: readonly string[] = ['md', 'txt', 'yml', 'yaml', 'json']
+
+/**
+ * Whether the canary check covers one file.
+ * @param path - any file path (only its basename decides).
+ * @returns true for a whitelisted extension or no extension at all.
+ */
+export function isCanaryTextFile(path: string): boolean {
+  const base = path.slice(path.lastIndexOf('/') + 1)
+  const dot = base.lastIndexOf('.')
+  if (dot <= 0) return true // no extension, or a dotfile whose leading dot is not one
+  return CANARY_TEXT_EXTENSIONS.includes(base.slice(dot + 1).toLowerCase())
+}
+
+/**
+ * The layer one dataset-relative path belongs to by the LAYOUT convention
+ * (register roles are resolved by the caller, and win): a declared top-level
+ * directory is a dataset-level layer, a declared directory under
+ * `items/<id>/` is an item-level layer. dataset.json, item.json, item-root
+ * strays and the passthrough zone belong to no layer.
+ * @param rel - dataset-relative path.
+ * @param declared - the descriptor's declared layer names.
+ * @returns the layer name, or undefined when the path is in no layer.
+ */
+function conventionLayer(rel: string, declared: ReadonlySet<string>): string | undefined {
+  if (!rel.startsWith('items/')) {
+    const top = rel.split('/')[0] ?? ''
+    return rel.includes('/') && declared.has(top) ? top : undefined
+  }
+  const segments = rel.slice('items/'.length).split('/')
+  if (segments.length < 3) return undefined // items/<id>/item.json and item-root strays
+  const layer = segments[1] ?? ''
+  return declared.has(layer) ? layer : undefined
+}
+
+/**
+ * Check the descriptor's canary string against the dataset's visible content:
+ * every text file of a `modelFacing: true` layer (both levels, register roles
+ * included) must contain it verbatim. A dataset that declares no canary is
+ * not checked at all — the field is opt-in and its absence is never a warning.
+ *
+ * This is the one warning rule that reads file CONTENT, so it lives on the
+ * `validate` path only and never on the summary (list/show stay cheap).
+ * @param repo - repository path.
+ * @param commit - commit to read from.
+ * @param datasetId - the dataset id.
+ * @param descriptor - the validated descriptor.
+ * @param registry - the register role map at this commit.
+ * @returns one CANARY_MISSING warning per file lacking the string.
+ */
+export async function canaryWarnings(
+  repo: string,
+  commit: string,
+  datasetId: string,
+  descriptor: DatasetDescriptor,
+  registry: DatasetRegistry,
+): Promise<DescriptorWarning[]> {
+  const canary = descriptor.canary
+  if (canary === undefined) return []
+  const declared = new Set(descriptor.layers.map(layer => layer.name))
+  const visible = new Set(descriptor.layers.filter(layer => layer.modelFacing).map(layer => layer.name))
+  // A register-claimed file is visible through the layer it was registered
+  // into, wherever it physically sits — the role wins over the directory.
+  const role = new Map<string, string>()
+  for (const [key, bucket] of registry.entries) {
+    const layer = key.split('\0')[1] ?? ''
+    for (const file of bucket) role.set(file.object, layer)
+  }
+  const base = `${datasetDir(datasetId)}/`
+  const warnings: DescriptorWarning[] = []
+  for (const file of await listFiles(repo, commit, datasetDir(datasetId))) {
+    const rel = file.slice(base.length)
+    const layer = role.get(file) ?? conventionLayer(rel, declared)
+    if (layer === undefined || !visible.has(layer)) continue
+    if (!isCanaryTextFile(rel)) continue
+    const content = await showFile(repo, commit, file)
+    if (content === undefined || content.includes(canary)) continue
+    warnings.push({
+      code: 'CANARY_MISSING',
+      layer,
+      file: rel,
+      message: `${rel} does not contain the dataset's canary string; every text file of a modelFacing `
+        + 'layer must carry it verbatim (finding the canary in model output is what proves this dataset '
+        + 'entered training data)',
+    })
+  }
+  return warnings
+}
+
 /** Validated `dataset.json` shape. Unknown fields pass through on `raw`. */
 export interface DatasetDescriptor {
   id: string
   name?: string
+  /**
+   * The dataset's canary string: a globally unique token every text file of a
+   * modelFacing layer must carry verbatim. Finding it in a model's output is
+   * what proves the dataset entered training data (`validate` reports the
+   * files that lack it; the plugin never generates or injects one).
+   */
+  canary?: string
   layers: DatasetLayerDecl[]
   /** Declared item-metadata JSON Schema; shape-checked as an object, never interpreted. */
   itemMetaSchema?: Record<string, unknown>
@@ -274,6 +376,10 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
   if (name !== undefined && typeof name !== 'string') {
     throw new DatasetsError(`${origin}: "name" must be a string when present`, 'SHAPE_INVALID')
   }
+  const canary = value['canary']
+  if (canary !== undefined && (typeof canary !== 'string' || canary.trim() === '')) {
+    throw new DatasetsError(`${origin}: "canary" must be a non-empty string when present`, 'SHAPE_INVALID')
+  }
   const layers = value['layers']
   if (!Array.isArray(layers) || layers.length === 0) {
     throw new DatasetsError(`${origin}: "layers" must be a non-empty array of {name, modelFacing?}`, 'SHAPE_INVALID')
@@ -306,6 +412,7 @@ export function validateDescriptor(value: unknown, origin: string): DatasetDescr
   return {
     id,
     ...(name !== undefined ? { name } : {}),
+    ...(canary !== undefined ? { canary: canary as string } : {}),
     layers: decls,
     ...(itemMetaSchema !== undefined ? { itemMetaSchema: itemMetaSchema as Record<string, unknown> } : {}),
     register,

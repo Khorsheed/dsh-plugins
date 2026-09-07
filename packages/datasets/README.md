@@ -21,7 +21,7 @@ git 仓库之上的通用版本化数据集存储：分层 item、从 git 对象
       <layer>/...          # item 级层
 ```
 
-版本 = git commit。插件只校验 `dataset.json` 的**形状**：`id`、可选 `name`、非空的 `layers` 清单（每项声明 `name`，可声明 `modelFacing: false`，缺省 true）、可选的 `itemMetaSchema` 对象。其余字段原样透传。
+版本 = git commit。插件只校验 `dataset.json` 的**形状**：`id`、可选 `name`、可选 `canary` 串、非空的 `layers` 清单（每项声明 `name`，可声明 `modelFacing: false`，缺省 true）、可选的 `itemMetaSchema` 对象。其余字段原样透传。
 
 两级规则纯粹按名字判定：顶层目录的名字若声明在 `layers` 清单里，它就是题集级层；其余任何顶层文件或目录都是 descriptor 透传，与之前一样置身 `list`/`show`/`read`/`worktree_path` 之外。`items` 是保留的 item 容器，不能用作层名。所有机制在两级统一生效：会话绑定的层白名单（列表过滤、读取拒绝、sparse-checkout 模式同时覆盖 `datasets/<id>/<layer>/` 与 `datasets/<id>/items/*/<layer>/`）、`modelFacing` 可见性类别（声明按层名，天然两级适用）。评测题集布局里，跨 item 共享且有可见性要求的内容就放在这里：`suites/<suite>/verify/helpers/` 放题集级层（判定时才挂载），评分 rubric 也从散落的顶层目录收进声明过的题集级层，白名单才真正管得到它们。
 
@@ -30,6 +30,8 @@ git 仓库之上的通用版本化数据集存储：分层 item、从 git 对象
 descriptor 还可带可选的 `register` 数组（数据集作者协议 §2）：把 item 目录内的自由文件显式注册进 item/层角色——`register: [{item, layer, files}]`，files 是 item 相对路径或单层 glob（`*` 不跨 `/`）。注册的文件在 list/show/树上归位到声明的层角色（物理位置与角色解耦），worktree 的 sparse 模式覆盖注册路径；路径越界、`**`、与布局形态冲突、精确路径不存在都会 fail loud。完整约定见根目录 `docs/dataset-authoring-protocol.md`。
 
 层缺省 `modelFacing` 为 `true`。因为 descriptor 文件会被当模板抄，形状校验还会**告警**（绝不阻断）：在混合敏感度数据集（存在任何显式 `modelFacing: false` 层）里，每个未显式声明该键的层各产生一条警告（`MODELFACING_UNDECLARED`，逐层）。纯公开数据集（没有任何 false 层）与逐层显式声明（无论 true/false）的数据集不产生警告。警告随数据集摘要走：CLI 在 `list`/`show`/`describe` 时打到 stderr，slash 命令附在输出末尾，web tab 在数据集行下以安静行呈现。
+
+**金丝雀（泄题取证）**：descriptor 可声明 `canary`——一个全局唯一串，建议格式 `dsh-canary:<dataset-id>:<uuid>`。声明之后，`validate` 检查每个可见层（`modelFacing: true`；题集级与 item 级都算，register 归位的文件按其角色层算）里的文本文件是否逐字包含它，缺的逐文件报 `CANARY_MISSING`。文本按扩展名白名单判定（`.md` / `.txt` / `.yml` / `.yaml` / `.json` 与无扩展名），其余文件跳过；敏感层与 item.json 不在检查范围。用途是日后拿这个串去搜模型的输出：搜到即证明本题库进过训练语料，成本几乎为零。插件只校验，从不生成也从不注入金丝雀——串由作者自己造、自己埋。未声明 `canary` 的数据集完全不做此检查。
 
 内容以仓库内普通文件的方式进入数据集，走正常 git 流程提交；或由 agent 经 `datasets_put_item` 起草进工作树、人评审后提交。没有 import 动词，也没有复制式物化：单文件从 git 对象直读，整层经托管 worktree 消费。
 
@@ -44,9 +46,9 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `datasets` 挂载）调和进 profile 的 bundles 层——不需要手改 cordis.yml。一个 composition 只能挂载 `datasets` 行 id 一次；`dsh --profile web --dump-config | grep datasets` 无输出即说明可以安全 add。
 
-配置（均可选）：`repo`（调用既无显式 `repo` 会话也无绑定时的默认数据集仓库；缺省无）与 `worktreeRoot`（托管 worktree 根覆盖；缺省 `$DSH_HOME/state/datasets/worktrees`，否则 `<cwd>/.dsh-datasets/worktrees`）。
+配置（均可选）：`repo`（调用既无显式 `repo` 会话也无绑定时的默认数据集仓库；缺省无）、`worktreeRoot`（托管 worktree 根覆盖；缺省 `$DSH_HOME/state/datasets/worktrees`，否则 `<cwd>/.dsh-datasets/worktrees`）与 `tools`（注册哪一组模型工具；缺省 `all`，见[工具分组](#模型工具)）。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，注册七个 `datasets_*` 模型工具和 `/datasets` slash 命令，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，注册 `datasets_*` 模型工具（哪些取决于 `tools` 分组，缺省八个全开）和 `/datasets` slash 命令，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查托管 worktree 根的结构完整性。
 
 ## 会话绑定
 
@@ -77,7 +79,9 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 | `datasets_snapshot` | | 固化 `{repoPath, commit, datasetId}`，仓库演进中读稳定版本 |
 | `datasets_worktree_path` | 建托管 worktree | 整层只读视图路径（sparse-checkout 限层、按键去重） |
 | `datasets_put_item` | 写工作树 | 创建/更新 item 元数据与层文件；`git commit` 留给人 |
-| `datasets_validate` | | 作者卫生校验：形状错误 fail loud；三类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区），警告不阻断 |
+| `datasets_validate` | | 作者卫生校验：形状错误 fail loud；四类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区 / 声明了 canary 但可见层文本文件没埋），警告不阻断 |
+
+**工具分组**：`tools` 配置决定注册哪一组工具——preset 挑不掉 profile 层已注册的工具，能决定的只有注册本身。四档是一条包含链：`read` = 六个读类动词（list / show / describe / read / snapshot / validate）；`authoring` = read + `put_item`（起草进工作树，提交仍然是人的）；`all`（缺省）= authoring + `worktree_path`（整层物化，会写托管 worktree）；`none` = 一个模型工具都不注册。系统提示词段只描述实际注册的工具，`none` 下连段都不贡献。服务、CLI、`/datasets` 与会话 tab 是人的面，任何档位都不动它们。**评测域建议 `authoring`**：规划期的 agent 要读题、要出题，但整层物化是编排器的动作，不该是 agent 能自己发起的一步。
 
 `worktree_path` 返回托管根下的普通目录，以 (repo, commit, 排序后 layers) 为键、全机按键共享：`git worktree add --detach <commit>` + 限定层目录的 sparse-checkout + `git worktree lock`。消费方只读挂载或直接读取，绝不修改或删除——它是跨消费方缓存。同键并发创建由托管根下的锁目录串行化，后到者复用建好的 worktree。清理走 CLI 的 `worktree prune`。
 
@@ -122,6 +126,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 - npm release 线（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。会话 tab 已在 rc.8 的 web profile 上做过活实例冒烟（绑定 → 树 → 预览）；更早的 release 线共享同一套网关约定，但未做冒烟。
 - source 线（deepseek-harness master）：✅。
+- `tools` 分组与金丝雀校验都在插件内部完成（前者只是少调几次 `ctx.tools.register`，后者只读 git 对象），不依赖任何新的宿主能力，两条线表现一致。
 - ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，模型工具与 CLI 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
@@ -132,5 +137,6 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - **item 元数据不按 `itemMetaSchema` 校验**——schema 仅声明、形状校验为对象并透传；对 item 元数据做完整 JSON-Schema 校验需要引入本包不接受的校验器依赖。
 - **会话 tab 的预览经 RPC 读整个文件**——`read` 返回完整文件内容、无字节上限（与工具同语义）；超大层文件更适合走 `worktree_path` 消费。
 - **fork 出的会话以未绑定开始**——绑定按会话 id 归档在插件自管存储里，不随 fork 继承；删除会话会留下其绑定记录（无害，一个小 JSON 文件）。
+- **金丝雀检查逐文件读内容**——`validate` 对每个可见层文本文件跑一次 `git show`，是插件里唯一读文件内容的校验；因此它只在 `validate` 上跑，`list`/`show` 的摘要警告仍然只有形状级的那条。
 - **被消费方写脏的 worktree 由 `worktree prune` 重建**——只读契约由消费方的挂载（`:ro`）强制，插件不强制。
 - **`worktree prune` 需要 `--repo`**——注册表是 `git worktree list`，按仓库管理；已删除仓库残留的托管根手工清理。

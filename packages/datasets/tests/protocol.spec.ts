@@ -41,6 +41,9 @@ describe('the authoring protocol document', () => {
         layer: 'visible',
         files: ['task.md', 'docs/*.md'],
       })
+      // The canary is what the visible files must carry verbatim; the
+      // recommended shape names the dataset and a uuid.
+      expect(descriptor!.canary).toMatch(/^dsh-canary:harness-comparison:[0-9a-f-]{36}$/)
     })
   }
 })
