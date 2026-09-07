@@ -466,7 +466,7 @@ describe('codex-cli-provider resume round', () => {
     const run = await provider.start(request)
     const result = await run.result
     expect(result.stopReason).toBe('completed')
-    expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'read-only', '--json', 'resume', 't1', '接着做'])
+    expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--json', 'resume', 't1', '接着做'])
     expect(run.id).toBe(SessionId('child-run-1'))
     const turnStarts = child.events.filter(event => event.type === 'turn/start')
     const turnEnds = child.events.filter(event => event.type === 'turn/end')

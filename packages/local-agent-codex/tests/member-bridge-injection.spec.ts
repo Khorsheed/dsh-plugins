@@ -96,7 +96,7 @@ describe('codex-cli-provider member bridge injection', () => {
       provider: 'codex-local',
     })
     expect(spawned[0]).toEqual([
-      'codex', 'exec', '-c', EXPECTED_OVERRIDE, '--sandbox', 'workspace-write', '--json', 'do the task',
+      'codex', 'exec', '-c', EXPECTED_OVERRIDE, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', 'do the task',
     ])
     expect(registry.bindMemberRunPid).toHaveBeenCalledWith('token-xyz-1234', 4242)
 
@@ -127,7 +127,7 @@ describe('codex-cli-provider member bridge injection', () => {
       provider: 'codex-local',
     })
     expect(spawned[0]).toEqual([
-      'codex', 'exec', '-c', EXPECTED_OVERRIDE, '--sandbox', 'workspace-write', '--json', 'resume', 'thread-1', 'do the task',
+      'codex', 'exec', '-c', EXPECTED_OVERRIDE, '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', 'resume', 'thread-1', 'do the task',
     ])
 
     await run.result
@@ -148,6 +148,6 @@ describe('codex-cli-provider member bridge injection', () => {
     const run = await provider.start(request())
 
     expect((await run.result).stopReason).toBe('completed')
-    expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'workspace-write', '--json', 'do the task'])
+    expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', 'do the task'])
   })
 })

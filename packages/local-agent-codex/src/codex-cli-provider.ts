@@ -679,9 +679,19 @@ export function startCodexCliRun(
   const memberArgv = spec.member === undefined ? [] : ['-c', spec.member.configOverride]
 
   const child = spec.spawn({
+    // `--skip-git-repo-check` rides every exec argv. Codex refuses to start
+    // outside a Git repository ("Not inside a trusted directory and
+    // --skip-git-repo-check was not specified") and exits before producing a
+    // single stream event, so the run fails with no diagnosable output. The
+    // delegation cwd is the CALLER's choice — a scratch directory, an eval
+    // cell, any path the `cwd` option names — and none of those are required
+    // to be repositories. The check is codex's own guard for interactive use
+    // in a stray directory; a delegation has already been directed at its
+    // workspace by the caller, so the guard can only reject work the caller
+    // asked for. Sandboxing stays with `--sandbox`, which this does not touch.
     argv: spec.resume === undefined
-      ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--json', task]
-      : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--json', 'resume', spec.resume.cliSessionId, task],
+      ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
+      : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task],
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
