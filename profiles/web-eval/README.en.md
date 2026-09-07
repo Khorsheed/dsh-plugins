@@ -286,7 +286,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh --source "$PWD/dsh-plugi
 DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
 ```
 
-Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$DSH_HOME/profiles/web-eval"`) removes them too, and re-running `install.sh --source` after the checkout moves swaps in fresh tarballs (remove the profile directory first, same as any reinstall).
+Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$DSH_HOME/profiles/web-eval"`) removes them too. To swap in fresh tarballs after the checkout moves, re-run **with `--fresh`**: an installed profile's `node_modules`, `pnpm-lock.yaml` and `tarballs/` would otherwise keep the newly packed tarballs out and the instance would keep running the old build with no sign of it. `--fresh` removes all three first, and a re-run without it is refused with exactly that reason printed.
 
 The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference; I1 decides whether they live in a patch layer shipped by the pack or in the user's `cordis.patch.yml`.
 

@@ -27,7 +27,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
-import type { DelegationResult, DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
+import type { DelegationProgress, DelegationResult, DelegationUsage, DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
 import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
@@ -58,6 +58,9 @@ class SubmissionRejected extends Error {
   }
 }
 
+/** Declared model ≠ observed model (frozen decision 5): the run is misattributed — fail loud. */
+class MisattributedRun extends Error {}
+
 /** Options of the run service verb. */
 export interface RunOptions {
   /**
@@ -78,13 +81,14 @@ export interface RunOptions {
    * (no judge yet) cannot fill — so the default run stops at `archived`.
    */
   finalize?: boolean
-  /** Bundle export directory. Default `<dataset repo>/exports/` (decision 11). */
+  /**
+   * Bundle export directory. Overrides the plan's `exports`; without either,
+   * `<dataset repo>/exports/` (decision 11).
+   */
   exportsDir?: string
   /**
-   * Infrastructure-retry budget per cell. Named `plan.retry.infrastructure`
-   * in the task brief; dataseek.plan/1 (additionalProperties: false) cannot
-   * carry the field yet, so it rides the run options until a protocol
-   * revision adds it. Default 1.
+   * Infrastructure-retry budget per cell. Overrides the plan's
+   * `retry.infrastructure` (the reviewed default); without either, 1.
    */
   retryInfrastructure?: number
   /** Caller tag for mission writes. Default `eval-orchestrator`. */
@@ -180,6 +184,8 @@ interface ResolvedCondition {
   sha: string
   declaredModel: string | null
   provider: string
+  /** The full condition document (recorded into run.meta for the report's factor diff). */
+  document: Record<string, unknown>
 }
 
 /** Per-cell mutable state carried across infrastructure retries. */
@@ -300,9 +306,26 @@ async function runCellOnce(
       controller.abort()
       if (childSessionId !== undefined) localAgent.cancel(childSessionId)
     }, remainingMs)
+    // T11 read-back: the settled progress event carries the round's observed
+    // model and usage; kept here and merged with delegationOf after settle
+    // (either channel may have the value the other missed).
+    let settled: { observedModel?: string; usage?: DelegationUsage } | undefined
     let run: Awaited<ReturnType<LocalAgentFace['start']>>
     try {
-      const delegationOptions = { label: `${env.runId}/${missionId} ${stageId}`, signal: controller.signal, cwd: cellDir }
+      const delegationOptions = {
+        label: `${env.runId}/${missionId} ${stageId}`,
+        signal: controller.signal,
+        cwd: cellDir,
+        onProgress: (event: DelegationProgress) => {
+          // Only the settled kind carries the read-back; the round's own
+          // event wins over a later record read (last settle = this round).
+          if (event.kind !== 'settled') return
+          settled = {
+            ...event.observedModel !== undefined ? { observedModel: event.observedModel } : {},
+            ...event.usage !== undefined ? { usage: event.usage } : {},
+          }
+        },
+      }
       const promptBlocks = [{ type: 'text' as const, text: promptBytes.toString('utf8') }]
       run = childSessionId === undefined
         ? await localAgent.start(env.parentSessionId, env.condition.provider, promptBlocks, delegationOptions)
@@ -349,6 +372,12 @@ async function runCellOnce(
     const durationMs = env.now() - startedAt
     state.spentMs += durationMs
     clearTimeout(timer)
+    // The read-back after settle: the settled event won, else the delegation
+    // record. A facade predating T11 leaves both absent — null is recorded,
+    // never guessed.
+    const record = localAgent.delegationOf?.(run.id)
+    const observedModel = settled?.observedModel ?? record?.observedModel ?? null
+    const usage = settled?.usage ?? null
     await mission.annotate(missionId, 'orchestrator', {
       kind: 'delegation',
       stage: stageId,
@@ -357,14 +386,22 @@ async function runCellOnce(
       promptSha,
       startedAt,
       durationMs,
-      usage: null, // the local-agent family records usage with T11's settled event
-      model: { declared: env.condition.declaredModel, observed: null }, // observed read back lands with T11
+      usage,
+      model: { declared: env.condition.declaredModel, observed: observedModel },
     }, { runId: env.runId, by: env.by })
     if (timedOut) {
       throw new InfrastructureFailure(`stage ${stageId} delegation exceeded the cell's ${Math.round(env.budgetMs / 60_000)}min active budget — cancelled (${run.id})`)
     }
     if (result.stopReason !== 'completed') {
       throw new InfrastructureFailure(`stage ${stageId} delegation ended with stopReason ${JSON.stringify(result.stopReason)}${result.diagnostic !== undefined ? `: ${result.diagnostic}` : ''}`)
+    }
+    // Declared ≠ observed is fail loud (frozen decision 5): the run is
+    // misattributed and must not quietly continue. The annotation above
+    // carries the mismatch for the report.
+    if (observedModel !== null && env.condition.declaredModel !== null && observedModel !== env.condition.declaredModel) {
+      throw new MisattributedRun(
+        `condition ${env.condition.id} declares model ${JSON.stringify(env.condition.declaredModel)} but the delegation ran ${JSON.stringify(observedModel)} (child ${run.id}, stage ${stageId}) — the run is misattributed`,
+      )
     }
 
     // Collect the stage outputs from the cell directory (decision 7).
@@ -575,11 +612,15 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     stages: string[]
     budget: { activeMinutes: number; turns: number }
     order: { seed: number; interleave: boolean }
+    retry?: { infrastructure?: number }
+    exports?: string
     expectedNs?: string[]
   }
   const planSha = sha256(Buffer.from(canonicalJson(plan), 'utf8'))
   const budgetMs = plan.budget.activeMinutes * 60_000
-  const retryLimit = Math.max(0, options.retryInfrastructure ?? 1)
+  // Option overrides the plan (decision 3): the plan is the reviewed default.
+  const retryLimit = Math.max(0, options.retryInfrastructure ?? plan.retry?.infrastructure ?? 1)
+  const planExportsDir = plan.exports !== undefined ? expandHome(plan.exports) : undefined
 
   // ── Manifest + template + matrix (works for a dry run with no faces). ──
   const { manifest } = await loadManifest(join(datasetRoot, 'manifest.yml'))
@@ -595,7 +636,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const conditions: ResolvedCondition[] = []
   const conditionWarnings: EvalDiagnostic[] = []
   for (const resolution of validation.conditions) {
-    const document = JSON.parse(await readFile(join(datasetRoot, 'conditions', `${resolution.id}.json`), 'utf8'))
+    const document = JSON.parse(await readFile(join(datasetRoot, 'conditions', `${resolution.id}.json`), 'utf8')) as Record<string, unknown>
     const { errors } = conditionDiagnostics(document)
     if (errors.length > 0) {
       throw new EvalRunRefused(`condition ${resolution.id} violates the contract — nothing was executed`, errors)
@@ -622,6 +663,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       sha,
       declaredModel: (document['model'] as { declared: string | null } | undefined)?.declared ?? null,
       provider: '',
+      document,
     })
   }
 
@@ -661,9 +703,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
 
   // Harness → provider (decision 5), exec drive only (frozen decision 2).
   for (const condition of conditions) {
-    const document = JSON.parse(await readFile(join(datasetRoot, 'conditions', `${condition.id}.json`), 'utf8')) as {
-      harness: { name: string; drive: string }
-    }
+    const document = condition.document as { harness: { name: string; drive: string } }
     if (document.harness.drive !== 'exec') {
       throw new EvalRunRefused(`condition ${condition.id}: harness.drive must be exec (frozen decision 2), got ${JSON.stringify(document.harness.drive)}`)
     }
@@ -686,7 +726,9 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     planPath: planAbs,
     evalVersion: await evalVersion(),
     snapshot: { repo: snapshot.repoPath, commit: snapshot.commit, datasetId: snapshot.datasetId },
-    conditions: conditions.map(condition => ({ id: condition.id, sha: condition.sha })),
+    // The full condition document rides each entry (`condition`) so the
+    // report's factor diff needs nothing beyond the bundle.
+    conditions: conditions.map(condition => ({ id: condition.id, sha: condition.sha, condition: condition.document })),
     order: { seed: plan.order.seed, sequence: ordered.map(cell => cell.missionId) },
     concurrency: options.concurrency ?? 1,
     budget: { activeMinutes: plan.budget.activeMinutes, turns: plan.budget.turns },
@@ -713,6 +755,21 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   const runId = created.run.id
   for (const lintError of created.lint.errors) log(`lint error: ${lintError}`)
   log(`run ${runId} created (${ordered.length} cell(s), concurrency ${options.concurrency ?? 1})`)
+
+  // Cell anchors (decision: every cell carries its identity in the
+  // orchestrator ns — the bundle's mission ids are lossy, the annotation is
+  // not): one write per cell BEFORE any work, so even a skipped cell is
+  // attributable.
+  for (const cell of ordered) {
+    const condition = conditions.find(entry => entry.id === cell.labels.condition) as ResolvedCondition
+    await faces.mission.annotate(cell.missionId, 'orchestrator', {
+      kind: 'cell',
+      task: cell.labels.task,
+      condition: condition.id,
+      conditionSha: condition.sha,
+      rep: Number(cell.labels.rep),
+    }, { runId, by })
+  }
 
   // ── The pool: ordered cells, `concurrency` workers. ───────────────────
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 1, ordered.length))
@@ -746,7 +803,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   await Promise.all(Array.from({ length: concurrency }, () => worker()))
 
   // ── Bundle export (decision 11): visible layer only. ─────────────────
-  const outDir = options.exportsDir ?? join(snapshot.repoPath, 'exports')
+  const outDir = options.exportsDir ?? planExportsDir ?? join(snapshot.repoPath, 'exports')
   let bundleDir: string | undefined
   let exportError: string | undefined
   try {

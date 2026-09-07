@@ -25,7 +25,7 @@ describe('dsh-eval validate', () => {
     expect(report.errors).toEqual([])
     expect(report.warnings.map(w => w.code)).toContain('LOCK_MISSING')
     expect(stderr).toContain('valid')
-    expect(stderr).toContain('6 warning(s)')
+    expect(stderr).toContain('4 warning(s)')
   })
 
   it('an invalid plan exits 1 with the report still on stdout', async () => {
@@ -67,9 +67,9 @@ describe('dsh-eval conditions hash', () => {
     const out = JSON.parse(first.stdout) as { id: string; sha: string; warnings: Array<{ code: string }> }
     expect(out.id).toBe('dsh-exec')
     expect(out.sha).toMatch(/^[0-9a-f]{64}$/)
-    expect(out.warnings.map(w => w.code)).toEqual([
-      'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD',
-    ])
+    // model.endpoint + home.sha; harness.version and model.declared were
+    // filled from the live instance snapshot (T8b).
+    expect(out.warnings.map(w => w.code)).toEqual(['UNRESOLVED_FIELD', 'UNRESOLVED_FIELD'])
 
     const second = await run(['conditions', 'hash', T1_CONDITION])
     expect((JSON.parse(second.stdout) as { sha: string }).sha).toBe(out.sha)
@@ -165,7 +165,7 @@ describe('dsh-eval run --dry-run', () => {
         "conditions": [
           {
             "id": "dsh-exec",
-            "sha": "3afb40c930e0eaff946f7ee920b8b50db03a4db4e77a9a2cf896fdc01a328b55",
+            "sha": "d81ebc695e3b15e0594eaccf96056369617a060e9fbfa1a8e664f7e475a78f79",
           },
         ],
         "order": {

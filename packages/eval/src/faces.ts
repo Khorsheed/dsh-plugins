@@ -6,11 +6,13 @@
  * `ctx.get` (degrade-don't-explode: a missing service is a refusal that names
  * it, never a boot failure).
  *
- * The delegation options carry `cwd` (the per-cell working directory, T11's
- * facade option). Against a facade that predates the option the field is
- * ignored and the child inherits the parent session's cwd — the run loop
- * detects that by the stage files' absence and fails the cell honestly
- * (submission-rejected), never silently mis-attributes output.
+ * The delegation options carry T11's `cwd` (the per-cell working directory)
+ * and `onProgress` (the settled read-back). Against a facade that predates
+ * the option the cwd field is ignored and the child inherits the parent
+ * session's cwd — the run loop detects that by the stage files' absence and
+ * fails the cell honestly (submission-rejected), never silently
+ * mis-attributes output. `delegationOf` is optional on the face: a facade
+ * predating T11 leaves the observed model null.
  * @module @khorsheed/dsh-eval
  */
 
@@ -100,15 +102,56 @@ export interface DelegationRun {
   result: Promise<DelegationResult>
 }
 
+/** Token usage as the settled event carries it (structural TokenUsage). */
+export interface DelegationUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  reasoningTokens?: number
+}
+
 /**
- * Delegation call options, including T11's `cwd` (the per-cell directory).
- * Structurally a superset of the current DelegationCallOptions: a facade
- * without the option ignores it.
+ * One progress event as the facade emits it. Only the `settled` kind carries
+ * the read-back; every other kind (heartbeat / mirror / delta) is ignored
+ * here, so `kind` stays open and the payload optional — a facade emitting
+ * further variants stays assignable to this callback rather than failing to
+ * type-check at the seam.
+ */
+export interface DelegationProgress {
+  kind: string
+  /** `settled` only: the model the provider observed for this round (T11). */
+  observedModel?: string
+  /** `settled` only: the round's token usage, when the harness reported one. */
+  usage?: DelegationUsage
+}
+
+/**
+ * A settled round's read-back (T11): the observed model and usage, either
+ * optional — absence is recorded, never guessed.
+ */
+export interface DelegationSettled extends DelegationProgress {
+  kind: 'settled'
+}
+
+/**
+ * Delegation call options, including T11's `cwd` (the per-cell directory)
+ * and `onProgress` (the settled read-back channel).
  */
 export interface EvalDelegationOptions {
   label?: string
   signal?: AbortSignal
   cwd?: string
+  onProgress?: (event: DelegationProgress) => void
+}
+
+/** The read-only delegation projection T11's `delegationOf` returns. */
+export interface DelegationInfo {
+  childSessionId: string
+  provider: string
+  parentSessionId: string
+  cwd?: string
+  observedModel?: string
 }
 
 /** The localAgent verbs the run loop uses. */
@@ -118,4 +161,6 @@ export interface LocalAgentFace {
   cancel(childSessionId: string): boolean
   /** Harness lookup (name → delegationProvider); absent harness = undefined. */
   get(name: string): { delegationProvider?: string } | undefined
+  /** T11 read-back: the delegation record without the resume handle; absent when unknown. */
+  delegationOf?(childSessionId: string): DelegationInfo | undefined
 }

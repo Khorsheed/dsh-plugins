@@ -8,5 +8,7 @@
   "budget": { "activeMinutes": 60, "turns": 10 },
   "judge": { "conditions": ["judge-claude"], "samples": 2 },
   "expectedNs": ["script", "llm-draft", "human-final"],
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。"
+  "retry": { "infrastructure": 1 },
+  "exports": "~/dataseek/exports",
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。"
 }
