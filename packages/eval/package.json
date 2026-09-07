@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-eval",
-  "description": "The web-eval orchestrator: dataseek contract schemas, plan/condition validation, deterministic hashing, run-template generation from a suite manifest, the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, archive gate, bundle export), and the bundle report (results.jsonl + summary.md behind the four-invariant gate)",
+  "description": "The web-eval orchestrator: dataseek contract schemas, plan/condition validation, deterministic hashing, run-template generation from a suite manifest, the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, judging, archive gate, bundle export), the two mechanical verdict sources (verify-layer probes writing script, de-fingerprinted double-sampled blind LLM judging writing llm-draft), and the bundle report (results.jsonl + summary.md behind the four-invariant gate)",
   "version": "0.1.0-rc.1",
   "publishConfig": {
     "access": "public"
@@ -77,7 +77,7 @@
     "compat": {
       "minHost": "0.1.0-rc.6",
       "verifiedHost": "0.1.1-rc.2",
-      "notes": "injects commands (the /eval slash face); the run verb probes datasets / mission / localAgent via ctx.get and refuses naming any missing one — never a boot failure; report only reads bundles and consumes no host capability; the delegation cwd option and the usage / model.observed read-back (settled event, else delegationOf) are consumed from the local-agent family (T11) — against a facade predating it the cwd option is ignored (the cell is then refused honestly, never mis-attributed) and the read-back is recorded as null"
+      "notes": "injects commands (the /eval slash face); the run verb probes datasets / mission / localAgent via ctx.get and refuses naming any missing one — never a boot failure; report only reads bundles and consumes no host capability; the delegation cwd option and the usage / model.observed read-back (settled event, else delegationOf) are consumed from the local-agent family (T11) — against a facade predating it the cwd option is ignored (the cell is then refused honestly, never mis-attributed) and the read-back is recorded as null — judge (T9): probes and blind LLM judging run through the same faces; a judge sample without cwd support is recorded as a parse failure, never a verdict"
     }
   },
   "bin": {

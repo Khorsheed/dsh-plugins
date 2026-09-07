@@ -51,6 +51,15 @@ export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiag
 export { conditionDiagnostics, validatePlan } from './validate.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
+export {
+  buildDeidentifyRules, buildJudgePrompt, deidentify, llmDraftCriteria,
+  mergeReplacements, pickRubricPath, probePaths,
+  DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
+} from './judge.ts'
+export type {
+  Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome,
+  ReplacementCount, ResolvedJudge, RubricCriterion,
+} from './judge.ts'
 export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
 export type {
   ConditionEfficiency,

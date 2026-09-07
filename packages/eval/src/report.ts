@@ -320,6 +320,21 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
 }
 
 /**
+ * The verdict documents carried by one annotation payload. Three shapes are
+ * accepted, because three writers produce them: a bare verdict (a person
+ * annotating one criterion), an ARRAY of verdicts (a probe's script.json), and
+ * the orchestrator's llm-draft SAMPLE ENVELOPE — `{sample, judgeCondition,
+ * judgeSha, promptSha, verdicts}` — whose provenance fields sit beside the
+ * verdicts rather than inside them. Reading only the first two shapes would
+ * silently drop every LLM sample the judge wrote.
+ */
+function verdictDocsOf(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload
+  if (isPlainObject(payload) && Array.isArray(payload['verdicts'])) return payload['verdicts']
+  return [payload]
+}
+
+/**
  * The overall materialization hash of one cell: prefer the overall sha the
  * orchestrator recorded inside materialization.json (`sha256` is the field
  * the run loop writes; the other spellings cover hand-made bundles), fall
@@ -395,8 +410,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
       continue
     }
     if (!VERDICT_NS.has(ns)) continue
-    const payloadItems = Array.isArray(annotation['payload']) ? annotation['payload'] : [annotation['payload']]
-    for (const doc of payloadItems) {
+    for (const doc of verdictDocsOf(annotation['payload'])) {
       if (!isPlainObject(doc) || validateJson(VERDICT_SCHEMA, doc).length > 0) continue
       verdicts.push({
         ns,

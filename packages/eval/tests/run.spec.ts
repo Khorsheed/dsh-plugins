@@ -8,7 +8,10 @@
  * new attempt. The fake datasets serves an in-memory visible layer. The fake
  * localAgent writes stage outputs INTO the delegation cwd — proving the
  * per-cell directory flows end to end — and can be scripted to throw, hang,
- * or produce bad payloads.
+ * or produce bad payloads. Since T9 the fake datasets also serves the
+ * non-model-facing `grading` and `verify` layers (rubric + probes) and the
+ * fake localAgent can act as a JUDGE: it recognizes the judge prompt, reads
+ * the criteria back out of it, and writes verdicts.json into the sample cwd.
  */
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -52,6 +55,12 @@ const VALID_STAGE1 = {
 const VALID_STAGE2 = { feasible: true, mechanisms_considered: [], stage1_risks_resolved: [], iterations: [] }
 const HALT_STAGE2 = { feasible: false }
 
+/** Item files of the two non-model-facing layers, by `<item>/<display path>`. */
+interface GuardedLayers {
+  grading?: Map<string, string>
+  verify?: Map<string, string>
+}
+
 /** Copy the checked-in dataset fixture into a writable tmp tree and add the visible layer + plan. */
 function makeDatasetTree(): string {
   const root = tmpTree()
@@ -88,12 +97,23 @@ function readPlanDoc(planPath: string): Record<string, unknown> {
 
 /* ───────────────────────── fake datasets face ─────────────────────────── */
 
-function fakeDatasets(root: string): DatasetsFace {
+function fakeDatasets(root: string, guarded: GuardedLayers = {}): DatasetsFace {
   const datasetRoot = join(root, 'datasets', 'harness-comparison')
   const itemFiles = new Map<string, string>([
     ['P0-placeholder/task.md', TASK],
     ['P0-placeholder/standards.yml', STANDARDS],
   ])
+  const byLayer: Record<string, Map<string, string>> = {
+    grading: guarded.grading ?? new Map(),
+    verify: guarded.verify ?? new Map(),
+  }
+  /** The real service refuses a sensitive layer unless the scope names it. */
+  const assertScoped = (scope: { layers?: readonly string[] }, layer: string): void => {
+    if (layer === 'visible') return
+    if (scope.layers === undefined || !scope.layers.includes(layer)) {
+      throw new Error(`fake datasets: layer ${JSON.stringify(layer)} is outside the call's scope — the judge path must name it explicitly`)
+    }
+  }
   const datasetFiles = new Map<string, string>([
     ['visible/prompts/stage1.md', PROMPT_ONE],
     ['visible/prompts/stage2.md', PROMPT_TWO],
@@ -105,11 +125,26 @@ function fakeDatasets(root: string): DatasetsFace {
     async worktreePath(_scope, _datasetId, options) {
       return { path: join(datasetRoot, 'worktree'), commit: options?.commit ?? FAKE_COMMIT, layers: ['visible'], reused: false }
     },
-    async show(_scope, _datasetId, itemId) {
-      const visible = ['task.md', 'standards.yml'].filter(rel => itemFiles.has(`${itemId}/${rel}`))
-      return { items: [{ id: itemId ?? 'P0-placeholder', layers: { visible } }] }
+    async show(scope, _datasetId, itemId) {
+      const id = itemId ?? 'P0-placeholder'
+      const layers: Record<string, string[]> = {
+        visible: ['task.md', 'standards.yml'].filter(rel => itemFiles.has(`${id}/${rel}`)),
+      }
+      for (const [layer, files] of Object.entries(byLayer)) {
+        if (scope.layers === undefined || !scope.layers.includes(layer)) continue
+        const paths = [...files.keys()].filter(key => key.startsWith(`${id}/`)).map(key => key.slice(id.length + 1)).sort()
+        if (paths.length > 0) layers[layer] = paths
+      }
+      return { items: [{ id, layers }] }
     },
-    async read(_scope, query) {
+    async read(scope, query) {
+      assertScoped(scope, query.layer)
+      const guardedLayer = byLayer[query.layer]
+      if (query.item !== undefined && guardedLayer !== undefined) {
+        const content = guardedLayer.get(`${query.item}/${query.path}`)
+        if (content === undefined) throw new Error(`fake datasets: no ${query.layer} file ${query.item}/${query.path}`)
+        return { content, commit: query.commit ?? FAKE_COMMIT }
+      }
       if (query.item === undefined) {
         const content = datasetFiles.get(`${query.layer}/${query.path}`)
         if (content === undefined) throw new Error(`fake datasets: no dataset-level file ${query.layer}/${query.path}`)
@@ -302,6 +337,17 @@ interface DelegationCall {
   childSessionId?: string
   prompt: string
   cwd?: string
+  /** Set on judge delegations (the fake recognizes the blind-judging prompt). */
+  judge?: true
+}
+
+/** The judge prompt's opening line — how the fake tells judging from playing. */
+const JUDGE_PROMPT_HEADING = '# 盲评任务'
+
+/** Read the criterion ids back out of a judge prompt (its `### <id>` headings). */
+function criteriaOfPrompt(prompt: string): string[] {
+  const body = prompt.slice(0, prompt.indexOf('## 材料'))
+  return [...body.matchAll(/^### ([A-Za-z0-9._-]+)/gm)].map(match => match[1] as string)
 }
 
 /**
@@ -328,6 +374,8 @@ class FakeLocalAgent implements LocalAgentFace {
   calls: DelegationCall[] = []
   private seq = 0
   private pending = new Map<string, () => void>()
+  /** Judge delegations so far — the index handed to `judgeAnswer`. */
+  judgeCalls = 0
   constructor(readonly options: {
     /** start() throws this many times before succeeding (spawn failure). */
     failuresBeforeSuccess?: number
@@ -336,6 +384,14 @@ class FakeLocalAgent implements LocalAgentFace {
     hangUntilCancel?: boolean
     stage1Payload?: 'valid' | 'invalid'
     stage2Payload?: 'valid' | 'halt'
+    /** Appended to each stage's narrative — how a test plants a fingerprint. */
+    stageNarrative?: string
+    /**
+     * What the judge writes on its `call`-th delegation. The default answers
+     * every criterion in the prompt with `pass: true`; a function that writes
+     * nothing produces the parse failure the retry path is for.
+     */
+    judgeAnswer?: (call: number, cwd: string, criteria: string[]) => void
     /** T11 read-back; omitted, the fake emits nothing (a facade predating T11). */
     readback?: FakeReadback
   } = {}) {
@@ -386,7 +442,26 @@ class FakeLocalAgent implements LocalAgentFace {
       ? (behavior === 'valid' ? VALID_STAGE1 : {})
       : (behavior === 'halt' ? HALT_STAGE2 : VALID_STAGE2)
     writeFileSync(join(cwd, `${stageId}.json`), `${JSON.stringify(payload, null, 2)}\n`)
-    writeFileSync(join(cwd, `${stageId}.md`), `# ${stageId} narrative\n`)
+    writeFileSync(join(cwd, `${stageId}.md`), `# ${stageId} narrative\n${this.options.stageNarrative ?? ''}`)
+  }
+
+  /** One judge delegation: answer the prompt's criteria into the sample cwd. */
+  private judge(prompt: string, cwd: string | undefined): void {
+    if (cwd === undefined) throw new Error('fake localAgent: the judge must run in its own sample directory')
+    const call = ++this.judgeCalls
+    const criteria = criteriaOfPrompt(prompt)
+    if (this.options.judgeAnswer !== undefined) {
+      this.options.judgeAnswer(call, cwd, criteria)
+      return
+    }
+    writeFileSync(join(cwd, 'verdicts.json'), `${JSON.stringify(criteria.map(criterion => ({
+      schema: 'dataseek.verdict/1',
+      task: 'P0-placeholder',
+      criterion,
+      pass: true,
+      evidence: `材料里写了 ${criterion}`,
+      by: 'fake-judge',
+    })), null, 2)}\n`)
   }
 
   private behaviorFor(prompt: string): 'valid' | 'invalid' | 'halt' {
@@ -405,6 +480,11 @@ class FakeLocalAgent implements LocalAgentFace {
     }
     const text = prompt[0]?.text ?? ''
     const childSessionId = `child-${++this.seq}`
+    if (text.startsWith(JUDGE_PROMPT_HEADING)) {
+      this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, judge: true, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
+      this.judge(text, options?.cwd)
+      return this.makeRun(childSessionId)
+    }
     this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
     this.emitProgress(options?.onProgress)
@@ -925,5 +1005,392 @@ describe('runPlan — finalize (decision 10)', () => {
     expect(cell.finalState).toBe('archived')
     const refusal = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'finalize-refused')
     expect(refusal).toBeDefined()
+  })
+})
+
+/* ───────────────────── T9: probes, judging, finalize ──────────────────── */
+
+/** A P0 rubric carrying one of each `kind` — only the two llm-draft rows may reach a judge. */
+const RUBRIC = `schema_version: dataseek.rubric/2
+rubric_id: P0-default
+task_id: P0-placeholder
+items:
+  - {id: J1, axis: A1, weight: 3, kind: llm-draft,
+     criterion: 设计里写清了共享上下文谁能看到,
+     evidence: "stage1.md"}
+  - {id: J2, axis: A1, weight: 2, kind: llm-draft,
+     criterion: 区分了对一个成员说话与对所有人说话,
+     evidence: "stage1.md", note: 只看 stage1.md}
+  - {id: A2-1, axis: A3, weight: 3, kind: objective,
+     criterion: "out_of_scope 非空", evidence: "stage1.json:out_of_scope"}
+  - {id: H1, axis: D1, weight: 4, kind: human,
+     criterion: 排除的项确实值得排除, evidence: "stage1.json:out_of_scope"}
+`
+
+/** Exit 0 WITH verdicts — reads --cell and --rubric, and mislabels task/by on purpose. */
+const PROBE_OK = [
+  "import { readFileSync, writeFileSync } from 'node:fs'",
+  "const args = process.argv.slice(2)",
+  "const flag = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1] }",
+  "const cell = flag('--cell'); const rubric = flag('--rubric'); const out = flag('--out')",
+  "if (cell === undefined || out === undefined) { console.error('probe: missing --cell/--out'); process.exit(2) }",
+  "const stage1 = JSON.parse(readFileSync(cell + '/stage1.json', 'utf8'))",
+  "const rubricBytes = rubric === undefined ? 0 : readFileSync(rubric, 'utf8').length",
+  "writeFileSync(out, JSON.stringify([{",
+  "  schema: 'dataseek.verdict/1',",
+  "  task: 'WRONG-the-orchestrator-overwrites-this',",
+  "  criterion: 'A2-1',",
+  "  pass: Array.isArray(stage1.out_of_scope) && stage1.out_of_scope.length > 0,",
+  "  evidence: 'out_of_scope 有 ' + stage1.out_of_scope.length + ' 条；rubric ' + rubricBytes + ' 字节',",
+  "  by: 'WRONG-the-orchestrator-overwrites-this',",
+  "}]))",
+].join('\n') + '\n'
+
+/** Non-zero exit — the probe itself failed, so it produces no verdict. */
+const PROBE_FAILS = [
+  "console.error('probe: the workspace has no deployment to inspect')",
+  "process.exit(3)",
+].join('\n') + '\n'
+
+/** Exit 0 with NO output — claims a judgement and produces nothing checkable. */
+const PROBE_SILENT = "process.exit(0)\n"
+
+/** Write a condition declaration into the dataset tree. */
+function writeCondition(root: string, id: string, overrides: Record<string, unknown> = {}): void {
+  const condition = {
+    schema: 'dataseek.condition/1',
+    harness: { name: 'dsh', version: null, drive: 'exec' },
+    model: { declared: null, endpoint: null },
+    reasoning: { effort: 'default' },
+    permissions: 'unrestricted',
+    instructions: 'none',
+    preset: null,
+    skills: { pack: null },
+    home: { sha: null },
+    env: { keys: [] },
+    ...overrides,
+  }
+  writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${id}.json`), `${JSON.stringify(condition, null, 2)}\n`)
+}
+
+/** The judge condition of the happy path: same harness, a DIFFERENT declared model. */
+function writeJudgeCondition(root: string, id = 'judge-r1'): string {
+  writeCondition(root, id, { model: { declared: 'judge-model-r1', endpoint: null } })
+  return id
+}
+
+/** A plan that judges: expectedNs gains llm-draft, judge names its condition. */
+function writeJudgingPlan(root: string, judgeIds: string[], samples: number, name = 't9-judge'): string {
+  return writePlan(root, {
+    judge: { conditions: judgeIds, samples },
+    expectedNs: ['script', 'llm-draft'],
+  }, name)
+}
+
+function llmDraftAnnotations(mission: FakeMission, runId: string, missionId: string): Array<Record<string, unknown>> {
+  const record = mission.runs.get(runId)?.missions.get(missionId)
+  return (record?.annotations.filter(a => a.ns === 'llm-draft') ?? []).map(a => a.payload as Record<string, unknown>)
+}
+
+function scriptAnnotations(mission: FakeMission, runId: string, missionId: string): unknown[] {
+  const record = mission.runs.get(runId)?.missions.get(missionId)
+  return (record?.annotations.filter(a => a.ns === 'script') ?? []).map(a => a.payload)
+}
+
+describe('runPlan — the LLM judge (frozen decision 9)', () => {
+  it('samples every judge condition twice, each a fresh delegation in its own cwd, and archives both', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; finalState: string; verdicts?: { script: number; llmDraft: number } }
+    expect(cell.finalState).toBe('archived')
+    // Two samples × two llm-draft criteria (J1, J2). The objective and human
+    // rows of the rubric never reached the judge.
+    expect(cell.verdicts).toEqual({ script: 0, llmDraft: 4 })
+
+    const judgeCalls = localAgent.calls.filter(call => call.judge === true)
+    expect(judgeCalls).toHaveLength(2)
+    expect(judgeCalls.every(call => call.kind === 'start')).toBe(true) // never resume: samples must be independent
+    expect(new Set(judgeCalls.map(call => call.cwd)).size).toBe(2)
+    expect(judgeCalls[0]?.prompt).toContain('J1')
+    expect(judgeCalls[0]?.prompt).toContain('J2')
+    expect(judgeCalls[0]?.prompt).not.toContain('A2-1') // objective → the probes
+    expect(judgeCalls[0]?.prompt).not.toContain('H1') // human → the judge bench
+
+    // One annotation per SAMPLE, provenance beside the verdicts.
+    const annotations = llmDraftAnnotations(mission, report.runId, cell.missionId)
+    expect(annotations).toHaveLength(2)
+    expect(annotations.map(a => a['sample'])).toEqual([1, 2])
+    for (const annotation of annotations) {
+      expect(annotation['judgeCondition']).toBe(judgeId)
+      expect(annotation['judgeSha']).toMatch(/^[0-9a-f]{64}$/)
+      expect(annotation['promptSha']).toMatch(/^[0-9a-f]{64}$/)
+      const verdicts = annotation['verdicts'] as Array<Record<string, unknown>>
+      expect(verdicts.map(v => v['criterion'])).toEqual(['J1', 'J2'])
+      // The orchestrator's coordinates win over whatever the judge wrote.
+      expect(verdicts.every(v => v['task'] === 'P0-placeholder' && v['by'] === judgeId)).toBe(true)
+    }
+    // Both samples share one prompt: the only difference between them is the model's own variance.
+    expect(annotations[0]?.['promptSha']).toBe(annotations[1]?.['promptSha'])
+
+    const verdictsDir = join(root, 'mission', 'runs', report.runId, 'data', cell.missionId, 'attempt-1', 'archive', 'verdicts')
+    expect(JSON.parse(readFileSync(join(verdictsDir, `llm-draft-${judgeId}-1.json`), 'utf8'))).toHaveLength(2)
+    expect(existsSync(join(verdictsDir, `llm-draft-${judgeId}-2.json`))).toBe(true)
+
+    // Decision 6 of the brief: judging cost is `kind: judge`, never `delegation`
+    // — the report's efficiency table reads `delegation` and nothing else.
+    const entries = orchestratorNs(mission, report.runId, cell.missionId)
+    expect(entries.filter(e => e['kind'] === 'delegation')).toHaveLength(2) // stage1, stage2 — the players' only
+    const judgeEntries = entries.filter(e => e['kind'] === 'judge')
+    expect(judgeEntries).toHaveLength(2)
+    expect(judgeEntries[0]).toMatchObject({ judgeCondition: judgeId, sample: 1, attempt: 1, usage: null })
+    expect(judgeEntries[0]?.['durationMs']).toBeGreaterThanOrEqual(0)
+
+    // The material directory survives the run, for review.
+    expect(existsSync(join(root, 'state', 'judge', report.runId, cell.missionId, 'attempt-1', judgeId, 'sample-1', 'prompt.md'))).toBe(true)
+    expect(existsSync(join(root, 'state', 'judge', report.runId, cell.missionId, 'attempt-1', judgeId, 'sample-2', 'verdicts.json'))).toBe(true)
+  })
+
+  it('de-fingerprints the material, records the replacement table, and leaves the originals alone', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    // The player declares a model; both it and the harness names are fingerprints.
+    writeCondition(root, 'dsh-exec', { model: { declared: 'deepseek-chat', endpoint: null } })
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const localAgent = new FakeLocalAgent({
+      stageNarrative: 'I am Codex, running on deepseek-chat via the dsh harness. Claude Code would do this differently.\n',
+    })
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+
+    const judgePrompt = localAgent.calls.find(call => call.judge === true)?.prompt as string
+    expect(judgePrompt).not.toMatch(/codex/i)
+    expect(judgePrompt).not.toMatch(/claude/i)
+    expect(judgePrompt).not.toMatch(/deepseek-chat/i)
+    expect(judgePrompt).toContain('I am <harness>, running on <model> via the <harness> harness. <harness> would do this differently.')
+
+    const table = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'deidentify') as {
+      files: string[]
+      table: Array<{ pattern: string; replacement: string; count: number }>
+      total: number
+    }
+    expect(table.files).toEqual(['stage1.json', 'stage1.md', 'stage2.json', 'stage2.md'])
+    const byPattern = Object.fromEntries(table.table.map(row => [row.pattern, row]))
+    // `deepseek-chat` is consumed before `deepseek`, and `claude code` before `claude`.
+    expect(byPattern['deepseek-chat']).toEqual({ pattern: 'deepseek-chat', replacement: '<model>', count: 2 })
+    expect(byPattern['claude code']).toEqual({ pattern: 'claude code', replacement: '<harness>', count: 2 })
+    expect(byPattern['codex']).toEqual({ pattern: 'codex', replacement: '<harness>', count: 2 })
+    expect(byPattern['deepseek']).toBeUndefined()
+    expect(byPattern['claude']).toBeUndefined()
+    expect(table.total).toBe(table.table.reduce((sum, row) => sum + row.count, 0))
+
+    // The material the cell produced is untouched — only the judge's copy was rewritten.
+    const cellDir = join(root, 'state', 'cells', report.runId, cell.missionId, 'attempt-1')
+    expect(readFileSync(join(cellDir, 'stage1.md'), 'utf8')).toContain('I am Codex')
+  })
+
+  it('retries a sample whose verdicts.json cannot be read, exactly once', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    // Call 1 writes nothing; call 2 (the retry) answers. Sample 2 answers first time.
+    const localAgent = new FakeLocalAgent({
+      judgeAnswer: (call, cwd, criteria) => {
+        if (call === 1) return
+        writeFileSync(join(cwd, 'verdicts.json'), JSON.stringify(criteria.map(criterion => ({
+          schema: 'dataseek.verdict/1', task: 'P0-placeholder', criterion, pass: call === 2, evidence: `call ${call}`, by: 'fake',
+        }))))
+      },
+    })
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string }
+
+    expect(localAgent.judgeCalls).toBe(3) // sample 1 twice, sample 2 once
+    const failures = orchestratorNs(mission, report.runId, cell.missionId).filter(e => e['kind'] === 'judge-parse-failed')
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toMatchObject({ judgeCondition: judgeId, sample: 1, attempt: 1 })
+    expect(String(failures[0]?.['error'])).toContain('no verdicts.json was written')
+    // Both samples still landed — the retry rescued the first one.
+    expect(llmDraftAnnotations(mission, report.runId, cell.missionId)).toHaveLength(2)
+    expect(existsSync(join(root, 'state', 'judge', report.runId, cell.missionId, 'attempt-1', judgeId, 'sample-1-retry', 'prompt.md'))).toBe(true)
+  })
+
+  it('drops a sample that fails twice rather than inventing one', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 1)
+    const localAgent = new FakeLocalAgent({
+      judgeAnswer: (_call, cwd) => { writeFileSync(join(cwd, 'verdicts.json'), '{ this is not json') },
+    })
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent })
+    const cell = report.cells[0] as { missionId: string; verdicts?: { llmDraft: number } }
+
+    expect(localAgent.judgeCalls).toBe(2)
+    expect(orchestratorNs(mission, report.runId, cell.missionId).filter(e => e['kind'] === 'judge-parse-failed')).toHaveLength(2)
+    expect(llmDraftAnnotations(mission, report.runId, cell.missionId)).toHaveLength(0)
+    expect(cell.verdicts?.llmDraft).toBe(0)
+  })
+
+  it('says so honestly when the item ships no rubric — no judging, no empty verdict', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }) // no grading layer at all
+    const cell = report.cells[0] as { missionId: string; verdicts?: { llmDraft: number } }
+
+    expect(localAgent.judgeCalls).toBe(0)
+    expect(cell.verdicts?.llmDraft).toBe(0)
+    const skipped = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'judge-skipped')
+    expect(String(skipped?.['reason'])).toContain('ships no rubric')
+  })
+})
+
+describe('runPlan — the judge must not be a contestant (frozen decision 9)', () => {
+  it('refuses before executing when a judge condition matches a player on (harness, model)', async () => {
+    const root = makeDatasetTree()
+    // A different id, the same subject: dsh + the same (null) declared model.
+    writeCondition(root, 'judge-twin')
+    const planPath = writeJudgingPlan(root, ['judge-twin'], 2)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(EvalRunRefused)
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })).rejects.toThrow(/is a contestant/)
+    // Nothing executed: no run was created and no delegation was made.
+    expect(mission.runs.size).toBe(0)
+    expect(localAgent.calls).toHaveLength(0)
+  })
+
+  it('accepts the same harness on a different declared model', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root, 'judge-other-model')
+    const planPath = writeJudgingPlan(root, [judgeId], 1)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent() })
+    expect((report.meta['judge'] as { conditions: Array<{ id: string }> }).conditions).toEqual([
+      { id: judgeId, sha: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    ])
+  })
+})
+
+describe('runPlan — probes write the script ns (protocol §6.7)', () => {
+  const probes = (): Map<string, string> => new Map([
+    ['P0-placeholder/checklist.yml', 'schema_version: dataseek.verify/1\n'],
+    ['P0-placeholder/probes/a-ok.mjs', PROBE_OK],
+    ['P0-placeholder/probes/b-fails.mjs', PROBE_FAILS],
+    ['P0-placeholder/probes/c-silent.mjs', PROBE_SILENT],
+  ])
+
+  it('keeps the exit-0 probe, drops the non-zero one and the silent one, and records all three', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: probes() }),
+      mission,
+      localAgent: new FakeLocalAgent(),
+    })
+    const cell = report.cells[0] as { missionId: string; verdicts?: { script: number } }
+    expect(cell.verdicts?.script).toBe(1)
+
+    const recorded = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'probes') as {
+      probes: Array<{ probe: string; exitCode: number | null; ok: boolean; verdicts: number; error?: string }>
+    }
+    expect(recorded.probes.map(p => p.probe)).toEqual(['probes/a-ok.mjs', 'probes/b-fails.mjs', 'probes/c-silent.mjs'])
+    expect(recorded.probes[0]).toMatchObject({ exitCode: 0, ok: true, verdicts: 1 })
+    // Non-zero exit: the PROBE failed, so it produced no verdict.
+    expect(recorded.probes[1]).toMatchObject({ exitCode: 3, ok: false, verdicts: 0 })
+    expect(String(recorded.probes[1]?.error)).toContain('no deployment to inspect')
+    // Exit 0 with nothing written is a contract violation, not a verdict.
+    expect(recorded.probes[2]).toMatchObject({ exitCode: 0, ok: false, verdicts: 0 })
+    expect(String(recorded.probes[2]?.error)).toContain('exited 0 but produced no readable verdict')
+
+    const verdicts = scriptAnnotations(mission, report.runId, cell.missionId)[0] as Array<Record<string, unknown>>
+    expect(verdicts).toHaveLength(1)
+    expect(verdicts[0]).toMatchObject({ criterion: 'A2-1', pass: true })
+    // The orchestrator's coordinates overwrite whatever the probe claimed.
+    expect(verdicts[0]?.['task']).toBe('P0-placeholder')
+    expect(verdicts[0]?.['by']).toBe('probes/a-ok.mjs')
+    // The probe really was handed --rubric (it reported the byte count it read).
+    expect(String(verdicts[0]?.['evidence'])).toContain(`rubric ${RUBRIC.length} 字节`)
+
+    const archived = JSON.parse(readFileSync(
+      join(root, 'mission', 'runs', report.runId, 'data', cell.missionId, 'attempt-1', 'archive', 'verdicts', 'script.json'), 'utf8',
+    )) as unknown[]
+    expect(archived).toHaveLength(1)
+    // The verify layer does not outlive its use.
+    expect(existsSync(join(root, 'state', 'probes', report.runId, cell.missionId, 'attempt-1'))).toBe(false)
+  })
+
+  it('writes nothing at all when the item ships no probes', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent() })
+    const cell = report.cells[0] as { missionId: string; verdicts?: { script: number } }
+    expect(cell.verdicts?.script).toBe(0)
+    expect(scriptAnnotations(mission, report.runId, cell.missionId)).toHaveLength(0)
+    expect(orchestratorNs(mission, report.runId, cell.missionId).some(e => e['kind'] === 'probes')).toBe(false)
+    expect(existsSync(join(root, 'mission', 'runs', report.runId, 'data', cell.missionId, 'attempt-1', 'archive', 'verdicts', 'script.json'))).toBe(false)
+  })
+})
+
+describe('runPlan — --finalize and the archive gate', () => {
+  it('reaches released once verdicts exist (script alone is enough — no judge configured)', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true }, {
+      datasets: fakeDatasets(root, {
+        grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]),
+        verify: new Map([['P0-placeholder/probes/a-ok.mjs', PROBE_OK]]),
+      }),
+      mission,
+      localAgent: new FakeLocalAgent(),
+    })
+    const cell = report.cells[0] as { missionId: string; finalState: string; verdicts?: { script: number; llmDraft: number } }
+    expect(cell.verdicts).toEqual({ script: 1, llmDraft: 0 })
+    expect(cell.finalState).toBe('released')
+    expect(orchestratorNs(mission, report.runId, cell.missionId).some(e => e['kind'] === 'finalize-refused')).toBe(false)
+  })
+
+  it('reaches released on llm-draft alone', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent() })
+    expect((report.cells[0] as { finalState: string }).finalState).toBe('released')
+  })
+
+  it('still refuses honestly when neither source produced anything', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+    const cell = report.cells[0] as { missionId: string; finalState: string }
+    expect(cell.finalState).toBe('archived')
+    const refusal = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'finalize-refused')
+    expect(String(refusal?.['error'])).toContain('empty verdicts/')
   })
 })

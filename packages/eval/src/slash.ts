@@ -20,9 +20,11 @@ const USAGE = `usage:
   run starts an evaluation run from a dataseek.plan/1 document. The invoking
   session becomes the run's originSession and the parent of every delegation.
   --dry-run validates, generates the template, expands the matrix, and prints
-  the execution order — nothing executes. The default run stops at 'archived'
-  (the archive gate needs a non-empty verdicts/, which lands with the judge);
-  --finalize attempts releasable → released explicitly.`
+  the execution order — nothing executes. Every cell is judged before it is
+  archived (the item's probes write script verdicts; the plan's judge
+  conditions write double-sampled llm-draft ones). The default run stops at
+  'archived'; --finalize attempts releasable → released, which the archive
+  gate allows once verdicts/ is non-empty.`
 
 /** Parsed slash input: positional tokens, `--flag value` pairs, bare `--switches`. */
 interface SlashArgs {
@@ -85,7 +87,7 @@ function renderReport(lines: readonly string[], report: {
   runId: string
   dryRun: boolean
   meta: { order?: { sequence?: string[] } }
-  cells: Array<{ missionId: string; finalState: string; attempts: number; activeMs: number; halted?: boolean; skipped?: { reason: string }; rejected?: { stage: string; violations: string[] } }>
+  cells: Array<{ missionId: string; finalState: string; attempts: number; activeMs: number; halted?: boolean; skipped?: { reason: string }; rejected?: { stage: string; violations: string[] }; verdicts?: { script: number; llmDraft: number } }>
   bundleDir?: string
   exportError?: string
 }): CommandResult {
@@ -103,6 +105,9 @@ function renderReport(lines: readonly string[], report: {
     if (cell.halted === true) notes.push('halted')
     if (cell.skipped !== undefined) notes.push(`skipped: ${cell.skipped.reason}`)
     if (cell.rejected !== undefined) notes.push(`rejected at ${cell.rejected.stage}`)
+    if (cell.verdicts !== undefined && (cell.verdicts.script > 0 || cell.verdicts.llmDraft > 0)) {
+      notes.push(`verdicts ${cell.verdicts.script} script / ${cell.verdicts.llmDraft} llm-draft`)
+    }
     body.push(`  ${cell.missionId}: ${cell.finalState} · ${cell.attempts} attempt(s) · active ${(cell.activeMs / 60_000).toFixed(1)}min${notes.length > 0 ? ` · ${notes.join(', ')}` : ''}`)
   }
   if (report.bundleDir !== undefined) body.push(`bundle: ${report.bundleDir}`)

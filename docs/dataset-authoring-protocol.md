@@ -578,3 +578,43 @@ datasets/<id>/
 - **条件哈希** = 规范化 JSON（键全排序、无空白）的 sha256，小写十六进制。`notes` 是评审注释，**不参与哈希**——改注释不是换条件；其余任何字段变化都产生新哈希。同一输入两次计算必然一致。
 - **home.sha** = scoped home 目录内容哈希。只取配置类文件（`.json .jsonc .yml .yaml .toml .ini .cfg .conf .xml .properties` 后缀），按相对路径字节序排序后，对 `<relPath>\0<content>\0` 逐文件喂入 sha256。**拒绝清单**：名为 `auth.json`、`.env*` 的文件；文件名含 `token` / `key` / `credential` / `secret` / `password` / `auth`（不分大小写）的文件；`credentials/`、`oauth/`、`sessions/`、`keys/`、`secrets/` 目录整棵跳过；符号链接、非常规文件与超大文件（> 1 MiB）跳过。文件内容只进摘要，**绝不读入日志、绝不打印**。
 - **阶段 schema**：阶段的 structured schema 以题集级 `schemas/<stage>.json` 为权威（JSON Schema 子集：`type` / `required` / `properties` / `items` / `if` / `then` / `const` / `enum` / `additionalProperties`）。mission 的 schema-check 守卫与 `dsh-eval validate` 只认这个子集，出子集即 error。题集 manifest 的 `output_schema` 改为**引用文件名**，不再内联 schema，自创的 `type: enum` 记法与 markdown 记法废弃；题库侧的迁移由后续任务执行。
+
+### 6.7 探针契约 —— script 判定怎么产生
+
+`script` 是三个判定源里唯一确定性的一个，只由探针写。探针是题目自带的可执行文件，住在**该题 verify 层下任意 `probes/` 段**里，后缀 `.mjs` 或 `.sh`（`probes/room-identity.mjs`、被 register 改过户的 `checks/probes/x.sh` 都算）。
+
+**调用约定**（编排器在格子跑完阶段、进入 `judged` 后逐个执行）：
+
+```text
+<probe> --cell <格子目录> --rubric <rubric 路径> --out <verdicts.json>
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--cell` | 选手的格子工作目录。探针**只读**它——判定不改被判定的东西 |
+| `--rubric` | 该题 grading 层 rubric 的宿主副本路径。题目没有 rubric 时**不给这个参数** |
+| `--out` | 探针把判定写到这个路径 |
+
+**退出码就是契约**：`0` 表示**已判定**——包括判 `pass: false`，「做到了没有」和「探针能不能判」是两件事；非 `0` 表示**探针失败**，本次不产生任何判定，失败原因进 orchestrator ns。退出 `0` 却没写出可读的 `--out`，同样按探针失败记——它声称判了又拿不出可核对的东西。
+
+**输出形状**是 §6.5 `dataseek.verdict/1` 的**数组**（只有一条时写成单个对象也接受）。其中 `task` 与 `by` 由编排器回填（`by` = 探针在 verify 层的 display 路径），探针自己写了也会被覆盖：这两项是编排器知道的坐标，判定方只是回声，写错会污染报告的每一次 join。
+
+**执行环境**：编排器把该题 verify 层**整层**物化进宿主临时目录并以它为 cwd（探针因此能按相对路径读同层的 checklist 与 helper），`.mjs` 交 node、`.sh` 交 `/bin/sh`，每个探针 5 分钟墙钟上限，跑完整个目录删除——verify 层是答案，不留过夜。I3 起这一步交给 `lab.verify` 在容器内执行，**契约不变**。
+
+**落点**：判定写进 mission 的 `script` ns，并落到 `attempt-N/archive/verdicts/script.json`。题目没有探针就什么都不写——不写空文件，不写空注解。
+
+### 6.8 判官契约 —— llm-draft 判定怎么产生
+
+`llm-draft` 由**判官条件**写。判官本身是一份 `dataseek.condition/1`（§6.2），不是一个带工具的会话；plan 的 `judge` 块（§6.4）指定它与采样次数。三条方法论约束由编排器强制：
+
+1. **判官不得是选手。** 校验器拒绝 id 出现在两边；编排器在开跑前再比一次 `(harness.name, model.declared)`——两个不同 id 指向同一个受试对象，仍是自己判自己。
+2. **判前去指纹。** 送判材料（`stage1.json` / `stage1.md` / `stage2.json` / `stage2.md`）里的 harness 名、CLI 名、成员自报名字一律换成 `<harness>`，plan 各条件声明与回读到的模型标识换成 `<model>`。替换表与次数进 orchestrator ns；**材料原件不动**，判官看到的始终是副本。
+3. **至少两次采样。** 每个判官条件独立跑 `judge.samples` 次（缺省 2），每次都是**全新委派**——续聊会让判官看见自己上一次的答案，那就不是独立样本了。报告据此给一致率与 Cohen κ。
+
+**判官 prompt** 由编排器拼装，判官不自带提示词：该题 grading 层 rubric 里 `kind: llm-draft` 的判据（`objective` 归探针、`human` 归判官台，都不给判官看）+ 去指纹材料 + 输出要求。rubric 的选取规则是「grading 层 display 路径中文件名为 `rubric.yml` / `rubric.yaml` 者，多个取最短路径」——两种题目布局（约定式的 `rubric.yml` 与 register 改户的 `answers/rubric.yml`）都覆盖到。
+
+**输出**与探针同形：判官把 §6.5 的数组写进自己 cwd 下的 `verdicts.json`，`task` 与 `by`（= 判官条件 id）由编排器回填。读不出来就记 orchestrator ns 并**重试一次**，再失败该样本如实丢弃，不补造。
+
+**落点**：每个样本一条 `llm-draft` 注解，形状 `{sample, judgeCondition, judgeSha, promptSha, verdicts}`——出处与判定放在一起，报告拆信封取 `verdicts`；同时落 `attempt-N/archive/verdicts/llm-draft-<判官条件>-<样本号>.json`。判官的用量与耗时记进 orchestrator ns 的 `kind: judge`，**不算进选手的效率表**。判官材料目录（prompt + 去指纹材料 + 判官的回答）在 run 结束后保留，供复核。
+
+grading 层与 verify 层只经 datasets 服务面以**显式单层 scope** 读取（`layers: ['grading']` / `['verify']`），物化进宿主侧的判官目录与探针目录，**绝不进选手格子**。
