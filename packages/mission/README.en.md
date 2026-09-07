@@ -37,7 +37,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # this plugin
 
 The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `mission` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `mission` row id only once; check with `dsh --profile web --dump-config | grep mission` before adding to a composition that might already mount it. From source: clone the monorepo; the package lives at `packages/mission` (`pnpm install && pnpm run build`).
 
-Config (all optional): `dataDir` — the host instance's data root (default `$DSH_HOME/state/mission`, else `<cwd>/.dsh-mission`).
+Config (all optional): `dataDir` — the host instance's data root (default `$DSH_HOME/state/mission`, else `<cwd>/.dsh-mission`); `tools` — which model-tool group to register, `all` (default, all twelve) / `read` (the four queue queries only) / `none` (no model tools), see [Model tools](#model-tools).
 
 ## Storage and concurrency
 
@@ -74,6 +74,16 @@ The `simple` template's `releasableStates` is deliberately empty: everyday work 
 ## Model tools
 
 `mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`. `mission_submit.to` has the service face's intended-edge semantics; `mission_retry` requires `reason` and `category`. Write tools ride the standard `tools/pre-execute` approval pipeline; the calling session id is recorded into history as `tool:<sessionId>`. A companion system-prompt section (`tool:mission`) briefs the model. **Export is intentionally not a tool** — sharing a run bundle is an initiating-class human decision (CLI/slash/tab only, with the leak gate).
+
+**Tools register as a group** — a mount picks one with `tools`, because a preset can only choose among the tools that were registered; it cannot subtract one the profile registered. Whether the model can write has to be decided where registration happens.
+
+| `tools` | Registered |
+|---|---|
+| `all` (default) | the twelve above — byte-identical behavior to before this option existed |
+| `read` | `mission_run_list` / `mission_run_status` / `mission_list` / `mission_get` |
+| `none` | nothing |
+
+`read` is for mounts where something else does the writing: the run is driven by a service-face caller, the CLI, or a person at the tab, and the model only reads the queue. `mission_is_releasable` is read-only yet stays in `all` — it answers whether a held resource may be destroyed, which belongs with the side holding it, and a `read` mount is by definition not that side. The system-prompt section (`tool:mission`) follows the group: `all` keeps the original text, `read` gets a text naming only those four tools and saying who writes instead, and `none` registers no section at all. The service face, CLI, slash command, and tab are unaffected in all three — the tool face is the only one the group trims.
 
 ## Service face
 
@@ -135,7 +145,7 @@ The `missions` entry in the conversation tab ring (web profile): five-bucket fil
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host.
 - source line (deepseek-harness master, fork or upstream): ✅ — same.
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. The session tab is a web surface; TUI has no tab mechanism, and headless profiles expose the Remote data face without a browser consumer. The tab is live-smoke-tested on the `0.1.0-rc.8` web profile; earlier release lines share the same gateway conventions but were not smoke-tested.
+Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. A mount that sets `tools: 'read'` or `'none'` trims the model tools per the table above — that is the mounting profile's choice, not a missing host capability; the service face, CLI, slash command, and tab are unaffected. The session tab is a web surface; TUI has no tab mechanism, and headless profiles expose the Remote data face without a browser consumer. The tab is live-smoke-tested on the `0.1.0-rc.8` web profile; earlier release lines share the same gateway conventions but were not smoke-tested.
 
 ## Known Limitations and Deferred Work
 

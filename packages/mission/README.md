@@ -37,7 +37,7 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `mission` 挂载）合入 profile 的 bundles 层——无需手改 cordis.yml。一个 composition 只能挂载 `mission` 行 id 一次；向可能已挂载该 id 的 composition 添加前，先 `dsh --profile web --dump-config | grep mission` 确认。源码方式：clone monorepo，包在 `packages/mission`（`pnpm install && pnpm run build`）。
 
-配置（全部可选）：`dataDir`——宿主实例的数据根（默认 `$DSH_HOME/state/mission`，否则 `<cwd>/.dsh-mission`）。
+配置（全部可选）：`dataDir`——宿主实例的数据根（默认 `$DSH_HOME/state/mission`，否则 `<cwd>/.dsh-mission`）；`tools`——注册哪一组模型工具，`all`（默认，全部 12 个）/ `read`（只有四个队列查询）/ `none`（不注册模型工具），见[模型工具](#模型工具)。
 
 ## 存储与并发
 
@@ -74,6 +74,16 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 ## 模型工具
 
 `mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。`mission_submit.to` 与服务面的意向边语义一致；`mission_retry` 必须带 `reason` 与 `category`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（仅 CLI/slash/tab，带泄题闸）。
+
+**工具按组注册**——挂载时用 `tools` 选一组，因为 preset 只能在已注册的工具里挑，挑不掉 profile 层注册的工具；写不写得动，必须在注册处决定。
+
+| `tools` | 注册的工具 |
+|---|---|
+| `all`（默认） | 上面 12 个，行为与本配置项加入前完全一致 |
+| `read` | `mission_run_list` / `mission_run_status` / `mission_list` / `mission_get` |
+| `none` | 无 |
+
+`read` 是给「写由别人做」的挂载用的：run 由服务面的调用方、CLI 或 tab 前的人推动，模型只读队列。`mission_is_releasable` 虽然只读，仍留在 `all`——它回答的是「持有的资源可否销毁」，属于持有资源的那一侧，而 `read` 挂载按定义不是那一侧。系统提示词段（`tool:mission`）按档位走：`all` 用原文案，`read` 换成只讲这四个工具、并说明写由谁做的文案，`none` 干脆不注册这一段。服务面、CLI、slash、tab 三档都不受影响——工具面是唯一被裁的面。
 
 ## 服务面
 
@@ -135,7 +145,7 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 - npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。
 - source line（deepseek-harness master，fork 或 upstream）：✅——同上。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。挂载时选 `tools: 'read'` 或 `'none'` 会按上表裁掉模型工具（不是宿主能力缺失，是挂载方的选择）——服务面、CLI、slash、tab 照常。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
 
 ## Known Limitations and Deferred Work
 

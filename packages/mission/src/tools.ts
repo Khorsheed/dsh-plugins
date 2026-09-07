@@ -6,9 +6,16 @@
  * calling session id is recorded into history as `tool:<sessionId>`. There is
  * deliberately NO export tool: sharing is an initiating-class human decision
  * and stays CLI/slash-only.
+ *
+ * Which tools exist at all is a mount-time decision ({@link MissionToolsTier}):
+ * a profile where something other than the model owns the writing — a
+ * service-face driver, the CLI, a person at the tab — mounts `read` or `none`
+ * so the model cannot reach the write tools. A preset cannot subtract a tool
+ * the profile registered, so the group has to be chosen where registration
+ * happens.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { MissionService } from './service.ts'
 import { RETRY_CATEGORIES } from './types.ts'
@@ -32,14 +39,43 @@ function jsonOutput(renderText: (value: never) => string) {
   }
 }
 
-/** Register the twelve mission tools on the plugin context. */
-export function registerMissionTools(ctx: Context, service: MissionService): void {
+/**
+ * The tool group a mount opens: every tool (default), the read-only queue
+ * queries, or no model tools at all.
+ */
+export type MissionToolsTier = 'all' | 'read' | 'none'
+
+/**
+ * The `read` group: the four queries that project the queue and open one
+ * mission. `mission_is_releasable` is read-only too but stays out — it answers
+ * a question about destroying a resource, which belongs with the side that
+ * holds it, and a `read` mount is by definition not that side.
+ */
+export const MISSION_READ_TOOLS: readonly string[] = [
+  'mission_run_list', 'mission_run_status', 'mission_list', 'mission_get',
+]
+
+/**
+ * Register the mission tools of the given group on the plugin context.
+ * @param ctx - plugin context carrying the tool registry.
+ * @param service - the service every tool adapts.
+ * @param tier - which group to register (default: all twelve).
+ */
+export function registerMissionTools(ctx: Context, service: MissionService, tier: MissionToolsTier = 'all'): void {
+  if (tier === 'none') return
+  /** Register one definition when the configured group contains it. */
+  const register = (definition: ToolDefinition): void => {
+    if (tier === 'all' || MISSION_READ_TOOLS.includes(definition.name)) {
+      ctx.tools.register(definePluginTool(definition))
+    }
+  }
+
   const by = (exec: { agent?: { session: { id: string } } | undefined }): string =>
     `tool:${exec.agent?.session.id ?? 'unknown'}`
   const originOf = (exec: { agent?: { session: { id: string } } | undefined }): string | undefined =>
     exec.agent?.session.id
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_run_create',
     description: 'Create a run (a batch of missions) from a run template: the template\'s state machine '
       + 'freezes into the run and its mission batch materializes. A template that fails lint is refused. '
@@ -70,9 +106,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         warnings: result.lint.warnings, existed: result.existed,
       } as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_run_list',
     description: 'List all runs (id, template, mission count, state).',
     parameters: {},
@@ -81,9 +117,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
     execute() {
       return Promise.resolve(service.runList() as unknown as JsonValue)
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_run_status',
     description: 'Projected status of one run: every mission with its five-bucket projection '
       + '(ready/scheduled/blocked/active/done), the bucket grouping, and missions holding an '
@@ -101,9 +137,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
     execute(args) {
       return Promise.resolve(service.runStatus(args.run_id) as unknown as JsonValue)
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_create',
     description: 'Queue one work item. Without `run_id` it lands in this session\'s implicit run '
       + '(built-in `simple` template: queued → active → done | failed) — zero configuration. '
@@ -136,9 +172,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
       })
       return { runId: run.id, id: mission.id, state: mission.attempts[0]?.state, existed } as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_list',
     description: 'List missions with their five-bucket projection, optionally filtered by run, bucket, '
       + 'and exact label matches.',
@@ -156,9 +192,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         ...(args.labels !== undefined ? { labels: args.labels as Record<string, string> } : {}),
       }) as unknown as JsonValue)
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_get',
     description: 'Full detail of one mission: attempts with states/history/refs/checkpoints/artifacts, '
       + 'and all annotations.',
@@ -172,9 +208,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
       const { run, mission } = service.get(args.mission_id, args.run_id)
       return Promise.resolve({ runId: run.id, mission } as unknown as JsonValue)
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_transition',
     description: 'Move a mission along an edge its run\'s state machine DECLARES: undeclared transitions '
       + 'fail, and a declared guard (file-check / schema-check / attested) is enforced — a failed guard '
@@ -196,9 +232,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         by: by(exec),
       }) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_submit',
     description: 'Submit outputs of the current attempt: files are appended into the attempt\'s run-data '
       + 'directory (append-only — same bytes are a no-op, different bytes at an existing path fail), '
@@ -239,9 +275,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         by: by(exec),
       }) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_annotate',
     description: 'Append an annotation to the current attempt under a namespace. Annotations are '
       + 'append-only and ns-isolated — nothing rewrites or deletes them. An identical (ns, payload) '
@@ -259,9 +295,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         by: by(exec),
       }) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_attest',
     description: 'Register an attestation key for the current attempt — the confirmation an '
       + '`attested` transition guard checks. Repeating a key is a no-op.',
@@ -279,9 +315,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         by: by(exec),
       }) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_retry',
     description: 'Re-run a mission for an explicit reason: opens a NEW attempt at the initial state. '
       + 'The old attempt stays immutable; the reason, category, caller, and time are recorded on the '
@@ -301,9 +337,9 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
         by: by(exec),
       }) as unknown as JsonValue
     },
-  })))
+  }))
 
-  ctx.tools.register(definePluginTool(defineTool({
+  register(defineTool({
     name: 'mission_is_releasable',
     description: 'May this mission\'s held resources be destroyed? True exactly when its current state '
       + 'is one of the run\'s declared releasableStates.',
@@ -316,5 +352,5 @@ export function registerMissionTools(ctx: Context, service: MissionService): voi
     execute(args) {
       return Promise.resolve({ releasable: service.isReleasable(args.mission_id, args.run_id) } as unknown as JsonValue)
     },
-  })))
+  }))
 }
