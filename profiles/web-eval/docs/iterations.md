@@ -169,31 +169,43 @@ T2 到 T6 五个任务互不依赖，可并行；T2 用题库 i1-walk 的两份�
 | T12 ✅ | 代码 | datasets：金丝雀字段 + validate；`tools` 分组配置 | 无 | 合入 main `2ce8910` |
 | T13 ✅ | 代码 | mission：`tools` 分组配置 | 无 | 合入 main `fbf90f6` |
 | T14 ✅ | 代码 | eval：只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status` | T8b | 合入 main `2176535` |
-| T15 | 运维 | pilot A：step 0 把评测 pin 写进 web-eval 的 cordis.patch.yml 并决定该文件归 pack；F2 + F3 × 四家 × 3 rep，阶段一二，每格独立 cwd；bundle + report；把结论与保留条款写成 methodology.md | T8b T9 T14 | 第一份结论 |
+| T15 ✅ | 运维 | pilot A：step 0 把评测 pin 写进 web-eval 的 cordis.patch.yml 并决定该文件归 pack；F2 + F3 × 四家 × 3 rep，阶段一二，每格独立 cwd；bundle + report；把结论与保留条款写成 methodology.md | T8b T9 T14 | pins 合入 main `eb2b6c1`，codex 修复 `ac7dd39`；实际 F2 + F3 × 两家，3 格 released，其余由协调者叫停（见第三波验收）；bundle 在题库 `exports/pilot-a-round1-bundle/`；第一份结论 = 14 条缺口 |
 
 **第一波验收（2026-09-06）**：T11（`2f05c1b`）、T10（`11b322f`）、T8（`d65b17b`）依次合入 main。T8 与 T10 在 `packages/eval` 的六处冲突全是「两边都加」，协调者按两边保留解决，合并后 eval 127 个测试全绿。T8 的真实一格 P0 × dsh 全自动到 archived，两轮 prompt 哈希与 I1 人肉走通逐字节相同，纯评测流 9.5 分钟对比 I1 的 1.5 小时。两个要记住的发现：服务键不能叫 `eval`（loader 的 !!js 用 with(ctx) 求值，同名属性遮蔽全局 eval，已改 `dshEval`）；profile 内 file: tarball 重打包后 pnpm 按 lockfile 复用旧解包，重装要清 node_modules。T12、T13 未回报。
 
 **第二波验收（2026-09-07）**：T13（`fbf90f6`）、T12（`2ce8910`）、T8b（`9069b1b`）、T9（`0c75673`）依次合入 main。T8b 与 T9 在 `packages/eval` 的六处冲突全是两边各加一段，协调者按两边保留解决；合并后唯一挂掉的用例是「判官等于选手」——T8b 给夹具选手填了实测模型而 T9 仍假设 null，测试改为复用同一声明模型（`7842cba`），eval 178 个测试全绿。四个发现：一、报告曾按物化记录的字节哈希而非其 sha256 字段，两格因 source.reused 不同被判「题面不一致」，T9 发现、T8b 修复，真实两格 bundle 的三条不变量首次全部成立；二、回读读早一拍，门面在 settle 后才合并观测，T8b 改为有界轮询，四轮 observed 全部非空且与 declared 一致；三、judge.ts 源码里有一个字面 NUL 字节让 git 把它当二进制，合并时改为 \u0000 转义；四、两个 agent 共用 ~/.dsh-lab 的 web-eval 实例互相覆盖过 tarball，T9 另开 web-eval-t9（3181，验收后已停）。gate 的 test 步会把 root 包一起选中而 root 的 test 脚本是 pnpm -r，作用域形同虚设，ankh-guard 的偶发 flake 因此拦住每一个人——归 mainline。T14 于同日合入（`2176535`，与 T9 的 README 冲突按两边保留解决，eval 合并态 189 个测试全绿；工具配置词表定为 all / none，read 不作同义值，理由见其 Agent Note）。I2 的代码任务全部落地，T15 pilot A 可发。
 
-验收：README I2 行的三条；report 开头四条不变量全部成立；判官一致性有数字。
+**第三波验收（2026-09-08）**：T15 的两条分支合入 main。`feat/web-eval-pins`（`eb2b6c1`）：评测 pin 进 profile 的 cordis.patch.yml，该文件归 pack，update.sh 也覆盖它；工具按域开放三行、四家 live false、codex workspace-write、claude permissionMode skip、kimi thinkingEffort high、claude 端点 pin 为官方端点 + 本机代理出网，Agent Note 记了三条备选与拒绝理由。`fix/local-agent-codex-non-git-cwd`（`ac7dd39`）：codex exec argv 补 `--skip-git-repo-check`，格子目录不必是 git 仓库；新 spec 把 flag 钉在首轮与 resume 两种 argv 上并断言 `--sandbox` 仍在；trust_level 与「父目录做成仓库」两条备选都实测排除过。合并态 gate 通过，local-agent-codex 包 112 个测试全绿。题库 i1-walk 分支 `558ec30` 定稿。
 
-进入 I3 的信号：pilot A 的结论写完；T15 的卡点清单变成 I3 任务。
+范围的裁决：任务段的完成判据写 24 格全部 released，实际 3 格。claude 的 scoped home 授权刷不动、kimi 月度额度耗尽，两家开跑前进不来，均属账号侧；剩下两家 12 格跑到 3 格 released 时由协调者叫停——methodology §0 已写明本轮结果不能用于任何能力比较（无容器；判官实物上与 dsh 选手同模型；只剩两家；推理强度只一家受控），多跑的格子买不到信息，只烧 codex 额度。迭代收口只看 README I2 行的判据（规程第 6 条），24 格是任务级数字。
+
+核过的事实：bundle 77 文件；四条不变量三条成立，「环境一致」按约定记「本 run 无指纹」，据此 `comparisonAllowed: false`，报告只出事实表——比较闸第一次被真实触发；判官双采样 39 条判据一致 38，Cohen κ 0.655，方差全部来自 F3 × codex 一格（A2-2 fail、A2-3 两次分歧），另两格 24 条零方差，κ 是单格支撑的数字；llm-draft 对 human-final 38/39。报告把 codex-exec vs dsh-exec 自动判为多因子（env / harness / model / permissions 四字段）只做描述统计——跨厂商 harness 对比在当前条件 schema 下天然不是单因子，单因子路径是 I4 的同 harness 换模型。
+
+pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `authenticated` 只查形状不查活性、G6 F3 rubric 没有叶子、G7 codex argv、G11 verdict 无极性、G12 权重进不了 bundle、G13 `--finalize` 无再入口）加 methodology §5b（llm-draft 一档写的是「设计里存不存在 X」，完整设计整片通过，阶段一二的区分度只能来自 objective 档做成真探针）构成 I3 第一波。验收另发现三件：一、报告的效率表按条件对**所有**当前格子的委派时长求和，未完成的格子（F2 × dsh × rep3 只跑了阶段一）也计入，两家「活跃时长」同为 21.0 min 是巧合——效率表应只计已完成格子或逐格列出，记 G15 归 T23；二、ankh-guard 在实施 agent 的 worktree 里留下四个「checkpoint: web-eval install」提交（三个为空、一个带半截改动），随分支进了 main 历史，checkpoint 不该落在功能分支上，归 mainline；三、`proxyUrl: http://127.0.0.1:6152` 是本机出网细节进了 pack 文件，换机器装即失效，I4 provision 落地后移到按主机覆盖层，暂由文件注释兜住。文档漂移两处归 mainline：`docs/ops.md` 写 lab 的 local-agent 软链回 official，实际是独立目录（对评测这才是对的）；`docs/players.md` 的 claude 代理路径已过期。
+
+**I2 收口（2026-09-08）**：README I2 行三条判据——一格全自动跑完（T8/T8b 的 P0 格与本轮 F2/F3 三格）✅；一份带保留条款的结论（bundle 内 methodology.md，结论是缺口清单而非名次）✅；判官一致性有数字（κ 0.655，单格支撑，读法随数字写明）✅。I3 已按「T15 的卡点清单变成 I3 任务」开启，任务表见下节，文案见第三节。
 
 ### I3 · 容器化 + 阶段三四
 
-目标：容器内一格全流程，release 经闸；四家在容器内跑通同一题。
+目标：容器内一格全流程，release 经闸；四家在容器内跑通同一题。**第一波先把 pilot A 的缺口做掉**：它们不依赖容器，且不做掉的话容器内的四家对比同样出不了可读的数字。
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T16 | 运维 | 验证题集级镜像构建；四家 Linux CLI 安装方式实测；本地包镜像与白名单代理；各家凭证可写卷；`versions.lock` 填实 | 无 | 镜像 digest、代理与镜像源的地址与快照标识 |
 | T17 | 代码 | local-agent：决定「容器内 exec 包装」还是「CLI 驱动抽成独立包」，写 Agent Note 后实施其一 | T16 | |
-| T18 | 代码 | lab：复合指纹 | 无 | |
-| T19 | 数据 | F2 阶段三的 verify 探针脚本与 `verify/helpers/`，按 `dataseek.verdict/1` 输出 | 无 | |
+| T18 | 代码 | lab：复合指纹（镜像 digest + 资源限制 + 挂载布局 + env 键），分量可读 | 无 | |
+| T19 | 数据 | 探针：F2 / F3 阶段一二的 objective 判据写成 `.mjs` 探针（对 stage1.json / stage2.json 的结构断言）；F2 阶段三的 verify 探针与 `verify/helpers/`；按 `dataseek.verdict/1` 输出 | 无 | 阶段一二第一次有 `script` 源 |
 | T20 | 代码 | eval：容器路径（acquire / populate / checkpoint / verify / archive 交 lab；销毁路径唯一） | T17 T18 | |
 | T21 | profile | eval preset：不挂 Bash 与 docker | 无 | |
 | T22 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 | |
+| T23 | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | |
+| T24 | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现 | 无 | 协议 §6.5 加一段说明 |
+| T25 | 代码 | local-agent：`effectiveSettings.cliVersion` 填实（G1）；codex 回读在并发 run 里失效的原因与修复（G14）；status 增加「记录在、活性未知」一档（G4 的 local-agent 半边） | 无 | |
+| T26 | 代码 | datasets：`validate` 增加可判性检查（G6）——rubric 有叶子、每个 kind 在该题上有判定源 | 无 | |
 
-验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在。
+第一波（互不依赖，可并行）：T16、T18、T19、T21、T23、T24、T25、T26。第二波：T17 在 T16 回报后发；T20 在 T17、T18 合入后发；T22 收尾。
+
+验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
 ### I4 · 放宽因子
 
@@ -515,7 +527,7 @@ eval 测试全绿；check:plugins 零违规；pnpm gate 通过；在 ~/.dsh-lab 
 commit、worktree、Agent Note、eval_run_status 的真实输出（脱敏）。
 ```
 
-### T15 · pilot A（可发）
+### T15 · pilot A（已完成，2026-09-08 收口）
 
 ```text
 # 任务 T15：pilot A——F2 + F3 × 四家 × 3 rep，阶段一二
@@ -547,6 +559,274 @@ pilot 期间 ~/.dsh-lab 的 web-eval 实例由本任务独占：其他任务不�
 
 ## 回报
 题库 commit、bundle 路径、summary.md 全文、pilot-a-log.md、profile pins 的 dsh-plugins commit。
+```
+
+### I3 的文案
+
+I2 已收口（2026-09-08）。I3 的目标：容器内一格全流程，release 经闸；四家在容器内跑通同一题。第一波八段互不依赖可并行；T17 / T20 / T22 的文案等 T16 回报后写，它们的形状取决于镜像与 CLI 的实测结果。每段的通用约束不再重复：从 main 开 worktree，分支只改指明的目录；Agent Note 双语并写 Alternatives considered；`pnpm gate` 绿；不碰 3080，不共用 ~/.dsh-lab 的评测实例（要跑实例就另开 profile 与端口）；日志、回报、提交里不得出现凭据。
+
+### T16 · 运维：题集级镜像与四家 Linux CLI 实测（可发）
+
+```text
+# 任务 T16：验证题集级镜像、四家 Linux CLI、本地包镜像与白名单代理
+
+## 背景
+I3 要把选手搬进容器。architecture.md「运行环境」一节把环境定义放在题库的题集级 env/（Dockerfile + versions.lock），并规定：四家 CLI 版本 pin 死、harness 源码 pin commit 并预装依赖、镜像里不得有参考实现、容器无外网只走白名单代理、依赖走本地包镜像、各家凭证以专用可写卷挂进容器。这些至今都是文字。本任务把它们逐条变成实测结论与可复现的构建。
+
+## 先读
+profiles/web-eval/README.md「冻结决策」与「安装」；profiles/web-eval/docs/architecture.md「运行环境」；题库 datasets/harness-comparison/env/ 现有内容与 README；题库 docs/players.md（四家 CLI 的安装与登录方式）；docs/ops.md 的环境拓扑；packages/lab/README.md（acquire 的 image 与 fingerprint 语义）。
+
+## 分支
+题库仓库：从 i1-walk 开分支 i3-env，只改 datasets/harness-comparison/env/ 与 docs/。dsh-plugins 本任务不改代码；若发现 lab 或 profile 文档与实测不符，只在回报里列出，不改。
+
+## 交付
+1. env/Dockerfile 能构建：node、pnpm、git 版本与宿主一致；四家 CLI 用 Linux 安装方式装到 pin 死的版本（写清各家用 npm 包、发行版包还是二进制，以及哪一家在 Linux 上没有 exec 驱动可用）；dsh 用 harness 源码 pin commit 预装。
+2. versions.lock 填实：每个组件的版本、来源、校验和；本地包镜像的快照标识；构建出的镜像 digest。
+3. 构建后断言：镜像内不存在参考实现与 verify 层（grep 题库路径与已知文件名），结果写进 env/README。
+4. 本地包镜像：宿主起一个 registry 镜像（写明用什么），断外网时容器内 pnpm install 能成功；四家装到的是同一份。
+5. 白名单代理：容器无外网，只放行四家模型端点（claude 的官方端点 + 本机代理出网这一条与 profile 的 pin 同值）；给出容器内的 env 键清单（只有键名进指纹，值不进）。
+6. 凭证卷：每家一个可写卷的挂载布局（codex auth.json、claude 凭证文件须可写以便续期回写、kimi oauth/、dsh 走 env 注入）；实测续期回写落在卷上而不是容器层。
+7. 四家在容器内各跑一次最小 exec（一句话任务）并记录版本自报、退出码、耗时。
+
+## 约束
+不进 dsh-plugins 改代码；不碰 3080；凭证只在本机卷里，不进镜像、不进 git、不进回报。镜像与代理的地址写成可替换的变量并在 README 说明，不写死本机路径。
+
+## 完成判据
+docker build 可复现（同 versions.lock 两次构建 digest 相同，或说明不相同的原因）；断外网下四家最小 exec 全部完成；env/README 有「谁在 Linux 上跑不了 exec」的明确答案。
+
+## 回报
+题库 commit；镜像 digest；versions.lock 全文；四家最小 exec 的版本自报与耗时表；镜像内无参考实现的断言输出；发现的 lab / profile 文档不符项。
+```
+
+### T18 · lab：复合指纹（可发）
+
+```text
+# 任务 T18：lab 复合指纹——镜像 digest + 资源限制 + 挂载布局 + env 键
+
+## 背景
+报告的「环境一致」不变量读 refs.fingerprint。lab 现在的指纹是镜像的 repo digest（packages/lab/src/docker.ts 的 fingerprint()），而 architecture.md 定义的是复合指纹：镜像 digest、CPU 与内存上限、挂载布局、注入的 env 键名。同一镜像配不同资源限制或多挂一个卷，现在会被判为「环境一致」。pilot A 的报告因无指纹拒绝比较，I3 的第一份容器内报告要靠这条指纹放行比较，它必须诚实。
+
+## 先读
+packages/lab/README.md 与 src/docker.ts、types.ts（AcquireSpec）、cli-core.ts（--fingerprint 的传递）；profiles/web-eval/docs/architecture.md「运行环境」与「四条不变量」；packages/mission 的 AttemptRefs.fingerprint 语义（不透明字符串）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-lab-composite-fingerprint，分支 feat/lab-composite-fingerprint，只改 packages/lab/。
+
+## 已定决定（照此实现）
+- 指纹 = sha256(规范化 JSON)，分量：image（resolved digest）、resources（cpu、memory 的规范化字面）、mounts（每个挂载的容器内路径、只读/可写、类型；不含宿主路径）、envKeys（键名排序数组，不含值）。任一分量缺席记 null 而不是省略，保证同形状。
+- 分量 JSON 与指纹一并落盘到 lab 自己的状态目录，并可由 lab status / 一条 fingerprint 子命令原样打印；mission refs.fingerprint 仍只存字符串。
+- 旧格式（裸 digest）继续被接受为「无分量的指纹」，报告侧不做特殊处理。
+
+## 交付
+docker.ts 的 fingerprint(spec) 改为复合；acquire 把分量写进容器 label 与状态文件；status 表新增一列或子命令展示分量；测试覆盖「同镜像不同资源限制指纹不同」「挂载顺序不同指纹相同」「env 值不同键相同指纹相同」；README 双语更新；Agent Note（按仓库分类规则选 design 或 feature）。
+
+## 约束
+不改 mission；不 import 其他插件；分量里绝不出现宿主绝对路径与 env 值。
+
+## 完成判据
+包内测试绿，pnpm gate 绿；用两份只差 memory 的 AcquireSpec 跑 fingerprint 得到不同值并能打印出差在哪个分量。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；一份分量 JSON 示例（脱敏）。
+```
+
+### T19 · 数据：阶段一二的 objective 探针 + F2 阶段三的 verify 探针（可发）
+
+```text
+# 任务 T19：F2 / F3 阶段一二的 objective 探针 + F2 阶段三的 verify 探针
+
+## 背景
+pilot A 的 methodology §5b：阶段一二唯一有判定源的是 llm-draft 一档，判据形态是「设计里存不存在 X」，完整设计整片通过，两家配对差值为 0 不是因为一样而是分不开。能拉开差距的是 objective 档——F2 的 A2-1（out_of_scope 非空且每条带理由）、A3-3（每条风险有 tradeoff）、B2-5（每条机制带 verdict）、A-N2（tradeoff 出现 worth-the-cost）、B5-1（core 全覆盖）、B5-3（每个迭代有工作量预估），F3 的同类项——它们全是对 stage1.json / stage2.json 的结构断言，但 verify/probes/ 下只有 .md 没有 .mjs，script 源整源缺席。
+
+## 先读
+docs/dataset-authoring-protocol.md §6.5（verdict）与 §6.7（探针契约：入口、参数、输出、超时）；题库 items/F2-*/grading/rubric.yml 与 items/F3-*/grading/rubric.yml 里 kind: objective 的每一条（evidence 字段指明查证位置）；题库 schemas/stage1.json、stage2.json；bundle exports/pilot-a-round1-bundle/ 里三格的 stage1.json / stage2.json（真实样本，用来自测探针）；packages/eval/src/judge.ts 里 script 源是怎么被编排器调用与入库的。
+
+## 分支
+题库仓库：从 i1-walk 开分支 i3-probes，只改 items/F2-*/verify/、items/F3-*/verify/ 与 docs/。dsh-plugins 不改；探针契约若有不够用的地方，回报里写，不自行改协议。
+
+## 已定决定（照此实现）
+- 每条 objective 判据一个 .mjs 探针，或一个探针输出多条 verdict——按 §6.7 的输出形状，一行一个 dataseek.verdict/1。
+- pass 的语义是「判据成立」，与 rubric 的 criterion 文字一致；负分判据（negative: true，如 A-N2）成立即 pass: true，方向由 rubric 的 negative / 负 weight 决定，探针不自行取反（T24 让报告按此计分）。
+- evidence 写可查证事实：字段路径与命中的值，不写评价。
+- 探针只读 stage*.json，不读 .md（.md 归判官）；缺字段按判据语义判 fail 并在 evidence 里写明缺哪个。
+- F2 阶段三的 verify 探针与 verify/helpers/ 按现有 verify/README 的设计写，能在宿主上对一份工作区目录运行；容器内执行归 T20/T22。
+
+## 交付
+F2、F3 每条 objective 判据都有探针覆盖；一个 run-all 入口逐条执行并汇总；用 bundle 里三格的真实 stage*.json 自测，把结果表写进 docs/probes-selftest.md（哪格哪条 pass/fail 及 evidence）；rubric.yml 的 evidence 字段若与探针实际查证位置不一致，改 rubric 使之一致并在提交说明里列出。
+
+## 约束
+不改判据文字与权重（那是 T24 与出题人的事）；不改 dsh-plugins；探针不依赖网络与外部包。
+
+## 完成判据
+run-all 在三格真实样本上跑完无异常；至少一条判据在三格之间产生了不同的 pass 值（否则说明探针没有区分度，回报里解释）；`dsh-datasets validate` 对题集仍通过。
+
+## 回报
+题库 commit；探针清单（判据 id → 文件）；自测结果表；探针契约的不足之处。
+```
+
+### T21 · profile：eval preset（可发）
+
+```text
+# 任务 T21：eval preset——评测实例的 agent 不挂 Bash 与 docker
+
+## 背景
+冻结决策 12：销毁路径唯一——只有编排器持有 docker socket，评测实例的 agent preset 不挂 Bash 与 docker。I2 在宿主直跑，agent 用的还是 dev 域的默认预设。I3 编排器接 docker 之前，这个 preset 必须先存在并被 profile 装上，否则任何一次 agent 误操作都能绕过 lab 的 release 闸。
+
+## 先读
+profiles/web-eval/README.md「工具按域开放」「冻结决策」「安装」；profiles/web-dev/README.md 里 agent 预设一节（自建预设在 $DSH_HOME/.agent-presets/）；dsh 宿主关于 agent preset 的文档（哪些字段能挑工具、能否禁掉 Bash 与 code-runtime 的执行类工具）；profiles/web-eval/scripts/install.sh 与 update.sh 的 PROFILE_FILES / UPDATE_FILES 机制。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-web-eval-preset，分支 feat/web-eval-preset，只改 profiles/web-eval/。
+
+## 已定决定（照此实现）
+- preset 文件随 pack 分发（放 profiles/web-eval/presets/ 下，install.sh 与 update.sh 都覆盖它，与 cordis.patch.yml 同理由——它是装置不是偏好），安装后落到评测实例的预设目录并成为默认预设。
+- preset 里去掉 Bash、docker 及任何能执行宿主命令的工具；保留读类工具与 datasets / mission / eval 的按域工具（已由 cordis.patch.yml 限定）。
+- 若 dsh 的 preset 机制挑不掉某个执行类工具，不要用 patch 层 disable 整个插件来凑——在回报里写明是哪一个，列出可选办法（插件加 tools 分组配置，走 T12/T13 的同款）。
+
+## 交付
+preset 文件；install.sh / update.sh 的覆盖清单更新；README 双语加一小节说明这是冻结决策 12 的执行点、怎样确认实例正在用它；用 install.sh --source --fresh 在一个新 profile（不是 ~/.dsh-lab 正在用的 web-eval）上装一次并截取工具列表证明 Bash 与 docker 不在。Agent Note（process 或 feature）。
+
+## 约束
+不碰 ~/.dsh-lab 现有的 web-eval 实例与 3080；不改任何 packages/。
+
+## 完成判据
+新装实例的 agent 工具列表里没有 Bash 与 docker 类工具；datasets / mission / eval 的读工具仍在；gate 绿。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；新装实例的工具列表（脱敏）；挑不掉的工具清单（若有）。
+```
+
+### T23 · eval：finalize 再入口、就绪检查、效率表、run 子集（可发）
+
+```text
+# 任务 T23：eval——finalize 再入口、开跑前就绪检查、效率表只计完成格、run 子集
+
+## 背景
+pilot A 暴露的四条都在编排器上：G13 `--finalize` 只在 run 启动时可用，跑完的 run 想补做终评再释放没有动词，三格是人手逐格 dsh-mission transition 推的；G4 `/<harness> status` 的 authenticated 只查凭据记录的形状，claude 在它说 yes 的情况下每次委派都 401，24 格里 6 格注定全废而失败要到第一次委派才看得见；G15 报告的效率表按条件把所有当前格子的委派时长求和，未完成的格子也计入（F2 × dsh × rep3 只跑了阶段一，两家活跃时长同为 21.0 min 是巧合）；缩减 run 只能靠停掉会话轮次，run.meta 里没有任何记录说明为什么只跑了一部分。
+
+## 先读
+packages/eval/README.md 全文；src/run.ts（finalize 分支、run.meta 的写入、cell-skipped 注解）；src/slash.ts（/eval run 的开关）；src/cli-core.ts；src/report.ts（efficiencyOf、COMPLETED_STATES）；packages/local-agent 的门面 start 与 effectiveSettings；题库 docs/pilot-a-log.md 的 G4、G13；iterations.md 第三波验收里的 G15；pilot-a-round1 的 run.json（~/.dsh-lab/state/mission/runs/ 下，只读，拷副本再动）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-finalize-readiness，分支 feat/eval-finalize-readiness，只改 packages/eval/。
+
+## 已定决定（照此实现）
+- `/eval finalize <runId>`：对 run 内每个 archived 的格子走 archived → releasable → released 的同一条闸，非 archived 的格子跳过并逐格列出状态；闸拒绝按格记录，不 force。CLI 形态可选：进程外没有 mission 服务，若做就以子进程调用 dsh-mission 的 CLI，不得 import mission 包。
+- 就绪检查：`/eval run` 在建 run 之前对 plan 里每个条件做一次最小委派（一句话任务，同一 cwd 规则），记 orchestrator ns 的 readiness 注解（条件、harness、耗时、回读模型、结果）；任一条件失败即整 run 不启动并打印原因；`--ignore-readiness` 才允许带着失败条件开跑，此时该条件的格子一律记 cell-skipped 并给出理由。就绪检查不信 status 的 authenticated。
+- 效率表只统计 COMPLETED_STATES 的格子；未完成格子的数目与状态在效率表下方单列一行；results.jsonl 不变。
+- `/eval run --only <missionId,...>` 与 `--max-cells N`：子集与上限进 run.meta（字段名自定，写进 README），报告开头「程序一致」一节打印它们；plan 契约不加字段。
+- validate 交叉核 plan.expectedNs 与题的判定源：声明 `script` 但题的 verify/probes/ 无可执行探针、声明 `llm-draft` 但 rubric 无叶子——按 warning 报出（题库侧的检查归 T26，这里只看 plan 与题的对应）。
+
+## 交付
+上述五项 + 测试（finalize 对混合状态 run 的行为、就绪检查失败阻止启动、效率表排除未完成格、--only/--max-cells 落 run.meta、validate 的交叉 warning）；README 双语更新；Agent Note（feature）。
+
+## 约束
+不改 mission、local-agent、datasets；就绪检查的委派与正式格子走同一门面，不另开后门；不碰 3080 与 ~/.dsh-lab 的 web-eval 实例（要真跑就另开 profile 与端口）。
+
+## 完成判据
+eval 包测试全绿，gate 绿；对 pilot-a-round1 的 run.json 副本跑 finalize 能列出「3 released 跳过、2 中断跳过、7 pending 跳过」；对该 bundle 重跑 report，效率表的 dsh-exec 活跃时长不再含 F2 × dsh × rep3。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；重跑 report 的效率表片段；就绪检查一次失败与一次成功的注解示例（脱敏）。
+```
+
+### T24 · 负分判据进报告：极性取自 rubric，权重表进 bundle（可发）
+
+```text
+# 任务 T24：负分判据进报告——极性取自 rubric，权重表进 bundle
+
+## 背景
+G11：dataseek.verdict/1 只有 pass: boolean，语义「判据成立」；负分判据的 criterion 写的是缺陷（F2 A-N2「tradeoff 出现 worth-the-cost」、F3 A-N1「把协议知识推给用户」），成立 = 缺陷存在，报告主轴「通过判据数」却把它算成多通过一条。pilot A 只能把 human-final 的负分判据全部不写，丢掉了真实观测（F2 × codex × rep2 确有一条 worth-the-cost）。G12：rubric 在 grading 层，run 的自动导出只收 visible 层（泄题闸是对的），report 的 readWeights 拿不到权重，weightsAvailable 恒为 false，加权分这条唯一的救济在自包含 bundle 上默认不可用。
+
+## 先读
+docs/dataset-authoring-protocol.md §6.5、§6.6、§6.7；题库 items/F2-*/grading/rubric.yml 与 F3 的（叶子已带 weight 与 negative: true，axes 带 negative 小计）；packages/eval/src/report.ts（rubric weights 一节、weightsAvailable、配对表）；packages/eval/src/run.ts 里导出 bundle 的那一步（收哪些层）；packages/mission/src/export.ts（层与泄题闸）；bundle exports/pilot-a-round1-bundle/ 的 report/ 与 dataset/ 实物。
+
+## 分支
+dsh-plugins：从 main 开 worktree ../dsh-plugins-wt-eval-polarity，分支 feat/eval-polarity-weights，只改 packages/eval/ 与 docs/dataset-authoring-protocol.md（双语 + sidecar 重录）。题库：从 i1-walk 开分支 i3-rubric-weights，只在 rubric 缺 negative / weight 的叶子上补齐，不改判据文字。
+
+## 已定决定（照此实现）
+- verdict 契约不加字段：pass 永远是「判据成立」。极性是数据，来源唯一——rubric 叶子的 negative: true（weight 为负与之等价，两者不一致即 validate 报错，规则归 T26）。探针与判官都不取反（T19 同此）。
+- 导出时从 grading 层派生一份权重表写进 bundle 的 report/（文件名自定，如 rubric-weights.json）：只含 task、criterion id、weight、negative、kind、axis，不含 criterion 文字与 evidence，因而不经泄题闸；可执行的探针与 rubric 全文仍不进 bundle。
+- 报告主轴改为「得分判据数」：正向判据 pass 计 1；负向判据 pass 计 0、fail 计 1；加权分 = Σ weight × (pass ? 1 : 0)，负 weight 自然扣分。摘要里单列「负向判据命中」表（哪格哪条命中、evidence），那才是读者要看的缺陷清单。
+- 权重表缺席时行为不变（只出计数），但报告明确打印「极性未知，计数按正向处理」并把负向判据数列为 unknown。
+- 协议 §6.5 加一段：极性不在 verdict 里，在 rubric 里，理由如上；版本记 v1-rev4（文档级说明，schema 不变）。
+
+## 交付
+导出派生权重表；report 的极性计分、加权分、负向命中表；协议双语段落与 sidecar 重录；测试（正/负判据计分、权重表缺席的降级、派生文件不含 criterion 文字）；用 pilot-a-round1 的 bundle 副本重跑 report 作为示例。Agent Note（design）。
+
+## 约束
+不改 mission；不把 grading 层任何文字带进 bundle；不改 verdict schema。
+
+## 完成判据
+eval 测试全绿，gate 绿；对 pilot-a-round1 bundle 副本补入权重表后，报告出现加权分与负向命中表；F2 × codex × rep2 的 A-N2 若由人补一条 pass: true 的 human-final，即被计为扣分而不是加分。
+
+## 回报
+分支名与 commit（两个仓库）；Agent Note 路径；gate 输出；重跑报告的相关片段。
+```
+
+### T25 · local-agent：CLI 版本回读、codex 并发回读、status 活性档（可发）
+
+```text
+# 任务 T25：local-agent——CLI 版本回读、codex 回读在并发 run 里失效、status 的活性档
+
+## 背景
+G1：LocalAgentEffectiveSettings 已有 cliVersion 字段（types.ts 注释写「no family probe ships yet」），至今为空，条件的 harness.version 只能取 CLI 自报，而它正是条件哈希里最大的混淆变量。G14：codex 在 smoke 委派里回读到 gpt-5.6-sol，在正式 run 里两轮 model.observed 与 usage 全为 null；codex 的 --json 流不含模型字段，provider 回落到 scoped home 的 rollout 文件按 threadId + 时间窗定位，run 里（--concurrency 2，两个 codex 进程同窗）没定位到。G4 的 local-agent 半边：status 的 authenticated 是形状检查，一份过期且刷不动的记录同样算 yes（已有的 authFailures 机制只在一次委派失败之后才生效）。
+
+## 先读
+packages/local-agent/src/types.ts（LocalAgentEffectiveSettings、cliVersion 注释、observedModel）、src/index.ts（statusOf、authFailures、credentialStamp）；packages/local-agent-codex/src/codex-cli-provider.ts（rollout 定位：spawn 时刻锚点、threadId、时间窗；onRoundSettled）；其余三家 provider 的回读路径；T11 与 T8b 的 Agent Note（回读与有界轮询）；题库 docs/pilot-a-log.md G1、G4、G14 与 §五 契约回填。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-local-agent-readback-v2，分支 feat/local-agent-readback-v2，只改 packages/local-agent 与四个 provider 包。
+
+## 已定决定（照此实现）
+- cliVersion：优先从 CLI 自己的流或记录里读（哪家的首事件带版本就用它），读不到的家在首次 status / 首次委派时 spawn 一次 `<cli> --version` 并按可执行文件的路径 + mtime 缓存；写进 effectiveSettings.cliVersion 与委派记录，四家都要有值或有「该家无法读到」的明确记录。
+- codex 回读：先复现（两个 codex exec 同窗并发，cwd 不同），找到定位失败的确切原因（时间窗、threadId 匹配、cwd 未参与筛选、并发下文件名冲突之类），修复后在并发下回读稳定；写清 rollout 里哪个字段是权威来源。
+- status 增加 credentialState：absent / present-unverified / verified / rejected；authenticated 布尔保留并等于 verified 或 present-unverified，以兼容现有设置卡与 T15 的驱动；verified 由一次成功委派或显式探测设置，rejected 由 authFailures 设置；status 文本行打印这一档。真正的开跑前活性探测归 T23（一次最小委派），本任务只把「记录在、活性未知」说实话。
+
+## 交付
+上述三项 + 测试（cliVersion 缓存与回退、codex 并发回读、credentialState 的四态迁移）；四家 README 的 effectiveSettings 字段表更新；Agent Note（bug-fix 一份给 codex 回读，feature 一份给 cliVersion 与 credentialState，或合一份写清两段）。
+
+## 约束
+不改 eval；不引入新的常驻进程；`--version` 探测有超时并在失败时降级为 undefined 而不是抛错；不碰 3080。
+
+## 完成判据
+四个 provider 包与 local-agent 测试全绿，gate 绿；本机四家 /<harness> status 的 effectiveSettings 都带 cliVersion 与 credentialState；两条并发 codex 委派的委派记录 observedModel 均非空。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；四家 status 输出（脱敏）；codex 并发回读失败的根因一句话。
+```
+
+### T26 · datasets：validate 增加可判性检查（可发）
+
+```text
+# 任务 T26：datasets validate 增加可判性检查
+
+## 背景
+G6：F3 的 rubric.yml 原本只有 axes 没有叶子，rubric.md 逐条引用的 A1-1 / A2-1 / A-N1 从未落成结构化行；`dsh-datasets validate` 照样通过，结果判官在 F3 每一格记 judge-skipped，verdicts/ 为空，格子过不了归档闸。一道题能不能被判，应当是开跑前的机械检查，而它属于题库侧的事实，与 plan 无关。
+
+## 先读
+packages/datasets/README.md 与 src/dataset.ts（现有 validate 规则、rubric 在哪里被读）、src/invariant.ts、src/cli.ts；docs/dataset-authoring-protocol.md 里 rubric（dataseek.rubric/2）与 verify 层的约定，§6.7 探针契约；题库 items/F2-*、F3-*、P0-* 的 grading/rubric.yml 与 verify/probes/ 实物；T12 的 Agent Note（金丝雀字段是同类检查的先例）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-datasets-judgeable，分支 feat/datasets-judgeable-validate，只改 packages/datasets/。
+
+## 已定决定（照此实现）
+- 对每个 item：rubric 必须有至少一条叶子（items 非空），否则 error；每条叶子必须有 id、axis、weight、kind、criterion、evidence，kind 只能取 objective / llm-draft / human，否则 error；negative: true 与 weight 符号不一致 error。
+- 判定源可达性：存在 kind: objective 的叶子但 verify/probes/ 下没有可执行探针（.mjs / .sh）→ warning「objective 判据无探针源」；存在 kind: llm-draft 的叶子即视为有源（判官由 plan 提供）；kind: human 不查。这是题库侧能知道的全部；plan.expectedNs 与题的对应归 eval validate（T23）。
+- rubric.md 引用了叶子 id 而 rubric.yml 没有该叶子 → warning（正则抓 [A-Z]\d?-N?\d+ 形状的 id，允许误报，只报 warning）。
+- 输出格式与现有 validate 一致；新增规则在 README 的规则表里逐条列出。
+
+## 交付
+validate 的三组规则 + 测试（缺叶子、字段缺失、极性不一致、无探针源、md 引用悬空）；README 双语规则表；Agent Note（feature）。
+
+## 约束
+不改协议文本（若发现 rubric/2 的约定写得不够，回报里提）；不改 eval / mission；对现有题库跑一遍并把每条 warning 的处理建议写进回报，不直接改题库。
+
+## 完成判据
+datasets 测试全绿，gate 绿；对题库当前 commit 跑 validate：P0、F2、F3 的结果与 pilot A 的事实一致（F3 补叶子前的 commit 6c3877b^ 应报 error，补后不报；F2 / F3 的 objective 判据在 T19 落地前应报「无探针源」warning）。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；对题库两个 commit 的 validate 输出。
 ```
 
 ## 四、验收规程

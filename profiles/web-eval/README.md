@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：I1 已收口（2026-09-05）：三份契约与 `dsh-eval validate`、mission 与 local-agent 的评测改动、源码安装路径全部合入 main，一格评测已在宿主上手工走通。I2 进行中：编排器 v0 与第一次 pilot。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 进行中：容器化 + 阶段三四，第一波先做 pilot A 的缺口。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
@@ -253,7 +253,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 | **I0 骨架** | 本 profile 目录与本文 | package.json、脚本、README、冻结决策 | 目录存在；决策清单被下一迭代引用 |
 | **I1 走通一格 + 三份契约** | P0 × dsh × 阶段一二，宿主上手工推，不进容器；同时定 condition / plan / verdict 的形状 | `dsh-eval validate`；local-agent 评测 pin 配置；mission retry reason；操作手册更新 | 操作手册里没有 ❌；P0 的 plan 过校验且两次哈希相同；一格的耗时与卡点有记录 |
 | **I2 编排器 v0 + pilot A** | 宿主插件 + CLI，只覆盖阶段一二；F2 + F3 × 四家 × 3 rep，每格独立 cwd | `@khorsheed/dsh-eval` 进成员清单；模板由 manifest 生成；`script` 与 `llm-draft` 自动入库；模型回读；datasets 金丝雀字段；datasets 与 mission 的 `tools` 分组配置；bundle；`dsh-eval report` 配对表 | 一格全自动跑完；一份带保留条款的结论；判官一致性有数字 |
-| **I3 容器化 + 阶段三四** | 验证题集级镜像；四家 Linux CLI；容器内 exec；复合指纹；verify 探针脚本 | lab 复合指纹；provider 容器包装或 CLI 驱动独立包；F2 阶段三的探针 | 容器内一格走完全流程，release 经闸；四家在容器内跑通同一题 |
+| **I3 容器化 + 阶段三四** | 验证题集级镜像；四家 Linux CLI；容器内 exec；复合指纹；verify 探针脚本；pilot A 的缺口（活性探测、finalize 再入口、负分判据与权重、CLI 版本回读、可判性检查） | lab 复合指纹；provider 容器包装或 CLI 驱动独立包；F2 阶段三的探针；阶段一二的 objective 探针；eval preset | 容器内一格走完全流程，release 经闸；四家在容器内跑通同一题 |
 | **I4 放宽因子** | 条件参数化：模型、preset、skill 包 | provider 的模型参数与每条件 scoped home 覆盖；`dsh-eval conditions provision`；条件注册表数据面；capability-catalog 能力清单哈希 | dsh × 两模型的配对结果；claude × 两模型验证参数路径；同 harness 两 preset 的配对结果 |
 | **I5 agent 配实验 + 界面** | `eval-planning` skill；实验台 tab；计划审阅；判官台；报告视图 | 三个新面 + skill | 一句话 → 计划 → 批准 → 跑完 → 报告，人只做审批与终评 |
 | **I6 外部评测集与开放** | SWE-bench / Terminal-Bench 适配脚本；item 级外部源指针；train/dev/test 标签；npm 发布 | 适配脚本；协议扩展；镜像仓 | 一个外部题集跑通一格；`dsh plugin add` 装齐 |
