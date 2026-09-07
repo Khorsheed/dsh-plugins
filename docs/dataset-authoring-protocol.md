@@ -468,6 +468,24 @@ datasets/<id>/
       },
       "description": "Verdict sources this run expects; the report marks the missing ones honestly."
     },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "infrastructure"
+      ],
+      "description": "Optional. Per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts). Run-call options may override.",
+      "properties": {
+        "infrastructure": {
+          "type": "integer",
+          "description": "Maximum infrastructure retries per cell; 0 disables retrying. Default 1."
+        }
+      }
+    },
+    "exports": {
+      "type": "string",
+      "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; not part of any hash."
@@ -479,6 +497,7 @@ datasets/<id>/
 - `conditions` 与 `judge.conditions` 写**条件 id**（文件名），不写 sha；sha 由校验器从 `conditions/<id>.lock.json` 解析并随 run.meta 记录。
 - `judge` 可整个缺省：缺省时 `expectedNs` 不得含 `llm-draft`（validate 交叉检查）。judge 在场但 `samples: 0` 是合法的「本 run 无 LLM 判定」，此时 llm-draft 在报告里如实缺失。
 - 判官不得是选手：`judge.conditions` 与 `conditions` 的交集必须为空（validate 报 error）。
+- `retry.infrastructure` 与 `exports` 都可缺省：前者是每格的基础设施重试预算（spawn 失败、facade 报错、超时），缺省 1，`0` 表示不重试；后者是 bundle 导出目录（允许 `~/…`），缺省 `<题库仓库>/exports`。两者都是**被审阅的默认值**，run 调用选项（`retryInfrastructure` / `exportsDir`）可覆盖——审阅看 plan，临时跑法看选项。
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
 - `dataset.commit` 为 `null` 表示「run 启动时由 snapshot 钉入」，run.meta 记实际值。
 - 例：
@@ -494,7 +513,9 @@ datasets/<id>/
   "budget": { "activeMinutes": 60, "turns": 10 },
   "judge": { "conditions": ["judge-claude"], "samples": 2 },
   "expectedNs": ["script", "llm-draft", "human-final"],
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。"
+  "retry": { "infrastructure": 1 },
+  "exports": "~/dataseek/exports",
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。"
 }
 ```
 

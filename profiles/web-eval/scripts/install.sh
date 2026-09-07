@@ -11,6 +11,13 @@
 #     transitive headless bundle) with pnpm overrides, so the ^-range family
 #     edges inside the tarballs never reach the registry. Published members
 #     still resolve from the registry.
+#
+# Re-running over an installed profile needs --fresh. An installed profile
+# carries node_modules, a pnpm-lock.yaml and the packed tarballs; a plain
+# re-run would resolve against those, so freshly built source tarballs never
+# reach the profile and the instance quietly keeps running the OLD build.
+# --fresh removes all three first, so `--source --fresh` always installs what
+# the checkout currently holds.
 set -eu
 
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
@@ -36,13 +43,15 @@ local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission"
 
 SOURCE=""
+FRESH=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
       [ $# -ge 2 ] || { echo "dsh-web-eval: --source needs a dsh-plugins checkout path" >&2; exit 2; }
       SOURCE="$2"; shift 2 ;;
     --source=*) SOURCE="${1#--source=}"; shift ;;
-    *) echo "dsh-web-eval: unknown argument $1 (usage: install.sh [--source <dsh-plugins checkout>])" >&2; exit 2 ;;
+    --fresh) FRESH=1; shift ;;
+    *) echo "dsh-web-eval: unknown argument $1 (usage: install.sh [--source <dsh-plugins checkout>] [--fresh])" >&2; exit 2 ;;
   esac
 done
 
@@ -58,8 +67,18 @@ if [ -n "$SOURCE" ]; then
 fi
 
 if [ -d "$DEST" ]; then
-  echo "dsh-web-eval: $DEST already exists — remove it first if you want a clean reinstall" >&2
-  exit 1
+  if [ -z "$FRESH" ]; then
+    echo "dsh-web-eval: $DEST already exists — re-run with --fresh to reinstall over it." >&2
+    if [ -d "$DEST/node_modules" ]; then
+      echo "  It carries an installed node_modules: a re-run would resolve against it and the" >&2
+      echo "  existing pnpm-lock.yaml, so newly packed source tarballs would NOT reach the" >&2
+      echo "  profile — the instance would keep running the old build with no sign of it." >&2
+      echo "  --fresh removes node_modules, pnpm-lock.yaml and tarballs/ before installing." >&2
+    fi
+    exit 1
+  fi
+  echo "dsh-web-eval: --fresh — removing node_modules, pnpm-lock.yaml and tarballs/ under $DEST"
+  rm -rf "$DEST/node_modules" "$DEST/pnpm-lock.yaml" "$DEST/tarballs"
 fi
 
 mkdir -p "$DEST"

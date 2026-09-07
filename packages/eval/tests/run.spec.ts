@@ -38,6 +38,8 @@ const PROMPT_TWO = 'STAGE-TWO PROMPT: plan the iterations.\n'
 const TASK = 'Task: count the files in a directory.\n'
 const STANDARDS = 'S1: be correct.\n'
 const FAKE_COMMIT = 'a'.repeat(40)
+/** The model conditions/dsh-exec.json declares (the fixture mirrors the dataset repo). */
+const DECLARED_MODEL = 'deepseek-official/deepseek-v4-flash'
 const PARENT_SESSION = 'sess-eval-parent'
 
 /** Stage payloads by schema conformance. */
@@ -302,6 +304,26 @@ interface DelegationCall {
   cwd?: string
 }
 
+/**
+ * What the fake delivers on the T11 read-back channels for one round.
+ *
+ * The real facade clears the tracked run — and with it the `onProgress` the
+ * call options carried — the moment `run.result` resolves, while the provider
+ * records its observation in a settle pass chained AFTER that. So a real
+ * delegation delivers NO settled event to the caller and a delegation record
+ * that gains `observedModel` a beat late; `recordModelDelayMs` models exactly
+ * that, and `settledModel` models a facade that reports before settling.
+ */
+interface FakeReadback {
+  /** Emitted on the settled progress event (undefined = the event carries none). */
+  settledModel?: string
+  settledUsage?: { inputTokens: number; outputTokens: number }
+  /** Returned by delegationOf (undefined = the record never carries one). */
+  recordModel?: string
+  /** Milliseconds after the result settles before the record carries it (default 0). */
+  recordModelDelayMs?: number
+}
+
 class FakeLocalAgent implements LocalAgentFace {
   calls: DelegationCall[] = []
   private seq = 0
@@ -314,7 +336,45 @@ class FakeLocalAgent implements LocalAgentFace {
     hangUntilCancel?: boolean
     stage1Payload?: 'valid' | 'invalid'
     stage2Payload?: 'valid' | 'halt'
-  } = {}) {}
+    /** T11 read-back; omitted, the fake emits nothing (a facade predating T11). */
+    readback?: FakeReadback
+  } = {}) {
+    // A facade predating T11 has no delegationOf at all — the face's method is
+    // optional, so the fake drops it unless this run exercises the read-back.
+    if (this.options.readback === undefined) {
+      ;(this as { delegationOf?: unknown }).delegationOf = undefined
+    }
+  }
+
+  /** Child session id → when its record starts carrying the observed model. */
+  private recordVisibleAt = new Map<string, number>()
+
+  /** T11: the read-only delegation projection (observed model, first-round cwd). */
+  delegationOf?(childSessionId: string): { childSessionId: string; provider: string; parentSessionId: string; cwd?: string; observedModel?: string } | undefined {
+    const call = this.calls.find(c => c.childSessionId === childSessionId)
+    if (call === undefined) return undefined
+    const recordModel = this.options.readback?.recordModel
+    const visibleAt = this.recordVisibleAt.get(childSessionId)
+    const visible = recordModel !== undefined && visibleAt !== undefined && Date.now() >= visibleAt
+    return {
+      childSessionId, provider: call.provider, parentSessionId: PARENT_SESSION,
+      ...(call.cwd !== undefined ? { cwd: call.cwd } : {}),
+      ...(visible ? { observedModel: recordModel } : {}),
+    }
+  }
+
+  /** Emit the progress events of one settled round, in the facade's order. */
+  private emitProgress(onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void): void {
+    if (onProgress === undefined) return
+    onProgress({ kind: 'heartbeat' })
+    const readback = this.options.readback
+    if (readback === undefined) return
+    onProgress({
+      kind: 'settled',
+      ...(readback.settledModel !== undefined ? { observedModel: readback.settledModel } : {}),
+      ...(readback.settledUsage !== undefined ? { usage: readback.settledUsage } : {}),
+    })
+  }
 
   get(name: string): { delegationProvider?: string } | undefined {
     return name === 'dsh' ? { delegationProvider: 'subagent_dsh' } : undefined
@@ -337,7 +397,7 @@ class FakeLocalAgent implements LocalAgentFace {
     throw new Error(`fake localAgent: unrecognized prompt ${prompt.slice(0, 20)}`)
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string }): Promise<DelegationRun> {
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     void parentSessionId
     if (this.options.alwaysThrow === true || (this.options.failuresBeforeSuccess ?? 0) > this.calls.filter(c => c.kind === 'start').length) {
       this.calls.push({ kind: 'start', provider, prompt: prompt[0]?.text ?? '', ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
@@ -347,14 +407,24 @@ class FakeLocalAgent implements LocalAgentFace {
     const childSessionId = `child-${++this.seq}`
     this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
+    this.emitProgress(options?.onProgress)
+    this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
   }
 
-  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string }): Promise<DelegationRun> {
+  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     const text = prompt[0]?.text ?? ''
     this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
+    this.emitProgress(options?.onProgress)
+    this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
+  }
+
+  /** Arm the record's visibility for the round that is about to settle. */
+  private armRecord(childSessionId: string): void {
+    if (this.options.readback?.recordModel === undefined) return
+    this.recordVisibleAt.set(childSessionId, Date.now() + (this.options.readback.recordModelDelayMs ?? 0))
   }
 
   private makeRun(childSessionId: string): DelegationRun {
@@ -384,7 +454,13 @@ function orchestratorNs(mission: FakeMission, runId: string, missionId: string):
   return (record?.annotations.filter(a => a.ns === 'orchestrator') ?? []).map(a => a.payload as Record<string, unknown>)
 }
 
-function expectDelegationAnnotations(entries: Array<Record<string, unknown>>, stages: string[], childIds: string[]): void {
+function expectDelegationAnnotations(
+  entries: Array<Record<string, unknown>>,
+  stages: string[],
+  childIds: string[],
+  readback: { usage?: unknown; observed?: string | null } = {},
+): void {
+  const declared = DECLARED_MODEL
   const delegations = entries.filter(e => e['kind'] === 'delegation')
   expect(delegations).toHaveLength(stages.length)
   for (const [i, entry] of delegations.entries()) {
@@ -394,9 +470,14 @@ function expectDelegationAnnotations(entries: Array<Record<string, unknown>>, st
     expect(entry['promptSha']).toMatch(/^[0-9a-f]{64}$/)
     expect(typeof entry['startedAt']).toBe('number')
     expect(entry['durationMs']).toBeGreaterThanOrEqual(0)
-    expect(entry['usage']).toBeNull()
-    expect(entry['model']).toEqual({ declared: null, observed: null })
+    expect(entry['usage']).toEqual(readback.usage ?? null)
+    expect(entry['model']).toEqual({ declared, observed: readback.observed ?? null })
   }
+}
+
+/** The cell anchors one run wrote, by mission id (T8b). */
+function cellAnchors(mission: FakeMission, runId: string, missionId: string): Array<Record<string, unknown>> {
+  return orchestratorNs(mission, runId, missionId).filter(e => e['kind'] === 'cell')
 }
 
 describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)', () => {
@@ -453,7 +534,12 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
     expect(report.meta['commit']).toBe(FAKE_COMMIT)
     expect(report.meta['planSha']).toBe(createHash('sha256').update(Buffer.from(canonicalJson(planDoc), 'utf8')).digest('hex'))
     expect(report.meta['evalVersion']).toMatch(/^0\.1\.0-rc\.1/)
-    expect(report.meta['conditions']).toEqual([{ id: 'dsh-exec', sha: expect.stringMatching(/^[0-9a-f]{64}$/) }])
+    // T8b: the full condition document rides the entry, so the report's
+    // factor diff needs nothing beyond the bundle.
+    const conditionDoc = JSON.parse(readFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', 'dsh-exec.json'), 'utf8'))
+    expect(report.meta['conditions']).toEqual([
+      { id: 'dsh-exec', sha: expect.stringMatching(/^[0-9a-f]{64}$/), condition: conditionDoc },
+    ])
     expect(report.meta['order']).toEqual({ seed: 42, sequence: [cell.missionId] })
     expect(report.meta['concurrency']).toBe(1)
     expect(report.meta['startedAt']).toBe(1_700_000_000_000)
@@ -608,6 +694,178 @@ describe('runPlan — refusals before anything executes', () => {
     await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
       { datasets: fakeDatasets(root), mission: new FakeMission(root), localAgent: new FakeLocalAgent() }))
       .rejects.toThrow(/lock sha does not match/)
+  })
+})
+
+
+describe('runPlan — T11 read-back (usage and model.observed)', () => {
+  it('backfills the settled event\u2019s observed model and usage into the delegation annotation', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-settled')
+    const mission = new FakeMission(join(root, 'mission'))
+    const usage = { inputTokens: 900, outputTokens: 300 }
+    const localAgent = new FakeLocalAgent({ readback: { settledModel: DECLARED_MODEL, settledUsage: usage } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    expectDelegationAnnotations(
+      orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
+      { usage, observed: DECLARED_MODEL },
+    )
+  })
+
+  it('falls back to delegationOf when the settled event carries no model', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-record')
+    const mission = new FakeMission(join(root, 'mission'))
+    // The settled event fires but names no model; the record does.
+    const localAgent = new FakeLocalAgent({ readback: { recordModel: DECLARED_MODEL } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    expectDelegationAnnotations(
+      orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
+      { observed: DECLARED_MODEL },
+    )
+  })
+
+  it('waits for the record the provider merges AFTER the result settles', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-late-record')
+    const mission = new FakeMission(join(root, 'mission'))
+    // The real shape: no settled event reaches the caller (the facade cleared
+    // the tracked run), and the record gains the model a beat after settle.
+    const localAgent = new FakeLocalAgent({ readback: { recordModel: DECLARED_MODEL, recordModelDelayMs: 150 } })
+    // Round 1 resolves as soon as the record lands; the resumed round ran the
+    // same model, so its wait expires and returns the carried observation.
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 600 },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    expectDelegationAnnotations(
+      orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
+      { observed: DECLARED_MODEL },
+    )
+  })
+
+  it('records null when the wait expires with nothing recorded', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-never-record')
+    const mission = new FakeMission(join(root, 'mission'))
+    // delegationOf exists but the provider never observes a model.
+    const localAgent = new FakeLocalAgent({ readback: {} })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; finalState: string; childSessionIds: string[] }
+    expect(cell.finalState).toBe('archived')
+    expectDelegationAnnotations(orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds)
+  })
+
+  it('records null against a facade predating T11 — absence is recorded, never guessed', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-absent')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent() // no readback config = no delegationOf at all
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; finalState: string; childSessionIds: string[] }
+    expect(cell.finalState).toBe('archived')
+    expectDelegationAnnotations(orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds)
+  })
+
+  it('fails loud when the observed model contradicts the declared one (frozen decision 5)', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-mismatch')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent({ readback: { recordModel: 'dsh/some-other-model' } })
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
+      { datasets: fakeDatasets(root), mission, localAgent }))
+      .rejects.toThrow(/misattributed/)
+    // The mismatch is not an infrastructure failure: no retry was opened.
+    const cellId = 'p0-placeholder-dsh-exec-rep1'
+    expect(orchestratorNs(mission, [...mission.runs.keys()][0] as string, cellId).some(e => e['kind'] === 'cell-skipped')).toBe(false)
+  })
+})
+
+describe('runPlan — T8b cell anchors', () => {
+  it('writes one {kind: cell} anchor per cell before any work, with the condition hash', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, { reps: 2 }, 't8b-anchor')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+
+    const conditionSha = (report.meta['conditions'] as Array<{ id: string; sha: string }>)[0]?.sha
+    expect(conditionSha).toMatch(/^[0-9a-f]{64}$/)
+    expect(report.cells).toHaveLength(2)
+    for (const cell of report.cells) {
+      const anchors = cellAnchors(mission, report.runId, cell.missionId)
+      expect(anchors).toHaveLength(1)
+      expect(anchors[0]).toEqual({
+        kind: 'cell', task: 'P0-placeholder', condition: 'dsh-exec', conditionSha, rep: cell.rep,
+      })
+    }
+    // The anchor is the FIRST orchestrator write of the cell — it precedes
+    // every delegation, so even a cell that never ran is attributable.
+    const first = orchestratorNs(mission, report.runId, report.cells[0]?.missionId as string)[0]
+    expect(first?.['kind']).toBe('cell')
+  })
+
+  it('anchors a cell whose delegation never starts (the anchor precedes the failure)', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-anchor-skip')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), retryInfrastructure: 0 },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent({ alwaysThrow: true }) })
+
+    const cell = report.cells[0] as { missionId: string; skipped?: { reason: string } }
+    expect(cell.skipped?.reason).toMatch(/spawn failed/)
+    expect(cellAnchors(mission, report.runId, cell.missionId)).toHaveLength(1)
+  })
+})
+
+describe('runPlan — dataseek.plan/1 retry and exports (T8b)', () => {
+  it('takes the retry budget from the plan and lets the run option override it', async () => {
+    const root = makeDatasetTree()
+    // The plan allows two infrastructure retries; the fake fails twice then succeeds.
+    const planPath = writePlan(root, { retry: { infrastructure: 2 } }, 't8b-plan-retry')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent({ failuresBeforeSuccess: 2 }) })
+    const cell = report.cells[0] as { attempts: number; finalState: string }
+    expect(cell.attempts).toBe(3)
+    expect(cell.finalState).toBe('archived')
+
+    // The option wins over the plan: 0 retries turns the same failure into a skip.
+    const root2 = makeDatasetTree()
+    const planPath2 = writePlan(root2, { retry: { infrastructure: 2 } }, 't8b-plan-retry-override')
+    const mission2 = new FakeMission(join(root2, 'mission'))
+    const report2 = await runPlan(planPath2, { parentSessionId: PARENT_SESSION, stateRoot: join(root2, 'state'), retryInfrastructure: 0 },
+      { datasets: fakeDatasets(root2), mission: mission2, localAgent: new FakeLocalAgent({ failuresBeforeSuccess: 2 }) })
+    expect((report2.cells[0] as { skipped?: unknown }).skipped).toBeDefined()
+  })
+
+  it('exports into the plan\u2019s directory, and into the option\u2019s when both are given', async () => {
+    const root = makeDatasetTree()
+    const planned = join(root, 'planned-exports')
+    const planPath = writePlan(root, { exports: planned }, 't8b-plan-exports')
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+    expect(mission.exportRequests[0]?.outDir).toBe(planned)
+    expect(report.bundleDir).toBe(join(planned, `${report.runId}-bundle`))
+
+    const root2 = makeDatasetTree()
+    const planPath2 = writePlan(root2, { exports: join(root2, 'planned-exports') }, 't8b-plan-exports-override')
+    const mission2 = new FakeMission(join(root2, 'mission'))
+    const chosen = join(root2, 'chosen-exports')
+    await runPlan(planPath2, { parentSessionId: PARENT_SESSION, stateRoot: join(root2, 'state'), exportsDir: chosen },
+      { datasets: fakeDatasets(root2), mission: mission2, localAgent: new FakeLocalAgent() })
+    expect(mission2.exportRequests[0]?.outDir).toBe(chosen)
   })
 })
 

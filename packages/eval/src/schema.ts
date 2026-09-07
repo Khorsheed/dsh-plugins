@@ -365,6 +365,19 @@ export const PLAN_SCHEMA: SchemaObject = {
       items: { enum: [...EXPECTED_NS_VALUES] },
       description: 'Verdict sources this run expects; the report marks the missing ones honestly.',
     },
+    retry: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['infrastructure'],
+      description: 'Optional. Per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts). Run-call options may override.',
+      properties: {
+        infrastructure: { type: 'integer', description: 'Maximum infrastructure retries per cell; 0 disables retrying. Default 1.' },
+      },
+    },
+    exports: {
+      type: 'string',
+      description: 'Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override.',
+    },
     notes: {
       type: 'string',
       description: 'Review commentary; not part of any hash.',

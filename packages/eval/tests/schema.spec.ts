@@ -73,12 +73,24 @@ describe('validateJson', () => {
 })
 
 describe('conditionDiagnostics', () => {
-  it('lists the four nullable fields as unresolved warnings on the T1 example', () => {
+  it('lists the still-null fields as unresolved warnings on the T1 example', () => {
+    // T8b filled harness.version and model.declared from the live instance's
+    // /dsh status snapshot; endpoint and home.sha stay null (no pinned
+    // endpoint, provision not built) and stay warnings.
     const { errors, warnings } = conditionDiagnostics(T1_CONDITION)
     expect(errors).toEqual([])
-    expect(warnings.map(w => w.code)).toEqual([
-      'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD', 'UNRESOLVED_FIELD',
+    expect(warnings.map(w => w.code)).toEqual(['UNRESOLVED_FIELD', 'UNRESOLVED_FIELD'])
+    expect(warnings.map(w => w.message)).toEqual([
+      expect.stringContaining('model.endpoint'),
+      expect.stringContaining('home.sha'),
     ])
+  })
+
+  it('warns on every nullable field when none is resolved', () => {
+    const bare = structuredClone(T1_CONDITION) as { harness: { version: string | null }; model: { declared: string | null } }
+    bare.harness.version = null
+    bare.model.declared = null
+    const { warnings } = conditionDiagnostics(bare)
     expect(warnings.map(w => w.message)).toEqual([
       expect.stringContaining('harness.version'),
       expect.stringContaining('model.declared'),

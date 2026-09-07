@@ -41,7 +41,17 @@ interface FixtureAttempt {
   retry?: { reason: string; category: string }
 }
 
-interface FixtureMission { id: string; attempts: FixtureAttempt[] }
+interface FixtureMission {
+  id: string
+  attempts: FixtureAttempt[]
+  /**
+   * The cell anchor the orchestrator writes before any work (T8b). Omitted,
+   * the builder derives it from the mission id against meta.conditions —
+   * exactly the naming the run loop uses. `null` builds a bundle WITHOUT an
+   * anchor (a run predating T8b).
+   */
+  anchor?: { task?: string | null; condition?: string; conditionSha?: string | null; rep?: number | null } | null
+}
 
 interface FixtureSpec {
   runId: string
@@ -58,6 +68,28 @@ function attemptFiles(attempt: FixtureAttempt): Record<string, string> {
     throw new Error('fixture: materialization artifact needs its bytes in files')
   }
   return files
+}
+
+/**
+ * The orchestrator's cell anchor (T8b): one orchestrator-ns annotation per
+ * cell, written before any work — the report's only identity source.
+ */
+const cellNote = (anchor: { task: string | null; condition: string; conditionSha: string | null; rep: number | null }): FixtureAnnotation => ({
+  ns: 'orchestrator', by: 'orchestrator', createdAt: -1, payload: [{ kind: 'cell', ...anchor }],
+})
+
+/** Derive one mission's anchor from its id against the run's condition table. */
+function anchorFor(mission: FixtureMission, conditions: Array<{ id: string; sha: string | null }>): FixtureAnnotation | null {
+  if (mission.anchor === null) return null
+  const parsed = parseMissionId(mission.id, conditions.map(c => c.id))
+  const condition = mission.anchor?.condition ?? parsed.condition
+  if (condition === null) return null
+  return cellNote({
+    task: mission.anchor?.task ?? parsed.task,
+    condition,
+    conditionSha: mission.anchor?.conditionSha ?? conditions.find(c => c.id === condition)?.sha ?? null,
+    rep: mission.anchor?.rep ?? parsed.rep,
+  })
 }
 
 function writeBundle(root: string, spec: FixtureSpec): string {
@@ -84,8 +116,17 @@ function writeBundle(root: string, spec: FixtureSpec): string {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
   }
+  const conditionTable = (Array.isArray(meta.conditions) ? meta.conditions : [])
+    .filter((entry): entry is { id: string; sha: string | null } => typeof entry === 'object' && entry !== null && typeof (entry as { id?: unknown }).id === 'string')
   for (const mission of spec.missions) {
+    // The anchor rides the mission's FIRST attempt, exactly as the run loop
+    // writes it (before any work); later attempts inherit it in the report.
+    const anchor = anchorFor(mission, conditionTable)
+    const firstAttempt = Math.min(...mission.attempts.map(a => a.attempt))
     for (const attempt of mission.attempts) {
+      const annotations = anchor !== null && attempt.attempt === firstAttempt
+        ? [anchor, ...attempt.annotations]
+        : attempt.annotations
       const dir = join(bundle, 'missions', mission.id, `attempt-${attempt.attempt}`)
       mkdirSync(join(dir, 'artifacts'), { recursive: true })
       writeFileSync(join(dir, 'meta.json'), `${JSON.stringify({
@@ -96,7 +137,7 @@ function writeBundle(root: string, spec: FixtureSpec): string {
         enteredAt: {}, checkpoints: [], history: [],
         artifacts: attempt.artifacts ?? [], attestations: [],
       }, null, 2)}\n`)
-      writeFileSync(join(dir, 'annotations.json'), `${JSON.stringify(attempt.annotations.map((annotation, index) => ({
+      writeFileSync(join(dir, 'annotations.json'), `${JSON.stringify(annotations.map((annotation, index) => ({
         missionId: mission.id, attempt: attempt.attempt, ns: annotation.ns, payload: annotation.payload,
         createdAt: annotation.createdAt ?? index, by: annotation.by,
         ...(annotation.stage !== undefined ? { stage: annotation.stage } : {}),
@@ -124,6 +165,29 @@ const orchestratorNote = (stage: string, round: number, durationMs: number, toke
 const matArtifact = (matSha: string): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
   artifacts: [{ path: 'materialization.json', kind: 'materialization' }],
   files: { 'materialization.json': `${JSON.stringify({ files: [{ path: 'task.md', sha: sha('ee') }], sha: matSha }, null, 2)}\n` },
+})
+
+/**
+ * The materialization record EXACTLY as the run loop writes it: the overall
+ * digest is `sha256`, and `source` carries per-cell facts — the worktree path
+ * plus `reused`, which is false for the cell that creates the dataset worktree
+ * and true for every cell after it. A reader that hashed the record's bytes
+ * instead of reading the digest field therefore sees a different value per
+ * cell, which is exactly what the first real two-cell bundle did.
+ */
+const runLoopMatArtifact = (matSha: string, cellDir: string, reused = false): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
+  artifacts: [{ path: 'materialization.json', kind: 'materialization' }],
+  files: {
+    'materialization.json': `${JSON.stringify({
+      dataset: 'harness-comparison',
+      task: 'P0-placeholder',
+      commit: sha('c0'),
+      layers: ['visible'],
+      source: { worktree: cellDir, reused },
+      files: [{ path: 'task.md', sha256: sha('ee') }],
+      sha256: matSha,
+    }, null, 2)}\n`,
+  },
 })
 
 /** A full-fare condition entry (invariant-3 compatible). */
@@ -542,6 +606,128 @@ describe('report — S8 tool-written expected ns raises the red flag', () => {
 })
 
 // --- CLI ------------------------------------------------------------------------------
+
+// --- T8b · cell anchors are the identity source -------------------------------
+
+/** One anchored cell whose mission id encodes NOTHING (the split cannot help). */
+function anchoredBundle(root: string, overrides: {
+  anchor?: FixtureMission['anchor']
+  attempts?: FixtureAttempt[]
+} = {}): string {
+  const base: FixtureAttempt = {
+    attempt: 1, state: 'released', refs: goodRefs(),
+    ...matArtifact(sha('m1')),
+    annotations: [scriptNote('P0-placeholder', [['placeholder-check', true]]), orchestratorNote('stage1', 1, 1000, 100)],
+  }
+  return writeBundle(root, {
+    runId: 'anchored',
+    meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+    missions: [{
+      id: 'cell-0001',
+      ...(overrides.anchor !== undefined ? { anchor: overrides.anchor } : { anchor: { task: 'P0-placeholder', condition: 'dsh-exec', rep: 1 } }),
+      attempts: overrides.attempts ?? [base],
+    }],
+  })
+}
+
+describe('report — T8b cell anchors', () => {
+  it('reads the cell identity from the anchor when the mission id encodes nothing', async () => {
+    const report = await analyzeBundle(anchoredBundle(tmpTree()))
+    const row = report.rows[0]
+    expect(row?.task).toBe('P0-placeholder')
+    expect(row?.condition).toBe('dsh-exec')
+    expect(row?.rep).toBe(1)
+    expect(row?.conditionSha).toBe(sha('a1'))
+    expect(report.invariants.find(i => i.id === 'subject')?.status).toBe('ok')
+    expect(report.comparisonAllowed).toBe(true)
+  })
+
+  it('propagates the mission anchor across a retried cell (the anchor rides attempt 1 only)', async () => {
+    const withRetry = anchoredBundle(tmpTree(), {
+      attempts: [
+        {
+          attempt: 1, state: 'archived', refs: goodRefs(), retry: { reason: 'spawn-failed', category: 'infrastructure' },
+          ...matArtifact(sha('m1')), annotations: [],
+        },
+        {
+          attempt: 2, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [scriptNote('P0-placeholder', [['placeholder-check', true]]), orchestratorNote('stage1', 1, 1000, 100)],
+        },
+      ],
+    })
+    const report = await analyzeBundle(withRetry)
+    expect(report.retries).toBe(1)
+    expect(report.rows.every(r => r.condition === 'dsh-exec' && r.task === 'P0-placeholder' && r.rep === 1)).toBe(true)
+    expect(report.invariants.find(i => i.id === 'subject')?.status).toBe('ok')
+  })
+
+  it('leaves 受试对象一致 unverifiable without an anchor — the mission-id split is not accepted as identity', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'noanchor',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: [{
+        id: 'P0-dsh-exec-rep1', // the split WOULD resolve this — the invariant still refuses
+        anchor: null,
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m1')),
+          annotations: [scriptNote('P0', [['placeholder-check', true]]), orchestratorNote('stage1', 1, 1000, 100)],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    const subject = report.invariants.find(i => i.id === 'subject')
+    expect(subject?.status).toBe('unverifiable')
+    expect(subject?.details.some(d => d.includes('无 cell 锚点'))).toBe(true)
+    expect(report.comparisonAllowed).toBe(false)
+    // the coordinates still come from the split, so the fact table stays usable
+    expect(report.rows[0]?.condition).toBe('dsh-exec')
+  })
+
+  it('violates 受试对象一致 when the anchor hash disagrees with run.meta', async () => {
+    const report = await analyzeBundle(anchoredBundle(tmpTree(), {
+      anchor: { task: 'P0-placeholder', condition: 'dsh-exec', conditionSha: sha('ff'), rep: 1 },
+    }))
+    const subject = report.invariants.find(i => i.id === 'subject')
+    expect(subject?.status).toBe('violated')
+    expect(subject?.details.some(d => d.includes('≠ run.meta'))).toBe(true)
+    expect(report.comparisonAllowed).toBe(false)
+  })
+
+  it('violates 受试对象一致 when the anchor names a condition the run never recorded', async () => {
+    const report = await analyzeBundle(anchoredBundle(tmpTree(), {
+      anchor: { task: 'P0-placeholder', condition: 'ghost-exec', rep: 1 },
+    }))
+    const subject = report.invariants.find(i => i.id === 'subject')
+    expect(subject?.status).toBe('violated')
+    expect(subject?.details.some(d => d.includes('不在 run.meta.conditions 中'))).toBe(true)
+  })
+})
+
+describe('report — materialization record as the run loop writes it', () => {
+  it('reads the overall sha256 field, not the record bytes (which carry per-cell source facts)', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'runloop-mat',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: ['rep1', 'rep2'].map(rep => ({
+        id: `P0-placeholder-dsh-exec-${rep}`,
+        anchor: { task: 'P0-placeholder', condition: 'dsh-exec', rep: rep === 'rep1' ? 1 : 2 },
+        attempts: [{
+          attempt: 1, state: 'archived', refs: {},
+          // Same content, same digest — but per-cell `source` facts, as the
+          // real bundle has: the second cell reused the dataset worktree.
+          ...runLoopMatArtifact(sha('m9'), '/state/eval/cells/run-x/shared-worktree', rep === 'rep2'),
+          annotations: [orchestratorNote('stage1', 1, 1000, 100)],
+        }],
+      })),
+    })
+    const report = await analyzeBundle(bundle)
+    const materialization = report.invariants.find(i => i.id === 'materialization')
+    expect(materialization?.status).toBe('ok')
+    expect(materialization?.details[0]).toContain('2 格一致')
+  })
+})
 
 describe('dsh-eval report (CLI)', () => {
   it('writes the report and prints a JSON summary; usage errors exit 2', async () => {

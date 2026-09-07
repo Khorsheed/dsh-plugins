@@ -1,7 +1,7 @@
 {
   "schema": "dataseek.condition/1",
-  "harness": { "name": "dsh", "version": null, "drive": "exec" },
-  "model": { "declared": null, "endpoint": null },
+  "harness": { "name": "dsh", "version": "0.1.1-rc.2", "drive": "exec" },
+  "model": { "declared": "deepseek-official/deepseek-v4-flash", "endpoint": null },
   "reasoning": { "effort": "default" },
   "permissions": "unrestricted",
   "instructions": "none",
@@ -9,5 +9,5 @@
   "skills": { "pack": null },
   "home": { "sha": null },
   "env": { "keys": ["DEEPSEEK_API_KEY"] },
-  "notes": "I1 手写示例。null 字段：harness.version（无版本探测）、model.declared / endpoint（dsh 走宿主默认）、home.sha（provision 未建，I2 的 conditions hash / I4 的 provision 落地后回算）。permissions 写 unrestricted 对应冻结决策 3 的「dsh 无限制」。"
+  "notes": "I1 手写示例，I2·T8b 回填实测值：harness.version 取宿主 dsh（~/.dsh-lab 实例，npm 线 0.1.1-rc.2），model.declared 取 /dsh status 快照 effectiveSettings 的 model（deepseek-official/deepseek-v4-flash，即无头子 dsh 继承的宿主 agentDefaultModel 选择）。仍为 null 的字段：model.endpoint（快照 baseUrlSet:false，未固定端点）、home.sha（provision 未建，I4 落地后回算）。permissions 写 unrestricted 对应冻结决策 3 的「dsh 无限制」。"
 }

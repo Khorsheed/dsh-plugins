@@ -22,13 +22,19 @@
  * - Attempts are infrastructure retries (frozen decision 1): every attempt's
  *   verdicts appear as rows, but aggregation uses the current attempt only.
  *
- * Shapes the orchestrator writes (I2·T8 contract, profiles/web-eval/docs/
+ * Shapes the orchestrator writes (I2·T8/T8b contract, profiles/web-eval/docs/
  * iterations.md): run.meta = {planSha, planPath, evalVersion, snapshot,
- * conditions: [{id, sha, condition?}, …], order, concurrency, startedAt};
- * orchestrator-ns delegation records = {kind: 'delegation', stage, round,
- * childSessionId, promptSha, startedAt, durationMs, usage, model:
- * {declared, observed}}. Fields this report cannot find are reported as
- * absent — never guessed from other sources.
+ * conditions: [{id, sha, condition}, …], order, concurrency, startedAt};
+ * orchestrator-ns cell anchors = {kind: 'cell', task, condition,
+ * conditionSha, rep} (one per cell, written before any work); orchestrator-ns
+ * delegation records = {kind: 'delegation', stage, round, childSessionId,
+ * promptSha, startedAt, durationMs, usage, model: {declared, observed}}.
+ *
+ * Cell identity comes from the anchor, never from `labels` — a mission
+ * export bundle carries no labels, and the mission id is lossy (the split
+ * stays only as the fallback for bundles predating the anchor). Fields this
+ * report cannot find are reported as absent — never guessed from other
+ * sources.
  * @module @khorsheed/dsh-eval
  */
 import { createHash } from 'node:crypto'
@@ -200,12 +206,26 @@ interface CellVerdict {
   stage: string | null
 }
 
+/**
+ * One cell's identity as the orchestrator anchored it (T8b): written once
+ * per cell before any work, so even a skipped cell is attributable and a
+ * retried cell inherits the anchor of its mission's first attempt.
+ */
+interface CellAnchor {
+  task: string | null
+  condition: string
+  conditionSha: string | null
+  rep: number | null
+}
+
 interface BundleCell {
   missionId: string
   attempt: number
   isCurrent: boolean
   state: string | null
   refs: Record<string, unknown>
+  /** The anchor annotation of this cell's mission; null for a bundle without one. */
+  anchor: CellAnchor | null
   task: string | null
   condition: string | null
   rep: number | null
@@ -259,6 +279,22 @@ export function parseMissionId(
   return { task: null, condition: null, rep }
 }
 
+/**
+ * Extract the cell anchor from an orchestrator-ns payload (object or array).
+ * `condition` is the one required field — an anchor that cannot name its
+ * condition anchors nothing and is ignored.
+ */
+function anchorOf(payload: unknown): CellAnchor | null {
+  const items = Array.isArray(payload) ? payload : [payload]
+  for (const item of items) {
+    if (!isPlainObject(item) || item['kind'] !== 'cell') continue
+    const condition = str(item['condition'])
+    if (condition === null) continue
+    return { task: str(item['task']), condition, conditionSha: str(item['conditionSha']), rep: num(item['rep']) }
+  }
+  return null
+}
+
 /** Extract delegation records from an orchestrator-ns payload (object or array). */
 function delegationsOf(payload: unknown): DelegationRecord[] {
   const items = Array.isArray(payload) ? payload : [payload]
@@ -285,8 +321,15 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
 
 /**
  * The overall materialization hash of one cell: prefer the overall sha the
- * orchestrator recorded inside materialization.json, fall back to hashing the
- * file bytes; a refs key mentioning materialization wins when present.
+ * orchestrator recorded inside materialization.json (`sha256` is the field
+ * the run loop writes; the other spellings cover hand-made bundles), fall
+ * back to hashing the file bytes; a refs key mentioning materialization wins
+ * when present.
+ *
+ * The byte fallback is a LAST resort on purpose: the record also carries
+ * `source.worktree`, the per-cell directory, so hashing the bytes gives every
+ * cell a different digest and would report 题面一致 as violated on a run
+ * whose cells materialized identical content.
  */
 async function materializationShaOf(attemptDir: string, refs: Record<string, unknown>): Promise<string | null> {
   for (const [key, value] of Object.entries(refs)) {
@@ -303,7 +346,7 @@ async function materializationShaOf(attemptDir: string, refs: Record<string, unk
         if (kind === 'materialization' || path?.endsWith('materialization.json')) {
           const loaded = await readJsonFile(join(attemptDir, 'artifacts', path ?? 'materialization.json'))
           if (loaded.ok && isPlainObject(loaded.value)) {
-            const overall = str(loaded.value['sha']) ?? str(loaded.value['overallSha']) ?? str(loaded.value['hash'])
+            const overall = str(loaded.value['sha256']) ?? str(loaded.value['sha']) ?? str(loaded.value['overallSha']) ?? str(loaded.value['hash'])
             if (overall !== null) return overall
           }
           try {
@@ -332,6 +375,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
   const verdicts: CellVerdict[] = []
   const delegations: DelegationRecord[] = []
   const writers = new Map<string, Set<string>>()
+  let anchor: CellAnchor | null = null
   let seq = 0
   for (const annotation of annotations) {
     if (!isPlainObject(annotation)) continue
@@ -347,6 +391,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     }
     if (ns === 'orchestrator') {
       delegations.push(...delegationsOf(annotation['payload']))
+      anchor ??= anchorOf(annotation['payload'])
       continue
     }
     if (!VERDICT_NS.has(ns)) continue
@@ -370,6 +415,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     isCurrent,
     state: str(meta['state']),
     refs,
+    anchor,
     task: null,
     condition: null,
     rep: null,
@@ -406,13 +452,28 @@ async function readCells(bundleDir: string, conditionIds: readonly string[]): Pr
     }
   }
 
-  // Cell coordinates: verdict task (majority) as the task anchor when the id
-  // cannot be split, then the id split for condition/rep.
+  // The anchor is written once per cell (attempt 1); a retried cell's later
+  // attempts carry none, so the mission's anchor propagates across its
+  // attempts — cell identity belongs to the mission, not to the attempt.
+  const anchorByMission = new Map<string, CellAnchor>()
   for (const cell of cells) {
-    const parsed = parseMissionId(cell.missionId, conditionIds)
-    cell.condition = parsed.condition
-    cell.rep = parsed.rep
-    cell.task = parsed.task
+    if (cell.anchor !== null && !anchorByMission.has(cell.missionId)) anchorByMission.set(cell.missionId, cell.anchor)
+  }
+
+  // Cell coordinates: the anchor when the run wrote one, else the mission-id
+  // split (bundles predating T8b), else the verdict task by majority.
+  for (const cell of cells) {
+    cell.anchor = anchorByMission.get(cell.missionId) ?? null
+    if (cell.anchor !== null) {
+      cell.condition = cell.anchor.condition
+      cell.rep = cell.anchor.rep
+      cell.task = cell.anchor.task
+    } else {
+      const parsed = parseMissionId(cell.missionId, conditionIds)
+      cell.condition = parsed.condition
+      cell.rep = parsed.rep
+      cell.task = parsed.task
+    }
     if (cell.task === null) {
       const counts = new Map<string, number>()
       for (const verdict of cell.verdicts) counts.set(verdict.doc['task'] as string, (counts.get(verdict.doc['task'] as string) ?? 0) + 1)
@@ -556,34 +617,43 @@ function conditionEntriesOf(meta: Record<string, unknown>): Array<{ id: string; 
   return out
 }
 
+/**
+ * 受试对象一致: every current cell's ANCHOR names a condition the run
+ * recorded, with the same hash, and every model read back equals the one
+ * declared. The anchor is the only identity source here — `labels` do not
+ * exist in a bundle, and the mission-id split is a guess, so a cell without
+ * an anchor leaves the invariant unverifiable rather than assumed.
+ */
 function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string; sha: string | null }>): InvariantCheck {
-  const title = '受试对象一致（labels.condition 与 run.meta.conditions 一致；model.observed 与 declared 一致）'
+  const title = '受试对象一致（cell 锚点与 run.meta.conditions 一致；model.observed 与 declared 一致）'
   const details: string[] = []
   let violated = false
   let conditionVerified = true
   const shaById = new Map(conditionEntries.map(e => [e.id, e.sha]))
   const current = cells.filter(c => c.isCurrent)
 
-  const conditionOfCell = (cell: BundleCell): string | null => {
-    const label = str(cell.refs['condition'])
-    return label ?? cell.condition
-  }
-  for (const cell of current) {
-    const condition = conditionOfCell(cell)
-    if (condition === null) {
-      conditionVerified = false
-      details.push(`${cell.missionId}: 条件未记录（bundle 无 labels，mission id 无法以条件表拆分）`)
-      continue
-    }
-    if (!shaById.has(condition)) {
-      conditionVerified = false
-      violated = true
-      details.push(`${cell.missionId}: 条件 ${JSON.stringify(condition)} 不在 run.meta.conditions 中`)
-    }
-  }
   if (conditionEntries.length === 0) {
     conditionVerified = false
     details.push('run.meta 未记录 conditions（id 与 sha 清单）')
+  }
+  for (const cell of current) {
+    const anchor = cell.anchor
+    if (anchor === null) {
+      conditionVerified = false
+      details.push(`${cell.missionId}: 无 cell 锚点（orchestrator ns 的 {kind:'cell'} 注解）——格子身份不可核验`)
+      continue
+    }
+    if (!shaById.has(anchor.condition)) {
+      conditionVerified = false
+      violated = true
+      details.push(`${cell.missionId}: 锚点条件 ${JSON.stringify(anchor.condition)} 不在 run.meta.conditions 中`)
+      continue
+    }
+    const metaSha = shaById.get(anchor.condition) ?? null
+    if (anchor.conditionSha !== null && metaSha !== null && anchor.conditionSha !== metaSha) {
+      violated = true
+      details.push(`${cell.missionId}: 锚点条件哈希 ${anchor.conditionSha.slice(0, 12)}… ≠ run.meta 的 ${metaSha.slice(0, 12)}…`)
+    }
   }
 
   let observedSeen = false
@@ -601,7 +671,7 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
 
   if (violated) return { id: 'subject', title, status: 'violated', details }
   if (!conditionVerified || !observedSeen) return { id: 'subject', title, status: 'unverifiable', details }
-  return { id: 'subject', title, status: 'ok', details: [`${current.length} 格条件均落在 run.meta.conditions 内；模型回读与声明一致`] }
+  return { id: 'subject', title, status: 'ok', details: [`${current.length} 格锚点条件均落在 run.meta.conditions 内且哈希一致；模型回读与声明一致`] }
 }
 
 function checkProcedure(meta: Record<string, unknown>): InvariantCheck {
@@ -984,7 +1054,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
       rows.push({
         task: cell.task ?? (typeof verdict.doc['task'] === 'string' ? verdict.doc['task'] : null),
         condition: cell.condition,
-        conditionSha: cell.condition === null ? null : conditionEntries.find(e => e.id === cell.condition)?.sha ?? null,
+        conditionSha: cell.anchor?.conditionSha ?? (cell.condition === null ? null : conditionEntries.find(e => e.id === cell.condition)?.sha ?? null),
         rep: cell.rep,
         attempt: cell.attempt,
         stage: verdict.stage,

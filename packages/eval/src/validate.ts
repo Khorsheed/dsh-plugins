@@ -198,6 +198,16 @@ function planSemantics(plan: unknown): { diagnostics: EvalDiagnostic[]; semantic
   if (expectedNs !== undefined && expectedNs.length === 0) {
     diagnostics.push({ code: 'EXPECTED_NS_EMPTY', message: 'expectedNs must name at least one verdict source' })
   }
+  // retry / exports (protocol §6.4): the schema subset carries no `minimum`
+  // and no path shape, so the floor and the emptiness live here.
+  const retry = isPlainObject(plan['retry']) ? plan['retry'] : undefined
+  const infrastructure = retry?.['infrastructure']
+  if (typeof infrastructure === 'number' && (!Number.isInteger(infrastructure) || infrastructure < 0)) {
+    diagnostics.push({ code: 'RETRY_INVALID', message: 'retry.infrastructure must be an integer >= 0 (0 disables retrying)' })
+  }
+  if (typeof plan['exports'] === 'string' && plan['exports'].trim() === '') {
+    diagnostics.push({ code: 'EXPORTS_INVALID', message: 'exports must be a non-empty directory path' })
+  }
 
   const judgeIds = judge !== undefined && Array.isArray(judge['conditions'])
     ? judge['conditions'].filter((c): c is string => typeof c === 'string')

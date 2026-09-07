@@ -49,11 +49,11 @@ describe('validatePlan — the T1 walk examples', () => {
     expect(report.errors).toEqual([])
     // fixture repo path never exists → plans/-sibling fallback
     expect(report.datasetRoot).toBe(FIXTURE_DATASET)
+    // Two unresolved fields since T8b filled harness.version and
+    // model.declared from the live instance snapshot.
     expect(codes(report.warnings).sort()).toEqual([
       'COMMIT_UNRESOLVED',
       'LOCK_MISSING',
-      'UNRESOLVED_FIELD',
-      'UNRESOLVED_FIELD',
       'UNRESOLVED_FIELD',
       'UNRESOLVED_FIELD',
     ])
@@ -155,6 +155,23 @@ describe('validatePlan — lock states', () => {
   })
 })
 
+describe('validatePlan — retry and exports (protocol §6.4)', () => {
+  it('accepts both fields, and accepts a plan that omits them', async () => {
+    const withFields = await validatePlan(writeJson(tmpTree(), 'plan.json', planBody({
+      retry: { infrastructure: 0 }, exports: '~/dataseek/exports',
+    })))
+    expect(codes(withFields.errors)).toEqual([])
+    const without = await validatePlan(writeJson(tmpTree(), 'plan.json', planBody()))
+    expect(codes(without.errors)).toEqual([])
+  })
+
+  it('refuses an unknown retry key (the plan schema is closed)', async () => {
+    const report = await validatePlan(writeJson(tmpTree(), 'plan.json', planBody({ retry: { infrastructure: 1, submission: 2 } })))
+    expect(report.ok).toBe(false)
+    expect(codes(report.errors)).toContain('PLAN_SCHEMA')
+  })
+})
+
 describe('validatePlan — contract errors', () => {
   it.each([
     ['judge absent + llm-draft expected', { expectedNs: ['script', 'llm-draft'] }, 'JUDGE_REQUIRED_FOR_LLM_DRAFT'],
@@ -166,6 +183,9 @@ describe('validatePlan — contract errors', () => {
     ['duplicated conditions', { conditions: ['c1', 'c1'] }, 'CONDITIONS_DUPLICATED'],
     ['empty items', { dataset: { repo: '~/repo', commit: null, id: 'ds', items: [] } }, 'ITEMS_EMPTY'],
     ['empty expectedNs', { expectedNs: [] }, 'EXPECTED_NS_EMPTY'],
+    ['negative retry budget', { retry: { infrastructure: -1 } }, 'RETRY_INVALID'],
+    ['fractional retry budget', { retry: { infrastructure: 1.5 } }, 'RETRY_INVALID'],
+    ['blank exports path', { exports: '   ' }, 'EXPORTS_INVALID'],
   ])('errors on %s', async (_label, overrides, code) => {
     const planPath = writeJson(tmpTree(), 'plan.json', planBody(overrides))
     const report = await validatePlan(planPath)

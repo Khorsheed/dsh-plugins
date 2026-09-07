@@ -468,6 +468,24 @@ One condition = one harness + a model declaration + a permission word + one scop
       },
       "description": "Verdict sources this run expects; the report marks the missing ones honestly."
     },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "infrastructure"
+      ],
+      "description": "Optional. Per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts). Run-call options may override.",
+      "properties": {
+        "infrastructure": {
+          "type": "integer",
+          "description": "Maximum infrastructure retries per cell; 0 disables retrying. Default 1."
+        }
+      }
+    },
+    "exports": {
+      "type": "string",
+      "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; not part of any hash."
@@ -479,6 +497,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `conditions` and `judge.conditions` carry **condition ids** (file names), never shas; the validator resolves shas from `conditions/<id>.lock.json` and run.meta records them.
 - `judge` may be absent entirely: when it is, `expectedNs` must not contain `llm-draft` (validate cross-checks). A present judge with `samples: 0` legally means "no LLM judging in this run"; the report then marks llm-draft honestly missing.
 - The judge must not be a contestant: `judge.conditions` and `conditions` must be disjoint (validate errors).
+- `retry.infrastructure` and `exports` are both optional: the first is the per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts), default 1, `0` disabling retries; the second is the bundle export directory (`~/…` allowed), default `<dataset repo>/exports`. Both are **reviewed defaults** — the run call options (`retryInfrastructure` / `exportsDir`) override them, so the plan is what review reads and the options are what a one-off run bends.
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset.commit` of `null` means "pinned by the snapshot at run start"; run.meta records the actual commit.
 - Example:
@@ -494,7 +513,9 @@ One condition = one harness + a model declaration + a permission word + one scop
   "budget": { "activeMinutes": 60, "turns": 10 },
   "judge": { "conditions": ["judge-claude"], "samples": 2 },
   "expectedNs": ["script", "llm-draft", "human-final"],
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。"
+  "retry": { "infrastructure": 1 },
+  "exports": "~/dataseek/exports",
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。"
 }
 ```
 
