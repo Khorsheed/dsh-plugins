@@ -11,10 +11,17 @@
 import { hashConditionDocument, hashHome, type HomeHash } from './hash.ts'
 import { writeEvalReport, type ReportWrite } from './report.ts'
 import { CONDITION_SCHEMA_ID } from './schema.ts'
-import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
+import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
-import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
+import {
+  EvalReadRefused,
+  listConditions,
+  runStatus,
+  type ConditionsReport,
+  type RunStatusReport,
+} from './read.ts'
+import type { DatasetsBindingFace, DatasetsFace, LocalAgentFace, MissionFace, MissionReadFace } from './faces.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -81,6 +88,64 @@ export class EvalService {
   }
 
   /**
+   * List the conditions a dataset repository declares, with their hashes and
+   * readiness (lock present and matching, scoped home verified, unresolved
+   * fields). Read-only: minting a condition is a file the agent drafts, and
+   * turning one into a real scoped home is `conditions provision` (I4).
+   * @param options - `repo` wins; otherwise the calling session's datasets
+   *   binding decides, and its dataset whitelist is honoured — which datasets
+   *   an agent may see is the human's decision, not the agent's.
+   * @throws {@link EvalReadRefused} when no repository can be resolved, when
+   *   the path is not a dataset repository, or when `dataset` is outside the
+   *   session binding's whitelist.
+   */
+  conditions(options: { repo?: string; dataset?: string; session?: { id: string } } = {}): Promise<ConditionsReport> {
+    const binding = options.session === undefined
+      ? undefined
+      : (this.hosts?.get('datasets') as DatasetsBindingFace | undefined)?.binding(options.session)
+    const repo = options.repo !== undefined && options.repo !== ''
+      ? expandHome(options.repo)
+      : binding?.repoPath
+    if (repo === undefined || repo === '') {
+      return Promise.reject(new EvalReadRefused(
+        'no dataset repository: pass repo, or ask the human to bind one for this session (/datasets bind <repoPath>)',
+      ))
+    }
+    const allowed = binding?.datasets
+    if (options.dataset !== undefined && options.dataset !== '') {
+      if (allowed !== undefined && !allowed.includes(options.dataset)) {
+        return Promise.reject(new EvalReadRefused(
+          `dataset ${JSON.stringify(options.dataset)} is outside this session's binding (${allowed.join(', ')})`,
+        ))
+      }
+      return listConditions(repo, [options.dataset])
+    }
+    return listConditions(repo, allowed)
+  }
+
+  /**
+   * Project one run: the evaluation-relevant slice of `run.meta` plus a row
+   * per cell (state, bucket, what the orchestrator last did, how often a
+   * submission was rejected). Reads mission's ledger; writes nothing.
+   * @param runId - the run to project.
+   * @throws {@link EvalReadRefused} when the composition mounts no mission
+   *   service — the run ledger lives there, so there is nothing to read.
+   */
+  runStatus(runId: string): RunStatusReport {
+    const mission = this.hosts?.get('mission') as MissionReadFace | undefined
+    if (mission === undefined) {
+      // Named without its scope on purpose: a scoped `@khorsheed/…` string in
+      // shipped code reads as a family edge to pack-dist, and this is a
+      // sentence for a human, not a dependency.
+      throw new EvalReadRefused(
+        'no mission service: run records live in the mission ledger, so this composition cannot answer run '
+        + 'status — mount the dsh-mission plugin',
+      )
+    }
+    return runStatus(mission, runId)
+  }
+
+  /**
    * Generate a run template from a dataset-suite manifest (deterministic —
    * the same function `dsh-eval template` prints and the run loop writes
    * beside the plan).
@@ -120,3 +185,5 @@ export class EvalService {
 
 export { EvalRunRefused } from './run.ts'
 export type { RunOptions, RunReport, RunCellReport } from './run.ts'
+export { EvalReadRefused } from './read.ts'
+export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'

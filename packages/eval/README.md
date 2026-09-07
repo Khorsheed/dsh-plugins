@@ -4,6 +4,8 @@
 
 **web-eval 编排器：dataseek 契约 schema、plan/condition 校验、条件与 scoped home 哈希、由题集 manifest 生成 run 模板、阶段一二的 run 循环（逐格物化、逐字节委派、提交推进、归档闸、bundle 导出）。** run 的发起是人的动作（`/eval run`，发起会话即所有委派的父会话）；判定的两条机器通路（探针写 `script`、判官盲评写 `llm-draft`）随 T9 落地，`human-final` 仍归人。不依赖任何兄弟插件——四个上游服务（datasets / mission / localAgent）在 run 时经 `ctx.get` 探测，缺哪个就拒绝并列出哪个，绝不炸启动。
 
+给 agent 的模型工具只有三个读工具（见「模型工具」一节），run、finalize 与注解都不给模型。
+
 `report` 把 mission export 的 bundle 变成 results.jsonl 与 summary.md（见「报告」一节），只读 bundle、不依赖宿主。
 
 ## 它管什么
@@ -81,6 +83,8 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 | `hashHome(homeDir)` | scoped home 内容哈希：只取配置类文件，按拒绝清单跳过凭证形状的路径；内容只进摘要，绝不返回或打印 |
 | `generateTemplate(manifestPath, opts?)` | 由题集 manifest 生成 run 模板（可选项：`stages` 子集、`missions` 格批次、`name`、schemaPath 前缀）。纯函数：不探测 schema 文件，探测归 mission 的 runCreate lint |
 | `run(planPath, options?)` | run 循环本体（见上节）。缺 datasets / mission / localAgent 任一即拒绝并列出哪个；`dryRun` 选项只做校验 + 模板 + 矩阵 + 顺序，不需要任何上游 |
+| `conditions({repo?, dataset?, session?})` | 列出题库声明的条件：harness、声明模型、条件哈希、就绪（lock 在不在、还对不对、home 是否核过）、未解析字段。`repo` 缺省时取会话的 datasets 绑定，并遵守绑定的题集白名单——agent 能看哪些题集是人的决定 |
+| `runStatus(runId)` | 投影一次 run：run.meta 摘要（planSha、快照 commit、条件、随机顺序与种子、启动时间）+ 逐格一行（题、条件、rep、attempt、状态、桶、编排器最近一条注解、submission-rejected 次数）。缺 mission 服务即拒绝并说明原因 |
 | `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
 
 ## 报告（report）
@@ -91,6 +95,22 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 - **summary.md** — 开头先核四条不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致）。**任一项不成立或无法核验，只输出事实表，不输出比较**。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（通过判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖）；n < 3 或因子未知/多因子时打印「不可排名」并拒绝名次。判官一致性按 criterion 算双采样一致率与 Cohen κ，human-final 在场时算 llm-draft 对终评的一致率。效率并列不合成：活跃时长（委派 durationMs 之和）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
 
 判定源按权威排序取各格的主判定（human-final > llm-draft > script，同判据多样本按多数计）；rep 是独立样本，attempt 只算基础设施重试——所有 attempt 的判定都进 results.jsonl，聚合只用各格最新 attempt。
+
+## 模型工具（只读，三个）
+
+agent 在一次实验里只出现两次：规划期起草、分析期读结论。两次都不需要写。所以本包注册的模型工具**只有三个，全是读**，并且刻意没有第四个——能起 run 的 agent 就能起一次人没批准的 run。
+
+| 工具 | 答什么 |
+|---|---|
+| `eval_conditions` | 题库里有哪些条件、各自的哈希与就绪状态、哪些字段还是 null。参数 `repo`（缺省取会话的 datasets 绑定）与 `dataset`（缺省扫全库）|
+| `eval_plan_validate` | 给定 plan 路径的校验结果：`ok` / `errors`（不能跑）/ `warnings`（还没解析）与解析出的条件 sha。校验从不启动任何东西 |
+| `eval_run_status` | 一次 run 的 run.meta 摘要与逐格状态；数据源是 `mission.runStatus` 与 orchestrator ns |
+
+写类动词一个都不开：run 由人在会话里用 `/eval run` 发起，materialize / submit / transition / annotate / archive / export / finalize 归编排器服务面与人的 CLI（profile 的[「工具按域开放」](../../profiles/web-eval/README.md#工具按域开放)）。
+
+配置项 `tools: 'all' | 'none'`（缺省 `all`）。没有更细的分组，因为没有可分的：本包一个写工具都不注册。`none` 时插件只留 slash、CLI 与服务面。
+
+工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
 
 ## slash 与 CLI
 
@@ -124,12 +144,13 @@ dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 
+- 三个只读工具与 `tool:eval` 提示词段走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，slash、CLI 与服务面照常，不炸启动。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（T20 / I5）。
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）已落地。只读工具（T14）、provision（I4）、界面（I5）按 web-eval 迭代计划推进。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。provision（I4）、界面（I5）按 web-eval 迭代计划推进。
 
 ## 许可
 

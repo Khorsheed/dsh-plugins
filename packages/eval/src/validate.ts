@@ -57,7 +57,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function expandHome(path: string): string {
+/** Expand a leading `~` against the current user's home directory. */
+export function expandHome(path: string): string {
   if (path === '~') return homedir()
   if (path.startsWith('~/')) return join(homedir(), path.slice(2))
   return path
@@ -139,16 +140,30 @@ export function conditionDiagnostics(condition: unknown): ConditionDiagnostics {
     errors.push({ code: 'SHA_FORMAT', message: 'home.sha must be a 64-hex sha256 (or null while unresolved)' })
   }
 
-  for (const [obj, field] of CONDITION_NULLABLE_PATHS) {
-    const section = isPlainObject(condition[obj]) ? condition[obj] : undefined
-    if (section?.[field] === null) {
-      warnings.push({
-        code: 'UNRESOLVED_FIELD',
-        message: `${obj}.${field} is null — unresolved; the pre-run readiness gate refuses this condition`,
-      })
-    }
+  for (const path of unresolvedFields(condition)) {
+    warnings.push({
+      code: 'UNRESOLVED_FIELD',
+      message: `${path} is null — unresolved; the pre-run readiness gate refuses this condition`,
+    })
   }
   return { errors, warnings }
+}
+
+/**
+ * The nullable contract fields this condition leaves unresolved, as dotted
+ * paths (`model.declared`, `home.sha`, …). The same list `conditionDiagnostics`
+ * turns into UNRESOLVED_FIELD warnings, exposed on its own so the
+ * `eval_conditions` read tool can print it per condition.
+ * @param condition - a condition document (a non-object yields an empty list).
+ */
+export function unresolvedFields(condition: unknown): string[] {
+  if (!isPlainObject(condition)) return []
+  const paths: string[] = []
+  for (const [obj, field] of CONDITION_NULLABLE_PATHS) {
+    const section = isPlainObject(condition[obj]) ? condition[obj] : undefined
+    if (section?.[field] === null) paths.push(`${obj}.${field}`)
+  }
+  return paths
 }
 
 interface PlanSemantics {
@@ -246,9 +261,29 @@ async function readJson(path: string): Promise<{ ok: true; value: unknown } | { 
   }
 }
 
-/** Validate one referenced condition (declaration + lock) against a dataset root. */
-async function resolveCondition(id: string, root: string, errors: EvalDiagnostic[], warnings: EvalDiagnostic[]): Promise<ConditionResolution> {
+/** One condition's readiness, with the diagnostics resolving it produced. */
+export interface ConditionReadiness {
+  entry: ConditionResolution
+  /** The parsed declaration; null when it is absent, malformed, or contract-violating. */
+  document: Record<string, unknown> | null
+  errors: EvalDiagnostic[]
+  warnings: EvalDiagnostic[]
+}
+
+/**
+ * Resolve one condition (declaration + lock) against a dataset root: hash the
+ * declaration, read the lock, and decide ready / unready / missing. Shared by
+ * {@link validatePlan}, which folds the diagnostics into the plan report, and
+ * by the `eval_conditions` read tool, which lists them per condition — what
+ * "ready" means is decided in exactly one place.
+ * @param id - condition id (the file stem under `conditions/`).
+ * @param root - the dataset-set directory holding `conditions/`.
+ */
+export async function resolveConditionReadiness(id: string, root: string): Promise<ConditionReadiness> {
+  const errors: EvalDiagnostic[] = []
+  const warnings: EvalDiagnostic[] = []
   const entry: ConditionResolution = { id, sha: null, lock: null, status: 'missing' }
+  const readiness: ConditionReadiness = { entry, document: null, errors, warnings }
   const loaded = await readJson(join(root, 'conditions', `${id}.json`))
   if (!loaded.ok) {
     if (loaded.reason === 'missing') {
@@ -256,15 +291,16 @@ async function resolveCondition(id: string, root: string, errors: EvalDiagnostic
     } else {
       errors.push({ code: 'CONDITION_MALFORMED', message: `conditions/${id}.json is not valid JSON` })
     }
-    return entry
+    return readiness
   }
   const { errors: condErrors, warnings: condWarnings } = conditionDiagnostics(loaded.value)
   for (const diagnostic of condErrors) errors.push({ ...diagnostic, message: `condition ${id}: ${diagnostic.message}` })
   for (const diagnostic of condWarnings) warnings.push({ ...diagnostic, message: `condition ${id}: ${diagnostic.message}` })
-  if (condErrors.length > 0 || !isPlainObject(loaded.value)) return entry
+  if (condErrors.length > 0 || !isPlainObject(loaded.value)) return readiness
 
   // The declaration is usable from here on: at worst the condition is
   // unready, never missing.
+  readiness.document = loaded.value
   entry.status = 'unready'
   entry.sha = hashConditionDocument(loaded.value)
   const home = isPlainObject(loaded.value['home']) ? loaded.value['home'] : undefined
@@ -277,32 +313,32 @@ async function resolveCondition(id: string, root: string, errors: EvalDiagnostic
     } else {
       warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json is not valid JSON` })
     }
-    return entry
+    return readiness
   }
   if (!isPlainObject(lock.value)) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json is not an object` })
-    return entry
+    return readiness
   }
   const lockViolations = validateJson(LOCK_SCHEMA, lock.value)
   if (lockViolations.length > 0) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json violates dataseek.condition-lock/1: ${lockViolations[0] ?? 'unknown'}` })
-    return entry
+    return readiness
   }
   const lockSha = lock.value['sha']
   if (typeof lockSha !== 'string') {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json sha is not a string` })
-    return entry
+    return readiness
   }
   const lockHome = isPlainObject(lock.value['home']) ? lock.value['home'] : undefined
   const lockHomeSha = typeof lockHome?.['sha'] === 'string' ? lockHome['sha'] : undefined
   entry.lock = { sha: lockSha, ...(lockHomeSha !== undefined ? { homeSha: lockHomeSha } : {}) }
   if (lock.value['condition'] !== id) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json records condition ${JSON.stringify(lock.value['condition'])}, not ${JSON.stringify(id)}` })
-    return entry
+    return readiness
   }
   if (!SHA256_HEX_RE.test(lockSha)) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json sha is not a 64-hex sha256` })
-    return entry
+    return readiness
   }
   if (entry.sha !== null && lockSha !== entry.sha) {
     warnings.push({ code: 'LOCK_STALE', message: `conditions/${id}.lock.json sha ${lockSha.slice(0, 12)}… does not match the current condition hash ${entry.sha.slice(0, 12)}… — the declaration changed after locking` })
@@ -314,7 +350,7 @@ async function resolveCondition(id: string, root: string, errors: EvalDiagnostic
   }
   const homeVerified = declaredSha !== undefined && declaredSha === lockHomeSha
   entry.status = entry.lock.sha === entry.sha && homeVerified ? 'ready' : 'unready'
-  return entry
+  return readiness
 }
 
 /** Lint the stage schemas a plan names (they gate mission transitions at run time). */
@@ -398,7 +434,10 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
 
   await checkStageSchemas(semantics.stages, root, errors, warnings)
   for (const id of semantics.conditionIds) {
-    conditions.push(await resolveCondition(id, root, errors, warnings))
+    const readiness = await resolveConditionReadiness(id, root)
+    errors.push(...readiness.errors)
+    warnings.push(...readiness.warnings)
+    conditions.push(readiness.entry)
   }
   report.ok = errors.length === 0
   return report

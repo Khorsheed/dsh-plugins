@@ -16,14 +16,41 @@
  * @module @khorsheed/dsh-eval
  */
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { EvalService } from './service.ts'
 import { registerEvalSlash } from './slash.ts'
+import { registerEvalTools } from './tools.ts'
+
+/** Plugin configuration. */
+export interface EvalConfig {
+  /**
+   * Which model tools to register. `all` (the default) registers the three
+   * READ tools; `none` registers none and the plugin keeps only its slash,
+   * CLI, and service faces. There is no finer grouping because there is
+   * nothing to group: this package registers no write tool at all — starting
+   * a run is a human act and the write verbs are the orchestrator's service
+   * face (README «工具按域开放»).
+   */
+  tools?: 'all' | 'none'
+}
+
+export const Config: z<EvalConfig> = z.object({
+  tools: z.union([z.const('all'), z.const('none')]).default('all'),
+})
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'eval'
 
 /** Required services: the command registry (the `/eval` slash face). */
 export const inject = ['commands']
+
+/** The narrow prompt-section registry surface this plugin opportunistically uses. */
+interface PromptSections {
+  section(section: { name: string; order: number; text: string }): () => void
+}
+
+/** Cross-call guidance, registered beside the tools it describes. */
+const EVAL_PROMPT = `The eval_* tools are READ ONLY, all three of them. eval_conditions lists the conditions (subjects under test) a dataset repository declares, each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null. eval_plan_validate checks a dataseek.plan/1 document and reports errors (the plan cannot run) and warnings (not resolved yet). eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it. Starting a run is a HUMAN act: the person runs /eval run <plan.json> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Your part is drafting and reading: propose conditions and plans as data files (copy an existing condition and change exactly ONE field), validate them, and hand them to the human for approval; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -35,20 +62,43 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Mount the eval service and its slash command.
+ * Mount the eval service, its slash command, and (unless `tools: 'none'`) the
+ * three read tools.
  * @param ctx - plugin context.
+ * @param config - validated plugin config.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: EvalConfig = {}): void {
   const service = new EvalService(ctx)
   ctx.provide('dshEval', service)
   registerEvalSlash(ctx, service)
+  if (config.tools === 'none') return
+  // Deferred injection, NOT an apply-time `ctx.get('tools')` probe: the probe
+  // races the tools registry's own mount order on a real composition tree and
+  // loses silently — the tools would simply never register, and nothing would
+  // say so (room and worktrees both shipped this fix). `ctx.inject` fires when
+  // the registry appears and never fires in a composition without one, so a
+  // tools-less composition keeps the slash, CLI, and service faces and never
+  // fails boot.
+  ctx.inject(['tools'], (toolsCtx) => {
+    registerEvalTools(toolsCtx, service)
+    // The guidance describes those tools, so it rides with them — and through
+    // the same deferred door, for the same reason.
+    toolsCtx.inject(['systemPrompt'], (promptCtx) => {
+      const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
+      sections?.section({ name: 'tool:eval', order: 114, text: EVAL_PROMPT })
+    })
+  })
 }
 
 export { EvalService, EvalContractError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
+export { EvalReadRefused } from './read.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport } from './service.ts'
-export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics } from './validate.ts'
-export { conditionDiagnostics, validatePlan } from './validate.ts'
+export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness } from './validate.ts'
+export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
+export { listConditions, runStatus } from './read.ts'
+export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
+export { registerEvalTools, EVAL_TOOL_NAMES } from './tools.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
 export {
@@ -80,7 +130,7 @@ export type { SuiteManifest, ManifestStage, ManifestOutputSchema } from './manif
 export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
 export type { EvalCell } from './matrix.ts'
 export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
-export type { DatasetsFace, MissionFace, LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile } from './faces.ts'
+export type { DatasetsBindingFace, DatasetsFace, MissionFace, MissionReadFace, MissionStatusRow, LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile } from './faces.ts'
 export { handleEvalCommand, registerEvalSlash } from './slash.ts'
 export {
   CONDITION_SCHEMA,
