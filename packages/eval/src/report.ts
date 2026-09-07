@@ -321,8 +321,15 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
 
 /**
  * The overall materialization hash of one cell: prefer the overall sha the
- * orchestrator recorded inside materialization.json, fall back to hashing the
- * file bytes; a refs key mentioning materialization wins when present.
+ * orchestrator recorded inside materialization.json (`sha256` is the field
+ * the run loop writes; the other spellings cover hand-made bundles), fall
+ * back to hashing the file bytes; a refs key mentioning materialization wins
+ * when present.
+ *
+ * The byte fallback is a LAST resort on purpose: the record also carries
+ * `source.worktree`, the per-cell directory, so hashing the bytes gives every
+ * cell a different digest and would report 题面一致 as violated on a run
+ * whose cells materialized identical content.
  */
 async function materializationShaOf(attemptDir: string, refs: Record<string, unknown>): Promise<string | null> {
   for (const [key, value] of Object.entries(refs)) {
@@ -339,7 +346,7 @@ async function materializationShaOf(attemptDir: string, refs: Record<string, unk
         if (kind === 'materialization' || path?.endsWith('materialization.json')) {
           const loaded = await readJsonFile(join(attemptDir, 'artifacts', path ?? 'materialization.json'))
           if (loaded.ok && isPlainObject(loaded.value)) {
-            const overall = str(loaded.value['sha']) ?? str(loaded.value['overallSha']) ?? str(loaded.value['hash'])
+            const overall = str(loaded.value['sha256']) ?? str(loaded.value['sha']) ?? str(loaded.value['overallSha']) ?? str(loaded.value['hash'])
             if (overall !== null) return overall
           }
           try {

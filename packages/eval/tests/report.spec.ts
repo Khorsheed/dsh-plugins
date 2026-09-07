@@ -167,6 +167,27 @@ const matArtifact = (matSha: string): { artifacts: Array<{ path: string; kind: s
   files: { 'materialization.json': `${JSON.stringify({ files: [{ path: 'task.md', sha: sha('ee') }], sha: matSha }, null, 2)}\n` },
 })
 
+/**
+ * The materialization record EXACTLY as the run loop writes it: the overall
+ * digest is `sha256`, and `source.worktree` is the per-cell directory — so a
+ * reader that hashed the bytes instead of reading the field would see a
+ * different digest per cell.
+ */
+const runLoopMatArtifact = (matSha: string, cellDir: string): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
+  artifacts: [{ path: 'materialization.json', kind: 'materialization' }],
+  files: {
+    'materialization.json': `${JSON.stringify({
+      dataset: 'harness-comparison',
+      task: 'P0-placeholder',
+      commit: sha('c0'),
+      layers: ['visible'],
+      source: { worktree: cellDir, reused: false },
+      files: [{ path: 'task.md', sha256: sha('ee') }],
+      sha256: matSha,
+    }, null, 2)}\n`,
+  },
+})
+
 /** A full-fare condition entry (invariant-3 compatible). */
 const conditionEntry = (id: string, doc: Record<string, unknown>, prefix: string): Record<string, unknown> =>
   ({ id, sha: sha(prefix), condition: doc })
@@ -679,6 +700,29 @@ describe('report — T8b cell anchors', () => {
     const subject = report.invariants.find(i => i.id === 'subject')
     expect(subject?.status).toBe('violated')
     expect(subject?.details.some(d => d.includes('不在 run.meta.conditions 中'))).toBe(true)
+  })
+})
+
+describe('report — materialization record as the run loop writes it', () => {
+  it('reads the overall sha256 field, not the record bytes (which carry the per-cell worktree)', async () => {
+    const bundle = writeBundle(tmpTree(), {
+      runId: 'runloop-mat',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc(), 'a1')] },
+      missions: ['rep1', 'rep2'].map(rep => ({
+        id: `P0-placeholder-dsh-exec-${rep}`,
+        anchor: { task: 'P0-placeholder', condition: 'dsh-exec', rep: rep === 'rep1' ? 1 : 2 },
+        attempts: [{
+          attempt: 1, state: 'archived', refs: {},
+          // Same content, same digest — but a DIFFERENT worktree per cell.
+          ...runLoopMatArtifact(sha('m9'), `/state/eval/cells/run-x/P0-placeholder-dsh-exec-${rep}/attempt-1`),
+          annotations: [orchestratorNote('stage1', 1, 1000, 100)],
+        }],
+      })),
+    })
+    const report = await analyzeBundle(bundle)
+    const materialization = report.invariants.find(i => i.id === 'materialization')
+    expect(materialization?.status).toBe('ok')
+    expect(materialization?.details[0]).toContain('2 格一致')
   })
 })
 

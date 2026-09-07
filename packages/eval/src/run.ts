@@ -91,6 +91,14 @@ export interface RunOptions {
    * `retry.infrastructure` (the reviewed default); without either, 1.
    */
   retryInfrastructure?: number
+  /**
+   * How long to wait, after a round settles, for T11's observation to reach
+   * the delegation record (default 10s). The wait exists because the
+   * observation lands AFTER the run result resolves — see
+   * {@link awaitObservedModel}. 0 disables it: the read-back is then whatever
+   * is already there, which is what a facade predating T11 gives anyway.
+   */
+  readbackWaitMs?: number
   /** Caller tag for mission writes. Default `eval-orchestrator`. */
   by?: string
   /** Injected clock (epoch ms) for deterministic tests. */
@@ -144,6 +152,53 @@ export interface RunReport {
   template: GeneratedTemplate
   bundleDir?: string
   exportError?: string
+}
+
+/** Resolve after `ms` — the read-back wait's only sleep. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms) })
+}
+
+/** Poll interval of the post-settle read-back wait. */
+const READBACK_POLL_MS = 50
+/** Default bound on the post-settle read-back wait. */
+const DEFAULT_READBACK_WAIT_MS = 10_000
+
+/**
+ * Wait, bounded, for T11's observation of the round that just settled.
+ *
+ * The observation does not arrive before `run.result` resolves: a provider
+ * records it in its settle pass, which is chained AFTER the result promise —
+ * and the facade clears the tracked run (with the `onProgress` callback the
+ * options carried) at that same moment, so on a real facade the `settled`
+ * event never reaches this caller and `delegationOf` is the channel that
+ * does. Reading the record the instant the result resolves therefore reads it
+ * one beat too early, which is exactly what the first real two-cell run
+ * showed: model.observed null against a delegations.jsonl that had the model.
+ *
+ * `prior` is the record's observation BEFORE this round started, so a value
+ * that differs from it is one this round produced. When the wait expires the
+ * record's current value is still returned — for a resumed round that ran the
+ * same model as its predecessor the two are identical and indistinguishable,
+ * and the record is documented as the delegation's latest observation, so
+ * reporting it is honest where reporting null would discard real evidence.
+ * @returns the observed model, or null when nothing was ever recorded.
+ */
+async function awaitObservedModel(
+  localAgent: LocalAgentFace,
+  childSessionId: string,
+  prior: string | undefined,
+  waitMs: number,
+): Promise<string | null> {
+  const deadline = Date.now() + Math.max(0, waitMs)
+  let observed = localAgent.delegationOf?.(childSessionId)?.observedModel
+  // Nothing to wait for when the facade has no read side at all (pre-T11).
+  if (localAgent.delegationOf === undefined) return observed ?? null
+  while ((observed === undefined || observed === prior) && Date.now() < deadline) {
+    await delay(READBACK_POLL_MS)
+    observed = localAgent.delegationOf(childSessionId)?.observedModel
+  }
+  return observed ?? null
 }
 
 /** sha256 hex of a buffer. */
@@ -216,6 +271,7 @@ async function runCellOnce(
     condition: ResolvedCondition
     parentSessionId: string
     finalize: boolean
+    readbackWaitMs: number
   },
   state: CellState,
 ): Promise<RunCellReport> {
@@ -310,6 +366,11 @@ async function runCellOnce(
     // model and usage; kept here and merged with delegationOf after settle
     // (either channel may have the value the other missed).
     let settled: { observedModel?: string; usage?: DelegationUsage } | undefined
+    // What the record already carried before this round — a later value that
+    // differs from it is this round's own observation.
+    const priorObserved = childSessionId === undefined
+      ? undefined
+      : localAgent.delegationOf?.(childSessionId)?.observedModel
     let run: Awaited<ReturnType<LocalAgentFace['start']>>
     try {
       const delegationOptions = {
@@ -372,11 +433,14 @@ async function runCellOnce(
     const durationMs = env.now() - startedAt
     state.spentMs += durationMs
     clearTimeout(timer)
-    // The read-back after settle: the settled event won, else the delegation
-    // record. A facade predating T11 leaves both absent — null is recorded,
-    // never guessed.
-    const record = localAgent.delegationOf?.(run.id)
-    const observedModel = settled?.observedModel ?? record?.observedModel ?? null
+    // The read-back after settle: this round's own settled event wins; else
+    // the delegation record, waited for because the provider merges it a beat
+    // after the result resolves. A facade that delivers neither leaves null —
+    // absence is recorded, never guessed. `usage` rides the settled event
+    // only: a facade that clears the tracked run before its settle pass
+    // records no usage here, and null is the honest answer.
+    const observedModel = settled?.observedModel
+      ?? await awaitObservedModel(localAgent, run.id, priorObserved, env.readbackWaitMs)
     const usage = settled?.usage ?? null
     await mission.annotate(missionId, 'orchestrator', {
       kind: 'delegation',
@@ -518,6 +582,7 @@ async function runCellWithRetry(
     condition: ResolvedCondition
     parentSessionId: string
     finalize: boolean
+    readbackWaitMs: number
   },
 ): Promise<RunCellReport> {
   const { mission } = faces
@@ -797,6 +862,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         condition: conditions.find(condition => condition.id === cell.labels.condition) as ResolvedCondition,
         parentSessionId: options.parentSessionId as string,
         finalize: options.finalize === true,
+        readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
       }))
     }
   }

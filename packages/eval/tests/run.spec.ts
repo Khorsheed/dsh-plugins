@@ -304,15 +304,24 @@ interface DelegationCall {
   cwd?: string
 }
 
-/** What the fake emits on the T11 read-back channels for one round. */
+/**
+ * What the fake delivers on the T11 read-back channels for one round.
+ *
+ * The real facade clears the tracked run — and with it the `onProgress` the
+ * call options carried — the moment `run.result` resolves, while the provider
+ * records its observation in a settle pass chained AFTER that. So a real
+ * delegation delivers NO settled event to the caller and a delegation record
+ * that gains `observedModel` a beat late; `recordModelDelayMs` models exactly
+ * that, and `settledModel` models a facade that reports before settling.
+ */
 interface FakeReadback {
   /** Emitted on the settled progress event (undefined = the event carries none). */
   settledModel?: string
   settledUsage?: { inputTokens: number; outputTokens: number }
-  /** Returned by delegationOf (undefined = the record carries none). */
+  /** Returned by delegationOf (undefined = the record never carries one). */
   recordModel?: string
-  /** false: the facade predates T11 and has no delegationOf at all. */
-  hasDelegationOf?: boolean
+  /** Milliseconds after the result settles before the record carries it (default 0). */
+  recordModelDelayMs?: number
 }
 
 class FakeLocalAgent implements LocalAgentFace {
@@ -330,22 +339,27 @@ class FakeLocalAgent implements LocalAgentFace {
     /** T11 read-back; omitted, the fake emits nothing (a facade predating T11). */
     readback?: FakeReadback
   } = {}) {
-    // A facade predating T11 has no delegationOf at all — the face's method
-    // is optional, so the fake drops it rather than returning undefined.
-    if (this.options.readback?.hasDelegationOf === false) {
+    // A facade predating T11 has no delegationOf at all — the face's method is
+    // optional, so the fake drops it unless this run exercises the read-back.
+    if (this.options.readback === undefined) {
       ;(this as { delegationOf?: unknown }).delegationOf = undefined
     }
   }
+
+  /** Child session id → when its record starts carrying the observed model. */
+  private recordVisibleAt = new Map<string, number>()
 
   /** T11: the read-only delegation projection (observed model, first-round cwd). */
   delegationOf?(childSessionId: string): { childSessionId: string; provider: string; parentSessionId: string; cwd?: string; observedModel?: string } | undefined {
     const call = this.calls.find(c => c.childSessionId === childSessionId)
     if (call === undefined) return undefined
     const recordModel = this.options.readback?.recordModel
+    const visibleAt = this.recordVisibleAt.get(childSessionId)
+    const visible = recordModel !== undefined && visibleAt !== undefined && Date.now() >= visibleAt
     return {
       childSessionId, provider: call.provider, parentSessionId: PARENT_SESSION,
       ...(call.cwd !== undefined ? { cwd: call.cwd } : {}),
-      ...(recordModel !== undefined ? { observedModel: recordModel } : {}),
+      ...(visible ? { observedModel: recordModel } : {}),
     }
   }
 
@@ -394,6 +408,7 @@ class FakeLocalAgent implements LocalAgentFace {
     this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
     this.emitProgress(options?.onProgress)
+    this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
   }
 
@@ -402,7 +417,14 @@ class FakeLocalAgent implements LocalAgentFace {
     this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
     this.emitProgress(options?.onProgress)
+    this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
+  }
+
+  /** Arm the record's visibility for the round that is about to settle. */
+  private armRecord(childSessionId: string): void {
+    if (this.options.readback?.recordModel === undefined) return
+    this.recordVisibleAt.set(childSessionId, Date.now() + (this.options.readback.recordModelDelayMs ?? 0))
   }
 
   private makeRun(childSessionId: string): DelegationRun {
@@ -699,7 +721,7 @@ describe('runPlan — T11 read-back (usage and model.observed)', () => {
     const mission = new FakeMission(join(root, 'mission'))
     // The settled event fires but names no model; the record does.
     const localAgent = new FakeLocalAgent({ readback: { recordModel: DECLARED_MODEL } })
-    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
       { datasets: fakeDatasets(root), mission, localAgent })
 
     const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
@@ -709,11 +731,44 @@ describe('runPlan — T11 read-back (usage and model.observed)', () => {
     )
   })
 
+  it('waits for the record the provider merges AFTER the result settles', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-late-record')
+    const mission = new FakeMission(join(root, 'mission'))
+    // The real shape: no settled event reaches the caller (the facade cleared
+    // the tracked run), and the record gains the model a beat after settle.
+    const localAgent = new FakeLocalAgent({ readback: { recordModel: DECLARED_MODEL, recordModelDelayMs: 150 } })
+    // Round 1 resolves as soon as the record lands; the resumed round ran the
+    // same model, so its wait expires and returns the carried observation.
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 600 },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    expectDelegationAnnotations(
+      orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
+      { observed: DECLARED_MODEL },
+    )
+  })
+
+  it('records null when the wait expires with nothing recorded', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't8b-never-record')
+    const mission = new FakeMission(join(root, 'mission'))
+    // delegationOf exists but the provider never observes a model.
+    const localAgent = new FakeLocalAgent({ readback: {} })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; finalState: string; childSessionIds: string[] }
+    expect(cell.finalState).toBe('archived')
+    expectDelegationAnnotations(orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds)
+  })
+
   it('records null against a facade predating T11 — absence is recorded, never guessed', async () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root, {}, 't8b-absent')
     const mission = new FakeMission(join(root, 'mission'))
-    const localAgent = new FakeLocalAgent({ readback: { hasDelegationOf: false } })
+    const localAgent = new FakeLocalAgent() // no readback config = no delegationOf at all
     const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
       { datasets: fakeDatasets(root), mission, localAgent })
 
@@ -726,8 +781,8 @@ describe('runPlan — T11 read-back (usage and model.observed)', () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root, {}, 't8b-mismatch')
     const mission = new FakeMission(join(root, 'mission'))
-    const localAgent = new FakeLocalAgent({ readback: { settledModel: 'dsh/some-other-model' } })
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+    const localAgent = new FakeLocalAgent({ readback: { recordModel: 'dsh/some-other-model' } })
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
       { datasets: fakeDatasets(root), mission, localAgent }))
       .rejects.toThrow(/misattributed/)
     // The mismatch is not an infrastructure failure: no retry was opened.
