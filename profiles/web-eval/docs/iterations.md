@@ -197,8 +197,9 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T18b ✅ | 代码 | lab：`network`（挂指定网或 none）、volume 挂载、`user`——T16 的三条硬缺口 | T18 | 合入 main `68e23d2`；三分量都真加到容器上再进指纹，未声明的分量不入哈希（旧指纹不变）；`--volume` 与 `--mount` 分立；pid 目录以 root 建 1777，非 root 单元才起得来 |
 | T19 ✅ | 数据 | 探针：F2 / F3 阶段一二的 objective 判据写成 `.mjs` 探针；F2 阶段三的 verify 探针与 `verify/helpers/` | 无 | 题库 `i3-probes` `050e22d`（并入 i1-walk `d3ee214`）；25 条判定过 schema；3 条 objective 判据无探针，理由在 `docs/probes-selftest.md` |
 | T19b ✅ | 数据 | F3 补一条与 A-N2 同形的 objective 负分判据；两题 core/bonus 计数对齐 standards.yml；探针改出 T24 定下的比例字段 | T24 | 题库 `i3-probes-b` `2142daf`（并入 i1-walk `22bc6bb`）；F3 新增 D-N1（D1，−2，negative），底层取值三格 1/8、1/5、0/6，一格 false；C1 / C2 出 `ratio`，34 条判定 pass 与 ratio 一致、evidence 无比例；两题 core 口径统一含 G1 |
-| T19c | 数据 | 探针接 T28 的运行器：EXIT_NOT_JUDGEABLE 2 → 3；删两题 verify/lib 副本，探针 import 题集级 lib；F3 rubric.md 三处悬空引用改现行 id；P0 最小探针；自测表重跑 | T19b T28 | |
-| T20 | 代码 | eval：容器路径（acquire / populate / checkpoint / verify / archive 交 lab；销毁路径唯一） | T17 T18b T28 | |
+| T19c ✅ | 数据 | 探针接 T28 的运行器：EXIT_NOT_JUDGEABLE 2 → 3；删两题 verify/lib 副本，探针 import 题集级 lib；F3 rubric.md 三处悬空引用改现行 id；P0 最小探针；自测表重跑 | T19b T28 | 题库 `i3-probes-c` `e90aa42`（并入 i1-walk `fef040a`）；main 的真实运行器跑三格：共享探针与 verify-rollup 记 probe-skipped，题内探针经题集级 lib 判定，逐格 9 / 5 / 5 与 T19b 相同；validate 只剩 41 条 UNREGISTERED_FILES；P0 探针不 import 共享库——register 布局物化后多一层 verify/，相对路径差一层 → T20b |
+| T20 ✅ | 代码 | eval：容器路径（acquire / populate / checkpoint / verify / archive 交 lab；销毁路径唯一） | T17 T18b T28 | 合入 main `0639947`；计划 `unit` 段作开关，条件 `unit.scopedHome`，一格一单元八个动词顺序固定，refs.fingerprint 取复合指纹，force 只在探活单元一处；真 docker 上 P0 一格跑到 released，闸拒绝过一次且容器仍在；「环境一致」首次成立。**未上 3171、未拉真 CLI**（委派由容器内 docker exec 写产出），真 CLI 一格归 T22；四家横比时指纹含各家不同的 env 键与挂载 target → T20b |
+| T20b | 代码 | eval：「环境一致」的口径——去掉条件自有项再比；register 布局按题库真实路径物化；两条路径的物化哈希统一 | T20 T19c | |
 | T21 ✅ | profile | eval preset：不挂 Bash 与 docker | 无 | 合入 main `e1e12f1`；工具 43 → 39，差集恰为 bash / exit_plan_mode / ralph / workflow；四个 `subagent_<harness>` 预设挑不掉 → T27 |
 | T22 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | |
 | T23 ✅ | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | 合入 main `0cd2139`；finalize 不强推、不碰 archived 以下；就绪检查每条件一次真委派，失败拒整 run；效率表只计已完成格子（pilot A 的 dsh-exec 21.0 → 11.9 min）；子集记 `run.meta.subset`；validate 对 expectedNs 出四种 warning；judge.ts 零改动 |
@@ -208,7 +209,7 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T27 ✅ | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | 合入 main `c8ba619`；none 下不注册工具也不挂生命周期监听；patch 三行 none（整值替换，故重抄 provider / toolName 并以 name 守卫）；新装实例 36 个工具，叠 all 回 39，差集恰为三家委派工具；第四家 `subagent_dsh` 在 profile 层关不掉，要改 provider 包 |
 | T28 ✅ | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | 合入 main `a6395e1`；两个 verify 层镜像题库布局物化，题集级探针对每题各跑一次；退出码 0 / 3 / 其余（取 3 不取 2：2 是 getopt 的用法错误码）；先回填再校验，ratio 边界与 pass 一致性在源头拦；协议 v1-rev5；题库仍退 2、仍留 lib 副本 → T19c |
 
-第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 可发；T22 在 T19c、T20 合入后发，文案已写好待放行。
+第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 已验收。第四波（2026-09-08 发出）：T20b、T22 可发（T22 第 5 步等 T20b 合入）；I4 的 T30a 不依赖 I3，可并行发。
 
 **第一波验收（2026-09-08）**：T21（`e1e12f1`）与 T18（`b7dc599`）合入 main，两条分支文件不重叠；合并态 gate 通过，lab 包 100 个测试在验收机上重跑全绿。T16 与 T19 在题库仓库：`i3-env`（`4004dfc`）与 `i3-probes`（`050e22d`）经临时 worktree 并入 `i1-walk`（`714b793`、`d3ee214`），未动共享检出的 HEAD；T16 的提交全文 grep 过凭据形状，无命中。
 
@@ -236,6 +237,11 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 
 交出 mainline 的累计清单又长三条：ankh-guard 的 lane inventory mismatch 本轮拦了 T26 一次、T28 一次（干净 main 复现）；datasets `validate --commit` 死参数；协议 `dataseek.rubric` 的 axes 形状与 schema_version 语义。profile 侧一条：`--dump-config` 的两条 tool-subagent 官方行不存在的 loader 警告。provider 侧一条：`subagent_dsh` 的注册开关要进 local-agent-dsh。
 
+**第四波验收（2026-09-08）**：T20（`0639947`）合入 main，从 `17e0ce8` 开出、无冲突；合并态 eval 301、lab 124 在验收机上重跑全绿，双语 224 对同步。题库侧 T19c：`i3-probes-c`（`e90aa42`）经临时 worktree 并入 `i1-walk`（`fef040a`），共享检出 HEAD 未动；新校验器 0 error，RUBRIC_REF_DANGLING 与 OBJECTIVE_NO_PROBE 归零。
+
+- **T19c**：三步机械改动如预演——EXIT_NOT_JUDGEABLE 2 → 3、no-patch.sh 两处 exit 3、六个探针 import 改题集级路径、副本 1434 行删光、`--check-shared` 撤掉；用法错误保持 exit 1。用 main 的真实运行器（tsx 直接 import judge.ts 与 datasets 服务面，未复刻）跑三格：共享探针与 verify-rollup 全记 probe-skipped，题内探针 judged，逐格 9 / 5 / 5，overwritten 与 dropped 皆空。三条要记住：一、**P0 刻意不 import 共享库**——register 布局的题物化后判定目录在 item 与 display 之间多一段 verify/（`items/P0/verify/checks/probes/x.mjs`），题库里没有（`items/P0/checks/probes/x.mjs`），相对路径差一层；任何用 register 布局的真题都会踩，运行器要按题库真实路径物化，记 T20b。二、F3 题眼标题的分数随 id 改了（`B2-3（5 分）` → `B5-1（3 分）`），rubric.yml 一字未动；散文里另一处「题眼 A2-1（6 分）：不给用户增加负担」按内容应是 A4-1，T26 不报（id 存在），未动，留给下一次碰 F3 散文的人。三、`dsh-datasets validate` 忽略 `--commit`（`resolveCommitAt(scope, undefined)` 永远走 HEAD），T19 / T19b 回报里「对基线无新增警告」的对比其实两边都在量 HEAD，结论数仍对；本次改前改后是拿临时 worktree 量的。
+- **T20**：LabFace 八个动词、计划 `unit` 段、条件 `unit.scopedHome`（契约 v1-rev6 双语 + sidecar + 夹具）、执行器接口、`destroyUnit` 唯一——run.ts 与 judge.ts 里没有 docker 字样，force 只出现在探活单元那一处。真 docker daemon + 真 lab / mission / datasets 服务跑 P0 一格两次：不带 finalize 的那次 archived 后 release 被闸拒绝、容器仍在、记 unit-retained；带 finalize 的那次 releasable → release → released，容器已删，`docker ps -a --filter label=dsh-lab.managed` 为空；lab status 的 TASK 哈希与 mission 清单 sha 一致；报告四条不变量里「环境一致」首次 ok（pilot A 整轮 unverifiable）。三处偏离的裁决：一、**没上 3171、没拉真 CLI**——委派那一步由容器内 docker exec 写产出，凭证目录是占位文件。编排全流程是真的，CLI 在同一镜像里起得来是 T17 实测过的接缝，本次改的只是带 exec 还是 cwd，测试在 argv 层钉住。按「pilot 验机制、少花 token」接受，但 I3 完成判据的「容器内一格走完全流程」只算做了编排半边，真 CLI 一格归 T22 第 4 步（本来就要跑），报告的「受试对象一致 ⚠️ 无模型回读」正是这半边缺席的痕迹。二、**lab 动了三处**（约定只加不改）：`AcquireSpec.ownWorkdir`（`docker run --workdir` 把缺失目录建成 root，非 root 单元写不进自己的工作区）、/run/dsh-lab 根可写（否则 verify 在非 root 单元上死在自己的 mkdir）、verify 把材料交给单元用户（否则它自己的 rm -rf 逐文件失败，答案键留在单元里）。三处都是「不改就跑不起来」的 T18b 同类硬伤，各带测试、README 双语、sidecar，接受；ownWorkdir 不入指纹，它是单元自己用户的权限事实，eval 路径上恒为 true。三、**四家横比「环境一致」会 violated**——复合指纹含 env 键名与挂载 target，四家的作用域变量与容器内路径各不相同。实施者判归 I4，不同意：T22 第 5 步的四家同一题就靠这张比较表打开，不改就又是一份拒绝比较的报告，记 T20b。两条小的都接受：两条路径的物化哈希算法不同（run 内可比、跨路径不可比，报告两种字段都读）——T20b 统一；verify-translation-pairing 的 glob 加 docs，协议文档的 sidecar 从此受检。
+
 验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
 ### I4 · 放宽因子
@@ -245,10 +251,13 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T29 | 代码 | local-agent：每次委派可覆盖 scoped home / 配置 | T3 | |
-| T30 | 代码 | local-agent：每 provider 的模型参数，首轮委派指定、成员内固定、resume 不换；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | T29 T3b | |
-| T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选） | T29 | |
+| T30a | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | |
+| T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型 | T29 T30a | |
+| T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选） | T29 T30b | |
 | T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
+
+模型切换（2026-09-08 定）：「配置能切模型、切了新 run 照新的走、缺省与今天一致、前端能切能指定」拆成两半。配置切换与设置卡是 T30a，不依赖 I3 与 T29，可与 T22 并行发；按次委派指定是 T30b，与条件 provision（T31）一起才有意义。界面上「指定某次 run 用哪个模型」走 I5 的计划审阅（T36）读条件文件，不另做入口。
 
 验收：README I4 行；report 的因子列由 condition diff 自动推出。
 
@@ -1034,7 +1043,7 @@ eval 测试全绿，gate 绿；对 bundle 三格跑运行器：no-patch.sh 每�
 - readVerdictFile 校验带 ratio 的 verdict 时加两条数值检查：passed / total 为整数且 total > 0、0 ≤ passed ≤ total；pass === (passed === total)。不符按「产物不合契约」计，与 schema 不过同一档，原因进 orchestrator ns。report.ts 里 T24 的 ratioOf 只做前一条并退回布尔——运行器在源头拦，报告兜底，两边都要在。
 ```
 
-### T19c · 题库：探针接上 T28 的运行器——退出码 3、删 lib 副本、悬空引用、P0 最小探针（可发）
+### T19c · 题库：探针接上 T28 的运行器——退出码 3、删 lib 副本、悬空引用、P0 最小探针（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T19c：题库——探针接上 T28 的运行器：退出码 3、删 lib 副本、悬空引用、P0 最小探针
@@ -1069,7 +1078,7 @@ main 上 docs/dataset-authoring-protocol.md §6.7（v1-rev5：退出码三态、
 题库 commit；三格探针 outcome 表；validate 输出；被改的 import 与退出码清单。
 ```
 
-### T20 · eval：容器路径——一格一单元，acquire / populate / checkpoint / verify / archive 交 lab，销毁路径唯一（可发）
+### T20 · eval：容器路径——一格一单元，acquire / populate / checkpoint / verify / archive 交 lab，销毁路径唯一（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T20：dsh-eval 容器路径——一格一单元，五个动词交 lab，销毁路径唯一
@@ -1107,7 +1116,7 @@ eval 测试全绿，gate 绿（ankh-guard 的 inventory mismatch 若在干净 ma
 分支名与 commit；Agent Note 路径；gate 输出；真机一格的时间线（acquire → … → released，含单元名与指纹前 12 位）；探针 outcome 表；report 的不变量四行。
 ```
 
-### T22 · 运维：环境侧收尾 + 容器内 F2 阶段三一格 + 四家同一题（T19c、T20 合入后可发）
+### T22 · 运维：环境侧收尾 + 容器内 F2 阶段三一格 + 四家同一题（可发；第 5 步等 T20b 合入）
 
 ```text
 # 任务 T22：运维——环境侧收尾、容器内 F2 阶段三一格、四家同一题
@@ -1137,6 +1146,83 @@ I3 行的完成判据整句成立：容器内一格走完全流程、release 经
 
 ## 回报
 两条分支与题库 commit；镜像 digest 与 refs.fingerprint；四家容器内 exec 复测表；两个 run 的报告摘录（不变量、得分判据数、缺陷清单、效率表）；pilot-b-log.md 路径；剩余缺口清单。
+
+## 追加（2026-09-08，T19c、T20 合入后）
+- T19c（i1-walk fef040a）与 T20（main 0639947）都已合入，第 1–4 步可以开始。T20 的真机一格没上 3171、没拉真 CLI，所以第 4 步是 I3「容器内一格走完全流程」第一次真的成立：就绪检查、两阶段真 CLI 委派、回读模型、探针、闸、release 缺一不可，报告四条不变量要全 ok（含「受试对象一致」）。
+- 第 5 步（四家同一题）等 T20b 合入：现在的复合指纹含各家不同的 env 键与挂载 target，四家横比「环境一致」必 violated，报告会拒绝比较。T20b 合入前不要跑第 5 步。
+- 题库顺手两行（只改散文，不动判读）：P0 探针改回 import 题集级 lib（T20b 物化路径修好后才成立，放第 5 步之后）；F3 rubric.md「题眼 A2-1（6 分）：不给用户增加负担」按内容应指 A4-1，核对 rubric.yml 后改指认。
+- 凭证目录按 T20 的 `--creds-root DIR/<条件 id>` 约定备，属主 1000；T20 用的是占位文件，第 4 步是第一次装真凭据进单元。
+```
+
+### T20b · eval：「环境一致」的口径、register 布局的物化路径、物化哈希统一（可发）
+
+```text
+# 任务 T20b：dsh-eval——「环境一致」去掉条件自有项再比；register 布局按题库真实路径物化；两条路径的物化哈希统一
+
+## 背景
+T20（main 0639947）让 refs.fingerprint 取 lab 的复合指纹，「环境一致」在 P0 × 一家上首次 ok。但复合指纹的分量含 envKeys 与 mounts（target / type / readonly），而容器路径下每个条件各挂自己的作用域目录、各设自己的变量（CODEX_HOME、CLAUDE_CONFIG_DIR、KIMI_CODE_HOME、DSH_HOME 各指向自己在容器内的作用域目录），四家同一 run 必然四个指纹，报告按既有规则记 violated 并拒绝比较——T22 第 5 步就卡在这里。T19c 发现第二件：register 布局的题（P0）物化后判定目录在 item 与 display 之间多一段 verify/（<tmp>/items/P0/verify/checks/probes/x.mjs），题库里是 items/P0/checks/probes/x.mjs，题内探针到题集级 lib 的相对路径差一层，P0 只能自带几十行副本；任何 register 布局的真题都会踩。第三件：容器路径的 materialization sha 是 lab populate 的 manifest 算法，宿主路径是 eval 自己「排序后整体 sha256」，报告两种字段都读，跨路径不可比。
+
+## 先读
+packages/eval/src/run.ts（acquire 后 setRefs 的位置、容器路径的物化与 manifest）、report.ts（envInvariant / refs.fingerprint 的读法）、judge.ts（两个 verify 层的物化、register 布局的角色映射）；packages/lab/src/fingerprint.ts（FingerprintComponents、canonical JSON、ADDITIVE_COMPONENTS）与 types.ts；packages/datasets 的 register 布局说明（README「布局」节）；T18 / T18b / T20 / T28 的 Agent Note；题库 items/P0-placeholder 的 register 与 checks/probes/link-check.mjs。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-env-class，分支 feat/eval-env-class；主要改 packages/eval/；lab 只加一个纯函数动词，不改既有动词；不改 datasets、local-agent、mission。
+
+## 已定决定（照此实现）
+- 「环境一致」比的是计划声明的环境，不是单元的全部事实：从单元的 FingerprintComponents 里去掉条件自有项——条件 unit.scopedHome 的挂载 target 与变量名、条件 env.keys 里的键——剩下的（image、resources、network、user、计划级挂载与 env 键）算一个环境类哈希，写进 refs.fingerprint；每格完整的 lab 指纹另记 refs.unitFingerprint 并进 archive manifest。同 run 内环境类不同仍 violated。
+- 哈希规则不复刻：lab 服务面加纯函数 fingerprintOf(components)（与 CLI 的 fingerprint 同一实现，只加不改，带测试与 README 双语 + sidecar），eval 用它算环境类；标签沿用 lab-env:<sha256>，分量 version 不变——它只是少了几项的同一算法。
+- 报告：不变量一节「环境一致」打印环境类；下面列每格的 unitFingerprint 与被去掉的条件项（键名与 target，不含值），让读者看得见差在哪儿；宿主路径无指纹的 run 照旧 unverifiable。
+- register 布局按题库真实路径物化：判定目录里每层落在它在题库里的真实相对目录（items/<id>/checks/…），不再统一套 verify/；约定式布局不变；探针的 by 仍是 display 路径。P0 的探针改回 import 题集级 lib 归题库（T22 顺手），本任务用夹具题验证两种布局下 ../../../../verify/helpers/lib 都解析得到。
+- 物化哈希统一：两条路径的 materialization.json 都用 eval 今天的算法对源目录算（排序后整体 sha256），lab populate 的 manifest 作为「拷进单元的是这份」的证明另存，报告只读一种字段；pilot-a-round1 与 T20 的 P0 bundle 复算作回归（宿主 sha 不变；容器格换算法后与宿主同题同 commit 的 sha 相等）。
+
+## 交付
+上述三项 + 测试（环境类去项、四个假条件同 run 环境类相等而 unitFingerprint 不等、register 布局物化路径、哈希统一的跨路径相等）；lab 的 fingerprintOf；README 双语；Agent Note（bug-fix）。
+
+## 约束
+不碰 3080；不改 verdict / probe 契约；不改 lab 既有动词语义；不动题库。
+
+## 完成判据
+eval / lab 测试全绿，gate 绿；用 T20 的 P0 bundle 加三个只差作用域项的假条件做出的 run：报告「环境一致」ok、四个 unitFingerprint 各异并列出差异项；register 夹具题的探针经题集级 lib 判定成功；pilot-a-round1 报告逐字节不变。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；那份四条件 run 的不变量一节原文；物化 sha 跨路径相等的两行。
+```
+
+### I4 的文案
+
+### T30a · local-agent：四家 provider 的 `model` 配置键，缺省即今天，设置卡「默认模型」（可发，与 T22 并行）
+
+```text
+# 任务 T30a：local-agent——四家 provider 插件配置加可选 model，不写 = 今天的表现，写了每轮以它起 CLI；设置卡「默认模型」
+
+## 背景
+四家的模型今天各有各的来源，没有一个统一的「切模型」入口：codex 读作用域 config.toml 顶层 model（packages/local-agent-codex/src/provision.ts:115）；claude-code 读作用域 settings.json 的 model（local-agent-claude-code/src/provision.ts:73），没配就是 CLI 自己的默认，插件不猜；kimi 的插件配置有必填 model 键，但只在第一次备置作用域目录时写成 config.toml 的 default_model，已有配置不动；dsh 的子实例继承宿主实例的默认模型服务，provider 从不覆盖，报成 provider/model。要换模型得去改各家的作用域文件，dsh 还得改整个宿主实例。评测侧的约束已经在：冻结决策 5 要求声明模型 == 实测模型，条件哈希含模型，run 中途换会让下一轮 MisattributedRun——这是对的，保留。
+
+## 先读
+四家 provider 的 index.ts（配置 schema、effectiveSettings 的读取顺序）与 provision.ts；packages/local-agent/src/types.ts 的 LocalAgentEffectiveSettings.model 注释；T11 / T8b / T25 的 Agent Note（回读与 effectiveSettings）；profiles/web-eval/cordis.patch.yml 的 kimi 行（现有 model pin）；dsh 的 @deepseek-ai/dsh-agent-default-model 服务面（dsh 子实例能否按次启动指定模型）。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-local-agent-model-key，分支 feat/local-agent-model-key，只改 packages/local-agent 与四个 provider 包（含 README 双语与 sidecar）；不改 eval、profile pin。
+
+## 已定决定（照此实现）
+- 四家插件配置加可选 model: string。不写：与今天逐字节相同（各家从作用域文件 / CLI 默认 / 宿主实例读）。写了：每轮委派（fresh 与 resume 都算）以它起 CLI——各家用自己 CLI 的模型参数（codex exec 的 -m / -c model=、claude 的 --model；kimi 与 dsh 以实施者核实的旗标或作用域配置为准），argv 层测试钉住；哪家 CLI 没有按次启动的模型参数，就在每轮起 CLI 前把作用域配置写成该值并在 README 写明。
+- kimi 的 model 键语义从「备置时镜像一次」改为「每轮生效」，是有意的行为变化：旧的 provision 镜像保留（首次备置仍写 default_model），README 与 Agent Note 写明。
+- dsh：宿主实例的默认模型服务仍是缺省来源；若子实例的 headless 启动能指定模型则 model 键生效，否则本任务不给 dsh 提供 model 键，README 写清「dsh 换模型 = 换宿主实例默认模型」并记进交出项。
+- effectiveSettings.model 的读取顺序改为：插件配置 model → 作用域文件 → 缺位；status 与条件快照都看得到；回读照旧核对实测模型，不一致仍 MisattributedRun。
+- 「切了新 run 照新走、进行中不受影响」不需要额外机制：条件哈希在 run 建立时冻结，中途改配置下一轮就会被回读拦下——README 写一段解释这是设计而不是缺口。
+- 设置卡「默认模型」：dev 域 UI，四家各一个自由输入框加最近用过的值，不硬编码模型目录；保存即写插件配置的 model 键。
+
+## 交付
+四家配置键与 argv / 配置写入；effectiveSettings 顺序；设置卡；测试（每家：不写 = 旧 argv 逐字节相同；写了 = 新 argv 或新作用域配置；resume 沿用；effectiveSettings 顺序）；README 双语；Agent Note（feature）。真机：本机三家（codex / claude / kimi）各改一次 model 后委派一轮，回读模型等于配置值；改回去再跑一轮，回到原值。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；凭据不进日志与回报；不改 eval；不改 profile pin（评测实例要不要 pin 模型是 T31 的事）。
+
+## 完成判据
+四家测试全绿，gate 绿；真机三家的两轮回读表；dsh 一栏写明生效或不生效及原因。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；三家两轮回读表（脱敏）；每家用的是旗标还是配置写入。
 ```
 
 ## 四、验收规程
