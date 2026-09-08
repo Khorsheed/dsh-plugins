@@ -225,6 +225,25 @@ export interface LocalAgentFace {
   get(name: string): { delegationProvider?: string } | undefined
   /** T11 read-back: the delegation record without the resume handle; absent when unknown. */
   delegationOf?(childSessionId: string): DelegationInfo | undefined
+  /**
+   * The host scoped home of one harness (`<homesRoot>/<name>`) — where that
+   * harness's credentials live and where its CLI writes the rollout / session
+   * log the read-back parses.
+   *
+   * The container path mounts exactly THIS directory into the unit. It has to
+   * be the same one: a round inside a unit writes its rollout to the bound
+   * directory, and the read-back looks for it under `homeDir(harness)`. Point
+   * the two at different places and nothing errors — the read-back simply
+   * finds nothing, forever, and `model.observed` is null on every round while
+   * the readiness check reports `ready, model —` and «受试对象一致» never gets
+   * past ⚠️. That is the bug T20 shipped by staging a separate credential
+   * tree, and pilot B paid for it before anyone saw it.
+   *
+   * OPTIONAL on the face: only the container path needs it, and a facade that
+   * predates it makes that path a refusal naming the method, never a silent
+   * mount of the wrong directory.
+   */
+  homeDir?(harness: string): string
 }
 
 /**

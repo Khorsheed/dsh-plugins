@@ -53,12 +53,15 @@ describe('the plan/condition split that produces one acquire spec', () => {
   })
 
   it('declares exactly one mount and exactly the environment the unit needs', () => {
-    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/creds')
+    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/homes/codex')
     expect(resolved.ok).toBe(true)
     const spec = acquireSpecFor((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan, { missionId: 'm-1', runId: 'r-1' })
     // One mount: four credential directories in one container would show every
-    // player the other three's credentials — a leak AND an asymmetry.
-    expect(spec.mounts).toEqual([{ source: '/host/creds/codex-exec', target: '/creds/codex', type: 'bind' }])
+    // player the other three's credentials — a leak AND an asymmetry. The
+    // source is the harness's own scoped home, verbatim: mounting a COPY is
+    // what broke the read-back, because the CLI then writes its rollout where
+    // nothing looks for it.
+    expect(spec.mounts).toEqual([{ source: '/host/homes/codex', target: '/creds/codex', type: 'bind' }])
     expect(spec.env).toEqual({ CODEX_HOME: '/creds/codex' })
     expect(spec).toMatchObject({
       image: 'eval-env:pinned',
@@ -74,10 +77,10 @@ describe('the plan/condition split that produces one acquire spec', () => {
 
   it('gives dsh — and only dsh — the node flag its HTTP client needs behind a proxy', () => {
     const dsh = { ...CODEX_CONDITION, harness: { name: 'dsh', version: null, drive: 'exec' }, permissions: 'unrestricted', env: { keys: ['DSH_HOME'] }, unit: { scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } } }
-    const resolved = resolveCellUnit(PLAN_UNIT, 'dsh-exec', dsh, '/host/creds')
+    const resolved = resolveCellUnit(PLAN_UNIT, 'dsh-exec', dsh, '/host/homes/dsh')
     const spec = acquireSpecFor((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan)
     expect(spec.env).toEqual({ DSH_HOME: '/creds/dsh', NODE_OPTIONS: '--use-env-proxy' })
-    const codex = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/creds')
+    const codex = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/homes/codex')
     expect(acquireSpecFor((codex as { plan: Parameters<typeof acquireSpecFor>[0] }).plan).env).not.toHaveProperty('NODE_OPTIONS')
   })
 
@@ -91,7 +94,7 @@ describe('the plan/condition split that produces one acquire spec', () => {
   })
 
   it('prints a spec with env NAMES and no values', () => {
-    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/creds')
+    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', CODEX_CONDITION, '/host/homes/codex')
     const described = describeAcquireSpec(acquireSpecFor((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan))
     expect(described['envKeys']).toEqual(['CODEX_HOME'])
     // Names, never the map: the mount TARGET is reviewable (it is what the
@@ -346,7 +349,7 @@ describe('the environment CLASS: the plan\'s environment, without each condition
   }
 
   it('drops the condition\'s scoped-home mount, its variable, its harness extras and its declared keys', () => {
-    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', { ...CODEX_CONDITION, env: { keys: ['CODEX_HOME', 'OPENAI_BASE_URL'] } }, '/host/creds')
+    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', { ...CODEX_CONDITION, env: { keys: ['CODEX_HOME', 'OPENAI_BASE_URL'] } }, '/host/homes/codex')
     const owned = conditionOwnedComponents((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan, { ...CODEX_CONDITION, env: { keys: ['CODEX_HOME', 'OPENAI_BASE_URL'] } })
     expect(owned).toEqual({ mountTargets: ['/creds/codex'], envKeys: ['CODEX_HOME', 'OPENAI_BASE_URL'] })
     const { components, excluded } = environmentClassComponents(COMPONENTS, owned)
@@ -359,7 +362,7 @@ describe('the environment CLASS: the plan\'s environment, without each condition
 
   it('drops dsh\'s node flag too — a harness extra is the condition\'s, not the plan\'s', () => {
     const dsh = { ...CODEX_CONDITION, harness: { name: 'dsh', version: null, drive: 'exec' }, permissions: 'unrestricted', env: { keys: ['DSH_HOME'] }, unit: { scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } } }
-    const resolved = resolveCellUnit(PLAN_UNIT, 'dsh-exec', dsh, '/host/creds')
+    const resolved = resolveCellUnit(PLAN_UNIT, 'dsh-exec', dsh, '/host/homes/codex')
     const owned = conditionOwnedComponents((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan, dsh)
     expect(owned.envKeys).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
   })
@@ -389,7 +392,7 @@ describe('the environment CLASS: the plan\'s environment, without each condition
         env: { keys: [harness.var] },
         unit: { scopedHome: { container: harness.container, var: harness.var } },
       }
-      const resolved = resolveCellUnit(PLAN_UNIT, harness.id, condition, '/host/creds')
+      const resolved = resolveCellUnit(PLAN_UNIT, harness.id, condition, '/host/homes/codex')
       const plan = (resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan
       const spec = acquireSpecFor(plan)
       // The unit's own components, as lab would compute them from that spec.

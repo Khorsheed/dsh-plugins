@@ -439,6 +439,8 @@ class FakeLocalAgent implements LocalAgentFace {
     workspaceOf?: (container: string) => string
     /** Harness names this facade has a delegation provider for (default `['dsh']`). */
     harnesses?: string[]
+    /** Root of the per-harness scoped homes this facade reports. */
+    homesRoot?: string
     /**
      * What the record reports for the READINESS child specifically. Set it to
      * the declared model to let the probe pass while the stage rounds read
@@ -446,6 +448,12 @@ class FakeLocalAgent implements LocalAgentFace {
      * guard exists for, which the probe by construction cannot see.
      */
     readinessModel?: string
+    /**
+     * Condition ids whose READINESS probe is refused (the probe's label names
+     * the condition). Lets a test fail the judge's probe while every player's
+     * passes, which is pilot B's shape exactly.
+     */
+    readinessFailFor?: string[]
   } = {}) {
     // A facade predating T11 has no delegationOf at all — the face's method is
     // optional, so the fake drops it unless this run exercises the read-back.
@@ -485,6 +493,11 @@ class FakeLocalAgent implements LocalAgentFace {
       ...(readback.settledModel !== undefined ? { observedModel: readback.settledModel } : {}),
       ...(readback.settledUsage !== undefined ? { usage: readback.settledUsage } : {}),
     })
+  }
+
+  /** The instance's scoped home for one harness — what the container path mounts. */
+  homeDir(name: string): string {
+    return join(this.options.homesRoot ?? '/nonexistent-homes', name)
   }
 
   get(name: string): { delegationProvider?: string } | undefined {
@@ -529,9 +542,17 @@ class FakeLocalAgent implements LocalAgentFace {
    */
   private readinessRun(
     provider: string,
-    options: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } } | undefined,
+    options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } } | undefined,
     onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void,
   ): DelegationRun {
+    // The probe's label is `readiness <condition id>` — the only place the
+    // facade learns WHICH condition it is being asked about.
+    const probed = (options?.label ?? '').replace(/^readiness /, '')
+    if (this.options.readinessFailFor?.includes(probed) === true) {
+      const childSessionId = `readiness-${++this.seq}`
+      this.calls.push({ kind: 'start', provider, childSessionId, prompt: READINESS_PROMPT, readiness: true, ...this.addressed(options) })
+      return { id: childSessionId, result: Promise.resolve({ stopReason: 'failed', diagnostic: '401 authentication failed' }) }
+    }
     if (this.options.readiness === 'throw') {
       this.calls.push({ kind: 'start', provider, prompt: READINESS_PROMPT, readiness: true, ...this.addressed(options) })
       throw new Error('spawn failed: CLI binary not found')
@@ -569,7 +590,7 @@ class FakeLocalAgent implements LocalAgentFace {
     return options?.cwd !== undefined ? { cwd: options.cwd } : {}
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     void parentSessionId
     // The readiness probe is answered before any scripted failure: those
     // script the STAGE rounds, and a run whose probe failed never gets there.
@@ -1982,12 +2003,16 @@ function writeUnitCondition(root: string, id = 'dsh-unit'): void {
   }, null, 2)}\n`)
 }
 
-/** A staged credential directory, owned by whoever runs the tests. */
-function stageCredentials(root: string, id = 'dsh-unit'): string {
-  const credsRoot = join(root, 'creds')
-  mkdirSync(join(credsRoot, id), { recursive: true })
-  writeFileSync(join(credsRoot, id, '.keep'), 'staged by hand (T22)\n')
-  return credsRoot
+/**
+ * The scoped home local-agent would have provisioned for a harness, with a
+ * credential in it. The container path mounts THIS — the instance's own — so
+ * a round's rollout lands where the read-back reads it.
+ */
+function stageScopedHome(root: string, harness = 'dsh'): string {
+  const homesRoot = join(root, 'homes')
+  mkdirSync(join(homesRoot, harness), { recursive: true })
+  writeFileSync(join(homesRoot, harness, 'auth.json'), '{"written by /<harness> login": true}\n')
+  return homesRoot
 }
 
 /** The probes the container cells judge with (the same fixtures the host path uses). */
@@ -2003,18 +2028,17 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('takes the eight verbs in the order the trajectory table declares, and no others', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
     const report = await runPlan(planPath, {
       parentSessionId: PARENT_SESSION,
       stateRoot: join(root, 'state'),
-      credsRoot,
       finalize: true,
     }, { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }), mission, localAgent: agent, lab })
 
@@ -2048,7 +2072,10 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
       missionId: cell.missionId,
       runId: report.runId,
     })
-    expect(cellAcquire.mounts).toEqual([{ source: join(credsRoot, 'dsh-unit'), target: '/creds/dsh', type: 'bind' }])
+    // THE mount source: the instance's own scoped home for that harness, which
+    // is where the CLI writes its rollout and where the read-back looks.
+    expect(cellAcquire.mounts).toEqual([{ source: join(homesRoot, 'dsh'), target: '/creds/dsh', type: 'bind' }])
+    expect(cellAcquire.mounts?.[0]?.source).toBe(agent.homeDir('dsh'))
     expect(cellAcquire.env).toEqual({ DSH_HOME: '/creds/dsh', NODE_OPTIONS: '--use-env-proxy' })
     // The readiness unit is the same environment minus the mission binding —
     // a probe against a different environment would prove nothing.
@@ -2065,15 +2092,15 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('addresses every round at the unit and never at a host cwd', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
-    await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, {
+    await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
       datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab,
     })
     const stageRounds = agent.calls.filter(call => call.readiness !== true && call.judge !== true)
@@ -2094,15 +2121,15 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('writes the unit fingerprint into refs, which is what makes «环境一致» checkable', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], reps: 2, unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
-    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true }, {
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true }, {
       datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab,
     })
     const fingerprints = report.cells.map(cell => mission.refsOf(cell.missionId, report.runId).fingerprint)
@@ -2120,16 +2147,16 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('judges inside the unit and keeps the judging output out of the archived workspace', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
     const report = await runPlan(planPath, {
-      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true,
     }, { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }), mission, localAgent: agent, lab })
 
     const missionId = report.cells[0]?.missionId as string
@@ -2155,17 +2182,17 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('keeps the container when the gate refuses, and says so on the cell', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     // No probes and no judge: verdicts/ is empty, so the archive gate refuses.
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
     const report = await runPlan(planPath, {
-      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true,
     }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab })
 
     const missionId = report.cells[0]?.missionId as string
@@ -2197,34 +2224,41 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
   it('refuses before anything executes when the container path is not satisfiable', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
     const deps = { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), lab }
 
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, { ...deps, lab: undefined }))
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { ...deps, lab: undefined }))
       .rejects.toThrow(/needs the lab service/)
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, deps))
-      .rejects.toThrow(/--creds-root/)
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, concurrency: 2 }, deps))
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), concurrency: 2 }, deps))
       .rejects.toThrow(/serial in this line/)
     // A lab predating the hashing verb: the environment class cannot be
     // derived, and deriving it by a second rule is exactly what must not
     // happen — so the run is refused and says which verb is missing.
     const older = Object.create(Object.getPrototypeOf(lab) as object, Object.getOwnPropertyDescriptors(lab)) as LabFace & { fingerprintOf?: unknown }
     older.fingerprintOf = undefined
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, { ...deps, lab: older }))
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { ...deps, lab: older }))
       .rejects.toThrow(/fingerprintOf/)
-    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot: join(root, 'absent') }, deps))
+    // A harness nobody has logged in on: its scoped home is empty (or absent),
+    // and every cell would 401 — refused before the run exists.
+    const loggedOut = new FakeLocalAgent({ homesRoot: join(root, 'never-logged-in') })
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { ...deps, localAgent: loggedOut }))
       .rejects.toThrow(/nothing was executed/)
+    // …and a facade with no homeDir at all is a refusal that names the method,
+    // never a mount of some other directory.
+    const noHomeDir = new FakeLocalAgent({ homesRoot }) as FakeLocalAgent & { homeDir?: unknown }
+    noHomeDir.homeDir = undefined
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { ...deps, localAgent: noHomeDir }))
+      .rejects.toThrow(/homeDir/)
     // Nothing was acquired by any of the four refusals.
     expect(lab.calls).toEqual([])
 
     // …and a condition that never said where its scoped home is mounted is a
     // validation error, so the plan does not even reach the run loop.
     const planNoUnit = writePlan(root, { conditions: ['dsh-exec'], unit: UNIT_SEGMENT }, 'container-bad')
-    await expect(runPlan(planNoUnit, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, deps))
+    await expect(runPlan(planNoUnit, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, deps))
       .rejects.toThrow(/validation error/)
   })
 
@@ -2232,11 +2266,13 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
     const root = makeDatasetTree()
     writeUnitCondition(root)
     const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
-    const report = await runPlan(planPath, { dryRun: true, credsRoot: join(root, 'creds') })
+    const report = await runPlan(planPath, { dryRun: true })
     const units = report.meta['units'] as Array<{ condition: string; acquire: Record<string, unknown> }>
     expect(units).toHaveLength(1)
     expect(units[0]?.condition).toBe('dsh-unit')
     expect(units[0]?.acquire).toMatchObject({ image: 'eval-env:pinned', network: 'eval-net', user: '1000', workdir: '/workspace' })
+    // A dry run has no facade to ask, so the mount source is named by shape.
+    expect(JSON.stringify(units[0]?.acquire)).toContain('scoped home of dsh')
     expect(units[0]?.acquire['envKeys']).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
     expect(units[0]?.acquire).not.toHaveProperty('env')
   })
@@ -2253,7 +2289,7 @@ describe('runPlan — «环境一致» compares the environment class, not the u
 
   function writeFourConditions(root: string): string {
     const base = JSON.parse(readFileSync(join(FIXTURE_DATASET, 'conditions', 'dsh-exec.json'), 'utf8')) as Record<string, unknown>
-    const credsRoot = join(root, 'creds')
+    const homesRoot = join(root, 'homes')
     for (const harness of HARNESSES) {
       writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${harness.id}.json`), `${JSON.stringify({
         ...base,
@@ -2265,27 +2301,28 @@ describe('runPlan — «环境一致» compares the environment class, not the u
         env: { keys: [harness.variable] },
         unit: { scopedHome: { container: harness.container, var: harness.variable } },
       }, null, 2)}\n`)
-      mkdirSync(join(credsRoot, harness.id), { recursive: true })
-      writeFileSync(join(credsRoot, harness.id, '.keep'), 'staged by hand (T22)\n')
+      mkdirSync(join(homesRoot, harness.name), { recursive: true })
+      writeFileSync(join(homesRoot, harness.name, 'auth.json'), '{"written by /<harness> login": true}\n')
     }
-    return credsRoot
+    return homesRoot
   }
 
   it('gives four harnesses one class and four unit fingerprints, and records what it left out', async () => {
     const root = makeDatasetTree()
-    const credsRoot = writeFourConditions(root)
+    const homesRoot = writeFourConditions(root)
     const planPath = writePlan(root, { conditions: HARNESSES.map(h => h.id), unit: UNIT_SEGMENT }, 'four')
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
     const agent = new FakeLocalAgent({
       harnesses: HARNESSES.map(harness => harness.name),
+      homesRoot,
       workspaceOf: (container) => {
         const held = [...lab.live.values()].find(unit => unit.info.resource === container)
         return held?.workspace ?? ''
       },
     })
     const report = await runPlan(planPath, {
-      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true,
     }, { datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab })
 
     expect(report.cells).toHaveLength(4)
@@ -2331,15 +2368,15 @@ describe('runPlan — one materialization hash for both paths (T20b)', () => {
 
     const unitRoot = makeDatasetTree()
     writeUnitCondition(unitRoot)
-    const credsRoot = stageCredentials(unitRoot)
+    const homesRoot = stageScopedHome(unitRoot)
     const unitMission = new FakeMission(join(unitRoot, 'mission'))
     const lab = new FakeLab(join(unitRoot, 'units'), unitMission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
     const unitReport = await runPlan(writePlan(unitRoot, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container'), {
-      parentSessionId: PARENT_SESSION, stateRoot: join(unitRoot, 'state'), credsRoot,
+      parentSessionId: PARENT_SESSION, stateRoot: join(unitRoot, 'state'),
     }, { datasets: fakeDatasets(unitRoot), mission: unitMission, localAgent: agent, lab })
 
     const hostSha = shaOf(hostRoot, hostReport.runId, hostReport.cells[0]?.missionId as string)
@@ -2353,15 +2390,15 @@ describe('runPlan — one materialization hash for both paths (T20b)', () => {
   it('keeps lab\'s own hash of what it copied in, under its own name', async () => {
     const root = makeDatasetTree()
     writeUnitCondition(root)
-    const credsRoot = stageCredentials(root)
+    const homesRoot = stageScopedHome(root)
     const mission = new FakeMission(join(root, 'mission'))
     const lab = new FakeLab(join(root, 'units'), mission)
-    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
       const held = [...lab.live.values()].find(unit => unit.info.resource === container)
       return held?.workspace ?? ''
     } })
     const report = await runPlan(writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container'), {
-      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot,
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'),
     }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab })
 
     const attemptDir = join(root, 'mission', 'runs', report.runId, 'data', report.cells[0]?.missionId as string, 'attempt-1')
@@ -2372,5 +2409,69 @@ describe('runPlan — one materialization hash for both paths (T20b)', () => {
     expect(populate.sha).not.toBe(shaOf(root, report.runId, report.cells[0]?.missionId as string))
     // …and the workspace still carries no manifest of either kind.
     expect(existsSync(join(attemptDir, 'archive', 'workspace', 'materialization.json'))).toBe(false)
+  })
+})
+
+describe('runPlan — the judge is probed too (T20c)', () => {
+  it('records a judge row in run.meta.readiness beside the players', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent() })
+
+    const roles = report.readiness.map(record => [record.condition, record.role, record.ok])
+    expect(roles).toEqual([['dsh-exec', 'player', true], [judgeId, 'judge', true]])
+    // …and it is in the ledger, not only in the returned report.
+    const meta = mission.runs.get(report.runId)?.meta as { readiness: Array<{ condition: string; role: string }> }
+    expect(meta.readiness.filter(record => record.role === 'judge').map(record => record.condition)).toEqual([judgeId])
+  })
+
+  it('refuses the whole run when the judge cannot be delegated to', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const mission = new FakeMission(join(root, 'mission'))
+    // Only the judge's probe fails — every player is live. Pilot B ran exactly
+    // this and reached `released` with both judge samples dropped and an empty
+    // llm-draft namespace; the cost of the failure is the whole round's
+    // judging, so it refuses like any other unready condition.
+    const localAgent = new FakeLocalAgent({ readinessFailFor: [judgeId] })
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }))
+      .rejects.toThrow(/failed the pre-run readiness check/)
+    // Nothing was created: the refusal is before the run exists.
+    expect(mission.runs.size).toBe(0)
+  })
+
+  it('names the judge in the refusal, so the reader knows which half is down', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const localAgent = new FakeLocalAgent({ readinessFailFor: [judgeId] })
+    let refused: unknown
+    try {
+      await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+        { datasets: fakeDatasets(root), mission: new FakeMission(join(root, 'mission')), localAgent })
+    } catch (error) {
+      refused = error
+    }
+    const diagnostics = (refused as { diagnostics: Array<{ code: string; message: string }> }).diagnostics
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.code).toBe('READINESS_FAILED')
+    expect(diagnostics[0]?.message).toContain(`judge ${judgeId}`)
+  })
+
+  it('--ignore-readiness starts anyway, and skips no cell for a judge that has none', async () => {
+    const root = makeDatasetTree()
+    const judgeId = writeJudgeCondition(root)
+    const planPath = writeJudgingPlan(root, [judgeId], 2)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), ignoreReadiness: true },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent({ readinessFailFor: [judgeId] }) })
+    // The player's cells still run — a failed judge is not a failed player.
+    expect(report.cells[0]?.skipped).toBeUndefined()
+    expect(report.readiness.find(record => record.role === 'judge')?.ok).toBe(false)
   })
 })

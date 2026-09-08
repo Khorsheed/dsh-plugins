@@ -114,3 +114,14 @@ describe('/eval run — the subset flags', () => {
     expect(result.text).toContain('2 cell(s) the plan')
   })
 })
+
+describe('/eval run — --creds-root is gone (T20c)', () => {
+  it('no longer takes a credentials root: the mount source is the instance\'s own scoped home', async () => {
+    // It used to be a value flag. Now it is an unknown switch, and its value
+    // becomes a second positional — which the verb refuses out loud rather
+    // than silently ignoring a flag someone still believes in.
+    const result = await handleEvalCommand(new EvalService(), invocation('run plan.json --creds-root /tmp/creds'))
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('exactly one plan path')
+  })
+})

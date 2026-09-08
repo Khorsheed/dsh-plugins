@@ -50,5 +50,5 @@
     "infrastructure": 1
   },
   "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，凭证目录的宿主根由 run 的 --creds-root 给，不写进本文件。"
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }

@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev6** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev7** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -266,7 +266,7 @@ One condition = one harness + a model declaration + a permission word + one scop
             "container",
             "var"
           ],
-          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.",
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory /<harness> login writes into, and the one the delegation read-back reads.",
           "properties": {
             "container": {
               "type": "string",
@@ -291,7 +291,7 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `null` in the nullable fields (`harness.version`, `model.declared`, `model.endpoint`, `home.sha`) reads as "**unresolved**": validate lists it as a warning, and the pre-run readiness gate refuses it. `null` means "not known yet", not "none".
 - The `permissions` vocabulary is given per harness: `dsh` → `unrestricted`; `claude-code` → `skip` or `normal`; `codex` → `danger-full-access`, `workspace-write`, `read-only`; `kimi` → `auto-approve`. The schema enum is the union; an out-of-vocabulary value for a known harness (e.g. dsh with `skip`) is a validator error.
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
-- `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator is given a credentials root and takes `<root>/<condition id>`, so the same condition file runs unchanged on another machine.
+- `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator mounts the evaluation instance's own scoped home for that harness — the one `/<harness> login` writes into, and the one the delegation read-back reads. Mounting a COPY fails silently: a containerized round writes its rollout into whatever was bound, while the read-back looks under `homeDir(<harness>)`, and two different directories produce no error at all — just a read-back that is empty forever.
 - `unit` IS part of the condition hash (only `notes` is not): where a subject reads its credentials from is a factor, not a comment. Adding `unit` to an existing condition changes its hash and stales its lock, which is a re-provision.
 - Example (fully resolved; the in-progress I1 hand-walked shape lives in the dataset repo's `conditions/dsh-exec.json`, its four null fields listed as warnings):
 
@@ -653,7 +653,7 @@ One condition = one harness + a model declaration + a permission word + one scop
     "infrastructure": 1
   },
   "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，凭证目录的宿主根由 run 的 --creds-root 给，不写进本文件。"
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }
 ```
 

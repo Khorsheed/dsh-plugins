@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev6** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev7** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -266,7 +266,7 @@ datasets/<id>/
             "container",
             "var"
           ],
-          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.",
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory /<harness> login writes into, and the one the delegation read-back reads.",
           "properties": {
             "container": {
               "type": "string",
@@ -291,7 +291,7 @@ datasets/<id>/
 - 可空字段（`harness.version`、`model.declared`、`model.endpoint`、`home.sha`）的 `null` 读作「**未解析**」：validate 列为 warning，run 前的就绪检查拦截。`null` 是显式的「还不知道」，不是「没有」。
 - `permissions` 的词表按 harness 给定：`dsh` → `unrestricted`；`claude-code` → `skip` 或 `normal`；`codex` → `danger-full-access`、`workspace-write`、`read-only`；`kimi` → `auto-approve`。schema 枚举是并集；已知 harness 的越表取值（如 dsh 配 `skip`）由校验器报 error。
 - `env.keys` 只写变量名。任何值——尤其凭证——不得进契约文件。
-- `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器拿到一个凭证根，取 `<根>/<条件 id>`，所以同一份条件文件换台机器照跑。
+- `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器挂的是评测实例自己的该家作用域目录——`/<家> login` 写进去的那个，也是委派回读读的那个。挂副本会静默坏掉：容器轮把 rollout 写进挂进去的那个目录，回读却按 `homeDir(家名)` 去找，两者不是一处时不报错，只是永远读不到。
 - `unit` 进条件哈希（只有 `notes` 不进）：受试对象从哪里读凭证是一项因子，不是注释。给既有条件补 `unit` 会改哈希，lock 随之过期，要重新 provision。
 - 例（已全部解析；I1 手写格的「进行中」形态见题库 `conditions/dsh-exec.json`，四个 null 字段以 warning 列出）：
 
@@ -653,7 +653,7 @@ datasets/<id>/
     "infrastructure": 1
   },
   "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，凭证目录的宿主根由 run 的 --creds-root 给，不写进本文件。"
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，挂的是评测实例自己的该家作用域目录，不写进本文件。"
 }
 ```
 
