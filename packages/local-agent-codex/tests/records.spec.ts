@@ -4,9 +4,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   codexAuthenticated,
+  codexRolloutRoundFacts,
   codexRolloutTokenUsage,
-  codexRolloutUsage,
   listCodexSessions,
+  rolloutCliVersion,
   rolloutRecord,
   usageFromCodex,
 } from '../src/records.ts'
@@ -30,6 +31,11 @@ function homeWithSession(sessionId: string, cwd: string, timestamp: string): str
 /** The real codex 0.144 rollout event shape for one token_count line. */
 function tokenCountLine(info: unknown): string {
   return JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info } })
+}
+
+/** The real codex 0.144 rollout event shape for one turn_context line. */
+function turnContextLine(timestamp: string, model: string, cwd: string): string {
+  return JSON.stringify({ type: 'turn_context', timestamp, payload: { turn_id: `turn-${timestamp}`, cwd, model } })
 }
 
 /** The real codex 0.144 `info` payload: per-turn + session totals. */
@@ -121,24 +127,82 @@ describe('codex rollout token_count recovery', () => {
     expect(codexRolloutTokenUsage('not-json\n{"type":"event_msg","payload":{"type":"turn_aborted"}}')).toBeUndefined()
   })
 
-  it('locates the rollout file by thread id and recovers the last token_count from its tail', async () => {
-    const home = tempHome('codex-usage-thread-')
+  it('locates the rollout file by thread id and reads back its usage, model, and codex build', async () => {
+    const home = tempHome('codex-facts-thread-')
     const dir = join(home, 'sessions', '2026', '08', '16')
     mkdirSync(dir, { recursive: true })
     const threadId = 'thread-42'
     writeFileSync(join(dir, `rollout-2026-08-16T01-00-00-${threadId}.jsonl`), [
-      JSON.stringify({ type: 'session_meta', payload: { id: threadId, timestamp: '2026-08-16T01:00:00.000Z', cwd: '/work' } }),
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: threadId, timestamp: '2026-08-16T01:00:00.000Z', cwd: '/work', cli_version: '0.144.0' },
+      }),
+      turnContextLine('2026-08-16T01:00:01.000Z', 'gpt-5.6-sol', '/work'),
       tokenCountLine(tokenCountInfo(
         { input_tokens: 100, cached_input_tokens: 40, output_tokens: 25, total_tokens: 125 },
       )),
       '',
     ].join('\n'))
-    const usage = await codexRolloutUsage(home, { threadId, windowStart: Date.parse('2026-08-16T01:00:05.000Z') })
-    expect(usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
+    const facts = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T01:00:00.000Z') })
+    expect(facts).toEqual({
+      usage: { inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 },
+      model: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+    })
+  })
+
+  it('reads the model back from a turn_context far outside the tail window', async () => {
+    // The regression that made a real evaluation run report a null model:
+    // codex writes turn_context when the TURN STARTS, so a round that then
+    // produces more than the tail window of events pushes it out of reach of a
+    // tail-only scan. The file below is deliberately larger than the window.
+    const home = tempHome('codex-facts-bigfile-')
+    const dir = join(home, 'sessions', '2026', '08', '16')
+    mkdirSync(dir, { recursive: true })
+    const threadId = 'thread-big'
+    const filler = JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'reasoning', text: 'x'.repeat(4096) },
+    })
+    writeFileSync(join(dir, `rollout-2026-08-16T01-00-00-${threadId}.jsonl`), [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: threadId, timestamp: '2026-08-16T01:00:00.000Z', cwd: '/work', cli_version: '0.144.0' },
+      }),
+      turnContextLine('2026-08-16T01:00:01.000Z', 'gpt-5.6-sol', '/work'),
+      ...Array.from({ length: 40 }, () => filler),
+      tokenCountLine(tokenCountInfo({ input_tokens: 10, cached_input_tokens: 0, output_tokens: 2 })),
+      '',
+    ].join('\n'))
+    const facts = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T01:00:00.000Z') })
+    expect(facts.model).toBe('gpt-5.6-sol')
+    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2 })
+  })
+
+  it('ignores an earlier round\u2019s turn_context: only this round\u2019s window counts', async () => {
+    const home = tempHome('codex-facts-resume-')
+    const dir = join(home, 'sessions', '2026', '08', '16')
+    mkdirSync(dir, { recursive: true })
+    const threadId = 'thread-resumed'
+    writeFileSync(join(dir, `rollout-2026-08-16T01-00-00-${threadId}.jsonl`), [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: threadId, timestamp: '2026-08-16T01:00:00.000Z', cwd: '/work', cli_version: '0.144.0' },
+      }),
+      turnContextLine('2026-08-16T01:00:01.000Z', 'old-model', '/work'),
+      turnContextLine('2026-08-16T02:00:00.000Z', 'new-model', '/work'),
+      '',
+    ].join('\n'))
+    const round1 = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T01:00:00.000Z') })
+    expect(round1.model).toBe('new-model')
+    const round2 = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T01:59:59.000Z') })
+    expect(round2.model).toBe('new-model')
+    const beforeAnyTurn = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T03:00:00.000Z') })
+    expect(beforeAnyTurn.model).toBeUndefined()
   })
 
   it('falls back to the time window when the thread id matches nothing', async () => {
-    const home = tempHome('codex-usage-window-')
+    const home = tempHome('codex-facts-window-')
     const dir = join(home, 'sessions', '2026', '08', '16')
     mkdirSync(dir, { recursive: true })
     const sessionId = 'window-session'
@@ -148,18 +212,90 @@ describe('codex rollout token_count recovery', () => {
         { input_tokens: 10, cached_input_tokens: 0, output_tokens: 2, total_tokens: 12 },
       )),
     ].join('\n'))
-    const usage = await codexRolloutUsage(home, {
+    const facts = await codexRolloutRoundFacts(home, {
       threadId: 'no-such-thread',
       windowStart: Date.parse('2026-08-16T01:00:10.000Z'),
     })
-    expect(usage).toEqual({ inputTokens: 10, outputTokens: 2 })
+    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2 })
   })
 
-  it('returns undefined when nothing locates or the home has no sessions', async () => {
-    expect(await codexRolloutUsage(tempHome('codex-usage-empty-'), { threadId: 'x', windowStart: Date.now() }))
+  describe('concurrent rounds inside one window', () => {
+    /** Two rounds started seconds apart in different cell directories. */
+    function concurrentHome(): string {
+      const home = tempHome('codex-facts-concurrent-')
+      const dir = join(home, 'sessions', '2026', '08', '16')
+      mkdirSync(dir, { recursive: true })
+      for (const [id, cwd, model, minute] of [
+        ['cell-a-session', '/cells/a', 'model-a', '00'],
+        ['cell-b-session', '/cells/b', 'model-b', '01'],
+      ] as const) {
+        writeFileSync(join(dir, `rollout-2026-08-16T01-${minute}-00-${id}.jsonl`), [
+          JSON.stringify({
+            type: 'session_meta',
+            payload: { id, timestamp: `2026-08-16T01:${minute}:00.000Z`, cwd, cli_version: '0.144.0' },
+          }),
+          turnContextLine(`2026-08-16T01:${minute}:01.000Z`, model, cwd),
+        ].join('\n'))
+      }
+      return home
+    }
+
+    it('separates the two files by the round\u2019s cwd when no thread id located one', async () => {
+      const home = concurrentHome()
+      // Without the cwd, the newest file in the window wins — which is the
+      // OTHER cell's round.
+      const blind = await codexRolloutRoundFacts(home, { windowStart: Date.parse('2026-08-16T01:00:00.000Z') })
+      expect(blind.model).toBe('model-b')
+      const own = await codexRolloutRoundFacts(home, {
+        windowStart: Date.parse('2026-08-16T01:00:00.000Z'),
+        cwd: '/cells/a',
+      })
+      expect(own.model).toBe('model-a')
+    })
+
+    it('reports nothing rather than a neighbour\u2019s round when no file matches the cwd', async () => {
+      const home = concurrentHome()
+      const facts = await codexRolloutRoundFacts(home, {
+        windowStart: Date.parse('2026-08-16T01:00:00.000Z'),
+        cwd: '/cells/never-ran',
+      })
+      expect(facts).toEqual({})
+    })
+
+    it('still answers on a lone in-window file whose cwd differs (path skew, not ambiguity)', async () => {
+      const home = tempHome('codex-facts-skew-')
+      const dir = join(home, 'sessions', '2026', '08', '16')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'rollout-2026-08-16T01-00-00-lonely.jsonl'), [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: { id: 'lonely', timestamp: '2026-08-16T01:00:00.000Z', cwd: '/private/tmp/cell', cli_version: '0.144.0' },
+        }),
+        turnContextLine('2026-08-16T01:00:01.000Z', 'model-lonely', '/private/tmp/cell'),
+      ].join('\n'))
+      const facts = await codexRolloutRoundFacts(home, {
+        windowStart: Date.parse('2026-08-16T01:00:00.000Z'),
+        cwd: '/tmp/cell',
+      })
+      expect(facts.model).toBe('model-lonely')
+    })
+  })
+
+  it('reads the codex build from the session_meta head, and nothing from a head without one', () => {
+    expect(rolloutCliVersion(JSON.stringify({
+      type: 'session_meta',
+      payload: { id: 's1', cwd: '/work', cli_version: '0.144.0' },
+    }))).toBe('0.144.0')
+    expect(rolloutCliVersion(JSON.stringify({ type: 'session_meta', payload: { id: 's1', cwd: '/work' } })))
       .toBeUndefined()
+    expect(rolloutCliVersion('not-json')).toBeUndefined()
+  })
+
+  it('returns nothing when no file locates or the home has no sessions', async () => {
+    expect(await codexRolloutRoundFacts(tempHome('codex-facts-empty-'), { threadId: 'x', windowStart: Date.now() }))
+      .toEqual({})
     const home = homeWithSession('s1', '/work', '2026-08-16T01:02:03.000Z')
-    expect(await codexRolloutUsage(home, { threadId: 'other', windowStart: Date.parse('2026-09-01T00:00:00.000Z') }))
-      .toBeUndefined()
+    expect(await codexRolloutRoundFacts(home, { threadId: 'other', windowStart: Date.parse('2026-09-01T00:00:00.000Z') }))
+      .toEqual({})
   })
 })

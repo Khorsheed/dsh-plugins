@@ -841,13 +841,36 @@ function stubChildWith(stream: string): SubprocessHandle {
 }
 
 /** Write a rollout file naming `model` in its turn_context line, keyed by thread id. */
-function writeRollout(homeDir: string, threadId: string, model: string): void {
+function writeRollout(
+  homeDir: string,
+  threadId: string,
+  model: string,
+  options: { cwd?: string; cliVersion?: string; filler?: number; startedOffsetMs?: number } = {},
+): void {
   const dir = join(homeDir, 'sessions', '2026', '09', '06')
   mkdirSync(dir, { recursive: true })
-  const lines = [
-    { timestamp: new Date().toISOString(), type: 'session_meta', payload: { id: threadId, cwd: '/tmp' } },
-    { timestamp: new Date().toISOString(), type: 'turn_context', payload: { turn_id: 'turn-1', cwd: '/tmp', model } },
+  const cwd = options.cwd ?? '/tmp'
+  // The head timestamp is what the locator's time window reads; the filename's
+  // is only its fallback.
+  const startedAt = new Date(Date.now() + (options.startedOffsetMs ?? 0)).toISOString()
+  const lines: unknown[] = [
+    {
+      timestamp: startedAt,
+      type: 'session_meta',
+      payload: {
+        id: threadId,
+        cwd,
+        timestamp: startedAt,
+        ...options.cliVersion === undefined ? {} : { cli_version: options.cliVersion },
+      },
+    },
+    { timestamp: new Date().toISOString(), type: 'turn_context', payload: { turn_id: 'turn-1', cwd, model } },
   ]
+  // Optional bulk AFTER the turn_context: a long round pushes it out of any
+  // tail-only scan, which is the shape that made a real run report null.
+  for (let index = 0; index < (options.filler ?? 0); index += 1) {
+    lines.push({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'reasoning', text: 'x'.repeat(4096) } })
+  }
   writeFileSync(join(dir, `rollout-2026-09-06T00-00-00-${threadId}.jsonl`), lines.map(line => JSON.stringify(line)).join('\n') + '\n')
 }
 
@@ -937,13 +960,63 @@ describe('codex-cli-provider observed model and cwd', () => {
   it('falls back to the rollout turn_context model when the stream names none', async () => {
     const { provider, settled } = await mountObserved({
       stream: PLAIN_STREAM,
-      rollout: homeDir => { writeRollout(homeDir, 't-obs', 'gpt-5.6-sol') },
+      rollout: homeDir => { writeRollout(homeDir, 't-obs', 'gpt-5.6-sol', { cliVersion: '0.144.0' }) },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    // The rollout head also names the codex build that actually served the
+    // round — a stronger answer than a later probe of the executable.
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+      usage: { inputTokens: 10, outputTokens: 4 },
+    })
+  })
+
+  it('reads the model back from a long round whose turn_context left the tail window', async () => {
+    const { provider, settled } = await mountObserved({
+      stream: PLAIN_STREAM,
+      rollout: homeDir => { writeRollout(homeDir, 't-obs', 'gpt-5.6-sol', { filler: 40, cliVersion: '0.144.0' }) },
     })
     const run = await provider.start(OBS_REQUEST)
     await run.result
     await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+      usage: { inputTokens: 10, outputTokens: 4 },
+    })
+  })
+
+  it('reads back its OWN round when a concurrent delegation shares the scoped home', async () => {
+    // Two cells run at once against one scoped home. This round's stream was
+    // truncated before thread.started, so only the time window and the cwd can
+    // tell the two rollout files apart — and the neighbour's file is newer.
+    const truncated = [
+      { type: 'turn.started' },
+      { type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'done' } },
+      { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 4 } },
+    ].map(event => JSON.stringify(event)).join('\n')
+    const { provider, settled } = await mountObserved({
+      stream: truncated,
+      intent: { kind: 'fresh', cwd: '/cells/mine' },
+      rollout: (homeDir) => {
+        writeRollout(homeDir, 't-mine', 'gpt-5.6-sol', { cwd: '/cells/mine', cliVersion: '0.144.0' })
+        writeRollout(homeDir, 't-neighbour', 'some-other-model', {
+          cwd: '/cells/theirs',
+          cliVersion: '0.144.0',
+          // Started later, so "newest in the window" picks the WRONG file.
+          startedOffsetMs: 1_000,
+        })
+      },
+    })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
       usage: { inputTokens: 10, outputTokens: 4 },
     })
   })

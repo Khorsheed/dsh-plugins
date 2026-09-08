@@ -61,7 +61,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 **程序查询走只读 Remote 通道。** `LocalAgentGateway`（服务键 `localAgentGateway`，生成物 `./remote`）通过 Typert Gateway 向浏览器暴露 roster、各 harness 状态与作用域会话。它不产生任何会话事件，因此 UI 轮询不会在会话日志里留下命令节点；登录与退出仍走斜杠命令通道——用户主动操作产生可见命令节点正是预期反馈。
 
-**评测快照（effectiveSettings）。** 每个 harness 可声明一份当前生效的公平性相关设置：drive（exec/live）、沙箱或权限模式（各用自家词汇：codex 报 sandbox 策略、claude 报 permissionMode、kimi 报自动批准与否；没有该旋钮的 harness 字段缺位，缺位本身就是诚实的条件输入）、推理强度、已配置模型（各家读自家配置面：kimi 的 `default_model`、codex 的 `model`、claude 的作用域 `settings.json`、dsh 继承的宿主选择；读不到就不给字段，绝不猜默认值）、端点是否固定（只报主机名，绝不报完整 URL）。快照是实时读——人改过的作用域配置报人改过的值——纯 JSON、绝不含凭证，`registry.effectiveSettings(name)` 供编排器读条件哈希，`/<harness> status` 与 `LocalAgentStatus` Remote 附带同一份（增量字段，旧客户端不受影响）。
+**评测快照（effectiveSettings）。** 每个 harness 可声明一份当前生效的公平性相关设置：drive（exec/live）、沙箱或权限模式（各用自家词汇：codex 报 sandbox 策略、claude 报 permissionMode、kimi 报自动批准与否；没有该旋钮的 harness 字段缺位，缺位本身就是诚实的条件输入）、推理强度、已配置模型（各家读自家配置面：kimi 的 `default_model`、codex 的 `model`、claude 的作用域 `settings.json`、dsh 继承的宿主选择；读不到就不给字段，绝不猜默认值）、端点是否固定（只报主机名，绝不报完整 URL）、CLI 版本（问 CLI 自己：`probeCliVersion` 跑一次 `<cli> --version`，按可执行文件的解析路径+mtime+大小缓存，所以一次升级会自动重探，而没装、超时、非零退出、输出里没有版本形状的 token 都只是字段缺位）。快照是实时读——人改过的作用域配置报人改过的值——纯 JSON、绝不含凭证，`registry.effectiveSettings(name)` 供编排器读条件哈希，`/<harness> status` 与 `LocalAgentStatus` Remote 附带同一份（增量字段，旧客户端不受影响）。
+
+**凭证只说知道的（credentialState）。** `LocalAgentStatus` 除 `authenticated` 布尔外还带一档 `credentialState`：`absent`（作用域家目录里没有凭证记录）、`present-unverified`（有记录，但本宿主进程里还没有任何一轮委派碰过它——一份过期且刷不动的凭证和一份能用的凭证形状完全一样，说不知道正是这一档的意义）、`verified`（自上次登录/登出以来有一轮委派真的打通了端点并完成）、`rejected`（某轮的端点拒了这份凭证，且此后没有新登录重写凭证标记）。`authenticated` 保持不变，恒等于 `verified || present-unverified`，所以设置卡片与既有客户端读到的还是原来那个布尔。这一档是每宿主进程的：重启后一份在场的凭证回到 `present-unverified`，因为那才是当下真正知道的；开跑前的主动活性探测不归这个字段。provider 在一轮 settle 成 completed 时调 `reportAuthSuccess`，与既有的 `reportAuthFailure` 对称。
 
 **浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）+ 共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`）——各 provider 包的 `settings.plugin.item` 卡片直接组合它们，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 

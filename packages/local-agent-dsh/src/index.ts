@@ -32,7 +32,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
-import { DshCliProvider } from './dsh-cli-provider.ts'
+import { DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { listDshSessions } from './records.ts'
@@ -151,7 +151,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       // loader reads the same service), reported as `provider/model`; a
       // composition without the service — or a selection that fails to read —
       // reports no model rather than a guessed identifier.
-      effectiveSettings: () => {
+      effectiveSettings: async () => {
+        const cliVersion = await dshCliVersion(ctx, config, ctx.localAgent.homeDir('dsh')).catch(() => undefined)
         let model: string | undefined
         try {
           const defaultModel = ctx.get('agentDefaultModel') as
@@ -171,6 +172,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
           drive: scope.get().live ? 'live' : 'exec',
           baseUrlSet: false,
           ...model !== undefined ? { model } : {},
+          ...cliVersion !== undefined ? { cliVersion } : {},
         }
       },
     }

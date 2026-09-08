@@ -57,7 +57,7 @@ base_url = "https://your-router.example/v1"
     liveMirrorGranularity: event  # live 镜像粒度;token 额外把 ACP chunk 写成 assistant/chunk(写放大,opt-in)
 ```
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)、已配置模型(读作用域 config 的顶层 `default_model`,没有就不给字段)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)、已配置模型(读作用域 config 的顶层 `default_model`,没有就不给字段)、CLI 版本(`kimi --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
 
 ## Compatibility
 

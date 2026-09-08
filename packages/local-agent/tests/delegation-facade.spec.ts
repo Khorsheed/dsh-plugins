@@ -436,6 +436,42 @@ describe('LocalAgentRegistry delegation facade', () => {
       expect(cordisEvents).toEqual([['child-a', { kind: 'mirror', mirroredLines: 12 }]])
     })
 
+    it('still routes the provider’s settle observation after the result resolved', async () => {
+      // Every exec-drive provider computes a round's observed model, CLI
+      // version and usage only once the CLI process is reaped and its whole
+      // stream is parsed — strictly after `run.result` settles. Dropping the
+      // route at result-settle is what left a real evaluation run with a null
+      // usage against a delegation that had recorded one.
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      const seen: LocalAgentRunProgress[] = []
+      const controllable = makeRun('child-late')
+      h.setStartHandler((request) => { h.consumeIntent(request); return controllable.run })
+      await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seen.push(progress) } })
+
+      controllable.settle({ stopReason: 'completed', output: [] })
+      await controllable.run.result
+      // Let the facade's own settle handler run before the provider reports.
+      await Promise.resolve()
+
+      h.registry.recordRoundSettled('child-late', {
+        observedModel: 'gpt-5.6-sol',
+        cliVersion: '0.144.0',
+        usage: { inputTokens: 10, outputTokens: 4 },
+      })
+      expect(seen).toEqual([{
+        kind: 'settled',
+        observedModel: 'gpt-5.6-sol',
+        cliVersion: '0.144.0',
+        usage: { inputTokens: 10, outputTokens: 4 },
+      }])
+
+      // The route closes on delivery: a second report reaches the cordis event
+      // only, never the finished call's callback.
+      h.registry.reportRunProgress('child-late', { kind: 'mirror', mirroredLines: 1 })
+      expect(seen).toHaveLength(1)
+    })
+
     it('emits the cordis event for reports on untracked child sessions', async () => {
       const h = await mountFacade()
       const cordisEvents: [string, LocalAgentRunProgress][] = []
@@ -603,19 +639,30 @@ describe('delegation cwd option and observation read side', () => {
     h.ctx.on('localAgent/run-progress', (id, progress) => { cordisEvents.push([id, progress]) })
 
     h.registry.recordRoundSettled('child-obs', {
-      observedModel: 'gpt-5.6-sol', usage: { inputTokens: 10, outputTokens: 4 },
+      observedModel: 'gpt-5.6-sol', cliVersion: '0.144.0', usage: { inputTokens: 10, outputTokens: 4 },
     })
-    expect(h.registry.delegationOf('child-obs')?.observedModel).toBe('gpt-5.6-sol')
+    expect(h.registry.delegationOf('child-obs')).toMatchObject({
+      observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+    })
     expect(cordisEvents.at(-1)).toEqual([
       'child-obs',
-      { kind: 'settled', observedModel: 'gpt-5.6-sol', usage: { inputTokens: 10, outputTokens: 4 } },
+      {
+        kind: 'settled',
+        observedModel: 'gpt-5.6-sol',
+        cliVersion: '0.144.0',
+        usage: { inputTokens: 10, outputTokens: 4 },
+      },
     ])
 
     // Absent fields stay absent — no keys, never guesses. A later round with
     // no model leaves the earlier observation standing.
     h.registry.recordRoundSettled('child-obs', {})
     expect(cordisEvents.at(-1)).toEqual(['child-obs', { kind: 'settled' }])
-    expect(h.registry.delegationOf('child-obs')?.observedModel).toBe('gpt-5.6-sol')
+    expect(h.registry.delegationOf('child-obs')).toMatchObject({
+      observedModel: 'gpt-5.6-sol',
+      cliVersion: '0.144.0',
+    })
 
     // An unknown child has nothing to merge, but the event still reports.
     expect(() => h.registry.recordRoundSettled('child-unknown', { observedModel: 'm' })).not.toThrow()

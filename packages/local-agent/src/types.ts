@@ -20,14 +20,48 @@ export interface LocalAgentSessionRecord {
   startedAt?: number
 }
 
+/**
+ * How much is known about a harness's credential, from the two channels a
+ * status read has: the scoped home's own shape, and what delegation rounds
+ * observed.
+ *
+ * - `absent` — no credential in the scoped home (or the harness declares no
+ *   probe at all). Nothing to try.
+ * - `present-unverified` — a credential record exists and nothing has
+ *   exercised it in this host process. The record could be expired and
+ *   unrefreshable and still look exactly like this; saying so is the point.
+ * - `verified` — a delegation round reached the CLI's endpoint and completed
+ *   since the last login/logout, so the credential is known live.
+ * - `rejected` — a round's endpoint rejected the credential (a 401/403 a
+ *   presence probe cannot see) and no fresh login has rewritten the
+ *   credential marker since.
+ *
+ * The grade is per host process: after a restart a present credential reports
+ * `present-unverified` until a round exercises it, because that is what is
+ * actually known. An eager liveness probe at status time is deliberately NOT
+ * this field's job.
+ */
+export type LocalAgentCredentialState = 'absent' | 'present-unverified' | 'verified' | 'rejected'
+
 /** One harness's auth-status snapshot, shared by the command and Remote channels. */
 export interface LocalAgentStatus {
   /** Harness command prefix. */
   name: string
   /** Human display name. */
   displayName: string
-  /** Whether the scoped home holds usable credentials. */
+  /**
+   * Whether the scoped home holds usable credentials — the SHAPE answer,
+   * kept for every surface written before {@link LocalAgentCredentialState}
+   * existed. Exactly `credentialState === 'verified' || 'present-unverified'`:
+   * a record that is present but never exercised still reads true, which is
+   * why the finer field exists.
+   */
   authenticated: boolean
+  /**
+   * How much is actually known about the credential — the liveness grade
+   * behind {@link LocalAgentStatus.authenticated}. Always present.
+   */
+  credentialState: LocalAgentCredentialState
   /** Absolute scoped home. */
   homeDir: string
   /** Subagent provider name, when the harness delegates. */
@@ -104,9 +138,14 @@ export interface LocalAgentEffectiveSettings {
    */
   baseUrlHost?: string
   /**
-   * The CLI's own version. No family probe ships yet (probing would spawn
-   * every CLI at status time), so this stays absent until a probe exists;
-   * the field is reserved so a later probe is additive.
+   * The CLI's own version, as the CLI itself reports it — the version a
+   * delegation round would run with right now. Resolved by the family's
+   * `<cli> --version` probe, which spawns at most once per executable
+   * identity (resolved path + mtime + size) and is therefore cheap enough for
+   * a status read while still re-probing across an upgrade. Absent when the
+   * CLI cannot be asked (not installed, non-zero exit, timeout, no
+   * version-shaped token in its banner) — absence is the honest condition
+   * input, never a substituted guess.
    */
   cliVersion?: string
   /**
@@ -179,6 +218,15 @@ export interface LocalAgentDelegationRecord {
    * 5); it never enters any prompt or model-visible face.
    */
   observedModel?: string
+  /**
+   * The CLI version the latest settled round actually ran, read back the same
+   * way {@link LocalAgentDelegationRecord.observedModel} is: from the CLI's
+   * own stream or records when it names one (codex's rollout `session_meta`
+   * carries `cli_version`, claude's stream-json init carries
+   * `claude_code_version`), otherwise from the family's `--version` probe of
+   * the executable the round spawned. Absent when neither channel answered.
+   */
+  cliVersion?: string
   /**
    * Kimi transcript lines already mirrored into the child session. The kimi
    * provider advances this after every round so a resumed round mirrors only
@@ -363,6 +411,11 @@ export type LocalAgentRunProgress =
      * check; never enters any prompt or model-visible face.
      */
     readonly observedModel?: string
+    /**
+     * The CLI version the round ran, when the provider could read one back
+     * (its own stream or records first, the `--version` probe second).
+     */
+    readonly cliVersion?: string
     /** The settled round's token usage, when the harness reported one. */
     readonly usage?: TokenUsage
   }

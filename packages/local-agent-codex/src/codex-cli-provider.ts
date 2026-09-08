@@ -36,6 +36,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   delegationEnv,
+  probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -43,7 +44,7 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
-import { codexRolloutUsage, codexRolloutTurnModel, usageFromCodex } from './records.ts'
+import { codexRolloutRoundFacts, usageFromCodex } from './records.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
 // rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
@@ -137,6 +138,41 @@ export function registerCodexMemberRun(
  * (`live: true`), rounds instead go to the resident app-server process (see
  * live-driver.ts); the exec path below stays the fallback.
  */
+/**
+ * Mark the harness credential verified after a completed round, degrading
+ * silently on a core that predates the mark (the family's companion-pair
+ * rule: a provider paired with an older core loses the grade, never the run).
+ * @param ctx - host context carrying the family registry.
+ */
+function markCredentialVerified(ctx: Context): void {
+  const registry = ctx.get('localAgent')
+  if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
+  registry.reportAuthSuccess('codex')
+}
+
+/**
+ * The codex build `codex --version` reports, probed through the shared
+ * subprocess seam inside the SCOPED home (never the user's own installation)
+ * and cached by the family probe against the executable's identity. Both the
+ * effective-settings snapshot and a settled round's read-back use it — the
+ * round prefers its own rollout head, which names the build that actually ran.
+ * @param ctx - host context carrying the subprocess seam.
+ * @param homeDir - the harness's scoped home.
+ * @returns the version, or undefined when the CLI cannot be asked.
+ */
+export function codexCliVersion(ctx: Context, homeDir: string): Promise<string | undefined> {
+  // Degrade, don't explode: a composition without the subprocess seam simply
+  // reports no version, exactly as an unaskable CLI does.
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return Promise.resolve(undefined)
+  return probeCliVersion({
+    argv: ['codex', '--version'],
+    cwd: homeDir,
+    spawn: spec => subprocess.spawn(spec),
+    env: delegationEnv({ CODEX_HOME: homeDir }),
+  })
+}
+
 export class CodexCliProvider implements SubagentProvider {
   readonly name = 'codex-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -273,6 +309,8 @@ export class CodexCliProvider implements SubagentProvider {
         },
         onSpawned: (pid) => { member?.bind(pid) },
         onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
+        onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        cliVersion: () => codexCliVersion(this.ctx, homeDir),
         ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
         childSession,
         ctx: this.ctx,
@@ -372,6 +410,8 @@ export class CodexCliProvider implements SubagentProvider {
           },
           onSpawned: (pid) => { member?.bind(pid) },
         onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('codex', detail) },
+          onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+          cliVersion: () => codexCliVersion(this.ctx, homeDir),
           ...member === undefined ? {} : { member: { configOverride: member.configOverride } },
           childSession,
           ctx: this.ctx,
@@ -426,6 +466,18 @@ export interface CodexCliRunSpec {
    * to the family registry's auth-failure mark.
    */
   readonly onAuthFailure?: ((detail: string) => void) | undefined
+  /**
+   * Called when the round SETTLED COMPLETED — the CLI reached its endpoint and
+   * produced an answer, which is the only evidence a host has that the scoped
+   * credential is live. The provider wires this to the family registry's
+   * auth-success mark (the `verified` credential grade).
+   */
+  readonly onAuthSuccess?: (() => void) | undefined
+  /**
+   * The codex build the executable reports, resolved lazily and cached by the
+   * family probe. Only consulted when the round's own rollout head named none.
+   */
+  readonly cliVersion?: (() => Promise<string | undefined>) | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /**
@@ -823,6 +875,10 @@ export function startCodexCliRun(
     // open on a failed or cancelled run: success settles 'completed', a
     // non-zero exit 'error', and a locally cancelled run 'aborted'. The
     // turn/end timestamp is the real settle moment.
+    // A completed round proves the scoped credential is live — the endpoint
+    // answered. Reported here rather than from the mirror so it lands whether
+    // or not the round is session-backed.
+    if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
     if (spec.childSession !== undefined) {
       if (settled.stopReason === 'completed') {
         spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
@@ -1205,27 +1261,36 @@ async function mirrorCodexAfterExit(
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
     // Non-completed terminal states (aborted/error) never emit turn.completed,
-    // so parsed.usage is absent; recover this run's last token_count from its
-    // rollout file (scoped home via the spawn env, located by thread id or
-    // the run's start-time window). A completed run keeps its stream usage.
-    // The same located file names the run's model in its turn_context line.
+    // so parsed.usage is absent; the exec wire never names a model at all
+    // (codex 0.144.0). Both come back from the run's own rollout file —
+    // located by thread id, and under concurrency disambiguated by the run's
+    // cwd, since several cells' files share one time window. The head of the
+    // same file names the codex build that served the round, which is a
+    // stronger answer than a later `--version` probe of the executable: it is
+    // what actually ran.
     let usage = parsed.usage
     let observedModel = parsed.model
+    let cliVersion: string | undefined
     const homeDir = spec.env['CODEX_HOME']
-    if ((usage === undefined || observedModel === undefined) && homeDir !== undefined && homeDir !== '') {
-      const locator = { threadId: parsed.threadId, windowStart: startedAtMs }
-      if (usage === undefined) {
-        usage = await codexRolloutUsage(homeDir, locator)
-      }
-      if (observedModel === undefined) {
-        observedModel = await codexRolloutTurnModel(homeDir, locator)
-      }
+    if (homeDir !== undefined && homeDir !== '') {
+      const facts = await codexRolloutRoundFacts(homeDir, {
+        threadId: parsed.threadId,
+        windowStart: startedAtMs,
+        cwd: spec.cwd,
+      })
+      usage ??= facts.usage
+      observedModel ??= facts.model
+      cliVersion = facts.cliVersion
     }
+    // A rollout that named no build still reports one: the probe of the
+    // executable this round spawned. Absent only when neither channel answers.
+    cliVersion ??= await spec.cliVersion?.()
     // The round's settled observation rides out even when nothing streamed:
     // an empty stream is still a settled round, and the rollout may already
     // name the model and the spend.
     spec.onRoundSettled?.({
       ...observedModel === undefined ? {} : { observedModel },
+      ...cliVersion === undefined ? {} : { cliVersion },
       ...usage === undefined ? {} : { usage },
     })
     // Nothing streamed at all (e.g. the CLI died before the first item): keep
