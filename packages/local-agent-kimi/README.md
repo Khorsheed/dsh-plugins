@@ -51,13 +51,33 @@ base_url = "https://your-router.example/v1"
 ```yaml
 - id: local-agent-kimi
   config:
+    model: kimi-code/k3        # 可选:每轮委派以它起 CLI;不写就一个模型参数都不传(见下)
     thinkingEffort: high       # 推理强度;写入"全新"作用域 config.toml 的 [thinking] effort 与模型 default_effort(low/high/max,默认 high)。仅预置期生效——已存在的 config 永不覆盖
     live: false                # 长驻驱动:每成员常驻一个 kimi acp 进程,按轮发 session/prompt(runtime 级优雅取消 session/cancel、推送触发的镜像);关闭或通道不可用即回一次性 kimi -p
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
     liveMirrorGranularity: event  # live 镜像粒度;token 额外把 ACP chunk 写成 assistant/chunk(写放大,opt-in)
 ```
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)、已配置模型(读作用域 config 的顶层 `default_model`,没有就不给字段)、CLI 版本(`kimi --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
+### 默认模型（`model`）
+
+⚠️ **这个键的语义变了。**旧版里 `model` 只在**首次预置**全新作用域目录时用一次——写进 `config.toml` 的 `default_model`，已存在的 config 不动。现在它**每轮委派都生效**。首次预置的镜像行为保留：全新的、没有用户 config 可镜像的作用域目录，仍然按它写出最小 managed config。
+
+**不写 = 今天的表现。**没有这个键时，本插件在 argv 上一个模型参数都不加，跑哪个模型由作用域 `config.toml` 的顶层 `default_model` 决定。
+
+**写了 = 每轮委派以它起 CLI。**值必须是作用域 `config.toml` 里已定义的那个模型名（`[models."…"]` 的键）——`-m` 是按 kimi 自己的模型表解析的。
+
+| 驱动 | 传法 |
+|---|---|
+| 一次性（默认） | `kimi -m <模型> -p <任务>`；resume 轮为 `kimi -S <会话> -m <模型> -p <任务>`——`-S` 仍在最前，`-m` 紧贴 `-p`（`-p` 之后的词会被当成提示词） |
+| 常驻（`live: true`） | `kimi acp` **没有**模型旗标，所以每次起常驻进程前，把作用域 `config.toml` 的顶层 `default_model` 改写成该值。改写是就地、幂等的：只动顶层那一行，注释、模型表、provider、`[thinking]` 全部逐字节保留；没有 config 可写时不新建（预置逻辑才负责创建），该轮照跑，模型回读负责暴露不一致 |
+
+也就是说：一次性驱动不碰你的 `config.toml`，常驻驱动会改写其中的 `default_model` 一行。
+
+设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键。
+
+**这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
+
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live,随 live 偏好)、推理强度(读作用域 config 的 `[thinking] effort`,缺则回模型 `default_effort`)、是否自动批准(作用域 config 是否带 `Bash(*)` 放行规则)、端点是否固定(只报主机名;managed 端点不算固定)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖;没有才读作用域 config 的顶层 `default_model`;都没有就不给字段)、CLI 版本(`kimi --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
 
 ## Compatibility
 

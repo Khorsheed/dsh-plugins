@@ -54,6 +54,8 @@ interface Mount {
   home: string
   /** The resolver the provider was constructed with (private face). */
   resolveLive: (childSessionId: string) => KimiAcpLiveDriver | undefined
+  /** The model resolver the provider was constructed with (private face). */
+  resolveModel: () => string | undefined
 }
 
 function mount(initial: Partial<KimiLiveSettings> = {}, config: Record<string, unknown> = {}): Mount {
@@ -69,17 +71,26 @@ function mount(initial: Partial<KimiLiveSettings> = {}, config: Record<string, u
   } as unknown as LocalAgentRegistry
   const settings = fakeSettings({ live: false, liveMirrorGranularity: 'event', ...initial })
   let resolveLive: Mount['resolveLive'] = () => undefined
+  let resolveModel: Mount['resolveModel'] = () => undefined
   ctx.provide('localAgent', registry)
   ctx.provide('logger', { warn: () => {} })
   ctx.provide('subagents', {
     registerProvider: (provider: unknown) => {
       resolveLive = (provider as { live: Mount['resolveLive'] }).live
+      resolveModel = (provider as { model?: Mount['resolveModel'] }).model ?? (() => undefined)
     },
   })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('settings', settings.service)
   apply(ctx, config as never)
-  return { ctx, registered, settings, home, resolveLive: id => resolveLive(id) }
+  return {
+    ctx,
+    registered,
+    settings,
+    home,
+    resolveLive: id => resolveLive(id),
+    resolveModel: () => resolveModel(),
+  }
 }
 
 describe('local-agent-kimi apply', () => {
@@ -229,5 +240,39 @@ describe('local-agent-kimi apply', () => {
       baseUrlSet: false,
     })
     expect('model' in snapshot).toBe(false)
+  })
+})
+
+describe('local-agent-kimi model key', () => {
+  it('carries the YAML model into the composition base', () => {
+    const { settings } = mount({}, { model: 'kimi-code/k3' })
+    const registration = settings.registrations[0] as { options?: { base?: object } }
+    expect(registration.options?.base).toEqual({ model: 'kimi-code/k3' })
+  })
+
+  it('hands the provider a resolver that follows later settings writes (no reload)', () => {
+    const { settings, resolveModel } = mount()
+    expect(resolveModel()).toBeUndefined()
+    settings.set({ live: false, liveMirrorGranularity: 'event', model: 'kimi-code/k3' })
+    expect(resolveModel()).toBe('kimi-code/k3')
+  })
+
+  it('treats a blank value as unset — the pre-key argv, not an empty -m', () => {
+    const { resolveModel } = mount({ model: '   ' })
+    expect(resolveModel()).toBeUndefined()
+  })
+
+  it('snapshot order: the plugin key wins over the scoped default_model', async () => {
+    const { home, registered } = mount({ model: 'card-model' })
+    // The scoped config still names the mirrored default; every round now
+    // spawns with -m, so the key is what actually runs.
+    writeFileSync(join(home, 'config.toml'), 'default_model = "scoped-model"\n')
+    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'card-model' })
+  })
+
+  it('snapshot order: with no key, the scoped default_model still decides', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'config.toml'), 'default_model = "scoped-model"\n')
+    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'scoped-model' })
   })
 })

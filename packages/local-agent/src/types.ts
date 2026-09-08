@@ -150,12 +150,20 @@ export interface LocalAgentEffectiveSettings {
   cliVersion?: string
   /**
    * The configured model identifier a delegation round would run with — read
-   * from the harness's own configuration surface, never guessed: kimi reads
-   * its scoped config's `default_model`, codex its scoped config's `model`,
-   * claude-code its scoped `settings.json`'s `model` (the CLI's own default
-   * stays unnamed), and dsh the host `agentDefaultModel` selection it
-   * inherits, formatted `provider/model`. Absent when nothing is configured
-   * or readable — absence is the honest answer, never a substituted default.
+   * in one fixed order, never guessed: the harness's OWN `model` plugin-config
+   * key first (codex, claude-code, and kimi each accept one, and a set key
+   * rides every round's CLI launch), then the harness's scoped configuration
+   * surface (kimi's `default_model`, codex's `model`, claude-code's
+   * `settings.json` `model` — the CLI's own default stays unnamed), then
+   * absent. dsh has no key of its own: it reports the host
+   * `agentDefaultModel` selection its sub-instance inherits, formatted
+   * `provider/model`. Absence is the honest answer, never a substituted
+   * default.
+   *
+   * This is a LIVE read of what the NEXT round would run with. A run's
+   * condition hash freezes it at run setup, so changing the key mid-run does
+   * not rewrite the recorded condition — the next round's model read-back
+   * fails the run as misattributed instead (web-eval frozen decision 5).
    */
   model?: string
   /**

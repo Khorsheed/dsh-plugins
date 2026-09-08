@@ -180,6 +180,57 @@ export async function readKimiDefaultModel(homeDir: string): Promise<string | un
 }
 
 /**
+ * Rewrite the scoped config's top-level `default_model` to `model`, so the
+ * NEXT process started under this home runs that model. This is the resident
+ * path's only lever: `kimi acp` takes no model flag (verified against kimi
+ * 0.39.1), while `kimi -p` takes `-m` — so the one-shot rounds pass the flag
+ * and the live driver writes the file before spawning its runtime.
+ *
+ * The write is surgical: the first top-level `default_model` assignment is
+ * replaced in place and everything else — model tables, providers, thinking
+ * effort, comments, key order — is left byte-identical. A config with no
+ * top-level `default_model` gains one as its first line; an absent or
+ * unreadable config is left alone (provisioning owns creation, and inventing
+ * a config here would hide a broken home).
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @param model - the model identifier to pin as the default.
+ * @returns true when the file now names `model`, false when there was no
+ *   config to write into.
+ */
+export async function writeKimiDefaultModel(homeDir: string, model: string): Promise<boolean> {
+  const path = join(homeDir, 'config.toml')
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch {
+    return false
+  }
+  // TOML basic strings take backslash escapes; a model id with a quote or a
+  // backslash would otherwise produce a config kimi cannot parse.
+  const assignment = `default_model = "${model.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')}"`
+  const lines = text.split('\n')
+  let section = ''
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.trim()
+    const header = /^\[+([^\]]+)\]+$/.exec(line)
+    if (header !== null) {
+      section = header[1]!
+      continue
+    }
+    // Top-level only, exactly as readKimiDefaultModel scans for it.
+    if (section !== '') continue
+    const key = /^(\w+)\s*=/.exec(line)
+    if (key === null || key[1] !== 'default_model') continue
+    if (line === assignment) return true
+    lines[index] = assignment
+    await writeFile(path, lines.join('\n'), 'utf8')
+    return true
+  }
+  await writeFile(path, `${assignment}\n${text}`, 'utf8')
+  return true
+}
+
+/**
  * Read the scoped config's effective reasoning effort: the `[thinking] effort`
  * key, falling back to a `[models."…"]` section's `default_effort` when the
  * thinking table carries none (the CLI resolves effort the same way). A

@@ -176,6 +176,18 @@ export function codexCliVersion(ctx: Context, homeDir: string): Promise<string |
   })
 }
 
+/**
+ * The round's model as a run-spec fragment. No resolver, or a resolver with
+ * nothing configured, yields NO field — and an absent field leaves the spawn
+ * argv exactly the shape it had before the `model` key existed.
+ * @param resolve - the per-round model resolver, when the plugin passed one.
+ * @returns `{ model }` when one is configured, `{}` otherwise.
+ */
+function modelArg(resolve?: () => string | undefined): { model?: string } {
+  const model = resolve?.()?.trim()
+  return model === undefined || model === '' ? {} : { model }
+}
+
 export class CodexCliProvider implements SubagentProvider {
   readonly name = 'codex-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -186,11 +198,17 @@ export class CodexCliProvider implements SubagentProvider {
    *   generation's driver per member (the settings toggle swaps generations;
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
+   * @param model - resolver for the configured model, read PER ROUND so a
+   *   settings-card write takes effect on the next delegation without a
+   *   reload. Undefined (the resolver absent, or returning undefined) leaves
+   *   the argv exactly as it was before the key existed — the scoped
+   *   config.toml's own `model` then decides, as it always did.
    */
   constructor(
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
+    private readonly model?: () => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -318,6 +336,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
+        ...modelArg(this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -423,6 +442,7 @@ export class CodexCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           sandbox: this.sandbox,
+          ...modelArg(this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -480,6 +500,13 @@ export interface CodexCliRunSpec {
   readonly endpointLabel?: string | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */
   readonly sandbox: CodexSandbox
+  /**
+   * Model this round runs with, passed as `codex exec -m <model>`. Absent
+   * means no `-m` on the argv at all: the scoped `config.toml`'s own `model`
+   * (or, with none, codex's built-in default) decides, exactly as before the
+   * key existed.
+   */
+  readonly model?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -766,9 +793,15 @@ export function startCodexCliRun(
   // in a stray directory; a delegation has already been directed at its
   // workspace by the caller, so the guard can only reject work the caller
   // asked for. Sandboxing stays with `--sandbox`, which this does not touch.
+  // The configured model rides `-m`, an option of `codex exec` itself, so the
+  // SAME position serves the fresh and the resume argv (the `resume`
+  // subcommand declares no `-m` of its own — verified against codex-cli
+  // 0.144.0). Nothing configured appends nothing: the argv below is then
+  // byte-for-byte the shape that shipped before the key existed.
+  const modelArgv = spec.model === undefined ? [] : ['-m', spec.model]
   const argv = spec.resume === undefined
-    ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
-    : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task]
+    ? ['codex', 'exec', ...memberArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
+    : ['codex', 'exec', ...memberArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task]
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while
   // the CLI's own is the target's in-container workdir.

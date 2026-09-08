@@ -55,6 +55,7 @@ import {
 import { assistantEvent, nextKimiSessionStep } from './session-mirror.ts'
 import type { KimiMirrorOptions } from './session-mirror.ts'
 import { guardKimiCredential } from './credential-guard.ts'
+import { writeKimiDefaultModel } from './provision.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -423,6 +424,13 @@ export class KimiAcpLiveDriver {
     private readonly config: {
       liveIdleMs?: number
       liveMirrorGranularity?: KimiLiveMirrorGranularity
+      /**
+       * Resolver for the configured model, read at each RUNTIME SPAWN. `kimi
+       * acp` takes no model flag, so this path pins the scoped config's
+       * `default_model` instead of extending the argv. Absent, or resolving
+       * to nothing, writes nothing at all.
+       */
+      model?: () => string | undefined
     } = {},
     private readonly timeouts: KimiLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -537,6 +545,20 @@ export class KimiAcpLiveDriver {
     // channel); the resident process serves one member, so its token lives
     // with the process.
     const member = this.registerMember(spec)
+    // `kimi acp` has no `-m` (verified against kimi 0.39.1), so the resident
+    // path pins the model the only way the CLI offers: the scoped config's
+    // `default_model`, rewritten before the process reads it. The write is
+    // surgical and idempotent — a runtime already on this model rewrites
+    // nothing. Best-effort: a home whose config cannot be written still gets
+    // its runtime, running whatever the config already named, and the round's
+    // model read-back is what catches the mismatch.
+    const model = this.config.model?.()?.trim()
+    if (model !== undefined && model !== '') {
+      await writeKimiDefaultModel(spec.homeDir, model).catch((error: unknown) => {
+        this.ctx.logger.warn(`local-agent-kimi: pinning default_model for the resident runtime failed: ${thrown(error).message}`)
+        return false
+      })
+    }
     const spawnSpec: SubprocessSpawnSpec = {
       argv: ['kimi', 'acp'],
       cwd: spec.cwd,

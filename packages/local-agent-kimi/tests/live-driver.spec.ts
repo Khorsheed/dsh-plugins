@@ -18,6 +18,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, KimiAcpLiveDriver } from '../src/live-driver.ts'
+import { readKimiDefaultModel } from '../src/provision.ts'
 
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
@@ -883,5 +884,40 @@ describe('kimi provider live resolver', () => {
     expect((await run.result).stopReason).toBe('completed')
     expect(m.spawns[0]!.spec.argv).toEqual(['kimi', 'acp'])
     await m.driver.disposeAll()
+  })
+})
+
+describe('kimi live driver model key', () => {
+  it('set: the scoped default_model is pinned before the runtime spawns (kimi acp takes no -m)', async () => {
+    const m = mount({ config: { model: () => 'card-model' } })
+    writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "scoped-model"\n')
+    const child = Session.create(SessionId('child-kimi-model'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    // The argv is untouched — the CLI has no flag for this — and the config
+    // the spawned process reads now names the configured model.
+    expect(m.spawns[0]!.spec.argv).toEqual(['kimi', 'acp'])
+    await expect(readKimiDefaultModel(m.homeDir)).resolves.toBe('card-model')
+  })
+
+  it('unset: the scoped config is left exactly as it was', async () => {
+    const m = mount()
+    writeFileSync(join(m.homeDir, 'config.toml'), 'default_model = "scoped-model"\n')
+    const child = Session.create(SessionId('child-kimi-model-off'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    await expect(readKimiDefaultModel(m.homeDir)).resolves.toBe('scoped-model')
+  })
+
+  it('a home whose config cannot be written still gets its runtime', async () => {
+    // No config.toml at all: the write reports false and the round proceeds
+    // on whatever the CLI resolves for itself.
+    const m = mount({ config: { model: () => 'card-model' } })
+    const child = Session.create(SessionId('child-kimi-model-noconfig'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
   })
 })

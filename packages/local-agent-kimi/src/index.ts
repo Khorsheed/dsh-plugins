@@ -40,9 +40,22 @@ export const name = 'local-agent-kimi'
 /** Services required before the harness can register. */
 export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
-/** Plugin config: the model a fresh scoped home defaults to, plus the live driver. */
+/** Plugin config: the model every round runs, plus the live driver. */
 export interface Config {
-  /** Kimi-managed model id; used only when no user config exists to mirror. */
+  /**
+   * The model every delegation round starts the CLI with (`kimi -m <model>`;
+   * the resident `kimi acp`, which takes no model flag, gets the scoped
+   * config's `default_model` rewritten before each spawn instead). The value
+   * must name a model the scoped config.toml defines (a `[models."…"]` key).
+   *
+   * Absent — the default — passes no model at all: `default_model` decides,
+   * exactly as it did before this key rode every round. The settings card
+   * writes the same key, so a change applies to the next round without a
+   * reload.
+   *
+   * This key ALSO still seeds a FRESH scoped home's `default_model` when
+   * there is no user config to mirror, which is all it used to do.
+   */
   model?: string
   /**
    * Reasoning effort a FRESH scoped home's config.toml pins (`[thinking]
@@ -84,10 +97,16 @@ export const Config: z<Config> = z.object({
  */
 export const KIMI_SETTINGS_NAMESPACE = settingsNamespace('local-agent-kimi')
 
-/** The card's schema; field defaults are the innermost layer below `base`. */
+/**
+ * The card's schema; field defaults are the innermost layer below `base`.
+ * `model` deliberately carries NO default: an unset key must resolve to
+ * undefined, which is what keeps the pre-key behavior byte-identical.
+ */
 const KIMI_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
 })
 
 /**
@@ -160,10 +179,20 @@ export function apply(ctx: Context, config: Config): void {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+        ...config.model === undefined ? {} : { model: config.model },
       },
     })
-    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs)
-    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve))
+    // The model is read PER ROUND, not captured at apply: the settings card
+    // writes the same namespace field, so a change has to reach the next
+    // delegation without a plugin reload — exactly like the live toggle.
+    // Blank is not a model: a whitespace-only value means "unset", which is
+    // the pre-key argv.
+    const resolveModel = (): string | undefined => {
+      const model = scope.get().model?.trim()
+      return model === undefined || model === '' ? undefined : model
+    }
+    const liveSwitch = new LiveDriverSwitch(ctx, scope, config.liveIdleMs, resolveModel)
+    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel))
     const disposeHarness = ctx.localAgent.register({
       name: 'kimi',
       displayName: 'Kimi Code',
@@ -178,8 +207,10 @@ export function apply(ctx: Context, config: Config): void {
       // The eval snapshot reads the scoped config as-is — it is authoritative
       // once provisioned, so a person-edited (or user-mirrored) effort and
       // endpoint report what actually applies, not what the config item
-      // would have written. Provisioning-time values only ever reach a home
-      // that had none.
+      // would have written. The MODEL is the one exception, and the family's
+      // fixed order says why: a set `model` key rides every round's launch,
+      // so it beats the file it is about to overrule; with no key, the
+      // scoped `default_model` is what runs.
       effectiveSettings: async () => {
         const [reasoningEffort, baseUrl, autoApprove, defaultModel, cliVersion] = await Promise.all([
           readKimiReasoningEffort(homeDir).catch(() => undefined),
@@ -192,13 +223,14 @@ export function apply(ctx: Context, config: Config): void {
         // the default, not a pinned custom route.
         const custom = baseUrl !== undefined && baseUrl !== KIMI_MANAGED_BASE_URL
         const baseUrlHost = custom ? endpointHost(baseUrl) : undefined
+        const model = resolveModel() ?? defaultModel
         return {
           drive: scope.get().live ? 'live' : 'exec',
           autoApprove,
           ...reasoningEffort !== undefined ? { reasoningEffort } : {},
           baseUrlSet: custom,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
-          ...defaultModel !== undefined ? { model: defaultModel } : {},
+          ...model !== undefined ? { model } : {},
           ...cliVersion !== undefined ? { cliVersion } : {},
         }
       },
