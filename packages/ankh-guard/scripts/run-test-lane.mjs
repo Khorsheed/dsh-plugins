@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { cpus, loadavg } from 'node:os'
+import { readFileSync, mkdtempSync, writeFileSync, openSync, closeSync } from 'node:fs'
+import { join } from 'node:path'
+import { cpus, loadavg, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { acquireTestResource } from './test-resource.mjs'
+import { assessTestResult } from './test-result.mjs'
 
 const lane = process.argv[2]
 if (lane !== 'unit' && lane !== 'integration' && lane !== 'all') {
@@ -21,6 +24,7 @@ const pureSpecs = [
   'tests/preset-derive.spec.ts',
   'tests/state-files.spec.ts',
   'tests/transition.spec.ts',
+  'tests/test-runner.spec.ts',
 ]
 
 const unitTasks = [
@@ -44,8 +48,14 @@ const integrationTasks = [
   { name: 'lifecycle-drift', args: ['tests/process-lifecycle.spec.ts', 'tests/preflight-drift.spec.ts'] },
 ]
 const tasks = lane === 'unit' ? unitTasks : lane === 'integration' ? integrationTasks : [...integrationTasks, ...unitTasks]
+const inventory = { pure: 43, 'self-unit': 21, 'supervise-1-of-4': 15, 'supervise-2-of-4': 10,
+  'supervise-3-of-4': 15, 'supervise-4-of-4': 12, 'self-process': 67, 'lifecycle-drift': 11 }
+for (const task of tasks) task.expected = inventory[task.name]
+const artifacts = mkdtempSync(join(tmpdir(), 'ankh-test-results-'))
+process.stdout.write(`ankh-guard test artifacts: ${artifacts}\n`)
+const release = lane === 'unit' ? () => {} : await acquireTestResource('ankh-integration')
 
-if (lane !== 'unit') {
+function captureBaseline() {
   const cli = fileURLToPath(new URL('../lib/cli.js', import.meta.url))
   let gitHead = 'unavailable'
   let activeTestProcesses = -1
@@ -65,7 +75,7 @@ if (lane !== 'unit') {
     }
     activeTestProcesses = rows.filter(row => !ownChain.has(row.pid) && /(?:vitest|gate\.mts|run-test-lane)/.test(row.command)).length
   } catch {}
-  process.stdout.write(`${JSON.stringify({
+  return {
     event: 'ankh-guard-integration-baseline',
     measuredAt: new Date().toISOString(),
     logicalCpuCount: cpus().length,
@@ -76,8 +86,10 @@ if (lane !== 'unit') {
     gitHead,
     cli,
     cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),
-  })}\n`)
+  }
 }
+const baseline = captureBaseline()
+process.stdout.write(`${JSON.stringify(baseline)}\n`)
 
 const maxParallel = lane === 'unit' ? 2 : 4
 // Match the repository preset for spawn-heavy tests without adding a package
@@ -87,40 +99,60 @@ const defaultTestTimeoutMs = 30_000
 let cursor = 0
 let failed = false
 let passed = 0
+const results = []
 
 async function worker() {
   while (cursor < tasks.length) {
     const task = tasks[cursor++]
     const started = performance.now()
-    const child = spawn(process.execPath, [vitest, 'run', '--testTimeout', String(defaultTestTimeoutMs), ...task.args], {
+    const reportFile = join(artifacts, `${task.name}.json`)
+    const stdoutFile = join(artifacts, `${task.name}.stdout.log`)
+    const stderrFile = join(artifacts, `${task.name}.stderr.log`)
+    const stdout = openSync(stdoutFile, 'wx', 0o600)
+    const stderr = openSync(stderrFile, 'wx', 0o600)
+    const child = spawn(process.execPath, [vitest, 'run', '--maxWorkers', '1', '--minWorkers', '1',
+      '--reporter=default', '--reporter=json', `--outputFile.json=${reportFile}`,
+      '--testTimeout', String(defaultTestTimeoutMs), ...task.args], {
       env: { ...process.env, ...task.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', stdout, stderr],
     })
-    const chunks = []
-    child.stdout.on('data', chunk => chunks.push(chunk))
-    child.stderr.on('data', chunk => chunks.push(chunk))
     const result = await new Promise(resolve => {
       let spawnError
       child.once('error', error => { spawnError = error })
       // `exit` can precede the final stdout/stderr pipe reads. `close` is the
       // lifecycle boundary that proves both the process and its stdio closed.
-      child.once('close', (code, signal) => resolve({ code: code ?? 1, signal, spawnError }))
+      child.once('close', (code, signal) => resolve({ code, signal, spawnError }))
     })
-    if (result.spawnError !== undefined) chunks.push(Buffer.from(`\nrunner spawn error: ${String(result.spawnError)}\n`))
-    const output = Buffer.concat(chunks).toString('utf8')
+    closeSync(stdout)
+    closeSync(stderr)
+    const output = readFileSync(stdoutFile, 'utf8') + readFileSync(stderrFile, 'utf8')
     const outcome = result.signal === null ? `exit ${result.code}` : `signal ${result.signal}`
     process.stdout.write(`\n===== ${lane}:${task.name} (${Math.round(performance.now() - started)}ms, ${outcome}) =====\n${output}`)
-    if (result.code !== 0 || result.spawnError !== undefined) failed = true
-    const count = /Tests\s+(\d+) passed/.exec(output)
-    if (count === null) failed = true
-    else passed += Number(count[1])
+    let report = null
+    try { report = JSON.parse(readFileSync(reportFile, 'utf8')) } catch { /* Missing reports fail closed. */ }
+    const assessment = { ...assessTestResult(task, report, result), reportFile, stdoutFile, stderrFile,
+      durationMs: Math.round(performance.now() - started) }
+    results.push(assessment)
+    if (!assessment.ok) failed = true
+    passed += assessment.passed ?? 0
   }
 }
 
-await Promise.all(Array.from({ length: Math.min(maxParallel, tasks.length) }, () => worker()))
-const expected = lane === 'unit' ? 60 : lane === 'integration' ? 130 : 190
-if (passed !== expected) {
-  process.stderr.write(`\n${lane} lane inventory mismatch: expected ${expected} passing tests, observed ${passed}\n`)
-  failed = true
+try {
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(maxParallel, tasks.length) }, () => worker()))
+  const infrastructureErrors = workers.flatMap(result => result.status === 'rejected' ? [String(result.reason)] : [])
+  if (infrastructureErrors.length) failed = true
+  const expected = tasks.reduce((sum, task) => sum + task.expected, 0)
+  if (passed !== expected) {
+    process.stderr.write(`\n${lane} lane inventory mismatch: expected ${expected} passing tests, observed ${passed}\n`)
+    failed = true
+  }
+  const summary = { lane, expected, passed, failed, infrastructureErrors, baseline, atEnd: captureBaseline(), results, artifacts }
+  writeFileSync(join(artifacts, 'summary.json'), JSON.stringify(summary, null, 2), { mode: 0o600 })
+  process.stdout.write(`\nankh-guard ${lane} task summary (${artifacts}):\n`)
+  for (const result of results) process.stdout.write(`${JSON.stringify(result)}\n`)
+  if (failed) process.stderr.write(`ankh-guard lane failure: ${JSON.stringify(summary)}\n`)
+  if (failed) process.exitCode = 1
+} finally {
+  release()
 }
-if (failed) process.exit(1)

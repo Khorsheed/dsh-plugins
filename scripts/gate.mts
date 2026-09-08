@@ -39,6 +39,7 @@ import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { acquireTestResource } from '../packages/ankh-guard/scripts/test-resource.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const argv = process.argv.slice(2)
@@ -89,6 +90,12 @@ export const GLOBAL_PATHS = ['build/', 'scripts/', 'tsconfig.base.json', 'pnpm-w
 
 export interface Scope { readonly filter: string | undefined; readonly dirs: string[]; readonly why: string }
 
+/** Exclude the root orchestrator from execution as well as the displayed list:
+ * its recursive build/test scripts would escape the selected dependency closure. */
+export function packageFilter(filter: string | undefined): string {
+  return `${filter === undefined ? '-r' : `--filter "${filter}"`} --filter '!.'`
+}
+
 /** Resolve what to build, test and pack.
  *
  * The base defaults to LOCAL `main`, not `origin/main`: pushes are batched by
@@ -120,7 +127,7 @@ export function resolveScope(run: Runner, opts: { all: boolean; since?: string }
   }
 
   const selector = `...[${base}]`
-  const listed = run(`pnpm --filter "${selector}" list --depth -1 --parseable`)
+  const listed = run(`pnpm ${packageFilter(selector)} list --depth -1 --parseable`)
   // Fail closed: a filter that errored is indistinguishable from one that
   // matched nothing, and guessing "nothing" skips the entire build.
   if (!listed.ok) return { filter: undefined, dirs: [], why: `whole repo — the package filter failed against ${base}` }
@@ -228,9 +235,11 @@ function harnessAdvisory(): void {
  */
 function testStep(scope: Scope): void {
   const log = join(mkdtempSync(join(tmpdir(), 'gate-')), 'test.log')
-  const filter = scope.filter === undefined ? '-r' : `--filter "${scope.filter}"`
+  const filter = packageFilter(scope.filter)
+  let succeeded = false
   try {
-    sh(`set -o pipefail; pnpm ${filter} --if-present run test 2>&1 | tee ${log}`)
+    sh(`set -o pipefail; pnpm ${filter} --if-present run test 2>&1 | tee "${log}"`)
+    succeeded = true
   } finally {
     const byPackage = new Map<string, number[]>()
     for (const [, pkg, secs] of readFileSync(log, 'utf8').matchAll(/^packages\/([a-z0-9-]+) test: +Duration +([0-9.]+)s/gm)) {
@@ -244,7 +253,8 @@ function testStep(scope: Scope): void {
         process.stdout.write(`    ${r.longest.toFixed(1).padStart(7)}s  ${r.pkg}${r.runs > 1 ? `  (longest of ${r.runs} shards)` : ''}\n`)
       }
     }
-    rmSync(join(log, '..'), { recursive: true, force: true })
+    if (succeeded) rmSync(join(log, '..'), { recursive: true, force: true })
+    else process.stderr.write(`\n  gate test failure log retained: ${log}\n`)
   }
 }
 
@@ -253,14 +263,14 @@ function actStep(): void {
     execFileSync('act', ['--version'], { stdio: 'ignore' })
   } catch {
     process.stderr.write('gate --full needs act (runs the real workflow in Docker):\n  brew install act\n')
-    process.exit(2)
+    throw new Error('act is unavailable')
   }
   sh('act push -W .github/workflows/ci.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest')
 }
 
 export function main(): void {
   const scope = resolveScope(gitRunner, { all, since: requestedBase })
-  const filter = scope.filter === undefined ? '-r' : `--filter "${scope.filter}"`
+  const filter = packageFilter(scope.filter)
   const skipPackages = scope.filter === 'NONE'
 
   // Recorded now, re-checked at the end: a nine-minute gate reads the working
@@ -308,7 +318,8 @@ export function main(): void {
       const detail = error instanceof Error && error.message !== '' && !error.message.startsWith('Command failed')
         ? `\n  ${error.message}` : ''
       process.stderr.write(`\ngate FAILED at: ${step.name} (after ${((Date.now() - stepStart) / 1000).toFixed(0)}s)${detail}\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
     timings.push({ name: step.name, secs: (Date.now() - stepStart) / 1000 })
   }
@@ -322,7 +333,8 @@ export function main(): void {
   if (treeAtEnd !== treeAtStart) {
     process.stderr.write('\ngate WARNING: the working tree changed while the gate ran.\n'
       + '  This result describes neither the state it started on nor the one it ended on. Re-run.\n')
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
 
   process.stdout.write(`\ngate PASSED (${steps.length} steps, ${Math.round((Date.now() - started) / 1000)}s)`
@@ -332,4 +344,7 @@ export function main(): void {
 
 // Importable for the spec — without this guard, importing the module runs the
 // entire gate (which is exactly what happened the first time the spec ran).
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main()
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  const release = await acquireTestResource('gate')
+  try { main() } finally { release() }
+}

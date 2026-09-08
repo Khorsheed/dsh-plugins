@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GLOBAL_PATHS, porcelainPaths, resolveScope, type Outcome, type Runner } from './gate.mts'
+import { GLOBAL_PATHS, packageFilter, porcelainPaths, resolveScope, type Outcome, type Runner } from './gate.mts'
 
 /** A runner driven by a table, so every branch — including the ones that only
  * happen when a command fails — is reachable without a git repository. */
@@ -14,6 +14,14 @@ function stub(table: Record<string, Outcome>, fallback: Outcome = { ok: true, ou
 
 const ok = (out: string): Outcome => ({ ok: true, out })
 const failed: Outcome = { ok: false, out: '' }
+
+it('excludes the recursive root orchestrator for both scoped and full execution', () => {
+  expect(packageFilter('...[main]')).toBe('--filter "...[main]" --filter \'!.\'')
+  expect(packageFilter(undefined)).toBe('-r --filter \'!.\'')
+  const seen: string[] = []
+  resolveScope(command => { seen.push(command); return ok('') }, { all: false })
+  expect(seen.find(command => command.startsWith('pnpm '))).toContain("--filter '!.'")
+})
 
 describe('porcelainPaths', () => {
   it('reads both ends of a rename — the old path alone would miss a move INTO a shared layer', () => {

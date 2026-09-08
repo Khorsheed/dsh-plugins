@@ -12,7 +12,10 @@
  * a deployment machine where DSH_HOME is simply not exported into the test
  * process — a sentinel that skips everywhere is no sentinel.
  */
-import { spawnSync } from 'node:child_process'
+import { execFile, type ExecFileOptions } from 'node:child_process'
+import { promisify } from 'node:util'
+import { Worker } from 'node:worker_threads'
+import { rm } from 'node:fs/promises'
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
@@ -20,7 +23,44 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { composePreflightPatches, resolveHarnessRoot } from '../src/preflight-runner.ts'
-import { createPreflightSnapshot } from '../src/transition.ts'
+
+const exec = promisify(execFile)
+async function run(executable: string, args: string[], options: ExecFileOptions) {
+  try {
+    const result = await exec(executable, args, { ...options, encoding: 'utf8', timeout: 60_000, maxBuffer: 10 * 1024 * 1024 })
+    return { ...result, status: 0, error: undefined }
+  } catch (error) {
+    const result = error as Error & { stdout?: string; stderr?: string; code?: number }
+    return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', status: result.code, error: result }
+  }
+}
+
+// Snapshotting the real dependency graph is deliberately synchronous product
+// code. Exercise the freshly built implementation off Vitest's RPC event loop.
+async function snapshotOffThread(home: string): Promise<{ home: string; root: string }> {
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    import(workerData.module).then(({ createPreflightSnapshot }) => {
+      const snapshot = createPreflightSnapshot(workerData.home);
+      parentPort.postMessage({ home: snapshot.home, root: snapshot.root });
+    });
+  `, { eval: true, workerData: { home, module: new URL('../lib/types/transition.js', import.meta.url).href } })
+  return new Promise((resolve, reject) => {
+    let result: { home: string; root: string } | undefined
+    let failure: Error | undefined
+    const deadline = setTimeout(() => {
+      failure = new Error('snapshot worker exceeded 90 seconds')
+      void worker.terminate()
+    }, 90_000)
+    worker.once('message', value => { result = value })
+    worker.once('error', error => { failure = error })
+    worker.once('exit', code => {
+      clearTimeout(deadline)
+      if (failure || code !== 0 || !result) reject(failure ?? new Error(`snapshot worker exited ${code} without a result`))
+      else resolve(result)
+    })
+  })
+}
 
 const harness = resolveHarnessRoot()
 // Probe the home the guard actually protects in deployment: the same chain
@@ -74,7 +114,7 @@ describe('preflight composition drift tripwire', () => {
     // exports the harness source imports). env matters just as much: both
     // sides must compose the SAME home's tree — a green run against the wrong
     // home is a blank round with a confident title.
-    const dump = spawnSync('node', ['--import', tsx, join(harness, 'apps/cli/src/bin.ts'), '--profile', profile, '--dump-config'], { encoding: 'utf8', cwd: harness, env: { ...process.env, DSH_HOME: home } })
+    const dump = await run(process.execPath, ['--import', tsx, join(harness, 'apps/cli/src/bin.ts'), '--profile', profile, '--dump-config'], { cwd: harness, env: { ...process.env, DSH_HOME: home } })
     expect(dump.error).toBeUndefined()
     expect(dump.status).toBe(0)
     const dumpIds = new Set([...dump.stdout.matchAll(/^- id: (\S+)/gm)].map(match => match[1]))
@@ -98,17 +138,17 @@ describe('preflight composition drift tripwire', () => {
   }, 60_000)
 
   const generatedHomeTest = builtDshCli === undefined ? it.skip : it
-  generatedHomeTest('runs a built candidate against a DSH-generated home with a cyclic pnpm/Cordis link graph', () => {
+  generatedHomeTest('runs a built candidate against a DSH-generated home with a cyclic pnpm/Cordis link graph', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ankh-generated-dsh-home-'))
     const generatedHome = join(root, 'home')
     const graph = join(generatedHome, 'pnpm-cordis-cycle')
     const runtimePackage = join(graph, 'packages', 'cordis-runtime')
     const pluginPackage = join(graph, 'packages', 'cordis-plugin')
     const externalPackage = join(root, 'external-package')
-    let snapshot: ReturnType<typeof createPreflightSnapshot> | undefined
+    let snapshot: Awaited<ReturnType<typeof snapshotOffThread>> | undefined
     try {
       mkdirSync(generatedHome)
-      const initialize = spawnSync(process.execPath, [builtDshCli!, '--profile', 'web', '--dump-config'], {
+      const initialize = await run(process.execPath, [builtDshCli!, '--profile', 'web', '--dump-config'], {
         cwd: dirname(builtDshCli!),
         encoding: 'utf8',
         env: { ...process.env, DSH_HOME: generatedHome },
@@ -146,7 +186,7 @@ describe('preflight composition drift tripwire', () => {
       }, null, 2)}\n`)
       writeFileSync(join(runtimePackage, 'state.txt'), 'live-cordis-runtime')
       writeFileSync(join(externalPackage, 'state.txt'), 'live-external-package')
-      const install = spawnSync('pnpm', ['install', '--offline', '--ignore-scripts'], {
+      const install = await run('pnpm', ['install', '--offline', '--ignore-scripts'], {
         cwd: graph,
         encoding: 'utf8',
       })
@@ -160,7 +200,7 @@ describe('preflight composition drift tripwire', () => {
       expect(lstatSync(join(runtimePackage, 'node_modules', '@fixture', 'cordis-plugin')).isSymbolicLink()).toBe(true)
       expect(lstatSync(join(pluginPackage, 'node_modules', '@fixture', 'cordis-runtime')).isSymbolicLink()).toBe(true)
 
-      snapshot = createPreflightSnapshot(generatedHome)
+      snapshot = await snapshotOffThread(generatedHome)
       const copiedGraph = join(snapshot.home, 'pnpm-cordis-cycle')
       const copiedCordisLink = join(snapshot.home, 'profiles', 'node_modules', '@deepseek-ai', 'cordis')
       const copiedRuntimeLink = join(copiedGraph, 'node_modules', '@fixture', 'cordis-runtime')
@@ -177,7 +217,7 @@ describe('preflight composition drift tripwire', () => {
       expect(realpathSync(join(copiedPlugin, 'node_modules', '@fixture', 'cordis-runtime'))).toBe(copiedRuntime)
       expect(realpathSync(copiedExternalLink).startsWith(`${realpathSync(snapshot.root)}/`)).toBe(true)
 
-      const candidate = spawnSync(process.execPath, ['-e', `
+      const candidate = await run(process.execPath, ['-e', `
 const fs = require('node:fs')
 const child = require('node:child_process')
 fs.writeFileSync(process.env.ANKH_TEST_RUNTIME_LINK + '/state.txt', 'candidate-cordis-runtime')
@@ -212,8 +252,8 @@ process.exit(result.status === null ? 1 : result.status)
       expect(readFileSync(join(externalPackage, 'state.txt'), 'utf8')).toBe('live-external-package')
       expect(readFileSync(liveProfile)).toEqual(liveProfileBytes)
     } finally {
-      snapshot?.cleanup()
-      rmSync(root, { recursive: true, force: true })
+      if (snapshot) await rm(snapshot.root, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true })
     }
   }, 120_000)
 })
