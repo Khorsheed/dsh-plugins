@@ -12,6 +12,7 @@ The [local-agent family](../local-agent/README.md)'s own delegation tool: each h
 - **Resumable delegation** — one optional `resume` parameter continues the same CLI conversation in a later round, in the same dsh child session.
 - **Secure by construction** — the resume handle travels only as a parameter; one smuggled into the prompt is ignored, a forged one is rejected.
 - **Scope isolation inherited** — the tool spawns nothing; the CLI runs under the harness bundle's scoped home.
+- **Registration switch** — `tools: none` mounts the row without its model-visible tool; the provider and its slash verbs stay.
 
 ## Install
 
@@ -28,6 +29,42 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
 Removing this package alone is not supported — the harness bundles require it.
+
+## Configuration
+
+| Key | Values | Default | Meaning |
+|---|---|---|---|
+| `provider` | string (required) | — | the `ctx.subagents` provider to start runs on (e.g. `kimi-cli`) |
+| `toolName` | string | `subagent` | the model-visible tool name; distinct per loaded row |
+| `tools` | `all` \| `none` | `all` | whether this row registers its model-visible tool |
+
+`tools: none` trims that one model-visible tool and nothing else. The provider row still
+mounts, and `/codex login`, `/kimi status` and the `ctx.localAgent` service face all live in
+the provider package — so an orchestrator that drives the CLIs through the service face is
+untouched by this switch; only the model in a session is.
+
+Two values rather than a group list: each loaded row registers exactly **one** tool, so there
+is nothing to group (`datasets` and `mission` have graded `tools` groups because they register
+a dozen each).
+
+The switch has to live here rather than in an agent preset: this row mounts at the **profile
+root**, and a preset selects among registered tools without being able to subtract one. That
+is how an evaluation composition takes the host-CLI execution path away from the model while
+keeping those same CLIs available to the orchestrator through the service face (see
+`profiles/web-eval`'s «工具按域开放»).
+
+```yaml
+- id: tool-subagent-kimi
+  name: '@khorsheed/dsh-local-agent-tool-subagent'
+  config:
+    provider: kimi-cli
+    toolName: subagent_kimi
+    tools: none
+```
+
+A patch layer's `config` is a whole-value **replace**, not a deep merge, so an override of this
+row restates `provider` and `toolName` alongside it — `provider` is required, and dropping it
+fails the whole composition at schema validation.
 
 ## Compatibility
 

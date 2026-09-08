@@ -60,11 +60,29 @@ export interface Config {
    * use a distinct name.
    */
   toolName?: string
+  /**
+   * Whether this row registers its model-visible tool. `all` (the default)
+   * registers it — byte-identical to the behavior before this option existed.
+   * `none` registers nothing model-visible; the delegation provider, its
+   * slash verbs (`/codex login`, `/kimi status`, …) and the localAgent
+   * service face all live in the provider package and are untouched, so a
+   * `none` row still leaves every non-model path to that CLI open.
+   *
+   * Two values, not a group list: each loaded row registers exactly ONE tool,
+   * so there is nothing to group — the knob is on/off (mission's and
+   * datasets' `tools` groups exist because those packages register a dozen).
+   *
+   * The switch has to live here rather than in an agent preset: this row
+   * mounts at the PROFILE ROOT, and a preset selects among registered tools
+   * without being able to subtract one.
+   */
+  tools?: 'all' | 'none'
 }
 
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
+  tools: z.union([z.const('all'), z.const('none')]).default('all'),
 })
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
@@ -188,6 +206,14 @@ function familyWording(): { description: string; promptDescription: string; resu
 
 export function apply(ctx: Context, config: Config): void {
   const toolName = config.toolName ?? 'subagent'
+  if ((config.tools ?? 'all') === 'none') {
+    // Nothing model-visible mounts, so there is no provider to watch either:
+    // the lifecycle listeners below exist only to mount and unmount the tool.
+    // The provider itself, its slash verbs, and the localAgent service face
+    // are registered by the provider package and keep working unchanged.
+    ctx.logger.info(`"${toolName}" is not registered (tools: none); the "${config.provider}" provider is unaffected`)
+    return
+  }
   const wording = familyWording()
   // Mirror provider lifecycle because sibling load order and HMR replacement
   // can change provider availability while this fiber remains active.

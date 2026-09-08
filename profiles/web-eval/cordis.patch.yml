@@ -20,7 +20,8 @@
 #                          条件文件的 reasoning.effort 记 default）
 #   5 端点进条件         → claude 的第三方代理地址
 #   12 销毁路径唯一       → 工具按域开放（README 的同名小节）+ 默认预设换成
-#                          pack 自带的 eval（不挂 Bash、不挂容器控制）
+#                          pack 自带的 eval（不挂 Bash、不挂容器控制）+ 三家
+#                          委派工具行 tools: none（预设够不到的那批，见下）
 #
 # 阶段一二在宿主上直跑，没有容器边界，所以 codex 的 sandbox 取
 # workspace-write 而不是 danger-full-access：宿主上给满权限等于把评测的
@@ -61,6 +62,58 @@
 - id: eval
   config:
     tools: all            # 本包只注册三个读工具，all 即三个读工具
+
+# ── 委派工具不注册（冻结决策 12 的第三个执行点）──────────────────────
+# 前两个执行点在上面：「工具按域开放」（三个机制插件按域注册）与 agent-presets
+# 钉成 `eval`（预设组成里没有执行类行）。第三个是这里，家族委派工具。
+#
+# `subagent_codex` / `subagent_claude_code` / `subagent_kimi` 由各 provider 的
+# bundle patch 插在 **profile 根**上，而预设只能挑掉自己挂的行，所以 T21 的
+# eval 预设够不到它们——它们每一个都在宿主上起一家 CLI，沙箱按决策 3 放开。
+# 评测实例的 agent 因此仍有一条执行宿主命令的路；这三行把它关上。
+#
+# 关掉的只是**模型可见的工具**。provider 行照挂：编排器驱动选手走 local-agent
+# 门面（`packages/eval/src/run.ts` 只用 `LocalAgentFace`，即注册在 `ctx.subagents`
+# 上的 provider），`/codex login`、`/kimi status` 这些动词也在 provider 上，
+# 两条路都不经这三个工具。评测流一点没变。
+#
+# **为什么每行都把 `provider` 与 `toolName` 重抄一遍**：patch 的 `config` 是整值
+# 替换而不是深合并（`vendor/include` 的 `applyEntryPatches`：`target[key] = value`），
+# 只写 `tools: none` 会把 provider 包写的那两个键一并抹掉，而 `provider` 是必填，
+# 组合会在 schema 校验上炸掉。`name` 也写上：id 万一被别的插件占了，loader 报
+# name mismatch 并跳过这一行，而不是把这份配置塞给另一个插件。
+# 这两个键在 `tools: none` 下只用于满足 schema——插件在注册任何东西之前就返回了，
+# 谁都没被探测。值抄自各 provider 的 bundle patch 的 insert（`--dump-config` 可核）：
+# codex 与 claude-code 的行带 `-local` 后缀（家族 provider 名是 `codex-local` /
+# `claude-local`），kimi 的没有。
+#
+# **第四家 `subagent_dsh` 不在这里，因为它没有配置行。** `local-agent-dsh` 的
+# DeepSeek 开关默认关，工具由控制器在开关 ON 时用写死的配置动态挂载
+# （`packages/local-agent-dsh/src/index.ts` 里的 `ctx.plugin(toolModule, …)`）。
+# 默认状态下它一个工具都不注册，所以本 profile 的工具列表里本就没有它；但**人在
+# 「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会带默认 `tools: all`
+# 出现**。这一条 profile 层关不掉——要关得改 provider 包，本次任务书划在范围外。
+# 与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
+- id: tool-subagent-codex-local
+  name: '@khorsheed/dsh-local-agent-tool-subagent'
+  config:
+    provider: codex-local
+    toolName: subagent_codex
+    tools: none
+
+- id: tool-subagent-claude-code-local
+  name: '@khorsheed/dsh-local-agent-tool-subagent'
+  config:
+    provider: claude-local
+    toolName: subagent_claude_code
+    tools: none
+
+- id: tool-subagent-kimi
+  name: '@khorsheed/dsh-local-agent-tool-subagent'
+  config:
+    provider: kimi-cli
+    toolName: subagent_kimi
+    tools: none
 
 # ── 四家选手的评测 pin（冻结决策 2 / 3 / 4 / 5）──────────────────────
 
