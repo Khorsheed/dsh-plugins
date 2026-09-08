@@ -61,6 +61,8 @@ const HALT_STAGE2 = { feasible: false }
 interface GuardedLayers {
   grading?: Map<string, string>
   verify?: Map<string, string>
+  /** The DATASET-level verify layer: layer-relative path → content (no item id). */
+  datasetVerify?: Map<string, string>
 }
 
 /** Copy the checked-in dataset fixture into a writable tmp tree and add the visible layer + plan. */
@@ -116,9 +118,11 @@ function fakeDatasets(root: string, guarded: GuardedLayers = {}): DatasetsFace {
       throw new Error(`fake datasets: layer ${JSON.stringify(layer)} is outside the call's scope — the judge path must name it explicitly`)
     }
   }
+  const datasetVerify = guarded.datasetVerify ?? new Map<string, string>()
   const datasetFiles = new Map<string, string>([
     ['visible/prompts/stage1.md', PROMPT_ONE],
     ['visible/prompts/stage2.md', PROMPT_TWO],
+    ...[...datasetVerify].map(([path, content]): [string, string] => [`verify/${path}`, content]),
   ])
   return {
     async snapshot(_scope, datasetId, commit) {
@@ -137,7 +141,10 @@ function fakeDatasets(root: string, guarded: GuardedLayers = {}): DatasetsFace {
         const paths = [...files.keys()].filter(key => key.startsWith(`${id}/`)).map(key => key.slice(id.length + 1)).sort()
         if (paths.length > 0) layers[layer] = paths
       }
-      return { items: [{ id, layers }] }
+      const shared = scope.layers?.includes('verify') === true && datasetVerify.size > 0
+        ? { datasetLayers: { verify: [...datasetVerify.keys()].sort() } }
+        : {}
+      return { items: [{ id, layers }], ...shared }
     },
     async read(scope, query) {
       assertScoped(scope, query.layer)
@@ -1159,7 +1166,26 @@ const PROBE_OK = [
 /** Non-zero exit — the probe itself failed, so it produces no verdict. */
 const PROBE_FAILS = [
   "console.error('probe: the workspace has no deployment to inspect')",
+  "process.exit(1)",
+].join('\n') + '\n'
+
+/** Exit 3: the probe is fine, the input the criterion needs is not in this cell. */
+const PROBE_NOT_APPLICABLE = [
+  "console.error('stage three never ran in this cell — nothing to roll up')",
   "process.exit(3)",
+].join('\n') + '\n'
+
+/** A DATASET-level probe: the same ruler, applied once per item. */
+const SHARED_PROBE = [
+  "import { readFileSync, writeFileSync } from 'node:fs'",
+  "const args = process.argv.slice(2)",
+  "const flag = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1] }",
+  // cwd is THIS item's verify root, so the item's own checklist is beside it.
+  "const task = readFileSync('./checklist.yml', 'utf8').match(/task_id: (\\S+)/)[1]",
+  "writeFileSync(flag('--out'), JSON.stringify([{",
+  "  schema: 'dataseek.verdict/1', criterion: 'X-no-patch', pass: false,",
+  "  evidence: 'checklist beside me says ' + task,",
+  "}]))",
 ].join('\n') + '\n'
 
 /** Exit 0 with NO output — claims a judgement and produces nothing checkable. */
@@ -1403,13 +1429,14 @@ describe('runPlan — the judge must not be a contestant (frozen decision 9)', (
 
 describe('runPlan — probes write the script ns (protocol §6.7)', () => {
   const probes = (): Map<string, string> => new Map([
-    ['P0-placeholder/checklist.yml', 'schema_version: dataseek.verify/1\n'],
+    ['P0-placeholder/checklist.yml', 'task_id: P0-placeholder\nschema_version: dataseek.verify/1\n'],
     ['P0-placeholder/probes/a-ok.mjs', PROBE_OK],
     ['P0-placeholder/probes/b-fails.mjs', PROBE_FAILS],
     ['P0-placeholder/probes/c-silent.mjs', PROBE_SILENT],
+    ['P0-placeholder/probes/d-not-applicable.mjs', PROBE_NOT_APPLICABLE],
   ])
 
-  it('keeps the exit-0 probe, drops the non-zero one and the silent one, and records all three', async () => {
+  it('keeps the exit-0 probe, drops the non-zero one and the silent one, and records all four', async () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root)
     const mission = new FakeMission(join(root, 'mission'))
@@ -1422,16 +1449,32 @@ describe('runPlan — probes write the script ns (protocol §6.7)', () => {
     expect(cell.verdicts?.script).toBe(1)
 
     const recorded = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'probes') as {
-      probes: Array<{ probe: string; exitCode: number | null; ok: boolean; verdicts: number; error?: string }>
+      probes: Array<{
+        probe: string
+        origin: string
+        exitCode: number | null
+        outcome: string
+        ok: boolean
+        verdicts: number
+        error?: string
+        reason?: string
+        overwritten?: string[]
+      }>
     }
-    expect(recorded.probes.map(p => p.probe)).toEqual(['probes/a-ok.mjs', 'probes/b-fails.mjs', 'probes/c-silent.mjs'])
-    expect(recorded.probes[0]).toMatchObject({ exitCode: 0, ok: true, verdicts: 1 })
+    expect(recorded.probes.map(p => p.probe)).toEqual([
+      'probes/a-ok.mjs', 'probes/b-fails.mjs', 'probes/c-silent.mjs', 'probes/d-not-applicable.mjs',
+    ])
+    expect(recorded.probes[0]).toMatchObject({ origin: 'item', exitCode: 0, outcome: 'judged', ok: true, verdicts: 1 })
     // Non-zero exit: the PROBE failed, so it produced no verdict.
-    expect(recorded.probes[1]).toMatchObject({ exitCode: 3, ok: false, verdicts: 0 })
+    expect(recorded.probes[1]).toMatchObject({ exitCode: 1, outcome: 'probe-failed', ok: false, verdicts: 0 })
     expect(String(recorded.probes[1]?.error)).toContain('no deployment to inspect')
     // Exit 0 with nothing written is a contract violation, not a verdict.
-    expect(recorded.probes[2]).toMatchObject({ exitCode: 0, ok: false, verdicts: 0 })
+    expect(recorded.probes[2]).toMatchObject({ exitCode: 0, outcome: 'probe-failed', ok: false, verdicts: 0 })
     expect(String(recorded.probes[2]?.error)).toContain('exited 0 but produced no readable verdict')
+    // Exit 3 is the third state: recorded with its reason, and NOT a failure.
+    expect(recorded.probes[3]).toMatchObject({ exitCode: 3, outcome: 'probe-skipped', ok: false, verdicts: 0 })
+    expect(recorded.probes[3]?.reason).toBe('stage three never ran in this cell — nothing to roll up')
+    expect(recorded.probes[3]?.error).toBeUndefined()
 
     const verdicts = scriptAnnotations(mission, report.runId, cell.missionId)[0] as Array<Record<string, unknown>>
     expect(verdicts).toHaveLength(1)
@@ -1439,6 +1482,7 @@ describe('runPlan — probes write the script ns (protocol §6.7)', () => {
     // The orchestrator's coordinates overwrite whatever the probe claimed.
     expect(verdicts[0]?.['task']).toBe('P0-placeholder')
     expect(verdicts[0]?.['by']).toBe('probes/a-ok.mjs')
+    expect(recorded.probes[0]?.overwritten).toEqual(['by', 'task'])
     // The probe really was handed --rubric (it reported the byte count it read).
     expect(String(verdicts[0]?.['evidence'])).toContain(`rubric ${RUBRIC.length} 字节`)
 
@@ -1448,6 +1492,44 @@ describe('runPlan — probes write the script ns (protocol §6.7)', () => {
     expect(archived).toHaveLength(1)
     // The verify layer does not outlive its use.
     expect(existsSync(join(root, 'state', 'probes', report.runId, cell.missionId, 'attempt-1'))).toBe(false)
+  })
+
+  it('runs the dataset’s shared probes too, once for this item, in its verify root', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root, {
+        grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]),
+        verify: new Map([
+          ['P0-placeholder/checklist.yml', 'task_id: P0-placeholder\n'],
+          ['P0-placeholder/probes/own.mjs', PROBE_OK],
+        ]),
+        datasetVerify: new Map([['helpers/probes/shared.mjs', SHARED_PROBE]]),
+      }),
+      mission,
+      localAgent: new FakeLocalAgent(),
+    })
+    const cell = report.cells[0] as { missionId: string; verdicts?: { script: number } }
+    expect(cell.verdicts?.script).toBe(2)
+
+    const recorded = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'probes') as {
+      probes: Array<{ probe: string; origin: string; outcome: string }>
+    }
+    // The shared probe goes first (the dataset's veto probe lives there), and
+    // is namespaced so its verdicts never collide with an item probe's.
+    expect(recorded.probes.map(p => [p.probe, p.origin])).toEqual([
+      ['shared/helpers/probes/shared.mjs', 'dataset'],
+      ['probes/own.mjs', 'item'],
+    ])
+    const verdicts = scriptAnnotations(mission, report.runId, cell.missionId)[0] as Array<Record<string, unknown>>
+    expect(verdicts[0]).toMatchObject({
+      task: 'P0-placeholder',
+      criterion: 'X-no-patch',
+      by: 'shared/helpers/probes/shared.mjs',
+      // It read the ITEM's checklist beside it — the cwd is the item's root.
+      evidence: 'checklist beside me says P0-placeholder',
+    })
   })
 
   it('writes nothing at all when the item ships no probes', async () => {

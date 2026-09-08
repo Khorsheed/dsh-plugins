@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev4** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev5** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -644,7 +644,10 @@ Identifiers and numbers only: **no criterion text, no evidence, no notes**, whic
 
 ### 6.7 The probe contract — how `script` verdicts are produced
 
-`script` is the one deterministic source of the three, and only probes write it. A probe is an executable the item ships **under any `probes/` segment of that item's verify layer**, suffixed `.mjs` or `.sh` (`probes/room-identity.mjs` counts, and so does a register-rehomed `checks/probes/x.sh`).
+`script` is the one deterministic source of the three, and only probes write it. A probe is an executable suffixed `.mjs` or `.sh` living **under any `probes/` segment** (`probes/room-identity.mjs` counts, and so does a register-rehomed `checks/probes/x.sh`). There are two sources:
+
+- **the item's own probes** — under that item's verify layer, judging that item alone;
+- **the dataset's shared probes** — under the DATASET-level verify layer (`verify/helpers/probes/no-patch.sh` and its kind), **run once for every item**. A criterion that holds in every item and should be judged identically in each ("the harness source was not modified", "an ordinary session stays uncontaminated") deserves exactly one ruler; a copy per item lets strictness drift apart silently.
 
 **The invocation** (the orchestrator runs each probe once the cell has finished its stages and entered `judged`):
 
@@ -658,13 +661,30 @@ Identifiers and numbers only: **no criterion text, no evidence, no notes**, whic
 | `--rubric` | Host-side copy of the item's grading-layer rubric. **Omitted entirely** when the item ships no rubric |
 | `--out` | Where the probe writes its verdicts |
 
-**The exit code is the contract**: `0` means **judged** — including `pass: false`, because "did it hold?" and "could the probe tell?" are different questions; non-zero means **the probe failed** and produces no verdict at all, with the reason recorded in the orchestrator ns. Exiting `0` without leaving a readable `--out` counts as a probe failure too: it claimed a judgement and then produced nothing checkable.
+**The exit code is the contract, and it carries three states**:
 
-**The output** is an **array** of §6.5 `dataseek.verdict/1` documents (a lone object is accepted as a one-element array). A proportionally scored criterion carries `ratio: {passed, total}` and **never encodes the proportion in an `evidence` prefix** (§6.5). `task` and `by` are overwritten by the orchestrator (`by` = the probe's display path in the verify layer) whatever the probe wrote: those two are coordinates the orchestrator knows and the judging side only echoes — getting them wrong would corrupt every join the report performs.
+| Exit code | State | How the orchestrator records it |
+|---|---|---|
+| `0` | **Judged** — including `pass: false`, because "did it hold?" and "could the probe tell?" are different questions | The verdicts go to the `script` ns; outcome `judged` |
+| `3` | **Not applicable this round** — the probe is fine and the criterion is not false; the input it needs is simply not in place (stage three never ran, the harness worktree is not in the cell) | Outcome `probe-skipped` with the probe's first stderr line; **not counted a failure** |
+| any other non-zero | **The probe failed**, and produces no verdict at all | Outcome `probe-failed`, with the reason in the orchestrator ns |
 
-**The execution environment**: the orchestrator materializes the item's **whole** verify layer into a host-side temporary directory and uses it as the cwd (so a probe can read the checklist and helpers beside it by relative path), runs `.mjs` under node and `.sh` under `/bin/sh` with a five-minute wall-clock cap each, and removes the directory afterwards — the verify layer is the answer key and does not stay overnight. From I3 this step is executed inside the container by `lab.verify`; **the contract is unchanged**.
+The third state is not optional: without it, a run that executed only stages one and two collects several bogus "probe failed" records per cell, and the noise buries the real failures. **`3` rather than `2`** — `2` is the getopt-conventional "usage error" code, which is exactly what a probe returns when its arguments are wrong; reading it as "cannot judge" would swallow every mis-invocation. Exiting `0` without leaving a readable `--out` is a **probe failure**: it claimed a judgement and then produced nothing checkable.
 
-**Where it lands**: verdicts go to mission's `script` ns and to `attempt-N/archive/verdicts/script.json`. An item with no probes writes nothing at all — no empty file, no empty annotation.
+**The output** is an **array** of §6.5 `dataseek.verdict/1` documents (a lone object is accepted as a one-element array). A proportionally scored criterion carries `ratio: {passed, total}` and **never encodes the proportion in an `evidence` prefix** (§6.5). The orchestrator checks the two numeric facts about `ratio` **where the artifact is produced**, and a failure counts as off-contract output (the same bucket as a schema failure, with the reason in the orchestrator ns):
+
+- `passed` and `total` are integers, `total > 0`, and `0 <= passed <= total`;
+- `pass === (passed === total)` — `pass` is always "the criterion FULLY holds", which for a proportional criterion means numerator equals denominator. When the two contradict each other there is no way to tell which is the typo.
+
+The report side (§6.5) still degrades gracefully for data already on disk: an out-of-bounds ratio is treated as absent and falls back to the boolean. Both are needed — the source check catches a mistake that can still be fixed, the report check absorbs one already written down.
+
+**`task` and `by` are backfilled by the orchestrator, BEFORE validation.** Whatever the probe wrote is overwritten: those two are coordinates the orchestrator knows and the judging side only echoes, and getting them wrong would corrupt every join the report performs. **A probe may omit them entirely** — both are `required` under `additionalProperties: false`, so validating first would void an otherwise complete verdict for missing exactly the fields the orchestrator was about to supply; hence backfill first, validate second. A value that is present but disagrees loses, and the fact that it was overwritten is recorded in the orchestrator ns. What `by` holds: for an item probe, its display path in that item's verify layer (`probes/stage1-structure.mjs`); for a shared probe, `shared/` plus its display path in the dataset-level verify layer (`shared/helpers/probes/no-patch.sh`). `shared/` is a **namespace, not a directory** — it marks the verdict as coming from the dataset's ruler rather than this item's, and keeps the two `by` spaces from ever colliding.
+
+**The execution environment**: the orchestrator materializes **both verify layers, whole**, into a host-side temporary directory, **in the dataset's own relative layout** — the dataset-level layer at `<tmp>/verify/…`, the item's at `<tmp>/items/<item id>/verify/…`. That the layout matches is the entire point: an item probe imports the dataset's shared library through **the same relative path that resolves in the repository** (`../../../../verify/helpers/lib/x.mjs`), so one ruler serves every item instead of a per-item copy drifting apart.
+
+The cwd is always **the item's verify-layer root**, shared probes included — a shared probe is the same ruler applied once per item, and the checklist it reads beside it must be that item's. `.mjs` runs under node and `.sh` under `/bin/sh`, with a five-minute wall-clock cap each, and the whole directory is removed afterwards — the verify layer is the answer key and does not stay overnight. From I3 this step is executed inside the container by `lab.verify`; **the contract is unchanged**.
+
+**Where it lands**: verdicts go to mission's `script` ns and to `attempt-N/archive/verdicts/script.json`. When neither layer ships a probe, nothing at all is written — no empty file, no empty annotation.
 
 ### 6.8 The judge contract — how `llm-draft` verdicts are produced
 
@@ -676,7 +696,7 @@ Identifiers and numbers only: **no criterion text, no evidence, no notes**, whic
 
 **The judge prompt** is assembled by the orchestrator, never carried by the judge: the `kind: llm-draft` criteria of the item's grading-layer rubric (`objective` rows belong to the probes and `human` rows to the judge bench — neither is shown), plus the de-identified material, plus the output requirement. The rubric is selected as "the grading-layer display path whose file name is `rubric.yml` / `rubric.yaml`, shortest path wins", which covers both item layouts (the conventional `rubric.yml` and a register-rehomed `answers/rubric.yml`).
 
-**The output** has the same shape as a probe's: the judge writes the §6.5 array into `verdicts.json` in its own cwd, and `task` and `by` (= the judge condition id) are backfilled by the orchestrator. An unreadable answer is recorded in the orchestrator ns and **retried exactly once**; a second failure drops that sample honestly rather than inventing one.
+**The output** has the same shape as a probe's: the judge writes the §6.5 array into `verdicts.json` in its own cwd, and `task` and `by` (= the judge condition id) are backfilled by the orchestrator, **in §6.7's order: backfill first, validate second**. An unreadable answer is recorded in the orchestrator ns and **retried exactly once**; a second failure drops that sample honestly rather than inventing one.
 
 **Where it lands**: one `llm-draft` annotation per sample, shaped `{sample, judgeCondition, judgeSha, promptSha, verdicts}` — provenance beside the verdicts, with the report unwrapping the envelope for `verdicts` — plus `attempt-N/archive/verdicts/llm-draft-<judge condition>-<sample>.json`. The judge's usage and duration go to the orchestrator ns under `kind: judge` and are **kept out of the contestants' efficiency table**. The judge material directory (prompt + de-identified material + the judge's answer) is retained after the run for review.
 

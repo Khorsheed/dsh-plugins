@@ -109,13 +109,14 @@ export { registerEvalTools, EVAL_TOOL_NAMES } from './tools.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
 export {
-  buildDeidentifyRules, buildJudgePrompt, deidentify, llmDraftCriteria,
-  mergeReplacements, pickRubricPath, probePaths,
-  DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
+  buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemVerifyRoot,
+  llmDraftCriteria, mergeReplacements, pickRubricPath, probePaths,
+  DATASET_VERIFY_ROOT, DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
+  PROBE_EXIT_NOT_APPLICABLE,
 } from './judge.ts'
 export type {
-  Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome,
-  ReplacementCount, ResolvedJudge, RubricCriterion,
+  Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome, ProbeRef, ProbeStatus,
+  ReplacementCount, ResolvedJudge, RubricCriterion, VerdictAnchor,
 } from './judge.ts'
 export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
 export type {

@@ -76,7 +76,15 @@ run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, condit
 
 格子跑完阶段、停在终态后，编排器在归档前跑两条机器通路。完整契约见 [协议 §6.7 / §6.8](../../docs/dataset-authoring-protocol.md)；这里是实现侧的读法。
 
-**探针（`script`）** —— 题目 verify 层下任意 `probes/` 段里的 `.mjs` / `.sh`。调用约定 `<probe> --cell <格子目录> --rubric <rubric 路径> --out <verdicts.json>`：**退出码 0 = 已判定**（含 `pass: false`），非 0 = 探针失败不产生判定；退出 0 却写不出可读的 `--out`，同样按失败记。verify 层整层物化进宿主临时目录并以它为 cwd，跑完删除（I3 起交 `lab.verify` 进容器，契约不变）。产出写 `script` ns 与 `archive/verdicts/script.json`；题目没有探针就什么都不写。
+**探针（`script`）** —— 任意 `probes/` 段里的 `.mjs` / `.sh`，来源有两处：**题内**（该题 verify 层，只判这道题）与**题集级共享**（题集级 verify 层，对每道题各跑一次；`shared/no-patch.sh` 这类「所有题共用同一把尺子」的判据归这里）。调用约定 `<probe> --cell <格子目录> --rubric <rubric 路径> --out <verdicts.json>`。
+
+**退出码三态**：`0` = 已判定（含 `pass: false`），记 `judged`；`3` = **本轮不适用**（探针没坏、判据也没不成立，只是输入不在位——阶段三没跑、harness 工作树不在格子里），记 `probe-skipped` 并附 stderr 首行，**不算失败**；其余非 `0` = 探针失败，记 `probe-failed`。退出 `0` 却写不出可读的 `--out`，按失败记。用 `3` 不用 `2`：`2` 是 getopt 传统的「用法错误」码，读成「判不了」会咽下每一次误调用。
+
+**执行环境**：**两个 verify 层都整层物化**进宿主临时目录，相对布局与题库一致（`<tmp>/verify/…` 与 `<tmp>/items/<题 id>/verify/…`），题内探针因此能用在题库里同样成立的相对路径 import 题集级共享库（`../../../../verify/helpers/lib/x.mjs`）。cwd 一律是该题 verify 层的根，共享探针也一样。跑完整个目录删除（I3 起交 `lab.verify` 进容器，契约不变）。
+
+**`task` / `by` 先回填、后校验**——两项都是 `required` 且 schema `additionalProperties: false`，反过来会把探针没写这两项的完整判定判成废品。`by`：题内探针 = 它在该题 verify 层的 display 路径；共享探针 = `shared/` + 它在题集级 verify 层的 display 路径。探针写了但与编排器不一致的，以编排器为准并把 `overwritten` 记进 orchestrator ns。带 `ratio` 的判定在源头核两条数值约束（`total > 0` 且 `0 ≤ passed ≤ total`、`pass === (passed === total)`），不符按产物不合契约记——报告侧的退回布尔是兜底，不是唯一的闸。
+
+产出写 `script` ns 与 `archive/verdicts/script.json`；两个层都没有探针就什么都不写。每次探针运行的记录（`{probe, origin, exitCode, outcome, ok, verdicts, durationMs, error?, reason?, overwritten?, dropped?}`）进 orchestrator ns 的 `kind: 'probes'`。
 
 **判官盲评（`llm-draft`）** —— 判官本身是一份 condition，由 `plan.judge.conditions` 指定，`plan.judge.samples`（缺省 2）是每个判官条件的采样数。三条约束由编排器强制（冻结决策 9）：
 
@@ -182,7 +190,7 @@ dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`。provision（I4）、界面（I5）按 web-eval 迭代计划推进。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。provision（I4）、界面（I5）按 web-eval 迭代计划推进。
 
 ## 许可
 

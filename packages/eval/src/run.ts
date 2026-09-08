@@ -342,11 +342,16 @@ async function judgeCell(
         kind: 'probes',
         probes: probed.outcomes.map(outcome => ({
           probe: outcome.probe,
+          origin: outcome.origin,
           exitCode: outcome.exitCode,
+          outcome: outcome.outcome,
           ok: outcome.ok,
           verdicts: outcome.verdicts.length,
           durationMs: outcome.durationMs,
           ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+          ...(outcome.reason !== undefined ? { reason: outcome.reason } : {}),
+          ...(outcome.overwritten !== undefined ? { overwritten: outcome.overwritten } : {}),
+          ...(outcome.dropped !== undefined ? { dropped: outcome.dropped } : {}),
         })),
       }, { runId: env.runId, by: env.by }).catch(() => {})
     }
@@ -354,7 +359,17 @@ async function judgeCell(
       writeFileSync(join(verdictsDir, 'script.json'), `${JSON.stringify(probed.verdicts, null, 2)}\n`, 'utf8')
       await faces.mission.annotate(env.missionId, 'script', probed.verdicts, { runId: env.runId, by: env.by })
       counts.script = probed.verdicts.length
-      env.log(`cell ${env.missionId}: ${probed.verdicts.length} script verdict(s) from ${probed.outcomes.filter(o => o.ok).length}/${probed.outcomes.length} probe(s)`)
+    }
+    if (probed.outcomes.length > 0) {
+      // The three states are counted separately on purpose: a cell that reads
+      // "2 not applicable this round" knows two criteria went unanswered for
+      // want of input, where the old "2/4 probe(s)" read as two broken probes.
+      // The line is printed even with no verdicts at all — an all-skipped cell
+      // is exactly the case the old counting made invisible.
+      const skipped = probed.outcomes.filter(outcome => outcome.outcome === 'probe-skipped').length
+      const failed = probed.outcomes.filter(outcome => outcome.outcome === 'probe-failed').length
+      env.log(`cell ${env.missionId}: ${probed.verdicts.length} script verdict(s) from ${probed.outcomes.filter(o => o.ok).length}/${probed.outcomes.length} probe(s)`
+        + `${failed > 0 ? `, ${failed} failed` : ''}${skipped > 0 ? `, ${skipped} not applicable this round` : ''}`)
     }
   } catch (error) {
     await faces.mission.annotate(env.missionId, 'orchestrator', {
