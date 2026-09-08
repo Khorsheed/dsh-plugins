@@ -91,10 +91,18 @@ grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: 
 
 输入是 mission export 的 bundle（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），输出两份文件：
 
-- **results.jsonl** — 一行一个判定：`{task, condition, conditionSha, rep, attempt, stage, ns, criterion, pass, weight?, evidence, by}`。weight 只在 bundle 的 dataset 层带有 weight 的 rubric 时出现；stage 取自注解记录的 stage 字段（判定契约本身不含 stage，未记录即 null）。
-- **summary.md** — 开头先核四条不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致）。**任一项不成立或无法核验，只输出事实表，不输出比较**。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（通过判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖）；n < 3 或因子未知/多因子时打印「不可排名」并拒绝名次。判官一致性按 criterion 算双采样一致率与 Cohen κ，human-final 在场时算 llm-draft 对终评的一致率。效率并列不合成：活跃时长（委派 durationMs 之和）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
+- **results.jsonl** — 一行一个判定：`{task, condition, conditionSha, rep, attempt, stage, ns, criterion, pass, ratio?, weight?, negative?, evidence, by}`。ratio 只在判定声明了可用的 `{passed, total}` 时出现；weight / negative 只在该判据的极性可知时出现（见下）；stage 取自注解记录的 stage 字段（判定契约本身不含 stage，未记录即 null）。
+- **summary.md** — 开头先核四条不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致）。**任一项不成立或无法核验，只输出事实表，不输出比较**。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（得分判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖）；n < 3 或因子未知/多因子时打印「不可排名」并拒绝名次。判官一致性按 criterion 算双采样一致率与 Cohen κ，human-final 在场时算 llm-draft 对终评的一致率。效率并列不合成：活跃时长（委派 durationMs 之和）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
 
 判定源按权威排序取各格的主判定（human-final > llm-draft > script，同判据多样本按多数计）；rep 是独立样本，attempt 只算基础设施重试——所有 attempt 的判定都进 results.jsonl，聚合只用各格最新 attempt。
+
+### 判据极性与权重表（协议 §6.5）
+
+`pass` 恒为「判据成立」。负分判据的 criterion 写的是缺陷，成立即缺陷存在——所以报告的主轴是**得分判据数**：正向判据成立计 1，负向判据成立计 0、不成立计 1；加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。摘要另出一张「负向判据命中」表（哪格、哪条、比例、证据），那是缺陷清单。
+
+「按比例给分」的判据（F2 / F3 的 C1、C2）在判定里带可选的 `ratio: {passed, total}`（协议 §6.5）：报告按 `passed / total` 计分而不是布尔（负向判据计其余量 `1 − passed/total`），同判据多样本取所给比例的均值。`pass` 仍是那个布尔事实（判据**完整**成立），`ratio` 只是细化它——读不懂 ratio 的消费者退回严格布尔，只会低估。比例只走字段：报告**从不**去解析 `evidence` 里的「通过 6/9」之类前缀；`total ≤ 0` 或 `passed` 越界的比例按缺失处理并在附注里点名。
+
+极性来自 rubric，不来自 verdict。rubric 住在 grading 层、不进 bundle，所以 run 在导出后从 grading 层**派生**一份权重表写进 `<bundle>/report/rubric-weights.json`（`dataseek.rubric-weights/1`：`{task, id, weight, negative, kind, axis}`，只有编号与数字，**不含 criterion 文字与 evidence**，因而不经泄题闸）。报告优先读它，其次读 bundle dataset 层里的 rubric（有意开闸导出时）。两者都没有时，报告只出计数，并明确打印「极性未知，计数按正向处理」、把负向判据数记为 unknown——不把「无从判断」显示成「没有缺陷」。`report` 只读这个文件，从不改写它。
 
 ## 模型工具（只读，三个）
 

@@ -54,12 +54,20 @@ const SCHEMA_BY_TITLE: Record<string, Record<string, unknown>> = {
   [LOCK_SCHEMA_ID]: LOCK_SCHEMA,
 }
 
-const FIXTURE_BY_SCHEMA: Record<string, string> = {
-  [CONDITION_SCHEMA_ID]: 'condition.example.json',
-  [LOCK_SCHEMA_ID]: 'lock.example.json',
-  [PLAN_SCHEMA_ID]: 'plan.example.json',
-  [VERDICT_SCHEMA_ID]: 'verdict.example.json',
+/**
+ * Example fixtures per schema, in the order the examples appear in §6. A
+ * schema may publish several — the verdict chapter shows the plain boolean
+ * verdict and the proportional one (`ratio`) — and each example is pinned to
+ * its own fixture.
+ */
+const FIXTURES_BY_SCHEMA: Record<string, string[]> = {
+  [CONDITION_SCHEMA_ID]: ['condition.example.json'],
+  [LOCK_SCHEMA_ID]: ['lock.example.json'],
+  [PLAN_SCHEMA_ID]: ['plan.example.json'],
+  [VERDICT_SCHEMA_ID]: ['verdict.example.json', 'verdict-ratio.example.json'],
 }
+
+const EXAMPLE_COUNT = Object.values(FIXTURES_BY_SCHEMA).reduce((sum, list) => sum + list.length, 0)
 
 describe('dataset-authoring protocol §6 — no drift between doc and code', () => {
   for (const protocolPath of PROTOCOLS) {
@@ -77,15 +85,24 @@ describe('dataset-authoring protocol §6 — no drift between doc and code', () 
         expect(jsonEquals(block.value, code), `§6 ${title} drifted from the code schema`).toBe(true)
       }
 
-      // Four examples, each valid against its schema and identical to the fixture.
-      expect(instanceBlocks).toHaveLength(4)
+      // Every example valid against its schema and identical to its fixture.
+      expect(instanceBlocks).toHaveLength(EXAMPLE_COUNT)
+      const seen: Record<string, number> = {}
       for (const block of instanceBlocks) {
         const schemaId = block.value['schema'] as string
         const schema = SCHEMA_BY_TITLE[schemaId]
         expect(schema, `no schema for ${schemaId}`).toBeDefined()
         expect(validateJson(schema, block.value), `§6 ${schemaId} example must validate`).toEqual([])
-        const fixturePath = join(PACKAGE_ROOT, 'tests/fixtures/protocol', FIXTURE_BY_SCHEMA[schemaId] as string)
-        expect(jsonEquals(block.value, JSON.parse(readFileSync(fixturePath, 'utf8'))), `${schemaId} example drifted from its fixture`).toBe(true)
+        const index = seen[schemaId] ?? 0
+        seen[schemaId] = index + 1
+        const fixture = FIXTURES_BY_SCHEMA[schemaId]?.[index]
+        expect(fixture, `§6 publishes more ${schemaId} examples than there are fixtures`).toBeDefined()
+        const fixturePath = join(PACKAGE_ROOT, 'tests/fixtures/protocol', fixture as string)
+        expect(jsonEquals(block.value, JSON.parse(readFileSync(fixturePath, 'utf8'))), `${schemaId} example drifted from ${fixture as string}`).toBe(true)
+      }
+      // Every fixture is published; an orphan fixture is drift too.
+      for (const [schemaId, fixtures] of Object.entries(FIXTURES_BY_SCHEMA)) {
+        expect(seen[schemaId] ?? 0, `§6 publishes fewer ${schemaId} examples than there are fixtures`).toBe(fixtures.length)
       }
     })
   }

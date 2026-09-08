@@ -24,6 +24,7 @@ import type { DelegationResult, DelegationRun } from '../src/faces.ts'
 import { canonicalJson } from '../src/hash.ts'
 import { expandMatrix, orderCells } from '../src/matrix.ts'
 import { validateJson } from '../src/schema.ts'
+import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/weights.ts'
 import { cleanupTmp } from './helpers.ts'
 
 const FIXTURE_DATASET = join(import.meta.dirname, 'fixtures', 'dataset', 'datasets', 'harness-comparison')
@@ -641,6 +642,47 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
   })
 })
 
+describe('runPlan — the derived rubric weight table (T24)', () => {
+  it('writes report/rubric-weights.json from the grading layer — numbers only, no criterion text', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]) }), mission, localAgent: new FakeLocalAgent() })
+
+    const path = join(report.bundleDir as string, RUBRIC_WEIGHTS_PATH)
+    const bytes = readFileSync(path, 'utf8')
+    const table = JSON.parse(bytes) as { schema: string; tasks: string[]; criteria: Array<Record<string, unknown>> }
+    expect(table.schema).toBe(RUBRIC_WEIGHTS_SCHEMA)
+    expect(table.tasks).toEqual(['P0-placeholder'])
+    expect(table.criteria.map(row => row['id'])).toEqual(['J1', 'J2', 'A2-1', 'H1', 'N1'])
+    expect(table.criteria.find(row => row['id'] === 'N1')).toEqual({
+      task: 'P0-placeholder', id: 'N1', weight: -2, negative: true, kind: 'objective', axis: 'E1',
+    })
+    expect(table.criteria.find(row => row['id'] === 'J1')?.['negative']).toBe(false)
+
+    // The grading layer's WORDS never travel: this is why the derived table
+    // needs no leak gate while the layer it came from does.
+    expect(bytes).not.toContain('criterion')
+    expect(bytes).not.toContain('evidence')
+    expect(bytes).not.toContain('共享上下文')
+    expect(bytes).not.toContain('不存在的 API')
+    // And the rubric itself still stays out of the bundle.
+    expect(mission.exportRequests[0]?.['layers']).toEqual([{ name: 'visible', guarded: false }])
+  })
+
+  it('writes no table when the item ships no rubric — and the run still finishes', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent() })
+    expect(report.bundleDir).toBeDefined()
+    expect(report.exportError).toBeUndefined()
+    expect(existsSync(join(report.bundleDir as string, RUBRIC_WEIGHTS_PATH))).toBe(false)
+  })
+})
+
 describe('runPlan — the halt branch (decision 7)', () => {
   it('diverts stage2 → halted → archived when halt_on matches, submitting on the halted edge', async () => {
     const root = makeDatasetTree()
@@ -1025,6 +1067,8 @@ items:
      criterion: "out_of_scope 非空", evidence: "stage1.json:out_of_scope"}
   - {id: H1, axis: D1, weight: 4, kind: human,
      criterion: 排除的项确实值得排除, evidence: "stage1.json:out_of_scope"}
+  - {id: N1, axis: E1, weight: -2, kind: objective, negative: true,
+     criterion: 引用了不存在的 API / 文件路径 / 行号, evidence: "stage2.md 全文，脚本核对"}
 `
 
 /** Exit 0 WITH verdicts — reads --cell and --rubric, and mislabels task/by on purpose. */

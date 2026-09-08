@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { runCli } from '../src/cli-core.ts'
 import { analyzeBundle, parseMissionId, writeEvalReport } from '../src/report.ts'
 import { EvalService } from '../src/service.ts'
+import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/weights.ts'
 import { captureIo, cleanupTmp, tmpTree } from './helpers.ts'
 
 afterEach(cleanupTmp)
@@ -13,8 +14,10 @@ afterEach(cleanupTmp)
 
 const sha = (prefix: string): string => prefix.padEnd(64, '0')
 
-const verdict = (task: string, criterion: string, pass: boolean, by = 'probes/probe.mjs'): Record<string, unknown> => ({
-  schema: 'dataseek.verdict/1', task, criterion, pass, evidence: `${criterion} ${pass ? '通过' : '未过'}（可查证事实）`, by,
+const verdict = (task: string, criterion: string, pass: boolean, by = 'probes/probe.mjs', ratio?: unknown): Record<string, unknown> => ({
+  schema: 'dataseek.verdict/1', task, criterion, pass,
+  ...(ratio !== undefined ? { ratio } : {}),
+  evidence: `${criterion} ${pass ? '通过' : '未过'}（可查证事实）`, by,
 })
 
 const delegation = (stage: string, round: number, durationMs: number, outputTokens: number, observed = 'gpt-x'): Record<string, unknown> => ({
@@ -60,6 +63,10 @@ interface FixtureSpec {
   manifest?: Record<string, unknown> | null
   /** rel path under the bundle's dataset/ → JSON content. */
   datasetFiles?: Record<string, unknown>
+  /** rel path under the bundle's dataset/ → raw text (a YAML rubric of a guarded export). */
+  datasetText?: Record<string, string>
+  /** The derived polarity/weight table the export writes into report/. */
+  weightsTable?: Record<string, unknown>
 }
 
 function attemptFiles(attempt: FixtureAttempt): Record<string, string> {
@@ -116,6 +123,16 @@ function writeBundle(root: string, spec: FixtureSpec): string {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
   }
+  for (const [rel, text] of Object.entries(spec.datasetText ?? {})) {
+    const file = join(bundle, 'dataset', rel)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, text)
+  }
+  if (spec.weightsTable !== undefined) {
+    const file = join(bundle, RUBRIC_WEIGHTS_PATH)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `${JSON.stringify(spec.weightsTable, null, 2)}\n`)
+  }
   const conditionTable = (Array.isArray(meta.conditions) ? meta.conditions : [])
     .filter((entry): entry is { id: string; sha: string | null } => typeof entry === 'object' && entry !== null && typeof (entry as { id?: unknown }).id === 'string')
   for (const mission of spec.missions) {
@@ -151,9 +168,13 @@ function writeBundle(root: string, spec: FixtureSpec): string {
   return bundle
 }
 
-/** One script-verdict annotation carrying the given docs. */
-const scriptNote = (task: string, docs: Array<[string, boolean]>, by = 'cli', createdAt = 0): FixtureAnnotation => ({
-  ns: 'script', by, createdAt, payload: docs.map(([criterion, pass]) => verdict(task, criterion, pass)),
+/**
+ * One script-verdict annotation carrying the given docs. The optional third
+ * tuple slot is the verdict's `ratio` (protocol §6.5) — passed through raw so
+ * a test can also hand in a malformed one.
+ */
+const scriptNote = (task: string, docs: Array<[string, boolean, unknown?]>, by = 'cli', createdAt = 0): FixtureAnnotation => ({
+  ns: 'script', by, createdAt, payload: docs.map(([criterion, pass, ratio]) => verdict(task, criterion, pass, 'probes/probe.mjs', ratio)),
 })
 
 /** One delegation annotation for a cell. */
@@ -665,6 +686,262 @@ function anchoredBundle(root: string, overrides: {
     }],
   })
 }
+
+// --- S9 · negative criteria (T24) ---------------------------------------------
+
+/**
+ * The G11 shape, minimally: one positive criterion and one NEGATIVE one.
+ * `pass: true` on A-N2 means the DEFECT is present (protocol §6.5) — codex
+ * never has it, claude always does. Counting passes would rank claude above
+ * codex on exactly that defect; counting SCORED criteria must not.
+ */
+const NEGATIVE_WEIGHTS_TABLE = {
+  schema: RUBRIC_WEIGHTS_SCHEMA,
+  dataset: 'harness-comparison',
+  commit: sha('c0'),
+  tasks: ['F2'],
+  criteria: [
+    { task: 'F2', id: 'A1-1', weight: 3, negative: false, kind: 'llm-draft', axis: 'A1' },
+    { task: 'F2', id: 'A-N2', weight: -2, negative: true, kind: 'objective', axis: 'A3' },
+  ],
+}
+
+/** The same rubric as YAML, as a deliberately guarded export would carry it. */
+const NEGATIVE_RUBRIC_YAML = `schema_version: dataseek.rubric/2
+task_id: F2
+items:
+  - {id: A1-1, axis: A1, weight: 3, kind: llm-draft,
+     criterion: 设计中存在一份共享上下文, evidence: "stage1.md"}
+  - {id: A-N2, axis: A3, weight: -2, kind: objective, negative: true,
+     criterion: "tradeoff 中出现 worth-the-cost", evidence: "stage1.json"}
+`
+
+function negativeCriterionBundle(root: string, opts: { table?: boolean; yaml?: boolean } = {}): string {
+  const cell = (condition: string, rep: number, defect: boolean): FixtureMission => ({
+    id: `F2-${condition}-rep${rep}`,
+    attempts: [{
+      attempt: 1, state: 'released', refs: goodRefs(),
+      ...matArtifact(sha('m2')),
+      annotations: [scriptNote('F2', [['A1-1', true], ['A-N2', defect]]), orchestratorNote('stage1', 1, 60_000, 900)],
+    }],
+  })
+  return writeBundle(root, {
+    runId: 'polarity',
+    meta: {
+      expectedNs: ['script'],
+      conditions: [
+        conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+        conditionEntry('claude-exec', baseConditionDoc({ preset: 'thorough' }), 'bb'),
+      ],
+    },
+    missions: [1, 2, 3].flatMap(rep => [cell('codex-exec', rep, false), cell('claude-exec', rep, true)]),
+    ...(opts.table === true ? { weightsTable: NEGATIVE_WEIGHTS_TABLE } : {}),
+    ...(opts.yaml === true ? { datasetText: { 'grading/items/F2/rubric.yml': NEGATIVE_RUBRIC_YAML } } : {}),
+  })
+}
+
+describe('report — S9 negative criteria score as defects (T24)', () => {
+  it('scores a held negative criterion as 0 and subtracts its weight', async () => {
+    const report = await analyzeBundle(negativeCriterionBundle(tmpTree(), { table: true }))
+    expect(report.polarity).toEqual({
+      available: true, origin: RUBRIC_WEIGHTS_PATH, criteria: 2, negative: 1, weighted: true,
+    })
+    expect(report.weightsAvailable).toBe(true)
+
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    // codex: A1-1 holds (+1), A-N2 does NOT hold (+1) = 2.
+    // claude: A1-1 holds (+1), A-N2 HOLDS — the defect — (0) = 1.
+    expect(f2?.aMean).toBe(2)
+    expect(f2?.bMean).toBe(1)
+    // Weighted sums the weight of every criterion that HOLDS: 3 vs 3 + (-2).
+    expect(f2?.aWeighted).toBe(3)
+    expect(f2?.bWeighted).toBe(1)
+    expect(report.comparisons[0]?.rank).toBe('a')
+  })
+
+  it('lists every held negative criterion with its evidence — the defect list', async () => {
+    const report = await analyzeBundle(negativeCriterionBundle(tmpTree(), { table: true }))
+    expect(report.negativeHits).toHaveLength(3)
+    expect(report.negativeHits.every(hit => hit.condition === 'claude-exec' && hit.criterion === 'A-N2')).toBe(true)
+    expect(report.negativeHits.map(hit => hit.rep)).toEqual([1, 2, 3])
+    expect(report.negativeHits[0]).toMatchObject({ task: 'F2', ns: 'script', weight: -2, attempt: 1 })
+    expect(report.negativeHits[0]?.evidence).toContain('A-N2')
+    // A negative criterion that did NOT hold is not a hit.
+    expect(report.negativeHits.some(hit => hit.condition === 'codex-exec')).toBe(false)
+  })
+
+  it('stamps polarity on the result rows', async () => {
+    const report = await analyzeBundle(negativeCriterionBundle(tmpTree(), { table: true }))
+    expect(report.rows.find(row => row.criterion === 'A-N2')?.negative).toBe(true)
+    expect(report.rows.find(row => row.criterion === 'A-N2')?.weight).toBe(-2)
+    expect(report.rows.find(row => row.criterion === 'A1-1')?.negative).toBe(false)
+  })
+
+  it('reads the polarity out of a rubric the export deliberately included', async () => {
+    const report = await analyzeBundle(negativeCriterionBundle(tmpTree(), { yaml: true }))
+    expect(report.polarity).toEqual({ available: true, origin: 'dataset/', criteria: 2, negative: 1, weighted: true })
+    expect(report.comparisons[0]?.perTask[0]?.aMean).toBe(2)
+    expect(report.negativeHits).toHaveLength(3)
+  })
+
+  it('degrades to plain counts and SAYS the polarity is unknown when no table travelled', async () => {
+    const report = await analyzeBundle(negativeCriterionBundle(tmpTree()))
+    expect(report.polarity).toEqual({ available: false, origin: null, criteria: 0, negative: 0, weighted: false })
+    expect(report.weightsAvailable).toBe(false)
+    expect(report.negativeHits).toEqual([])
+    // Every criterion counted as positive — which is exactly the G11 error the
+    // table exists to prevent: the cell WITH the defect now scores higher.
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    expect(f2?.aMean).toBe(1)
+    expect(f2?.bMean).toBe(2)
+    expect(f2?.aWeighted).toBeNull()
+    expect(report.notes.some(note => note.includes('极性未知'))).toBe(true)
+    expect(report.rows.every(row => row.negative === undefined)).toBe(true)
+  })
+
+  it('renders the defect list and the 得分 columns into summary.md', async () => {
+    const bundle = negativeCriterionBundle(tmpTree(), { table: true })
+    const written = await writeEvalReport(bundle)
+    const summary = readFileSync(written.summaryPath, 'utf8')
+    expect(summary).toContain('## 负向判据命中（缺陷清单）')
+    expect(summary).toContain('| F2 | claude-exec | 1 | A-N2 | — | -2 | script |')
+    expect(summary).toContain('codex-exec 得分')
+    expect(summary).toContain('Δ 加权')
+    expect(summary).not.toContain('codex-exec 通过')
+    // The report never republishes the criterion text it does not have.
+    expect(summary).not.toContain('worth-the-cost')
+  })
+
+  it('says so in the summary when the polarity is unknown', async () => {
+    const written = await writeEvalReport(negativeCriterionBundle(tmpTree()))
+    const summary = readFileSync(written.summaryPath, 'utf8')
+    expect(summary).toContain('**极性未知**')
+    expect(summary).toContain('负向判据数 **unknown**')
+  })
+})
+
+// --- S10 · proportional criteria (T19b/T24 contract) --------------------------
+
+/**
+ * The `ratio` shape: `C1` is scored proportionally (weight 18), `A-N2` stays
+ * the boolean negative one (weight -2). codex passes 6 of 9 core standards,
+ * claude 3 of 9 — a difference the boolean `pass: false` on both sides cannot
+ * express at all.
+ */
+const RATIO_WEIGHTS_TABLE = {
+  schema: RUBRIC_WEIGHTS_SCHEMA,
+  dataset: 'harness-comparison',
+  commit: sha('c0'),
+  tasks: ['F2'],
+  criteria: [
+    { task: 'F2', id: 'C1', weight: 18, negative: false, kind: 'objective', axis: 'C4' },
+    { task: 'F2', id: 'A-N2', weight: -2, negative: true, kind: 'objective', axis: 'A3' },
+  ],
+}
+
+function ratioBundle(root: string, opts: { malformed?: boolean; negativeRatio?: boolean } = {}): string {
+  const cell = (condition: string, rep: number, passed: number): FixtureMission => ({
+    id: `F2-${condition}-rep${rep}`,
+    attempts: [{
+      attempt: 1, state: 'released', refs: goodRefs(),
+      ...matArtifact(sha('m3')),
+      annotations: [
+        scriptNote('F2', [
+          ['C1', passed === 9, opts.malformed === true ? { passed: 12, total: 9 } : { passed, total: 9 }],
+          // A-N2 holds on claude only; with negativeRatio it holds partially on both.
+          ...(opts.negativeRatio === true
+            ? [['A-N2', false, { passed: condition === 'codex-exec' ? 1 : 3, total: 4 }] as [string, boolean, unknown]]
+            : [['A-N2', condition !== 'codex-exec'] as [string, boolean]]),
+        ]),
+        orchestratorNote('stage1', 1, 60_000, 900),
+      ],
+    }],
+  })
+  return writeBundle(root, {
+    runId: 'ratio',
+    meta: {
+      expectedNs: ['script'],
+      conditions: [
+        conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+        conditionEntry('claude-exec', baseConditionDoc({ preset: 'thorough' }), 'bb'),
+      ],
+    },
+    missions: [1, 2, 3].flatMap(rep => [cell('codex-exec', rep, 6), cell('claude-exec', rep, 3)]),
+    weightsTable: RATIO_WEIGHTS_TABLE,
+  })
+}
+
+describe('report — S10 proportional criteria score by ratio (T19b/T24)', () => {
+  it('scores passed/total instead of the boolean, and weights the same fraction', async () => {
+    const report = await analyzeBundle(ratioBundle(tmpTree()))
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    // codex: C1 = 6/9, A-N2 does not hold (+1)  → 1.667
+    // claude: C1 = 3/9, A-N2 HOLDS (0)          → 0.333
+    expect(f2?.aMean).toBeCloseTo(6 / 9 + 1, 6)
+    expect(f2?.bMean).toBeCloseTo(3 / 9, 6)
+    // Weighted: 18 × 6/9 vs 18 × 3/9 + (-2) × 1.
+    expect(f2?.aWeighted).toBeCloseTo(12, 6)
+    expect(f2?.bWeighted).toBeCloseTo(4, 6)
+    expect(report.comparisons[0]?.rank).toBe('a')
+  })
+
+  it('earns the fraction even though `pass` is false — pass means FULLY holds', async () => {
+    const report = await analyzeBundle(ratioBundle(tmpTree()))
+    const row = report.rows.find(r => r.criterion === 'C1' && r.condition === 'codex-exec')
+    expect(row?.pass).toBe(false)
+    expect(row?.ratio).toEqual({ passed: 6, total: 9 })
+    expect(report.notes.some(note => note.includes('`ratio`') && note.includes('按比例给分'))).toBe(true)
+  })
+
+  it('scores a proportional NEGATIVE criterion by what is left of it, and prints the proportion', async () => {
+    const report = await analyzeBundle(ratioBundle(tmpTree(), { negativeRatio: true }))
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    // codex: 6/9 + (1 - 1/4); claude: 3/9 + (1 - 3/4).
+    expect(f2?.aMean).toBeCloseTo(6 / 9 + 0.75, 6)
+    expect(f2?.bMean).toBeCloseTo(3 / 9 + 0.25, 6)
+    // Both sides hold PART of the defect, so both appear in the defect list.
+    expect(report.negativeHits).toHaveLength(6)
+    expect(report.negativeHits.find(hit => hit.condition === 'claude-exec')?.ratio).toEqual({ passed: 3, total: 4 })
+    const summary = readFileSync((await writeEvalReport(ratioBundle(tmpTree(), { negativeRatio: true }))).summaryPath, 'utf8')
+    expect(summary).toContain('| F2 | claude-exec | 1 | A-N2 | 3/4 | -2 | script |')
+  })
+
+  it('falls back to the boolean on an out-of-bounds ratio and says so', async () => {
+    const report = await analyzeBundle(ratioBundle(tmpTree(), { malformed: true }))
+    // 12/9 is not a proportion; the row keeps no ratio and scores as pass: false.
+    expect(report.rows.find(r => r.criterion === 'C1')?.ratio).toBeUndefined()
+    const f2 = report.comparisons[0]?.perTask.find(task => task.task === 'F2')
+    expect(f2?.aMean).toBe(1) // C1 fails, A-N2 does not hold
+    expect(report.notes.some(note => note.includes('越界') && note.includes('退回布尔'))).toBe(true)
+  })
+
+  it('never reads the proportion out of the evidence prose', async () => {
+    // Same numbers, but stated only in `evidence` — the report must ignore it.
+    const root = tmpTree()
+    const bundle = writeBundle(root, {
+      runId: 'prose',
+      meta: { expectedNs: ['script'], conditions: [conditionEntry('codex-exec', baseConditionDoc(), 'aa')] },
+      missions: [{
+        id: 'F2-codex-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(),
+          ...matArtifact(sha('m3')),
+          annotations: [{
+            ns: 'script', by: 'cli', createdAt: 0,
+            payload: [{
+              schema: 'dataseek.verdict/1', task: 'F2', criterion: 'C1', pass: false,
+              evidence: '通过 6/9：core 标准 R1 R2 R3 R5 R6 G1 通过', by: 'probes/probe.mjs',
+            }],
+          }],
+        }],
+      }],
+      weightsTable: RATIO_WEIGHTS_TABLE,
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.rows[0]?.ratio).toBeUndefined()
+    expect(report.rows[0]?.pass).toBe(false)
+  })
+})
 
 describe('report — T8b cell anchors', () => {
   it('reads the cell identity from the anchor when the mission id encodes nothing', async () => {

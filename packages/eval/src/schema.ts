@@ -396,6 +396,16 @@ export const VERDICT_SCHEMA: SchemaObject = {
     task: { type: 'string' },
     criterion: { type: 'string' },
     pass: { type: 'boolean' },
+    ratio: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['passed', 'total'],
+      description: 'Optional partial credit for a proportional criterion (rubric 的「按比例给分」). pass stays the boolean fact — the criterion FULLY holds — and ratio refines it; a reader that ignores ratio degrades to the strict boolean, never upward.',
+      properties: {
+        passed: { type: 'integer' },
+        total: { type: 'integer' },
+      },
+    },
     evidence: { type: 'string', description: 'A checkable fact, not an opinion.' },
     by: { type: 'string', description: 'Where the verdict came from: probe path, judge condition, or the judge bench.' },
   },

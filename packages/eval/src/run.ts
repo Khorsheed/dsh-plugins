@@ -43,6 +43,7 @@ import {
   DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
 } from './judge.ts'
+import { buildRubricWeightTable, writeRubricWeightTable } from './weights.ts'
 
 /** Thrown when a run is REFUSED before anything executes (data problems, missing services). */
 export class EvalRunRefused extends Error {
@@ -880,6 +881,59 @@ async function runCellWithRetry(
 }
 
 /**
+ * Derive the bundle's rubric weight/polarity table from the GRADING layer and
+ * write it into `<bundle>/report/rubric-weights.json`.
+ *
+ * The bundle itself carries the visible layer only, and that is right — the
+ * grading layer is the answers. But a report that cannot tell a negative
+ * criterion from a positive one counts a defect as one more pass (G11), and
+ * without weights the weighted score — the only relief — is permanently
+ * blank (G12). So the export derives the NUMBERS: task, criterion id, weight,
+ * negative, kind, axis. No criterion text, no evidence pointer, no note; the
+ * executable probes and the rubric itself still stay out. That is why this
+ * table needs no leak gate while the layer it came from does.
+ *
+ * Best-effort by construction: a task whose grading layer cannot be listed or
+ * read is logged and skipped, and a run never fails because its weight table
+ * could not be built.
+ * @param faces - the datasets face, read with an EXPLICIT single-layer scope.
+ * @param input - bundle location, snapshot coordinates, and the plan's tasks.
+ * @returns the written path, or null when no rubric yielded a row.
+ */
+async function exportRubricWeights(
+  faces: { datasets: DatasetsFace },
+  input: {
+    bundleDir: string
+    repo: string
+    datasetId: string
+    commit: string
+    tasks: readonly string[]
+    log: (message: string) => void
+  },
+): Promise<string | null> {
+  const scope = { repo: input.repo, layers: ['grading'] }
+  const rubrics: Array<{ task: string; rubricText: string }> = []
+  for (const task of [...new Set(input.tasks)]) {
+    try {
+      const graded = await faces.datasets.show(scope, input.datasetId, task, input.commit)
+      const rubricPath = pickRubricPath(graded.items.find(item => item.id === task)?.layers['grading'] ?? [])
+      if (rubricPath === null) continue
+      const rubric = await faces.datasets.read(scope, {
+        dataset: input.datasetId, item: task, layer: 'grading', path: rubricPath, commit: input.commit,
+      })
+      rubrics.push({ task, rubricText: rubric.content })
+    } catch (error) {
+      input.log(`rubric weights: task ${task} skipped — ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const table = buildRubricWeightTable({ dataset: input.datasetId, commit: input.commit, rubrics })
+  const written = await writeRubricWeightTable(input.bundleDir, table)
+  if (written === null) input.log('rubric weights: no rubric yielded a row — no table written')
+  else input.log(`rubric weights: ${table.criteria.length} criteria over ${table.tasks.length} task(s) → ${written}`)
+  return written
+}
+
+/**
  * Run the plan at `planPath`. The service verb behind `/eval run` (decision
  * 12): refuses before executing anything on data or wiring problems, then
  * drives the matrix.
@@ -1193,6 +1247,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     })
     bundleDir = exported.bundleDir
     log(`bundle exported: ${exported.bundleDir} (${exported.files} files)`)
+    await exportRubricWeights(faces, {
+      bundleDir: exported.bundleDir,
+      repo: snapshot.repoPath,
+      datasetId: plan.dataset.id,
+      commit: snapshot.commit,
+      tasks: plan.dataset.items,
+      log,
+    })
   } catch (error) {
     exportError = error instanceof Error ? error.message : String(error)
     log(`export failed: ${exportError}`)

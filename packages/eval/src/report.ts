@@ -21,6 +21,16 @@
  *   compare only within the same model.
  * - Attempts are infrastructure retries (frozen decision 1): every attempt's
  *   verdicts appear as rows, but aggregation uses the current attempt only.
+ * - The scoring axis is SCORED criteria, not passed ones. `pass` always means
+ *   "the criterion holds" (protocol §6.5); on a negative criterion that is a
+ *   defect, so it scores 0 and its absence scores 1. Polarity comes from the
+ *   rubric — the bundle's derived weights table, or a rubric inside an
+ *   included dataset layer — never from the verdict. Without a table the
+ *   report says so and counts every criterion as positive.
+ * - A criterion scored proportionally carries `ratio: {passed, total}` in its
+ *   verdict (§6.5) and contributes that fraction instead of 1/0. The
+ *   proportion is read from the FIELD, never parsed out of `evidence`; a
+ *   ratio out of bounds is reported and falls back to the boolean.
  *
  * Shapes the orchestrator writes (I2·T8/T8b contract, profiles/web-eval/docs/
  * iterations.md): run.meta = {planSha, planPath, evalVersion, snapshot,
@@ -43,8 +53,18 @@ import { join } from 'node:path'
 import { renderSummaryMd } from './report-render.ts'
 import { bootstrapMeanCi, cohenKappa, fnv1a, mean, type BootstrapCi } from './stats.ts'
 import { jsonEquals, VERDICT_SCHEMA, validateJson } from './schema.ts'
+import { readRubricWeightTable, rubricWeightRows, RUBRIC_WEIGHTS_PATH, type RubricWeightRow } from './weights.ts'
 
 // --- public shapes -----------------------------------------------------------
+
+/**
+ * Partial credit for a proportional criterion (protocol §6.5). `pass` stays
+ * the boolean fact — the criterion FULLY holds — and this refines it.
+ */
+export interface VerdictRatio {
+  passed: number
+  total: number
+}
 
 /** One line of results.jsonl — one verdict, carrying its cell coordinates. */
 export interface ReportRow {
@@ -56,8 +76,13 @@ export interface ReportRow {
   stage: string | null
   ns: string
   criterion: string
+  /** The criterion HOLDS (protocol §6.5) — on a negative criterion that is the defect. */
   pass: boolean
+  /** Present only when the verdict declared a usable one (proportional criterion). */
+  ratio?: VerdictRatio
   weight?: number
+  /** Present only when the rubric's polarity is known for this criterion. */
+  negative?: boolean
   evidence: string
   by: string
 }
@@ -86,7 +111,11 @@ export interface FactorPair {
 /** One task's paired deltas between two conditions (current attempts). */
 export interface PairTaskDelta {
   task: string
-  /** Mean passed-criterion count (and weighted score) per side. */
+  /**
+   * Mean SCORED-criterion count (and weighted score) per side. A positive
+   * criterion scores when it holds, a negative one when it does NOT — so a
+   * defect never reads as one more point.
+   */
   aMean: number
   bMean: number
   aWeighted: number | null
@@ -141,6 +170,41 @@ export interface ConditionEfficiency {
   price: number | null
 }
 
+/** Where the report's criterion polarity and weights came from, and how much of it there is. */
+export interface RubricPolarity {
+  /** True when a table was found — polarity is known for the criteria it lists. */
+  available: boolean
+  /** The bundle-relative source, or null when nothing carried one. */
+  origin: string | null
+  /** Criterion rows the table carries. */
+  criteria: number
+  /** Rows flagged negative — the defect criteria. */
+  negative: number
+  /** True when at least one row carries a numeric weight (the weighted score's precondition). */
+  weighted: boolean
+}
+
+/**
+ * One negative criterion that HELD — a defect the run actually observed.
+ * This is the list a reader comes for; the scored-criterion count only says
+ * how many there were.
+ */
+export interface NegativeHit {
+  task: string | null
+  condition: string | null
+  rep: number | null
+  attempt: number
+  criterion: string
+  /** The authoritative namespace this cell's verdict came from. */
+  ns: string
+  /** Rubric weight (negative), or null when the table declares none. */
+  weight: number | null
+  /** The verdict's proportion, when the criterion is scored proportionally. */
+  ratio: VerdictRatio | null
+  evidence: string
+  by: string
+}
+
 /** The analyzed bundle — everything summary rendering and tests consume. */
 export interface EvalReport {
   bundleDir: string
@@ -166,6 +230,10 @@ export interface EvalReport {
   attempts: number
   retries: number
   weightsAvailable: boolean
+  /** Criterion polarity: whether it is known at all, from where, and how much. */
+  polarity: RubricPolarity
+  /** Negative criteria that held, over current attempts — the defect list. */
+  negativeHits: NegativeHit[]
   notes: string[]
 }
 
@@ -200,10 +268,34 @@ interface CellVerdict {
   ns: string
   criterion: string
   pass: boolean
+  /** A usable `ratio`; null when absent or out of bounds. */
+  ratio: VerdictRatio | null
+  /** The verdict declared a `ratio` that could not be used — counted, never scored. */
+  ratioMalformed: boolean
   doc: Record<string, unknown>
   createdAt: number
   seq: number
   stage: string | null
+}
+
+/**
+ * A verdict's `ratio`, when it is usable. The schema subset cannot express
+ * numeric bounds, so they live here: `total` positive, `passed` inside it,
+ * both integers. A ratio that fails is treated as ABSENT — the verdict falls
+ * back to its boolean — and reported, because bad data must never quietly
+ * become a score.
+ */
+function ratioOf(doc: Record<string, unknown>): { ratio: VerdictRatio | null; malformed: boolean } {
+  const raw = doc['ratio']
+  if (raw === undefined) return { ratio: null, malformed: false }
+  if (!isPlainObject(raw)) return { ratio: null, malformed: true }
+  const passed = num(raw['passed'])
+  const total = num(raw['total'])
+  if (passed === null || total === null || !Number.isInteger(passed) || !Number.isInteger(total)
+    || total <= 0 || passed < 0 || passed > total) {
+    return { ratio: null, malformed: true }
+  }
+  return { ratio: { passed, total }, malformed: false }
 }
 
 /**
@@ -412,10 +504,13 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     if (!VERDICT_NS.has(ns)) continue
     for (const doc of verdictDocsOf(annotation['payload'])) {
       if (!isPlainObject(doc) || validateJson(VERDICT_SCHEMA, doc).length > 0) continue
+      const { ratio, malformed } = ratioOf(doc)
       verdicts.push({
         ns,
         criterion: doc['criterion'] as string,
         pass: doc['pass'] as boolean,
+        ratio,
+        ratioMalformed: malformed,
         doc,
         createdAt,
         seq: seq++,
@@ -498,10 +593,31 @@ async function readCells(bundleDir: string, conditionIds: readonly string[]): Pr
   return cells
 }
 
-// --- rubric weights ----------------------------------------------------------
+// --- rubric polarity & weights ----------------------------------------------
 
-/** Collect (task, criterion) → weight triples from one parsed rubric document. */
-function weightsOfDocument(value: unknown, sink: Map<string, Map<string, number>>, depth: number): void {
+/** One criterion's scoring facts as the rubric declares them. */
+interface CriterionFacts {
+  weight: number | null
+  negative: boolean
+}
+
+/** task → criterion → the rubric's scoring facts. */
+type PolarityMap = Map<string, Map<string, CriterionFacts>>
+
+function indexRows(rows: readonly RubricWeightRow[], sink: PolarityMap): void {
+  for (const row of rows) {
+    if (!sink.has(row.task)) sink.set(row.task, new Map())
+    sink.get(row.task)?.set(row.id, { weight: row.weight, negative: row.negative })
+  }
+}
+
+/**
+ * Collect rows from one parsed JSON document shaped like a rubric
+ * (`{task, criteria: [{criterion, weight}]}` and nestings of it). The
+ * tolerant reader that predates the derived table: it only ever knew
+ * weights, so polarity there is the weight's sign.
+ */
+function rowsOfJsonDocument(value: unknown, sink: RubricWeightRow[], depth: number): void {
   if (depth > 4 || !isPlainObject(value)) return
   const criteria = value['criteria']
   if (Array.isArray(criteria) || isPlainObject(criteria)) {
@@ -512,20 +628,26 @@ function weightsOfDocument(value: unknown, sink: Map<string, Map<string, number>
       const criterion = str(entry['criterion']) ?? str(entry['name']) ?? str(entry['id'])
       const weight = num(entry['weight'])
       if (criterion !== null && weight !== null && task !== null) {
-        if (!sink.has(task)) sink.set(task, new Map())
-        sink.get(task)?.set(criterion, weight)
+        sink.push({
+          task,
+          id: criterion,
+          weight,
+          negative: entry['negative'] === true || weight < 0,
+          kind: str(entry['kind']),
+          axis: str(entry['axis']),
+        })
       }
     }
   }
   for (const [, sub] of Object.entries(value)) {
-    if (isPlainObject(sub)) weightsOfDocument(sub, sink, depth + 1)
-    else if (Array.isArray(sub)) for (const item of sub) weightsOfDocument(item, sink, depth + 1)
+    if (isPlainObject(sub)) rowsOfJsonDocument(sub, sink, depth + 1)
+    else if (Array.isArray(sub)) for (const item of sub) rowsOfJsonDocument(item, sink, depth + 1)
   }
 }
 
-async function readWeights(bundleDir: string): Promise<{ weights: Map<string, Map<string, number>>; found: boolean }> {
-  const weights = new Map<string, Map<string, number>>()
-  const datasetDir = join(bundleDir, 'dataset')
+/** Rubric rows carried by the bundle's own dataset layers (a guarded export). */
+async function rowsOfDatasetLayers(bundleDir: string): Promise<RubricWeightRow[]> {
+  const rows: RubricWeightRow[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > 5) return
     let entries
@@ -536,20 +658,62 @@ async function readWeights(bundleDir: string): Promise<{ weights: Map<string, Ma
     }
     for (const entry of entries) {
       const full = join(dir, entry.name)
-      if (entry.isDirectory()) await walk(full, depth + 1)
-      else if (entry.isFile() && entry.name.endsWith('.json')) {
-        try {
-          if ((await stat(full)).size > 1_000_000) continue
-          const parsed = JSON.parse(await readFile(full, 'utf8'))
-          weightsOfDocument(parsed, weights, 0)
-        } catch {
-          /* a dataset layer file that is not a rubric stays ignored */
-        }
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const isJson = entry.name.endsWith('.json')
+      // A real rubric is YAML: without this, an export that deliberately
+      // included the grading layer still produced no weights at all.
+      const isRubricYaml = /^rubric\.ya?ml$/i.test(entry.name)
+      if (!isJson && !isRubricYaml) continue
+      try {
+        if ((await stat(full)).size > 1_000_000) continue
+        const text = await readFile(full, 'utf8')
+        if (isRubricYaml) rows.push(...rubricWeightRows(text))
+        else rowsOfJsonDocument(JSON.parse(text), rows, 0)
+      } catch {
+        /* a dataset layer file that is not a rubric stays ignored */
       }
     }
   }
-  await walk(datasetDir, 0)
-  return { weights, found: weights.size > 0 }
+  await walk(join(bundleDir, 'dataset'), 0)
+  return rows
+}
+
+/**
+ * The bundle's criterion table. The DERIVED table wins — it is written from
+ * the grading layer at export time and is the only source that states
+ * polarity outright; a rubric inside an included dataset layer is the
+ * fallback for a deliberately guarded export. Neither present → polarity
+ * unknown, and the report says so rather than assuming everything positive.
+ */
+async function readPolarity(bundleDir: string): Promise<{ map: PolarityMap; polarity: RubricPolarity }> {
+  const map: PolarityMap = new Map()
+  let origin: string | null = null
+  const derived = await readRubricWeightTable(bundleDir)
+  if (derived !== null) {
+    indexRows(derived.criteria, map)
+    origin = RUBRIC_WEIGHTS_PATH
+  } else {
+    const rows = await rowsOfDatasetLayers(bundleDir)
+    if (rows.length > 0) {
+      indexRows(rows, map)
+      origin = 'dataset/'
+    }
+  }
+  let criteria = 0
+  let negative = 0
+  let weighted = false
+  for (const [, byCriterion] of map) {
+    for (const [, facts] of byCriterion) {
+      criteria += 1
+      if (facts.negative) negative += 1
+      if (facts.weight !== null) weighted = true
+    }
+  }
+  return { map, polarity: { available: origin !== null, origin, criteria, negative, weighted } }
 }
 
 // --- invariants --------------------------------------------------------------
@@ -744,39 +908,117 @@ function factorPairs(conditionEntries: Array<{ id: string; sha: string | null; d
 // --- comparison --------------------------------------------------------------
 
 /** The cell's authoritative verdicts: best available ns, majority per criterion. */
-function primaryPass(cell: BundleCell): Map<string, boolean> | null {
+interface PrimaryVerdicts {
+  ns: string
+  /** criterion → the criterion HOLDS (majority across samples). */
+  holds: Map<string, boolean>
+  /**
+   * criterion → credit in [0, 1] BEFORE polarity is applied. A boolean
+   * criterion is 1 or 0 by the same majority rule as `holds`; a proportional
+   * one (protocol §6.5 `ratio`) is the mean of the proportions its samples
+   * actually declared — samples without a usable ratio are not averaged in,
+   * because the report averages what it was given, never what it guessed.
+   */
+  credit: Map<string, number>
+  /** criterion → the first verdict document behind it (evidence and `by`). */
+  source: Map<string, CellVerdict>
+}
+
+function primaryPass(cell: BundleCell): PrimaryVerdicts | null {
   for (const ns of NS_PRIORITY) {
     const verdicts = cell.verdicts.filter(v => v.ns === ns)
     if (verdicts.length === 0) continue
     const byCriterion = new Map<string, boolean[]>()
+    const ratios = new Map<string, number[]>()
+    const source = new Map<string, CellVerdict>()
     for (const verdict of verdicts) {
       if (!byCriterion.has(verdict.criterion)) byCriterion.set(verdict.criterion, [])
       byCriterion.get(verdict.criterion)?.push(verdict.pass)
+      if (verdict.ratio !== null) {
+        if (!ratios.has(verdict.criterion)) ratios.set(verdict.criterion, [])
+        ratios.get(verdict.criterion)?.push(verdict.ratio.passed / verdict.ratio.total)
+      }
+      if (!source.has(verdict.criterion)) source.set(verdict.criterion, verdict)
     }
-    const result = new Map<string, boolean>()
+    const holds = new Map<string, boolean>()
+    const credit = new Map<string, number>()
     for (const [criterion, values] of byCriterion) {
-      result.set(criterion, values.filter(Boolean).length > values.length / 2)
+      const majority = values.filter(Boolean).length > values.length / 2
+      holds.set(criterion, majority)
+      const fractions = ratios.get(criterion)
+      credit.set(criterion, fractions !== undefined && fractions.length > 0 ? mean(fractions) : (majority ? 1 : 0))
     }
-    return result
+    return { ns, holds, credit, source }
   }
   return null
 }
 
-function passAndWeight(cell: BundleCell, weights: Map<string, Map<string, number>>): { passed: number; weighted: number | null } {
-  const pass = primaryPass(cell)
-  if (pass === null) return { passed: 0, weighted: null }
-  const taskWeights = cell.task === null ? undefined : weights.get(cell.task)
+/**
+ * One cell's score. `scored` is the report's main axis: a positive criterion
+ * scores its credit, a NEGATIVE one scores what is LEFT of it — the defect
+ * being present must never read as one more point. `weighted` sums
+ * `weight × credit`, so a negative weight subtracts on its own without any
+ * second rule, and a proportional criterion earns its fraction of the weight.
+ * Polarity absent from the table → positive (and the report prints that it
+ * is assuming so).
+ *
+ * With no `ratio` anywhere, credit is 1 or 0 and this is exactly the boolean
+ * arithmetic it generalizes.
+ */
+function scoreOf(cell: BundleCell, polarity: PolarityMap): { scored: number; weighted: number | null } {
+  const primary = primaryPass(cell)
+  if (primary === null) return { scored: 0, weighted: null }
+  const taskFacts = cell.task === null ? undefined : polarity.get(cell.task)
+  let scored = 0
   let weighted = 0
   let weightedSeen = false
-  for (const [criterion, ok] of pass) {
-    if (!ok) continue
-    const weight = taskWeights?.get(criterion)
-    if (weight !== undefined) {
-      weighted += weight
+  for (const [criterion, credit] of primary.credit) {
+    const facts = taskFacts?.get(criterion)
+    scored += facts?.negative === true ? 1 - credit : credit
+    if (credit > 0 && facts?.weight !== undefined && facts.weight !== null) {
+      weighted += facts.weight * credit
       weightedSeen = true
     }
   }
-  return { passed: [...pass.values()].filter(Boolean).length, weighted: weightedSeen ? weighted : null }
+  return { scored, weighted: weightedSeen ? weighted : null }
+}
+
+/**
+ * Negative criteria that HELD in the run's current attempts — the defect
+ * list. A proportional negative criterion counts as a hit as soon as any of
+ * it holds (credit > 0): one occurrence of the defect is an observation, and
+ * the table prints the proportion beside it.
+ */
+function negativeHitsOf(cells: readonly BundleCell[], polarity: PolarityMap): NegativeHit[] {
+  const hits: NegativeHit[] = []
+  for (const cell of cells) {
+    if (!cell.isCurrent) continue
+    const primary = primaryPass(cell)
+    if (primary === null) continue
+    const taskFacts = cell.task === null ? undefined : polarity.get(cell.task)
+    if (taskFacts === undefined) continue
+    for (const [criterion, credit] of primary.credit) {
+      const facts = taskFacts.get(criterion)
+      if (facts === undefined || !facts.negative || credit <= 0) continue
+      const verdict = primary.source.get(criterion)
+      const doc = verdict?.doc ?? {}
+      hits.push({
+        task: cell.task,
+        condition: cell.condition,
+        rep: cell.rep,
+        attempt: cell.attempt,
+        criterion,
+        ns: primary.ns,
+        weight: facts.weight,
+        ratio: verdict?.ratio ?? null,
+        evidence: typeof doc['evidence'] === 'string' ? doc['evidence'] : '',
+        by: typeof doc['by'] === 'string' ? doc['by'] : '',
+      })
+    }
+  }
+  return hits.sort((a, b) =>
+    (a.task ?? '').localeCompare(b.task ?? '') || (a.condition ?? '').localeCompare(b.condition ?? '')
+    || (a.rep ?? 0) - (b.rep ?? 0) || a.criterion.localeCompare(b.criterion))
 }
 
 function comparePair(
@@ -784,7 +1026,7 @@ function comparePair(
   b: string,
   factor: FactorPair,
   cells: BundleCell[],
-  weights: Map<string, Map<string, number>>,
+  polarity: PolarityMap,
   runId: string,
 ): PairComparison {
   const current = cells.filter(c => c.isCurrent)
@@ -803,17 +1045,17 @@ function comparePair(
     const shared = [...repsA.keys()].filter(rep => repsB.has(rep)).sort((x, y) => x - y)
     if (shared.length === 0) continue
     const deltas: number[] = []
-    const aPassed: number[] = []
-    const bPassed: number[] = []
+    const aScored: number[] = []
+    const bScored: number[] = []
     let aWeightedSum = 0
     let bWeightedSum = 0
     let weightedSeen = false
     for (const rep of shared) {
-      const pa = passAndWeight(repsA.get(rep) as BundleCell, weights)
-      const pb = passAndWeight(repsB.get(rep) as BundleCell, weights)
-      deltas.push(pa.passed - pb.passed)
-      aPassed.push(pa.passed)
-      bPassed.push(pb.passed)
+      const pa = scoreOf(repsA.get(rep) as BundleCell, polarity)
+      const pb = scoreOf(repsB.get(rep) as BundleCell, polarity)
+      deltas.push(pa.scored - pb.scored)
+      aScored.push(pa.scored)
+      bScored.push(pb.scored)
       if (pa.weighted !== null && pb.weighted !== null) {
         aWeightedSum += pa.weighted
         bWeightedSum += pb.weighted
@@ -822,8 +1064,8 @@ function comparePair(
     }
     perTask.push({
       task,
-      aMean: mean(aPassed),
-      bMean: mean(bPassed),
+      aMean: mean(aScored),
+      bMean: mean(bScored),
       aWeighted: weightedSeen ? aWeightedSum / shared.length : null,
       bWeighted: weightedSeen ? bWeightedSum / shared.length : null,
       deltas,
@@ -1059,12 +1301,14 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const expectedNs = Array.isArray(meta['expectedNs'])
     ? meta['expectedNs'].filter((ns): ns is string => typeof ns === 'string' && ns.length > 0)
     : null
-  const { weights, found: weightsAvailable } = await readWeights(bundleDir)
+  const { map: polarityMap, polarity } = await readPolarity(bundleDir)
+  const weightsAvailable = polarity.weighted
 
   const rows: ReportRow[] = []
   for (const cell of cells) {
     for (const verdict of cell.verdicts) {
-      const weight = cell.task === null ? undefined : weights.get(cell.task)?.get(verdict.criterion)
+      const facts = cell.task === null ? undefined : polarityMap.get(cell.task)?.get(verdict.criterion)
+      const weight = facts?.weight ?? undefined
       rows.push({
         task: cell.task ?? (typeof verdict.doc['task'] === 'string' ? verdict.doc['task'] : null),
         condition: cell.condition,
@@ -1075,7 +1319,9 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
         ns: verdict.ns,
         criterion: verdict.criterion,
         pass: verdict.pass,
+        ...(verdict.ratio !== null ? { ratio: verdict.ratio } : {}),
         ...(weight !== undefined ? { weight } : {}),
+        ...(facts !== undefined ? { negative: facts.negative } : {}),
         evidence: typeof verdict.doc['evidence'] === 'string' ? verdict.doc['evidence'] : '',
         by: typeof verdict.doc['by'] === 'string' ? verdict.doc['by'] : '',
       })
@@ -1104,7 +1350,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const comparisons: PairComparison[] = []
   if (comparisonAllowed && !singleCondition) {
     for (const factor of factors) {
-      comparisons.push(comparePair(factor.a, factor.b, factor, cells, weights, runId ?? bundleDir))
+      comparisons.push(comparePair(factor.a, factor.b, factor, cells, polarityMap, runId ?? bundleDir))
     }
   }
 
@@ -1128,9 +1374,26 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
 
   const writtenBy = writtenByOf(manifest, cells)
 
+  const negativeHits = negativeHitsOf(cells, polarityMap)
+
   const notes: string[] = []
   if (manifest === null) notes.push('bundle 缺 manifest.json——nsReport/writtenBy 由注解回算')
-  if (!weightsAvailable) notes.push('bundle 的 dataset 层未提供带 weight 的 rubric——加权分留空')
+  if (polarity.available) {
+    notes.push(`判据极性取自 \`${polarity.origin}\`（${polarity.criteria} 条判据，其中负向 ${polarity.negative} 条）`
+      + '——pass 恒为「判据成立」，负向判据成立即缺陷存在，计 0 分')
+  } else {
+    notes.push(`bundle 未带判据权重表（\`${RUBRIC_WEIGHTS_PATH}\`），dataset 层也无 rubric——`
+      + '**极性未知，计数按正向处理**；负向判据数 unknown，加权分留空')
+  }
+  if (polarity.available && !weightsAvailable) notes.push('权重表有极性但无 weight——加权分留空，只出得分判据数')
+  const ratioRows = rows.filter(row => row.ratio !== undefined).length
+  if (ratioRows > 0) {
+    notes.push(`${ratioRows} 条判定带 \`ratio\`（按比例给分，协议 §6.5）——按 passed/total 计分，不按布尔；同判据多样本取所给比例的均值`)
+  }
+  const malformedRatios = cells.reduce((sum, cell) => sum + cell.verdicts.filter(v => v.ratioMalformed).length, 0)
+  if (malformedRatios > 0) {
+    notes.push(`⚠️ ${malformedRatios} 条判定的 \`ratio\` 越界或形状不对（total ≤ 0、passed 越界、非整数）——已按缺失处理退回布尔，未计入任何分数`)
+  }
   notes.push('行 stage 取自注解记录的 stage 字段；判定契约本身不含 stage，未记录时为 null')
 
   return {
@@ -1157,6 +1420,8 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     attempts: cells.length,
     retries: cells.filter(c => !c.isCurrent).length,
     weightsAvailable,
+    polarity,
+    negativeHits,
     notes,
   }
 }
@@ -1165,8 +1430,10 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
 
 /**
  * Build the report for a bundle and write `results.jsonl` + `summary.md`.
- * The out directory defaults to `<bundleDir>/report` and is overwritten on
- * re-run: a report is derived state, unlike the append-only bundle itself.
+ * The out directory defaults to `<bundleDir>/report` and those two files are
+ * overwritten on re-run: a report is derived state, unlike the append-only
+ * bundle itself. `report/rubric-weights.json` is NOT touched — the export
+ * writes it, the report only reads it.
  */
 export async function writeEvalReport(bundleDir: string, options: { out?: string } = {}): Promise<ReportWrite> {
   const report = await analyzeBundle(bundleDir)
