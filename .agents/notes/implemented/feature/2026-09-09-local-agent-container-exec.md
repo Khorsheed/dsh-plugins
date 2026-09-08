@@ -27,11 +27,11 @@ One "answer 2+2" delegation per harness against the T16 image (`eval-env:pinned`
 | Harness | Result | Evidence |
 |---|---|---|
 | codex | `completed`, output `4` | `observedModel` `gpt-5.6-sol`, read back from the rollout the CONTAINER wrote into the HOST scoped home |
-| claude | `error` — `OAuth session expired and could not be refreshed` | Same failure on the host control (`401 API key is invalid`); the proxy log shows the refresh reaching `platform.claude.com` and then being refused on `console.anthropic.com`, which the evaluation whitelist does not carry. Transport verified: the argv is the expected `docker exec …`, the stream-json parsed, `observedModel` `claude-opus-5[1m]` |
+| claude | `error` — `OAuth session expired and could not be refreshed` | The host control fails with the SAME message, so the grant, not the transport, is what is broken. Transport verified anyway: the expected `docker exec …` argv, the stream-json parsed, `observedModel` `claude-opus-5[1m]` |
 | kimi | `error` — `provider.auth_error: 403 monthly usage limit` | The same account-side quota T16 recorded; `observedModel` `kimi-for-coding` read back from the wire log the container wrote into the host scoped home |
 | dsh | `error` in the unit; `completed`, output `4` on the host control (`observedModel` `deepseek-official/deepseek-v4-flash`) | The image's in-box `headless` profile is a different, smaller app with no `--session-id`; the same `docker exec` shape without that flag answers `4` inside the same unit with `--use-env-proxy` doing its job |
 
-The four findings that belong to the environment rather than to this code: the evaluation whitelist misses claude's `console.anthropic.com` refresh fallback; the image must ship the family headless bundle plus its runtime dependencies for dsh; a live scoped home bind-mounted whole carries host-only settings into the unit (claude's scoped `settings.json` names a host-daemon `https_proxy` that fails with `Connection refused` inside a unit); and kimi's account quota is still exhausted.
+The findings that belong to the environment rather than to this code: the image must ship the family headless bundle plus its runtime dependencies for dsh; a live scoped home bind-mounted whole carries host-only settings into the unit (claude's scoped `settings.json` names a host-daemon `https_proxy` that fails with `Connection refused` inside a unit); the evaluation whitelist refuses `console.anthropic.com`, the last hop of claude's refresh chain in the proxy log — not the cause of this failure, since the host cannot refresh either, but a gap that will bite once the grant is healthy; and kimi's account quota is still exhausted.
 
 ## Alternatives considered
 

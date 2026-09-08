@@ -27,11 +27,11 @@ web-eval 的编排器（I3）要把每个评测格子放进受控单元里跑，
 | 选手 | 结果 | 证据 |
 |---|---|---|
 | codex | `completed`，输出 `4` | `observedModel` `gpt-5.6-sol`，从**容器**写进**宿主**作用域目录的 rollout 里回读 |
-| claude | `error`——`OAuth session expired and could not be refreshed` | 宿主对照组同样失败（`401 API key is invalid`）；代理日志显示续期打到 `platform.claude.com` 之后被 `console.anthropic.com` 拒绝，而评测白名单里没有那一条。传输已验证：argv 正是预期的 `docker exec …`，stream-json 正常解析，`observedModel` `claude-opus-5[1m]` |
+| claude | `error`——`OAuth session expired and could not be refreshed` | 宿主对照组报**同一条**消息，坏的是授权本身而不是传输。传输仍已验证：argv 正是预期的 `docker exec …`，stream-json 正常解析，`observedModel` `claude-opus-5[1m]` |
 | kimi | `error`——`provider.auth_error: 403 monthly usage limit` | 与 T16 记的是同一条账号侧配额；`observedModel` `kimi-for-coding`，从容器写进宿主作用域目录的 wire 日志里回读 |
 | dsh | 单元内 `error`；宿主对照组 `completed`、输出 `4`（`observedModel` `deepseek-official/deepseek-v4-flash`） | 镜像自带的 in-box `headless` 是另一个更小的 app，不认 `--session-id`；同样的 `docker exec` 形状去掉那个 flag，在同一个单元里答出 `4`，`--use-env-proxy` 正常工作 |
 
-其中四条属于环境而不属于本次代码的发现：评测白名单缺 claude 的 `console.anthropic.com` 续期回退；镜像必须为 dsh 备好家族 headless bundle 及其运行期依赖；整份活的作用域目录 bind 进单元会把宿主专用设置一起带进去（claude 作用域 `settings.json` 里那个给宿主守护进程用的 `https_proxy`，在单元里当场 `Connection refused`）；kimi 的账号配额仍然用尽。
+属于环境而不属于本次代码的发现：镜像必须为 dsh 备好家族 headless bundle 及其运行期依赖；整份活的作用域目录 bind 进单元会把宿主专用设置一起带进去（claude 作用域 `settings.json` 里那个给宿主守护进程用的 `https_proxy`，在单元里当场 `Connection refused`）；评测白名单拒绝 `console.anthropic.com`——代理日志里 claude 续期链的最后一跳，本次不是失败原因（宿主同样刷不动），但等授权恢复正常后它会咬人；kimi 的账号配额仍然用尽。
 
 ## Alternatives considered
 
