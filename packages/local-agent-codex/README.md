@@ -86,6 +86,8 @@ model_provider = "dsh-router"
 
 **模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把从自身输出侧读到的模型标识（codex 0.144.0 的 exec 流事件不带 model，回退读本轮 rollout 文件的 `turn_context` 行——按本轮时间窗过滤，resume 线程里先前轮次的模型不会被误读）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
+**容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> codex exec …`，其余（流解析、settle、rollout 回读、记录）逐字节不变。`env` 必须给出容器内的 `CODEX_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——rollout 回读读的是宿主那份文件。容器轮固定走 exec 一次性驱动（长驻 app-server 是宿主进程），且不声明成员桥（宿主 unix socket 进不去容器）。实测：`eval-env:pinned` 单元里一次「回答 2+2」settle 为 `completed`，输出 `4`，`observedModel` 从容器写进宿主作用域目录的 rollout 里回读为 `gpt-5.6-sol`。
+
 **续聊（resume）。** 家族工具（`@khorsheed/dsh-local-agent-tool-subagent`）在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程（`codex exec --json resume <thread_id>`），按轮记账。句柄只从 `resume` 参数读取，localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
 
 **事件流镜像。** 子代理会话按顺序镜像 `codex exec --json` 事件流：`reasoning` → 推理块、`agent_message` → 回复文本、`command_execution`/`web_search_call`/`function_call_output` → 工具行（`[工具 Bash] <command> → output`）；最终 `agent_message` 作为运行输出，当轮用量挂在最后一条镜像的 assistant 消息上。续聊轮各自追加自己的 turn，不会重复。中止会让工具结果立即 settle，并保留已收到的事件与用量。

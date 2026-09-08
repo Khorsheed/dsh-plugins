@@ -78,6 +78,8 @@ base_url = "https://your-router.example/v1"
 
 **模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 wire.jsonl 里 `usage.record`（次选 `llm.request`）事件 `model` 字段的实际模型（最后一个为准——resume 会话后续轮次追加在文件尾部）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
+**容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> kimi -p …`，其余（wire.jsonl 镜像与回读、settle、记录）逐字节不变。`env` 必须给出容器内的 `KIMI_CODE_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——转写镜像与模型回读读的是宿主那份 wire 日志。容器轮固定走 exec 一次性驱动（长驻 `kimi acp` 是宿主进程），且**不写** `mcp.json` 的成员桥条目：那条声明带着宿主 node 路径，容器里起不来，与其在共享配置文件里留一个坏 server，不如这一轮不要成员通道。
+
 **作用域目录与登录。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。登录只走 device-code:`/kimi login` 把授权 URL 和验证码呈现在会话中,CLI 在后台轮询,凭据写入作用域目录。`/kimi logout` 删除作用域内的凭据与 OAuth 缓存(kimi CLI 没有 logout 命令)。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制,用户没有 config 时则写入最小 managed config——因为没有 provider 与 model 定义 CLI 就拒绝认证;已存在的 config 永不覆盖。
 
 **挂载。** bundle patch 注册 `kimi` harness,并把 `subagent_kimi` 工具挂到 profile 根;`kimi-cli` 一次性 provider 在作用域目录下 spawn `kimi -p`。家族 core(`local-agent` 行,共享作用域目录根)随 `@khorsheed/dsh-local-agent` 自己的 patch 提供,本包把它声明为依赖;浏览器设置分区随家族 core 的 `./client` 半提供。

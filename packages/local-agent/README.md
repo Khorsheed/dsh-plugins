@@ -98,6 +98,27 @@ export function registerCodex(ctx: Context): void {
 
 registry 还持有家族的**委派 registry**：每个子会话一条记录，记下该委派用的 provider 与 CLI 会话，以及按 (parent, provider) 分组的委派 intent FIFO。家族工具（`@khorsheed/dsh-local-agent-tool-subagent`，由各 harness bundle 的 patch 挂载）在每次调用 `ctx.subagents.start()` 前恰好 stage 一个 intent，归属 provider 每次 start 恰好消费一个——因此即使并行委派，fresh 轮与 resume 轮也能正确配对。resume 轮的句柄（dsh 子会话 id）经 registry 解析，凡是未知子会话、他人 parent 的会话、或错误 provider 的句柄都会被拒绝；subagent 请求 descriptor 无法携带该目标，因此本服务就是家族内部的载体。映射按 harness 持久化在其作用域目录下的 append-only `delegations.jsonl`（同一子会话最后一行生效），resume 句柄因此能跨宿主重启存活。
 
+### 委派调用选项（facade）
+
+`registry.start(parent, provider, prompt, options)` 与 `registry.resume(…)` 的 `options`（`DelegationCallOptions`）——纯增量，每个字段缺位就是它出现之前的行为：
+
+| 字段 | 作用 |
+|---|---|
+| `label` | 子会话显示名；缺位用 harness 自己的显示名 |
+| `signal` | 调用方自己的取消通道，与 facade 内部 controller 熔合 |
+| `onProgress` | 本次调用的进度回调，与 `localAgent/run-progress` 事件同样的载荷 |
+| `reattach` | 仅 `resume`：子会话不在线时从持久化恢复（默认 true），传 `false` 则 fail loud |
+| `cwd` | 本轮 CLI 的工作目录；resume 轮必须与首轮记录一致，否则进程启动前 fail loud |
+| `exec` | 本轮在**已取得的容器里**跑：`{ container, workdir, env? }` |
+
+**容器内委派（`exec` 目标）。** 给了它，provider 把 argv 换成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`；stdio 仍是 pipe，流解析、settle、回读、`delegations.jsonl` 记录全部与宿主路径逐字节相同。家族只用 `exec` 这一个 docker 动词——取得、挂载、销毁容器是调用方（lab）的事。
+
+- **值不上 argv。** 每个转发的变量只以 `-e NAME` 出现，值留在 docker 客户端自己的环境里由它解析——provider 解析出的凭据因此不进宿主进程表。转发集 = provider 显式 env 层里有值的项，按键被 `target.env` 覆盖；`PATH`/`HOME`/代理这些走继承白名单的变量**不转发**，容器里它们属于镜像与 `docker run`。
+- **作用域目录必须由调用方点名。** `target.env` 必须给出容器内的作用域目录变量（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），否则进程启动前 fail loud：宿主路径在容器里什么都不是，照转会让 CLI 从一个空目录起步——没凭据、没有可回读的 rollout，而且失败原因不出现在任何输出里。
+- **作用域目录是宿主目录、rw bind 挂进容器。** 回读（codex 的 rollout、kimi 的 wire log、子 dsh 的会话日志）直接读宿主文件系统，凭据续期也回写到宿主目录。**挂什么由调用方备好**：把活的作用域目录整个挂进去，宿主专用的设置会跟着进去（实测：claude 作用域 `settings.json` 里给宿主守护进程用的 `https_proxy` 在容器里指向不存在的地址，本轮当场 `Connection refused`）。
+- **容器轮是 exec-only、且没有成员通道。** 长驻驱动跑的是宿主上的常驻进程，正是 `exec` 目标要替换的传输；成员桥是宿主 unix socket，其 MCP 声明还带着宿主 node 路径。两者都是明确放弃，不是没接上。
+- **resume 由调用方重复同一个目标。** 记录里的锚是宿主 `cwd`，换了容器它仍然相等——这一条记录抓不到。
+
 ### 活跃委派 registry 与 `/local-agent stop`
 
 registry 另持有**活跃委派 registry**（以 dsh 子会话 id 为键的在飞 run 表）：facade 启动的 run（`start`/`resume`——成员 composer、room 等程序化入口）与家族工具直接 `ctx.subagents.start()` 启动的 run（经 `trackDelegationRun` 登记）都落在同一张表里，条目在 run 结果 settle 时自清。`/local-agent stop <childSessionId>` 命令按这张表取消在飞的委派——语义对齐官方 `subagents.interrupt(targetSessionId)`：fire-and-return（发出取消信号即回复），目标缺席（未知子会话或无在飞 run）是显式说明的 accepted no-op，而非报错。这为 taskpilot 等表面提供了停止按钮的落点：对没有 live agent 的一次性子代理行，按钮改发 `/local-agent stop <childSessionId>`，local-agent 缺席时降级为无法停止的明确报错。
