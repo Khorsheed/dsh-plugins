@@ -146,7 +146,7 @@ The agent appears only in the planning and analysis phases and needs reading and
 
 | Plugin | Agent tools (eval domain) | Orchestrator service face | Human |
 |---|---|---|---|
-| datasets | all read verbs; `put_item` kept for authoring | snapshot, worktree_path, read (explicit layers) | bind, tab, validate |
+| datasets | all read verbs (snapshot included: it only resolves the current commit); `put_item` kept for authoring | worktree_path, read (explicit layers) | bind, tab, validate |
 | mission | only `run_list` `run_status` `list` `get` | every write method | export, retry, human-final |
 | lab | none | all | status, release |
 | eval | `eval_conditions` `eval_plan_validate` `eval_run_status`; no run | the kernel | approve, run, report |
@@ -263,7 +263,7 @@ These are the apparatus's fairness baseline: written into the run meta before th
 
 1. **A rep is an independent mission; an attempt is only for infrastructure-failure reruns.** retry carries a reason enum; the report counts them separately.
 2. **All exec driving.** live is a resident process; idle reclaim, crash resume, and auto-answered approvals are all extra factors.
-3. **Sandboxing is left to the container boundary.** codex `danger-full-access` inside containers, claude `skip`, kimi auto-approve, dsh unrestricted; identical across the four.
+3. **Sandboxing is left to the container boundary.** codex `danger-full-access` inside containers, claude `skip`, kimi auto-approve, dsh unrestricted; identical across the four. Cells run as a non-root user inside the container: claude refuses the `skip` tier under root (measured in T16).
 4. **Reasoning effort explicitly pinned and recorded per harness.** Today kimi's provisioning hardcodes high while the others use their defaults, which is uncontrolled.
 5. **Model explicitly pinned and read back from the output.** Declared versus actual mismatch fails loud; when claude goes through a proxy, the proxy address is part of the condition.
 6. **The prompt is the byte-for-byte content of the visible layer's files.** The parent agent plays no part in prompt construction; the prompt hash goes into refs.

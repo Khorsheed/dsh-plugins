@@ -113,11 +113,11 @@ flowchart LR
 | 组件 | 内容 | 谁提供 | 落地 |
 |---|---|---|---|
 | 评测实例 | 独立 `$DSH_HOME`（建议 `~/.dsh-eval`）、web-eval profile、独立端口；与开发实例不共享会话与凭据 | `docs/ops.md` 规程 | I1 起 |
-| 宿主前置 | node 与 pnpm（与宿主版本一致）、git；I1 到 I2 四家 CLI 直接装在宿主上；I3 起 docker CLI 与 daemon | 人 | I1 / I3 |
-| 各家凭证 | 各 harness 的 scoped home：codex `auth.json`、claude 由 keychain 导出的凭证文件（必须可写，续期回写）、kimi `oauth/`、dsh 的 API key 经 env 注入；容器化后以专用可写卷挂进容器，跨格持久 | local-agent 家族 + 人 | I1 宿主，I3 卷 |
+| 宿主前置 | node 与 pnpm（与宿主版本一致）、git；I1 到 I2 四家 CLI 直接装在宿主上；I3 起 docker CLI 与 daemon，且 daemon 要能拉到基础镜像（本机 Docker Desktop 打不到 Docker Hub 时，宿主侧按 digest 取 blob 再 `docker load`，T16 实测） | 人 | I1 / I3 |
+| 各家凭证 | 各 harness 的 scoped home：codex `auth.json`、claude 由 keychain 导出的凭证文件（必须可写，续期回写——T16 实测容器内续期确实写回挂载卷）、kimi `oauth/`、dsh 的 API key 经 env 注入；容器化后以专用可写卷挂进容器，跨格持久（bind 目录还是 named volume 由 T17 定，回读要读得到 scoped home） | local-agent 家族 + 人 | I1 宿主，I3 卷 |
 | 题集级镜像 | 题库 `env/Dockerfile` + `versions.lock`：node、pnpm、git、四家 CLI 版本 pin 死、harness 源码 pin commit 并预装依赖；构建 digest 进 `refs.fingerprint`；构建后断言镜像里没有参考实现 | 题库 + lab | I3 |
 | 本地包镜像 | 断外网仍能装依赖：宿主起一个 registry 镜像，快照标识进 `versions.lock`，四家装到的是同一份 | 人 | I3 |
-| 网络 | 容器无外网，白名单代理只放行各家模型端点；claude 的第三方代理地址进 condition 声明 | 人 | I3 |
+| 网络 | 容器无外网，白名单代理放行各家**推理端点与 OAuth 续期主机**（platform.claude.com / auth.openai.com / auth.kimi.com——只放推理端点会「第一天能跑、token 一过期就 403」，T16 实测）；claude 的端点是官方端点 + 本机代理出网，值进 condition 声明（决策 5）；受试对象的参数不与宿主环境变量重名，容器不继承宿主 shell 的任何端点变量 | 人 | I3 |
 | 资源限制 | CPU 与内存上限随 `acquire` 声明，进复合指纹；重阶段 `concurrency: exclusive` 串行 | lab | I3 |
 | docker socket | 只有编排器所在进程持有；评测实例的 agent preset 不挂 Bash 与 docker（冻结决策 12） | profile preset | I3 |
 | 判定环境 | 探针在宿主侧驱动，经 `lab.verify` 进容器执行；verify 层物化进临时目录，执行后移除，绝不进镜像 | lab | I3 |
