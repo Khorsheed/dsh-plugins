@@ -58,7 +58,7 @@ Every delegation records one orchestrator-ns annotation `{kind: 'delegation', st
 
 ## The container path (I3·T20)
 
-A plan that declares a `unit` segment takes the container path; one that does not takes the host path, **byte for byte** what it was before this section existed (pilot A's bundle recomputed on this branch produces a byte-identical `results.jsonl`). The container path needs `ctx.lab` and a credentials root: `/eval run … --creds-root DIR`.
+A plan that declares a `unit` segment takes the container path; one that does not takes the host path, **byte for byte** what it was before this section existed (pilot A's bundle recomputed on this branch produces a byte-identical `results.jsonl`). The container path needs `ctx.lab`; credentials need nothing extra — it mounts this instance's own scoped homes (below).
 
 **One unit per cell, in a fixed order** (architecture trajectory steps 11–17):
 
@@ -97,9 +97,11 @@ A probe's cwd is **the directory holding that item's checklist** — `items/<id>
 
 ### Directory and credential conventions
 
-- One credential directory per condition: `<--creds-root>/<condition id>`, bound at the in-container path the condition's `unit.scopedHome.container` declares. **No host path enters a plan or a condition** — a condition file runs unchanged on another machine, and the host side is an operator fact.
-- A human stages those directories (the dataset repo's `env/creds/stage.sh`); the orchestrator only checks that they **exist, are non-empty, and have a plausible owner**, and never reads their contents. The owner must be the unit's uid or the orchestrator's own: the first is right where a Linux host passes uids through, the second where Docker Desktop remaps a bind mount to the container user. A third uid is refused — that is exactly the case where the unit cannot read, or write back to, its own credentials.
-- The attempt's run-data directory gains two things: `materialization.json` (lab's manifest) and `probe-verdicts/` (the raw verdicts the probes wrote inside the unit). The host mirror of the workspace deliberately does **not** live there — the bundle would then carry it twice, once beside `archive/workspace/`. Where the mirror lives is recorded in a one-file `workspace-mirror.json`, which is the artifact each `collect` registers.
+- The container path mounts **the evaluation instance's own scoped home**: `<homesRoot>/<harness>`, the directory `local-agent` provisions for that harness, `bind`-mounted writable at the in-container path the condition's `unit.scopedHome.container` declares. Credentials get there from `/<harness> login` ON THIS INSTANCE; nothing is staged or copied. If a refresh fails or the directory is emptied, log in again here.
+- It has to be the SAME directory, not a copy: a containerized round's CLI writes its rollout / session log into whatever was bound, and the delegation read-back looks under `homeDir(<harness>)`. Pointing them at two places raises no error at all — the read-back is simply empty forever, every round's `model.observed` is null, readiness reports `ready, model —`, and the report's «受试对象一致» never leaves ⚠️. That is precisely what T20's separate credential tree did, and pilot B paid for it.
+- A consequence: **two conditions of the same harness share one scoped home today.** "One per condition" waits for I4's T29 (per-delegation scoped-home override); until then, two conditions of one harness can only differ in factors that do not live in the scoped home — model, reasoning effort, and the like.
+- The orchestrator checks that the directory **exists, is non-empty, and has a plausible owner**, and never reads its contents. An empty one means "nobody has logged in on this instance for that harness" — refused before the run, which is cheaper than twenty-four cells discovering it one 401 at a time.
+- The attempt's run-data directory gains two things: `materialization.json` (the orchestrator's manifest) and `probe-verdicts/` (the raw verdicts the probes wrote inside the unit). The host mirror of the workspace does not live there; where it lives is recorded in `workspace-mirror.json`.
 
 ### One destroy path
 
@@ -119,6 +121,8 @@ A probe's cwd is **the directory holding that item's checklist** — `items/<id>
 ## Readiness: one real delegation per condition
 
 `/<harness> status` answers a SHAPE question — is there a credential record here? An expired, unrefreshable grant reads exactly like a working one. Pilot A took that answer at face value: `claude-code status` said `authenticated: yes` while every delegation returned 401, six of twenty-four cells were doomed before the run began, and the first evidence arrived at the first delegation.
+
+The JUDGE conditions are probed too. A judge is the same kind of thing — a real delegation that can fail on a credential that reads authenticated — and its failure is dearer: a player that cannot be delegated to loses its own cells, a judge that cannot be delegated to loses the whole round's llm-draft verdicts. Pilot B lost both of its judge samples while the run walked on to `released` with an empty llm-draft namespace. So a judge is probed on the same rule, refuses the run on the same rule, and is recorded in `run.meta.readiness` with `role: 'judge'`. Judging delegates from the orchestrator rather than from a cell, so even on the container path the judge is probed on the HOST — probing it in a unit would test an environment it never meets.
 
 So the pre-run check does not ask; it spends one delegation. Before `runCreate`, every plan condition is probed with the byte-exact one-sentence prompt `READINESS_PROMPT` (reply `READY`, no tools, no files) through the SAME facade, provider and per-directory `cwd` rule the cells use — there is no back door, so what the probe proves is what the cells will meet. A condition is ready only when the delegation both started AND returned `stopReason: 'completed'`; the probe also reads the model back and fails the condition when it contradicts `model.declared` (frozen decision 5, caught before the run instead of at its first stage round).
 

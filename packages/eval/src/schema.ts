@@ -299,7 +299,7 @@ export const CONDITION_SCHEMA: SchemaObject = {
           type: 'object',
           additionalProperties: false,
           required: ['container', 'var'],
-          description: 'The condition\'s scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.',
+          description: 'The condition\'s scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance\'s own scoped home for that harness — the directory /<harness> login writes into, and the one the delegation read-back reads.',
           properties: {
             container: { type: 'string', description: 'Absolute in-container mount point, e.g. /creds/codex.' },
             var: { type: 'string', description: 'The variable naming it inside the unit (CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME); must also appear in env.keys.' },

@@ -36,9 +36,10 @@ const USAGE = `dsh-eval <verb> [options]
                                     [--max-cells N] rehearse a subset of the
                                     matrix. A plan with a unit segment also
                                     prints one acquire spec per condition
-                                    (env NAMES only; [--creds-root DIR] fills
-                                    in the mount source). Without --dry-run
-                                    the CLI REFUSES:
+                                    (env NAMES only; the mount source is the
+                                    instance's own scoped home, named by
+                                    shape). Without --dry-run the CLI
+                                    REFUSES:
                                     a run starts from a live session
                                     (/eval run) — outside one there is no
                                     parent agent to delegate through.
@@ -155,7 +156,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'run': {
         const [planPath, ...extra] = rest
         if (planPath === undefined) throw new UsageError('run wants a plan path')
-        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells', '--creds-root'])
+        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells'])
         const dryRun = switches.has('--dry-run')
         switches.delete('--dry-run')
         const unknown = [...switches, ...leftovers]
@@ -172,15 +173,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (maxCells !== undefined && (!Number.isInteger(maxCells) || maxCells < 1)) {
           throw new UsageError(`--max-cells wants a positive integer, got ${JSON.stringify(maxCellsRaw)}`)
         }
-        const credsRoot = values.get('--creds-root')?.[0]
         const report = await service.run(planPath, {
           dryRun: true,
           ...(only.length > 0 ? { only } : {}),
           ...(maxCells !== undefined ? { maxCells } : {}),
-          // Only ever affects what the rehearsal PRINTS: the mount source of a
-          // unit spec. Without it the spec still prints, with the host half
-          // left as a placeholder.
-          ...(credsRoot !== undefined ? { credsRoot } : {}),
         })
         io.stdout(`${JSON.stringify({
           planSha: report.meta.planSha,

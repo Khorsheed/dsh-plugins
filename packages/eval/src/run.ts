@@ -159,15 +159,6 @@ export interface RunOptions {
   ignoreReadiness?: boolean
   /** Wall-clock cap on one readiness probe. Default 2 minutes. */
   readinessTimeoutMs?: number
-  /**
-   * Host root of the per-condition credential directories the container path
-   * mounts: `<credsRoot>/<condition id>` is bound read-write at the container
-   * path the condition's `unit.scopedHome` names. Required by a plan that
-   * declares a `unit` segment, and given HERE rather than in the plan because
-   * a host path is an operator fact, not a reviewed one — the same plan runs
-   * on another machine unchanged.
-   */
-  credsRoot?: string
 }
 
 /** The resolved upstream faces + host paths the run loop needs. */
@@ -1439,11 +1430,11 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   if (options.dryRun === true) {
     // A container run's most consequential inputs are the ones nobody sees
     // until a unit exists, so the rehearsal prints them: one acquire spec per
-    // condition, env NAMES only. `<--creds-root>` stands in when the rehearsal
-    // was not told where the credentials live — the mount TARGET is the
-    // reviewable half, and the host half is the operator's.
+    // condition, env NAMES only. The mount SOURCE is the instance's own
+    // scoped home for that harness, which a dry run has no facade to ask —
+    // the reviewable half is the target, and the source is named by shape.
     const units = planUnit === null ? undefined : conditions.map((condition) => {
-      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, expandHome(options.credsRoot ?? '<--creds-root>'))
+      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, `<scoped home of ${condition.harnessName}>`)
       return resolved.ok
         ? { condition: condition.id, acquire: describeAcquireSpec(acquireSpecFor(resolved.plan)) }
         : { condition: condition.id, errors: resolved.diagnostics }
@@ -1502,10 +1493,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         + " — upgrade dsh-lab, or drop the plan's unit segment to run on the host",
       )
     }
-    if (options.credsRoot === undefined || options.credsRoot === '') {
+    if (typeof faces.localAgent.homeDir !== 'function') {
+      // Without it there is no way to mount the directory the read-back
+      // reads, and mounting any OTHER directory fails silently: the rounds
+      // run, the rollout lands somewhere nothing parses, and every
+      // `model.observed` is null while the run looks healthy.
       throw new EvalRunRefused(
-        'a plan with a unit segment needs --creds-root DIR: each condition mounts <DIR>/<condition id> at the container path it declares'
-        + ' (host paths stay out of the reviewed plan and condition files)',
+        'the mounted local-agent facade has no homeDir(harness), so the container path cannot mount the scoped home the delegation read-back reads'
+        + " — upgrade dsh-local-agent, or drop the plan's unit segment to run on the host",
       )
     }
     if ((options.concurrency ?? 1) > 1) {
@@ -1514,11 +1509,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         + ' (one cell acquires, works and releases before the next acquires). Parallel units are I4 — run the subset you want serially, or drop --concurrency.',
       )
     }
-    const credsRoot = expandHome(options.credsRoot)
     const uid = unitUid(planUnit.user)
     const problems: EvalDiagnostic[] = []
     for (const condition of conditions) {
-      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, credsRoot)
+      // THE fix: the mount source is the harness's own scoped home on this
+      // instance — the directory `/<harness> login` writes into and the
+      // directory the read-back parses. One directory, so a containerized
+      // round's rollout lands where the read-back looks.
+      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, faces.localAgent.homeDir(condition.harnessName))
       if (!resolved.ok) {
         problems.push(...resolved.diagnostics)
         continue
@@ -1593,15 +1591,33 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   // to no mission, so nothing gates its destroy: it is the one place in this
   // file where `force` appears, and it goes through the same destroyUnit as
   // every other release.
+  //
+  // The JUDGE is probed too. It is the same kind of thing — a real delegation
+  // that can fail on a credential that reads authenticated — and its failure
+  // is dearer than a player's: a player that cannot be delegated to loses its
+  // own cells, a judge that cannot be delegated to loses the whole round's
+  // llm-draft verdicts. Pilot B lost both of its judge samples while the run
+  // walked on to `released` with an empty namespace, which is exactly the
+  // shape of failure this check exists to make impossible.
   const readinessBase = join(stateRoot, 'readiness', `${planSha.slice(0, 12)}-${now()}`)
   const readiness = await checkReadiness({
     localAgent: faces.localAgent,
-    conditions: conditions.map((condition): ReadinessSubject => ({
-      id: condition.id,
-      harnessName: condition.harnessName,
-      declaredModel: condition.declaredModel,
-      provider: condition.provider,
-    })),
+    conditions: [
+      ...conditions.map((condition): ReadinessSubject => ({
+        id: condition.id,
+        harnessName: condition.harnessName,
+        declaredModel: condition.declaredModel,
+        provider: condition.provider,
+        role: 'player',
+      })),
+      ...judges.map((judge): ReadinessSubject => ({
+        id: judge.id,
+        harnessName: judge.harnessName,
+        declaredModel: judge.declaredModel,
+        provider: judge.provider,
+        role: 'judge',
+      })),
+    ],
     parentSessionId: options.parentSessionId,
     probeDirBase: readinessBase,
     timeoutMs: options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
@@ -1609,8 +1625,13 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     now,
     log,
     ...(planUnit === null || lab === undefined ? {} : {
-      unitFor: async (subject: ReadinessSubject): Promise<ReadinessUnit> => {
-        const cellUnit = cellUnits.get(subject.id) as CellUnitPlan
+      unitFor: async (subject: ReadinessSubject): Promise<ReadinessUnit | undefined> => {
+        // The judge delegates from the orchestrator, not from a cell, and it
+        // runs on the host even in a container run — so it is probed where it
+        // will actually run. Declining the unit is the honest answer, not a
+        // gap.
+        const cellUnit = cellUnits.get(subject.id)
+        if (cellUnit === undefined) return undefined
         const unit = await lab.acquire(acquireSpecFor(cellUnit))
         return {
           exec: {
@@ -1633,7 +1654,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       + ' (fix the condition, or re-run with --ignore-readiness to start anyway and record its cells as skipped)',
       [...failedReadiness.values()].map(record => ({
         code: 'READINESS_FAILED',
-        message: `${record.condition} (harness ${record.harness}): ${record.reason ?? 'unknown'}`,
+        message: `${record.role === 'judge' ? 'judge ' : ''}${record.condition} (harness ${record.harness}): ${record.reason ?? 'unknown'}`,
       })),
     )
   }

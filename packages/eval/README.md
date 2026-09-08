@@ -58,7 +58,7 @@ run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, condit
 
 ## 容器路径（I3·T20）
 
-plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者与本节出现之前**逐字节相同**（pilot A 的 bundle 用本分支的 report 复算，`results.jsonl` 逐字节一致）。容器路径要 `ctx.lab` 在场，还要一个凭证根：`/eval run … --creds-root DIR`。
+plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者与本节出现之前**逐字节相同**（pilot A 的 bundle 用本分支的 report 复算，`results.jsonl` 逐字节一致）。容器路径要 `ctx.lab` 在场；凭证不用另给——挂的是这台实例自己的作用域目录（见下）。
 
 **一格一单元，顺序固定**（架构轨迹表第 11–17 步）：
 
@@ -97,9 +97,11 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 
 ### 目录与凭证约定
 
-- 凭证目录一家一个：`<--creds-root>/<条件 id>`，bind 到该条件 `unit.scopedHome.container` 声明的容器内路径。**宿主路径不进 plan、不进 condition**——条件文件换台机器照跑，宿主一侧是运维事实。
-- 目录由人备好（题库 `env/creds/stage.sh`）；编排器只检查**存在、非空、属主**，绝不读内容。属主必须是单元的 uid 或编排器自己的 uid：Linux 直通 uid 时前者对，Docker Desktop 把 bind 挂载重映射到容器用户时后者对；第三个 uid 一律拒绝——那正是单元读不到、也写不回自己凭证的情形。
-- attempt 的运行数据目录多两样：`materialization.json`（lab 写的物化清单）与 `probe-verdicts/`（探针在单元内产出的原始判定）。工作区的宿主镜像**不进** attempt 目录——bundle 会连 `archive/workspace/` 一起收两份；镜像的位置记在一行 `workspace-mirror.json` 里，它就是那次 `collect` 登记的 artifact。
+- 容器路径挂的是**评测实例自己的作用域目录**：`local-agent` 为该 harness 建的 `<homesRoot>/<家名>`，`bind` 到该条件 `unit.scopedHome.container` 声明的容器内路径，可写。凭证由这台实例上的 `/<家> login` 写进去，**不 stage 副本**；续期失败或目录被清空，就在这台实例上重登。
+- 必须是同一个目录，不能是副本：容器轮的 CLI 把 rollout / session 写进被挂进去的那个目录，而委派回读按 `homeDir(家名)` 去找。指到两处不报错——回读永远为空，`model.observed` 每轮都是 null，就绪检查报 `ready, model —`，报告的「受试对象一致」停在 ⚠️。这正是 T20 用独立凭证树时的行为，pilot B 付过一次账。
+- 因此**同一 harness 的多个条件今天共用一份作用域目录**。「每条件一份」要等 I4 的 T29（按次委派覆盖 scoped home）；在那之前，同一家的两个条件只能在模型、推理强度这类不落在作用域目录里的因子上不同。
+- 编排器只检查这个目录**存在、非空、属主**，绝不读内容。空目录的意思就是「这台实例上还没人登录过这一家」——开跑前拒绝，比二十四格各自 401 便宜。
+- attempt 的运行数据目录多两样：`materialization.json`（编排器算的物化清单）与 `probe-verdicts/`（探针在单元内产出的原始判定）。工作区的宿主镜像不进 attempt 目录，位置记在 `workspace-mirror.json` 里。
 
 ### 销毁路径唯一
 
@@ -119,6 +121,8 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 ## 就绪检查：每个条件一次真委派
 
 `/<harness> status` 回答的是**形状**问题——scoped home 里有没有一份形状对的凭据记录。一份过期且刷不动的记录，读起来和一份能用的一模一样。pilot A 就照单全收了这个答案：`claude-code status` 报 `authenticated: yes`，而同一时刻每一次委派都 401，24 格里 6 格在开跑前就注定全废，而第一份证据要到第一次委派才出现。
+
+判官条件同样在内。判官也是一次会失败的真委派，而失败的代价更大：一个选手条件挂了只损失它自己的格子，判官挂了损失的是整轮的 llm-draft 判定——pilot B 的两个判官样本全掉，run 却一路走到 `released`，llm-draft 命名空间是空的。所以判官按同一条规则探、同一条规则拒，结果以 `role: 'judge'` 记进 `run.meta.readiness`。判官在宿主上委派（判定是编排器发起的，不是格子发起的），因此容器路径下它也在宿主上探——探一个它根本不会遇到的环境毫无意义。
 
 所以开跑前的检查不问，只花一次委派。`runCreate` 之前，对 plan 里每个条件用逐字节确定的一句话提示词 `READINESS_PROMPT`（回一个 `READY`，不用工具、不写文件）跑一次委派——**与正式格子同一门面、同一 provider、同一条按目录给 cwd 的规则**，不另开后门，所以探针证明的就是格子将要遇到的。条件只有在委派**既起得来又返回 `stopReason: 'completed'`** 时才算就绪；探针同时回读模型，与 `model.declared` 不符即当场判该条件不就绪（冻结决策 5，在开跑前拦下，而不是等到第一个阶段轮次）。
 

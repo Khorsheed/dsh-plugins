@@ -7,9 +7,11 @@
  * 人改程序, 编排器只解释数据**: the plan says which image, network, user and
  * ceilings every cell of this run gets; the condition says where its own
  * scoped credential directory is mounted inside the unit and which variable
- * names it; the human hands the orchestrator a credentials ROOT and stages
- * `<root>/<condition id>` under it. No host path ever appears in a reviewed
- * data file, and no credential value ever reaches an argv.
+ * names it. The HOST side of that directory is neither of their business — it
+ * is the evaluation instance's own scoped home for that harness, the one
+ * `/<harness> login` writes into and the one the delegation read-back parses.
+ * No host path ever appears in a reviewed data file, and no credential value
+ * ever reaches an argv.
  *
  * Nothing here knows the word docker: an image reference, a network name and
  * a user string are lab's vocabulary, and lab is the only plugin that holds
@@ -17,7 +19,6 @@
  * @module @khorsheed/dsh-eval
  */
 import { readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
 import type { EvalDiagnostic } from './validate.ts'
 import type { LabAcquireSpec, LabFingerprintComponents } from './faces.ts'
 
@@ -143,14 +144,15 @@ export function conditionUnitDiagnostics(conditionId: string, condition: unknown
  * @param planUnit - the plan's unit segment.
  * @param conditionId - the condition id (also the credential directory name).
  * @param condition - the condition document.
- * @param credsRoot - host root of the staged credential directories.
+ * @param hostHome - the harness's own scoped home on this host: what gets
+ *   mounted, and what the read-back reads. The two must be one directory.
  * @returns the resolved plan, or the diagnostics that stopped it.
  */
 export function resolveCellUnit(
   planUnit: PlanUnitDecl,
   conditionId: string,
   condition: unknown,
-  credsRoot: string,
+  hostHome: string,
 ): { ok: true; plan: CellUnitPlan } | { ok: false; diagnostics: EvalDiagnostic[] } {
   const diagnostics = conditionUnitDiagnostics(conditionId, condition)
   if (diagnostics.length > 0) return { ok: false, diagnostics }
@@ -160,7 +162,7 @@ export function resolveCellUnit(
   const plan: CellUnitPlan = {
     conditionId,
     image: planUnit.image,
-    scopedHome: { host: join(credsRoot, conditionId), container: decl.scopedHome.container, var: decl.scopedHome.var },
+    scopedHome: { host: hostHome, container: decl.scopedHome.container, var: decl.scopedHome.var },
     extraEnv: harnessName === 'dsh' ? { NODE_OPTIONS: DSH_CONTAINER_NODE_OPTIONS } : {},
   }
   if (planUnit.network !== undefined) plan.network = planUnit.network
@@ -247,12 +249,13 @@ export function unitUid(user: string | undefined): number | null {
 }
 
 /**
- * Check the credential directory a human staged for one condition: it exists,
- * it is a directory, it is not empty, and its owner is either the unit's own
- * uid or the uid the orchestrator itself runs as. The CONTENTS are never
- * read — what a credential file must contain is the harness's business, and
- * this process has no reason to open one (T22 stages them; this only refuses
- * to start a run against a directory that obviously cannot work).
+ * Check the scoped home this condition's harness will have mounted: it
+ * exists, it is a directory, it is not empty, and its owner is either the
+ * unit's own uid or the uid the orchestrator itself runs as. The CONTENTS are
+ * never read — what a credential file must contain is the harness's business,
+ * and this process has no reason to open one. What it catches is the case
+ * that costs a whole run: nobody has logged in on this instance yet, so the
+ * harness's scoped home is empty and every cell would 401.
  *
  * The two acceptable owners are one rule, not a platform switch: a Linux host
  * passes uids straight through, so a directory staged as the unit's uid is the
@@ -260,7 +263,7 @@ export function unitUid(user: string | undefined): number | null {
  * user, so a directory staged by the operator is the right answer there. A
  * third uid — root, or another account — is refused, because that is the case
  * where the unit cannot read (or cannot write back) its own credentials.
- * @param dir - `<credsRoot>/<condition id>`.
+ * @param dir - the harness's host scoped home, as `homeDir(harness)` reports it.
  * @param conditionId - for the message.
  * @param uid - the unit's numeric uid, when the plan declares one.
  * @param selfUid - the orchestrator's own uid.
@@ -271,7 +274,7 @@ export function checkCredentialsDir(dir: string, conditionId: string, uid: numbe
   try {
     stats = statSync(dir)
   } catch {
-    return { ...base, reason: `${dir} does not exist — stage this condition's credential directory under the credentials root first` }
+    return { ...base, reason: `${dir} does not exist — this harness has no scoped home on this instance yet; run /${conditionId.split('-')[0] ?? conditionId} login here first` }
   }
   if (!stats.isDirectory()) return { ...base, ownerUid: stats.uid, reason: `${dir} is not a directory` }
   const ownerUid = stats.uid
@@ -282,7 +285,7 @@ export function checkCredentialsDir(dir: string, conditionId: string, uid: numbe
     return { ...base, ownerUid, reason: `${dir} cannot be listed: ${error instanceof Error ? error.message : String(error)}` }
   }
   if (entries.length === 0) {
-    return { ...base, ownerUid, reason: `${dir} is empty — the condition would run with no credentials at all` }
+    return { ...base, ownerUid, reason: `${dir} is empty — the harness's scoped home holds no credentials; log in on THIS instance (the run mounts the instance's own scoped home, not a copy)` }
   }
   if (uid !== null && ownerUid !== uid && ownerUid !== selfUid) {
     return {

@@ -35,11 +35,22 @@ export const READINESS_PROMPT
 /** Default wall-clock cap on one readiness probe. */
 export const DEFAULT_READINESS_TIMEOUT_MS = 120_000
 
+/** What a probed condition is FOR: a subject under test, or the blind judge. */
+export type ReadinessRole = 'player' | 'judge'
+
 /** One condition's readiness verdict — the payload of the `readiness` annotation. */
 export interface ReadinessRecord {
   /** `readiness` — the annotation kind, carried in the record itself. */
   kind: 'readiness'
   condition: string
+  /**
+   * Whether this condition is a player or the judge. A judge that cannot be
+   * delegated to costs the WHOLE round's judging, not one cell — pilot B's
+   * two judge samples both dropped while the run walked on to `released`
+   * with an empty llm-draft namespace — so it is probed on the same rule and
+   * refuses the run the same way.
+   */
+  role: ReadinessRole
   harness: string
   /** The local-agent delegation provider the condition resolved to. */
   provider: string
@@ -72,6 +83,8 @@ export interface ReadinessSubject {
   harnessName: string
   declaredModel: string | null
   provider: string
+  /** Defaults to `player`; the plan's judge conditions come through as `judge`. */
+  role?: ReadinessRole
 }
 
 /**
@@ -112,8 +125,14 @@ export interface ReadinessInput {
    * lesson (G4) is that a credential answering "authenticated" somewhere else
    * proves nothing, and a host probe for a container run would be exactly
    * that mistake one level up.
+   *
+   * Returning `undefined` declines a unit for that condition and probes it on
+   * the host — which is right for the JUDGE: judging is a delegation from the
+   * orchestrator, not from a cell, and it runs on the host even in a
+   * container run. Probing it in a unit would test an environment it never
+   * meets.
    */
-  unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit>
+  unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
 }
 
 /**
@@ -154,20 +173,21 @@ async function probeOne(
     readbackWaitMs: number
     now: () => number
     log: (message: string) => void
-    unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit>
+    unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
   },
 ): Promise<ReadinessRecord> {
   if (env.unitFor === undefined) return await probeIn(localAgent, condition, env, undefined)
   const startedAt = env.now()
-  let unit: ReadinessUnit
+  let unit: ReadinessUnit | undefined
   try {
     unit = await env.unitFor(condition)
   } catch (error) {
     const reason = `the probe unit could not be acquired: ${error instanceof Error ? error.message : String(error)}`
-    env.log(`readiness ${condition.id}: NOT READY — ${reason}`)
+    env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${reason}`)
     return {
       kind: 'readiness',
       condition: condition.id,
+      role: condition.role ?? 'player',
       harness: condition.harnessName,
       provider: condition.provider,
       declaredModel: condition.declaredModel,
@@ -179,13 +199,16 @@ async function probeOne(
       reason,
     }
   }
+  // Declined: this condition is probed on the host (the judge's case).
+  if (unit === undefined) return await probeIn(localAgent, condition, env, undefined)
+  const held = unit
   try {
-    const record = await probeIn(localAgent, condition, env, unit)
-    return { ...record, unit: { resource: unit.exec.container, fingerprint: unit.fingerprint } }
+    const record = await probeIn(localAgent, condition, env, held)
+    return { ...record, unit: { resource: held.exec.container, fingerprint: held.fingerprint } }
   } finally {
     // Whatever the probe did, the unit goes. It is bound to no mission, so
     // this is the ONE destroy in the whole orchestrator that needs `force`.
-    await unit.release()
+    await held.release()
   }
 }
 
@@ -205,6 +228,7 @@ async function probeIn(
   const base = {
     kind: 'readiness' as const,
     condition: condition.id,
+    role: condition.role ?? 'player',
     harness: condition.harnessName,
     provider: condition.provider,
     declaredModel: condition.declaredModel,
