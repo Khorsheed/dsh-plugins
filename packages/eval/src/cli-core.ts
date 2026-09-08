@@ -11,6 +11,8 @@ import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { EvalService } from './service.ts'
 import { CONDITION_ID_RE } from './schema.ts'
+import { finalizeRun } from './finalize.ts'
+import { missionCliFace } from './mission-cli.ts'
 
 /** Injected output channels. */
 export interface CliIo {
@@ -30,10 +32,22 @@ const USAGE = `dsh-eval <verb> [options]
                                     (warnings allowed), 1 when errors remain.
   run <plan.json> --dry-run         Offline rehearsal: validate, generate the
                                     run template, expand the matrix, print the
-                                    seeded execution order. Without --dry-run
-                                    the CLI REFUSES: a run starts from a live
-                                    session (/eval run) — outside one there is
-                                    no parent agent to delegate through.
+                                    seeded execution order. [--only id,id] and
+                                    [--max-cells N] rehearse a subset of the
+                                    matrix. Without --dry-run the CLI REFUSES:
+                                    a run starts from a live session
+                                    (/eval run) — outside one there is no
+                                    parent agent to delegate through.
+  finalize <runId>                  Walk every 'archived' cell of a run through
+                                    archived → releasable → released, the same
+                                    gate /eval run --finalize takes, and list
+                                    every cell that was not archived with its
+                                    state. A refused gate is recorded, never
+                                    forced. Outside a host there is no mission
+                                    service, so this drives the dsh-mission CLI
+                                    in a child process: [--data-dir DIR] picks
+                                    the ledger, [--mission-cli PATH] (or
+                                    $DSH_MISSION_CLI) the binary.
   template <manifest.yml>           Print the run template generated from a
                                     dataset-suite manifest (stages, guards,
                                     archive gate) as stdout JSON. [--stages
@@ -55,6 +69,47 @@ Exit codes: 0 ok, 1 failure/refused, 2 usage.
 `
 
 class UsageError extends Error {}
+
+/**
+ * Split a verb's arguments into `--flag value` pairs, bare `--switches`, and
+ * positionals. `valueFlags` names the flags that take a value (both
+ * `--flag value` and `--flag=value` forms); everything else starting with
+ * `--` is a switch, so an unknown option is reported by the caller rather
+ * than swallowing the next argument.
+ */
+function splitOptions(argv: readonly string[], valueFlags: readonly string[]): {
+  values: Map<string, string[]>
+  switches: Set<string>
+  leftovers: string[]
+} {
+  const wanted = new Set(valueFlags)
+  const values = new Map<string, string[]>()
+  const switches = new Set<string>()
+  const leftovers: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string
+    if (!arg.startsWith('--')) {
+      if (arg !== '') leftovers.push(arg)
+      continue
+    }
+    const eq = arg.indexOf('=')
+    const name = eq === -1 ? arg : arg.slice(0, eq)
+    if (!wanted.has(name)) {
+      switches.add(arg)
+      continue
+    }
+    let value: string | undefined
+    if (eq === -1) {
+      value = argv[i + 1]
+      i++
+    } else {
+      value = arg.slice(eq + 1)
+    }
+    if (value === undefined || value === '') throw new UsageError(`${name} wants a value`)
+    values.set(name, [...values.get(name) ?? [], value])
+  }
+  return { values, switches, leftovers }
+}
 
 /** The condition id is the declaration's file name. */
 function conditionIdFromPath(path: string): string {
@@ -96,20 +151,54 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'run': {
         const [planPath, ...extra] = rest
         if (planPath === undefined) throw new UsageError('run wants a plan path')
-        const dryRun = extra.includes('--dry-run')
-        const leftovers = extra.filter(token => token !== '--dry-run')
-        if (leftovers.length > 0) {
-          throw new UsageError(`unexpected argument(s) for run: ${leftovers.join(' ')} — the CLI runs --dry-run only (a live run starts from a session: /eval run)`)
+        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells'])
+        const dryRun = switches.has('--dry-run')
+        switches.delete('--dry-run')
+        const unknown = [...switches, ...leftovers]
+        if (unknown.length > 0) {
+          throw new UsageError(`unexpected argument(s) for run: ${unknown.join(' ')} — the CLI runs --dry-run only (a live run starts from a session: /eval run)`)
         }
         if (!dryRun) {
           io.stderr(`dsh-eval: refusing: a run starts from a live session (/eval run) — outside one there is no parent agent to delegate through. Re-run with --dry-run for the offline rehearsal.\n`)
           return 1
         }
-        const report = await service.run(planPath, { dryRun: true })
-        io.stdout(`${JSON.stringify({ planSha: report.meta.planSha, conditions: report.meta.conditions, order: report.meta.order, concurrency: report.meta.concurrency, template: report.template }, null, 2)}\n`)
+        const only = (values.get('--only') ?? []).flatMap(value => value.split(',')).map(id => id.trim()).filter(id => id !== '')
+        const maxCellsRaw = values.get('--max-cells')?.[0]
+        const maxCells = maxCellsRaw === undefined ? undefined : Number(maxCellsRaw)
+        if (maxCells !== undefined && (!Number.isInteger(maxCells) || maxCells < 1)) {
+          throw new UsageError(`--max-cells wants a positive integer, got ${JSON.stringify(maxCellsRaw)}`)
+        }
+        const report = await service.run(planPath, {
+          dryRun: true,
+          ...(only.length > 0 ? { only } : {}),
+          ...(maxCells !== undefined ? { maxCells } : {}),
+        })
+        io.stdout(`${JSON.stringify({ planSha: report.meta.planSha, conditions: report.meta.conditions, order: report.meta.order, concurrency: report.meta.concurrency, subset: report.subset, template: report.template }, null, 2)}\n`)
         const sequence = (report.meta.order as { sequence: string[] }).sequence
-        io.stderr(`dsh-eval: dry-run ok — ${sequence.length} cell(s), order seeded (order.sequence)\n`)
+        io.stderr(`dsh-eval: dry-run ok — ${sequence.length} of ${report.subset.totalCells} cell(s), order seeded (order.sequence)\n`)
         return 0
+      }
+      case 'finalize': {
+        const { values, switches, leftovers } = splitOptions(rest, ['--data-dir', '--mission-cli'])
+        const [runId, ...extraPositionals] = leftovers
+        if (runId === undefined) throw new UsageError('finalize wants a run id')
+        if (extraPositionals.length > 0 || switches.size > 0) {
+          throw new UsageError(`unexpected argument(s): ${[...extraPositionals, ...switches].join(' ')}`)
+        }
+        const dataDir = values.get('--data-dir')?.[0]
+        const bin = values.get('--mission-cli')?.[0]
+        const mission = missionCliFace({
+          ...(dataDir !== undefined ? { dataDir } : {}),
+          ...(bin !== undefined ? { bin } : {}),
+        })
+        const report = await finalizeRun(mission, runId, { by: 'dsh-eval-cli', log: (message) => { io.stderr(`dsh-eval: ${message}\n`) } })
+        io.stdout(`${JSON.stringify(report, null, 2)}\n`)
+        const skips = Object.entries(report.skippedByState).map(([state, count]) => `${count} ${state}`).join(', ')
+        io.stderr(`dsh-eval: finalize ${report.runId} — ${report.released} released, ${report.refused} gate-refused, `
+          + `${report.skipped} skipped${skips === '' ? '' : ` (${skips})`}\n`)
+        // A refused gate is a real outcome the operator must see, not a
+        // crash: exit 1 so a script notices, with the per-cell reasons above.
+        return report.refused > 0 ? 1 : 0
       }
       case 'template': {
         const [manifestPath, ...extra] = rest

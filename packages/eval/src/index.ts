@@ -92,8 +92,15 @@ export function apply(ctx: Context, config: EvalConfig = {}): void {
 
 export { EvalService, EvalContractError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
+export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './finalize.ts'
+export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
+export { missionCliFace, MissionCliError, parseMissionRow } from './mission-cli.ts'
+export type { MissionCliOptions } from './mission-cli.ts'
+export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './readiness.ts'
+export type { ReadinessRecord, ReadinessSubject, ReadinessInput } from './readiness.ts'
+export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export { EvalReadRefused } from './read.ts'
-export type { ConditionHash, RunOptions, RunReport, RunCellReport } from './service.ts'
+export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
 export type { PlanValidation, ConditionResolution, EvalDiagnostic, ConditionDiagnostics, ConditionReadiness } from './validate.ts'
 export { conditionDiagnostics, resolveConditionReadiness, unresolvedFields, validatePlan } from './validate.ts'
 export { listConditions, runStatus } from './read.ts'
@@ -114,6 +121,7 @@ export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
 export type {
   ConditionEfficiency,
   EvalReport,
+  ExcludedCells,
   FactorPair,
   InvariantCheck,
   JudgeConsistency,
@@ -130,7 +138,8 @@ export type { SuiteManifest, ManifestStage, ManifestOutputSchema } from './manif
 export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
 export type { EvalCell } from './matrix.ts'
 export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
-export type { DatasetsBindingFace, DatasetsFace, MissionFace, MissionReadFace, MissionStatusRow, LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile } from './faces.ts'
+export type { RunSubset as RunSubsetRecord } from './run.ts'
+export type { DatasetsBindingFace, DatasetsFace, MissionFace, MissionFinalizeFace, MissionReadFace, MissionStatusRow, LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile } from './faces.ts'
 export { handleEvalCommand, registerEvalSlash } from './slash.ts'
 export {
   CONDITION_SCHEMA,

@@ -225,3 +225,17 @@ export interface MissionReadFace {
     }
   }
 }
+
+/**
+ * The mission slice `finalize` drives: the run projection it walks, and the
+ * two writes it makes. Structural and narrower than {@link MissionFace} on
+ * purpose — the in-host `ctx.mission` satisfies it, and so does a face backed
+ * by the `dsh-mission` CLI (the process-external form, which has no mission
+ * service to call and must not import the package either).
+ */
+export interface MissionFinalizeFace {
+  /** The run's cells with their current state; anything else in the row is ignored. */
+  runStatus(runId: string): { rows: ReadonlyArray<{ id: string; state: string }> }
+  transition(missionId: string, to: string, options?: { runId?: string; by?: string; note?: string }): Promise<{ changed: boolean }>
+  annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+}

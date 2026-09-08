@@ -37,6 +37,11 @@ import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValid
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
 import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
+import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
+import {
+  checkReadiness, DEFAULT_READINESS_TIMEOUT_MS,
+  type ReadinessRecord, type ReadinessSubject,
+} from './readiness.ts'
 import {
   buildDeidentifyRules, deidentify, discardProbeDir, llmDraftCriteria, mergeReplacements,
   pickRubricPath, runJudgeSamples, runProbes,
@@ -120,6 +125,24 @@ export interface RunOptions {
   stateRoot?: string
   /** Per-probe wall-clock cap. Default 5 minutes (probes are deterministic, not agents). */
   probeTimeoutMs?: number
+  /**
+   * Run only these mission ids out of the expanded matrix. The subset is
+   * recorded in `run.meta.subset` — a run that covers part of its plan must
+   * say so in the ledger, or the bundle looks like a full run that lost
+   * cells (pilot A shrank its matrix by stopping the session, and nothing
+   * recorded why).
+   */
+  only?: readonly string[]
+  /** Cap the run at the first N cells of the seeded order. Recorded the same way. */
+  maxCells?: number
+  /**
+   * Start even when a condition failed the pre-run readiness check. Every
+   * cell of a failed condition is then recorded `cell-skipped` with the
+   * reason instead of being delegated to.
+   */
+  ignoreReadiness?: boolean
+  /** Wall-clock cap on one readiness probe. Default 2 minutes. */
+  readinessTimeoutMs?: number
 }
 
 /** The resolved upstream faces + host paths the run loop needs. */
@@ -156,6 +179,18 @@ export interface RunCellReport {
   verdicts?: { script: number; llmDraft: number }
 }
 
+/** The subset a run actually covered — `run.meta.subset`, verbatim. */
+export interface RunSubset {
+  /** The `--only` mission ids, or null when the run took the whole matrix. */
+  only: string[] | null
+  /** The `--max-cells` cap, or null. */
+  maxCells: number | null
+  /** Cells the plan's matrix expands to. */
+  totalCells: number
+  /** Cells this run actually created. */
+  selectedCells: number
+}
+
 /** The run report (the slash/CLI answer and the run.json summary source). */
 export interface RunReport {
   runId: string
@@ -163,57 +198,14 @@ export interface RunReport {
   meta: Record<string, unknown>
   /** Cells in execution order. */
   cells: RunCellReport[]
+  /** One record per condition from the pre-run readiness check (empty on a dry run). */
+  readiness: ReadinessRecord[]
+  /** What part of the matrix this run covered. */
+  subset: RunSubset
   /** The generated template (also written next to the plan as <plan>.template.json). */
   template: GeneratedTemplate
   bundleDir?: string
   exportError?: string
-}
-
-/** Resolve after `ms` — the read-back wait's only sleep. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms) })
-}
-
-/** Poll interval of the post-settle read-back wait. */
-const READBACK_POLL_MS = 50
-/** Default bound on the post-settle read-back wait. */
-const DEFAULT_READBACK_WAIT_MS = 10_000
-
-/**
- * Wait, bounded, for T11's observation of the round that just settled.
- *
- * The observation does not arrive before `run.result` resolves: a provider
- * records it in its settle pass, which is chained AFTER the result promise —
- * and the facade clears the tracked run (with the `onProgress` callback the
- * options carried) at that same moment, so on a real facade the `settled`
- * event never reaches this caller and `delegationOf` is the channel that
- * does. Reading the record the instant the result resolves therefore reads it
- * one beat too early, which is exactly what the first real two-cell run
- * showed: model.observed null against a delegations.jsonl that had the model.
- *
- * `prior` is the record's observation BEFORE this round started, so a value
- * that differs from it is one this round produced. When the wait expires the
- * record's current value is still returned — for a resumed round that ran the
- * same model as its predecessor the two are identical and indistinguishable,
- * and the record is documented as the delegation's latest observation, so
- * reporting it is honest where reporting null would discard real evidence.
- * @returns the observed model, or null when nothing was ever recorded.
- */
-async function awaitObservedModel(
-  localAgent: LocalAgentFace,
-  childSessionId: string,
-  prior: string | undefined,
-  waitMs: number,
-): Promise<string | null> {
-  const deadline = Date.now() + Math.max(0, waitMs)
-  let observed = localAgent.delegationOf?.(childSessionId)?.observedModel
-  // Nothing to wait for when the facade has no read side at all (pre-T11).
-  if (localAgent.delegationOf === undefined) return observed ?? null
-  while ((observed === undefined || observed === prior) && Date.now() < deadline) {
-    await delay(READBACK_POLL_MS)
-    observed = localAgent.delegationOf(childSessionId)?.observedModel
-  }
-  return observed ?? null
 }
 
 /** sha256 hex of a buffer. */
@@ -927,10 +919,51 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   // ── Manifest + template + matrix (works for a dry run with no faces). ──
   const { manifest } = await loadManifest(join(datasetRoot, 'manifest.yml'))
   const cells = expandMatrix({ dataset: { items: plan.dataset.items }, conditions: plan.conditions, reps: plan.reps })
-  const ordered = orderCells(cells, plan.order.seed, plan.order.interleave)
+  const fullOrder = orderCells(cells, plan.order.seed, plan.order.interleave)
+
+  // ── The subset (--only / --max-cells): recorded, never implicit. ──────
+  // A shrunk run is a legitimate thing to want (one condition is down, the
+  // budget is half of what the plan assumes). What is NOT legitimate is a
+  // bundle that cannot tell a deliberate subset from a run that lost cells,
+  // which is what pilot A produced by stopping the session. The plan
+  // contract gains no field — a subset belongs to ONE execution, not to the
+  // reviewed program — so it lives in run.meta and in the report's
+  // procedure section.
+  let ordered = fullOrder
+  if (options.only !== undefined && options.only.length > 0) {
+    const wanted = new Set(options.only)
+    const unknown = [...wanted].filter(id => !fullOrder.some(cell => cell.missionId === id))
+    if (unknown.length > 0) {
+      throw new EvalRunRefused(
+        `--only names ${unknown.length} cell(s) the plan's matrix does not contain — nothing was executed`,
+        unknown.map(id => ({ code: 'ONLY_UNKNOWN_CELL', message: `${id} is not one of the ${fullOrder.length} expanded cells` })),
+      )
+    }
+    ordered = fullOrder.filter(cell => wanted.has(cell.missionId))
+  }
+  if (options.maxCells !== undefined) {
+    if (!Number.isInteger(options.maxCells) || options.maxCells < 1) {
+      throw new EvalRunRefused(`--max-cells must be a positive integer, got ${JSON.stringify(options.maxCells)}`)
+    }
+    ordered = ordered.slice(0, options.maxCells)
+  }
+  if (ordered.length === 0) {
+    throw new EvalRunRefused('the subset selects no cell — nothing was executed')
+  }
+  const subset: RunSubset = {
+    only: options.only !== undefined && options.only.length > 0 ? [...options.only] : null,
+    maxCells: options.maxCells ?? null,
+    totalCells: fullOrder.length,
+    selectedCells: ordered.length,
+  }
+  // The template carries exactly the cells this run creates: a mission the
+  // run will never drive would sit `pending` in the ledger forever and read
+  // as an abandoned cell rather than one that was never selected.
+  const selectedIds = new Set(ordered.map(cell => cell.missionId))
   const template = generateTemplateFromManifest(manifest, {
     stages: plan.stages,
-    missions: cells.map(cell => ({ id: cell.missionId, title: cell.title, labels: { ...cell.labels } })),
+    missions: cells.filter(cell => selectedIds.has(cell.missionId))
+      .map(cell => ({ id: cell.missionId, title: cell.title, labels: { ...cell.labels } })),
     ...(manifest.suiteId !== undefined ? { name: `${manifest.suiteId}-v1` } : {}),
   })
 
@@ -1019,10 +1052,13 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         order: { seed: plan.order.seed, sequence: ordered.map(cell => cell.missionId) },
         concurrency: options.concurrency ?? 1,
         judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: plan.judge?.samples ?? DEFAULT_JUDGE_SAMPLES },
+        subset,
         ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
       },
       template,
       cells: [],
+      readiness: [],
+      subset,
     }
   }
 
@@ -1068,6 +1104,45 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     judge.provider = provider
   }
 
+  // ── Readiness: one real delegation per condition, before anything. ────
+  // `/<harness> status` answers a SHAPE question ("is there a credential
+  // record?"); this answers the one that decides whether the run is worth
+  // starting ("does a delegation on this condition complete?"). Pilot A took
+  // the status answer at face value and burned six of twenty-four cells on a
+  // credential that said yes and 401'd every time (G4). The probe runs
+  // through the same facade, provider and cwd rule the cells use — there is
+  // no back door, so what it proves is what the cells will meet.
+  const readinessBase = join(stateRoot, 'readiness', `${planSha.slice(0, 12)}-${now()}`)
+  const readiness = await checkReadiness({
+    localAgent: faces.localAgent,
+    conditions: conditions.map((condition): ReadinessSubject => ({
+      id: condition.id,
+      harnessName: condition.harnessName,
+      declaredModel: condition.declaredModel,
+      provider: condition.provider,
+    })),
+    parentSessionId: options.parentSessionId,
+    probeDirBase: readinessBase,
+    timeoutMs: options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
+    readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
+    now,
+    log,
+  })
+  const failedReadiness = new Map(readiness.filter(record => !record.ok).map(record => [record.condition, record]))
+  if (failedReadiness.size > 0 && options.ignoreReadiness !== true) {
+    throw new EvalRunRefused(
+      `${failedReadiness.size} of ${readiness.length} condition(s) failed the pre-run readiness check — nothing was executed`
+      + ' (fix the condition, or re-run with --ignore-readiness to start anyway and record its cells as skipped)',
+      [...failedReadiness.values()].map(record => ({
+        code: 'READINESS_FAILED',
+        message: `${record.condition} (harness ${record.harness}): ${record.reason ?? 'unknown'}`,
+      })),
+    )
+  }
+  if (failedReadiness.size > 0) {
+    log(`--ignore-readiness: starting with ${failedReadiness.size} failed condition(s); their cells will be recorded as skipped`)
+  }
+
   // ── Snapshot (the pin lives in run.meta). ─────────────────────────────
   const snapshot = await faces.datasets.snapshot({ repo: expandHome(plan.dataset.repo) }, plan.dataset.id, plan.dataset.commit ?? undefined)
 
@@ -1099,6 +1174,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: judgeSamples },
     ...(plan.expectedNs !== undefined ? { expectedNs: plan.expectedNs } : {}),
     startedAt,
+    subset,
+    readiness,
     ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
   }
 
@@ -1134,6 +1211,11 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       conditionSha: condition.sha,
       rep: Number(cell.labels.rep),
     }, { runId, by })
+    // The readiness verdict rides each cell too, not only run.meta: the
+    // bundle carries per-mission annotations, and a reader asking why a cell
+    // was skipped should find the answer on the cell.
+    const record = readiness.find(entry => entry.condition === condition.id)
+    if (record !== undefined) await faces.mission.annotate(cell.missionId, 'orchestrator', record, { runId, by })
   }
 
   // ── The pool: ordered cells, `concurrency` workers. ───────────────────
@@ -1144,6 +1226,35 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     while (nextCell < ordered.length) {
       const cell = ordered[nextCell] as EvalCell
       nextCell += 1
+      // A cell whose condition failed readiness is not delegated to: the run
+      // only got here because of --ignore-readiness, and the cell records
+      // WHY it produced nothing rather than producing a delegation failure
+      // that looks like an infrastructure blip.
+      const failure = failedReadiness.get(cell.labels.condition)
+      if (failure !== undefined) {
+        const reason = `condition ${failure.condition} failed the pre-run readiness check (${failure.reason ?? 'unknown'})`
+          + ' and the run was started with --ignore-readiness'
+        await faces.mission.annotate(cell.missionId, 'orchestrator', {
+          kind: 'cell-skipped',
+          reason,
+          attempts: 1,
+        }, { runId, by }).catch(() => {})
+        log(`cell ${cell.missionId}: skipped — ${reason}`)
+        const record = faces.mission.get(cell.missionId, runId)
+        reports.set(cell.missionId, {
+          missionId: cell.missionId,
+          task: cell.labels.task,
+          condition: cell.labels.condition,
+          rep: Number(cell.labels.rep),
+          attempts: record.mission.currentAttempt,
+          finalState: record.mission.attempts[record.mission.currentAttempt - 1]?.state ?? 'unknown',
+          childSessionIds: [],
+          promptShas: {},
+          activeMs: 0,
+          skipped: { reason },
+        })
+        continue
+      }
       reports.set(cell.missionId, await runCellWithRetry(faces, {
         runId,
         by,
@@ -1203,6 +1314,8 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     dryRun: false,
     meta,
     cells: ordered.map(cell => reports.get(cell.missionId) as RunCellReport),
+    readiness,
+    subset,
     template,
     ...(bundleDir !== undefined ? { bundleDir } : {}),
     ...(exportError !== undefined ? { exportError } : {}),

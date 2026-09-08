@@ -15,16 +15,27 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { EvalService } from './service.ts'
 
 const USAGE = `usage:
-  /eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]
+  /eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR]
+           [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
+  /eval finalize <runId>
 
   run starts an evaluation run from a dataseek.plan/1 document. The invoking
   session becomes the run's originSession and the parent of every delegation.
   --dry-run validates, generates the template, expands the matrix, and prints
-  the execution order — nothing executes. Every cell is judged before it is
+  the execution order — nothing executes. Before creating the run, every
+  condition is probed with one minimal delegation (the readiness check: a
+  harness that reports 'authenticated' can still 401 on every call); a failed
+  condition refuses the whole run unless --ignore-readiness is given, and then
+  its cells are recorded as skipped. --only and --max-cells run part of the
+  matrix and record the subset in run.meta. Every cell is judged before it is
   archived (the item's probes write script verdicts; the plan's judge
   conditions write double-sampled llm-draft ones). The default run stops at
   'archived'; --finalize attempts releasable → released, which the archive
-  gate allows once verdicts/ is non-empty.`
+  gate allows once verdicts/ is non-empty.
+
+  finalize is the re-entry point for a run that already stopped at 'archived':
+  it walks every archived cell through the same gate and lists every cell that
+  was not archived with its state. It never forces a refused gate.`
 
 /** Parsed slash input: positional tokens, `--flag value` pairs, bare `--switches`. */
 interface SlashArgs {
@@ -58,7 +69,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries'])
+  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -82,22 +93,40 @@ function flagOf(args: SlashArgs, name: string): string | undefined {
   return values === undefined ? undefined : values[values.length - 1]
 }
 
+/** One line describing what part of the plan's matrix a run covered. */
+function subsetLine(subset: { only: string[] | null; maxCells: number | null; totalCells: number; selectedCells: number }): string | null {
+  const knobs: string[] = []
+  if (subset.only !== null && subset.only.length > 0) knobs.push(`--only ${subset.only.join(',')}`)
+  if (subset.maxCells !== null) knobs.push(`--max-cells ${subset.maxCells}`)
+  if (knobs.length === 0) return null
+  return `subset: ${knobs.join(' ')} — ${subset.selectedCells} of ${subset.totalCells} cell(s) (recorded in run.meta.subset)`
+}
+
 /** Render the run report as the command reply. */
 function renderReport(lines: readonly string[], report: {
   runId: string
   dryRun: boolean
   meta: { order?: { sequence?: string[] } }
   cells: Array<{ missionId: string; finalState: string; attempts: number; activeMs: number; halted?: boolean; skipped?: { reason: string }; rejected?: { stage: string; violations: string[] }; verdicts?: { script: number; llmDraft: number } }>
+  readiness: Array<{ condition: string; harness: string; ok: boolean; durationMs: number; observedModel: string | null; reason?: string }>
+  subset: { only: string[] | null; maxCells: number | null; totalCells: number; selectedCells: number }
   bundleDir?: string
   exportError?: string
 }): CommandResult {
   const body: string[] = [...lines]
+  const subset = subsetLine(report.subset)
+  if (subset !== null) body.push(subset)
   if (report.dryRun) {
     const sequence = report.meta.order?.sequence ?? []
     body.push(`dry-run — ${sequence.length} cell(s), execution order:`)
     for (const [i, missionId] of sequence.entries()) body.push(`  ${String(i + 1).padStart(3)}. ${missionId}`)
     body.push('(nothing executed — approve and run without --dry-run)')
     return { kind: 'success', text: body.join('\n') }
+  }
+  if (report.readiness.length > 0) {
+    const failed = report.readiness.filter(record => !record.ok)
+    body.push(`readiness: ${report.readiness.length - failed.length}/${report.readiness.length} condition(s) ready`)
+    for (const record of failed) body.push(`  ✗ ${record.condition} (${record.harness}): ${record.reason ?? 'unknown'}`)
   }
   body.push(`run ${report.runId} — ${report.cells.length} cell(s):`)
   for (const cell of report.cells) {
@@ -112,6 +141,43 @@ function renderReport(lines: readonly string[], report: {
   }
   if (report.bundleDir !== undefined) body.push(`bundle: ${report.bundleDir}`)
   if (report.exportError !== undefined) body.push(`export FAILED: ${report.exportError}`)
+  return { kind: 'success', text: body.join('\n') }
+}
+
+/** Human-readable name of each skip class, for the finalize summary line. */
+const SKIP_CATEGORY_LABEL: Record<string, string> = {
+  'already-released': 'released（已终结）',
+  interrupted: '中断（未走到 archived）',
+  'not-started': 'pending（未开跑）',
+}
+
+/** Handle `/eval finalize <runId>` — the post-run release walk. */
+async function handleFinalize(service: EvalService, args: SlashArgs): Promise<CommandResult> {
+  const runId = args.positionals[0]
+  if (runId === undefined || args.positionals.length > 1) {
+    return { kind: 'error', text: 'finalize wants exactly one run id\n\n' + USAGE }
+  }
+  const lines: string[] = []
+  let report: Awaited<ReturnType<EvalService['finalize']>>
+  try {
+    report = await service.finalize(runId, { log: (message) => { lines.push(message) } })
+  } catch (error) {
+    return { kind: 'error', text: `eval finalize refused: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  const body: string[] = [...lines]
+  body.push(`finalize ${report.runId} — ${report.cells.length} cell(s): ${report.released} released, ${report.refused} gate-refused, ${report.skipped} skipped`)
+  const skipSummary = Object.entries(report.skippedByCategory)
+    .filter(([, count]) => count > 0)
+    .map(([category, count]) => `${count} ${SKIP_CATEGORY_LABEL[category] ?? category}跳过`)
+  if (skipSummary.length > 0) body.push(`  跳过: ${skipSummary.join('、')}`)
+  for (const cell of report.cells) {
+    const suffix = cell.action === 'released'
+      ? 'archived → released'
+      : cell.action === 'refused'
+        ? `gate refused at ${cell.finalState} — ${cell.reason ?? 'unknown'}`
+        : `skipped (${cell.state})`
+    body.push(`  ${cell.missionId}: ${suffix}`)
+  }
   return { kind: 'success', text: body.join('\n') }
 }
 
@@ -138,6 +204,7 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
   } catch (error) {
     return { kind: 'error', text: `${String(error)}\n\n${USAGE}` }
   }
+  if (sub === 'finalize') return await handleFinalize(service, args)
   if (sub !== 'run') {
     return { kind: 'error', text: `unknown /eval verb ${JSON.stringify(sub)}\n\n${USAGE}` }
   }
@@ -161,6 +228,19 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
       return { kind: 'error', text: `--retries must be a non-negative integer, got ${JSON.stringify(retriesRaw)}` }
     }
   }
+  let maxCells: number | undefined
+  const maxCellsRaw = flagOf(args, '--max-cells')
+  if (maxCellsRaw !== undefined) {
+    maxCells = Number(maxCellsRaw)
+    if (!Number.isInteger(maxCells) || maxCells < 1) {
+      return { kind: 'error', text: `--max-cells must be a positive integer, got ${JSON.stringify(maxCellsRaw)}` }
+    }
+  }
+  // Repeatable and comma-separated both work; the union is what runs.
+  const only = (args.flags.get('--only') ?? [])
+    .flatMap(value => value.split(','))
+    .map(id => id.trim())
+    .filter(id => id !== '')
   const parentSessionId = String(invocation.agent.session.id)
   const lines: string[] = []
   try {
@@ -171,6 +251,9 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
       finalize: args.switches.has('--finalize'),
       ...(flagOf(args, '--out') !== undefined ? { exportsDir: flagOf(args, '--out') as string } : {}),
       ...(retries !== undefined ? { retryInfrastructure: retries } : {}),
+      ...(only.length > 0 ? { only } : {}),
+      ...(maxCells !== undefined ? { maxCells } : {}),
+      ignoreReadiness: args.switches.has('--ignore-readiness'),
       log: (message) => { lines.push(message) },
     })
     return renderReport(lines, report)
@@ -184,8 +267,8 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
 export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
-    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing).',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N]' },
+    description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate.',
+    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId>' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

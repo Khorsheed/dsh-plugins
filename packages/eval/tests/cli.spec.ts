@@ -151,7 +151,7 @@ describe('dsh-eval run --dry-run', () => {
     expect(out.order).toEqual({ seed: 42, sequence: ['p0-placeholder-dsh-exec-rep1'] })
     expect(out.concurrency).toBe(1)
     expect(out.template.states).toContain('stage-1')
-    expect(stderr).toContain('dry-run ok — 1 cell(s)')
+    expect(stderr).toContain('dry-run ok — 1 of 1 cell(s)')
   })
 
   it('the dry-run report is a stable snapshot for the same plan', async () => {
@@ -175,6 +175,12 @@ describe('dsh-eval run --dry-run', () => {
           ],
         },
         "planSha": "67e3b85dabf68c63ca5a682ee443c3cd8a3fd2d583aedb3bf3167529335f2b3d",
+        "subset": {
+          "maxCells": null,
+          "only": null,
+          "selectedCells": 1,
+          "totalCells": 1,
+        },
         "template": {
           "missions": [
             {
@@ -307,5 +313,106 @@ describe('dsh-eval template', () => {
     expect(stdout).toBe('')
     expect(stderr).toContain('stage3')
     expect(stderr).toContain('structured schema file reference')
+  })
+})
+
+// --- dsh-eval finalize (pilot A · G13) ----------------------------------------
+
+/**
+ * A stand-in `dsh-mission` binary. The point of the CLI form is that eval
+ * imports nothing from mission and calls a CHILD PROCESS instead, so the test
+ * exercises exactly that seam: argv in, mission's own row format out. Using
+ * the real binary here would couple eval's tests to a sibling package for no
+ * extra coverage — mission's own suite owns its output.
+ */
+function stubMissionCli(root: string, rows: Array<[id: string, state: string]>): { bin: string; calls: string } {
+  const bin = join(root, 'stub-dsh-mission.mjs')
+  const calls = join(root, 'calls.log')
+  const table = rows.map(([id, state]) => `${id.padEnd(16)} active     ${state.padEnd(12)} task=T,rep=1       -`).join('\n')
+  writeFileSync(bin, `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs'
+const argv = process.argv.slice(2)
+appendFileSync(${JSON.stringify(calls)}, argv.join(' ') + '\\n')
+if (argv[0] === 'list') {
+  process.stdout.write(\`id              bucket    state       labels             plan\n${table}\n(${rows.length} mission(s))\n\`)
+  process.exit(0)
+}
+if (argv[0] === 'transition') {
+  // The archive gate refuses the cell named 'cell-empty' on its first edge.
+  if (argv[1] === 'cell-empty' && argv[2] === 'releasable') {
+    process.stderr.write('mission: file-check guard failed: empty archive/verdicts/\\n')
+    process.exit(1)
+  }
+  process.stdout.write(argv[1] + ': ok\\n')
+  process.exit(0)
+}
+if (argv[0] === 'annotate') { process.stdout.write('annotation appended\\n'); process.exit(0) }
+process.stderr.write('stub: unknown command ' + argv[0] + '\\n')
+process.exit(2)
+`, { mode: 0o755 })
+  return { bin, calls }
+}
+
+describe('dsh-eval finalize', () => {
+  it('walks the archived cells through the gate and reports every other cell with its state', async () => {
+    const root = tmpTree()
+    const { bin, calls } = stubMissionCli(root, [
+      ['cell-a', 'archived'],
+      ['cell-b', 'released'],
+      ['cell-c', 'stage-2'],
+      ['cell-d', 'pending'],
+    ])
+    const { io, stdout, stderr } = captureIo()
+    const code = await runCli(['finalize', 'run-x', '--mission-cli', bin, '--data-dir', root], io)
+    expect(code).toBe(0)
+
+    const report = JSON.parse(stdout()) as {
+      released: number; refused: number; skipped: number
+      skippedByCategory: Record<string, number>
+      cells: Array<{ missionId: string; action: string; state: string }>
+    }
+    expect(report.released).toBe(1)
+    expect(report.skipped).toBe(3)
+    expect(report.skippedByCategory).toEqual({ 'already-released': 1, interrupted: 1, 'not-started': 1 })
+    expect(report.cells.map(cell => [cell.missionId, cell.action])).toEqual([
+      ['cell-a', 'released'], ['cell-b', 'skipped'], ['cell-c', 'skipped'], ['cell-d', 'skipped'],
+    ])
+    expect(stderr()).toContain('1 released, 0 gate-refused, 3 skipped')
+
+    // Both edges were driven through the child process, and the run id and
+    // data dir rode every call.
+    const log = readFileSync(calls, 'utf8').trim().split('\n')
+    expect(log[0]).toBe(`list --run run-x --data-dir ${root}`)
+    expect(log[1]).toBe(`transition cell-a releasable --run run-x --data-dir ${root}`)
+    expect(log[2]).toBe(`transition cell-a released --run run-x --data-dir ${root}`)
+    expect(log).toHaveLength(3)
+  })
+
+  it('exits 1 and records the refusal when the archive gate says no, without forcing', async () => {
+    const root = tmpTree()
+    const { bin, calls } = stubMissionCli(root, [['cell-empty', 'archived']])
+    const { io, stdout } = captureIo()
+    const code = await runCli(['finalize', 'run-y', '--mission-cli', bin], io)
+    expect(code).toBe(1)
+    const report = JSON.parse(stdout()) as { refused: number; cells: Array<{ finalState: string; reason?: string }> }
+    expect(report.refused).toBe(1)
+    expect(report.cells[0]?.finalState).toBe('archived')
+    expect(report.cells[0]?.reason).toContain('empty archive/verdicts/')
+    // The refusal was written back as an annotation; the second edge was never tried.
+    const log = readFileSync(calls, 'utf8')
+    expect(log).toContain('annotate cell-empty --ns orchestrator')
+    expect(log).not.toContain('transition cell-empty released')
+  })
+
+  it('says what to do when the mission CLI is not there', async () => {
+    const { io, stderr } = captureIo()
+    const code = await runCli(['finalize', 'run-z', '--mission-cli', join(tmpTree(), 'nope')], io)
+    expect(code).toBe(1)
+    expect(stderr()).toContain('DSH_MISSION_CLI')
+  })
+
+  it('wants a run id', async () => {
+    const { io } = captureIo()
+    expect(await runCli(['finalize'], io)).toBe(2)
   })
 })
