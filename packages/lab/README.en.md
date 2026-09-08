@@ -86,11 +86,14 @@ await ctx.lab.collect(unit.id, { source: '/workspace/out', target: '/host/archiv
 await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/ + manifest.json (sha256 per file)
 await ctx.lab.release(unit.id)                // gated by mission.isReleasable; force + warning without a gate
 const units = await ctx.lab.status()          // reconciled against the docker daemon
+ctx.lab.fingerprintOf(components)             // pure: the same hashing rule, over any component set
 ```
 
 `ownWorkdir` exists for non-root units: `docker run --workdir X` creates a missing X as `root:root`, so a unit that declares a `user` — or an image that ships a non-root `USER`, as the evaluation image does — cannot write the directory its whole working life happens in. `populate` still succeeds (the daemon copies as root) and the FIRST write from inside the unit fails, which is the worst possible place to find out. With the flag, `acquire` creates the workdir as root and `chown`s it to the unit's own uid:gid — asked of the unit itself, so an image's own `USER` is served as well as an explicit `user`; where the daemon refuses `--user 0` (userns-remap) it falls back to a plain create, the behavior before the option existed. It is **not** a fingerprint component: the component shape never varies, and who owns a directory the unit was going to be handed anyway does not make two otherwise identical environments incomparable.
 
 One thing at the same layer: `acquire` now also makes `/run/dsh-lab` itself `1777` (previously only `/run/dsh-lab/pids`). `verify` creates its material directory under it as the UNIT's user, and a root-owned `0755` parent made every verify-with-material call fail at `mkdir` on a non-root unit — i.e. exactly the units this project runs.
+
+`fingerprintOf` is the hashing function `acquire` itself uses, exposed because a caller sometimes needs to ask what a DIFFERENT component set would hash to. The evaluation orchestrator is that case: comparing cells needs "the same environment the plan declared", not "the same unit", and those differ by exactly the components each condition contributes (its own credential mount, its own env variable). It takes the unit's components, drops those, and asks for the hash of what is left. Doing that arithmetic here rather than re-implementing the canonicalization keeps one hashing rule in the repository — a second copy would drift the first time a component is added. Pure: no unit, no provider, no daemon.
 
 The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
 

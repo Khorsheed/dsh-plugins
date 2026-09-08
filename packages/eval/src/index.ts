@@ -109,14 +109,15 @@ export { registerEvalTools, EVAL_TOOL_NAMES } from './tools.ts'
 export { canonicalJson, hashConditionDocument, hashHome } from './hash.ts'
 export type { HomeHash } from './hash.ts'
 export {
-  buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemVerifyRoot,
-  llmDraftCriteria, mergeReplacements, pickRubricPath, probePaths,
+  buildDeidentifyRules, buildJudgePrompt, collectProbes, deidentify, itemLayerPath, itemProbeCwd,
+  itemVerifyRoot, llmDraftCriteria, mergeReplacements, pickChecklistPath, pickRubricPath, probePaths,
+  registerEntriesOf, registerPatternMatches,
   DATASET_VERIFY_ROOT, DEFAULT_JUDGE_SAMPLES, HARNESS_ALIASES, JUDGE_MATERIAL_FILES,
   PROBE_EXIT_NOT_APPLICABLE,
 } from './judge.ts'
 export type {
   Deidentified, DeidentifyRule, JudgeSampleRecord, ProbeOutcome, ProbeRef, ProbeStatus,
-  ReplacementCount, ResolvedJudge, RubricCriterion, VerdictAnchor,
+  RegisterEntry, ReplacementCount, ResolvedJudge, RubricCriterion, VerdictAnchor,
 } from './judge.ts'
 export { analyzeBundle, writeEvalReport, parseMissionId } from './report.ts'
 export type {
@@ -148,18 +149,19 @@ export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
 export type { EvalCell } from './matrix.ts'
 export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
 export {
-  acquireSpecFor, checkCredentialsDir, conditionUnitDiagnostics, conditionUnitOf, describeAcquireSpec,
-  planUnitOf, resolveCellUnit, unitUid,
+  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
+  describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from './unit.ts'
-export type { CellUnitPlan, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl } from './unit.ts'
+export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl } from './unit.ts'
 export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.ts'
 export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
 export type {
   DatasetsBindingFace, DatasetsFace, MissionFace, MissionFinalizeFace, MissionReadFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
-  LabFace, LabAcquireSpec, LabMountSpec, LabPopulateResult, LabResourceLimits, LabUnitInfo, LabVerifyResult,
+  LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
+  LabUnitInfo, LabVerifyResult,
 } from './faces.ts'
 export { handleEvalCommand, registerEvalSlash } from './slash.ts'
 export {

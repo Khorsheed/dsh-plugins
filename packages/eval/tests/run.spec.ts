@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
 import { READINESS_PROMPT } from '../src/readiness.ts'
-import type { DatasetsFace, LabAcquireSpec, LabFace, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
+import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
 import type { DelegationResult, DelegationRun } from '../src/faces.ts'
 import { canonicalJson } from '../src/hash.ts'
 import { expandMatrix, orderCells } from '../src/matrix.ts'
@@ -437,6 +437,8 @@ class FakeLocalAgent implements LocalAgentFace {
      * copy rather than a pretend one.
      */
     workspaceOf?: (container: string) => string
+    /** Harness names this facade has a delegation provider for (default `['dsh']`). */
+    harnesses?: string[]
     /**
      * What the record reports for the READINESS child specifically. Set it to
      * the declared model to let the probe pass while the stage rounds read
@@ -486,7 +488,10 @@ class FakeLocalAgent implements LocalAgentFace {
   }
 
   get(name: string): { delegationProvider?: string } | undefined {
-    return name === 'dsh' ? { delegationProvider: 'subagent_dsh' } : undefined
+    // Default to the one harness the fixture condition names; a test that
+    // needs several says so, and an unregistered harness stays a refusal.
+    const known = this.options.harnesses ?? ['dsh']
+    return known.includes(name) ? { delegationProvider: `subagent_${name}` } : undefined
   }
 
   private writeStageOutputs(stageId: string, cwd: string | undefined, behavior: 'valid' | 'invalid' | 'halt'): void {
@@ -1846,22 +1851,25 @@ class FakeLab implements LabFace {
     const workspace = join(this.root, id, 'workspace')
     const verdicts = join(this.root, id, 'verdicts')
     mkdirSync(workspace, { recursive: true })
-    // The fingerprint is a function of the DECLARED environment, exactly as
-    // the composite one is: two cells of the same condition share it, and a
-    // condition that injects a different variable does not.
-    const fingerprint = `lab-env:${createHash('sha256').update(canonicalJson({
-      image: spec.image,
+    // The components lab would compute for this spec, in lab's own shape —
+    // and the fingerprint is their hash, so a class derived by removing
+    // components is comparable with a unit's own by construction.
+    const components = {
+      version: 1,
+      image: `registry/${spec.image}@sha256:fixed`,
+      resources: { cpus: spec.resources?.cpus === undefined ? null : String(spec.resources.cpus), memory: spec.resources?.memory === undefined ? null : String(spec.resources.memory) },
+      mounts: (spec.mounts ?? []).map(mount => ({ target: mount.target, type: mount.type ?? 'bind', readonly: mount.readonly === true }))
+        .sort((a, b) => a.target.localeCompare(b.target)),
+      envKeys: Object.keys(spec.env ?? {}).sort(),
       network: spec.network ?? null,
       user: spec.user ?? null,
-      resources: spec.resources ?? null,
-      mounts: (spec.mounts ?? []).map(mount => ({ target: mount.target, type: mount.type ?? 'bind' })),
-      envKeys: Object.keys(spec.env ?? {}).sort(),
-    })).digest('hex')}`
+    }
     const info: LabUnitInfo = {
       id,
       provider: 'docker',
       resource: `dsh-lab-${id}`,
-      fingerprint,
+      fingerprint: this.fingerprintOf(components),
+      fingerprintComponents: components,
       workspace: '/workspace',
       createdAt: 0,
       ...(spec.missionId !== undefined ? { missionId: spec.missionId } : {}),
@@ -1949,6 +1957,11 @@ class FakeLab implements LabFace {
       throw new Error(`lab: release of ${unitId} refused — mission ${held.info.missionId} is not in a releasable state; archive and pass its gate first`)
     }
     this.live.delete(unitId)
+  }
+
+  /** lab's pure hashing verb: the same rule, over whatever components it is handed. */
+  fingerprintOf(components: LabFingerprintComponents): string {
+    return `lab-env:${createHash('sha256').update(canonicalJson(components)).digest('hex')}`
   }
 
   async status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>> {
@@ -2196,6 +2209,13 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
       .rejects.toThrow(/--creds-root/)
     await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, concurrency: 2 }, deps))
       .rejects.toThrow(/serial in this line/)
+    // A lab predating the hashing verb: the environment class cannot be
+    // derived, and deriving it by a second rule is exactly what must not
+    // happen — so the run is refused and says which verb is missing.
+    const older = Object.create(Object.getPrototypeOf(lab) as object, Object.getOwnPropertyDescriptors(lab)) as LabFace & { fingerprintOf?: unknown }
+    older.fingerprintOf = undefined
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, { ...deps, lab: older }))
+      .rejects.toThrow(/fingerprintOf/)
     await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot: join(root, 'absent') }, deps))
       .rejects.toThrow(/nothing was executed/)
     // Nothing was acquired by any of the four refusals.
@@ -2219,5 +2239,138 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
     expect(units[0]?.acquire).toMatchObject({ image: 'eval-env:pinned', network: 'eval-net', user: '1000', workdir: '/workspace' })
     expect(units[0]?.acquire['envKeys']).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
     expect(units[0]?.acquire).not.toHaveProperty('env')
+  })
+})
+
+describe('runPlan — «环境一致» compares the environment class, not the unit (T20b)', () => {
+  /** Four conditions differing ONLY in the scoped home each one mounts. */
+  const HARNESSES = [
+    { id: 'codex-unit', name: 'codex', permissions: 'danger-full-access', container: '/creds/codex', variable: 'CODEX_HOME' },
+    { id: 'claude-unit', name: 'claude-code', permissions: 'skip', container: '/creds/claude', variable: 'CLAUDE_CONFIG_DIR' },
+    { id: 'kimi-unit', name: 'kimi', permissions: 'auto-approve', container: '/creds/kimi', variable: 'KIMI_CODE_HOME' },
+    { id: 'dsh-unit', name: 'dsh', permissions: 'unrestricted', container: '/creds/dsh', variable: 'DSH_HOME' },
+  ]
+
+  function writeFourConditions(root: string): string {
+    const base = JSON.parse(readFileSync(join(FIXTURE_DATASET, 'conditions', 'dsh-exec.json'), 'utf8')) as Record<string, unknown>
+    const credsRoot = join(root, 'creds')
+    for (const harness of HARNESSES) {
+      writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${harness.id}.json`), `${JSON.stringify({
+        ...base,
+        harness: { name: harness.name, version: null, drive: 'exec' },
+        // Every model declared null: four harnesses cannot share one, and the
+        // subject invariant is not what this test is about.
+        model: { declared: null, endpoint: null },
+        permissions: harness.permissions,
+        env: { keys: [harness.variable] },
+        unit: { scopedHome: { container: harness.container, var: harness.variable } },
+      }, null, 2)}\n`)
+      mkdirSync(join(credsRoot, harness.id), { recursive: true })
+      writeFileSync(join(credsRoot, harness.id, '.keep'), 'staged by hand (T22)\n')
+    }
+    return credsRoot
+  }
+
+  it('gives four harnesses one class and four unit fingerprints, and records what it left out', async () => {
+    const root = makeDatasetTree()
+    const credsRoot = writeFourConditions(root)
+    const planPath = writePlan(root, { conditions: HARNESSES.map(h => h.id), unit: UNIT_SEGMENT }, 'four')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({
+      harnesses: HARNESSES.map(harness => harness.name),
+      workspaceOf: (container) => {
+        const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+        return held?.workspace ?? ''
+      },
+    })
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+    }, { datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab })
+
+    expect(report.cells).toHaveLength(4)
+    const classes = new Set(report.cells.map(cell => mission.refsOf(cell.missionId, report.runId).fingerprint))
+    // One environment: same image, ceilings, network, user. That is what the
+    // report compares, and before this it compared four different units.
+    expect(classes.size).toBe(1)
+    expect([...classes][0]).toMatch(/^lab-env:[0-9a-f]{64}$/)
+
+    // Cells come back in the seeded order, so each one is matched by the
+    // condition it names rather than by position.
+    const units = new Map(report.cells.map(cell => [cell.condition,
+      orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'unit') as {
+        fingerprint: string
+        unitFingerprint: string
+        envExcluded: { mounts: string[]; envKeys: string[] }
+      }]))
+    // Four units, still distinct — the class did not paper over a real
+    // difference, it named which components the difference is in.
+    expect(new Set([...units.values()].map(unit => unit.unitFingerprint)).size).toBe(4)
+    for (const harness of HARNESSES) {
+      const unit = units.get(harness.id) as NonNullable<ReturnType<typeof units.get>>
+      expect(unit.fingerprint).toBe([...classes][0])
+      expect(unit.envExcluded.mounts).toEqual([harness.container])
+      expect(unit.envExcluded.envKeys).toContain(harness.variable)
+      if (harness.name === 'dsh') expect(unit.envExcluded.envKeys).toContain('NODE_OPTIONS')
+    }
+  })
+})
+
+describe('runPlan — one materialization hash for both paths (T20b)', () => {
+  function shaOf(root: string, runId: string, missionId: string): string {
+    const record = JSON.parse(readFileSync(join(root, 'mission', 'runs', runId, 'data', missionId, 'attempt-1', 'materialization.json'), 'utf8')) as { sha256?: string }
+    return record.sha256 as string
+  }
+
+  it('hashes the same item at the same commit to the same sha on the host and in a unit', async () => {
+    const hostRoot = makeDatasetTree()
+    const hostMission = new FakeMission(join(hostRoot, 'mission'))
+    const hostReport = await runPlan(writePlan(hostRoot), { parentSessionId: PARENT_SESSION, stateRoot: join(hostRoot, 'state') }, {
+      datasets: fakeDatasets(hostRoot), mission: hostMission, localAgent: new FakeLocalAgent(),
+    })
+
+    const unitRoot = makeDatasetTree()
+    writeUnitCondition(unitRoot)
+    const credsRoot = stageCredentials(unitRoot)
+    const unitMission = new FakeMission(join(unitRoot, 'mission'))
+    const lab = new FakeLab(join(unitRoot, 'units'), unitMission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const unitReport = await runPlan(writePlan(unitRoot, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container'), {
+      parentSessionId: PARENT_SESSION, stateRoot: join(unitRoot, 'state'), credsRoot,
+    }, { datasets: fakeDatasets(unitRoot), mission: unitMission, localAgent: agent, lab })
+
+    const hostSha = shaOf(hostRoot, hostReport.runId, hostReport.cells[0]?.missionId as string)
+    const unitSha = shaOf(unitRoot, unitReport.runId, unitReport.cells[0]?.missionId as string)
+    expect(hostSha).toMatch(/^[0-9a-f]{64}$/)
+    // Same item, same commit, same bytes: one number. Two algorithms made the
+    // «题面一致» invariant answerable only within a path.
+    expect(unitSha).toBe(hostSha)
+  })
+
+  it('keeps lab\'s own hash of what it copied in, under its own name', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container'), {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot,
+    }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab })
+
+    const attemptDir = join(root, 'mission', 'runs', report.runId, 'data', report.cells[0]?.missionId as string, 'attempt-1')
+    const populate = JSON.parse(readFileSync(join(attemptDir, 'populate-manifest.json'), 'utf8')) as { sha: string; count: number }
+    expect(populate.sha).toMatch(/^[0-9a-f]{64}$/)
+    expect(populate.count).toBeGreaterThan(0)
+    // Two records, two claims: what the item is, and what went into the unit.
+    expect(populate.sha).not.toBe(shaOf(root, report.runId, report.cells[0]?.missionId as string))
+    // …and the workspace still carries no manifest of either kind.
+    expect(existsSync(join(attemptDir, 'archive', 'workspace', 'materialization.json'))).toBe(false)
   })
 })

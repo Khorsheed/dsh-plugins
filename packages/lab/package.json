@@ -77,7 +77,7 @@
     },
     "compat": {
       "minHost": "0.1.0-rc.6",
-      "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning; AcquireSpec.ownWorkdir creates the declared workdir and hands it to the unit's own user — needed because `docker run --workdir` creates a missing directory as root and a non-root unit then cannot write the directory its work happens in; the scratch root /run/dsh-lab is world-writable so verify can create its material directory as the unit's user, and verify hands that material to the unit so its own cleanup can remove it",
+      "notes": "fully functional on both host lines; without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning; AcquireSpec.ownWorkdir creates the declared workdir and hands it to the unit's own user — needed because `docker run --workdir` creates a missing directory as root and a non-root unit then cannot write the directory its work happens in; the scratch root /run/dsh-lab is world-writable so verify can create its material directory as the unit's user, and verify hands that material to the unit so its own cleanup can remove it; `fingerprintOf(components)` is the hashing rule as a pure verb — the same function `acquire` uses, exposed so a caller can ask what a derived component set would hash to (the evaluation orchestrator's environment class)",
       "verifiedHost": "0.1.1-rc.2"
     }
   },

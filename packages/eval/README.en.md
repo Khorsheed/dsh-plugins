@@ -70,6 +70,31 @@ A plan that declares a `unit` segment takes the container path; one that does no
 6. **Judging happens inside the unit**: the probes run through `lab.verify`, their material riding verify's own scratch directory (`/run/dsh-lab/verify`, removed after every call); `--out` is written to `/run/dsh-lab/verdicts/<probe>/`, **not** into `/workspace` — the archive is the player's work and must not carry judging output. After the last probe, one `collect` brings the whole verdict tree back into the attempt's `probe-verdicts/`, where it is read and judged on the host; then the in-unit directory is removed. The three exit states and the backfill-before-validation order are identical to the host path's, verbatim.
 7. **`archive`**: lab exports `workspace/` plus `manifest.json` into the attempt's `archive/`; `verdicts/` is already beside it (judging runs before archiving, because the gate refuses an empty one).
 
+### «环境一致» compares the environment CLASS
+
+`refs.fingerprint` does not carry the unit's full fingerprint. It carries the **environment class**: the unit's composite components minus the ones **that condition itself contributed** — its own scoped-home mount target, the variable naming it, that harness's extras (dsh's `NODE_OPTIONS`), and the keys the condition declares in `env.keys`. What is left is what the plan declared: image, ceilings, network, user, plan-level mounts and env keys.
+
+Without that, the invariant fails on exactly the comparison this profile exists to run. Four harnesses mount four credential directories under four variables (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), so one run yields four fingerprints and the report reads `violated` and refuses to compare — of four environments that are, in every sense the comparison cares about, one.
+
+The subtraction is read back off the code that BUILT the spec, not guessed from the components: whatever `acquireSpecFor` put in, `conditionOwnedComponents` takes back out. The hashing rule is not re-implemented — the class is hashed by `lab.fingerprintOf(components)`, the same function `acquire` uses, which is what makes a derived class and a unit's own fingerprint comparable at all. The label stays `lab-env:<sha256>` and the component `version` does not move: it is one algorithm over a smaller component set.
+
+The unit's own fingerprint is not lost: it is recorded on the cell's `unit` annotation in the orchestrator ns (with the excluded components) and in lab's archive `manifest.json`. It does **not** go into refs — mission's refs carry `resource` / `fingerprint` / `sessions`, and a fourth key is a mission change this package does not own. Under the invariant line the report lists every cell's unit fingerprint and what its class left out, so a reader can see where the difference is instead of trusting that there is one.
+
+### The judging directory reproduces the repository's real relative paths
+
+A dataset-level verify layer is a real directory (`datasets/<id>/verify/`), so it lands at `<judging>/verify/…`. An ITEM's layer is where the two dataset layouts diverge, and getting it wrong costs exactly one directory level:
+
+- convention: the files live in `items/<id>/verify/` and their display paths are relative to it (`probes/x.mjs`);
+- register: the descriptor re-homes free files from the item directory into a layer role, and their display paths are **item-relative** (`checks/probes/x.mjs`) — the file really is at `items/<id>/checks/probes/x.mjs`.
+
+Materializing both as `items/<id>/verify/<display>` puts the register item one level too deep, so `../../../../verify/helpers/lib` resolves above the judging root and the item can only carry a copy of the shared library. Every file now lands at the path it really occupies; which displays were re-homed is read from the `register` entries of the descriptor `datasets.show` already returns (optional on the face — a facade that does not report one degrades to the convention layout, which is what every caller got before). A probe's `by` stays the display path: that names the verdict's origin, not a location on disk.
+
+A probe's cwd is **the directory holding that item's checklist** — `items/<id>/verify` by convention, `items/<id>/checks` once re-homed — so a shared probe reads this item's own `./checklist.yml` under either layout. An item with no checklist falls back to the convention root.
+
+### One materialization hash, both paths
+
+`materialization.json` is computed by the orchestrator on both paths, by one algorithm (sorted per-file sha256, then an overall sha256), so the same item at the same commit hashes to **the same number** on the host and inside a unit. The container path used to record lab's populate manifest instead, which left «题面一致» answerable only within a path. lab's own hash is not lost — it moved to `populate-manifest.json` beside it, under its own name, because it makes a different claim ("what went into the unit is this") rather than being a second spelling of the same one.
+
 ### Directory and credential conventions
 
 - One credential directory per condition: `<--creds-root>/<condition id>`, bound at the in-container path the condition's `unit.scopedHome.container` declares. **No host path enters a plan or a condition** — a condition file runs unchanged on another machine, and the host side is an operator fact.
@@ -88,8 +113,8 @@ A plan that declares a `unit` segment takes the container path; one that does no
 ### Known trade-offs
 
 - **Serial.** The container path pins `concurrency: 1` (an explicit `>1` is refused); parallel units are I4. An `acquire` that hits `maxConcurrentUnits` is reported as a defect, not queued.
-- **A multi-harness run does not share one fingerprint.** The composite fingerprint includes env key NAMES, and each harness names a different scoped-home variable (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / …) — so four harnesses in one run make «环境一致» read `violated` under the existing rule. That is honest: the four environments genuinely differ. Making it hold needs either a fingerprint component change or a report-side rule, which is I4.
-- **The two paths hash their materialization differently**: the host path uses the orchestrator's own concatenation (`path\0sha\0`), the container path uses lab's (`path  sha`, newline-joined). Comparable within one run (the invariant only asks whether cells of the same item agree), not across paths. The report reads both field names (`sha256` and `sha`).
+- **The multi-harness fingerprint problem is what the environment class solves** (above): `refs.fingerprint` carries the class, and the unit's own fingerprint lives on the `unit` annotation and in the archive manifest.
+- **Both paths hash their materialization the same way** (above): `materialization.json` is the orchestrator's, by one algorithm; lab's own hash lives beside it as `populate-manifest.json`. The report still reads an older bundle's `sha` field.
 
 ## Readiness: one real delegation per condition
 

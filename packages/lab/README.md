@@ -86,11 +86,14 @@ await ctx.lab.collect(unit.id, { source: '/workspace/out', target: '/host/archiv
 await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/ + manifest.json（逐文件 sha256）
 await ctx.lab.release(unit.id)                // 由 mission.isReleasable 放行；无 gate 时需 force + 告警
 const units = await ctx.lab.status()          // 与 docker daemon reconcile 后的视图
+ctx.lab.fingerprintOf(components)             // 纯函数：同一套哈希规则，作用在任意分量集上
 ```
 
 `ownWorkdir` 是给非 root 单元用的：`docker run --workdir X` 建出来的 X 归 `root:root`，于是声明了 `user` 的单元（或镜像自带非 root `USER` 的，评测镜像就是）写不进自己干活的那个目录——`populate` 照样成功（拷贝走 daemon，是 root），**第一次从单元内写**才失败，那是最糟的发现时机。打开它，`acquire` 以 root 建出 workdir 并 `chown` 给单元自己的 uid:gid（uid 问单元自己要，所以镜像自带 `USER` 与显式 `user` 同样管用）；daemon 拒绝 `--user 0`（userns-remap）时退回普通创建，即打开它之前的行为。它**不进指纹**：指纹分量的形状不变，而「单元本来就会拿到的目录归谁」不会让两个原本可比的环境变得不可比。
 
 同一层的一件事：`acquire` 把 `/run/dsh-lab` 本身也置成 `1777`（此前只有 `/run/dsh-lab/pids`）。`verify` 的材料目录由**单元自己的用户**在它下面创建，父目录归 root 且 `0755` 时，非 root 单元上的每一次带材料的 verify 都会在 `mkdir` 处失败——也就是本项目实际会跑的那种单元。
+
+`fingerprintOf` 是 `acquire` 用的那个哈希函数本身，只是暴露出来：调用方偶尔需要问「另一组分量会哈希成什么」。评测编排器就是这个用例——比较格子要的是「与计划声明的环境相同」，而不是「与那个单元相同」，两者恰好差着每个条件自带的那几项（它自己的凭证挂载、它自己的 env 变量）。它拿单元的分量、减掉这几项、问剩下的哈希是多少。把这步算术放在这里而不是在调用方复刻规范化，是为了让仓库里只有一套哈希规则——复刻出来的第二套会在下一次加分量时漂移。纯函数：不碰单元、不碰 provider、不碰 daemon。
 
 mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
 

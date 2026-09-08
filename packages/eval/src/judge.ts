@@ -241,17 +241,131 @@ export const PROBE_EXIT_NOT_APPLICABLE = 3
 
 /**
  * The judging directory mirrors the DATASET's own layout, so a relative path
- * that resolves in the repository resolves here too: the dataset-level verify
- * layer at `<judging>/verify/…`, the item's at `<judging>/items/<id>/verify/…`.
- * That is what lets an item probe reach the shared library the dataset keeps
- * for every item (`../../../../verify/helpers/lib/x.mjs`) instead of carrying
- * a verbatim copy of it.
+ * that resolves in the repository resolves here too. The dataset-level verify
+ * layer is a real directory (`datasets/<id>/verify/`), so it lands at
+ * `<judging>/verify/…` for every dataset.
+ *
+ * An ITEM's layer is where the two dataset layouts differ, and getting it
+ * wrong costs exactly one directory level. Under the CONVENTION layout the
+ * item's files live in `items/<id>/verify/` and their display paths are
+ * relative to it (`probes/x.mjs`). Under the REGISTER layout the descriptor
+ * re-homes free files into a layer role, and their display paths are
+ * ITEM-relative (`checks/probes/x.mjs`) — the file really is at
+ * `items/<id>/checks/probes/x.mjs`. Materializing both as
+ * `items/<id>/verify/<display>` puts the register item one level too deep, so
+ * its `../../../../verify/helpers/lib` resolves above the judging root and
+ * the item can only carry a copy of the shared library. That is what
+ * {@link itemLayerPath} exists to prevent.
  */
 export const DATASET_VERIFY_ROOT = 'verify'
 
-/** The item's verify-layer root inside the judging directory, and its cwd. */
+/**
+ * The CONVENTION root of an item's verify layer. Still the answer for a
+ * convention item, and the fallback cwd for an item that ships no checklist.
+ */
 export function itemVerifyRoot(taskId: string): string {
   return `items/${taskId}/${DATASET_VERIFY_ROOT}`
+}
+
+/** One `register` entry of a dataset descriptor (item-relative patterns). */
+export interface RegisterEntry {
+  item: string
+  layer: string
+  /** Item-relative paths or single-segment globs (`*` never crosses `/`). */
+  files: string[]
+}
+
+/**
+ * The register entries a dataset descriptor declares; empty when it declares
+ * none, or when the facade did not report a descriptor at all.
+ * @param descriptor - the raw descriptor from `datasets.show`.
+ */
+export function registerEntriesOf(descriptor: unknown): RegisterEntry[] {
+  if (typeof descriptor !== 'object' || descriptor === null) return []
+  const raw = (descriptor as Record<string, unknown>)['register']
+  if (!Array.isArray(raw)) return []
+  const entries: RegisterEntry[] = []
+  for (const candidate of raw) {
+    if (typeof candidate !== 'object' || candidate === null) continue
+    const entry = candidate as Record<string, unknown>
+    const files = Array.isArray(entry['files']) ? entry['files'].filter((file): file is string => typeof file === 'string') : []
+    if (typeof entry['item'] !== 'string' || typeof entry['layer'] !== 'string' || files.length === 0) continue
+    entries.push({ item: entry['item'], layer: entry['layer'], files })
+  }
+  return entries
+}
+
+/**
+ * Whether a register pattern matches an item-relative path. Segment-wise, and
+ * `*` never crosses a `/` — the authoring protocol's rule, restated here
+ * rather than imported: community plugins never import sibling @khorsheed
+ * packages, and this is six lines pinned by a test against the same cases.
+ * @param pattern - an exact path or a single-level glob.
+ * @param path - an item-relative path.
+ */
+export function registerPatternMatches(pattern: string, path: string): boolean {
+  const patternSegments = pattern.split('/')
+  const pathSegments = path.split('/')
+  if (patternSegments.length !== pathSegments.length) return false
+  return patternSegments.every((segment, index) => {
+    if (!segment.includes('*')) return segment === pathSegments[index]
+    const source = segment.replace(/[.*+?^${}()|[\]\\]/g, match => (match === '*' ? '[^/]*' : `\\${match}`))
+    return new RegExp(`^${source}$`).test(pathSegments[index] ?? '')
+  })
+}
+
+/**
+ * Where one of an item's layer files really lives, relative to the item
+ * directory — the path the judging directory must reproduce.
+ * @param input.display - the display path `datasets.show` reported.
+ * @param input.register - the descriptor's register entries.
+ * @returns `<display>` for a re-homed file, `<layer>/<display>` otherwise.
+ */
+export function itemLayerPath(input: {
+  taskId: string
+  layer: string
+  display: string
+  register: readonly RegisterEntry[]
+}): string {
+  const rehomed = input.register.some(entry =>
+    entry.item === input.taskId && entry.layer === input.layer
+    && entry.files.some(pattern => registerPatternMatches(pattern, input.display)))
+  return rehomed ? input.display : `${input.layer}/${input.display}`
+}
+
+/**
+ * The item's checklist among its verify-layer display paths. Shortest path
+ * wins when several match, the same rule {@link pickRubricPath} uses.
+ * @param verifyPaths - display paths of the item's verify layer.
+ */
+export function pickChecklistPath(verifyPaths: readonly string[]): string | null {
+  const candidates = verifyPaths
+    .filter(path => /(?:^|\/)checklist\.ya?ml$/i.test(path))
+    .sort((a, b) => a.length - b.length || (a < b ? -1 : 1))
+  return candidates[0] ?? null
+}
+
+/**
+ * The working directory every probe of one item runs in — where the shared
+ * probes expect to find that item's `checklist.yml`, and the item's own
+ * probes expect to find whatever sits beside them.
+ *
+ * It is the checklist's own directory, which is the item's verify root under
+ * either layout (`items/<id>/verify` by convention, `items/<id>/checks` when
+ * the descriptor re-homed the layer). An item with no checklist falls back to
+ * the convention root: nothing reads a checklist that does not exist, and the
+ * directory still has to be somewhere.
+ */
+export function itemProbeCwd(input: {
+  taskId: string
+  itemVerifyPaths: readonly string[]
+  register: readonly RegisterEntry[]
+}): string {
+  const checklist = pickChecklistPath(input.itemVerifyPaths)
+  if (checklist === null) return itemVerifyRoot(input.taskId)
+  const real = itemLayerPath({ taskId: input.taskId, layer: 'verify', display: checklist, register: input.register })
+  const slash = real.lastIndexOf('/')
+  return slash < 0 ? `items/${input.taskId}` : `items/${input.taskId}/${real.slice(0, slash)}`
 }
 
 /** One probe to execute: which layer it came from, and what it is called. */
@@ -281,8 +395,10 @@ export function collectProbes(input: {
   taskId: string
   itemVerifyPaths: readonly string[]
   datasetVerifyPaths?: readonly string[]
+  /** The descriptor's register entries; absent means the convention layout. */
+  register?: readonly RegisterEntry[]
 }): ProbeRef[] {
-  const itemRoot = itemVerifyRoot(input.taskId)
+  const register = input.register ?? []
   return [
     // `shared/` is a NAMESPACE, not a directory: it marks the verdict as
     // coming from the dataset's ruler rather than this item's, and keeps the
@@ -297,7 +413,11 @@ export function collectProbes(input: {
     ...probePaths(input.itemVerifyPaths).map((display): ProbeRef => ({
       origin: 'item',
       display,
-      file: `${itemRoot}/${display}`,
+      // The REAL relative path: `items/<id>/verify/probes/x.mjs` by
+      // convention, `items/<id>/checks/probes/x.mjs` when re-homed. `by` stays
+      // the display path either way — that is the verdict's origin, not a
+      // location.
+      file: `items/${input.taskId}/${itemLayerPath({ taskId: input.taskId, layer: 'verify', display, register })}`,
       by: display,
     })),
   ]
@@ -565,15 +685,21 @@ function withinProbeDir(probeDir: string, rel: string): string | null {
   return target.startsWith(root + sep) ? target : null
 }
 
-/** Materialize one verify layer under `root` inside the judging directory. */
+/**
+ * Materialize one verify layer into the judging directory at the paths it
+ * really occupies in the repository — `homeOf` maps a display path to that
+ * location. Reproducing the layout is the whole point: a probe's relative
+ * import of the dataset's shared library has to resolve here exactly as it
+ * does in a checkout.
+ */
 async function materializeVerifyLayer(
   input: ProbeRunInput,
-  root: string,
+  homeOf: (display: string) => string,
   paths: readonly string[],
   itemId: string | undefined,
 ): Promise<void> {
   for (const rel of paths) {
-    const target = withinProbeDir(input.probeDir, join(root, rel))
+    const target = withinProbeDir(input.probeDir, homeOf(rel))
     if (target === null) continue
     const file = await input.datasets.read({ repo: input.repo, layers: ['verify'] }, {
       dataset: input.datasetId,
@@ -623,19 +749,25 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
   const item = shown.items.find(candidate => candidate.id === input.taskId)
   const itemVerifyPaths = item?.layers['verify'] ?? []
   const datasetVerifyPaths = shown.datasetLayers?.['verify'] ?? []
-  const probes = collectProbes({ taskId: input.taskId, itemVerifyPaths, datasetVerifyPaths })
+  const register = registerEntriesOf(shown.descriptor)
+  const probes = collectProbes({ taskId: input.taskId, itemVerifyPaths, datasetVerifyPaths, register })
   if (probes.length === 0) return { outcomes: [], verdicts: [], where: executor.where }
 
-  const itemRoot = itemVerifyRoot(input.taskId)
+  const cwd = itemProbeCwd({ taskId: input.taskId, itemVerifyPaths, register })
   // The cwd exists even when the item ships no verify layer of its own: the
   // dataset's shared probes still have to run somewhere, once for this item.
-  mkdirSync(join(input.probeDir, itemRoot), { recursive: true })
+  mkdirSync(join(input.probeDir, cwd), { recursive: true })
   // Whole layers, not just the probe files: a probe reads the checklist beside
   // it and imports its helpers by relative path, exactly as in the repository.
   // The dataset layer is materialized even when it ships no probes at all —
   // it is the shared library the item's own probes import.
-  await materializeVerifyLayer(input, itemRoot, itemVerifyPaths, input.taskId)
-  await materializeVerifyLayer(input, DATASET_VERIFY_ROOT, datasetVerifyPaths, undefined)
+  await materializeVerifyLayer(
+    input,
+    display => `items/${input.taskId}/${itemLayerPath({ taskId: input.taskId, layer: 'verify', display, register })}`,
+    itemVerifyPaths,
+    input.taskId,
+  )
+  await materializeVerifyLayer(input, display => `${DATASET_VERIFY_ROOT}/${display}`, datasetVerifyPaths, undefined)
 
   // The rubric rides along OUTSIDE the mirrored layout (a dotfile at the
   // judging root): the contract hands every probe a --rubric path, and the
@@ -661,7 +793,7 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
     execution: {
       file: probe.file,
       shell: /\.sh$/i.test(probe.display),
-      cwd: itemRoot,
+      cwd,
       slug: slug(probe.by),
       rubric,
       timeoutMs: input.timeoutMs,

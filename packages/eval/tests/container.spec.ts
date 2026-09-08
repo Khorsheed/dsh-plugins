@@ -14,8 +14,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LabAcquireSpec, LabFace, LabUnitInfo, LabVerifyResult, LocalAgentFace } from '../src/faces.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, conditionUnitDiagnostics, describeAcquireSpec,
-  planUnitOf, resolveCellUnit, unitUid, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
+  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, conditionUnitDiagnostics,
+  describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
+  UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from '../src/unit.ts'
 import { unitProbeExecutor } from '../src/probe-exec.ts'
 import { checkReadiness, READINESS_PROMPT, type ReadinessUnit } from '../src/readiness.ts'
@@ -165,6 +166,7 @@ function fakeLab(script: {
       return script.verify?.(unitId, options) ?? { exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false }
     },
     async archive(unitId, options) { record('archive', unitId, options) },
+    fingerprintOf(components) { record('fingerprintOf', components); return `lab-env:${JSON.stringify(components).length}` },
     async release(unitId, options) { record('release', unitId, options) },
     async status() { record('status'); return [] },
   }
@@ -326,5 +328,86 @@ describe('the readiness probe inside a throwaway unit', () => {
     expect(records[0]?.ok).toBe(false)
     expect(records[0]?.reason).toContain('maxConcurrentUnits reached')
     expect(starts).toHaveLength(0)
+  })
+})
+
+describe('the environment CLASS: the plan\'s environment, without each condition\'s own', () => {
+  const COMPONENTS = {
+    version: 1,
+    image: 'registry/eval-env@sha256:abc',
+    resources: { cpus: '2', memory: '4294967296' },
+    mounts: [
+      { target: '/creds/codex', type: 'bind', readonly: false },
+      { target: '/input', type: 'bind', readonly: true },
+    ],
+    envKeys: ['CODEX_HOME', 'EVAL_SEED', 'OPENAI_BASE_URL'],
+    network: 'eval-net',
+    user: '1000',
+  }
+
+  it('drops the condition\'s scoped-home mount, its variable, its harness extras and its declared keys', () => {
+    const resolved = resolveCellUnit(PLAN_UNIT, 'codex-exec', { ...CODEX_CONDITION, env: { keys: ['CODEX_HOME', 'OPENAI_BASE_URL'] } }, '/host/creds')
+    const owned = conditionOwnedComponents((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan, { ...CODEX_CONDITION, env: { keys: ['CODEX_HOME', 'OPENAI_BASE_URL'] } })
+    expect(owned).toEqual({ mountTargets: ['/creds/codex'], envKeys: ['CODEX_HOME', 'OPENAI_BASE_URL'] })
+    const { components, excluded } = environmentClassComponents(COMPONENTS, owned)
+    // What the PLAN declared survives; what the condition brought does not.
+    expect(components.mounts).toEqual([{ target: '/input', type: 'bind', readonly: true }])
+    expect(components.envKeys).toEqual(['EVAL_SEED'])
+    expect(components).toMatchObject({ version: 1, image: COMPONENTS.image, network: 'eval-net', user: '1000', resources: COMPONENTS.resources })
+    expect(excluded).toEqual({ mounts: ['/creds/codex'], envKeys: ['CODEX_HOME', 'OPENAI_BASE_URL'] })
+  })
+
+  it('drops dsh\'s node flag too — a harness extra is the condition\'s, not the plan\'s', () => {
+    const dsh = { ...CODEX_CONDITION, harness: { name: 'dsh', version: null, drive: 'exec' }, permissions: 'unrestricted', env: { keys: ['DSH_HOME'] }, unit: { scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } } }
+    const resolved = resolveCellUnit(PLAN_UNIT, 'dsh-exec', dsh, '/host/creds')
+    const owned = conditionOwnedComponents((resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan, dsh)
+    expect(owned.envKeys).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
+  })
+
+  it('leaves version alone: the class is the same hashing rule over fewer components', () => {
+    const { components } = environmentClassComponents(COMPONENTS, { mountTargets: [], envKeys: [] })
+    expect(components).toEqual(COMPONENTS)
+  })
+
+  it('four conditions that differ only in their scoped home share one class and no unit fingerprint', () => {
+    const harnesses = [
+      { id: 'codex-exec', name: 'codex', permissions: 'danger-full-access', container: '/creds/codex', var: 'CODEX_HOME' },
+      { id: 'claude-exec', name: 'claude-code', permissions: 'skip', container: '/creds/claude', var: 'CLAUDE_CONFIG_DIR' },
+      { id: 'kimi-exec', name: 'kimi', permissions: 'auto-approve', container: '/creds/kimi', var: 'KIMI_CODE_HOME' },
+      { id: 'dsh-exec', name: 'dsh', permissions: 'unrestricted', container: '/creds/dsh', var: 'DSH_HOME' },
+    ]
+    // Stand-in for lab's hashing rule; what matters here is only that it is a
+    // function of the components, which is what the real one is.
+    const hash = (components: unknown): string => `lab-env:${JSON.stringify(components).length}:${JSON.stringify(components)}`
+    const classes = new Set<string>()
+    const units = new Set<string>()
+    for (const harness of harnesses) {
+      const condition = {
+        ...CODEX_CONDITION,
+        harness: { name: harness.name, version: null, drive: 'exec' },
+        permissions: harness.permissions,
+        env: { keys: [harness.var] },
+        unit: { scopedHome: { container: harness.container, var: harness.var } },
+      }
+      const resolved = resolveCellUnit(PLAN_UNIT, harness.id, condition, '/host/creds')
+      const plan = (resolved as { plan: Parameters<typeof acquireSpecFor>[0] }).plan
+      const spec = acquireSpecFor(plan)
+      // The unit's own components, as lab would compute them from that spec.
+      const components = {
+        version: 1,
+        image: 'registry/eval-env@sha256:abc',
+        resources: { cpus: '2', memory: '4294967296' },
+        mounts: (spec.mounts ?? []).map(mount => ({ target: mount.target, type: mount.type ?? 'bind', readonly: mount.readonly === true })),
+        envKeys: Object.keys(spec.env ?? {}).sort(),
+        network: 'eval-net',
+        user: '1000',
+      }
+      units.add(hash(components))
+      classes.add(hash(environmentClassComponents(components, conditionOwnedComponents(plan, condition)).components))
+    }
+    // The whole point: four units, one environment. Before the class, this run
+    // read `violated` and the report refused to compare anything.
+    expect(units.size).toBe(4)
+    expect(classes.size).toBe(1)
   })
 })

@@ -50,6 +50,18 @@ export interface DatasetsFace {
      * don't explode.
      */
     datasetLayers?: Record<string, string[]>
+    /**
+     * The dataset descriptor, verbatim. The judging side reads ONE thing out
+     * of it: the `register` entries, which say which of an item's layer files
+     * are re-homed (their display path is item-relative) and which follow the
+     * convention (their display path is relative to `items/<id>/<layer>/`).
+     * Without it the judging directory cannot reproduce the repository's real
+     * relative layout, and a probe's `../../../..` to the dataset-level
+     * library lands one level off. OPTIONAL on the face: a facade that does
+     * not report it degrades to the convention layout, which is what every
+     * caller got before.
+     */
+    descriptor?: Record<string, unknown>
   }>
   read(scope: DatasetsScope, query: {
     dataset: string
@@ -315,14 +327,38 @@ export interface LabAcquireSpec {
   runId?: string
 }
 
+/**
+ * The components a lab fingerprint is computed from (structural
+ * `FingerprintComponents`). The shape never varies: an undeclared scalar is
+ * `null`, an undeclared list empty. Host paths and env VALUES never appear.
+ */
+export interface LabFingerprintComponents {
+  version: number
+  image: string | null
+  resources: { cpus: string | null; memory: string | null }
+  mounts: Array<{ target: string; type: string; readonly: boolean }>
+  envKeys: string[]
+  network: string | null
+  user: string | null
+}
+
 /** One acquired unit (structural `UnitInfo`). */
 export interface LabUnitInfo {
   id: string
   provider: string
   /** Provider-side resource handle — the container the delegation execs into. */
   resource: string
-  /** Composite environment fingerprint (`lab-env:<hex>`) — the run's `refs.fingerprint`. */
+  /** Composite environment fingerprint (`lab-env:<hex>`) of the UNIT — every component, this condition's included. */
   fingerprint: string
+  /**
+   * What that fingerprint was computed from. The orchestrator needs the
+   * components, not just the digest: the run's «环境一致» invariant compares
+   * the environment the PLAN declared, which is these components minus the
+   * ones each condition contributes. Absent for a legacy bare-digest unit,
+   * and then no environment class can be derived — recorded as absent, never
+   * guessed.
+   */
+  fingerprintComponents?: LabFingerprintComponents
   /** In-unit working directory. */
   workspace: string
   missionId?: string
@@ -377,4 +413,12 @@ export interface LabFace {
    */
   release(unitId: string, options?: { force?: boolean }): Promise<void>
   status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>>
+  /**
+   * Hash a component set — the same rule `acquire` uses, as a pure function.
+   * The orchestrator asks it what the ENVIRONMENT CLASS hashes to: the unit's
+   * components with each condition's own contributions removed. Deriving that
+   * here rather than re-implementing lab's canonicalization is deliberate —
+   * two copies of a hashing rule drift the first time a component is added.
+   */
+  fingerprintOf(components: LabFingerprintComponents): string
 }
