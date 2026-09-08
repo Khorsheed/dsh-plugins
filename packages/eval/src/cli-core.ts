@@ -34,7 +34,11 @@ const USAGE = `dsh-eval <verb> [options]
                                     run template, expand the matrix, print the
                                     seeded execution order. [--only id,id] and
                                     [--max-cells N] rehearse a subset of the
-                                    matrix. Without --dry-run the CLI REFUSES:
+                                    matrix. A plan with a unit segment also
+                                    prints one acquire spec per condition
+                                    (env NAMES only; [--creds-root DIR] fills
+                                    in the mount source). Without --dry-run
+                                    the CLI REFUSES:
                                     a run starts from a live session
                                     (/eval run) — outside one there is no
                                     parent agent to delegate through.
@@ -151,7 +155,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'run': {
         const [planPath, ...extra] = rest
         if (planPath === undefined) throw new UsageError('run wants a plan path')
-        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells'])
+        const { values, switches, leftovers } = splitOptions(extra, ['--only', '--max-cells', '--creds-root'])
         const dryRun = switches.has('--dry-run')
         switches.delete('--dry-run')
         const unknown = [...switches, ...leftovers]
@@ -168,12 +172,28 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (maxCells !== undefined && (!Number.isInteger(maxCells) || maxCells < 1)) {
           throw new UsageError(`--max-cells wants a positive integer, got ${JSON.stringify(maxCellsRaw)}`)
         }
+        const credsRoot = values.get('--creds-root')?.[0]
         const report = await service.run(planPath, {
           dryRun: true,
           ...(only.length > 0 ? { only } : {}),
           ...(maxCells !== undefined ? { maxCells } : {}),
+          // Only ever affects what the rehearsal PRINTS: the mount source of a
+          // unit spec. Without it the spec still prints, with the host half
+          // left as a placeholder.
+          ...(credsRoot !== undefined ? { credsRoot } : {}),
         })
-        io.stdout(`${JSON.stringify({ planSha: report.meta.planSha, conditions: report.meta.conditions, order: report.meta.order, concurrency: report.meta.concurrency, subset: report.subset, template: report.template }, null, 2)}\n`)
+        io.stdout(`${JSON.stringify({
+          planSha: report.meta.planSha,
+          conditions: report.meta.conditions,
+          order: report.meta.order,
+          concurrency: report.meta.concurrency,
+          // Present only for a plan with a unit segment: one acquire spec per
+          // condition, env NAMES only (the rehearsal prints what a unit will
+          // be built from, never a value it will be built with).
+          ...(report.meta.units !== undefined ? { units: report.meta.units } : {}),
+          subset: report.subset,
+          template: report.template,
+        }, null, 2)}\n`)
         const sequence = (report.meta.order as { sequence: string[] }).sequence
         io.stderr(`dsh-eval: dry-run ok — ${sequence.length} of ${report.subset.totalCells} cell(s), order seeded (order.sequence)\n`)
         return 0

@@ -13,6 +13,7 @@
  * fake localAgent can act as a JUDGE: it recognizes the judge prompt, reads
  * the criteria back out of it, and writes verdicts.json into the sample cwd.
  */
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
 import { READINESS_PROMPT } from '../src/readiness.ts'
-import type { DatasetsFace, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
+import type { DatasetsFace, LabAcquireSpec, LabFace, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
 import type { DelegationResult, DelegationRun } from '../src/faces.ts'
 import { canonicalJson } from '../src/hash.ts'
 import { expandMatrix, orderCells } from '../src/matrix.ts'
@@ -173,7 +174,7 @@ interface FakeAttempt {
   state: string
   retry?: { reason: string; category: string }
   submission?: { json: unknown }
-  refs: { sessions?: string[] }
+  refs: { sessions?: string[]; resource?: string; fingerprint?: string }
   artifacts: Array<{ path: string; kind: string }>
 }
 interface FakeMissionRecord {
@@ -310,10 +311,25 @@ class FakeMission implements MissionFace {
     return { attempt: record.currentAttempt }
   }
 
-  async setRefs(missionId: string, refs: { sessions?: string[] }, options?: { runId?: string }): Promise<void> {
+  async setRefs(missionId: string, refs: { sessions?: string[]; resource?: string; fingerprint?: string }, options?: { runId?: string }): Promise<void> {
     const { mission: record } = this.locate(missionId, options?.runId)
     const attempt = record.attempts[record.currentAttempt - 1] as FakeAttempt
     if (refs.sessions !== undefined) attempt.refs.sessions = [...new Set([...attempt.refs.sessions ?? [], ...refs.sessions])]
+    if (refs.resource !== undefined) attempt.refs.resource = refs.resource
+    if (refs.fingerprint !== undefined) attempt.refs.fingerprint = refs.fingerprint
+  }
+
+  /** The current attempt's refs — where the «环境一致» invariant reads its input. */
+  refsOf(missionId: string, runId?: string): { sessions?: string[]; resource?: string; fingerprint?: string } {
+    const { mission: record } = this.locate(missionId, runId)
+    return (record.attempts[record.currentAttempt - 1] as FakeAttempt).refs
+  }
+
+  /** Whether this mission's held resources may be destroyed — mission's own rule. */
+  isReleasable(missionId: string, runId?: string): boolean {
+    const { run, mission: record } = this.locate(missionId, runId)
+    const state = (record.attempts[record.currentAttempt - 1] as FakeAttempt).state
+    return ((run.stateMachine as { releasableStates?: string[] }).releasableStates ?? []).includes(state)
   }
 
   async addArtifact(missionId: string, artifact: { path: string; kind: string }, options?: { runId?: string }): Promise<{ added: boolean }> {
@@ -346,6 +362,8 @@ interface DelegationCall {
   childSessionId?: string
   prompt: string
   cwd?: string
+  /** T17's container target, when the round was addressed at a unit instead of a cwd. */
+  exec?: { container: string; workdir: string; env?: Record<string, string> }
   /** Set on judge delegations (the fake recognizes the blind-judging prompt). */
   judge?: true
   /** Set on the pre-run readiness probe (the fake recognizes its prompt too). */
@@ -412,6 +430,13 @@ class FakeLocalAgent implements LocalAgentFace {
      * provider that cannot even start.
      */
     readiness?: 'completed' | 'refused' | 'throw'
+    /**
+     * Container path: where the host directory standing in for a unit's
+     * workspace lives, by container name. A round addressed at a unit writes
+     * its stage outputs THERE, which is what makes the fake's collect a real
+     * copy rather than a pretend one.
+     */
+    workspaceOf?: (container: string) => string
     /**
      * What the record reports for the READINESS child specifically. Set it to
      * the declared model to let the probe pass while the stage rounds read
@@ -499,15 +524,15 @@ class FakeLocalAgent implements LocalAgentFace {
    */
   private readinessRun(
     provider: string,
-    cwd: string | undefined,
+    options: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } } | undefined,
     onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void,
   ): DelegationRun {
     if (this.options.readiness === 'throw') {
-      this.calls.push({ kind: 'start', provider, prompt: READINESS_PROMPT, readiness: true, ...(cwd !== undefined ? { cwd } : {}) })
+      this.calls.push({ kind: 'start', provider, prompt: READINESS_PROMPT, readiness: true, ...this.addressed(options) })
       throw new Error('spawn failed: CLI binary not found')
     }
     const childSessionId = `readiness-${++this.seq}`
-    this.calls.push({ kind: 'start', provider, childSessionId, prompt: READINESS_PROMPT, readiness: true, ...(cwd !== undefined ? { cwd } : {}) })
+    this.calls.push({ kind: 'start', provider, childSessionId, prompt: READINESS_PROMPT, readiness: true, ...this.addressed(options) })
     if (this.options.readiness === 'refused') {
       return { id: childSessionId, result: Promise.resolve({ stopReason: 'failed', diagnostic: '401 authentication failed' }) }
     }
@@ -527,13 +552,25 @@ class FakeLocalAgent implements LocalAgentFace {
     throw new Error(`fake localAgent: unrecognized prompt ${prompt.slice(0, 20)}`)
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
+  /** Where this round's files land: the cwd, or the host stand-in for the unit's workspace. */
+  private target(options?: { cwd?: string; exec?: { container: string } }): string | undefined {
+    if (options?.exec !== undefined) return this.options.workspaceOf?.(options.exec.container)
+    return options?.cwd
+  }
+
+  /** How this round was addressed, for the call record. */
+  private addressed(options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } }): Record<string, unknown> {
+    if (options?.exec !== undefined) return { exec: options.exec }
+    return options?.cwd !== undefined ? { cwd: options.cwd } : {}
+  }
+
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     void parentSessionId
     // The readiness probe is answered before any scripted failure: those
     // script the STAGE rounds, and a run whose probe failed never gets there.
-    if ((prompt[0]?.text ?? '') === READINESS_PROMPT) return this.readinessRun(provider, options?.cwd, options?.onProgress)
+    if ((prompt[0]?.text ?? '') === READINESS_PROMPT) return this.readinessRun(provider, options, options?.onProgress)
     if (this.options.alwaysThrow === true || (this.options.failuresBeforeSuccess ?? 0) > this.calls.filter(c => c.kind === 'start' && c.readiness !== true).length) {
-      this.calls.push({ kind: 'start', provider, prompt: prompt[0]?.text ?? '', ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
+      this.calls.push({ kind: 'start', provider, prompt: prompt[0]?.text ?? '', ...this.addressed(options) })
       throw new Error('spawn failed: CLI binary not found')
     }
     const text = prompt[0]?.text ?? ''
@@ -543,17 +580,17 @@ class FakeLocalAgent implements LocalAgentFace {
       this.judge(text, options?.cwd)
       return this.makeRun(childSessionId)
     }
-    this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
-    this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
+    this.calls.push({ kind: 'start', provider, childSessionId, prompt: text, ...this.addressed(options) })
+    this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', this.target(options), this.behaviorFor(text))
     this.emitProgress(options?.onProgress)
     this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
   }
 
-  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
+  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     const text = prompt[0]?.text ?? ''
-    this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
-    this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', options?.cwd, this.behaviorFor(text))
+    this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...this.addressed(options) })
+    this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', this.target(options), this.behaviorFor(text))
     this.emitProgress(options?.onProgress)
     this.armRecord(childSessionId)
     return this.makeRun(childSessionId)
@@ -1762,5 +1799,425 @@ describe('runPlan — the subset is recorded, never implicit', () => {
     expect(report.subset).toEqual({ only: null, maxCells: 2, totalCells: 3, selectedCells: 2 })
     expect((report.meta['order'] as { sequence: string[] }).sequence).toHaveLength(2)
     expect(report.readiness).toEqual([])
+  })
+})
+
+/* ──────────────────────── the container path (T20) ────────────────────── */
+
+/**
+ * A lab face that is a real simulation rather than a stub: a host directory
+ * stands in for each unit's workspace, `populate` and `collect` really copy,
+ * `archive` really writes `workspace/` plus a manifest, `verify` really runs
+ * the command the executor built (with the three in-container roots
+ * translated back to their host stand-ins), and `release` really consults the
+ * mission gate. That is what makes the assertions below about ORDER and
+ * ARGUMENTS mean something: the same call sequence against a stub would pass
+ * while producing nothing.
+ */
+class FakeLab implements LabFace {
+  /** Every verb, in call order — the trajectory table, as executed. */
+  calls: Array<{ verb: string; unitId?: string; options?: Record<string, unknown> }> = []
+  /** Units that still exist. A released one is gone; a gate-refused one is not. */
+  live = new Map<string, { info: LabUnitInfo; workspace: string; verdicts: string; spec: LabAcquireSpec }>()
+  /** Every unit ever acquired, released or not. */
+  acquired: LabAcquireSpec[] = []
+  private seq = 0
+
+  constructor(private readonly root: string, private readonly mission: FakeMission) {}
+
+  private locate(unitId: string): { info: LabUnitInfo; workspace: string; verdicts: string; spec: LabAcquireSpec } {
+    const held = this.live.get(unitId)
+    if (held === undefined) throw new Error(`fake lab: unknown unit ${JSON.stringify(unitId)}`)
+    return held
+  }
+
+  /** The three in-container roots, mapped onto their host stand-ins. */
+  private toHost(text: string, unitId: string, material: string | undefined): string {
+    const held = this.locate(unitId)
+    let out = text.replaceAll('/workspace', held.workspace).replaceAll('/run/dsh-lab/verdicts', held.verdicts)
+    if (material !== undefined) out = out.replaceAll('/run/dsh-lab/verify', material)
+    return out.replaceAll('exec node ', `exec ${process.execPath} `).replaceAll('exec sh ', 'exec /bin/sh ')
+  }
+
+  async acquire(spec: LabAcquireSpec): Promise<LabUnitInfo> {
+    this.calls.push({ verb: 'acquire', options: spec as unknown as Record<string, unknown> })
+    this.acquired.push(spec)
+    const id = `u${++this.seq}`
+    const workspace = join(this.root, id, 'workspace')
+    const verdicts = join(this.root, id, 'verdicts')
+    mkdirSync(workspace, { recursive: true })
+    // The fingerprint is a function of the DECLARED environment, exactly as
+    // the composite one is: two cells of the same condition share it, and a
+    // condition that injects a different variable does not.
+    const fingerprint = `lab-env:${createHash('sha256').update(canonicalJson({
+      image: spec.image,
+      network: spec.network ?? null,
+      user: spec.user ?? null,
+      resources: spec.resources ?? null,
+      mounts: (spec.mounts ?? []).map(mount => ({ target: mount.target, type: mount.type ?? 'bind' })),
+      envKeys: Object.keys(spec.env ?? {}).sort(),
+    })).digest('hex')}`
+    const info: LabUnitInfo = {
+      id,
+      provider: 'docker',
+      resource: `dsh-lab-${id}`,
+      fingerprint,
+      workspace: '/workspace',
+      createdAt: 0,
+      ...(spec.missionId !== undefined ? { missionId: spec.missionId } : {}),
+      ...(spec.runId !== undefined ? { runId: spec.runId } : {}),
+    }
+    this.live.set(id, { info, workspace, verdicts, spec })
+    return info
+  }
+
+  async populate(unitId: string, options: { source: string; target?: string; manifestPath?: string; artifactPath?: string }): Promise<{ sha: string; count: number; files: Array<{ path: string; sha: string }> }> {
+    this.calls.push({ verb: 'populate', unitId, options })
+    const held = this.locate(unitId)
+    cpSync(options.source, held.workspace, { recursive: true })
+    const files = readdirSync(options.source, { recursive: true, withFileTypes: true })
+      .filter(entry => entry.isFile())
+      .map(entry => ({
+        path: join(entry.parentPath, entry.name).slice(options.source.length + 1),
+        sha: createHash('sha256').update(readFileSync(join(entry.parentPath, entry.name))).digest('hex'),
+      }))
+      .sort((a, b) => (a.path < b.path ? -1 : 1))
+    const sha = createHash('sha256').update(files.map(file => `${file.path}  ${file.sha}`).join('\n')).digest('hex')
+    if (options.manifestPath !== undefined) {
+      writeFileSync(options.manifestPath, `${JSON.stringify({ source: options.source, target: options.target, sha, count: files.length, files, populatedAt: 0 }, null, 2)}\n`)
+      await this.mission.addArtifact(unitId === '' ? '' : held.info.missionId as string, { path: options.artifactPath ?? options.manifestPath, kind: 'materialization' }, { runId: held.info.runId as string })
+    }
+    return { sha, count: files.length, files }
+  }
+
+  async collect(unitId: string, options: { source: string; target: string; kind?: string; artifactPath?: string }): Promise<void> {
+    this.calls.push({ verb: 'collect', unitId, options })
+    const held = this.locate(unitId)
+    const source = options.source === '/workspace' ? held.workspace : held.verdicts
+    mkdirSync(options.target, { recursive: true })
+    if (existsSync(source)) cpSync(source, options.target, { recursive: true })
+    else throw new Error(`fake lab: ${options.source} does not exist in ${held.info.resource}`)
+    if (held.info.missionId !== undefined) {
+      await this.mission.addArtifact(held.info.missionId, { path: options.artifactPath ?? options.target, kind: options.kind ?? 'collection' }, { runId: held.info.runId as string })
+    }
+  }
+
+  async checkpoint(unitId: string, options: { name: string }): Promise<{ ref: string }> {
+    this.calls.push({ verb: 'checkpoint', unitId, options })
+    return { ref: createHash('sha1').update(`${unitId}/${options.name}`).digest('hex') }
+  }
+
+  async verify(unitId: string, options: { command: string[]; source?: string; timeoutMs?: number }): Promise<LabVerifyResult> {
+    this.calls.push({ verb: 'verify', unitId, options })
+    const held = this.locate(unitId)
+    let material: string | undefined
+    if (options.source !== undefined) {
+      material = join(this.root, held.info.id, 'material')
+      rmSync(material, { recursive: true, force: true })
+      mkdirSync(material, { recursive: true })
+      cpSync(options.source, material, { recursive: true })
+    }
+    const script = this.toHost(options.command[2] as string, unitId, material)
+    try {
+      const stdout = execFileSync('/bin/sh', ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      return { exitCode: 0, stdout, stderr: '', durationMs: 1, timedOut: false }
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string }
+      return { exitCode: failure.status ?? -1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? ''), durationMs: 1, timedOut: false }
+    } finally {
+      if (material !== undefined) rmSync(material, { recursive: true, force: true })
+    }
+  }
+
+  async archive(unitId: string, options: { target: string; kind?: string; artifactPath?: string }): Promise<void> {
+    this.calls.push({ verb: 'archive', unitId, options })
+    const held = this.locate(unitId)
+    cpSync(held.workspace, join(options.target, 'workspace'), { recursive: true })
+    writeFileSync(join(options.target, 'manifest.json'), `${JSON.stringify({ unit: held.info, archivedAt: 0 }, null, 2)}\n`)
+    if (held.info.missionId !== undefined) {
+      await this.mission.addArtifact(held.info.missionId, { path: options.artifactPath ?? options.target, kind: options.kind ?? 'archive' }, { runId: held.info.runId as string })
+    }
+  }
+
+  async release(unitId: string, options?: { force?: boolean }): Promise<void> {
+    this.calls.push({ verb: 'release', unitId, ...(options !== undefined ? { options } : {}) })
+    const held = this.locate(unitId)
+    if (held.info.missionId === undefined) {
+      // No mission binding, so no gate: lab requires the caller's own guarantee.
+      if (options?.force !== true) throw new Error(`lab: release of ${unitId} refused — it is registered to no mission; pass force`)
+    } else if (!this.mission.isReleasable(held.info.missionId, held.info.runId)) {
+      throw new Error(`lab: release of ${unitId} refused — mission ${held.info.missionId} is not in a releasable state; archive and pass its gate first`)
+    }
+    this.live.delete(unitId)
+  }
+
+  async status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>> {
+    this.calls.push({ verb: 'status', ...(unitId !== undefined ? { unitId } : {}) })
+    return [...this.live.values()].map(held => ({ id: held.info.id, resource: held.info.resource, running: true }))
+  }
+}
+
+const UNIT_SEGMENT = { image: 'eval-env:pinned', network: 'eval-net', user: '1000', resources: { cpus: '2', memory: '4g' } }
+
+/** The fixture condition plus the unit segment a container run requires. */
+function writeUnitCondition(root: string, id = 'dsh-unit'): void {
+  const base = JSON.parse(readFileSync(join(FIXTURE_DATASET, 'conditions', 'dsh-exec.json'), 'utf8')) as Record<string, unknown>
+  writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${id}.json`), `${JSON.stringify({
+    ...base,
+    env: { keys: ['DEEPSEEK_API_KEY', 'DSH_HOME'] },
+    unit: { scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } },
+  }, null, 2)}\n`)
+}
+
+/** A staged credential directory, owned by whoever runs the tests. */
+function stageCredentials(root: string, id = 'dsh-unit'): string {
+  const credsRoot = join(root, 'creds')
+  mkdirSync(join(credsRoot, id), { recursive: true })
+  writeFileSync(join(credsRoot, id, '.keep'), 'staged by hand (T22)\n')
+  return credsRoot
+}
+
+/** The probes the container cells judge with (the same fixtures the host path uses). */
+function unitProbes(): Map<string, string> {
+  return new Map([
+    ['P0-placeholder/checklist.yml', 'task_id: P0-placeholder\nschema_version: dataseek.verify/1\n'],
+    ['P0-placeholder/probes/a-ok.mjs', PROBE_OK],
+    ['P0-placeholder/probes/d-not-applicable.mjs', PROBE_NOT_APPLICABLE],
+  ])
+}
+
+describe('runPlan — the container path drives one unit per cell (I3·T20)', () => {
+  it('takes the eight verbs in the order the trajectory table declares, and no others', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      credsRoot,
+      finalize: true,
+    }, { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }), mission, localAgent: agent, lab })
+
+    const cell = report.cells[0] as { missionId: string; finalState: string; verdicts?: { script: number } }
+    expect(cell.finalState).toBe('released')
+    expect(cell.verdicts?.script).toBe(1)
+
+    // Two acquires: the readiness probe unit first (bound to no mission), then
+    // the cell's own. Everything after that is the cell's, in trajectory order.
+    const verbs = lab.calls.map(call => call.verb)
+    expect(verbs).toEqual([
+      'acquire', 'release', // the readiness probe unit
+      'acquire', 'populate',
+      'checkpoint', 'collect', // stage1
+      'checkpoint', 'collect', // stage2
+      'verify', 'verify', 'collect', 'verify', // two probes, the verdict collect, the scratch removal
+      'archive', 'release',
+    ])
+    // `status` is a human surface: the loop reads the mission ledger, never
+    // asks the provider what state a cell is in.
+    expect(verbs).not.toContain('status')
+
+    const cellAcquire = lab.acquired[1] as LabAcquireSpec
+    expect(cellAcquire).toMatchObject({
+      image: 'eval-env:pinned',
+      network: 'eval-net',
+      user: '1000',
+      resources: { cpus: '2', memory: '4g' },
+      workdir: '/workspace',
+      ownWorkdir: true,
+      missionId: cell.missionId,
+      runId: report.runId,
+    })
+    expect(cellAcquire.mounts).toEqual([{ source: join(credsRoot, 'dsh-unit'), target: '/creds/dsh', type: 'bind' }])
+    expect(cellAcquire.env).toEqual({ DSH_HOME: '/creds/dsh', NODE_OPTIONS: '--use-env-proxy' })
+    // The readiness unit is the same environment minus the mission binding —
+    // a probe against a different environment would prove nothing.
+    expect(lab.acquired[0]).toMatchObject({ image: 'eval-env:pinned', network: 'eval-net', user: '1000' })
+    expect(lab.acquired[0]?.missionId).toBeUndefined()
+
+    const checkpoints = lab.calls.filter(call => call.verb === 'checkpoint')
+    expect(checkpoints.map(call => (call.options as { name: string }).name)).toEqual(['stage1', 'stage2'])
+    // The unit is gone, and it went through the gate rather than around it.
+    expect(lab.live.size).toBe(0)
+    expect(lab.calls.filter(call => call.verb === 'release').map(call => call.options)).toEqual([{ force: true }, undefined])
+  })
+
+  it('addresses every round at the unit and never at a host cwd', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, {
+      datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab,
+    })
+    const stageRounds = agent.calls.filter(call => call.readiness !== true && call.judge !== true)
+    expect(stageRounds).toHaveLength(2)
+    for (const round of stageRounds) {
+      expect(round.cwd).toBeUndefined()
+      // The scoped-home variable is the one thing the target must carry: T17
+      // refuses the round outright without it, because a host path there would
+      // start the CLI in a directory the unit does not have.
+      expect(round.exec).toEqual({ container: 'dsh-lab-u2', workdir: '/workspace', env: { DSH_HOME: '/creds/dsh' } })
+    }
+    // The readiness probe ran in its own unit, on the same rule.
+    const probe = agent.calls.find(call => call.readiness === true)
+    expect(probe?.cwd).toBeUndefined()
+    expect(probe?.exec).toMatchObject({ container: 'dsh-lab-u1', workdir: '/workspace' })
+  })
+
+  it('writes the unit fingerprint into refs, which is what makes «环境一致» checkable', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], reps: 2, unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true }, {
+      datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab,
+    })
+    const fingerprints = report.cells.map(cell => mission.refsOf(cell.missionId, report.runId).fingerprint)
+    expect(fingerprints).toHaveLength(2)
+    expect(fingerprints[0]).toMatch(/^lab-env:[0-9a-f]{64}$/)
+    // Same declared environment, same fingerprint: that is the invariant.
+    expect(new Set(fingerprints).size).toBe(1)
+    for (const cell of report.cells) {
+      expect(mission.refsOf(cell.missionId, report.runId).resource).toMatch(/^dsh-lab-u\d+$/)
+    }
+    const unitAnnotation = orchestratorNs(mission, report.runId, report.cells[0]?.missionId as string).find(e => e['kind'] === 'unit')
+    expect(unitAnnotation).toMatchObject({ image: 'eval-env:pinned', scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } })
+  })
+
+  it('judges inside the unit and keeps the judging output out of the archived workspace', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+    }, { datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }), mission, localAgent: agent, lab })
+
+    const missionId = report.cells[0]?.missionId as string
+    const probed = orchestratorNs(mission, report.runId, missionId).find(e => e['kind'] === 'probes') as {
+      where: string
+      probes: Array<{ probe: string; outcome: string; exitCode: number | null }>
+    }
+    expect(probed.where).toBe('unit')
+    expect(probed.probes.map(probe => [probe.probe, probe.outcome])).toEqual([
+      ['probes/a-ok.mjs', 'judged'],
+      ['probes/d-not-applicable.mjs', 'probe-skipped'],
+    ])
+    const archive = join(root, 'mission', 'runs', report.runId, 'data', missionId, 'attempt-1', 'archive')
+    expect(existsSync(join(archive, 'workspace', 'stage2.json'))).toBe(true)
+    expect(existsSync(join(archive, 'verdicts', 'script.json'))).toBe(true)
+    expect(existsSync(join(archive, 'manifest.json'))).toBe(true)
+    // The archive is the player's work: no verdict tree inside the workspace.
+    expect(existsSync(join(archive, 'workspace', 'verdicts'))).toBe(false)
+    // …and the raw per-probe output came back beside it, as one artifact.
+    expect(existsSync(join(root, 'mission', 'runs', report.runId, 'data', missionId, 'attempt-1', 'probe-verdicts', 'probes-a-ok.mjs', 'verdicts.json'))).toBe(true)
+  })
+
+  it('keeps the container when the gate refuses, and says so on the cell', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    // No probes and no judge: verdicts/ is empty, so the archive gate refuses.
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, finalize: true,
+    }, { datasets: fakeDatasets(root), mission, localAgent: agent, lab })
+
+    const missionId = report.cells[0]?.missionId as string
+    expect(report.cells[0]?.finalState).toBe('archived')
+    // The unit is still there. That is the point of a single destroy path: a
+    // cell nobody has looked at keeps its evidence.
+    expect(lab.live.size).toBe(1)
+    const retained = orchestratorNs(mission, report.runId, missionId).find(e => e['kind'] === 'unit-retained') as { reason: string }
+    expect(retained.reason).toContain('not in a releasable state')
+  })
+
+  it('leaves the host path alone: a plan with no unit segment touches no lab verb', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), lab,
+    })
+    expect(lab.calls).toEqual([])
+    const missionId = report.cells[0]?.missionId as string
+    // The host path still writes its OWN materialization record, with the
+    // sha256 field the report reads — unchanged, mounted lab or not.
+    const record = JSON.parse(readFileSync(join(root, 'mission', 'runs', report.runId, 'data', missionId, 'attempt-1', 'materialization.json'), 'utf8')) as { sha256?: string }
+    expect(record.sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(mission.refsOf(missionId, report.runId).fingerprint).toBeUndefined()
+  })
+
+  it('refuses before anything executes when the container path is not satisfiable', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const credsRoot = stageCredentials(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const deps = { datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(), lab }
+
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, { ...deps, lab: undefined }))
+      .rejects.toThrow(/needs the lab service/)
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, deps))
+      .rejects.toThrow(/--creds-root/)
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot, concurrency: 2 }, deps))
+      .rejects.toThrow(/serial in this line/)
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot: join(root, 'absent') }, deps))
+      .rejects.toThrow(/nothing was executed/)
+    // Nothing was acquired by any of the four refusals.
+    expect(lab.calls).toEqual([])
+
+    // …and a condition that never said where its scoped home is mounted is a
+    // validation error, so the plan does not even reach the run loop.
+    const planNoUnit = writePlan(root, { conditions: ['dsh-exec'], unit: UNIT_SEGMENT }, 'container-bad')
+    await expect(runPlan(planNoUnit, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), credsRoot }, deps))
+      .rejects.toThrow(/validation error/)
+  })
+
+  it('rehearses the acquire spec on a dry run, with env NAMES and no values', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container')
+    const report = await runPlan(planPath, { dryRun: true, credsRoot: join(root, 'creds') })
+    const units = report.meta['units'] as Array<{ condition: string; acquire: Record<string, unknown> }>
+    expect(units).toHaveLength(1)
+    expect(units[0]?.condition).toBe('dsh-unit')
+    expect(units[0]?.acquire).toMatchObject({ image: 'eval-env:pinned', network: 'eval-net', user: '1000', workdir: '/workspace' })
+    expect(units[0]?.acquire['envKeys']).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
+    expect(units[0]?.acquire).not.toHaveProperty('env')
   })
 })

@@ -1,0 +1,302 @@
+/**
+ * The container path's data layer: turning the plan's `unit` segment and each
+ * condition's `unit.scopedHome` into ONE lab `AcquireSpec` per cell, and
+ * checking the host-side credential directory the human staged for it.
+ *
+ * The split is the same one the whole orchestrator rests on — **agent 改数据,
+ * 人改程序, 编排器只解释数据**: the plan says which image, network, user and
+ * ceilings every cell of this run gets; the condition says where its own
+ * scoped credential directory is mounted inside the unit and which variable
+ * names it; the human hands the orchestrator a credentials ROOT and stages
+ * `<root>/<condition id>` under it. No host path ever appears in a reviewed
+ * data file, and no credential value ever reaches an argv.
+ *
+ * Nothing here knows the word docker: an image reference, a network name and
+ * a user string are lab's vocabulary, and lab is the only plugin that holds
+ * the socket (frozen decision 12).
+ * @module @khorsheed/dsh-eval
+ */
+import { readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import type { EvalDiagnostic } from './validate.ts'
+import type { LabAcquireSpec } from './faces.ts'
+
+/** The in-unit working directory every cell's workspace is populated into. */
+export const UNIT_WORKSPACE = '/workspace'
+
+/** In-unit scratch the probe verdicts are written to — never `/workspace` (the archive must not carry judging output). */
+export const UNIT_VERDICTS_DIR = '/run/dsh-lab/verdicts'
+
+/**
+ * The node flag the dsh harness needs inside a sealed unit. dsh's HTTP client
+ * is node's `fetch` (undici), which does not read `HTTP(S)_PROXY`: without
+ * this the round dials the API directly and fails while the whitelist proxy
+ * never even receives a `CONNECT` (measured in T16 and again in T17). The
+ * provider injects it too; declaring it on the unit keeps the environment the
+ * cell runs in fully described by the orchestrator rather than half by a
+ * provider's private default.
+ */
+export const DSH_CONTAINER_NODE_OPTIONS = '--use-env-proxy'
+
+/** The plan's `unit` segment — the run-wide half of a unit declaration. */
+export interface PlanUnitDecl {
+  image: string
+  network?: string
+  user?: string
+  resources?: { cpus?: string | number; memory?: string | number }
+}
+
+/** One condition's `unit` segment — the per-subject half. */
+export interface ConditionUnitDecl {
+  scopedHome: { container: string; var: string }
+}
+
+/** One cell's resolved unit inputs: everything `acquire` needs but the mission ids. */
+export interface CellUnitPlan {
+  conditionId: string
+  image: string
+  network?: string
+  user?: string
+  resources?: { cpus?: string | number; memory?: string | number }
+  /** The scoped credential directory: host side (never in a data file), unit side, and its variable. */
+  scopedHome: { host: string; container: string; var: string }
+  /** Extra unit environment beyond the scoped-home variable (dsh's node flag). */
+  extraEnv: Record<string, string>
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Read a plan document's `unit` segment; null when the plan takes the host path. */
+export function planUnitOf(plan: unknown): PlanUnitDecl | null {
+  if (!isPlainObject(plan) || !isPlainObject(plan['unit'])) return null
+  const unit = plan['unit']
+  const image = unit['image']
+  if (typeof image !== 'string' || image === '') return null
+  const decl: PlanUnitDecl = { image }
+  if (typeof unit['network'] === 'string') decl.network = unit['network']
+  if (typeof unit['user'] === 'string') decl.user = unit['user']
+  if (isPlainObject(unit['resources'])) decl.resources = unit['resources'] as NonNullable<PlanUnitDecl['resources']>
+  return decl
+}
+
+/** Read a condition document's `unit` segment; null when it declares none. */
+export function conditionUnitOf(condition: unknown): ConditionUnitDecl | null {
+  if (!isPlainObject(condition) || !isPlainObject(condition['unit'])) return null
+  const scoped = condition['unit']['scopedHome']
+  if (!isPlainObject(scoped)) return null
+  const container = scoped['container']
+  const variable = scoped['var']
+  if (typeof container !== 'string' || container === '' || typeof variable !== 'string' || variable === '') return null
+  return { scopedHome: { container, var: variable } }
+}
+
+/** The `env.keys` a condition declares (names only — the contract carries no values). */
+function envKeysOf(condition: unknown): string[] {
+  if (!isPlainObject(condition) || !isPlainObject(condition['env'])) return []
+  const keys = condition['env']['keys']
+  return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === 'string') : []
+}
+
+/**
+ * Contract-check one condition against a plan that declares a unit segment:
+ * it must carry `unit.scopedHome`, and the variable naming that directory
+ * must also be one of the names the condition says it injects.
+ *
+ * Both are ERRORS rather than warnings: a condition without a scoped home has
+ * nowhere to read its credentials from inside the unit, and a variable absent
+ * from `env.keys` means the declaration and the injection disagree — the run
+ * would inject a name the reviewed document never admitted to.
+ * @param conditionId - the condition's id, for the message.
+ * @param condition - the condition document.
+ * @returns diagnostics; empty means the condition can run in a unit.
+ */
+export function conditionUnitDiagnostics(conditionId: string, condition: unknown): EvalDiagnostic[] {
+  const decl = conditionUnitOf(condition)
+  if (decl === null) {
+    return [{
+      code: 'UNIT_SCOPED_HOME_MISSING',
+      message: `condition ${conditionId}: the plan declares a unit, so the condition must declare unit.scopedHome`
+        + ' {container, var} — where its credential directory is mounted inside the unit and which variable names it',
+    }]
+  }
+  const diagnostics: EvalDiagnostic[] = []
+  if (!decl.scopedHome.container.startsWith('/')) {
+    diagnostics.push({
+      code: 'UNIT_SCOPED_HOME_RELATIVE',
+      message: `condition ${conditionId}: unit.scopedHome.container must be an absolute in-container path, got ${JSON.stringify(decl.scopedHome.container)}`,
+    })
+  }
+  if (!envKeysOf(condition).includes(decl.scopedHome.var)) {
+    diagnostics.push({
+      code: 'UNIT_SCOPED_HOME_VAR_UNDECLARED',
+      message: `condition ${conditionId}: unit.scopedHome.var ${JSON.stringify(decl.scopedHome.var)} is not in env.keys`
+        + ' — the variable the unit injects must be one the condition declares it injects',
+    })
+  }
+  return diagnostics
+}
+
+/**
+ * Resolve one condition's cell unit plan.
+ * @param planUnit - the plan's unit segment.
+ * @param conditionId - the condition id (also the credential directory name).
+ * @param condition - the condition document.
+ * @param credsRoot - host root of the staged credential directories.
+ * @returns the resolved plan, or the diagnostics that stopped it.
+ */
+export function resolveCellUnit(
+  planUnit: PlanUnitDecl,
+  conditionId: string,
+  condition: unknown,
+  credsRoot: string,
+): { ok: true; plan: CellUnitPlan } | { ok: false; diagnostics: EvalDiagnostic[] } {
+  const diagnostics = conditionUnitDiagnostics(conditionId, condition)
+  if (diagnostics.length > 0) return { ok: false, diagnostics }
+  const decl = conditionUnitOf(condition) as ConditionUnitDecl
+  const harness = isPlainObject(condition) && isPlainObject(condition['harness']) ? condition['harness'] : undefined
+  const harnessName = typeof harness?.['name'] === 'string' ? harness['name'] : ''
+  const plan: CellUnitPlan = {
+    conditionId,
+    image: planUnit.image,
+    scopedHome: { host: join(credsRoot, conditionId), container: decl.scopedHome.container, var: decl.scopedHome.var },
+    extraEnv: harnessName === 'dsh' ? { NODE_OPTIONS: DSH_CONTAINER_NODE_OPTIONS } : {},
+  }
+  if (planUnit.network !== undefined) plan.network = planUnit.network
+  if (planUnit.user !== undefined) plan.user = planUnit.user
+  if (planUnit.resources !== undefined) plan.resources = planUnit.resources
+  return { ok: true, plan }
+}
+
+/**
+ * The acquire spec for one cell (or, without mission ids, for a readiness
+ * probe unit). Exactly one mount — this condition's credential directory,
+ * read-write so the CLI's own refresh lands back on the host — and exactly
+ * the environment the unit needs: the scoped-home variable, plus dsh's node
+ * flag. Nothing else, because every env NAME enters the fingerprint.
+ * @param plan - the resolved cell unit plan.
+ * @param binding - the mission this unit serves, when it serves one.
+ */
+export function acquireSpecFor(plan: CellUnitPlan, binding: { missionId?: string; runId?: string } = {}): LabAcquireSpec {
+  const spec: LabAcquireSpec = {
+    image: plan.image,
+    mounts: [{ source: plan.scopedHome.host, target: plan.scopedHome.container, type: 'bind' }],
+    env: { [plan.scopedHome.var]: plan.scopedHome.container, ...plan.extraEnv },
+    workdir: UNIT_WORKSPACE,
+    ownWorkdir: true,
+  }
+  if (plan.network !== undefined) spec.network = plan.network
+  if (plan.user !== undefined) spec.user = plan.user
+  if (plan.resources !== undefined) spec.resources = plan.resources
+  if (binding.missionId !== undefined) spec.missionId = binding.missionId
+  if (binding.runId !== undefined) spec.runId = binding.runId
+  return spec
+}
+
+/**
+ * The printable form of an acquire spec: env NAMES only. The values here are
+ * in-container paths rather than secrets, but the rule that a printed spec
+ * carries no env values is the rule that keeps it true when a later condition
+ * injects something that IS one.
+ * @param spec - the spec to describe.
+ */
+export function describeAcquireSpec(spec: LabAcquireSpec): Record<string, unknown> {
+  return {
+    image: spec.image,
+    ...(spec.network !== undefined ? { network: spec.network } : {}),
+    ...(spec.user !== undefined ? { user: spec.user } : {}),
+    ...(spec.resources !== undefined ? { resources: spec.resources } : {}),
+    mounts: (spec.mounts ?? []).map(mount => ({
+      source: mount.source,
+      target: mount.target,
+      type: mount.type ?? 'bind',
+      readonly: mount.readonly === true,
+    })),
+    envKeys: Object.keys(spec.env ?? {}).sort(),
+    workdir: spec.workdir ?? UNIT_WORKSPACE,
+    ...(spec.missionId !== undefined ? { missionId: spec.missionId } : {}),
+  }
+}
+
+/** What the credentials-directory check found. */
+export interface CredentialsCheck {
+  condition: string
+  /** The host directory that was inspected. */
+  dir: string
+  ok: boolean
+  /** Entries counted (never their names — the check does not read the contents). */
+  entries: number
+  /** Owner uid of the directory as the host reports it. */
+  ownerUid: number | null
+  /** Why the directory is unusable; absent when it is fine. */
+  reason?: string
+  /**
+   * Set when the owner is not the unit's uid but IS the orchestrator's own —
+   * which is what a correctly staged directory looks like wherever the
+   * container runtime remaps bind-mount ownership (Docker Desktop does).
+   */
+  ownerNote?: string
+}
+
+/** The numeric uid of a lab `user` string (`uid[:gid]`), or null when it names a user. */
+export function unitUid(user: string | undefined): number | null {
+  if (user === undefined) return null
+  const first = user.split(':')[0] ?? ''
+  return /^\d+$/.test(first) ? Number(first) : null
+}
+
+/**
+ * Check the credential directory a human staged for one condition: it exists,
+ * it is a directory, it is not empty, and its owner is either the unit's own
+ * uid or the uid the orchestrator itself runs as. The CONTENTS are never
+ * read — what a credential file must contain is the harness's business, and
+ * this process has no reason to open one (T22 stages them; this only refuses
+ * to start a run against a directory that obviously cannot work).
+ *
+ * The two acceptable owners are one rule, not a platform switch: a Linux host
+ * passes uids straight through, so a directory staged as the unit's uid is the
+ * right answer there; Docker Desktop remaps a bind mount to the container
+ * user, so a directory staged by the operator is the right answer there. A
+ * third uid — root, or another account — is refused, because that is the case
+ * where the unit cannot read (or cannot write back) its own credentials.
+ * @param dir - `<credsRoot>/<condition id>`.
+ * @param conditionId - for the message.
+ * @param uid - the unit's numeric uid, when the plan declares one.
+ * @param selfUid - the orchestrator's own uid.
+ */
+export function checkCredentialsDir(dir: string, conditionId: string, uid: number | null, selfUid: number): CredentialsCheck {
+  const base: CredentialsCheck = { condition: conditionId, dir, ok: false, entries: 0, ownerUid: null }
+  let stats: ReturnType<typeof statSync>
+  try {
+    stats = statSync(dir)
+  } catch {
+    return { ...base, reason: `${dir} does not exist — stage this condition's credential directory under the credentials root first` }
+  }
+  if (!stats.isDirectory()) return { ...base, ownerUid: stats.uid, reason: `${dir} is not a directory` }
+  const ownerUid = stats.uid
+  let entries: string[]
+  try {
+    entries = readdirSync(dir)
+  } catch (error) {
+    return { ...base, ownerUid, reason: `${dir} cannot be listed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  if (entries.length === 0) {
+    return { ...base, ownerUid, reason: `${dir} is empty — the condition would run with no credentials at all` }
+  }
+  if (uid !== null && ownerUid !== uid && ownerUid !== selfUid) {
+    return {
+      ...base,
+      ownerUid,
+      entries: entries.length,
+      reason: `${dir} is owned by uid ${ownerUid}, which is neither the unit's uid (${uid}) nor this process's (${selfUid})`
+        + ' — the unit would not be able to read, or write back to, its own credentials',
+    }
+  }
+  const check: CredentialsCheck = { condition: conditionId, dir, ok: true, entries: entries.length, ownerUid }
+  if (uid !== null && ownerUid !== uid) {
+    check.ownerNote = `owned by uid ${ownerUid} (this process), not the unit's ${uid}`
+      + ' — accepted because the runtime may remap bind-mount ownership to the container user'
+  }
+  return check
+}

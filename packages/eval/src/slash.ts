@@ -17,6 +17,7 @@ import type { EvalService } from './service.ts'
 const USAGE = `usage:
   /eval run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR]
            [--retries N] [--only id,id] [--max-cells N] [--ignore-readiness]
+           [--creds-root DIR]
   /eval finalize <runId>
 
   run starts an evaluation run from a dataseek.plan/1 document. The invoking
@@ -32,6 +33,13 @@ const USAGE = `usage:
   conditions write double-sampled llm-draft ones). The default run stops at
   'archived'; --finalize attempts releasable → released, which the archive
   gate allows once verdicts/ is non-empty.
+
+  A plan that declares a unit segment runs every cell inside a container:
+  --creds-root DIR is then required and names the host root of the staged
+  credential directories (<DIR>/<condition id> is bound at the container path
+  each condition declares). The container path is serial, and without
+  --finalize each cell's container survives the run — the release gate is the
+  only destroy path, and a cell that stopped at 'archived' has not passed it.
 
   finalize is the re-entry point for a run that already stopped at 'archived':
   it walks every archived cell through the same gate and lists every cell that
@@ -69,7 +77,7 @@ function parseArgs(tokens: readonly string[]): SlashArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
   const switches = new Set<string>()
-  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells'])
+  const VALUE_FLAGS = new Set(['--concurrency', '--out', '--retries', '--only', '--max-cells', '--creds-root'])
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
     if (!token.startsWith('--')) {
@@ -106,7 +114,7 @@ function subsetLine(subset: { only: string[] | null; maxCells: number | null; to
 function renderReport(lines: readonly string[], report: {
   runId: string
   dryRun: boolean
-  meta: { order?: { sequence?: string[] } }
+  meta: { order?: { sequence?: string[] }; units?: Array<{ condition: string; acquire?: Record<string, unknown>; errors?: Array<{ message: string }> }> }
   cells: Array<{ missionId: string; finalState: string; attempts: number; activeMs: number; halted?: boolean; skipped?: { reason: string }; rejected?: { stage: string; violations: string[] }; verdicts?: { script: number; llmDraft: number } }>
   readiness: Array<{ condition: string; harness: string; ok: boolean; durationMs: number; observedModel: string | null; reason?: string }>
   subset: { only: string[] | null; maxCells: number | null; totalCells: number; selectedCells: number }
@@ -120,6 +128,12 @@ function renderReport(lines: readonly string[], report: {
     const sequence = report.meta.order?.sequence ?? []
     body.push(`dry-run — ${sequence.length} cell(s), execution order:`)
     for (const [i, missionId] of sequence.entries()) body.push(`  ${String(i + 1).padStart(3)}. ${missionId}`)
+    for (const unit of report.meta.units ?? []) {
+      // Env NAMES only, here as everywhere a spec is printed.
+      body.push(unit.errors === undefined
+        ? `unit ${unit.condition}: ${JSON.stringify(unit.acquire)}`
+        : `unit ${unit.condition}: REFUSED — ${unit.errors.map(error => error.message).join('; ')}`)
+    }
     body.push('(nothing executed — approve and run without --dry-run)')
     return { kind: 'success', text: body.join('\n') }
   }
@@ -254,6 +268,7 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
       ...(only.length > 0 ? { only } : {}),
       ...(maxCells !== undefined ? { maxCells } : {}),
       ignoreReadiness: args.switches.has('--ignore-readiness'),
+      ...(flagOf(args, '--creds-root') !== undefined ? { credsRoot: flagOf(args, '--creds-root') as string } : {}),
       log: (message) => { lines.push(message) },
     })
     return renderReport(lines, report)
@@ -268,7 +283,7 @@ export function registerEvalSlash(ctx: Context, service: EvalService): void {
   ctx.commands.register({
     name: 'eval',
     description: 'Evaluation runs: /eval run <plan.json> starts a run from this session (dry-run validates and prints the order without executing); /eval finalize <runId> walks an already-archived run through the release gate.',
-    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] | finalize <runId>' },
+    input: { hint: 'run <plan.json> [--concurrency N] [--dry-run] [--finalize] [--out DIR] [--retries N] [--only ids] [--max-cells N] [--ignore-readiness] [--creds-root DIR] | finalize <runId>' },
     handler: (invocation: CommandInvocation) => handleEvalCommand(service, invocation),
   })
 }

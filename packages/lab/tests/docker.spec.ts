@@ -234,7 +234,7 @@ describe('DockerProvider.acquire', () => {
     expect(run.slice(-3)).toEqual(['app:latest', 'sleep', 'infinity'])
     expect(calls[1]).toEqual([
       'exec', '--user', '0', 'dsh-lab-abc123', 'sh', '-c',
-      'mkdir -p /run/dsh-lab/pids && chmod 1777 /run/dsh-lab/pids',
+      'mkdir -p /run/dsh-lab/pids && chmod 1777 /run/dsh-lab /run/dsh-lab/pids',
     ])
   })
 
@@ -243,8 +243,53 @@ describe('DockerProvider.acquire', () => {
     await makeProvider(exec).acquire('abc123', { image: 'app:latest', user: '1000:1000' }, RESOLVED)
     const prepare = calls[1] ?? []
     expect(prepare.slice(0, 4)).toEqual(['exec', '--user', '0', 'dsh-lab-abc123'])
-    expect(prepare[6]).toContain('chmod 1777 /run/dsh-lab/pids')
+    expect(prepare[6]).toContain('chmod 1777 ')
+    expect(prepare[6]).toContain('/run/dsh-lab/pids')
     expect(calls).toHaveLength(2)
+  })
+
+  it('makes the scratch ROOT writable too, so verify can create its material directory as the unit user', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest', user: '1000:1000' }, RESOLVED)
+    // Without this, `verify`'s own `mkdir -p /run/dsh-lab/verify` runs as the
+    // unit's user against a root-owned 0755 parent and fails — every verify
+    // call with material on exactly the units this project runs.
+    expect(calls[1]?.[6]).toContain('chmod 1777 /run/dsh-lab /run/dsh-lab/pids')
+  })
+
+  it('does not touch the workdir unless ownWorkdir asks it to', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest', workdir: '/workspace' }, RESOLVED)
+    expect(calls).toHaveLength(2)
+  })
+
+  it('ownWorkdir creates the workdir and chowns it to the unit\'s own uid:gid', async () => {
+    const { exec, calls } = fakeExec((argv) => (
+      argv[0] === 'exec' && argv.includes('printf %s:%s "$(id -u)" "$(id -g)"')
+        ? { exitCode: 0, stdout: '1000:1000', stderr: '' }
+        : undefined
+    ))
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest', user: '1000', workdir: '/workspace', ownWorkdir: true }, RESOLVED)
+    // The uid is asked of the UNIT, not derived from the spec: an image that
+    // ships its own USER must be served as well as one that declares `user`.
+    expect(calls[2]?.[0]).toBe('exec')
+    expect(calls[2]?.join(' ')).toContain('id -u')
+    expect(calls[3]).toEqual([
+      'exec', '--user', '0', 'dsh-lab-abc123', 'sh', '-c',
+      `mkdir -p '/workspace' && chown -R '1000:1000' '/workspace'`,
+    ])
+  })
+
+  it('ownWorkdir falls back to a plain create when the daemon refuses --user 0', async () => {
+    const { exec, calls } = fakeExec((argv) => (
+      argv[0] === 'exec' && argv[1] === '--user' && argv[6]?.startsWith('mkdir -p \'') === true
+        ? { exitCode: 1, stdout: '', stderr: 'unable to find user' }
+        : undefined
+    ))
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest', workdir: '/workspace', ownWorkdir: true }, RESOLVED)
+    // The plain create is the pre-option behavior: the unit's own user makes
+    // the directory, which works wherever its parent is writable.
+    expect(calls[calls.length - 1]?.join(' ')).toContain('mkdir -p /workspace')
   })
 
   it('falls back to a plain create when the daemon refuses --user 0 (userns-remap)', async () => {

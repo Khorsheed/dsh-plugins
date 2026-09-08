@@ -100,6 +100,14 @@ export class LabService implements Lab {
     const target = options.target ?? unit.workspace
     await provider.populate(unit.resource, { source: options.source, target })
     const result: PopulateResult = { sha, count: files.length, files }
+    // Remember the hash this unit was populated with. The status view's TASK
+    // column used to be readable only by re-opening the registered
+    // materialization artifact — which works when the caller registers an
+    // absolute manifest path, and does not when it registers the path
+    // RELATIVE to the attempt's run-data directory, which is what mission's
+    // artifact index requires of it. Both callers are right; the column just
+    // has no business needing a file at all when populate computed the number.
+    unit.taskSha = sha
     if (options.manifestPath !== undefined) {
       const manifest = { source: options.source, target, sha, count: files.length, files, populatedAt: this.now() }
       writeFileSync(options.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
@@ -263,6 +271,7 @@ export class LabService implements Lab {
           if (facts.cpuUsageUsec !== undefined) row.cpuUsageUsec = facts.cpuUsageUsec
         }
       }
+      if (unit.taskSha !== undefined) row.taskHash = unit.taskSha.slice(0, TASK_HASH_PREFIX)
       if (unit.missionId !== undefined && mission !== undefined) {
         try {
           const { mission: snapshot } = await mission.get(unit.missionId, unit.runId)
@@ -273,7 +282,7 @@ export class LabService implements Lab {
             // Newest materialization first: retry re-materializes, and a stale
             // or ghost record (unreadable file) must skip with a warning, not
             // blank the whole column.
-            for (const artifact of attempt.artifacts.filter((a) => a.kind === 'materialization').reverse()) {
+            for (const artifact of row.taskHash !== undefined ? [] : attempt.artifacts.filter((a) => a.kind === 'materialization').reverse()) {
               try {
                 const parsed = JSON.parse(readFileSync(artifact.path, 'utf8')) as { sha?: string }
                 if (typeof parsed.sha === 'string') {

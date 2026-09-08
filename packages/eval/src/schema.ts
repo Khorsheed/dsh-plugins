@@ -289,6 +289,24 @@ export const CONDITION_SCHEMA: SchemaObject = {
       description: 'Environment variable NAMES the condition injects — never values.',
       properties: { keys: { type: 'array', items: { type: 'string' } } },
     },
+    unit: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['scopedHome'],
+      description: 'Optional. What this condition needs INSIDE a container unit. Required of every condition a plan with a unit segment names; absent on the host path. It IS part of the condition hash: where a subject reads its credentials from is a factor, not a comment.',
+      properties: {
+        scopedHome: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['container', 'var'],
+          description: 'The condition\'s scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.',
+          properties: {
+            container: { type: 'string', description: 'Absolute in-container mount point, e.g. /creds/codex.' },
+            var: { type: 'string', description: 'The variable naming it inside the unit (CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME); must also appear in env.keys.' },
+          },
+        },
+      },
+    },
     notes: {
       type: 'string',
       description: 'Review commentary; excluded from the condition hash (a comment edit is not a new factor).',
@@ -377,6 +395,26 @@ export const PLAN_SCHEMA: SchemaObject = {
     exports: {
       type: 'string',
       description: 'Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override.',
+    },
+    unit: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['image'],
+      description: 'Optional. Present, every cell of this run executes inside one lab unit built from this image; absent, the run takes the host path unchanged. validate does not probe the docker daemon (it need not be reachable to review a plan) — the first acquire is the check.',
+      properties: {
+        image: { type: 'string', description: 'Image tag or digest of the dataset suite\'s env/ layer.' },
+        network: { type: 'string', description: 'Docker network the units join. Undeclared is docker\'s default bridge, which HAS egress — a sealed run must name its internal network.' },
+        user: { type: 'string', description: 'In-container user (uid[:gid]); undeclared is the image\'s own USER.' },
+        resources: {
+          type: 'object',
+          additionalProperties: false,
+          description: 'CPU and memory ceilings; applied to the unit and hashed into its environment fingerprint.',
+          properties: {
+            cpus: { type: ['string', 'number'] },
+            memory: { type: ['string', 'number'] },
+          },
+        },
+      },
     },
     notes: {
       type: 'string',

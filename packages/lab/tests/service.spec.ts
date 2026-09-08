@@ -600,36 +600,50 @@ describe('status enrichment', () => {
 })
 
 describe('status materialization tolerance', () => {
-  it('takes the NEWEST materialization; an older ghost record is never consulted', async () => {
+  /** A source tree plus the service that will populate from it. */
+  function populated(): { service: LabService; mission: ReturnType<typeof fakeMission>; dir: string; warnings: string[] } {
     const mission = fakeMission(true)
     const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
     tmpDirs.push(dir)
     mkdirSync(join(dir, 'layer'))
     writeFileSync(join(dir, 'layer', 'task.md'), 'hello')
-    const manifestPath = join(dir, 'materialization.json')
-    const { service } = makeService({ mission })
+    const { service, warnings } = makeService({ mission })
+    return { service, mission, dir, warnings }
+  }
+
+  it('reports the hash populate itself computed, whatever path the artifact index carries', async () => {
+    const { service, mission, dir } = populated()
     const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
-    const manifest = await service.populate(info.id, { source: join(dir, 'layer'), manifestPath })
-    // A ghost record lands FIRST in registration order (the oldest); the
-    // newest-first read finds the real one and never reaches it.
+    // mission requires an artifact path RELATIVE to the attempt's run-data
+    // directory, so a caller that obeys it registers something this process
+    // cannot open by itself. The column must still hold: populate computed
+    // the number, and re-reading a file to recover it was never necessary.
+    const manifest = await service.populate(info.id, {
+      source: join(dir, 'layer'),
+      manifestPath: join(dir, 'materialization.json'),
+      artifactPath: 'materialization.json',
+    })
     mission.snapshot.attempts[0]?.artifacts.unshift({ path: join(dir, 'ghost.json'), kind: 'materialization' })
     const [row] = await service.status(info.id)
     expect(row?.taskHash).toBe(manifest.sha.slice(0, 8))
   })
 
-  it('an unreadable newest record is skipped with a warning, falling back to the older readable one', async () => {
+  it('falls back to the registered artifact for a unit this process never populated', async () => {
+    // The host-restart case: reconcile adopts a unit from the daemon's labels
+    // and knows nothing of the populate that filled it.
     const mission = fakeMission(true)
     const dir = mkdtempSync(join(tmpdir(), 'lab-src-'))
     tmpDirs.push(dir)
-    mkdirSync(join(dir, 'layer'))
-    writeFileSync(join(dir, 'layer', 'task.md'), 'hello')
-    const manifestPath = join(dir, 'materialization.json')
-    const { service, warnings } = makeService({ mission })
-    const info = await service.acquire({ image: 'app:latest', missionId: 'm-1' })
-    const manifest = await service.populate(info.id, { source: join(dir, 'layer'), manifestPath })
+    writeFileSync(join(dir, 'materialization.json'), `${JSON.stringify({ sha: 'a'.repeat(64) })}\n`)
+    const provider = new FakeProvider()
+    provider.managed = [{ id: 'adopted', resource: 'dsh-lab-adopted', running: true, labels: { 'dsh-lab.mission': 'm-1' } }]
+    const { service, warnings } = makeService({ mission, provider })
     mission.snapshot.attempts[0]?.artifacts.push({ path: join(dir, 'gone.json'), kind: 'materialization' })
-    const [row] = await service.status(info.id)
-    expect(row?.taskHash).toBe(manifest.sha.slice(0, 8))
+    mission.snapshot.attempts[0]?.artifacts.unshift({ path: join(dir, 'materialization.json'), kind: 'materialization' })
+    const [row] = await service.status('adopted')
+    // Newest-first: the unreadable record is skipped with a warning and the
+    // older readable one answers.
+    expect(row?.taskHash).toBe('a'.repeat(8))
     expect(warnings.some((w) => w.includes('gone.json') && w.includes('skipped'))).toBe(true)
   })
 })

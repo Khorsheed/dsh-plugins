@@ -114,6 +114,24 @@ export interface AcquireSpec {
   command?: string[]
   /** Working directory inside the unit. */
   workdir?: string
+  /**
+   * Create {@link AcquireSpec.workdir} inside the unit and hand it to the
+   * unit's own user, before any other verb runs.
+   *
+   * `docker run --workdir X` creates a missing X as `root:root`. A unit that
+   * declares a non-root `user` — or an image that ships one, as the
+   * evaluation image does — then cannot write the directory its whole working
+   * life happens in: `populate` still succeeds (the daemon copies as root)
+   * and the FIRST write from inside the unit fails, which is the worst place
+   * to find out. Opt-in, because creating directories on the caller's behalf
+   * is not something `acquire` should do unasked; an image that already ships
+   * a writable workspace needs nothing.
+   *
+   * Not a fingerprint component: the shape of {@link FingerprintComponents}
+   * never varies, and who owns a directory the unit was going to be given
+   * anyway does not make two otherwise identical environments incomparable.
+   */
+  ownWorkdir?: boolean
   /** Mission this unit serves; its refs receive the resource id and fingerprint. */
   missionId?: string
   /** Run hint forwarded to mission service calls. */
@@ -140,6 +158,13 @@ export interface UnitInfo {
   runId?: string
   /** Epoch ms of acquisition. */
   createdAt: number
+  /**
+   * Overall materialization hash of the last {@link Lab.populate}, when this
+   * process performed it. It is what {@link UnitStatus.taskHash} reports;
+   * absent for a unit adopted by reconcile after a host restart, which falls
+   * back to reading the registered materialization artifact.
+   */
+  taskSha?: string
 }
 
 /** A unit as observed by {@link Lab.status}. */

@@ -1,12 +1,36 @@
 {
   "schema": "dataseek.condition/1",
-  "harness": { "name": "claude-code", "version": "2.1.236", "drive": "exec" },
-  "model": { "declared": "claude-opus-5", "endpoint": "proxy" },
-  "reasoning": { "effort": "default" },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.236",
+    "drive": "exec"
+  },
+  "model": {
+    "declared": "claude-opus-5",
+    "endpoint": "proxy"
+  },
+  "reasoning": {
+    "effort": "default"
+  },
   "permissions": "skip",
   "instructions": "none",
   "preset": null,
-  "skills": { "pack": null },
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" },
-  "env": { "keys": ["ANTHROPIC_BASE_URL"] }
+  "skills": {
+    "pack": null
+  },
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "env": {
+    "keys": [
+      "ANTHROPIC_BASE_URL",
+      "CLAUDE_CONFIG_DIR"
+    ]
+  },
+  "unit": {
+    "scopedHome": {
+      "container": "/creds/claude",
+      "var": "CLAUDE_CONFIG_DIR"
+    }
+  }
 }

@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
+import { conditionUnitDiagnostics, planUnitOf } from './unit.ts'
 import {
   CONDITION_ID_RE,
   CONDITION_SCHEMA,
@@ -531,11 +532,19 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
 
   await checkStageSchemas(semantics.stages, root, errors, warnings)
   await checkExpectedNsSources(semantics.expectedNs, semantics.items, root, warnings)
+  // A plan that declares a unit puts every condition inside a container, and
+  // a condition that never said where its scoped home is mounted cannot run
+  // there. Checked HERE, offline, because the alternative is discovering it
+  // at the first acquire — with the run created and the ledger already open.
+  const planUnit = planUnitOf(plan)
   for (const id of semantics.conditionIds) {
     const readiness = await resolveConditionReadiness(id, root)
     errors.push(...readiness.errors)
     warnings.push(...readiness.warnings)
     conditions.push(readiness.entry)
+    if (planUnit !== null && readiness.document !== null) {
+      errors.push(...conditionUnitDiagnostics(id, readiness.document))
+    }
   }
   report.ok = errors.length === 0
   return report

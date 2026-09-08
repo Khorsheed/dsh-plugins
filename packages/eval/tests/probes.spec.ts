@@ -233,7 +233,7 @@ describe('runProbes — the dataset-level verify layer', () => {
     const root = scratch()
     const probeDir = join(root, 'judge')
     const result = await run({ item: { 'F2/checklist.yml': 'task_id: F2\n' } }, 'F2', { probeDir, cellDir: makeCell(root) })
-    expect(result).toEqual({ outcomes: [], verdicts: [] })
+    expect(result).toEqual({ outcomes: [], verdicts: [], where: 'host' })
     expect(existsSync(probeDir)).toBe(false)
   })
 

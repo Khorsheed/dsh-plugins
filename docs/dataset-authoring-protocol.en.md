@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev5** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev6** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -251,6 +251,35 @@ One condition = one harness + a model declaration + a permission word + one scop
         }
       }
     },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopedHome"
+      ],
+      "description": "Optional. What this condition needs INSIDE a container unit. Required of every condition a plan with a unit segment names; absent on the host path. It IS part of the condition hash: where a subject reads its credentials from is a factor, not a comment.",
+      "properties": {
+        "scopedHome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "container",
+            "var"
+          ],
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.",
+          "properties": {
+            "container": {
+              "type": "string",
+              "description": "Absolute in-container mount point, e.g. /creds/codex."
+            },
+            "var": {
+              "type": "string",
+              "description": "The variable naming it inside the unit (CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME); must also appear in env.keys."
+            }
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; excluded from the condition hash (a comment edit is not a new factor)."
@@ -262,20 +291,46 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `null` in the nullable fields (`harness.version`, `model.declared`, `model.endpoint`, `home.sha`) reads as "**unresolved**": validate lists it as a warning, and the pre-run readiness gate refuses it. `null` means "not known yet", not "none".
 - The `permissions` vocabulary is given per harness: `dsh` → `unrestricted`; `claude-code` → `skip` or `normal`; `codex` → `danger-full-access`, `workspace-write`, `read-only`; `kimi` → `auto-approve`. The schema enum is the union; an out-of-vocabulary value for a known harness (e.g. dsh with `skip`) is a validator error.
 - `env.keys` carries variable NAMES only. No values — especially credentials — ever enter a contract file.
+- `unit` may be omitted, and omitting it means "this condition only ever runs on the host". A plan that declares a `unit` REQUIRES it: `unit.scopedHome` says where this condition's credential directory is mounted inside the unit and which variable names it (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), and `var` must also appear in `env.keys` — the name that gets injected has to be a name the document admits to injecting, which validate enforces as an error. The HOST side of that directory is deliberately absent: the orchestrator is given a credentials root and takes `<root>/<condition id>`, so the same condition file runs unchanged on another machine.
+- `unit` IS part of the condition hash (only `notes` is not): where a subject reads its credentials from is a factor, not a comment. Adding `unit` to an existing condition changes its hash and stales its lock, which is a re-provision.
 - Example (fully resolved; the in-progress I1 hand-walked shape lives in the dataset repo's `conditions/dsh-exec.json`, its four null fields listed as warnings):
 
 ```json
 {
   "schema": "dataseek.condition/1",
-  "harness": { "name": "claude-code", "version": "2.1.236", "drive": "exec" },
-  "model": { "declared": "claude-opus-5", "endpoint": "proxy" },
-  "reasoning": { "effort": "default" },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.236",
+    "drive": "exec"
+  },
+  "model": {
+    "declared": "claude-opus-5",
+    "endpoint": "proxy"
+  },
+  "reasoning": {
+    "effort": "default"
+  },
   "permissions": "skip",
   "instructions": "none",
   "preset": null,
-  "skills": { "pack": null },
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" },
-  "env": { "keys": ["ANTHROPIC_BASE_URL"] }
+  "skills": {
+    "pack": null
+  },
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "env": {
+    "keys": [
+      "ANTHROPIC_BASE_URL",
+      "CLAUDE_CONFIG_DIR"
+    ]
+  },
+  "unit": {
+    "scopedHome": {
+      "container": "/creds/claude",
+      "var": "CLAUDE_CONFIG_DIR"
+    }
+  }
 }
 ```
 
@@ -486,6 +541,47 @@ One condition = one harness + a model declaration + a permission word + one scop
       "type": "string",
       "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
     },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "description": "Optional. Present, every cell of this run executes inside one lab unit built from this image; absent, the run takes the host path unchanged. validate does not probe the docker daemon (it need not be reachable to review a plan) — the first acquire is the check.",
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Image tag or digest of the dataset suite's env/ layer."
+        },
+        "network": {
+          "type": "string",
+          "description": "Docker network the units join. Undeclared is docker's default bridge, which HAS egress — a sealed run must name its internal network."
+        },
+        "user": {
+          "type": "string",
+          "description": "In-container user (uid[:gid]); undeclared is the image's own USER."
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "CPU and memory ceilings; applied to the unit and hashed into its environment fingerprint.",
+          "properties": {
+            "cpus": {
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "memory": {
+              "type": [
+                "string",
+                "number"
+              ]
+            }
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; not part of any hash."
@@ -500,22 +596,64 @@ One condition = one harness + a model declaration + a permission word + one scop
 - `retry.infrastructure` and `exports` are both optional: the first is the per-cell infrastructure-retry budget (spawn failures, facade errors, timeouts), default 1, `0` disabling retries; the second is the bundle export directory (`~/…` allowed), default `<dataset repo>/exports`. Both are **reviewed defaults** — the run call options (`retryInfrastructure` / `exportsDir`) override them, so the plan is what review reads and the options are what a one-off run bends.
 - A plan carries **no template field**: the run template is a deterministic function of the dataset manifest, generated and linted at validate time and reviewed alongside the plan (I2).
 - `dataset.commit` of `null` means "pinned by the snapshot at run start"; run.meta records the actual commit.
+- `unit` may be omitted. Omitted, the run takes the **host path**: per-cell directories under `$DSH_HOME/state/eval`, no containers, byte for byte what it was before this field existed. Present, it takes the **container path**: every cell of the run goes acquire → populate → one delegation round and one checkpoint per stage → probes (inside the unit, through `lab.verify`) → archive → release, in one lab unit built from `image`. An undeclared `network` is docker's default bridge, which HAS egress — a sealed run must name its internal network; an undeclared `user` is the image's own `USER`; `resources` is both applied to the container and hashed into the environment fingerprint.
+- validate does NOT check that the image exists: reviewing a plan must not require a reachable docker daemon. The first `acquire` is that check.
 - Example:
 
 ```json
 {
   "schema": "dataseek.plan/1",
-  "dataset": { "repo": "~/dataseek", "commit": null, "id": "harness-comparison", "items": ["F2-multi-agent-room", "F3-self-restart-report"] },
-  "conditions": ["codex-exec", "claude-exec"],
+  "dataset": {
+    "repo": "~/dataseek",
+    "commit": null,
+    "id": "harness-comparison",
+    "items": [
+      "F2-multi-agent-room",
+      "F3-self-restart-report"
+    ]
+  },
+  "conditions": [
+    "codex-exec",
+    "claude-exec"
+  ],
   "reps": 3,
-  "stages": ["stage1", "stage2"],
-  "order": { "seed": 42, "interleave": true },
-  "budget": { "activeMinutes": 60, "turns": 10 },
-  "judge": { "conditions": ["judge-claude"], "samples": 2 },
-  "expectedNs": ["script", "llm-draft", "human-final"],
-  "retry": { "infrastructure": 1 },
+  "stages": [
+    "stage1",
+    "stage2"
+  ],
+  "order": {
+    "seed": 42,
+    "interleave": true
+  },
+  "budget": {
+    "activeMinutes": 60,
+    "turns": 10
+  },
+  "unit": {
+    "image": "eval-env:pinned",
+    "network": "eval-net",
+    "user": "1000",
+    "resources": {
+      "cpus": "2",
+      "memory": "4g"
+    }
+  },
+  "judge": {
+    "conditions": [
+      "judge-claude"
+    ],
+    "samples": 2
+  },
+  "expectedNs": [
+    "script",
+    "llm-draft",
+    "human-final"
+  ],
+  "retry": {
+    "infrastructure": 1
+  },
   "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。"
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，凭证目录的宿主根由 run 的 --creds-root 给，不写进本文件。"
 }
 ```
 
