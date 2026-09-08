@@ -20,12 +20,12 @@
  *   stage outputs are never rewritten.
  * @module @khorsheed/dsh-eval
  */
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
+import { discardDir, hostProbeExecutor, type ProbeExecution, type ProbeExecutor } from './probe-exec.ts'
 import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
 
 /** The four material files handed to the judge, in prompt order. */
@@ -413,25 +413,6 @@ export interface ProbeOutcome {
   dropped?: string[]
 }
 
-/** Spawn one probe and capture its exit code (never throws). */
-function spawnProbe(command: string, args: readonly string[], cwd: string, timeoutMs: number): Promise<{
-  code: number | null
-  stderr: string
-  spawnError?: string
-}> {
-  return new Promise((resolvePromise) => {
-    execFile(command, [...args], { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (error, _stdout, stderr) => {
-      if (error === null) return resolvePromise({ code: 0, stderr: String(stderr) })
-      const code = typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : null
-      resolvePromise({
-        code,
-        stderr: String(stderr),
-        ...(code === null ? { spawnError: error.message } : {}),
-      })
-    })
-  })
-}
-
 /**
  * The two coordinates the ORCHESTRATOR knows and the judging side only echoes.
  * A probe or judge that mislabels `task` or `by` would corrupt every
@@ -553,6 +534,13 @@ export interface ProbeRunInput {
   /** The rubric display path in the grading layer, or null when the item ships none. */
   rubricPath: string | null
   timeoutMs: number
+  /**
+   * Where the probes run. Omitted, they run on the host out of `probeDir` —
+   * the pre-container behavior, byte for byte. The container path passes the
+   * unit executor instead; everything else about §6.7 is identical, which is
+   * the point of the seam.
+   */
+  executor?: ProbeExecutor
 }
 
 /** {@link runProbes} result. */
@@ -560,6 +548,8 @@ export interface ProbeRunResult {
   outcomes: ProbeOutcome[]
   /** Every verdict the probes produced, anchored to the task and the probe path. */
   verdicts: Array<Record<string, unknown>>
+  /** Where the probes ran — recorded so a bundle says which mechanism produced its script verdicts. */
+  where: 'host' | 'unit'
 }
 
 /**
@@ -623,6 +613,7 @@ function firstLine(stderr: string): string {
  * outlive its use (architecture §4).
  */
 export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
+  const executor = input.executor ?? hostProbeExecutor({ probeDir: input.probeDir, cellDir: input.cellDir })
   const shown = await input.datasets.show(
     { repo: input.repo, layers: ['verify'] },
     input.datasetId,
@@ -633,13 +624,12 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
   const itemVerifyPaths = item?.layers['verify'] ?? []
   const datasetVerifyPaths = shown.datasetLayers?.['verify'] ?? []
   const probes = collectProbes({ taskId: input.taskId, itemVerifyPaths, datasetVerifyPaths })
-  if (probes.length === 0) return { outcomes: [], verdicts: [] }
+  if (probes.length === 0) return { outcomes: [], verdicts: [], where: executor.where }
 
   const itemRoot = itemVerifyRoot(input.taskId)
-  const cwd = join(input.probeDir, itemRoot)
   // The cwd exists even when the item ships no verify layer of its own: the
   // dataset's shared probes still have to run somewhere, once for this item.
-  mkdirSync(cwd, { recursive: true })
+  mkdirSync(join(input.probeDir, itemRoot), { recursive: true })
   // Whole layers, not just the probe files: a probe reads the checklist beside
   // it and imports its helpers by relative path, exactly as in the repository.
   // The dataset layer is materialized even when it ships no probes at all —
@@ -650,37 +640,47 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
   // The rubric rides along OUTSIDE the mirrored layout (a dotfile at the
   // judging root): the contract hands every probe a --rubric path, and the
   // grading layer must not be reachable from the cell.
-  let rubricArg = ''
+  let rubric: string | null = null
   if (input.rubricPath !== null) {
-    const rubric = await input.datasets.read({ repo: input.repo, layers: ['grading'] }, {
+    const loaded = await input.datasets.read({ repo: input.repo, layers: ['grading'] }, {
       dataset: input.datasetId,
       item: input.taskId,
       layer: 'grading',
       path: input.rubricPath,
       commit: input.commit,
     })
-    rubricArg = join(input.probeDir, '.rubric.yml')
-    writeFileSync(rubricArg, rubric.content, 'utf8')
+    rubric = '.rubric.yml'
+    writeFileSync(join(input.probeDir, rubric), loaded.content, 'utf8')
   }
 
-  const outDir = join(input.probeDir, '.out')
-  mkdirSync(outDir, { recursive: true })
+  // Run every probe, THEN read every verdict file. The two phases exist
+  // because a unit executor brings its verdicts back in one collect; on the
+  // host the split is invisible (each probe already wrote its own file).
+  const executions = probes.map((probe): { probe: ProbeRef; execution: ProbeExecution } => ({
+    probe,
+    execution: {
+      file: probe.file,
+      shell: /\.sh$/i.test(probe.display),
+      cwd: itemRoot,
+      slug: slug(probe.by),
+      rubric,
+      timeoutMs: input.timeoutMs,
+    },
+  }))
+  const ran: Array<{ probe: ProbeRef; execution: ProbeExecution; result: Awaited<ReturnType<ProbeExecutor['run']>>; durationMs: number }> = []
+  for (const entry of executions) {
+    const startedAt = Date.now()
+    const result = await executor.run(entry.execution)
+    ran.push({ ...entry, result, durationMs: Date.now() - startedAt })
+  }
+  const collected = await executor.collect()
+
   const outcomes: ProbeOutcome[] = []
   const verdicts: Array<Record<string, unknown>> = []
-  for (const probe of probes) {
-    const probeFile = join(input.probeDir, probe.file)
-    const outFile = join(outDir, `${slug(probe.by)}.json`)
-    const args = ['--cell', input.cellDir, ...(rubricArg !== '' ? ['--rubric', rubricArg] : []), '--out', outFile]
-    const startedAt = Date.now()
-    const spawned = await spawnProbe(
-      /\.sh$/i.test(probe.display) ? '/bin/sh' : process.execPath,
-      [probeFile, ...args],
-      cwd,
-      input.timeoutMs,
-    )
-    const durationMs = Date.now() - startedAt
-    const common = { probe: probe.by, origin: probe.origin, exitCode: spawned.code, verdicts: [], durationMs }
-    if (spawned.code === PROBE_EXIT_NOT_APPLICABLE) {
+  for (const entry of ran) {
+    const { probe, result } = entry
+    const common = { probe: probe.by, origin: probe.origin, exitCode: result.code, verdicts: [], durationMs: entry.durationMs }
+    if (result.code === PROBE_EXIT_NOT_APPLICABLE) {
       // Not a failure and not a verdict: the probe is fine, the criterion is
       // untouched, and the input it needs is not in this cell. Counting it as
       // a failure is what buried the real failures in pilot A.
@@ -688,20 +688,31 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
         ...common,
         outcome: 'probe-skipped',
         ok: false,
-        reason: firstLine(spawned.stderr) || 'the probe reported nothing on stderr',
+        reason: firstLine(result.stderr) || 'the probe reported nothing on stderr',
       })
       continue
     }
-    if (spawned.code !== 0) {
+    if (result.code !== 0) {
       outcomes.push({
         ...common,
         outcome: 'probe-failed',
         ok: false,
-        error: spawned.spawnError ?? `probe exited ${String(spawned.code)}${spawned.stderr.trim() !== '' ? `: ${firstLine(spawned.stderr)}` : ''}`,
+        error: result.spawnError ?? `probe exited ${String(result.code)}${result.stderr.trim() !== '' ? `: ${firstLine(result.stderr)}` : ''}`,
       })
       continue
     }
-    const read = readVerdictFile(outFile, { task: input.taskId, by: probe.by })
+    if (!collected.ok) {
+      // The probe judged and the answer never reached the host. That is a
+      // failure of the RUN, not of the probe, and it says so.
+      outcomes.push({
+        ...common,
+        outcome: 'probe-failed',
+        ok: false,
+        error: `${probe.by} exited 0 but its verdicts could not be brought back to the host: ${collected.error}`,
+      })
+      continue
+    }
+    const read = readVerdictFile(executor.outFile(entry.execution), { task: input.taskId, by: probe.by })
     if (!read.ok) {
       // Exit 0 with unusable output is a CONTRACT violation, not a verdict:
       // the probe claimed it judged and then produced nothing checkable.
@@ -723,7 +734,7 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
     })
     verdicts.push(...read.verdicts)
   }
-  return { outcomes, verdicts }
+  return { outcomes, verdicts, where: executor.where }
 }
 
 /** One resolved judge condition (the run loop resolves it once, before executing). */
@@ -875,11 +886,12 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
   return { records, failures }
 }
 
-/** Remove a probe directory, best effort (the verify layer never outlives its use). */
+/**
+ * Remove a probe directory, best effort (the verify layer never outlives its
+ * use). The container path discards through the executor instead — it has an
+ * in-unit directory to remove as well — and this stays the host path's name
+ * for the same act.
+ */
 export function discardProbeDir(probeDir: string): void {
-  try {
-    rmSync(probeDir, { recursive: true, force: true })
-  } catch {
-    // A probe that left an unremovable file behind is not a run failure.
-  }
+  discardDir(probeDir)
 }

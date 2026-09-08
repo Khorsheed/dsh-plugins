@@ -90,7 +90,13 @@ export interface MissionFace {
   }): Promise<{ written: string[]; artifacts: number; checkpoint: string }>
   annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
   retry(missionId: string, options: { runId?: string; reason: string; category: string; by?: string }): Promise<{ attempt: number }>
-  setRefs(missionId: string, refs: { sessions?: string[] }, options?: { runId?: string; by?: string }): Promise<void>
+  /**
+   * Write the current attempt's refs. `sessions` is the delegation trail;
+   * `resource` and `fingerprint` are the unit's, written by the orchestrator
+   * right after `acquire` so the «环境一致» invariant has something to check
+   * (pilot A left it blank and the invariant read `unverifiable` forever).
+   */
+  setRefs(missionId: string, refs: { sessions?: string[]; resource?: string; fingerprint?: string }, options?: { runId?: string; by?: string }): Promise<void>
   addArtifact(missionId: string, artifact: { path: string; kind: string }, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
   /** One mission's record as far as the loop needs it (current attempt state). */
   get(missionId: string, runId?: string): {
@@ -173,6 +179,20 @@ export interface EvalDelegationOptions {
   signal?: AbortSignal
   cwd?: string
   onProgress?: (event: DelegationProgress) => void
+  /**
+   * T17's container target: run this round's CLI inside an already-acquired
+   * unit (`docker exec -w <workdir> [-e NAME…] <container> <the same argv>`).
+   * `cwd` is NOT passed alongside it — inside the unit the host cwd means
+   * nothing, and the workdir is the workspace the unit was populated into.
+   *
+   * `env` must name the harness's in-container scoped-home variable
+   * (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`); the
+   * provider refuses the round before any process when it is missing, because
+   * forwarding its host path would start the CLI in a directory the unit does
+   * not have. Values travel in the docker client's own environment, never on
+   * the argv.
+   */
+  exec?: { container: string; workdir: string; env?: Record<string, string> }
 }
 
 /** The read-only delegation projection T11's `delegationOf` returns. */
@@ -245,4 +265,116 @@ export interface MissionFinalizeFace {
   runStatus(runId: string): { rows: ReadonlyArray<{ id: string; state: string }> }
   transition(missionId: string, to: string, options?: { runId?: string; by?: string; note?: string }): Promise<{ changed: boolean }>
   annotate(missionId: string, ns: string, payload: unknown, options?: { runId?: string; by?: string }): Promise<{ added: boolean }>
+}
+
+/* ─────────────────────────── the lab face (I3) ────────────────────────── */
+
+/**
+ * One mount declared at acquire time. The container path declares exactly
+ * ONE: the condition's scoped credential directory, bound read-write so the
+ * CLI's own credential refresh lands back on the host (T17's decision — a
+ * named volume would put `docker cp` in every read-back path).
+ */
+export interface LabMountSpec {
+  /** Host directory for `bind`, a volume NAME for `volume`. */
+  source: string
+  /** Absolute path inside the unit. */
+  target: string
+  readonly?: boolean
+  type?: 'bind' | 'volume'
+}
+
+/** CPU and memory ceilings; applied to the unit AND hashed into its fingerprint. */
+export interface LabResourceLimits {
+  cpus?: string | number
+  memory?: string | number
+}
+
+/** What one unit is acquired with (structural `AcquireSpec`). */
+export interface LabAcquireSpec {
+  image: string
+  mounts?: LabMountSpec[]
+  resources?: LabResourceLimits
+  /** Docker network; undeclared is docker's default bridge, which HAS egress. */
+  network?: string
+  /** In-container user (`uid[:gid]`); undeclared is the image's own USER. */
+  user?: string
+  /** Environment entries inside the unit — NAMES enter the fingerprint, values never do. */
+  env?: Record<string, string>
+  /** In-unit working directory. */
+  workdir?: string
+  /**
+   * Create `workdir` and hand it to the unit's user before any other verb.
+   * The container path always asks for it: a missing `--workdir` is created
+   * root-owned, and a unit declaring a non-root `user` then cannot write the
+   * directory its own work is supposed to happen in.
+   */
+  ownWorkdir?: boolean
+  /** Mission this unit serves; its refs receive the resource id and fingerprint. */
+  missionId?: string
+  runId?: string
+}
+
+/** One acquired unit (structural `UnitInfo`). */
+export interface LabUnitInfo {
+  id: string
+  provider: string
+  /** Provider-side resource handle — the container the delegation execs into. */
+  resource: string
+  /** Composite environment fingerprint (`lab-env:<hex>`) — the run's `refs.fingerprint`. */
+  fingerprint: string
+  /** In-unit working directory. */
+  workspace: string
+  missionId?: string
+  runId?: string
+  createdAt: number
+}
+
+/** What one in-unit command factually produced (structural `VerifyResult`). */
+export interface LabVerifyResult {
+  /** Exit code; -1 when the client was terminated before one existed. */
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  timedOut: boolean
+}
+
+/** The materialization manifest `populate` returns (structural `PopulateResult`). */
+export interface LabPopulateResult {
+  sha: string
+  count: number
+  files: Array<{ path: string; sha: string }>
+}
+
+/**
+ * The lab verbs the container path drives (`ctx.lab`). Structural like every
+ * other face here: eval imports nothing from the lab package, and a
+ * composition without lab is a refusal that names it.
+ *
+ * All eight verbs are declared even though the run loop drives seven —
+ * `status` is a human/CLI surface, and the loop reads the mission ledger
+ * rather than asking the provider what state a cell is in.
+ */
+export interface LabFace {
+  acquire(spec: LabAcquireSpec): Promise<LabUnitInfo>
+  populate(unitId: string, options: {
+    source: string
+    target?: string
+    /** Host file the materialization manifest is written to (and registered from). */
+    manifestPath?: string
+    /** Artifact path registered with mission, relative to the attempt's run-data directory. */
+    artifactPath?: string
+  }): Promise<LabPopulateResult>
+  collect(unitId: string, options: { source: string; target: string; kind?: string; artifactPath?: string }): Promise<void>
+  checkpoint(unitId: string, options: { name: string }): Promise<{ ref: string }>
+  verify(unitId: string, options: { command: string[]; source?: string; timeoutMs?: number }): Promise<LabVerifyResult>
+  archive(unitId: string, options: { target: string; kind?: string; artifactPath?: string }): Promise<void>
+  /**
+   * Destroy the unit. With a mission binding this is the gate's enforcement
+   * point and no option bypasses it; `force` is only for a unit no gate
+   * protects (the readiness probe unit, which is bound to no mission).
+   */
+  release(unitId: string, options?: { force?: boolean }): Promise<void>
+  status(unitId?: string): Promise<Array<{ id: string; resource: string; running: boolean }>>
 }

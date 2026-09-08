@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev5** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev6** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -251,6 +251,35 @@ datasets/<id>/
         }
       }
     },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopedHome"
+      ],
+      "description": "Optional. What this condition needs INSIDE a container unit. Required of every condition a plan with a unit segment names; absent on the host path. It IS part of the condition hash: where a subject reads its credentials from is a factor, not a comment.",
+      "properties": {
+        "scopedHome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "container",
+            "var"
+          ],
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator is given a credentials root and takes <root>/<condition id>.",
+          "properties": {
+            "container": {
+              "type": "string",
+              "description": "Absolute in-container mount point, e.g. /creds/codex."
+            },
+            "var": {
+              "type": "string",
+              "description": "The variable naming it inside the unit (CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME); must also appear in env.keys."
+            }
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; excluded from the condition hash (a comment edit is not a new factor)."
@@ -262,20 +291,46 @@ datasets/<id>/
 - 可空字段（`harness.version`、`model.declared`、`model.endpoint`、`home.sha`）的 `null` 读作「**未解析**」：validate 列为 warning，run 前的就绪检查拦截。`null` 是显式的「还不知道」，不是「没有」。
 - `permissions` 的词表按 harness 给定：`dsh` → `unrestricted`；`claude-code` → `skip` 或 `normal`；`codex` → `danger-full-access`、`workspace-write`、`read-only`；`kimi` → `auto-approve`。schema 枚举是并集；已知 harness 的越表取值（如 dsh 配 `skip`）由校验器报 error。
 - `env.keys` 只写变量名。任何值——尤其凭证——不得进契约文件。
+- `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器拿到一个凭证根，取 `<根>/<条件 id>`，所以同一份条件文件换台机器照跑。
+- `unit` 进条件哈希（只有 `notes` 不进）：受试对象从哪里读凭证是一项因子，不是注释。给既有条件补 `unit` 会改哈希，lock 随之过期，要重新 provision。
 - 例（已全部解析；I1 手写格的「进行中」形态见题库 `conditions/dsh-exec.json`，四个 null 字段以 warning 列出）：
 
 ```json
 {
   "schema": "dataseek.condition/1",
-  "harness": { "name": "claude-code", "version": "2.1.236", "drive": "exec" },
-  "model": { "declared": "claude-opus-5", "endpoint": "proxy" },
-  "reasoning": { "effort": "default" },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.236",
+    "drive": "exec"
+  },
+  "model": {
+    "declared": "claude-opus-5",
+    "endpoint": "proxy"
+  },
+  "reasoning": {
+    "effort": "default"
+  },
   "permissions": "skip",
   "instructions": "none",
   "preset": null,
-  "skills": { "pack": null },
-  "home": { "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74" },
-  "env": { "keys": ["ANTHROPIC_BASE_URL"] }
+  "skills": {
+    "pack": null
+  },
+  "home": {
+    "sha": "4b329f9ebe6c7aa19339da9ac46cd90506af3e92d73713c8339966be071b4a74"
+  },
+  "env": {
+    "keys": [
+      "ANTHROPIC_BASE_URL",
+      "CLAUDE_CONFIG_DIR"
+    ]
+  },
+  "unit": {
+    "scopedHome": {
+      "container": "/creds/claude",
+      "var": "CLAUDE_CONFIG_DIR"
+    }
+  }
 }
 ```
 
@@ -486,6 +541,47 @@ datasets/<id>/
       "type": "string",
       "description": "Optional. Bundle export directory (~/… allowed); default <dataset repo>/exports. Run-call options may override."
     },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "description": "Optional. Present, every cell of this run executes inside one lab unit built from this image; absent, the run takes the host path unchanged. validate does not probe the docker daemon (it need not be reachable to review a plan) — the first acquire is the check.",
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Image tag or digest of the dataset suite's env/ layer."
+        },
+        "network": {
+          "type": "string",
+          "description": "Docker network the units join. Undeclared is docker's default bridge, which HAS egress — a sealed run must name its internal network."
+        },
+        "user": {
+          "type": "string",
+          "description": "In-container user (uid[:gid]); undeclared is the image's own USER."
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "CPU and memory ceilings; applied to the unit and hashed into its environment fingerprint.",
+          "properties": {
+            "cpus": {
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "memory": {
+              "type": [
+                "string",
+                "number"
+              ]
+            }
+          }
+        }
+      }
+    },
     "notes": {
       "type": "string",
       "description": "Review commentary; not part of any hash."
@@ -500,22 +596,64 @@ datasets/<id>/
 - `retry.infrastructure` 与 `exports` 都可缺省：前者是每格的基础设施重试预算（spawn 失败、facade 报错、超时），缺省 1，`0` 表示不重试；后者是 bundle 导出目录（允许 `~/…`），缺省 `<题库仓库>/exports`。两者都是**被审阅的默认值**，run 调用选项（`retryInfrastructure` / `exportsDir`）可覆盖——审阅看 plan，临时跑法看选项。
 - plan **不含 template 字段**：run 模板是题集 manifest 的确定性函数，validate 时生成、lint，随 plan 一起审阅（I2）。
 - `dataset.commit` 为 `null` 表示「run 启动时由 snapshot 钉入」，run.meta 记实际值。
+- `unit` 可缺省。缺省即**宿主路径**：格子目录在 `$DSH_HOME/state/eval` 下，与容器无关，与本字段出现之前逐字节相同。在场即**容器路径**：本 run 的每一格都在一个由 `image` 建出的 lab 单元里跑完 acquire → populate → 逐阶段委派与 checkpoint → 探针（经 `lab.verify` 在单元内）→ archive → release。`network` 不声明就是 docker 默认网桥（**有外网**），封闭跑法必须点名内网；`user` 不声明就是镜像自带的 `USER`；`resources` 既真加到容器上，也进环境指纹。
+- validate **不查镜像是否存在**：审阅一份 plan 不该要求 docker daemon 在场。第一次 `acquire` 就是这项检查。
 - 例：
 
 ```json
 {
   "schema": "dataseek.plan/1",
-  "dataset": { "repo": "~/dataseek", "commit": null, "id": "harness-comparison", "items": ["F2-multi-agent-room", "F3-self-restart-report"] },
-  "conditions": ["codex-exec", "claude-exec"],
+  "dataset": {
+    "repo": "~/dataseek",
+    "commit": null,
+    "id": "harness-comparison",
+    "items": [
+      "F2-multi-agent-room",
+      "F3-self-restart-report"
+    ]
+  },
+  "conditions": [
+    "codex-exec",
+    "claude-exec"
+  ],
   "reps": 3,
-  "stages": ["stage1", "stage2"],
-  "order": { "seed": 42, "interleave": true },
-  "budget": { "activeMinutes": 60, "turns": 10 },
-  "judge": { "conditions": ["judge-claude"], "samples": 2 },
-  "expectedNs": ["script", "llm-draft", "human-final"],
-  "retry": { "infrastructure": 1 },
+  "stages": [
+    "stage1",
+    "stage2"
+  ],
+  "order": {
+    "seed": 42,
+    "interleave": true
+  },
+  "budget": {
+    "activeMinutes": 60,
+    "turns": 10
+  },
+  "unit": {
+    "image": "eval-env:pinned",
+    "network": "eval-net",
+    "user": "1000",
+    "resources": {
+      "cpus": "2",
+      "memory": "4g"
+    }
+  },
+  "judge": {
+    "conditions": [
+      "judge-claude"
+    ],
+    "samples": 2
+  },
+  "expectedNs": [
+    "script",
+    "llm-draft",
+    "human-final"
+  ],
+  "retry": {
+    "infrastructure": 1
+  },
   "exports": "~/dataseek/exports",
-  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。"
+  "notes": "commit 在 run 启动时由 snapshot 钉入；conditions 与 judge.conditions 都写条件 id，sha 由 conditions/<id>.lock.json 解析。retry 与 exports 是 run 的默认值，run 调用选项可覆盖。unit 在场即容器路径：每格一个单元，凭证目录的宿主根由 run 的 --creds-root 给，不写进本文件。"
 }
 ```
 

@@ -28,11 +28,14 @@ const FINGERPRINT_LABEL = 'dsh-lab.fingerprint'
 export const COMPONENTS_LABEL = 'dsh-lab.fingerprint-components'
 const WORKSPACE_LABEL = 'dsh-lab.workdir'
 
+/** In-container root of every scratch directory this provider creates. */
+const SCRATCH_DIR = '/run/dsh-lab'
+
 /** In-container directory holding one pidfile per provider-spawned process. */
-const PID_DIR = '/run/dsh-lab/pids'
+const PID_DIR = `${SCRATCH_DIR}/pids`
 
 /** In-container scratch directory verify material is copied into. */
-const VERIFY_DIR = '/run/dsh-lab/verify'
+const VERIFY_DIR = `${SCRATCH_DIR}/verify`
 
 /** Docker provider tuning. */
 export interface DockerProviderOptions {
@@ -130,10 +133,46 @@ export class DockerProvider implements UnitProvider {
     // then drops pidfiles whoever the unit runs as, and lab never has to learn
     // the uid. Falls back to a plain create where the daemon refuses `--user 0`
     // (userns-remap), which is exactly the behavior before non-root units.
-    const prepare = `mkdir -p ${PID_DIR} && chmod 1777 ${PID_DIR}`
+    //
+    // The scratch ROOT gets the same treatment, not only the pid directory:
+    // `verify` creates its material directory under it as the unit's user,
+    // and a root-owned 0755 parent makes every verify call on a non-root unit
+    // fail at `mkdir` — i.e. exactly the units this project runs.
+    const prepare = `mkdir -p ${PID_DIR} && chmod 1777 ${SCRATCH_DIR} ${PID_DIR}`
     const asRoot = await this.docker(['exec', '--user', '0', resource, 'sh', '-c', prepare])
     if (asRoot.exitCode !== 0) await this.run(['exec', resource, 'sh', '-c', prepare])
+    if (spec.ownWorkdir === true) await this.giveWorkdirToUnit(resource, spec.workdir ?? DEFAULT_WORKSPACE)
     return resource
+  }
+
+  /**
+   * Create the unit's working directory and hand it to the unit's own user
+   * ({@link AcquireSpec.ownWorkdir}). The uid/gid are asked of the unit
+   * itself rather than derived from the spec, so an image that ships its own
+   * `USER` is served as well as one that declares `user`. Falls back to a
+   * plain create where the daemon refuses `--user 0` (userns-remap), which is
+   * the pre-option behavior.
+   */
+  private async giveWorkdirToUnit(resource: string, workdir: string): Promise<void> {
+    const asRoot = await this.giveToUnit(resource, workdir)
+    if (!asRoot) await this.execInUnit(resource, ['mkdir', '-p', workdir])
+  }
+
+  /**
+   * Create `path` if absent and hand it, recursively, to the unit's own user.
+   * The uid/gid are asked of the unit itself rather than derived from the
+   * spec, so an image that ships its own `USER` is served as well as one that
+   * declares `user`.
+   * @returns whether the root exec succeeded (a daemon under userns-remap
+   *   refuses `--user 0`, and the caller decides what to do instead).
+   */
+  private async giveToUnit(resource: string, path: string): Promise<boolean> {
+    const who = await this.execInUnit(resource, ['sh', '-c', 'printf %s:%s "$(id -u)" "$(id -g)"'])
+    const owner = who.exitCode === 0 ? who.stdout.trim() : ''
+    const quoted = shellQuote(path)
+    const script = `mkdir -p ${quoted}` + (owner === '' ? '' : ` && chown -R ${shellQuote(owner)} ${quoted}`)
+    const asRoot = await this.docker(['exec', '--user', '0', resource, 'sh', '-c', script])
+    return asRoot.exitCode === 0
   }
 
   async populate(resource: string, options: PopulateOptions & { target: string }): Promise<void> {
@@ -175,6 +214,14 @@ export class DockerProvider implements UnitProvider {
       await this.execChecked(resource, ['rm', '-rf', VERIFY_DIR])
       await this.execChecked(resource, ['mkdir', '-p', VERIFY_DIR])
       await this.run(['cp', `${options.source}/.`, `${resource}:${VERIFY_DIR}`])
+      // `docker cp` writes with the HOST file's numeric uid, which on a
+      // non-root unit is nobody in particular: the copied subdirectories end
+      // up unwritable by the unit's own user, and the `rm -rf` below then
+      // fails file by file — leaving the verification material (which for an
+      // evaluation IS the answer key) inside the unit until it is destroyed.
+      // Handing the tree to the unit is what makes "removed after the run"
+      // true rather than intended.
+      await this.giveToUnit(resource, VERIFY_DIR)
     }
     const started = this.now()
     try {
@@ -303,4 +350,9 @@ export class DockerProvider implements UnitProvider {
       throw new Error(`lab: docker ${argv[0] ?? ''} failed (exit ${result.exitCode}): ${result.stderr.trim()}`)
     }
   }
+}
+
+/** Single-quote a literal for a `sh -c` script (the only quoting this provider needs). */
+function shellQuote(literal: string): string {
+  return `'${literal.replaceAll("'", `'\\''`)}'`
 }

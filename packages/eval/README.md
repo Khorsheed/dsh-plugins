@@ -37,7 +37,7 @@ pending → ws-ready → stage-1 → … → judged → archived → releasable 
 
 阶段状态按 manifest 中的位次命名（`stage1` → `stage-1`）；格产出文件是 `<stageId>.json` / `<stageId>.md`（提示词里写明）。schemaPath 相对模板自身位置生成——编排器把模板写在 plan 旁（`plans/<plan>.template.json`），与手写模板的 `../schemas/…` 同一解析方式。
 
-## run 循环 v0（阶段一二，宿主目录）
+## run 循环 v0（阶段一二；宿主目录或容器单元）
 
 `ctx.eval.run(planPath, options)` 是本体；`/eval run` 是人的发起动作。流程：
 
@@ -55,6 +55,41 @@ pending → ws-ready → stage-1 → … → judged → archived → releasable 
 run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, conditionSha, rep}`——在任何工作之前，所以连被跳过的格子也可归属；报告只认这条锚点定格子身份（bundle 里没有 labels，mission id 是有损的）。
 
 每次委派在 orchestrator ns 记 `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, model: {declared, observed}}`；`observed` 取自 T11 的回读——本轮 settled 事件优先，其次 `delegationOf(childSessionId)` 的记录。读记录要**等**：provider 在 settle 后的收尾遍里才并入观测，而门面在 result 落定的同一刻就清掉了带着 `onProgress` 的在跑记录，所以真实门面上 settled 事件根本到不了编排器、记录也要晚一拍才有值——run 结束即读会读空（第一次两格真跑的现场）。编排器因此在 settle 后有界地轮询记录（缺省 10s，`readbackWaitMs` 可调），等到与本轮开始前不同的观测即采用；等超时仍返回记录当前值（续轮跑的是同一模型时两者本就无从区分，记录本身的语义就是「该委派最近一次观测」），两处都没有才记 null。`usage` 只走 settled 事件：门面先清在跑记录的情况下这里拿不到，记 null 是诚实答案。回读到的模型与条件 `model.declared` 不符即当场失败（冻结决策 5：这次 run 归属错了），不按基础设施失败重试。
+
+## 容器路径（I3·T20）
+
+plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者与本节出现之前**逐字节相同**（pilot A 的 bundle 用本分支的 report 复算，`results.jsonl` 逐字节一致）。容器路径要 `ctx.lab` 在场，还要一个凭证根：`/eval run … --creds-root DIR`。
+
+**一格一单元，顺序固定**（架构轨迹表第 11–17 步）：
+
+1. **`acquire`**：镜像、网络、`user`、资源上限来自 plan 的 `unit` 段；**挂载只有一条**——该条件的凭证目录，`bind` 且可写（凭证续期要写回宿主，T17 的决定）；**env 只有**该条件 `unit.scopedHome.var` = 容器内路径，dsh 再加 `NODE_OPTIONS=--use-env-proxy`；`missionId` 与 `runId` 都带上。`workdir` 是 `/workspace`，并要求 lab 把它交给单元自己的用户（`ownWorkdir`）——docker 建出来的 workdir 归 root，非 root 单元写不进去。
+2. **`setRefs({resource, fingerprint})`**：编排器自己写，acquire 之后立刻。lab 也写，但那是 warn-and-skip 的尽力而为，而「环境一致」这条不变量不能建在允许跳过的写上——pilot A 的指纹列整轮是空的，报告整轮 `unverifiable`。
+3. **`populate`**：宿主物化目录 → `/workspace`，`manifestPath` 指向该 attempt 的 `materialization.json`，由 lab 算哈希、写文件、登记 artifact。编排器不再另算一份：两个同名 `materialization.json` 带两个不同哈希，比任一个单独存在都糟。工作区里因此**只有题面字节**——没有清单，也就没有宿主路径进单元。
+4. **每阶段一轮委派**：`exec = {container, workdir: '/workspace', env: {<VAR>: <容器内路径>}}`，**不传 `cwd`**（单元里宿主 cwd 没有意义；作用域目录变量不点名的话 T17 会当场拒绝这一轮）。
+5. **每阶段结束 `checkpoint({name: <阶段 id>})`**（ref 经 lab 进 mission），再 `collect('/workspace' → 格子目录)`。格子目录在容器路径上是**工作区的宿主镜像**：收产出、结构校验、`submit`、判官取材都在它上面，因此第 7、9 两步的代码两条路径共用。
+6. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
+7. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
+
+### 目录与凭证约定
+
+- 凭证目录一家一个：`<--creds-root>/<条件 id>`，bind 到该条件 `unit.scopedHome.container` 声明的容器内路径。**宿主路径不进 plan、不进 condition**——条件文件换台机器照跑，宿主一侧是运维事实。
+- 目录由人备好（题库 `env/creds/stage.sh`）；编排器只检查**存在、非空、属主**，绝不读内容。属主必须是单元的 uid 或编排器自己的 uid：Linux 直通 uid 时前者对，Docker Desktop 把 bind 挂载重映射到容器用户时后者对；第三个 uid 一律拒绝——那正是单元读不到、也写不回自己凭证的情形。
+- attempt 的运行数据目录多两样：`materialization.json`（lab 写的物化清单）与 `probe-verdicts/`（探针在单元内产出的原始判定）。工作区的宿主镜像**不进** attempt 目录——bundle 会连 `archive/workspace/` 一起收两份；镜像的位置记在一行 `workspace-mirror.json` 里，它就是那次 `collect` 登记的 artifact。
+
+### 销毁路径唯一
+
+`run.ts` 里只有一个 `destroyUnit`，`lab.release` 只在它里面出现：
+
+- **过闸即销毁**：`--finalize` 时 `archived → releasable` 一过就销毁，然后才 `→ released`。位置是刻意的：`isReleasable` 读的是**当前**状态，而模板的 releasableStates 只有 `releasable`——先走到 `released` 再销毁，闸会答否，于是每个容器都活着。
+- **闸拒绝即留下**：没有 `--finalize`、或 verdicts 为空导致 `releasable` 过不去，销毁照样问一次、照样被拒，**容器留着**并在格子上记一条 `{kind: 'unit-retained', reason}`。没人看过的格子，现场比容器数值钱。
+- **异常路径先归档再释放**：格子抛错（基础设施失败、schema 拒绝、归属错误）时先 `collect` 再 `archive` 再走同一条闸——不归档就 release 等于毁证据（lab README「失败恢复循环」）。同样不带 force，所以失败的格子会留着它的容器。
+- **`force` 在本文件里只有一处**：就绪检查的探活单元。它不绑 mission，因而没有闸；lab 要求这种销毁必须显式 `force`，正是为了让「无闸销毁」是一句判决而不是一个默认。
+
+### 已知取舍
+
+- **串行**。容器路径固定 `concurrency: 1`（显式给 >1 会被拒），并发单元归 I4。`acquire` 撞上 `maxConcurrentUnits` 当缺陷报出来，不排队。
+- **多家横比时指纹不同**。复合指纹含 env 键名，而每家的作用域目录变量不同（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / …），所以四家跑同一个 run 时「环境一致」会按既有规则记 `violated`。这是如实的：四个环境确实不同。要让它成立需要指纹分量或报告口径改一次，属 I4。
+- **两条路径的物化哈希算法不同**：宿主路径是编排器自己的（`path\0sha\0` 串联），容器路径是 lab 的（`path  sha` 换行连接）。同一 run 内可比（不变量只问「同题的格子是否一致」），跨路径不可比。报告两种字段名都读（`sha256` 与 `sha`）。
 
 ## 就绪检查：每个条件一次真委派
 
@@ -186,11 +221,12 @@ dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘
 
 - 三个只读工具与 `tool:eval` 提示词段走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，slash、CLI 与服务面照常，不炸启动。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
-- `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（T20 / I5）。
+- `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
+- 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。
 
 ## 状态
 
-I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。provision（I4）、界面（I5）按 web-eval 迭代计划推进。
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。
 
 ## 许可
 

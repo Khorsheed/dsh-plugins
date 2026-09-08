@@ -57,6 +57,13 @@ export interface ReadinessRecord {
   observedModel: string | null
   /** Why the condition is not ready; absent when it is. */
   reason?: string
+  /**
+   * Set on the container path: the throwaway unit this probe ran in. Its
+   * fingerprint is the same composite the cells will get, so a probe that
+   * passed proves the credential works in THAT environment rather than on the
+   * host — which is the whole reason the probe moved into a unit.
+   */
+  unit?: { resource: string; fingerprint: string }
 }
 
 /** One condition as the readiness check needs it (the run loop's resolved shape). */
@@ -65,6 +72,20 @@ export interface ReadinessSubject {
   harnessName: string
   declaredModel: string | null
   provider: string
+}
+
+/**
+ * A throwaway probe unit: where the round runs, and how to destroy it. The
+ * caller owns both — this module never acquires or releases anything itself,
+ * so the run loop keeps exactly one destroy path.
+ */
+export interface ReadinessUnit {
+  /** The container exec target the round runs in. */
+  exec: { container: string; workdir: string; env?: Record<string, string> }
+  /** The unit's composite environment fingerprint, recorded on the verdict. */
+  fingerprint: string
+  /** Destroy the unit. Called whatever the probe did, including when it threw. */
+  release(): Promise<void>
 }
 
 /** Inputs of {@link checkReadiness}. */
@@ -82,6 +103,17 @@ export interface ReadinessInput {
   readbackWaitMs?: number
   now?: () => number
   log?: (message: string) => void
+  /**
+   * Container path: acquire a throwaway unit for one condition and hand back
+   * where to run and how to destroy it. Omitted, the probe runs on the host
+   * in `<probeDirBase>/<condition>` — the pre-container behavior.
+   *
+   * The probe MUST meet the same environment the cells will: pilot A's whole
+   * lesson (G4) is that a credential answering "authenticated" somewhere else
+   * proves nothing, and a host probe for a container run would be exactly
+   * that mistake one level up.
+   */
+  unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit>
 }
 
 /**
@@ -106,6 +138,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
       readbackWaitMs,
       now,
       log,
+      ...(input.unitFor !== undefined ? { unitFor: input.unitFor } : {}),
     }))
   }
   return records
@@ -121,7 +154,53 @@ async function probeOne(
     readbackWaitMs: number
     now: () => number
     log: (message: string) => void
+    unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit>
   },
+): Promise<ReadinessRecord> {
+  if (env.unitFor === undefined) return await probeIn(localAgent, condition, env, undefined)
+  const startedAt = env.now()
+  let unit: ReadinessUnit
+  try {
+    unit = await env.unitFor(condition)
+  } catch (error) {
+    const reason = `the probe unit could not be acquired: ${error instanceof Error ? error.message : String(error)}`
+    env.log(`readiness ${condition.id}: NOT READY — ${reason}`)
+    return {
+      kind: 'readiness',
+      condition: condition.id,
+      harness: condition.harnessName,
+      provider: condition.provider,
+      declaredModel: condition.declaredModel,
+      ok: false,
+      startedAt,
+      durationMs: env.now() - startedAt,
+      childSessionId: null,
+      observedModel: null,
+      reason,
+    }
+  }
+  try {
+    const record = await probeIn(localAgent, condition, env, unit)
+    return { ...record, unit: { resource: unit.exec.container, fingerprint: unit.fingerprint } }
+  } finally {
+    // Whatever the probe did, the unit goes. It is bound to no mission, so
+    // this is the ONE destroy in the whole orchestrator that needs `force`.
+    await unit.release()
+  }
+}
+
+async function probeIn(
+  localAgent: LocalAgentFace,
+  condition: ReadinessSubject,
+  env: {
+    parentSessionId: string
+    cwd: string
+    timeoutMs: number
+    readbackWaitMs: number
+    now: () => number
+    log: (message: string) => void
+  },
+  unit: ReadinessUnit | undefined,
 ): Promise<ReadinessRecord> {
   const base = {
     kind: 'readiness' as const,
@@ -131,7 +210,9 @@ async function probeOne(
     declaredModel: condition.declaredModel,
   }
   const startedAt = env.now()
-  mkdirSync(env.cwd, { recursive: true })
+  // Inside a unit the host cwd means nothing: the round runs in the unit's
+  // workdir and no host directory is created for it.
+  if (unit === undefined) mkdirSync(env.cwd, { recursive: true })
 
   const controller = new AbortController()
   let timedOut = false
@@ -158,7 +239,7 @@ async function probeOne(
     run = await localAgent.start(env.parentSessionId, condition.provider, [{ type: 'text', text: READINESS_PROMPT }], {
       label: `readiness ${condition.id}`,
       signal: controller.signal,
-      cwd: env.cwd,
+      ...(unit === undefined ? { cwd: env.cwd } : { exec: unit.exec }),
       onProgress: (event: DelegationProgress) => {
         if (event.kind === 'settled' && event.observedModel !== undefined) settledModel = event.observedModel
       },

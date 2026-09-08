@@ -22,7 +22,7 @@ import {
   type ConditionsReport,
   type RunStatusReport,
 } from './read.ts'
-import type { DatasetsBindingFace, DatasetsFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
+import type { DatasetsBindingFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -176,10 +176,15 @@ export class EvalService {
     const datasets = this.hosts.get('datasets') as DatasetsFace | undefined
     const mission = this.hosts.get('mission') as MissionFace | undefined
     const localAgent = this.hosts.get('localAgent') as LocalAgentFace | undefined
+    // Probed like the other three and just as optional: only a plan with a
+    // `unit` segment needs it, and its absence is then a refusal that names
+    // it — never a boot failure, never a silent fallback to the host path.
+    const lab = this.hosts.get('lab') as LabFace | undefined
     const deps: Partial<RunDeps> & { stateRoot?: string } = {}
     if (datasets !== undefined) deps.datasets = datasets
     if (mission !== undefined) deps.mission = mission
     if (localAgent !== undefined) deps.localAgent = localAgent
+    if (lab !== undefined) deps.lab = lab
     return runPlan(planPath, options, deps)
   }
 

@@ -97,7 +97,7 @@ export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkip
 export { missionCliFace, MissionCliError, parseMissionRow } from './mission-cli.ts'
 export type { MissionCliOptions } from './mission-cli.ts'
 export { checkReadiness, READINESS_PROMPT, DEFAULT_READINESS_TIMEOUT_MS } from './readiness.ts'
-export type { ReadinessRecord, ReadinessSubject, ReadinessInput } from './readiness.ts'
+export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit } from './readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 export { EvalReadRefused } from './read.ts'
 export type { ConditionHash, RunOptions, RunReport, RunCellReport, RunSubset } from './service.ts'
@@ -147,8 +147,20 @@ export type { SuiteManifest, ManifestStage, ManifestOutputSchema } from './manif
 export { expandMatrix, orderCells, missionIdFor } from './matrix.ts'
 export type { EvalCell } from './matrix.ts'
 export { runPlan, evalVersion, defaultStateRoot } from './run.ts'
+export {
+  acquireSpecFor, checkCredentialsDir, conditionUnitDiagnostics, conditionUnitOf, describeAcquireSpec,
+  planUnitOf, resolveCellUnit, unitUid,
+  DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
+} from './unit.ts'
+export type { CellUnitPlan, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl } from './unit.ts'
+export { discardDir, hostProbeExecutor, unitProbeExecutor } from './probe-exec.ts'
+export type { ProbeExecution, ProbeExecResult, ProbeExecutor } from './probe-exec.ts'
 export type { RunSubset as RunSubsetRecord } from './run.ts'
-export type { DatasetsBindingFace, DatasetsFace, MissionFace, MissionFinalizeFace, MissionReadFace, MissionStatusRow, LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile } from './faces.ts'
+export type {
+  DatasetsBindingFace, DatasetsFace, MissionFace, MissionFinalizeFace, MissionReadFace, MissionStatusRow,
+  LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
+  LabFace, LabAcquireSpec, LabMountSpec, LabPopulateResult, LabResourceLimits, LabUnitInfo, LabVerifyResult,
+} from './faces.ts'
 export { handleEvalCommand, registerEvalSlash } from './slash.ts'
 export {
   CONDITION_SCHEMA,

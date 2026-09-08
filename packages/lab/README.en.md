@@ -72,6 +72,8 @@ const unit = await ctx.lab.acquire({
   resources: { cpus: '2', memory: '4g' },     // these four are applied to the container AND hashed
   network: 'eval-net',                        // undeclared = docker's default bridge, which has egress
   user: '1000:1000',                          // undeclared = the image's own USER
+  workdir: '/workspace',
+  ownWorkdir: true,                           // create the workdir and hand it to the unit's user (below)
 })
 // unit.fingerprint = 'lab-env:<hex>' (written into the mission's refs, opaque there)
 // unit.fingerprintComponents = { version, image, resources, mounts, envKeys, network, user }
@@ -85,6 +87,10 @@ await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/
 await ctx.lab.release(unit.id)                // gated by mission.isReleasable; force + warning without a gate
 const units = await ctx.lab.status()          // reconciled against the docker daemon
 ```
+
+`ownWorkdir` exists for non-root units: `docker run --workdir X` creates a missing X as `root:root`, so a unit that declares a `user` — or an image that ships a non-root `USER`, as the evaluation image does — cannot write the directory its whole working life happens in. `populate` still succeeds (the daemon copies as root) and the FIRST write from inside the unit fails, which is the worst possible place to find out. With the flag, `acquire` creates the workdir as root and `chown`s it to the unit's own uid:gid — asked of the unit itself, so an image's own `USER` is served as well as an explicit `user`; where the daemon refuses `--user 0` (userns-remap) it falls back to a plain create, the behavior before the option existed. It is **not** a fingerprint component: the component shape never varies, and who owns a directory the unit was going to be handed anyway does not make two otherwise identical environments incomparable.
+
+One thing at the same layer: `acquire` now also makes `/run/dsh-lab` itself `1777` (previously only `/run/dsh-lab/pids`). `verify` creates its material directory under it as the UNIT's user, and a root-owned `0755` parent made every verify-with-material call fail at `mkdir` on a non-root unit — i.e. exactly the units this project runs.
 
 The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
 

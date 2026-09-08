@@ -8,13 +8,19 @@
  * outputs, submit + transition along the generated state machine, judge,
  * archive, and export the bundle.
  *
+ * Since I3·T20 the loop also has a CONTAINER path. A plan that declares a
+ * `unit` segment runs every cell inside one lab unit: acquire → populate →
+ * one delegation round per stage through `exec: {container, workdir, env}` →
+ * checkpoint → probes through `lab.verify` → archive → release, in the order
+ * the architecture's trajectory table has spelled out since step 11. A plan
+ * WITHOUT that segment takes the host path, byte for byte what it was.
+ *
  * Since I2·T9 the loop also JUDGES: once a cell reaches its terminal stage
  * state it runs the item's probes (script ns) and delegates the blind LLM
  * judging (llm-draft ns) through the judge conditions the plan names, so the
  * archive gate's non-empty `verdicts/` requirement can actually be met and
- * `--finalize` reaches `released`. What the loop still does not do: containers
- * (I3 hands probe execution to `lab.verify`) and `human-final` (a person's
- * act, written from the judge bench).
+ * `--finalize` reaches `released`. What the loop still does not do:
+ * `human-final` (a person's act, written from the judge bench).
  *
  * Frozen decisions implemented here: 2 (exec drive only), 5 (model declared
  * recorded, observed read back once the local-agent family lands the field —
@@ -32,7 +38,10 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
-import type { DelegationProgress, DelegationResult, DelegationUsage, DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
+import type {
+  DelegationProgress, DelegationResult, DelegationUsage,
+  DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
+} from './faces.ts'
 import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplateFromManifest, stageStateName, type GeneratedTemplate } from './template.ts'
 import { loadManifest, type SuiteManifest } from './manifest.ts'
@@ -40,14 +49,20 @@ import { expandMatrix, orderCells, type EvalCell } from './matrix.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import {
   checkReadiness, DEFAULT_READINESS_TIMEOUT_MS,
-  type ReadinessRecord, type ReadinessSubject,
+  type ReadinessRecord, type ReadinessSubject, type ReadinessUnit,
 } from './readiness.ts'
 import {
-  buildDeidentifyRules, deidentify, discardProbeDir, llmDraftCriteria, mergeReplacements,
+  buildDeidentifyRules, deidentify, llmDraftCriteria, mergeReplacements,
   pickRubricPath, runJudgeSamples, runProbes,
   DEFAULT_JUDGE_SAMPLES, JUDGE_MATERIAL_FILES,
   type DeidentifyRule, type ReplacementCount, type ResolvedJudge, type RubricCriterion,
 } from './judge.ts'
+import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './probe-exec.ts'
+import {
+  acquireSpecFor, checkCredentialsDir, describeAcquireSpec,
+  planUnitOf, resolveCellUnit, unitUid,
+  type CellUnitPlan, type CredentialsCheck,
+} from './unit.ts'
 import { buildRubricWeightTable, writeRubricWeightTable } from './weights.ts'
 
 /** Thrown when a run is REFUSED before anything executes (data problems, missing services). */
@@ -144,6 +159,15 @@ export interface RunOptions {
   ignoreReadiness?: boolean
   /** Wall-clock cap on one readiness probe. Default 2 minutes. */
   readinessTimeoutMs?: number
+  /**
+   * Host root of the per-condition credential directories the container path
+   * mounts: `<credsRoot>/<condition id>` is bound read-write at the container
+   * path the condition's `unit.scopedHome` names. Required by a plan that
+   * declares a `unit` segment, and given HERE rather than in the plan because
+   * a host path is an operator fact, not a reviewed one — the same plan runs
+   * on another machine unchanged.
+   */
+  credsRoot?: string
 }
 
 /** The resolved upstream faces + host paths the run loop needs. */
@@ -151,6 +175,8 @@ export interface RunDeps {
   datasets: DatasetsFace
   mission: MissionFace
   localAgent: LocalAgentFace
+  /** Required only by a plan that declares a `unit` segment; the host path never touches it. */
+  lab?: LabFace
   stateRoot: string
 }
 
@@ -275,6 +301,105 @@ interface CellState {
 }
 
 
+/** What one cell needs to run inside a unit: the face, and the resolved spec. */
+interface CellUnitBinding {
+  lab: LabFace
+  plan: CellUnitPlan
+}
+
+/**
+ * The host mirror marker. `lab.collect` registers what it copied as a mission
+ * artifact, and the attempt's run-data directory is what the bundle carries —
+ * so pointing the registration at the workspace itself would put a second
+ * copy of every cell's workspace in every bundle, beside the archive that
+ * already holds one. The marker is the artifact instead: one small file
+ * saying where the host mirror of this unit's workspace lives, registered
+ * once and re-registered (as a no-op) by every later collect.
+ */
+const WORKSPACE_MIRROR = 'workspace-mirror.json'
+
+/** Where the raw per-probe verdict files are collected back to, under the attempt's run data. */
+const PROBE_VERDICTS = 'probe-verdicts'
+
+/**
+ * THE destroy path. Every unit this orchestrator acquires dies here and
+ * nowhere else — frozen decision 12 says the destroy path is unique, and a
+ * second `release` call site is how that stops being true.
+ *
+ * `force` appears in exactly one caller: the readiness probe unit, which is
+ * bound to no mission and therefore has no gate to pass; lab requires the
+ * flag precisely so that a gate-less destroy is a deliberate sentence rather
+ * than a default. A cell's unit never carries it — its gate is
+ * `mission.isReleasable`, and a refusal LEAVES THE CONTAINER, which is the
+ * behavior a human wants when a cell needs looking at.
+ * @returns whether the unit was actually destroyed.
+ */
+async function destroyUnit(
+  faces: { lab: LabFace; mission: MissionFace },
+  env: { runId: string; by: string; log: (message: string) => void; missionId?: string },
+  unit: { id: string; resource: string },
+  why: string,
+  options: { force?: boolean } = {},
+): Promise<boolean> {
+  try {
+    await faces.lab.release(unit.id, options.force === true ? { force: true } : undefined)
+    return true
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    env.log(`unit ${unit.resource} was NOT released (${why}): ${reason}`)
+    if (env.missionId !== undefined) {
+      await faces.mission.annotate(env.missionId, 'orchestrator', {
+        kind: 'unit-retained',
+        unit: unit.id,
+        resource: unit.resource,
+        why,
+        reason,
+      }, { runId: env.runId, by: env.by }).catch(() => {})
+    }
+    return false
+  }
+}
+
+/**
+ * The failure path of lab's own recovery loop (lab README «失败恢复循环»),
+ * driven from here because the orchestrator is the only thing that knows a
+ * cell failed: collect whatever exists (a partial workspace is the normal
+ * case), archive the scene — a crashed cell's half-finished workspace, its
+ * crash output and its checkpoints are the most valuable data of the round,
+ * and releasing without archiving destroys the evidence — and then take the
+ * SAME gate the success path takes.
+ *
+ * There is no force here on purpose. A cell that never reached a releasable
+ * state keeps its container, and that is exactly the container a human wants
+ * to open. The cost is that a failed cell holds a unit until someone looks at
+ * it; the alternative is a destroy path that can be reached by failing, which
+ * is the one thing frozen decision 12 is about.
+ */
+async function salvageUnit(
+  faces: { lab: LabFace; mission: MissionFace },
+  env: { runId: string; by: string; log: (message: string) => void; missionId: string },
+  unit: LabUnitInfo,
+  paths: { cellDir: string; archiveDir: string },
+): Promise<void> {
+  try {
+    await faces.lab.collect(unit.id, {
+      source: unit.workspace,
+      target: paths.cellDir,
+      kind: 'workspace-mirror',
+      artifactPath: WORKSPACE_MIRROR,
+    })
+  } catch (error) {
+    env.log(`unit ${unit.resource}: collect after failure did not complete — ${error instanceof Error ? error.message : String(error)}`)
+  }
+  try {
+    mkdirSync(join(paths.archiveDir, 'verdicts'), { recursive: true })
+    await faces.lab.archive(unit.id, { target: paths.archiveDir, kind: 'archive', artifactPath: 'archive' })
+  } catch (error) {
+    env.log(`unit ${unit.resource}: archive after failure did not complete — ${error instanceof Error ? error.message : String(error)}`)
+  }
+  await destroyUnit(faces, env, unit, 'the cell failed')
+}
+
 /**
  * The judging phase of one cell (architecture steps 16 and 19), run once the
  * stage loop has parked the cell in its terminal stage state and BEFORE the
@@ -302,9 +427,12 @@ async function judgeCell(
     repo: string
     cellDir: string
     archiveDir: string
+    attemptDataDir: string
     attempt: number
     parentSessionId: string
     judge: JudgeEnv
+    /** Set on the container path: the probes run inside this cell's unit. */
+    unit?: { lab: LabFace; unitId: string }
   },
 ): Promise<{ script: number; llmDraft: number }> {
   const verdictsDir = join(env.archiveDir, 'verdicts')
@@ -324,7 +452,20 @@ async function judgeCell(
   }
 
   // ── script ns: the item's probes (protocol §6.7). ─────────────────────
+  // Same contract either side of the seam: the executor decides only WHERE
+  // the process runs. On the container path it runs in the cell's own unit,
+  // against `/workspace`, writing its verdicts outside the workspace so the
+  // archive stays the player's work.
   const probeDir = join(env.judge.probeDirBase, env.missionId, `attempt-${env.attempt}`)
+  const executor: ProbeExecutor = env.unit === undefined
+    ? hostProbeExecutor({ probeDir, cellDir: env.cellDir })
+    : unitProbeExecutor({
+      lab: env.unit.lab,
+      unitId: env.unit.unitId,
+      probeDir,
+      collectDir: join(env.attemptDataDir, PROBE_VERDICTS),
+      artifactPath: PROBE_VERDICTS,
+    })
   try {
     const probed = await runProbes({
       datasets: faces.datasets,
@@ -336,10 +477,12 @@ async function judgeCell(
       probeDir,
       rubricPath,
       timeoutMs: env.judge.probeTimeoutMs,
+      executor,
     })
     if (probed.outcomes.length > 0) {
       await faces.mission.annotate(env.missionId, 'orchestrator', {
         kind: 'probes',
+        where: probed.where,
         probes: probed.outcomes.map(outcome => ({
           probe: outcome.probe,
           origin: outcome.origin,
@@ -378,7 +521,9 @@ async function judgeCell(
     }, { runId: env.runId, by: env.by }).catch(() => {})
     env.log(`cell ${env.missionId}: probes failed — ${error instanceof Error ? error.message : String(error)}`)
   } finally {
-    discardProbeDir(probeDir)
+    // The verify layer is the answer key: it does not outlive its use, on the
+    // host OR inside the unit (architecture §4).
+    await executor.discard()
   }
 
   // ── llm-draft ns: the blind judging (decision 9). ─────────────────────
@@ -497,6 +642,14 @@ async function runCellOnce(
     finalize: boolean
     readbackWaitMs: number
     judge: JudgeEnv
+    /** Set when the plan declares a `unit` segment: this cell runs in a container. */
+    unit?: CellUnitBinding
+    /**
+     * Where the acquired unit is published for the retry wrapper. A unit is
+     * held by the ATTEMPT, and an attempt that throws must still be able to
+     * archive and release it — so the handle has to outlive this frame.
+     */
+    held?: { unit?: LabUnitInfo }
   },
   state: CellState,
 ): Promise<RunCellReport> {
@@ -524,32 +677,78 @@ async function runCellOnce(
     materialized.push({ path: rel, sha256: sha256(bytes) })
   }
   materialized.sort((a, b) => (a.path < b.path ? -1 : 1))
-  const overall = createHash('sha256')
-  for (const file of materialized) {
-    overall.update(file.path)
-    overall.update('\0')
-    overall.update(file.sha256)
-    overall.update('\0')
-  }
-  const materialization = {
-    dataset: env.datasetId,
-    task: env.cell.labels.task,
-    commit: env.commit,
-    layers: ['visible'],
-    source: { worktree: worktree.path, reused: worktree.reused },
-    files: materialized,
-    sha256: overall.digest('hex'),
-  }
-  const materializationText = `${JSON.stringify(materialization, null, 2)}\n`
-  writeFileSync(join(cellDir, 'materialization.json'), materializationText, 'utf8')
-  // The artifact index points INTO the mission run-data tree (bundle export
-  // copies from there), so the record lands in both places: the cell working
-  // directory (what the child sees) and the attempt's run-data directory
-  // (what addArtifact requires and the bundle carries).
   const attemptDataDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${env.attempt}`)
   mkdirSync(attemptDataDir, { recursive: true })
-  writeFileSync(join(attemptDataDir, 'materialization.json'), materializationText, 'utf8')
-  await mission.addArtifact(missionId, { path: 'materialization.json', kind: 'materialization' }, { runId: env.runId, by: env.by })
+
+  let unit: LabUnitInfo | undefined
+  if (env.unit === undefined) {
+    const overall = createHash('sha256')
+    for (const file of materialized) {
+      overall.update(file.path)
+      overall.update('\0')
+      overall.update(file.sha256)
+      overall.update('\0')
+    }
+    const materialization = {
+      dataset: env.datasetId,
+      task: env.cell.labels.task,
+      commit: env.commit,
+      layers: ['visible'],
+      source: { worktree: worktree.path, reused: worktree.reused },
+      files: materialized,
+      sha256: overall.digest('hex'),
+    }
+    const materializationText = `${JSON.stringify(materialization, null, 2)}\n`
+    writeFileSync(join(cellDir, 'materialization.json'), materializationText, 'utf8')
+    // The artifact index points INTO the mission run-data tree (bundle export
+    // copies from there), so the record lands in both places: the cell working
+    // directory (what the child sees) and the attempt's run-data directory
+    // (what addArtifact requires and the bundle carries).
+    writeFileSync(join(attemptDataDir, 'materialization.json'), materializationText, 'utf8')
+    await mission.addArtifact(missionId, { path: 'materialization.json', kind: 'materialization' }, { runId: env.runId, by: env.by })
+  } else {
+    // ── Container path, architecture steps 11 and 12. ──────────────────
+    // acquire first, then populate: mounts cannot be added to a container
+    // that already exists, so everything the unit will ever have is declared
+    // once, and the fingerprint that describes it exists before any work does.
+    unit = await env.unit.lab.acquire(acquireSpecFor(env.unit.plan, { missionId, runId: env.runId }))
+    if (env.held !== undefined) env.held.unit = unit
+    // The «环境一致» invariant's input, written by the ORCHESTRATOR the moment
+    // the unit exists. lab registers the same two refs itself, but that write
+    // is best-effort by design (it warns and skips), and an invariant may not
+    // rest on a write that is allowed to skip — pilot A's fingerprint column
+    // was blank for exactly one run, and the invariant read `unverifiable`
+    // for the whole iteration.
+    await mission.setRefs(missionId, { resource: unit.resource, fingerprint: unit.fingerprint }, { runId: env.runId, by: env.by })
+    await mission.annotate(missionId, 'orchestrator', {
+      kind: 'unit',
+      unit: unit.id,
+      resource: unit.resource,
+      fingerprint: unit.fingerprint,
+      image: env.unit.plan.image,
+      workspace: unit.workspace,
+      scopedHome: { container: env.unit.plan.scopedHome.container, var: env.unit.plan.scopedHome.var },
+    }, { runId: env.runId, by: env.by }).catch(() => {})
+    // lab hashes the source tree and writes the manifest itself; the
+    // orchestrator does not compute a second one, because two files called
+    // materialization.json with two different hashes is worse than either.
+    // The workspace therefore holds exactly the item's visible bytes — no
+    // manifest, and so no host path, inside the unit.
+    const populated = await env.unit.lab.populate(unit.id, {
+      source: cellDir,
+      target: unit.workspace,
+      manifestPath: join(attemptDataDir, 'materialization.json'),
+      artifactPath: 'materialization.json',
+    })
+    writeFileSync(join(attemptDataDir, WORKSPACE_MIRROR), `${JSON.stringify({
+      unit: unit.id,
+      resource: unit.resource,
+      workspace: unit.workspace,
+      hostMirror: cellDir,
+      note: 'the workspace is collected here after every stage round; the sealed copy is archive/workspace',
+    }, null, 2)}\n`, 'utf8')
+    env.log(`cell ${missionId}: unit ${unit.resource} · ${unit.fingerprint.slice(0, 20)}… · ${populated.count} file(s) populated into ${unit.workspace}`)
+  }
 
   // Stage loop: one delegation round per stage (fresh start in round one,
   // resume of the same child afterwards), byte-exact prompts (decision 4).
@@ -601,7 +800,20 @@ async function runCellOnce(
       const delegationOptions = {
         label: `${env.runId}/${missionId} ${stageId}`,
         signal: controller.signal,
-        cwd: cellDir,
+        // Inside a unit the host cwd is meaningless, so it is NOT passed: the
+        // round runs in the unit's workspace, and the one variable the target
+        // carries is the in-container scoped home the provider requires (a
+        // host path there would start the CLI in a directory the unit has no
+        // copy of — T17 refuses the round rather than let that happen).
+        ...(unit === undefined
+          ? { cwd: cellDir }
+          : {
+            exec: {
+              container: unit.resource,
+              workdir: unit.workspace,
+              env: { [(env.unit as CellUnitBinding).plan.scopedHome.var]: (env.unit as CellUnitBinding).plan.scopedHome.container },
+            },
+          }),
         onProgress: (event: DelegationProgress) => {
           // Only the settled kind carries the read-back; the round's own
           // event wins over a later record read (last settle = this round).
@@ -693,11 +905,30 @@ async function runCellOnce(
       )
     }
 
+    // Architecture step 14, then 15: tag the return point inside the unit,
+    // bring the workspace back to the host, and only then read, validate and
+    // submit. The checkpoint's ref reaches mission through lab.
+    if (unit !== undefined) {
+      const lab = (env.unit as CellUnitBinding).lab
+      const checkpoint = await lab.checkpoint(unit.id, { name: stageId })
+      await lab.collect(unit.id, {
+        source: unit.workspace,
+        target: cellDir,
+        kind: 'workspace-mirror',
+        artifactPath: WORKSPACE_MIRROR,
+      })
+      env.log(`cell ${missionId}: ${stageId} checkpointed at ${checkpoint.ref.slice(0, 12)} and mirrored to the host`)
+    }
+
     // Collect the stage outputs from the cell directory (decision 7).
     const jsonPath = join(cellDir, `${stageId}.json`)
     const mdPath = join(cellDir, `${stageId}.md`)
     const missing: string[] = []
-    if (!existsSync(jsonPath)) missing.push(`${stageId}.json missing from the cell directory (a facade without the cwd option runs the child in the parent session cwd — the file would land there)`)
+    if (!existsSync(jsonPath)) {
+      missing.push(unit === undefined
+        ? `${stageId}.json missing from the cell directory (a facade without the cwd option runs the child in the parent session cwd — the file would land there)`
+        : `${stageId}.json missing from the unit's workspace (${unit.workspace}) after collect — the round wrote it somewhere else, or wrote nothing`)
+    }
     if (!existsSync(mdPath)) missing.push(`${stageId}.md missing from the cell directory`)
     if (missing.length > 0) throw new SubmissionRejected(stageId, missing)
     const jsonText = readFileSync(jsonPath, 'utf8')
@@ -764,17 +995,45 @@ async function runCellOnce(
     repo: env.repo,
     cellDir,
     archiveDir,
+    attemptDataDir,
     attempt: current.mission.currentAttempt,
     parentSessionId: env.parentSessionId,
     judge: env.judge,
+    ...(unit !== undefined ? { unit: { lab: (env.unit as CellUnitBinding).lab, unitId: unit.id } } : {}),
   })
-  cpSync(cellDir, join(archiveDir, 'workspace'), { recursive: true })
-  await mission.addArtifact(missionId, { path: 'archive', kind: 'archive' }, { runId: env.runId, by: env.by })
+  if (unit === undefined) {
+    cpSync(cellDir, join(archiveDir, 'workspace'), { recursive: true })
+    await mission.addArtifact(missionId, { path: 'archive', kind: 'archive' }, { runId: env.runId, by: env.by })
+  } else {
+    // lab exports the workspace AND the integrity manifest, and registers the
+    // artifact itself. `verdicts/` is already beside it: the judging phase ran
+    // first, because the archive gate refuses an empty one.
+    await (env.unit as CellUnitBinding).lab.archive(unit.id, { target: archiveDir, kind: 'archive', artifactPath: 'archive' })
+  }
   await mission.transition(missionId, 'archived', { runId: env.runId, by: env.by })
+
+  const destroy = async (why: string): Promise<void> => {
+    if (unit === undefined) return
+    await destroyUnit(
+      { lab: (env.unit as CellUnitBinding).lab, mission },
+      { runId: env.runId, by: env.by, log: env.log, missionId },
+      unit,
+      why,
+    )
+    unit = undefined
+    if (env.held !== undefined) delete env.held.unit
+  }
 
   if (env.finalize) {
     try {
       await mission.transition(missionId, 'releasable', { runId: env.runId, by: env.by })
+      // The gate has just said yes, and `releasable` is the ONLY state it says
+      // yes in — `isReleasable` reads the current state against the template's
+      // releasableStates. So the unit dies HERE, between the two transitions,
+      // which is also the order architecture step 17 spells out: archive →
+      // pass the gate → release. Destroying after `released` would ask the
+      // gate a question it answers no to, and every container would survive.
+      await destroy('the cell passed the archive gate')
       await mission.transition(missionId, 'released', { runId: env.runId, by: env.by })
     } catch (error) {
       // The archive gate refused (an empty verdicts/ — no probes and no judge
@@ -786,6 +1045,11 @@ async function runCellOnce(
       }, { runId: env.runId, by: env.by }).catch(() => {})
     }
   }
+  // A cell that did not pass the gate — no --finalize, or a refused one —
+  // still asks, and is still refused, and its container STAYS. That is the
+  // correct answer for a cell nobody has looked at yet, and the reason there
+  // is no force on this path.
+  await destroy('the cell finished without passing the archive gate')
 
   const finalRecord = mission.get(missionId, env.runId)
   const finalAttempt = finalRecord.mission.attempts[finalRecord.mission.currentAttempt - 1]
@@ -827,15 +1091,34 @@ async function runCellWithRetry(
     finalize: boolean
     readbackWaitMs: number
     judge: JudgeEnv
+    unit?: CellUnitBinding
   },
 ): Promise<RunCellReport> {
   const { mission } = faces
   const state: CellState = { childSessionIds: [], promptShas: {}, spentMs: 0 }
   for (;;) {
     const current = mission.get(env.cell.missionId, env.runId)
+    const attempt = current.mission.currentAttempt
+    const held: { unit?: LabUnitInfo } = {}
     try {
-      return await runCellOnce(faces, { ...env, attempt: current.mission.currentAttempt }, state)
+      return await runCellOnce(faces, { ...env, attempt, held }, state)
     } catch (error) {
+      // Whatever went wrong, the unit is salvaged before anything else is
+      // decided: the retry below opens a NEW attempt and acquires a NEW unit,
+      // and a held container that nobody archived is both a lost crash scene
+      // and one step closer to the concurrency ceiling.
+      if (held.unit !== undefined && env.unit !== undefined) {
+        await salvageUnit(
+          { lab: env.unit.lab, mission },
+          { runId: env.runId, by: env.by, log: env.log, missionId: env.cell.missionId },
+          held.unit,
+          {
+            cellDir: join(env.cellDirBase, env.cell.missionId, `attempt-${attempt}`),
+            archiveDir: join(mission.dataDir, 'runs', env.runId, 'data', env.cell.missionId, `attempt-${attempt}`, 'archive'),
+          },
+        )
+        delete held.unit
+      }
       if (error instanceof SubmissionRejected) {
         await mission.annotate(env.cell.missionId, 'orchestrator', {
           kind: 'submission-rejected',
@@ -978,8 +1261,12 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     exports?: string
     judge?: { conditions?: string[]; samples?: number }
     expectedNs?: string[]
+    unit?: unknown
   }
   const planSha = sha256(Buffer.from(canonicalJson(plan), 'utf8'))
+  // The one switch between the two paths. A plan without it is the host path,
+  // byte for byte what it was before containers existed.
+  const planUnit = planUnitOf(plan)
   const budgetMs = plan.budget.activeMinutes * 60_000
   // Option overrides the plan (decision 3): the plan is the reviewed default.
   const retryLimit = Math.max(0, options.retryInfrastructure ?? plan.retry?.infrastructure ?? 1)
@@ -1111,6 +1398,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   }
 
   if (options.dryRun === true) {
+    // A container run's most consequential inputs are the ones nobody sees
+    // until a unit exists, so the rehearsal prints them: one acquire spec per
+    // condition, env NAMES only. `<--creds-root>` stands in when the rehearsal
+    // was not told where the credentials live — the mount TARGET is the
+    // reviewable half, and the host half is the operator's.
+    const units = planUnit === null ? undefined : conditions.map((condition) => {
+      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, expandHome(options.credsRoot ?? '<--creds-root>'))
+      return resolved.ok
+        ? { condition: condition.id, acquire: describeAcquireSpec(acquireSpecFor(resolved.plan)) }
+        : { condition: condition.id, errors: resolved.diagnostics }
+    })
     return {
       runId: options.runId ?? '(dry-run)',
       dryRun: true,
@@ -1122,6 +1420,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         concurrency: options.concurrency ?? 1,
         judge: { conditions: judges.map(judge => ({ id: judge.id, sha: judge.sha })), samples: plan.judge?.samples ?? DEFAULT_JUDGE_SAMPLES },
         subset,
+        ...(units !== undefined ? { units } : {}),
         ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
       },
       template,
@@ -1140,6 +1439,61 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     throw new EvalRunRefused(`the run needs the datasets, mission, and localAgent services; missing: ${missing.join(', ')}`)
   }
   const faces = { datasets: deps!.datasets as DatasetsFace, mission: deps!.mission as MissionFace, localAgent: deps!.localAgent as LocalAgentFace }
+
+  // ── The container path's own preconditions, all refusals. ─────────────
+  // Every one of these is a fact the run cannot discover later without
+  // burning cells: no lab service, no credentials root, a condition that
+  // never said where its scoped home is mounted, a directory nobody staged.
+  const cellUnits = new Map<string, CellUnitPlan>()
+  const credentials: CredentialsCheck[] = []
+  if (planUnit !== null) {
+    if (deps?.lab === undefined) {
+      throw new EvalRunRefused(
+        `plan ${planAbs} declares a unit (image ${JSON.stringify(planUnit.image)}), so the run needs the lab service — mount the dsh-lab plugin, or drop the unit segment to run on the host`,
+      )
+    }
+    if (options.credsRoot === undefined || options.credsRoot === '') {
+      throw new EvalRunRefused(
+        'a plan with a unit segment needs --creds-root DIR: each condition mounts <DIR>/<condition id> at the container path it declares'
+        + ' (host paths stay out of the reviewed plan and condition files)',
+      )
+    }
+    if ((options.concurrency ?? 1) > 1) {
+      throw new EvalRunRefused(
+        `--concurrency ${options.concurrency as number} with a unit segment: the container path is serial in this line`
+        + ' (one cell acquires, works and releases before the next acquires). Parallel units are I4 — run the subset you want serially, or drop --concurrency.',
+      )
+    }
+    const credsRoot = expandHome(options.credsRoot)
+    const uid = unitUid(planUnit.user)
+    const problems: EvalDiagnostic[] = []
+    for (const condition of conditions) {
+      const resolved = resolveCellUnit(planUnit, condition.id, condition.document, credsRoot)
+      if (!resolved.ok) {
+        problems.push(...resolved.diagnostics)
+        continue
+      }
+      cellUnits.set(condition.id, resolved.plan)
+      const check = checkCredentialsDir(resolved.plan.scopedHome.host, condition.id, uid, process.getuid?.() ?? -1)
+      credentials.push(check)
+      if (!check.ok) problems.push({ code: 'CREDENTIALS_UNUSABLE', message: check.reason as string })
+      else if (check.ownerNote !== undefined) log(`credentials ${condition.id}: ${check.ownerNote}`)
+    }
+    if (problems.length > 0) {
+      throw new EvalRunRefused(
+        `the plan's unit segment cannot be satisfied for ${problems.length} condition(s) — nothing was executed`,
+        problems,
+      )
+    }
+    if (options.finalize !== true) {
+      // Not a refusal: stopping at `archived` is a legitimate thing to want.
+      // But on the container path it means every cell's container survives
+      // the run, so it is said out loud rather than discovered by hitting the
+      // concurrency ceiling three cells later.
+      log('containers: this run stops at archived (no --finalize), so every cell\'s unit stays until its gate is passed — release them with dsh-lab once reviewed')
+    }
+  }
+  const lab = deps?.lab
   const stateRoot = options.stateRoot ?? defaultStateRoot()
   if (stateRoot === undefined) {
     throw new EvalRunRefused('no state root: set DSH_HOME (cells live under $DSH_HOME/state/eval/cells) or pass options.stateRoot')
@@ -1181,6 +1535,14 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   // credential that said yes and 401'd every time (G4). The probe runs
   // through the same facade, provider and cwd rule the cells use — there is
   // no back door, so what it proves is what the cells will meet.
+  //
+  // On the container path the probe runs INSIDE a unit built from the same
+  // spec the cells get — same image, network, user, mount and scoped-home
+  // variable — because a credential that works on the host proves nothing
+  // about one bind-mounted into a sealed container. The probe unit is bound
+  // to no mission, so nothing gates its destroy: it is the one place in this
+  // file where `force` appears, and it goes through the same destroyUnit as
+  // every other release.
   const readinessBase = join(stateRoot, 'readiness', `${planSha.slice(0, 12)}-${now()}`)
   const readiness = await checkReadiness({
     localAgent: faces.localAgent,
@@ -1196,6 +1558,23 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
     now,
     log,
+    ...(planUnit === null || lab === undefined ? {} : {
+      unitFor: async (subject: ReadinessSubject): Promise<ReadinessUnit> => {
+        const cellUnit = cellUnits.get(subject.id) as CellUnitPlan
+        const unit = await lab.acquire(acquireSpecFor(cellUnit))
+        return {
+          exec: {
+            container: unit.resource,
+            workdir: unit.workspace,
+            env: { [cellUnit.scopedHome.var]: cellUnit.scopedHome.container },
+          },
+          fingerprint: unit.fingerprint,
+          release: async () => {
+            await destroyUnit({ lab, mission: faces.mission }, { runId: '', by, log }, unit, 'the readiness probe finished', { force: true })
+          },
+        }
+      },
+    }),
   })
   const failedReadiness = new Map(readiness.filter(record => !record.ok).map(record => [record.condition, record]))
   if (failedReadiness.size > 0 && options.ignoreReadiness !== true) {
@@ -1245,6 +1624,24 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     startedAt,
     subset,
     readiness,
+    // What every cell of this run was built from. The host credential root is
+    // deliberately absent: it is an operator fact, and run.meta travels in the
+    // bundle.
+    ...(planUnit !== null
+      ? {
+        unit: {
+          image: planUnit.image,
+          ...(planUnit.network !== undefined ? { network: planUnit.network } : {}),
+          ...(planUnit.user !== undefined ? { user: planUnit.user } : {}),
+          ...(planUnit.resources !== undefined ? { resources: planUnit.resources } : {}),
+          scopedHomes: [...cellUnits.values()].map(cellUnit => ({
+            condition: cellUnit.conditionId,
+            container: cellUnit.scopedHome.container,
+            var: cellUnit.scopedHome.var,
+          })),
+        },
+      }
+      : {}),
     ...(conditionWarnings.length > 0 ? { warnings: conditionWarnings } : {}),
   }
 
@@ -1288,7 +1685,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
   }
 
   // ── The pool: ordered cells, `concurrency` workers. ───────────────────
-  const concurrency = Math.max(1, Math.min(options.concurrency ?? 1, ordered.length))
+  const concurrency = planUnit !== null ? 1 : Math.max(1, Math.min(options.concurrency ?? 1, ordered.length))
   const reports = new Map<string, RunCellReport>()
   let nextCell = 0
   const worker = async (): Promise<void> => {
@@ -1324,6 +1721,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         })
         continue
       }
+      const cellUnit = cellUnits.get(cell.labels.condition)
       reports.set(cell.missionId, await runCellWithRetry(faces, {
         runId,
         by,
@@ -1343,6 +1741,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         parentSessionId: options.parentSessionId as string,
         finalize: options.finalize === true,
         readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
+        ...(cellUnit !== undefined && lab !== undefined ? { unit: { lab, plan: cellUnit } } : {}),
         judge: {
           judges,
           samples: judgeSamples,
