@@ -17,6 +17,7 @@
     "src/dataset.ts",
     "src/defaults.ts",
     "src/git.ts",
+    "src/rubric.ts",
     "src/service.ts",
     "src/types.ts",
     "src/worktree.ts",

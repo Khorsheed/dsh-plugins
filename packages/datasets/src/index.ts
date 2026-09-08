@@ -388,11 +388,15 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     name: 'datasets_validate',
     description:
       'Validate a dataset repository (or one dataset of it) for authoring hygiene: descriptor shape errors '
-      + 'fail loud; warnings never block. Warnings cover undeclared modelFacing on layers of a '
+      + 'and unjudgeable rubrics fail loud; warnings never block. Errors cover the descriptor shape plus, '
+      + 'for an item carrying a grading-layer rubric, a rubric with no leaf criteria, a leaf missing '
+      + 'id/axis/weight/kind/criterion/evidence, a kind outside objective/llm-draft/human, and a leaf whose '
+      + '`negative: true` and weight sign disagree. Warnings cover undeclared modelFacing on layers of a '
       + 'mixed-sensitivity dataset, sensitive-looking item.json field names (note/hint/answer/rubric/'
       + 'grading — item.json is always visible), files covered by no layer directory or register '
-      + 'entry (they sit in the always-visible passthrough zone), and — when the descriptor declares a '
-      + '`canary` — text files of a modelFacing layer that do not carry that string.',
+      + 'entry (they sit in the always-visible passthrough zone), text files of a modelFacing layer that do '
+      + 'not carry the declared `canary`, objective leaves with no executable probe in the verify layer, and '
+      + 'a rubric.md referring to a leaf its rubric.yml does not declare.',
     parameters: {
       repo: COMMON_REPO_PARAM,
       dataset: { type: 'string', description: 'When given, validate just this dataset.' },

@@ -22,6 +22,7 @@ import {
   type ItemRecord, type JsonObject,
 } from './dataset.ts'
 import { listFiles, repoToplevel, resolveCommit, showFile } from './git.ts'
+import { judgeabilityIssues } from './rubric.ts'
 import { ensureWorktree, type ManagedWorktree } from './worktree.ts'
 
 /**
@@ -270,7 +271,8 @@ export interface DatasetsService {
    * Validate one dataset (or all) of a repository: shape errors fail loud per
    * dataset, warnings never block. Author-facing — sees everything
    * (operator semantics), including the passthrough zone it reports on. It is
-   * also the only path that reads file CONTENT (the canary check).
+   * also the only path that reads file CONTENT (the canary check and the
+   * judgeability rules over an item's rubric).
    */
   validate(scope: DatasetScope, datasetId?: string): Promise<ValidateResult>
   /** Record a binding for a live session (slash/tab path). */
@@ -601,6 +603,17 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
             continue
           }
           if (item.metadata !== undefined) warnings.push(...fieldNameWarnings(itemId, item.metadata))
+          // Judgeability: an item carrying a rubric must carry one that can
+          // actually be judged (leaves, their fields, their polarity) and a
+          // source for each mechanical kind. Reads rubric content, so it
+          // stays on this path only.
+          try {
+            const judgeable = await judgeabilityIssues(repo, sha, id, item, registry)
+            errors.push(...judgeable.errors)
+            warnings.push(...judgeable.warnings)
+          } catch (error) {
+            fail(error)
+          }
         }
         // The canary, when the descriptor declares one: every text file of a
         // modelFacing layer must carry it (the leak-detection contract).
