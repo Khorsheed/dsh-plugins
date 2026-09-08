@@ -329,6 +329,20 @@ interface CellAnchor {
   rep: number | null
 }
 
+/**
+ * What a cell's unit annotation says about its environment. `refs.fingerprint`
+ * carries the environment CLASS — the components the plan declared — and this
+ * carries the unit's own fingerprint plus the condition-owned components the
+ * class left out, so a reader can see WHY two cells that share a class do not
+ * share a unit fingerprint instead of having to take it on faith.
+ */
+interface CellUnit {
+  resource: string | null
+  unitFingerprint: string | null
+  excludedMounts: string[]
+  excludedEnvKeys: string[]
+}
+
 interface BundleCell {
   missionId: string
   attempt: number
@@ -341,6 +355,8 @@ interface BundleCell {
   condition: string | null
   rep: number | null
   materializationSha: string | null
+  /** The `kind: 'unit'` orchestrator annotation, when this cell ran in one. */
+  unit: CellUnit | null
   verdicts: CellVerdict[]
   delegations: DelegationRecord[]
   retryReason: string | null
@@ -488,6 +504,25 @@ async function materializationShaOf(attemptDir: string, refs: Record<string, unk
   return null
 }
 
+/**
+ * Read a `kind: 'unit'` orchestrator annotation. Every field is optional: a
+ * bundle from before the environment class carries `fingerprint` alone, and
+ * then there is nothing to print beside the invariant — which is the honest
+ * answer, not a blank row.
+ */
+function unitOf(payload: unknown): CellUnit | null {
+  if (!isPlainObject(payload) || payload['kind'] !== 'unit') return null
+  const excluded = isPlainObject(payload['envExcluded']) ? payload['envExcluded'] : {}
+  const list = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return {
+    resource: str(payload['resource']),
+    unitFingerprint: str(payload['unitFingerprint']),
+    excludedMounts: list(excluded['mounts']),
+    excludedEnvKeys: list(excluded['envKeys']),
+  }
+}
+
 async function readCell(bundleDir: string, missionId: string, attempt: number, isCurrent: boolean): Promise<BundleCell | null> {
   const attemptDir = join(bundleDir, 'missions', missionId, `attempt-${attempt}`)
   const metaLoaded = await readJsonFile(join(attemptDir, 'meta.json'))
@@ -502,6 +537,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
   const delegations: DelegationRecord[] = []
   const writers = new Map<string, Set<string>>()
   let anchor: CellAnchor | null = null
+  let unit: CellUnit | null = null
   let seq = 0
   for (const annotation of annotations) {
     if (!isPlainObject(annotation)) continue
@@ -518,6 +554,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     if (ns === 'orchestrator') {
       delegations.push(...delegationsOf(annotation['payload']))
       anchor ??= anchorOf(annotation['payload'])
+      unit ??= unitOf(annotation['payload'])
       continue
     }
     if (!VERDICT_NS.has(ns)) continue
@@ -548,6 +585,7 @@ async function readCell(bundleDir: string, missionId: string, attempt: number, i
     condition: null,
     rep: null,
     materializationSha: await materializationShaOf(attemptDir, refs),
+    unit,
     verdicts,
     delegations,
     retryReason: retry === undefined ? null : str(retry['reason']),
@@ -769,27 +807,67 @@ function checkMaterialization(cells: BundleCell[]): InvariantCheck {
   }
 }
 
+/** The environment-class title, restated wherever the invariant is reported. */
+const FINGERPRINT_TITLE = '环境一致（refs.fingerprint 同 run 相同）'
+
+/**
+ * Per-cell environment detail under the invariant line: the unit each cell
+ * actually ran in, and the condition-owned components its class left out.
+ *
+ * The class exists because four harnesses in one run mount four different
+ * credential directories under four different variables, so their UNIT
+ * fingerprints can never agree. Printing them next to the class is what keeps
+ * that from being a claim the reader has to trust: the classes are equal, the
+ * units are not, and here is exactly which components account for the
+ * difference (names and in-container targets — never a value).
+ */
+function fingerprintDetails(cells: BundleCell[]): string[] {
+  const rows = cells.filter(cell => cell.isCurrent && cell.unit !== null)
+  if (rows.length === 0) return []
+  const details = [`每格的单元指纹（含条件自有项，因而各不相同）与被排除的条件项：`]
+  for (const cell of rows) {
+    const unit = cell.unit as CellUnit
+    const excluded = [
+      ...unit.excludedMounts.map(target => `挂载 ${target}`),
+      ...unit.excludedEnvKeys.map(key => `env ${key}`),
+    ]
+    details.push(`  ${cell.missionId}: ${unit.unitFingerprint === null ? '（无单元指纹记录）' : `${unit.unitFingerprint.slice(0, 20)}…`}`
+      + `${excluded.length > 0 ? ` — 排除 ${excluded.join('、')}` : ' — 无排除项'}`)
+  }
+  return details
+}
+
 function checkFingerprint(cells: BundleCell[]): InvariantCheck {
   const present = cells.filter(c => c.isCurrent && str(c.refs['fingerprint']) !== null)
     .map(c => ({ cell: c.missionId, fp: c.refs['fingerprint'] as string }))
   if (present.length === 0) {
-    return { id: 'fingerprint', title: '环境一致（refs.fingerprint 同 run 相同）', status: 'unverifiable', details: ['本 run 无指纹'] }
+    return { id: 'fingerprint', title: FINGERPRINT_TITLE, status: 'unverifiable', details: ['本 run 无指纹'] }
   }
   const all = cells.filter(c => c.isCurrent)
   if (present.length < all.length) {
     return {
       id: 'fingerprint',
-      title: '环境一致（refs.fingerprint 同 run 相同）',
+      title: FINGERPRINT_TITLE,
       status: 'violated',
-      details: [`${all.length - present.length}/${all.length} 格未记录指纹，其余 ${present.length} 格已记录——记录不一致`],
+      details: [`${all.length - present.length}/${all.length} 格未记录指纹，其余 ${present.length} 格已记录——记录不一致`, ...fingerprintDetails(cells)],
     }
   }
   const distinct = [...new Set(present.map(p => p.fp))]
   if (distinct.length > 1) {
-    return { id: 'fingerprint', title: '环境一致（refs.fingerprint 同 run 相同）', status: 'violated', details: [`出现 ${distinct.length} 个不同指纹: ${distinct.map(d => `${d.slice(0, 12)}…`).join(' / ')}`] }
+    return {
+      id: 'fingerprint',
+      title: FINGERPRINT_TITLE,
+      status: 'violated',
+      details: [`出现 ${distinct.length} 个不同指纹: ${distinct.map(d => `${d.slice(0, 12)}…`).join(' / ')}`, ...fingerprintDetails(cells)],
+    }
   }
   const fingerprint = distinct[0] ?? ''
-  return { id: 'fingerprint', title: '环境一致（refs.fingerprint 同 run 相同）', status: 'ok', details: [`${present.length} 格指纹一致: ${fingerprint.slice(0, 12)}…`] }
+  return {
+    id: 'fingerprint',
+    title: FINGERPRINT_TITLE,
+    status: 'ok',
+    details: [`${present.length} 格指纹一致: ${fingerprint.slice(0, 12)}…`, ...fingerprintDetails(cells)],
+  }
 }
 
 function conditionEntriesOf(meta: Record<string, unknown>): Array<{ id: string; sha: string | null; doc: Record<string, unknown> | null }> {

@@ -59,8 +59,8 @@ import {
 } from './judge.ts'
 import { hostProbeExecutor, unitProbeExecutor, type ProbeExecutor } from './probe-exec.ts'
 import {
-  acquireSpecFor, checkCredentialsDir, describeAcquireSpec,
-  planUnitOf, resolveCellUnit, unitUid,
+  acquireSpecFor, checkCredentialsDir, conditionOwnedComponents, describeAcquireSpec,
+  environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
   type CellUnitPlan, type CredentialsCheck,
 } from './unit.ts'
 import { buildRubricWeightTable, writeRubricWeightTable } from './weights.ts'
@@ -320,6 +320,9 @@ const WORKSPACE_MIRROR = 'workspace-mirror.json'
 
 /** Where the raw per-probe verdict files are collected back to, under the attempt's run data. */
 const PROBE_VERDICTS = 'probe-verdicts'
+
+/** lab's own hash of what it copied into the unit — the proof, not the comparability number. */
+const POPULATE_MANIFEST = 'populate-manifest.json'
 
 /**
  * THE destroy path. Every unit this orchestrator acquires dies here and
@@ -680,32 +683,38 @@ async function runCellOnce(
   const attemptDataDir = join(faces.mission.dataDir, 'runs', env.runId, 'data', missionId, `attempt-${env.attempt}`)
   mkdirSync(attemptDataDir, { recursive: true })
 
+  // The comparability invariant's input, computed the SAME way on both paths.
+  // It has to be: «题面一致» asks whether the cells of one item received the
+  // same bytes, and two paths hashing the same bytes by two different rules
+  // can only answer that within a path. The number is over the materialized
+  // file set, not over the directory, so it does not depend on what else the
+  // working directory happens to hold.
+  const overall = createHash('sha256')
+  for (const file of materialized) {
+    overall.update(file.path)
+    overall.update('\0')
+    overall.update(file.sha256)
+    overall.update('\0')
+  }
+  const materializationText = `${JSON.stringify({
+    dataset: env.datasetId,
+    task: env.cell.labels.task,
+    commit: env.commit,
+    layers: ['visible'],
+    source: { worktree: worktree.path, reused: worktree.reused },
+    files: materialized,
+    sha256: overall.digest('hex'),
+  }, null, 2)}\n`
+  writeFileSync(join(attemptDataDir, 'materialization.json'), materializationText, 'utf8')
+  await mission.addArtifact(missionId, { path: 'materialization.json', kind: 'materialization' }, { runId: env.runId, by: env.by })
+
   let unit: LabUnitInfo | undefined
   if (env.unit === undefined) {
-    const overall = createHash('sha256')
-    for (const file of materialized) {
-      overall.update(file.path)
-      overall.update('\0')
-      overall.update(file.sha256)
-      overall.update('\0')
-    }
-    const materialization = {
-      dataset: env.datasetId,
-      task: env.cell.labels.task,
-      commit: env.commit,
-      layers: ['visible'],
-      source: { worktree: worktree.path, reused: worktree.reused },
-      files: materialized,
-      sha256: overall.digest('hex'),
-    }
-    const materializationText = `${JSON.stringify(materialization, null, 2)}\n`
+    // The host path also puts the record in the cell directory — that is what
+    // the child sees, and it has been there since the loop's first version.
+    // The container path deliberately does not: the workspace holds the item's
+    // bytes and nothing of the orchestrator's (a host path inside the unit).
     writeFileSync(join(cellDir, 'materialization.json'), materializationText, 'utf8')
-    // The artifact index points INTO the mission run-data tree (bundle export
-    // copies from there), so the record lands in both places: the cell working
-    // directory (what the child sees) and the attempt's run-data directory
-    // (what addArtifact requires and the bundle carries).
-    writeFileSync(join(attemptDataDir, 'materialization.json'), materializationText, 'utf8')
-    await mission.addArtifact(missionId, { path: 'materialization.json', kind: 'materialization' }, { runId: env.runId, by: env.by })
   } else {
     // ── Container path, architecture steps 11 and 12. ──────────────────
     // acquire first, then populate: mounts cannot be added to a container
@@ -719,27 +728,57 @@ async function runCellOnce(
     // rest on a write that is allowed to skip — pilot A's fingerprint column
     // was blank for exactly one run, and the invariant read `unverifiable`
     // for the whole iteration.
-    await mission.setRefs(missionId, { resource: unit.resource, fingerprint: unit.fingerprint }, { runId: env.runId, by: env.by })
+    // What «环境一致» compares is the environment the PLAN declared, so the
+    // ref carries the environment CLASS: the unit's components minus the ones
+    // this condition contributed (its own credential mount, its own env
+    // variable). Four harnesses in one run mount four different credential
+    // directories under four different variables — comparing unit
+    // fingerprints would read `violated` on a run whose environment is, in
+    // every sense the comparison cares about, identical.
+    const owned = conditionOwnedComponents(env.unit.plan, env.condition.document)
+    const klass = unit.fingerprintComponents === undefined
+      ? undefined
+      : environmentClassComponents(unit.fingerprintComponents, owned)
+    const envClass = klass === undefined ? undefined : env.unit.lab.fingerprintOf(klass.components)
+    // The unit's OWN fingerprint stays recorded — on the cell's annotation and
+    // in lab's archive manifest — because "which environment class" and "which
+    // unit" are different questions and a bundle should answer both. It does
+    // not go into refs: mission's refs carry `resource`, `fingerprint` and
+    // `sessions`, and adding a fourth key is a mission change this task does
+    // not own.
+    await mission.setRefs(missionId, {
+      resource: unit.resource,
+      fingerprint: envClass ?? unit.fingerprint,
+    }, { runId: env.runId, by: env.by })
     await mission.annotate(missionId, 'orchestrator', {
       kind: 'unit',
       unit: unit.id,
       resource: unit.resource,
-      fingerprint: unit.fingerprint,
+      // The class is what refs carries; both are printed so a reader can see
+      // the difference rather than infer it.
+      fingerprint: envClass ?? unit.fingerprint,
+      unitFingerprint: unit.fingerprint,
+      ...(klass !== undefined ? { envExcluded: klass.excluded } : {}),
       image: env.unit.plan.image,
       workspace: unit.workspace,
       scopedHome: { container: env.unit.plan.scopedHome.container, var: env.unit.plan.scopedHome.var },
     }, { runId: env.runId, by: env.by }).catch(() => {})
-    // lab hashes the source tree and writes the manifest itself; the
-    // orchestrator does not compute a second one, because two files called
-    // materialization.json with two different hashes is worse than either.
-    // The workspace therefore holds exactly the item's visible bytes — no
+    // lab hashes the tree it copies too. That number is a different claim —
+    // "what went into the unit is this" — so it is kept under its own name;
+    // `materialization.json` stays the orchestrator's, computed identically
+    // on both paths. The workspace holds exactly the item's visible bytes: no
     // manifest, and so no host path, inside the unit.
-    const populated = await env.unit.lab.populate(unit.id, {
+    const populated = await env.unit.lab.populate(unit.id, { source: cellDir, target: unit.workspace })
+    writeFileSync(join(attemptDataDir, POPULATE_MANIFEST), `${JSON.stringify({
+      unit: unit.id,
       source: cellDir,
       target: unit.workspace,
-      manifestPath: join(attemptDataDir, 'materialization.json'),
-      artifactPath: 'materialization.json',
-    })
+      sha: populated.sha,
+      count: populated.count,
+      files: populated.files,
+      note: 'lab populate: what was copied into the unit, hashed by lab\'s own rule. The comparability number is materialization.json.',
+    }, null, 2)}\n`, 'utf8')
+    await mission.addArtifact(missionId, { path: POPULATE_MANIFEST, kind: 'populate-manifest' }, { runId: env.runId, by: env.by })
     writeFileSync(join(attemptDataDir, WORKSPACE_MIRROR), `${JSON.stringify({
       unit: unit.id,
       resource: unit.resource,
@@ -1450,6 +1489,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     if (deps?.lab === undefined) {
       throw new EvalRunRefused(
         `plan ${planAbs} declares a unit (image ${JSON.stringify(planUnit.image)}), so the run needs the lab service — mount the dsh-lab plugin, or drop the unit segment to run on the host`,
+      )
+    }
+    if (typeof (deps.lab as { fingerprintOf?: unknown }).fingerprintOf !== 'function') {
+      // The environment class is hashed by lab's own rule, on purpose: a
+      // second implementation of the canonicalization would drift, and a
+      // class that no longer equals the fingerprint of a unit acquired with
+      // exactly those components is worse than no class at all. So a lab
+      // predating the verb is a refusal that names it, not a fallback.
+      throw new EvalRunRefused(
+        'the mounted lab has no fingerprintOf verb, so the environment class «环境一致» compares cannot be derived'
+        + " — upgrade dsh-lab, or drop the plan's unit segment to run on the host",
       )
     }
     if (options.credsRoot === undefined || options.credsRoot === '') {
