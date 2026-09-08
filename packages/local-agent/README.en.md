@@ -100,6 +100,27 @@ export function registerCodex(ctx: Context): void {
 
 The registry also owns the family's **delegation registry**: a per-child-session record of which provider and CLI session a delegation used, plus a per-(parent, provider) FIFO of delegation intents. The family tool (`@khorsheed/dsh-local-agent-tool-subagent`, mounted by each harness bundle's patch) stages exactly one intent per call before `ctx.subagents.start()`, and the owning provider consumes exactly one per start — so fresh and resume rounds stay paired even under parallel delegation. A resume handle (the dsh child session id) resolves through the registry, which rejects a handle naming an unknown child, another parent's session, or the wrong provider; the subagent request descriptor cannot carry the target, so this service is the family-internal carrier. Mappings persist per harness in an append-only `delegations.jsonl` under the harness's scoped home (last line per child session wins), so a resume handle survives a host restart.
 
+### Delegation call options (facade)
+
+The `options` argument of `registry.start(parent, provider, prompt, options)` and `registry.resume(…)` (`DelegationCallOptions`) — purely additive, every field absent meaning the behavior from before it existed:
+
+| Field | What it does |
+|---|---|
+| `label` | Child display label; absent uses the harness's own display name |
+| `signal` | The caller's own cancellation channel, fused with the facade's internal controller |
+| `onProgress` | Per-call progress callback, the same payload the `localAgent/run-progress` event carries |
+| `reattach` | `resume` only: restore a non-live child session from persistence (default true); `false` fails loud instead |
+| `cwd` | The round's CLI working directory; a resume round must repeat the first round's, or it fails loud before any spawn |
+| `exec` | Run this round inside an **already-acquired container**: `{ container, workdir, env? }` |
+
+**Container delegation (the `exec` target).** Given one, the provider spawns `docker exec -w <workdir> [-e NAME…] <container> <the same argv>`; stdio stays piped, and the stream parse, settle, readback and `delegations.jsonl` record are byte-for-byte the host path's. The family owns exactly one docker verb, `exec` — acquiring, mounting and destroying a container belong to the caller (lab).
+
+- **Values never ride the argv.** Each forwarded variable appears only as `-e NAME`, and the docker CLI resolves it from its own environment — so a credential the provider resolved stays out of the host process table. What is forwarded: the defined entries of the provider's explicit env layer, overridden per key by `target.env`; the ambient allowlist (`PATH`, `HOME`, the proxy variables) is **not** forwarded — inside the container those belong to the image and the `docker run` that created it.
+- **The caller must name the scoped home.** `target.env` must carry the in-container scoped-home variable (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`), or the round fails loud before spawning: the host path means nothing inside the unit, and forwarding it would start the CLI from an empty directory — no credentials, no rollout to read back, and nothing in the output naming the cause.
+- **The scoped home is a HOST directory, bind-mounted read-write.** Readback (codex's rollout, kimi's wire log, the sub-dsh session log) reads it straight off the host filesystem, and credential refreshes land back on the host. **The caller stages what it mounts**: mount a live scoped home and its host-only settings ride along (measured: the `https_proxy` in claude's scoped `settings.json`, meant for the host daemon, points at nothing inside the unit and the round dies with `Connection refused`).
+- **A container round is exec-only and carries no member channel.** The live drivers run resident processes on the HOST — the transport the target exists to replace; the member bridge is a host unix socket whose MCP declaration names a host node path. Both are given up on purpose, not missing by accident.
+- **The caller repeats the target on resume.** The recorded anchor is the host `cwd`, which a swapped container leaves equal — that one the record cannot catch.
+
 ### Active-delegation registry and `/local-agent stop`
 
 The registry also owns the **active-delegation registry**: an in-flight run table keyed by dsh child session id. Facade-started runs (`start`/`resume` — the member composer, room, and other programmatic entry points) and runs the family tool starts directly through `ctx.subagents.start()` (registered via `trackDelegationRun`) all land in the same table, and an entry clears itself when the run's result settles. `/local-agent stop <childSessionId>` cancels the in-flight delegation by this table — semantics aligned with the official `subagents.interrupt(targetSessionId)`: fire-and-return (the cancel signal goes out before the reply), and an absent target (unknown child or no in-flight run) is an explicitly-named accepted no-op, not an error. This gives surfaces like taskpilot a landing point for their stop buttons: for a one-shot subagent row with no live agent, the button dispatches `/local-agent stop <childSessionId>` instead, degrading to an explicit "cannot stop" error when the local-agent core is absent.

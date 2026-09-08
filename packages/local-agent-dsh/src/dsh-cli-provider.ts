@@ -32,11 +32,14 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  containerExecSpawn,
+  containerScopedHome,
   delegationEnv,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
+import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
@@ -52,6 +55,21 @@ import { mirrorDshSession } from './session-mirror.ts'
  * bridge itself reads only the socket/token env.
  */
 export const MEMBER_BRIDGE_ENTRY_ENV = 'DSH_MEMBER_BRIDGE_ENTRY'
+
+/**
+ * The `NODE_OPTIONS` a containerized round carries. dsh's HTTP client is
+ * node's `fetch` (undici), which does NOT read `HTTP(S)_PROXY` by default: in
+ * an evaluation unit whose only egress is a whitelist proxy the CLI dials the
+ * API directly and fails with a transport error while the proxy never even
+ * receives a `CONNECT`. `--use-env-proxy` opens undici's `EnvHttpProxyAgent`,
+ * which does read those variables. Measured on the T16 image: without it the
+ * round fails, with it the same round answers in 1.3 s. dsh is the only one
+ * of the four CLIs that needs an extra knob to run inside a unit — the other
+ * three carry their own proxy support — so the injection is automatic rather
+ * than something every caller must remember, and the harness reports it in
+ * its effective settings so the condition file can see it.
+ */
+export const CONTAINER_NODE_OPTIONS = '--use-env-proxy'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -165,13 +183,18 @@ export class DshCliProvider implements SubagentProvider {
     if (cwd === undefined) {
       throw new Error('subagent-dsh: the parent session has no working directory to run the CLI in')
     }
+    // Container exec target: the same round, spawned through `docker exec`
+    // inside a unit the caller acquired. Validated here so a target missing
+    // the in-container scoped home fails before any session record is made.
+    const exec = intent?.exec
+    if (exec !== undefined) containerScopedHome(exec, 'DSH_HOME', 'subagent-dsh')
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
       assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-dsh')
-      return this.startDshResume(request, intent, cwd, homeDir)
+      return this.startDshResume(request, intent, cwd, homeDir, exec)
     }
-    return this.startDshFresh(request, cwd, homeDir)
+    return this.startDshFresh(request, cwd, homeDir, exec)
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
@@ -179,6 +202,7 @@ export class DshCliProvider implements SubagentProvider {
     request: ResolvedSubagentStartRequest,
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -229,7 +253,10 @@ export class DshCliProvider implements SubagentProvider {
     // falls through to the exec one-shot below — and stays there
     // (driver.disabled) for later rounds. The resolver may gate this member to
     // exec while a retiring generation still hosts its runtime.
-    const live = this.liveDriver(runId)
+    // A container target always takes the exec one-shot: the live driver runs
+    // a resident serve process on the HOST, which is the transport the target
+    // exists to replace.
+    const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
@@ -247,7 +274,10 @@ export class DshCliProvider implements SubagentProvider {
     // Member channel: register this run and hand the bridge coordinates to
     // the sub-dsh through the spawn env, so its session starts with
     // member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
+    // The member bridge is a host unix socket the container cannot reach, and
+    // the bridge entry it names is a host node path — a containerized round
+    // therefore runs WITHOUT the member channel rather than with a broken one.
+    const member = exec === undefined ? this.memberRun(runId, request.parent.session.id) : undefined
     try {
       const run = await startDshCliRun(request, {
         cwd,
@@ -258,6 +288,7 @@ export class DshCliProvider implements SubagentProvider {
         config: this.config,
         ctx: this.ctx,
         ...member === undefined ? {} : { memberEnv: member.env },
+        ...exec === undefined ? {} : { exec },
         onSpawned: (pid) => { member?.bind(pid) },
         cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
       })
@@ -276,6 +307,7 @@ export class DshCliProvider implements SubagentProvider {
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -298,7 +330,8 @@ export class DshCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident serve process. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      const live = this.liveDriver(intent.childSessionId)
+      // See the fresh path: a container target is exec-only.
+      const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
@@ -321,7 +354,8 @@ export class DshCliProvider implements SubagentProvider {
       }
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
-      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      // See the fresh path: no member channel across the container boundary.
+      const member = exec === undefined ? this.memberRun(intent.childSessionId, request.parent.session.id) : undefined
       try {
         const run = await startDshCliRun(request, {
           cwd,
@@ -332,6 +366,7 @@ export class DshCliProvider implements SubagentProvider {
           config: this.config,
           ctx: this.ctx,
           ...member === undefined ? {} : { memberEnv: member.env },
+          ...exec === undefined ? {} : { exec },
           onSpawned: (pid) => { member?.bind(pid) },
           cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
         })
@@ -387,6 +422,13 @@ export interface DshCliRunSpec {
    * mcp-client row reads them via `!!js` env lookups.
    */
   readonly memberEnv?: Readonly<NodeJS.ProcessEnv> | undefined
+  /**
+   * Run the sub-dsh inside this container instead of on the host: the argv
+   * below is wrapped in `docker exec` and the explicit env layer is forwarded
+   * through NAME-only `-e` flags (the resolved API key therefore never
+   * reaches the host process table). Absent means the host spawn, unchanged.
+   */
+  readonly exec?: DelegationExecTarget | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
   /**
@@ -491,8 +533,14 @@ export async function startDshCliRun(
   }
   const profileName = config.profileName ?? DEFAULT_SUB_PROFILE_NAME
   // Provisioning is idempotent and cheap; re-running heals a deleted or
-  // drifted sub-profile before every round.
-  provisionDshSubProfile(spec.homeDir, config)
+  // drifted sub-profile before every round. A CONTAINER round skips it: the
+  // sub-profile's node_modules symlink points at the host installation of the
+  // headless bundle, which resolves to nothing inside a unit — and the scoped
+  // home is bind-mounted, so writing it would plant a broken profile in the
+  // directory the unit actually reads. A containerized caller names the
+  // unit's own profile through `profileName` (the image's in-box `headless`)
+  // and its own entry through `cliLaunch`.
+  if (spec.exec === undefined) provisionDshSubProfile(spec.homeDir, config)
   // Resolve the sub-dsh credential BEFORE spawning: the key travels in the
   // explicit env layer, which is the only way past the shared env scrub.
   const apiKey = await resolveApiKey(ctx, config)
@@ -501,34 +549,51 @@ export async function startDshCliRun(
   // measures actual CLI runtime.
   spec.childSession?.append('turn/start', { turn })
 
+  // The default launch replicates THIS process (node + argv[1]), which only
+  // exists on the host. A container target therefore expects the caller to
+  // have pinned `cliLaunch` to the unit's own entry (`['dsh']` on the T16
+  // image) — the existing config knob, not a new field on the exec target.
   const launch = dshLaunchArgv(config)
+  const argv = spec.resume === undefined
+    ? [...launch, '--profile', profileName, '--session-id', spec.sessionId, task]
+    : [...launch, '--profile', profileName, '--resume', spec.sessionId, task]
+  // The explicit env layer merges AFTER the shared credential scrub, so
+  // both the credential-shaped key and the DSH_* fact survive into the
+  // child — without DSH_HOME the sub-dsh would default to ~/.dsh and write
+  // sessions into the parent instance's store.
+  const env = delegationEnv({
+    DSH_HOME: spec.homeDir,
+    DEEPSEEK_API_KEY: apiKey,
+    // The launch replicates the parent's tsx ESM hook (dshLaunchArgv), so
+    // the hook's tsconfig path is a hard launch dependency: without it tsx
+    // compiles the harness source with default options and the child dies
+    // at import time ('FiberState' export mismatch). Pass it explicitly —
+    // the delegation env allowlist tombstones it otherwise. A container
+    // round runs the unit's own dsh, so the host hook path is not only
+    // useless there, it would put a host directory layout inside the unit.
+    ...spec.exec !== undefined || process.env.TSX_TSCONFIG_PATH === undefined
+      ? {}
+      : { TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH },
+    // Container round: open undici's env proxy agent, without which the
+    // sub-dsh dials the API directly and never reaches the unit's whitelist
+    // proxy (see CONTAINER_NODE_OPTIONS). A caller that named NODE_OPTIONS
+    // on the target keeps its own value — this is a default, not an override.
+    ...spec.exec === undefined || spec.exec.env?.['NODE_OPTIONS'] !== undefined
+      ? {}
+      : { NODE_OPTIONS: CONTAINER_NODE_OPTIONS },
+    // Member channel coordinates ride the same explicit layer (DSH_* names
+    // are scrubbed from the ambient env; this layer is the sanctioned
+    // override).
+    ...spec.memberEnv,
+  })
+  // Container target: the same argv, wrapped in `docker exec`. The host cwd
+  // still applies — it is the docker CLIENT's working directory now, while
+  // the sub-dsh's own is the target's in-container workdir.
   const spawnSpec: SubprocessSpawnSpec = {
-    argv: spec.resume === undefined
-      ? [...launch, '--profile', profileName, '--session-id', spec.sessionId, task]
-      : [...launch, '--profile', profileName, '--resume', spec.sessionId, task],
+    ...spec.exec === undefined ? { argv, env } : containerExecSpawn(spec.exec, { argv, env }, 'subagent-dsh'),
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: DEFAULT_DISPOSE_GRACE_MS,
-    // The explicit env layer merges AFTER the shared credential scrub, so
-    // both the credential-shaped key and the DSH_* fact survive into the
-    // child — without DSH_HOME the sub-dsh would default to ~/.dsh and write
-    // sessions into the parent instance's store.
-    env: delegationEnv({
-      DSH_HOME: spec.homeDir,
-      DEEPSEEK_API_KEY: apiKey,
-      // The launch replicates the parent's tsx ESM hook (dshLaunchArgv), so
-      // the hook's tsconfig path is a hard launch dependency: without it tsx
-      // compiles the harness source with default options and the child dies
-      // at import time ('FiberState' export mismatch). Pass it explicitly —
-      // the delegation env allowlist tombstones it otherwise.
-      ...process.env.TSX_TSCONFIG_PATH === undefined
-        ? {}
-        : { TSX_TSCONFIG_PATH: process.env.TSX_TSCONFIG_PATH },
-      // Member channel coordinates ride the same explicit layer (DSH_* names
-      // are scrubbed from the ambient env; this layer is the sanctioned
-      // override).
-      ...spec.memberEnv,
-    }),
   }
   const child = ctx.subprocess.spawn(spawnSpec)
   spec.onSpawned?.(child.pid)

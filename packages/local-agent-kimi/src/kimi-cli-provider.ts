@@ -29,11 +29,14 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  containerExecSpawn,
+  containerScopedHome,
   delegationEnv,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
+import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
@@ -184,13 +187,18 @@ export class KimiCliProvider implements SubagentProvider {
     if (cwd === undefined) {
       throw new Error('subagent-kimi: the parent session has no working directory to run the CLI in')
     }
+    // Container exec target: the same round, spawned through `docker exec`
+    // inside a unit the caller acquired. Validated here so a target missing
+    // the in-container scoped home fails before any session record is made.
+    const exec = intent?.exec
+    if (exec !== undefined) containerScopedHome(exec, 'KIMI_CODE_HOME', 'subagent-kimi')
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
       assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-kimi')
-      return this.startKimiResume(request, intent, cwd, homeDir)
+      return this.startKimiResume(request, intent, cwd, homeDir, exec)
     }
-    return this.startKimiFresh(request, cwd, homeDir)
+    return this.startKimiFresh(request, cwd, homeDir, exec)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
@@ -198,6 +206,7 @@ export class KimiCliProvider implements SubagentProvider {
     request: ResolvedSubagentStartRequest,
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -239,7 +248,10 @@ export class KimiCliProvider implements SubagentProvider {
     // Live driver: the round goes to the member's resident `kimi acp` process.
     // A channel that fails at spawn/handshake falls through to the exec
     // one-shot below — and stays there until the breaker cools down.
-    const live = this.liveDriver(runId)
+    // A container target always takes the exec one-shot: the live driver runs
+    // a resident `kimi acp` process on the HOST, which is the transport the
+    // target exists to replace.
+    const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
@@ -268,11 +280,16 @@ export class KimiCliProvider implements SubagentProvider {
     }
     // Member channel: register this run and declare the bridge MCP before the
     // spawn, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id, homeDir)
+    // The member bridge is a host unix socket the container cannot reach, and
+    // its declaration is written INTO the scoped home's mcp.json naming a host
+    // node path — a containerized round therefore runs WITHOUT the member
+    // channel rather than leaving a broken server in a shared config file.
+    const member = exec === undefined ? this.memberRun(runId, request.parent.session.id, homeDir) : undefined
     try {
       const run = await startKimiCliRun(request, {
         cwd,
         env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+        ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -326,6 +343,7 @@ export class KimiCliProvider implements SubagentProvider {
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -348,7 +366,8 @@ export class KimiCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident ACP session. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      const live = this.liveDriver(intent.childSessionId)
+      // See the fresh path: a container target is exec-only.
+      const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
@@ -370,7 +389,10 @@ export class KimiCliProvider implements SubagentProvider {
       }
       // Member channel: register the resume round (same child session, fresh
       // per-run token) and declare the bridge MCP before the spawn.
-      const member = this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
+      // See the fresh path: no member channel across the container boundary.
+      const member = exec === undefined
+        ? this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
+        : undefined
       const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
       this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
       let run: SubagentRun
@@ -378,6 +400,7 @@ export class KimiCliProvider implements SubagentProvider {
         run = await startKimiCliRun(request, {
           cwd,
           env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+          ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -431,6 +454,12 @@ export interface KimiCliRunSpec {
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
   readonly env: Readonly<NodeJS.ProcessEnv>
+  /**
+   * Run the CLI inside this container instead of on the host: the argv below
+   * is wrapped in `docker exec` and {@link env} is forwarded through NAME-only
+   * `-e` flags. Absent means the host spawn, unchanged.
+   */
+  readonly exec?: DelegationExecTarget | undefined
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -634,17 +663,25 @@ export function startKimiCliRun(
   // measures actual CLI runtime, not the post-hoc mirror time.
   spec.childSession?.append('turn/start', { turn })
 
+  // -S must precede -p: after -p, kimi parses the id as a command. The
+  // recorded id may already carry the ACP directory prefix (a record
+  // written by a live round): never double-prefix.
+  const argv = spec.resume === undefined
+    ? ['kimi', '-p', task]
+    : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task]
+  // Container target: the same argv, wrapped in `docker exec`. The host cwd
+  // still applies — it is the docker CLIENT's working directory now, while
+  // the CLI's own is the target's in-container workdir.
+  const launch = spec.exec === undefined
+    ? { argv, env: spec.env }
+    : containerExecSpawn(spec.exec, { argv, env: spec.env }, 'subagent-kimi')
+
   const child = spec.spawn({
-    // -S must precede -p: after -p, kimi parses the id as a command. The
-    // recorded id may already carry the ACP directory prefix (a record
-    // written by a live round): never double-prefix.
-    argv: spec.resume === undefined
-      ? ['kimi', '-p', task]
-      : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task],
+    argv: launch.argv,
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
-    env: spec.env,
+    env: launch.env,
   })
   spec.onSpawned?.(child.pid)
 

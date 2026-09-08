@@ -606,6 +606,31 @@ describe('delegation cwd option and observation read side', () => {
     expectNothingStaged(h.registry)
   })
 
+  it('rides the container exec target into the staged fresh and resume intents', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    const exec = { container: 'dsh-lab-abc', workdir: '/workspace', env: { CODEX_HOME: '/creds/codex' } }
+    await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', exec })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', exec })
+
+    h.registry.recordDelegation({
+      childSessionId: 'child-exec', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-2', cwd: '/cell-a',
+    })
+    // The caller repeats the target on resume, exactly as it repeats the cwd.
+    await h.registry.resume(PARENT, PROVIDER, 'child-exec', PROMPT, { cwd: '/cell-a', exec })
+    expect(h.consumed[1]).toEqual({
+      kind: 'resume', childSessionId: 'child-exec', cliSessionId: 'cli-2', cwd: '/cell-a', exec,
+    })
+  })
+
+  it('stages no exec target when the option is absent — the round runs on the host', async () => {
+    const h = await mountFacade()
+    h.enterParent(PARENT)
+    await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a' })
+    expectNothingStaged(h.registry)
+  })
+
   it('delegationOf projects the record without the CLI-session resume handle', async () => {
     const h = await mountFacade()
     h.registry.recordDelegation({

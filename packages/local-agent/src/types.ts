@@ -158,6 +158,18 @@ export interface LocalAgentEffectiveSettings {
    * or readable — absence is the honest answer, never a substituted default.
    */
   model?: string
+  /**
+   * Extra `NODE_OPTIONS` the harness injects when a round runs against a
+   * container exec target ({@link DelegationExecTarget}). Only the dsh
+   * harness declares one: its HTTP client is node's `fetch` (undici), which
+   * does not read `HTTP(S)_PROXY` by default, so a round inside a unit whose
+   * only egress is a whitelist proxy needs `--use-env-proxy` to open
+   * undici's `EnvHttpProxyAgent` — without it the CLI dials the API directly
+   * and the proxy never even sees a `CONNECT`. Reported unconditionally
+   * because the injection is unconditional in code; absent means the harness
+   * injects none. Never a credential — a node flag.
+   */
+  containerNodeOptions?: string
 }
 
 /**
@@ -364,6 +376,11 @@ export type LocalAgentDelegationIntent =
      * means the provider's default — the parent session's cwd.
      */
     readonly cwd?: string
+    /**
+     * Run the CLI inside this container instead of on the host (the `exec`
+     * call option riding the same staged intent). Absent means the host.
+     */
+    readonly exec?: DelegationExecTarget
   }
   | {
     readonly kind: 'resume'
@@ -377,6 +394,11 @@ export type LocalAgentDelegationIntent =
      * against the recorded first-round cwd and fails loud on a mismatch.
      */
     readonly cwd?: string
+    /**
+     * Run the resume round's CLI inside this container. The caller repeats
+     * the first round's target; nothing recorded can verify that for it.
+     */
+    readonly exec?: DelegationExecTarget
   }
 
 /**
@@ -421,6 +443,44 @@ export type LocalAgentRunProgress =
   }
 
 /**
+ * Where one delegation round's CLI process runs when the caller has already
+ * acquired a container for it (a lab unit). Given a target, the provider
+ * spawns `docker exec -w <workdir> [-e NAME…] <container> <the same argv>`
+ * instead of the CLI directly; stdio stays piped and every downstream
+ * layer — stream parse, settle, readback, delegation record — is the host
+ * path's, unchanged.
+ *
+ * The scoped home stays a HOST directory, bind-mounted read-write into the
+ * unit: readback (codex's rollout, kimi's wire log, the sub-dsh session log)
+ * reads it straight off the host filesystem, and credential refreshes the CLI
+ * writes land back on the host. `env` is where the caller names those
+ * in-container paths (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `KIMI_CODE_HOME`,
+ * `DSH_HOME`), which is why every provider REQUIRES its own scoped-home
+ * variable here: the host path it would otherwise forward means nothing
+ * inside the unit.
+ *
+ * Absent everywhere means the host path, byte-for-byte the behavior before
+ * this option existed.
+ */
+export interface DelegationExecTarget {
+  /**
+   * The container the round runs in — a name or id the caller acquired (lab's
+   * `UnitInfo.resource`). The family only ever runs `docker exec` against it:
+   * creating, inspecting, mounting and destroying it belong to the caller.
+   */
+  readonly container: string
+  /** Absolute in-container working directory (`docker exec -w`). */
+  readonly workdir: string
+  /**
+   * Environment entries for the in-container process, overriding the
+   * provider's own per key. Values travel in the docker CLIENT's environment
+   * and reach the container through NAME-only `-e` flags, so nothing here
+   * lands in the host process table.
+   */
+  readonly env?: Readonly<Record<string, string>>
+}
+
+/**
  * Call options for the public delegation facade (`LocalAgentRegistry.start` /
  * `resume`). The interface is deliberately additive: later milestones extend
  * it without changing the existing fields.
@@ -459,4 +519,13 @@ export interface DelegationCallOptions {
    * this option existed, unchanged.
    */
   readonly cwd?: string
+  /**
+   * Run the round's CLI inside an already-acquired container instead of on
+   * the host ({@link DelegationExecTarget}). The transport is the only thing
+   * it changes; a round with a target still parses, settles, reads back and
+   * records exactly as a host round does. On a resume, repeat the SAME target
+   * the first round used — the recorded first-round anchor is the host `cwd`,
+   * so a swapped container is a caller error the record cannot catch.
+   */
+  readonly exec?: DelegationExecTarget
 }

@@ -37,11 +37,14 @@ import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  containerExecSpawn,
+  containerScopedHome,
   delegationEnv,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
+import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
@@ -216,13 +219,22 @@ export class ClaudeCliProvider implements SubagentProvider {
     if (cwd === undefined) {
       throw new Error('subagent-claude: the parent session has no working directory to run the CLI in')
     }
+    // Container exec target: the same round, spawned through `docker exec`
+    // inside a unit the caller acquired. Validated here so a target missing
+    // the in-container scoped home fails before any session record is made.
+    // On Linux claude READS its credentials from the default home and only
+    // WRITES the scoped dir (upstream #47661), so the caller normally points
+    // CLAUDE_CONFIG_DIR at the same in-container path it bind-mounted the
+    // host scoped home onto — one directory, read and write.
+    const exec = intent?.exec
+    if (exec !== undefined) containerScopedHome(exec, 'CLAUDE_CONFIG_DIR', 'subagent-claude')
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
       assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-claude')
-      return this.startClaudeResume(request, intent, cwd, homeDir)
+      return this.startClaudeResume(request, intent, cwd, homeDir, exec)
     }
-    return this.startClaudeFresh(request, cwd, homeDir)
+    return this.startClaudeFresh(request, cwd, homeDir, exec)
   }
 
   /** Fresh round: record the child session, spawn `claude -p`, append after settle. */
@@ -230,6 +242,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     request: ResolvedSubagentStartRequest,
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -265,7 +278,10 @@ export class ClaudeCliProvider implements SubagentProvider {
     // Live driver: the round goes to the member's resident stream-json
     // process. A channel that fails at spawn falls through to the exec
     // one-shot below — and stays there until the breaker cools down.
-    const live = this.liveDriver(runId)
+    // A container target always takes the exec one-shot: the live driver runs
+    // a resident stream-json process on the HOST, which is the transport the
+    // target exists to replace.
+    const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
@@ -294,7 +310,10 @@ export class ClaudeCliProvider implements SubagentProvider {
     }
     // Member channel: register this run and carry the bridge declaration on
     // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
+    // The member bridge is a host unix socket the container cannot reach, and
+    // its MCP declaration names a host node path — a containerized round
+    // therefore runs WITHOUT the member channel rather than with a broken one.
+    const member = exec === undefined ? this.memberRun(runId, request.parent.session.id) : undefined
     try {
       const run = await startClaudeCliRun(request, {
         cwd,
@@ -302,6 +321,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           CLAUDE_CONFIG_DIR: homeDir,
           ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
         }),
+        ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -351,6 +371,7 @@ export class ClaudeCliProvider implements SubagentProvider {
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -372,7 +393,8 @@ export class ClaudeCliProvider implements SubagentProvider {
       const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident stream-json session.
       // Channel failure falls through to the exec one-shot below.
-      const live = this.liveDriver(intent.childSessionId)
+      // See the fresh path: a container target is exec-only.
+      const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
@@ -396,7 +418,8 @@ export class ClaudeCliProvider implements SubagentProvider {
       this.ctx.logger.info(`subagent-claude: resuming via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
-      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      // See the fresh path: no member channel across the container boundary.
+      const member = exec === undefined ? this.memberRun(intent.childSessionId, request.parent.session.id) : undefined
       let run: SubagentRun
       try {
         run = await startClaudeCliRun(request, {
@@ -405,6 +428,7 @@ export class ClaudeCliProvider implements SubagentProvider {
             CLAUDE_CONFIG_DIR: homeDir,
             ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
           }),
+          ...exec === undefined ? {} : { exec },
           endpointLabel: effectiveBaseUrl,
           permissionMode: this.permissionMode,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -458,6 +482,12 @@ export interface ClaudeCliRunSpec {
    * restores or overrides it.
    */
   readonly env: Readonly<NodeJS.ProcessEnv>
+  /**
+   * Run the CLI inside this container instead of on the host: the argv below
+   * is wrapped in `docker exec` and {@link env} is forwarded through NAME-only
+   * `-e` flags. Absent means the host spawn, unchanged.
+   */
+  readonly exec?: DelegationExecTarget | undefined
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Permission mode passed to `claude -p`. */
@@ -952,12 +982,19 @@ export async function startClaudeCliRun(
       ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
       : ['claude', '-p', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
 
+  // Container target: the same argv, wrapped in `docker exec`. The host cwd
+  // still applies — it is the docker CLIENT's working directory now, while
+  // the CLI's own is the target's in-container workdir.
+  const launch = spec.exec === undefined
+    ? { argv, env: spec.env }
+    : containerExecSpawn(spec.exec, { argv, env: spec.env }, 'subagent-claude')
+
   const child = spec.spawn({
-    argv,
+    argv: launch.argv,
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
-    env: spec.env,
+    env: launch.env,
   })
   spec.onSpawned?.(child.pid)
 
