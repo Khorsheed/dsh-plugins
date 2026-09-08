@@ -44,6 +44,8 @@ interface Mount {
   settings: ReturnType<typeof fakeSettings>
   /** The resolver the provider was constructed with (private face). */
   resolveLive: (childSessionId: string) => ClaudeLiveDriver | undefined
+  /** The model resolver the provider was constructed with (private face). */
+  resolveModel: () => string | undefined
 }
 
 function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string, unknown> = {}): Mount {
@@ -59,17 +61,26 @@ function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string,
   } as unknown as LocalAgentRegistry
   const settings = fakeSettings({ live: false, liveMirrorGranularity: 'event', ...initial })
   let resolveLive: Mount['resolveLive'] = () => undefined
+  let resolveModel: Mount['resolveModel'] = () => undefined
   ctx.provide('localAgent', registry)
   ctx.provide('logger', { warn: () => {} })
   ctx.provide('subagents', {
     registerProvider: (provider: unknown) => {
       resolveLive = (provider as { live: Mount['resolveLive'] }).live
+      resolveModel = (provider as { model?: Mount['resolveModel'] }).model ?? (() => undefined)
     },
   })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('settings', settings.service)
   apply(ctx, config as never)
-  return { ctx, registered, home, settings, resolveLive: id => resolveLive(id) }
+  return {
+    ctx,
+    registered,
+    home,
+    settings,
+    resolveLive: id => resolveLive(id),
+    resolveModel: () => resolveModel(),
+  }
 }
 
 describe('local-agent-claude-code apply', () => {
@@ -233,5 +244,43 @@ describe('local-agent-claude-code apply', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+  })
+})
+
+describe('local-agent-claude-code model key', () => {
+  it('carries the YAML model into the composition base', () => {
+    const { settings } = mount({}, { model: 'claude-opus-5' })
+    const registration = settings.registrations[0] as { options?: { base?: object } }
+    expect(registration.options?.base).toEqual({ model: 'claude-opus-5' })
+  })
+
+  it('hands the provider a resolver that follows later settings writes (no reload)', () => {
+    const { settings, resolveModel } = mount()
+    expect(resolveModel()).toBeUndefined()
+    settings.set({ live: false, liveMirrorGranularity: 'event', model: 'claude-opus-5' })
+    expect(resolveModel()).toBe('claude-opus-5')
+  })
+
+  it('treats a blank value as unset — the pre-key argv, not an empty --model', () => {
+    const { resolveModel } = mount({ model: '   ' })
+    expect(resolveModel()).toBeUndefined()
+  })
+
+  it('snapshot order: the plugin key wins over the scoped settings.json', async () => {
+    const { home, registered } = mount({ model: 'claude-opus-5' })
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'scoped-model' }, undefined, 2))
+    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'claude-opus-5' })
+  })
+
+  it('snapshot order: with no key, the scoped settings.json still decides', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'scoped-model' }, undefined, 2))
+    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'scoped-model' })
+  })
+
+  it('snapshot order: neither one names a model, so the field stays absent', async () => {
+    const { registered } = mount()
+    const snapshot = await registered[0]!.effectiveSettings!()
+    expect('model' in snapshot).toBe(false)
   })
 })

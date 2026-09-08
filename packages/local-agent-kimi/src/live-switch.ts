@@ -21,6 +21,10 @@ import type { KimiLiveMirrorGranularity } from './live-driver.ts'
 export interface KimiLiveSettings {
   live: boolean
   liveMirrorGranularity: KimiLiveMirrorGranularity
+  /** The configured model, when the card or the YAML base names one. */
+  model?: string
+  /** Model identifiers the card has saved before (its input's suggestions). */
+  recentModels?: readonly string[]
 }
 
 export class LiveDriverSwitch {
@@ -34,6 +38,8 @@ export class LiveDriverSwitch {
     private readonly ctx: Context,
     scope: SettingsScope<KimiLiveSettings>,
     private readonly liveIdleMs: number | undefined,
+    /** Per-spawn model resolver, handed to every driver generation. */
+    private readonly model?: () => string | undefined,
   ) {
     this.apply(scope.get())
     this.unwatch = scope.watch((next) => { this.apply(next) })
@@ -64,6 +70,7 @@ export class LiveDriverSwitch {
     this.active = next.live
       ? new KimiAcpLiveDriver(this.ctx, {
         ...this.liveIdleMs === undefined ? {} : { liveIdleMs: this.liveIdleMs },
+        ...this.model === undefined ? {} : { model: this.model },
         liveMirrorGranularity: next.liveMirrorGranularity,
       })
       : undefined

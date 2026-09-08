@@ -22,6 +22,10 @@ import type { CodexLiveMirrorGranularity } from './live-driver.ts'
 export interface CodexLiveSettings {
   live: boolean
   liveMirrorGranularity: CodexLiveMirrorGranularity
+  /** The configured model, when the card or the YAML base names one. */
+  model?: string
+  /** Model identifiers the card has saved before (its input's suggestions). */
+  recentModels?: readonly string[]
 }
 
 export class LiveDriverSwitch {
@@ -37,6 +41,8 @@ export class LiveDriverSwitch {
     private readonly options: {
       sandbox: Config['sandbox']
       liveIdleMs?: number
+      /** Per-spawn model resolver, handed to every driver generation. */
+      model?: () => string | undefined
     },
   ) {
     this.apply(scope.get())
@@ -69,6 +75,7 @@ export class LiveDriverSwitch {
       ? new CodexLiveDriver(this.ctx, {
         ...this.options.sandbox === undefined ? {} : { sandbox: this.options.sandbox },
         ...this.options.liveIdleMs === undefined ? {} : { liveIdleMs: this.options.liveIdleMs },
+        ...this.options.model === undefined ? {} : { model: this.options.model },
         liveMirrorGranularity: next.liveMirrorGranularity,
       })
       : undefined

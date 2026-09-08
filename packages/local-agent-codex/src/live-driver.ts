@@ -441,6 +441,12 @@ export class CodexLiveDriver {
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: CodexLiveMirrorGranularity
+      /**
+       * Resolver for the configured model, read at each RUNTIME SPAWN (the
+       * app-server is where a live round's CLI starts). Absent, or resolving
+       * to nothing, leaves the spawn argv unchanged.
+       */
+      model?: () => string | undefined
     },
     private readonly timeouts: CodexLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -554,10 +560,18 @@ export class CodexLiveDriver {
     // exec path; the resident process carries one member, so its token lives
     // with the process (released on reclaim/crash), not per round.
     const member = registerCodexMemberRun(this.ctx, String(spec.childSession.id), spec.parentSessionId)
+    // `codex app-server` has no `-m` (verified against codex-cli 0.144.0), so
+    // the model rides the process-level `-c` override the CLI documents for
+    // exactly this — the same mechanism the member bridge already uses. The
+    // resident process carries one member, so reading the resolver here binds
+    // the model for that member's runtime; a later change reaches it when the
+    // runtime is next respawned (idle reclaim, crash, or a live toggle).
+    const model = this.config.model?.()?.trim()
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         'codex', 'app-server',
         ...member === undefined ? [] : ['-c', member.configOverride],
+        ...model === undefined || model === '' ? [] : ['-c', `model=${JSON.stringify(model)}`],
         '--stdio',
       ],
       cwd: spec.cwd,

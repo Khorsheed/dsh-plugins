@@ -33,14 +33,27 @@ The scoped home is kept on uninstall so a reinstall needs no fresh login; delete
 Optional fields on the bundle row:
 
 - `permissionMode` — `skip` (default) passes `--dangerously-skip-permissions` so the child can write files without an approval prompt; `normal` runs without it, so approval-requiring actions (e.g. writing files) are denied.
+- `model` — every delegation round starts the CLI with it (`claude -p --model <model>`); absent passes no model flag at all. See below.
 - `baseUrl` — sets `ANTHROPIC_BASE_URL` for the child CLI (e.g. a self-hosted router or proxy); absent, the child inherits the host process environment. Config wins over environment.
 - `live` — live driver: one resident stream-json process per member (`--input-format stream-json`), one stdin message per round (runtime-level graceful control interrupt, same-shape push stream); off — or a channel that cannot come up — means the one-shot `claude -p` path.
 - `liveIdleMs` — idle lifetime of a resident runtime before reclaim (default 30 min).
 - `liveMirrorGranularity` — live mirror granularity (default `event`); `token` additionally spawns with `--include-partial-messages` and appends deltas as `assistant/chunk` (write amplification — opt-in).
 
+### Default model (`model`)
+
+**Absent = today's behavior.** Without this key the plugin adds no model flag to the argv at all: the scoped `settings.json`'s `model` decides which model runs, and claude's own default decides when that is missing too (the plugin never guesses what it is).
+
+**Set = every delegation round starts the CLI with it.** All four argv variants — fresh and resume, one-shot and resident (`live: true`) — carry `--model <model>`, placed before the member channel's `--allowedTools … --`: that flag is variadic and everything after its `--` is the task text.
+
+The scoped `settings.json` is never rewritten: `--model` overrules it per round and the file stays exactly as you edited it.
+
+The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above.
+
+**This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5). "A new run follows the new value, a running one is never switched underneath you" is the design, not an oversight.
+
 ⚠️ `skip` has no OS-level sandbox — the child can write anywhere the host user can, including outside the workspace — and the scoped login's OAuth token is sent to whatever `baseUrl` points at. Prefer `normal` when a delegation needs confinement; point `baseUrl` only at endpoints you trust.
 
-**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the permission mode (`skip`/`normal`, plugin config), whether a non-default endpoint is in force (following the provider's own resolution order — the config item wins over the host environment's `ANTHROPIC_BASE_URL`; hostname only), and the configured model (the scoped `settings.json`'s `model`; the CLI's own default model stays the CLI's business and is never guessed — no key, no field), and the CLI version (`claude --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/claude-code status` and the `LocalAgentStatus` Remote attach the same snapshot.
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the permission mode (`skip`/`normal`, plugin config), whether a non-default endpoint is in force (following the provider's own resolution order — the config item wins over the host environment's `ANTHROPIC_BASE_URL`; hostname only), and the configured model (the plugin config's `model` key first — it overrules the file on every argv — then the scoped `settings.json`'s `model`; the CLI's own default model stays the CLI's business and is never guessed — neither key, no field), and the CLI version (`claude --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/claude-code status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility
 

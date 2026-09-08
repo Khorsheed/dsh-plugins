@@ -51,13 +51,33 @@ Plugin config of its own (optional, in the profile patch layer):
 ```yaml
 - id: local-agent-kimi
   config:
+    model: kimi-code/k3        # optional: every delegation round starts the CLI with it; absent passes no model at all (below)
     thinkingEffort: high       # reasoning effort; written into a FRESH scoped config.toml ([thinking] effort and the model default_effort; low/high/max, default high). Provision-time only — an existing config is never overwritten
     live: false                # live driver: one resident kimi acp process per member, one session/prompt per round (runtime-level graceful session/cancel, push-triggered mirroring); off — or a channel that cannot come up — means the one-shot kimi -p path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
     liveMirrorGranularity: event  # live mirror granularity; token additionally appends ACP chunks as assistant/chunk (write amplification — opt-in)
 ```
 
-**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live, following the live preference), reasoning effort (read from the scoped config's `[thinking] effort`, falling back to the model's `default_effort`), whether tool use is auto-approved (the scoped config carries the `Bash(*)` allow rule), whether a custom endpoint is pinned (hostname only; the managed endpoint does not count as pinned), and the configured model (the scoped config's top-level `default_model`; absent when none is set — never guessed), and the CLI version (`kimi --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/kimi status` and the `LocalAgentStatus` Remote attach the same snapshot — this is the read side of web-eval frozen decisions 2 through 4.
+### Default model (`model`)
+
+⚠️ **This key's meaning changed.** It used to apply exactly once, when a FRESH scoped home was provisioned: it became the `default_model` of the written `config.toml`, and an existing config was left alone. It now applies to **every delegation round**. The provisioning mirror is kept: a fresh scoped home with no user config to mirror still gets its minimal managed config built around this value.
+
+**Absent = today's behavior.** Without this key the plugin adds no model flag to the argv at all: the scoped `config.toml`'s top-level `default_model` decides which model runs.
+
+**Set = every delegation round starts the CLI with it.** The value must name a model the scoped `config.toml` defines (a `[models."…"]` key) — `-m` resolves against kimi's own model table.
+
+| Drive | How it is passed |
+|---|---|
+| one-shot (default) | `kimi -m <model> -p <task>`; a resume round is `kimi -S <session> -m <model> -p <task>` — `-S` still leads and `-m` hugs `-p` (anything after `-p` is read as the prompt) |
+| resident (`live: true`) | `kimi acp` has **no** model flag, so the scoped `config.toml`'s top-level `default_model` is rewritten to the value before each runtime spawns. The write is in place and idempotent: only that one top-level line moves, while comments, model tables, providers and `[thinking]` stay byte-identical; with no config to write into, none is created (provisioning owns creation), the round still runs, and the model read-back is what surfaces a mismatch |
+
+So: the one-shot drive never touches your `config.toml`; the resident drive rewrites its `default_model` line.
+
+The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key.
+
+**This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5).
+
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live, following the live preference), reasoning effort (read from the scoped config's `[thinking] effort`, falling back to the model's `default_effort`), whether tool use is auto-approved (the scoped config carries the `Bash(*)` allow rule), whether a custom endpoint is pinned (hostname only; the managed endpoint does not count as pinned), and the configured model (the plugin config's `model` key first — it overrules the file every round — then the scoped config's top-level `default_model`; absent when neither names one — never guessed), and the CLI version (`kimi --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/kimi status` and the `LocalAgentStatus` Remote attach the same snapshot — this is the read side of web-eval frozen decisions 2 through 4.
 
 ## Compatibility
 

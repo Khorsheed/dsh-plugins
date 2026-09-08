@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-local-agent-model-key.md
+.agents/notes/implemented/feature/2026-09-08-local-agent-model-key.md: 8802cf9af31334f9e706323cc16f492f9c40231a
+.agents/notes/implemented/feature/2026-09-08-local-agent-model-key.zh.md: 597aa9fda71351891487746ff5a69cf99119cd35

@@ -666,3 +666,29 @@ describe('claude provider live resolver', () => {
     await m.driver.disposeAll()
   })
 })
+
+describe('claude live driver model key', () => {
+  it('set: the resident process starts with --model, before the stream-format flags', async () => {
+    const m = mount({ config: { model: () => 'claude-opus-5' } })
+    const child = Session.create(SessionId('child-claude-model'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('好') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual([
+      'claude', '-p', '--verbose',
+      '--model', 'claude-opus-5',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--dangerously-skip-permissions',
+    ])
+  })
+
+  it('a blank resolver leaves the argv exactly as it was', async () => {
+    const m = mount({ config: { model: () => '  ' } })
+    const child = Session.create(SessionId('child-claude-model-blank'))
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('好') }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.spawns[0]!.spec.argv).not.toContain('--model')
+  })
+})

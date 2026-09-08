@@ -34,6 +34,15 @@ export interface Config {
   /** Codex sandbox policy for `codex exec` / app-server threads; defaults to workspace-write. */
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   /**
+   * The model every delegation round starts the CLI with (`codex exec -m
+   * <model>`, and `-c model=…` for the resident app-server). Absent — the
+   * default — passes NO model flag at all: the scoped `config.toml`'s own
+   * `model`, or codex's built-in default with none, decides exactly as it did
+   * before this key existed. The settings card writes the same key, so a
+   * change applies to the next round without a reload.
+   */
+  model?: string
+  /**
    * Live driver: keep one resident `codex app-server` process per member and
    * drive turns over the app-server wire (runtime-level interrupt, push-mode
    * mirroring) instead of one `codex exec` process per round. Default off;
@@ -57,6 +66,7 @@ export const Config: z<Config> = z.object({
     z.const('workspace-write'),
     z.const('danger-full-access'),
   ]),
+  model: z.string(),
   live: z.boolean().default(false),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
@@ -72,10 +82,16 @@ export const DEFAULT_SANDBOX: NonNullable<Config['sandbox']> = 'workspace-write'
  */
 export const CODEX_SETTINGS_NAMESPACE = settingsNamespace('local-agent-codex')
 
-/** The card's schema; field defaults are the innermost layer below `base`. */
+/**
+ * The card's schema; field defaults are the innermost layer below `base`.
+ * `model` deliberately carries NO default: an unset key must resolve to
+ * undefined, which is what keeps the pre-key behavior byte-identical.
+ */
 const CODEX_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
 })
 
 /**
@@ -102,13 +118,24 @@ export function apply(ctx: Context, config: Config): void {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+        ...config.model === undefined ? {} : { model: config.model },
       },
     })
+    // The model is read PER ROUND, not captured at apply: the settings card
+    // writes the same namespace field, so a change has to reach the next
+    // delegation without a plugin reload — exactly like the live toggle.
+    // Blank is not a model: a whitespace-only value means "unset", which is
+    // the pre-key argv.
+    const resolveModel = (): string | undefined => {
+      const model = scope.get().model?.trim()
+      return model === undefined || model === '' ? undefined : model
+    }
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       sandbox,
+      model: resolveModel,
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
     })
-    const disposeProvider = ctx.subagents.registerProvider(new CodexCliProvider(ctx, sandbox, liveSwitch.resolve))
+    const disposeProvider = ctx.subagents.registerProvider(new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel))
     const disposeHarness = ctx.localAgent.register({
       name: 'codex',
       displayName: 'Codex',
@@ -124,16 +151,20 @@ export function apply(ctx: Context, config: Config): void {
       credentialStamp: codexCredentialStamp,
       logout: codexLogout,
       // The eval snapshot: the sandbox policy comes from the plugin config
-      // (it rides every spawn argv); effort, model, and endpoint are read
-      // live from the scoped config, which codex itself reads — a
-      // person-edited value is exactly what the rounds run with.
+      // (it rides every spawn argv); effort and endpoint are read live from
+      // the scoped config, which codex itself reads — a person-edited value
+      // is exactly what the rounds run with. The model follows the family's
+      // fixed order: the plugin config key (it overrides the file on every
+      // argv) before the scoped config's own `model`, absent when neither
+      // names one.
       effectiveSettings: async () => {
-        const [reasoningEffort, baseUrl, model, cliVersion] = await Promise.all([
+        const [reasoningEffort, baseUrl, scopedModel, cliVersion] = await Promise.all([
           readCodexReasoningEffort(homeDir).catch(() => undefined),
           readCodexBaseUrl(homeDir).catch(() => undefined),
           readCodexModel(homeDir).catch(() => undefined),
           codexCliVersion(ctx, homeDir).catch(() => undefined),
         ])
+        const model = resolveModel() ?? scopedModel
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined
         return {
           drive: scope.get().live ? 'live' : 'exec',

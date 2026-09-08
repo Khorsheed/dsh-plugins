@@ -40,10 +40,28 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec 策略:read-only | workspace-write | danger-full-access
+    model: gpt-5.2             # 可选:每轮委派以它起 CLI;不写就一个模型参数都不传(见下)
     live: false                # 长驻驱动:每成员常驻一个 codex app-server 进程,按轮发 turn(runtime 级优雅中断、事件推送镜像);关闭或通道不可用即回一次性 exec
     liveIdleMs: 1800000        # 长驻 runtime 空闲回收时限(默认 30 分钟)
     liveMirrorGranularity: event  # live 镜像粒度;token 额外写入 assistant/chunk 增量(写放大,opt-in)
 ```
+
+### 默认模型（`model`）
+
+**不写 = 今天的表现。**没有这个键时，本插件在 argv 上一个模型参数都不加：跑哪个模型由作用域 `config.toml` 的顶层 `model` 决定，它也没有时由 codex 自己的默认决定。
+
+**写了 = 每轮委派以它起 CLI。**新起一轮与续接（resume）同等对待：
+
+| 驱动 | 传法 |
+|---|---|
+| 一次性（默认） | `codex exec -m <model> …`；`-m` 是 `codex exec` 自己的选项，因此排在 `resume` 子命令之前（`codex exec resume` 不认自己的 `-m`） |
+| 常驻（`live: true`） | `codex app-server -c model="<model>" --stdio`；app-server 没有 `-m`，用 CLI 为此提供的进程级 `-c` 覆盖 |
+
+作用域 `config.toml` 不会被改写——`-m` 每轮覆盖它，文件仍是你编辑的样子。
+
+设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键，回到 YAML 组合基线、进而回到上面的「不写」。
+
+**这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。换句话说「切了新 run 照新走、进行中的 run 不被悄悄换掉」是设计出来的，不是漏掉的。
 
 ## 自定义端点
 
@@ -60,7 +78,7 @@ model_provider = "dsh-router"
 
 ⚠️ **凭据暴露**：作用域 `auth.json` token 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)、已配置模型(读作用域 config 的顶层 `model`,没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖文件;没有才读作用域 config 的顶层 `model`;都没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

@@ -103,6 +103,18 @@ export function kimiCliVersion(ctx: Context, homeDir: string): Promise<string | 
   })
 }
 
+/**
+ * The round's model as a run-spec fragment. No resolver, or a resolver with
+ * nothing configured, yields NO field — and an absent field leaves the spawn
+ * argv exactly the shape it had before the `model` key rode every round.
+ * @param resolve - the per-round model resolver, when the plugin passed one.
+ * @returns `{ model }` when one is configured, `{}` otherwise.
+ */
+function modelArg(resolve?: () => string | undefined): { model?: string } {
+  const model = resolve?.()?.trim()
+  return model === undefined || model === '' ? {} : { model }
+}
+
 export class KimiCliProvider implements SubagentProvider {
   readonly name = 'kimi-cli'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -113,10 +125,16 @@ export class KimiCliProvider implements SubagentProvider {
    *   generation's driver per member (the settings toggle swaps generations;
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
+   * @param model - resolver for the configured model, read PER ROUND so a
+   *   settings-card write takes effect on the next delegation without a
+   *   reload. Undefined (the resolver absent, or returning undefined) leaves
+   *   the argv exactly as it was before the key rode every round — the scoped
+   *   config.toml's `default_model` then decides, as it always did.
    */
   constructor(
     private readonly ctx: Context,
     private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
+    private readonly model?: () => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -291,6 +309,7 @@ export class KimiCliProvider implements SubagentProvider {
         env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
+        ...modelArg(this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -402,6 +421,7 @@ export class KimiCliProvider implements SubagentProvider {
           env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
+          ...modelArg(this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -462,6 +482,14 @@ export interface KimiCliRunSpec {
   readonly exec?: DelegationExecTarget | undefined
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
+  /**
+   * Model this round runs with, passed as `kimi -m <model>`. The value must
+   * name a model the scoped `config.toml` defines (a `[models."…"]` key) —
+   * kimi resolves the flag against its own model table. Absent means no `-m`
+   * on the argv at all: `default_model` decides, exactly as before the key
+   * rode every round.
+   */
+  readonly model?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -666,9 +694,14 @@ export function startKimiCliRun(
   // -S must precede -p: after -p, kimi parses the id as a command. The
   // recorded id may already carry the ACP directory prefix (a record
   // written by a live round): never double-prefix.
+  // The configured model rides `-m`, placed immediately before `-p` on both
+  // variants — after `-p` the CLI reads the next token as its prompt, and the
+  // resume id must still lead. Nothing configured appends nothing: the argv
+  // is then byte-for-byte the shape that shipped before the key rode rounds.
+  const modelArgv = spec.model === undefined ? [] : ['-m', spec.model]
   const argv = spec.resume === undefined
-    ? ['kimi', '-p', task]
-    : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, '-p', task]
+    ? ['kimi', ...modelArgv, '-p', task]
+    : ['kimi', '-S', spec.resume.cliSessionId.startsWith('session_') ? spec.resume.cliSessionId : `session_${spec.resume.cliSessionId}`, ...modelArgv, '-p', task]
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while
   // the CLI's own is the target's in-container workdir.
