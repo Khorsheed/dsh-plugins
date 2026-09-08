@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { componentsFor, hashComponents } from '../src/fingerprint.ts'
 import { LabService } from '../src/service.ts'
 import type {
   AcquireSpec, CollectOptions, EnvironmentFingerprint, FingerprintComponents, ManagedResource,
@@ -645,5 +646,46 @@ describe('status materialization tolerance', () => {
     // older readable one answers.
     expect(row?.taskHash).toBe('a'.repeat(8))
     expect(warnings.some((w) => w.includes('gone.json') && w.includes('skipped'))).toBe(true)
+  })
+})
+
+describe('fingerprintOf — the hashing rule as a pure verb', () => {
+  const SPEC = {
+    image: 'app:latest',
+    env: { CODEX_HOME: '/creds/codex', EVAL_SEED: '42' },
+    mounts: [{ source: '/host/creds', target: '/creds/codex' }, { source: '/host/in', target: '/input', readonly: true }],
+    network: 'eval-net',
+    user: '1000',
+  }
+
+  it('is literally the rule acquire hashes with — one hashing rule, not two', () => {
+    const { service } = makeService()
+    const components = componentsFor(SPEC, 'registry/app@sha256:fp')
+    expect(service.fingerprintOf(components)).toBe(hashComponents(components))
+  })
+
+  it('hashes a component set the caller derived — the case it exists for', () => {
+    const { service } = makeService()
+    const components = componentsFor(SPEC, 'registry/app@sha256:fp')
+    // Drop what one condition contributed; what is left is its environment class.
+    const klass = {
+      ...components,
+      mounts: components.mounts.filter((mount) => mount.target !== '/creds/codex'),
+      envKeys: components.envKeys.filter((key) => key !== 'CODEX_HOME'),
+    }
+    const derived = service.fingerprintOf(klass)
+    expect(derived).toMatch(/^lab-env:[0-9a-f]{64}$/)
+    expect(derived).not.toBe(service.fingerprintOf(components))
+    // It equals the fingerprint a unit acquired with exactly those components
+    // would carry — which is what makes a derived class comparable at all.
+    const without = componentsFor({ image: 'app:latest', env: { EVAL_SEED: '42' }, mounts: [{ source: '/host/in', target: '/input', readonly: true }], network: 'eval-net', user: '1000' }, 'registry/app@sha256:fp')
+    expect(derived).toBe(hashComponents(without))
+  })
+
+  it('is pure: it acquires nothing and calls no provider', async () => {
+    const { service, provider } = makeService()
+    service.fingerprintOf(componentsFor(SPEC, null))
+    expect(await service.status()).toEqual([])
+    expect(provider.terminated).toEqual([])
   })
 })

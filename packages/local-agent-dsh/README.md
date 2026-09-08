@@ -44,6 +44,12 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 | `liveIdleMs` | `1800000`（30 分钟） | 长驻 runtime 的空闲回收时限 |
 | `liveMirrorGranularity` | `event` | live 镜像粒度；`token` 额外把 `assistant/chunk` 增量写入子会话（写放大，opt-in） |
 
+### 默认模型：本 harness 没有 `model` 键
+
+同家族的 codex / claude-code / kimi 三个 provider 都有一个可选的 `model` 插件配置键，每轮委派以它起 CLI。**dsh 没有**，因为无头子 dsh 的启动面上没有可以按次指定模型的位置：`dsh --profile headless-local-agent-dsh` 只接受 `--session-id` / `--resume` / `--serve`，模型来自子实例自己 `agentDefaultModel` 服务的当前选择（headless bundle 的 agent loader 读的就是它）。给这个 harness 加一个 `model` 键就得先在 headless 侧开一条按次传模型的路，那是另一件事。
+
+**所以：dsh 换模型 = 换宿主实例的默认模型。**改完之后新起的委派轮次即按新模型跑。同样地，评测 run 的条件在建立时冻结：run 跑到一半换宿主默认模型，下一轮的模型回读会判为 misattributed 而让 run 失败（冻结决策 5）。
+
 **评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——无头子 dsh 复制的就是父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：无头子 dsh 没有沙箱或权限旋钮（web-eval 冻结基线称其无限制——字段缺位本身就是诚实的条件输入），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility

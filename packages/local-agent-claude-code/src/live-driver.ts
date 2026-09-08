@@ -293,6 +293,12 @@ export class ClaudeLiveDriver {
     private readonly config: Pick<Config, 'permissionMode' | 'baseUrl'> & {
       liveIdleMs?: number
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
+      /**
+       * Resolver for the configured model, read at each RUNTIME SPAWN (the
+       * resident process is where a live round's CLI starts). Absent, or
+       * resolving to nothing, leaves the spawn argv unchanged.
+       */
+      model?: () => string | undefined
     },
     private readonly timeouts: ClaudeLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -415,8 +421,13 @@ export class ClaudeLiveDriver {
     // its token lives with the process.
     const member = registerClaudeMemberRun(this.ctx, String(spec.childSession.id), spec.parentSessionId)
     const granularity = this.config.liveMirrorGranularity ?? 'event'
+    // The resident process serves one member, so the model resolved here binds
+    // that member's runtime; a later change reaches it when the runtime is next
+    // respawned (idle reclaim, crash, or a live toggle).
+    const model = this.config.model?.()?.trim()
     const argv = [
       'claude', '-p', '--verbose',
+      ...model === undefined || model === '' ? [] : ['--model', model],
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       ...(this.config.permissionMode ?? 'skip') === 'skip' ? ['--dangerously-skip-permissions'] : [],

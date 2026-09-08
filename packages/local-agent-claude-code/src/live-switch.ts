@@ -22,10 +22,18 @@ import type { ClaudeLiveMirrorGranularity } from './live-driver.ts'
 export interface ClaudeLiveSettings {
   live: boolean
   liveMirrorGranularity: ClaudeLiveMirrorGranularity
+  /** The configured model, when the card or the YAML base names one. */
+  model?: string
+  /** Model identifiers the card has saved before (its input's suggestions). */
+  recentModels?: readonly string[]
 }
 
 /** The Cordis-config inputs every driver generation shares. */
-type DriverBase = Pick<Config, 'permissionMode' | 'baseUrl'> & { liveIdleMs?: number }
+type DriverBase = Pick<Config, 'permissionMode' | 'baseUrl'> & {
+  liveIdleMs?: number
+  /** Per-spawn model resolver, handed to every driver generation. */
+  model?: () => string | undefined
+}
 
 export class LiveDriverSwitch {
   private liveOn = false

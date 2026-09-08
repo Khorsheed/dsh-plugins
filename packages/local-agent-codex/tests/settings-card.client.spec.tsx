@@ -204,3 +204,64 @@ describe('CodexSettingsCard', () => {
     // (Full login/poll/toast parity is pinned by the core package's block spec.)
   })
 })
+
+describe('CodexSettingsCard default-model block', () => {
+  it('shows the stored model and saves an edited one as the model key', async () => {
+    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
+    expect(input.value).toBe('model-a')
+    fireEvent.change(input, { target: { value: 'model-b' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
+    expect(screen.getByText(zh['model.applied'])).toBeTruthy()
+  })
+
+  it('trims the typed value rather than storing the spaces around it', async () => {
+    const harness = renderCard({})
+    await openCard()
+    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '  model-b  ' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
+  })
+
+  it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
+    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    await openCard()
+    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.unset).toHaveBeenCalledWith('model')
+    // An unset must not also write an empty string over the base.
+    expect(harness.scope.set).not.toHaveBeenCalledWith('model', '')
+  })
+
+  it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
+    const harness = renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+    })
+    await openCard()
+    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
+    expect(harness.scope.set).toHaveBeenCalledWith('recentModels', ['model-b', 'model-a'])
+  })
+
+  it('offers the saved suggestions without hardcoding any model catalog', async () => {
+    renderCard({
+      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
+    })
+    await openCard()
+    const input = screen.getByLabelText(zh['model.title'])
+    const list = document.getElementById(input.getAttribute('list') ?? '')
+    expect([...list!.querySelectorAll('option')].map(option => option.getAttribute('value')))
+      .toEqual(['model-a', 'model-b'])
+  })
+
+  it('save stays disabled while the field still matches what is stored', async () => {
+    renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+    await openCard()
+    const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
+    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})

@@ -38,6 +38,8 @@ interface Fixture {
   grading?: Record<string, string>
   /** Simulate a facade predating `datasetLayers` (it reports none at all). */
   hideDatasetLayers?: boolean
+  /** The descriptor's `register` entries — the REGISTER layout's re-homing. */
+  register?: Array<{ item: string; layer: string; files: string[] }>
 }
 
 /**
@@ -69,6 +71,7 @@ function fakeDatasets(fixture: Fixture): DatasetsFace {
       return {
         items: [{ id, layers: { verify: under(item, id) } }],
         ...(fixture.hideDatasetLayers === true ? {} : { datasetLayers: { verify: Object.keys(dataset).sort() } }),
+        ...(fixture.register === undefined ? {} : { descriptor: { id: 'fixture', register: fixture.register } }),
       }
     },
     async read(scope, query) {
@@ -461,5 +464,93 @@ describe('runProbes — the judging directory', () => {
     }, 'F2', { probeDir, cellDir: makeCell(root) })
     expect(existsSync(join(probeDir, itemVerifyRoot('F2')))).toBe(true)
     expect(dirname(join(probeDir, itemVerifyRoot('F2')))).toBe(join(probeDir, 'items', 'F2'))
+  })
+})
+
+describe('runProbes — the judging directory reproduces the repository layout', () => {
+  /**
+   * A probe that resolves the dataset's shared library by the SAME relative
+   * path that works in a checkout. Four levels up from
+   * `items/<id>/<layer dir>/probes/` is the dataset root under either layout —
+   * which is the whole point: the item must not need to know which layout it
+   * is in, and must not need a copy of the library.
+   */
+  const IMPORTING_PROBE = `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs'
+import { shared } from '../../../../verify/helpers/lib/kit.mjs'
+const args = process.argv.slice(2)
+const out = args[args.indexOf('--out') + 1]
+// cwd must be the item's verify root, whichever directory that item keeps it in.
+const task = readFileSync('./checklist.yml', 'utf8').split('task_id:')[1].trim()
+// …and a file beside the probe resolves relative to the probe itself.
+readFileSync(new URL('./sibling.txt', import.meta.url), 'utf8')
+writeFileSync(out, JSON.stringify([{
+  schema: 'dataseek.verdict/1', task, criterion: shared(), pass: true,
+  evidence: 'the shared library resolved by its repository-relative path', by: 'x',
+}]))
+`
+  const KIT = `export function shared() { return 'SHARED-1' }\n`
+  const CHECKLIST = 'task_id: P0-register\nschema_version: dataseek.verify/1\n'
+
+  it('materializes a register-homed layer at its real path, so ../../../.. reaches the shared library', async () => {
+    const root = scratch()
+    const probeDir = join(root, 'judge')
+    const result = await run({
+      // Display paths are ITEM-relative under the register layout: the file
+      // really lives at items/P0-register/checks/probes/link.mjs.
+      item: {
+        'P0-register/checks/checklist.yml': CHECKLIST,
+        'P0-register/checks/probes/link.mjs': IMPORTING_PROBE,
+        'P0-register/checks/probes/sibling.txt': 'beside the probe\n',
+      },
+      dataset: { 'helpers/lib/kit.mjs': KIT },
+      register: [{ item: 'P0-register', layer: 'verify', files: ['checks/*', 'checks/probes/*'] }],
+    }, 'P0-register', { probeDir, cellDir: join(root, 'cell') })
+
+    expect(result.outcomes.map(o => [o.probe, o.outcome])).toEqual([['checks/probes/link.mjs', 'judged']])
+    expect(result.verdicts[0]?.['criterion']).toBe('SHARED-1')
+    // `by` is the display path, unchanged: it names the verdict's origin, not
+    // a location on disk.
+    expect(result.verdicts[0]?.['by']).toBe('checks/probes/link.mjs')
+  })
+
+  it('materializes a convention layer at ITS real path, with the same probe unchanged', async () => {
+    const root = scratch()
+    const probeDir = join(root, 'judge')
+    const result = await run({
+      // Convention displays are LAYER-relative: items/P0-register/verify/probes/link.mjs.
+      item: {
+        'P0-register/checklist.yml': CHECKLIST,
+        'P0-register/probes/link.mjs': IMPORTING_PROBE,
+        'P0-register/probes/sibling.txt': 'beside the probe\n',
+      },
+      dataset: { 'helpers/lib/kit.mjs': KIT },
+    }, 'P0-register', { probeDir, cellDir: join(root, 'cell') })
+
+    expect(result.outcomes.map(o => [o.probe, o.outcome])).toEqual([['probes/link.mjs', 'judged']])
+    expect(result.verdicts[0]?.['criterion']).toBe('SHARED-1')
+  })
+
+  it('runs the dataset-level probe in the register item\'s own verify root', async () => {
+    const root = scratch()
+    const probeDir = join(root, 'judge')
+    // The shared probe reads ./checklist.yml — the item's, whichever directory
+    // that item keeps it in.
+    const SHARED_PROBE = `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs'
+const args = process.argv.slice(2)
+const task = readFileSync('./checklist.yml', 'utf8').split('task_id:')[1].trim()
+writeFileSync(args[args.indexOf('--out') + 1], JSON.stringify([{
+  schema: 'dataseek.verdict/1', task, criterion: 'X-shared', pass: false,
+  evidence: 'read the item checklist from the cwd', by: 'x',
+}]))
+`
+    const result = await run({
+      item: { 'P0-register/checks/checklist.yml': CHECKLIST },
+      dataset: { 'probes/shared.mjs': SHARED_PROBE },
+      register: [{ item: 'P0-register', layer: 'verify', files: ['checks/*'] }],
+    }, 'P0-register', { probeDir, cellDir: join(root, 'cell') })
+    expect(result.outcomes.map(o => [o.probe, o.outcome])).toEqual([['shared/probes/shared.mjs', 'judged']])
+    expect(result.verdicts[0]?.['task']).toBe('P0-register')
   })
 })

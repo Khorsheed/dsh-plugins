@@ -40,6 +40,15 @@ export interface Config {
    */
   permissionMode?: 'skip' | 'normal'
   /**
+   * The model every delegation round starts the CLI with (`claude -p --model
+   * <model>`, the same flag in resident mode). Absent — the default — passes
+   * NO model flag at all: the scoped `settings.json`'s own `model`, or the
+   * CLI's built-in default with none, decides exactly as it did before this
+   * key existed. The settings card writes the same key, so a change applies
+   * to the next round without a reload.
+   */
+  model?: string
+  /**
    * `ANTHROPIC_BASE_URL` for the child CLI; absent inherits the host
    * process environment (a user-level proxy like `https://proxy.example.com/anthropic`
    * is typically exported there). Set when delegations must route through a
@@ -76,6 +85,7 @@ export const Config: z<Config> = z.object({
     z.const('skip'),
     z.const('normal'),
   ]),
+  model: z.string(),
   baseUrl: z.string(),
   proxyUrl: z.string(),
   live: z.boolean().default(false),
@@ -93,10 +103,16 @@ export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 's
  */
 export const CLAUDE_SETTINGS_NAMESPACE = settingsNamespace('local-agent-claude-code')
 
-/** The card's schema; field defaults are the innermost layer below `base`. */
+/**
+ * The card's schema; field defaults are the innermost layer below `base`.
+ * `model` deliberately carries NO default: an unset key must resolve to
+ * undefined, which is what keeps the pre-key behavior byte-identical.
+ */
 const CLAUDE_SETTINGS_SCHEMA = z.object({
   live: z.boolean().default(false),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('event'),
+  model: z.string(),
+  recentModels: z.array(z.string()).default([]),
 })
 
 /**
@@ -124,14 +140,25 @@ export function apply(ctx: Context, config: Config): void {
       base: {
         ...config.live === undefined ? {} : { live: config.live },
         ...config.liveMirrorGranularity === undefined ? {} : { liveMirrorGranularity: config.liveMirrorGranularity },
+        ...config.model === undefined ? {} : { model: config.model },
       },
     })
+    // The model is read PER ROUND, not captured at apply: the settings card
+    // writes the same namespace field, so a change has to reach the next
+    // delegation without a plugin reload — exactly like the live toggle.
+    // Blank is not a model: a whitespace-only value means "unset", which is
+    // the pre-key argv.
+    const resolveModel = (): string | undefined => {
+      const model = scope.get().model?.trim()
+      return model === undefined || model === '' ? undefined : model
+    }
     const liveSwitch = new LiveDriverSwitch(ctx, scope, {
       ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
       ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
+      model: resolveModel,
     })
-    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve))
+    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, resolveModel))
     const disposeHarness = ctx.localAgent.register({
       name: 'claude-code',
       displayName: 'Claude Code',
@@ -163,16 +190,18 @@ export function apply(ctx: Context, config: Config): void {
       // The eval snapshot: the permission mode is the plugin config resolved
       // at apply (it selects the spawn flags); the endpoint mirrors the
       // provider's own resolution order — the config item wins over the host
-      // process environment's ANTHROPIC_BASE_URL. The model is read live
-      // from the scoped settings.json only — the CLI's own default model is
-      // never guessed, so nothing configured means no field.
+      // process environment's ANTHROPIC_BASE_URL. The model follows the
+      // family's fixed order: the plugin config key (it rides every argv)
+      // before the scoped settings.json's own `model`. The CLI's own default
+      // model is never guessed, so neither one configured means no field.
       effectiveSettings: async () => {
         const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
         const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
-        const [model, cliVersion] = await Promise.all([
+        const [scopedModel, cliVersion] = await Promise.all([
           readClaudeConfiguredModel(homeDir).catch(() => undefined),
           claudeCliVersion(ctx, homeDir).catch(() => undefined),
         ])
+        const model = resolveModel() ?? scopedModel
         return {
           drive: scope.get().live ? 'live' : 'exec',
           permissionMode,

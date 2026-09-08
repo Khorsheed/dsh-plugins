@@ -45,6 +45,12 @@ The scoped home (`$DSH_HOME/local-agent/dsh`) is kept on purpose — it holds th
 | `liveIdleMs` | `1800000` (30 min) | idle lifetime of a resident runtime before reclaim |
 | `liveMirrorGranularity` | `event` | live mirror granularity; `token` additionally appends `assistant/chunk` deltas to the child session (write amplification — opt-in) |
 
+### Default model: this harness has no `model` key
+
+The family's other three providers — codex, claude-code, kimi — each accept an optional `model` plugin-config key that starts the CLI on every delegation round. **dsh does not**, because the headless sub-dsh exposes no place to name a model per launch: `dsh --profile headless-local-agent-dsh` accepts only `--session-id`, `--resume` and `--serve`, and the model comes from the current selection of the sub-instance's own `agentDefaultModel` service (which is what the headless bundle's agent loader reads). Giving this harness a `model` key would mean first opening a per-launch model path on the headless side — a separate piece of work.
+
+**So: changing the model for dsh means changing the host instance's default model.** Delegation rounds started after that change run the new model. The evaluation rule is the same as for the other three: a run freezes its condition at setup, so switching the host default mid-run is caught by the next round's model read-back and fails the run as misattributed (frozen decision 5).
+
 **Evaluation snapshot (`effectiveSettings`).** The harness's fairness snapshot carries the drive (exec/live), the no-pinned-endpoint flag, the CLI version (the very launch argv a delegation spawns, asked `--version`, cached against that entry script's path + mtime — the sub-dsh replicates the parent instance's own build), and the configured model (the host `agentDefaultModel` selection the sub-dsh inherits, formatted `provider/model`; when the service is absent or the selection unreadable the field drops out — never guessed): a headless sub-dsh has no sandbox or permission knob (the web-eval frozen baseline calls this harness unrestricted — the absent fields are themselves the honest condition-hash input), and the endpoint is the host instance's model config, which this provider never overrides. `/dsh status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility

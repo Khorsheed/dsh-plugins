@@ -7,11 +7,12 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { parseComponents } from './fingerprint.ts'
+import { hashComponents, parseComponents } from './fingerprint.ts'
 import { removeUnitState, writeUnitState } from './state.ts'
 import {
   DEFAULT_WORKSPACE,
-  type AcquireSpec, type ArchiveOptions, type CheckpointOptions, type CollectOptions, type Lab,
+  type AcquireSpec, type ArchiveOptions, type CheckpointOptions, type CollectOptions,
+  type FingerprintComponents, type Lab,
   type MissionFace, type PopulateOptions, type PopulateResult, type ReleaseOptions, type UnitInfo,
   type UnitProvider, type UnitStatus, type VerifyOptions, type VerifyResult,
 } from './types.ts'
@@ -303,6 +304,17 @@ export class LabService implements Lab {
     }
     if (unitId !== undefined && rows.length === 0) throw new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
     return rows
+  }
+
+  /**
+   * The hashing rule, as a pure verb (see {@link Lab.fingerprintOf}). It is
+   * literally the function `acquire` hashes with, so a caller's derived
+   * fingerprint and a unit's own are comparable by construction.
+   * @param components - any component set.
+   * @returns `lab-env:<sha256 hex>`.
+   */
+  fingerprintOf(components: FingerprintComponents): string {
+    return hashComponents(components)
   }
 
   /** Registration writes warn-and-skip: they never block the resource verb. */

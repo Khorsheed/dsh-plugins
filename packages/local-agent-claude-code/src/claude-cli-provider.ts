@@ -173,6 +173,18 @@ export function claudeCliVersion(ctx: Context, homeDir: string): Promise<string 
   })
 }
 
+/**
+ * The round's model as a run-spec fragment. No resolver, or a resolver with
+ * nothing configured, yields NO field — and an absent field leaves the spawn
+ * argv exactly the shape it had before the `model` key existed.
+ * @param resolve - the per-round model resolver, when the plugin passed one.
+ * @returns `{ model }` when one is configured, `{}` otherwise.
+ */
+function modelArg(resolve?: () => string | undefined): { model?: string } {
+  const model = resolve?.()?.trim()
+  return model === undefined || model === '' ? {} : { model }
+}
+
 export class ClaudeCliProvider implements SubagentProvider {
   readonly name = 'claude-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -183,12 +195,18 @@ export class ClaudeCliProvider implements SubagentProvider {
    *   generation's driver per member (the settings toggle swaps generations;
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
+   * @param model - resolver for the configured model, read PER ROUND so a
+   *   settings-card write takes effect on the next delegation without a
+   *   reload. Undefined (the resolver absent, or returning undefined) leaves
+   *   the argv exactly as it was before the key existed — the scoped
+   *   `settings.json`'s own `model` then decides, as it always did.
    */
   constructor(
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
     private readonly baseUrl?: string,
     private readonly live?: ClaudeLiveDriver | ((childSessionId: string) => ClaudeLiveDriver | undefined),
+    private readonly model?: () => string | undefined,
   ) {}
 
   /** Resolve the live driver for one round's member, if live is on for it. */
@@ -324,6 +342,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
+        ...modelArg(this.model),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -431,6 +450,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: effectiveBaseUrl,
           permissionMode: this.permissionMode,
+          ...modelArg(this.model),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {
@@ -492,6 +512,13 @@ export interface ClaudeCliRunSpec {
   readonly endpointLabel?: string | undefined
   /** Permission mode passed to `claude -p`. */
   readonly permissionMode: 'skip' | 'normal'
+  /**
+   * Model this round runs with, passed as `claude -p --model <model>`. Absent
+   * means no `--model` on the argv at all: the scoped `settings.json`'s own
+   * `model` (or, with none, the CLI's built-in default) decides, exactly as
+   * before the key existed.
+   */
+  readonly model?: string | undefined
   /** Subprocess termination grace passed to the shared process-tree owner. */
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
@@ -973,14 +1000,20 @@ export async function startClaudeCliRun(
     // entries — without the `--` separator it swallows the task itself and
     // the CLI exits 1 with "Input must be provided … as a prompt argument".
     : ['--mcp-config', spec.member.mcpConfig, '--allowedTools', spec.member.allowedTool, '--']
+  // The configured model rides `--model`, which claude accepts on every one of
+  // the four argv variants below. It goes BEFORE the member flags because
+  // `--allowedTools` is variadic and its `--` terminator closes the flag
+  // section. Nothing configured appends nothing: each variant is then
+  // byte-for-byte the shape that shipped before the key existed.
+  const modelArgv = spec.model === undefined ? [] : ['--model', spec.model]
   // --verbose is required by the CLI when --print and stream-json combine.
   const argv = spec.resume === undefined
     ? spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', ...memberArgv, task]
-      : ['claude', '-p', '--verbose', '--output-format', 'stream-json', ...memberArgv, task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', ...modelArgv, '--output-format', 'stream-json', ...memberArgv, task]
+      : ['claude', '-p', '--verbose', ...modelArgv, '--output-format', 'stream-json', ...memberArgv, task]
     : spec.permissionMode === 'skip'
-      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
-      : ['claude', '-p', '--verbose', '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
+      ? ['claude', '-p', '--dangerously-skip-permissions', '--verbose', ...modelArgv, '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
+      : ['claude', '-p', '--verbose', ...modelArgv, '--resume', spec.resume.cliSessionId, '--output-format', 'stream-json', ...memberArgv, task]
 
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while

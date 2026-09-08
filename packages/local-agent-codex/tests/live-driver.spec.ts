@@ -878,3 +878,25 @@ describe('codex provider live resolver', () => {
     await m.driver.disposeAll()
   })
 })
+
+describe('codex live driver model key', () => {
+  it('unset: the app-server argv is exactly the pre-key shape', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-model-off'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: '好', phase: 'final_answer' }] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '--stdio'])
+    await run.dispose()
+  })
+
+  it('set: the resident app-server starts with -c model=… (it has no -m)', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', model: () => 'gpt-5.2' } })
+    const child = Session.create(SessionId('child-model-on'))
+    m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: '好', phase: 'final_answer' }] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    expect(m.spawns[0]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="gpt-5.2"', '--stdio'])
+    await run.dispose()
+  })
+})

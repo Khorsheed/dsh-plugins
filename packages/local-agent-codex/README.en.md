@@ -40,10 +40,28 @@ Optional, in the profile patch layer:
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec policy: read-only | workspace-write | danger-full-access
+    model: gpt-5.2             # optional: every delegation round starts the CLI with it; absent passes no model flag at all (below)
     live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
     liveMirrorGranularity: event  # live mirror granularity; token additionally appends assistant/chunk deltas (write amplification — opt-in)
 ```
+
+### Default model (`model`)
+
+**Absent = today's behavior.** Without this key the plugin adds no model flag to the argv at all: the scoped `config.toml`'s top-level `model` decides which model runs, and codex's own default decides when that is missing too.
+
+**Set = every delegation round starts the CLI with it.** A fresh round and a resume round are treated alike:
+
+| Drive | How it is passed |
+|---|---|
+| one-shot (default) | `codex exec -m <model> …` — `-m` is an option of `codex exec` itself, so it precedes the `resume` subcommand (`codex exec resume` declares no `-m` of its own) |
+| resident (`live: true`) | `codex app-server -c model="<model>" --stdio` — the app-server has no `-m`, so the model rides the process-level `-c` override the CLI documents for this |
+
+The scoped `config.toml` is never rewritten: `-m` overrules it per round and the file stays exactly as you edited it.
+
+The settings card's "Default model" writes the same key: a free-text input (no model catalog is built in) plus previously saved values as suggestions. Saving applies to the **next** round, leaves rounds in flight alone, and needs no reload. Clearing the field and saving unsets the key, which falls back to the YAML composition base and from there to "absent" above.
+
+**This is not an evaluation gap.** A run freezes its condition at setup: change the key mid-run and the next round's model read-back sees declared ≠ observed and fails the run as misattributed (frozen decision 5). "A new run follows the new value, a running one is never switched underneath you" is the design, not an oversight.
 
 ## Custom endpoint
 
@@ -60,7 +78,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ⚠️ **Credential exposure**: the scoped `auth.json` token is sent to whatever endpoint serves the request — only use endpoints you control or trust. Each delegation logs the effective endpoint at info level.
 
-**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), whether a custom endpoint is pinned (read from the scoped config's provider, hostname only), the configured model (the scoped config's top-level `model`; absent when none is set — never guessed), and the CLI version (`codex --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), whether a custom endpoint is pinned (read from the scoped config's provider, hostname only), the configured model (the plugin config's `model` key first — it overrules the file on every argv — then the scoped config's top-level `model`; absent when neither names one — never guessed), and the CLI version (`codex --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility
 

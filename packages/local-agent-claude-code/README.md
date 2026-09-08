@@ -33,14 +33,27 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
 bundle 行接受这些可选字段:
 
 - `permissionMode`——`skip`(默认)传 `--dangerously-skip-permissions`,子代理写文件无需审批;`normal` 不传,需审批的动作(如写文件)被拒绝。
+- `model`——每轮委派以它起 CLI(`claude -p --model <模型>`);不写就一个模型参数都不传。见下。
 - `baseUrl`——为子 CLI 设置 `ANTHROPIC_BASE_URL`(例如自部署路由器或代理);缺省继承宿主进程环境。配置优先于环境。
 - `live`——长驻驱动:每成员常驻一个 stream-json 进程(`--input-format stream-json`),按轮发 stdin 消息(runtime 级优雅中断 control interrupt、同形推送流);关闭或通道不可用即回一次性 `claude -p`。
 - `liveIdleMs`——长驻 runtime 空闲回收时限(默认 30 分钟)。
 - `liveMirrorGranularity`——live 镜像粒度(默认 `event`);`token` 额外以 `--include-partial-messages` 拉起并把增量写成 `assistant/chunk`(写放大,opt-in)。
 
+### 默认模型（`model`）
+
+**不写 = 今天的表现。**没有这个键时，本插件在 argv 上一个模型参数都不加：跑哪个模型由作用域 `settings.json` 的 `model` 决定，它也没有时由 claude 自己的默认决定（本插件从不猜它是什么）。
+
+**写了 = 每轮委派以它起 CLI。**新起一轮与续接（resume）、一次性与常驻（`live: true`）四种 argv 都带上 `--model <模型>`，位置在成员通道的 `--allowedTools …--` 之前——那个旗标是变长的，`--` 之后就是任务文本。
+
+作用域 `settings.json` 不会被改写——`--model` 每轮覆盖它，文件仍是你编辑的样子。
+
+设置卡「默认模型」写的是同一个键：一个自由输入框（不内置任何模型目录）加上此前存过的值作为候选，保存即生效于**下一轮**委派，进行中的轮次不受影响，不需要重载。清空后保存即取消该键，回到 YAML 组合基线、进而回到上面的「不写」。
+
+**这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。「切了新 run 照新走、进行中的 run 不被悄悄换掉」是设计出来的，不是漏掉的。
+
 ⚠️ `skip` 没有 OS 级沙箱——子进程可以写宿主用户能写的任何地方,包括工作区之外;作用域登录的 OAuth token 会发送给 `baseUrl` 指向的端点。委派需要限制时改用 `normal`;`baseUrl` 只指向你信任的地址。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、permissionMode(skip/normal,插件配置)、端点是否固定(按 provider 的解析顺序——配置项优先于宿主进程环境的 `ANTHROPIC_BASE_URL`,只报主机名)、已配置模型(读作用域 `settings.json` 的 `model`;CLI 自身的默认模型由 CLI 决定,绝不猜值,没有就不给字段)、CLI 版本(`claude --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/claude-code status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、permissionMode(skip/normal,插件配置)、端点是否固定(按 provider 的解析顺序——配置项优先于宿主进程环境的 `ANTHROPIC_BASE_URL`,只报主机名)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖文件;没有才读作用域 `settings.json` 的 `model`;CLI 自身的默认模型由 CLI 决定,绝不猜值,都没有就不给字段)、CLI 版本(`claude --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/claude-code status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

@@ -353,6 +353,25 @@ export interface Lab {
    * @returns matching unit statuses.
    */
   status(unitId?: string): Promise<UnitStatus[]>
+  /**
+   * Hash a component set into a fingerprint string — the same function
+   * `acquire` and the CLI use, exposed because a caller sometimes needs to
+   * ask what a DIFFERENT component set would hash to.
+   *
+   * The evaluation orchestrator is the case this exists for: comparing cells
+   * needs "the same environment as the plan declared", not "the same unit",
+   * and those differ by exactly the components each condition contributes (its
+   * own credential mount, its own env variable). It takes the unit's
+   * components, drops those, and asks for the hash of what is left. Doing that
+   * arithmetic here rather than re-implementing the canonicalization keeps one
+   * hashing rule in the repository — a second copy would drift the first time
+   * a component is added.
+   *
+   * Pure: no unit, no provider, no daemon.
+   * @param components - any component set, not necessarily a live unit's.
+   * @returns `lab-env:<sha256 hex>` over the canonical component JSON.
+   */
+  fingerprintOf(components: FingerprintComponents): string
 }
 
 /**

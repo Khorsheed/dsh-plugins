@@ -19,7 +19,7 @@
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EvalDiagnostic } from './validate.ts'
-import type { LabAcquireSpec } from './faces.ts'
+import type { LabAcquireSpec, LabFingerprintComponents } from './faces.ts'
 
 /** The in-unit working directory every cell's workspace is populated into. */
 export const UNIT_WORKSPACE = '/workspace'
@@ -299,4 +299,73 @@ export function checkCredentialsDir(dir: string, conditionId: string, uid: numbe
       + ' — accepted because the runtime may remap bind-mount ownership to the container user'
   }
   return check
+}
+
+/**
+ * The components one CONDITION contributes to its unit — the ones the
+ * environment class subtracts.
+ *
+ * They are not guessed from the components: they are read back from the same
+ * two places {@link acquireSpecFor} put them, so the subtraction is exact by
+ * construction rather than by pattern. The condition's declared `env.keys`
+ * ride along because a condition that injects its own variables is still the
+ * same environment class as one that injects different ones — the run is
+ * comparing what the PLAN set up, and each subject's credentials are part of
+ * the subject, not of the environment.
+ */
+export interface ConditionOwnedComponents {
+  /** In-container mount targets this condition brought (its scoped home). */
+  mountTargets: string[]
+  /** Env variable NAMES this condition brought (scoped-home var, harness extras, declared keys). */
+  envKeys: string[]
+}
+
+/**
+ * What this condition contributed to its unit's fingerprint.
+ * @param plan - the resolved cell unit plan.
+ * @param condition - the condition document (for its declared `env.keys`).
+ */
+export function conditionOwnedComponents(plan: CellUnitPlan, condition: unknown): ConditionOwnedComponents {
+  return {
+    mountTargets: [plan.scopedHome.container],
+    envKeys: [...new Set([plan.scopedHome.var, ...Object.keys(plan.extraEnv), ...envKeysOf(condition)])].sort(),
+  }
+}
+
+/**
+ * The environment CLASS of a unit: its components with every condition-owned
+ * mount and env key removed.
+ *
+ * This is what «环境一致» has to compare. A unit's own fingerprint answers
+ * "is this the same unit environment", and the answer for four harnesses in
+ * one run is always no — each mounts its own credential directory at its own
+ * path under its own variable (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`,
+ * `KIMI_CODE_HOME`, `DSH_HOME`), so four cells produce four fingerprints and
+ * the invariant reads `violated` on a run whose environment is, in every
+ * sense the comparison cares about, identical. The class answers the question
+ * the report is actually asking: same image, same ceilings, same network,
+ * same user, same plan-level mounts and variables.
+ *
+ * The subtraction never touches `version`: it is the same hashing rule over a
+ * smaller component set, not a new one.
+ * @param components - the unit's own components.
+ * @param owned - what this condition contributed.
+ * @returns the class's component set, and what was removed (for the report).
+ */
+export function environmentClassComponents(
+  components: LabFingerprintComponents,
+  owned: ConditionOwnedComponents,
+): { components: LabFingerprintComponents; excluded: { mounts: string[]; envKeys: string[] } } {
+  const targets = new Set(owned.mountTargets)
+  const keys = new Set(owned.envKeys)
+  const removedMounts = components.mounts.filter(mount => targets.has(mount.target)).map(mount => mount.target)
+  const removedKeys = components.envKeys.filter(key => keys.has(key))
+  return {
+    components: {
+      ...components,
+      mounts: components.mounts.filter(mount => !targets.has(mount.target)),
+      envKeys: components.envKeys.filter(key => !keys.has(key)),
+    },
+    excluded: { mounts: removedMounts.sort(), envKeys: removedKeys.sort() },
+  }
 }

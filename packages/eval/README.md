@@ -70,6 +70,31 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 6. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
 7. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
 
+### 「环境一致」比的是环境类
+
+`refs.fingerprint` 记的不是单元的完整指纹，而是**环境类**：单元的复合指纹分量减去**该条件自有的那几项**——它自己的作用域目录挂载 target、指向它的变量名、该 harness 的额外变量（dsh 的 `NODE_OPTIONS`）、以及条件 `env.keys` 里声明的键。剩下的是计划声明的那部分：image、资源上限、network、user、计划级挂载与 env 键。
+
+不这么做的话这条不变量对本 profile 存在的理由恰好不成立：四家各挂自己的凭证目录、各设自己的变量（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），同一个 run 必然四个指纹，报告按既有规则记 `violated` 并拒绝比较——而那四个环境在比较关心的每一个意义上都是同一个。
+
+减法是**照着造 spec 的那段代码反着读**出来的，不是从分量里猜的：`acquireSpecFor` 放进去哪几项，`conditionOwnedComponents` 就取回哪几项。哈希规则不复刻——环境类经 `lab.fingerprintOf(components)` 算，与 `acquire` 用的是同一个函数，因此派生出来的类与单元自己的指纹天然可比。标签仍是 `lab-env:<sha256>`，分量 `version` 不变：它只是同一套算法作用在少了几项的分量上。
+
+单元自己的完整指纹并没有丢：它记在该格 orchestrator ns 的 `unit` 注解里（连同被排除的项），也在 lab 写的 archive `manifest.json` 里。它**不进 refs**——mission 的 refs 只有 `resource` / `fingerprint` / `sessions` 三个键，加第四个是 mission 的改动，不属于本包。报告在不变量那一行下面把每格的单元指纹与排除项逐格列出，读者能看见差在哪儿，而不用信。
+
+### 判定目录按题库的真实相对路径物化
+
+题集级 verify 层是真目录（`datasets/<id>/verify/`），因此落在 `<判定目录>/verify/…`。**item 的层**是两种布局分岔的地方，错一层的代价正好是一个目录：
+
+- 约定式：文件在 `items/<id>/verify/`，display 路径相对它（`probes/x.mjs`）；
+- register：descriptor 把 item 目录里的自由文件归位到层角色，display 路径是 **item 相对**的（`checks/probes/x.mjs`），文件真的在 `items/<id>/checks/probes/x.mjs`。
+
+两种都按 `items/<id>/verify/<display>` 物化，register 的题就深了一层，`../../../../verify/helpers/lib` 落到判定根之外——题内探针只能自带一份题集级 lib 的副本。现在每个文件落在它在题库里的真实相对目录：哪些 display 是被 register 归位过的，从 `datasets.show` 顺带返回的 descriptor 里读 `register` 判断（面上是可选字段，不报的门面退回约定式，与从前相同）。探针的 `by` 仍是 display 路径——那是判定的出处，不是磁盘上的位置。
+
+探针的 cwd 是**该题 checklist 所在的目录**：约定式是 `items/<id>/verify`，register 归位后是 `items/<id>/checks`，两种布局下共享探针读到的都是这道题自己的 `./checklist.yml`。没有 checklist 的题回退到约定根。
+
+### 一份物化哈希，两条路径
+
+`materialization.json` 两条路径都由编排器按同一套算法算（排序后逐文件 sha256 再整体 sha256），因此同题同 commit 在宿主与容器里得到**同一个数**。此前容器路径记的是 lab populate 的 manifest 哈希，「题面一致」这条不变量只能在一条路径内部回答。lab 自己那份哈希没有丢，它换了个名字单独存在该 attempt 的 `populate-manifest.json` 里——那是另一个主张（「拷进单元的是这份」），不是同一个数的第二种写法。
+
 ### 目录与凭证约定
 
 - 凭证目录一家一个：`<--creds-root>/<条件 id>`，bind 到该条件 `unit.scopedHome.container` 声明的容器内路径。**宿主路径不进 plan、不进 condition**——条件文件换台机器照跑，宿主一侧是运维事实。
@@ -88,8 +113,8 @@ plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者�
 ### 已知取舍
 
 - **串行**。容器路径固定 `concurrency: 1`（显式给 >1 会被拒），并发单元归 I4。`acquire` 撞上 `maxConcurrentUnits` 当缺陷报出来，不排队。
-- **多家横比时指纹不同**。复合指纹含 env 键名，而每家的作用域目录变量不同（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / …），所以四家跑同一个 run 时「环境一致」会按既有规则记 `violated`。这是如实的：四个环境确实不同。要让它成立需要指纹分量或报告口径改一次，属 I4。
-- **两条路径的物化哈希算法不同**：宿主路径是编排器自己的（`path\0sha\0` 串联），容器路径是 lab 的（`path  sha` 换行连接）。同一 run 内可比（不变量只问「同题的格子是否一致」），跨路径不可比。报告两种字段名都读（`sha256` 与 `sha`）。
+- **多家横比的指纹问题已由环境类解决**（见上）：`refs.fingerprint` 记环境类，单元自己的指纹记在 `unit` 注解与归档 manifest 里。
+- **物化哈希两条路径统一**（见上）：`materialization.json` 由编排器按同一算法算，lab 的那份另存 `populate-manifest.json`。报告仍兼容旧 bundle 的 `sha` 字段。
 
 ## 就绪检查：每个条件一次真委派
 
