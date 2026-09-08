@@ -194,20 +194,20 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T16 ✅ | 运维 | 验证题集级镜像构建；四家 Linux CLI 安装方式实测；本地包镜像与白名单代理；各家凭证可写卷；`versions.lock` 填实 | 无 | 题库 `i3-env` `4004dfc`（并入 i1-walk `714b793`）；镜像 `sha256:ed988b33…`（linux/arm64）；`env/README` 与 `docs/i3-env-log.md`；dsh 是唯一被容器出网打破的选手 |
 | T17 | 代码 | local-agent：容器内 exec 包装（exec 传输层；「CLI 驱动抽成独立包」推迟，理由进 Agent Note） | T16 T18b | |
 | T18 ✅ | 代码 | lab：复合指纹（镜像 digest + 资源限制 + 挂载布局 + env 键），分量可读 | 无 | 合入 main `b7dc599`；`lab-env:<sha256>` + 分量 JSON；acquire 真传 `--cpus` / `--memory` |
-| T18b | 代码 | lab：`network`（挂指定网或 none）、volume 挂载、`user`——T16 的三条硬缺口 | T18 | |
+| T18b ✅ | 代码 | lab：`network`（挂指定网或 none）、volume 挂载、`user`——T16 的三条硬缺口 | T18 | 合入 main `68e23d2`；三分量都真加到容器上再进指纹，未声明的分量不入哈希（旧指纹不变）；`--volume` 与 `--mount` 分立；pid 目录以 root 建 1777，非 root 单元才起得来 |
 | T19 ✅ | 数据 | 探针：F2 / F3 阶段一二的 objective 判据写成 `.mjs` 探针；F2 阶段三的 verify 探针与 `verify/helpers/` | 无 | 题库 `i3-probes` `050e22d`（并入 i1-walk `d3ee214`）；25 条判定过 schema；3 条 objective 判据无探针，理由在 `docs/probes-selftest.md` |
 | T19b | 数据 | F3 补一条与 A-N2 同形的 objective 负分判据；两题 core/bonus 计数对齐 standards.yml；探针改出 T24 定下的比例字段 | T24 | |
 | T20 | 代码 | eval：容器路径（acquire / populate / checkpoint / verify / archive 交 lab；销毁路径唯一） | T17 T18b T28 | |
 | T21 ✅ | profile | eval preset：不挂 Bash 与 docker | 无 | 合入 main `e1e12f1`；工具 43 → 39，差集恰为 bash / exit_plan_mode / ralph / workflow；四个 `subagent_<harness>` 预设挑不掉 → T27 |
 | T22 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | |
-| T23 | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | |
-| T24 | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现；**追加**：比例字段进 §6.5 | 无 | 协议 §6.5 加一段说明 |
+| T23 ✅ | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | 合入 main `0cd2139`；finalize 不强推、不碰 archived 以下；就绪检查每条件一次真委派，失败拒整 run；效率表只计已完成格子（pilot A 的 dsh-exec 21.0 → 11.9 min）；子集记 `run.meta.subset`；validate 对 expectedNs 出四种 warning；judge.ts 零改动 |
+| T24 ✅ | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现；**追加**：比例字段进 §6.5 | 无 | 合入 main `979e624`；协议 v1-rev4：极性归 rubric、`ratio: {passed, total}` 进 §6.5、§6.7 禁止 evidence 前缀；导出写 `report/rubric-weights.json`（只有编号与数字）；报告主轴改「得分判据数」+ 缺陷清单表；题库三份 rubric 审计零改动 |
 | T25 | 代码 | local-agent：`effectiveSettings.cliVersion` 填实（G1）；codex 回读在并发 run 里失效的原因与修复（G14）；status 增加「记录在、活性未知」一档（G4 的 local-agent 半边） | 无 | |
 | T26 | 代码 | datasets：`validate` 增加可判性检查（G6）——rubric 有叶子、每个 kind 在该题上有判定源 | 无 | |
 | T27 | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | |
 | T28 | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | |
 
-第一波（2026-09-08 发出）：T16、T18、T19、T21 已验收；T23、T24、T25、T26 在跑。第二波（可即发，互不依赖）：T17、T18b、T27、T28；T19b 等 T24 回报后发。T20 在 T17、T18b、T28 合入后发；T22 收尾。
+第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24 已验收；T25、T26 在跑。第二波（2026-09-08 发出）：T18b 已验收；T17、T27、T28 在跑；T19b 可发。T20 在 T17、T28 合入后发；T22 收尾。
 
 **第一波验收（2026-09-08）**：T21（`e1e12f1`）与 T18（`b7dc599`）合入 main，两条分支文件不重叠；合并态 gate 通过，lab 包 100 个测试在验收机上重跑全绿。T16 与 T19 在题库仓库：`i3-env`（`4004dfc`）与 `i3-probes`（`050e22d`）经临时 worktree 并入 `i1-walk`（`714b793`、`d3ee214`），未动共享检出的 HEAD；T16 的提交全文 grep 过凭据形状，无命中。
 
@@ -217,6 +217,12 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 - **T19**：16 次探针调用 25 条判定全过 VERDICT_SCHEMA，验收机上重跑 run-all 结果一致；rubric 只动 evidence 与 note，YAML 逐条比对过。区分度如方法论 §5b 所料——完整样本上 objective 判据全 true；但 A-N2 的底层取值三格不同（1/8、1/5、0/6），F3 没有同形判据接住，记 T19b。探针契约六条不足：题集级 verify 层不被物化、退出码无「判不了」态、§6.7 先校验后回填的顺序矛盾——三条归 T28；verdict 无数值字段归 T24 追加（比例进契约，不解析 evidence 散文）；两条 objective 判据的可判性与 kind 不匹配、两题 core/bonus 计数漂移归 T19b。
 
 两条流程发现：题库仓库是多 agent 共享检出，T16 中途被 T19 的 `git checkout` 切走 HEAD、未提交改动漂到别人分支上，抢救后改用 worktree——自此题库任务一律 worktree，写进 I3 通用约束；协调者上一轮给 I3 编的 T23–T26 与 I4 既有编号撞车，本次把 I4–I6 的任务顺延为 T29–T44（尚未派发，无人受影响），I3 新增 T27、T28 与 T18b、T19b。
+
+**第二波验收（2026-09-08）**：T18b（`68e23d2`）、T23（`0cd2139`）、T24（`979e624`）依次合入 main。T18b 与另两条文件不重叠；T23 与 T24 在 `packages/eval` 的四处冲突（report.ts 两边各加接口；README 双语同两条要点两边各改一半；sidecar），协调者按两边保留合并——results.jsonl 行取 T24 的字段清单，summary.md 行取 T24 的「得分判据数」加 T23 的「只计已完成格子」与子集句，sidecar 按合并后的 blob 重录；合并态 eval 253 个测试全绿（189 + T23 的 40 + T24 的 24），lab 120 个在验收机上重跑全绿。题库侧 T24 零提交：`i3-rubric-weights` 停在 i1-walk 的祖先上，已删。
+
+- **T18b**：三个分量都是「真加到容器上再哈希」（`--network` / `--user` / `type=volume`），容器内实测 uid、网段地址、默认路由 0 条、卷已挂，与 docker inspect 对上。「未声明的分量不入哈希原像」取代了 T18「定义变宽必改所有指纹」的立场：两个 v1 指纹作字面基线钉进测试，改前改后相等；T18 的 Note 与 README 加了前向指针而不改写 rationale。代价写在 README——`network: null` 分不清「没人管过」与「确认过默认 bridge」，要断言隔离就得显式声明。顺带修了非 root 单元的硬伤：pid 目录原以容器用户建，非 root 建不了 /run 下的东西，每次非 root acquire 都会挂在那一行；现以 `exec --user 0` 建并置 1777，daemon 拒绝时回落。挂载分 `--mount` / `--volume` 两个标志而不从 source 形状猜，因为 docker `-v` 的推断在相对路径上恰好错且无声。一条给 T17 / T22 的事实：新建的 docker 卷是 root 所有 755，uid 1000 写不进，题库 `creds/stage.sh` 的 chown 正是为此。
+- **T23**：五项全落在 `packages/eval`，judge.ts 零 diff（validate.ts 只 import 三个已公开的纯函数），T28 可干净合入。finalize 的两条负保证（不强推、不碰 archived 以下）与 `releasable` 归 interrupted 的判断都对；pilot A 副本实测 0 released / 12 skipped，另造两格 archived 的 run 验证了释放与拒绝两条路。就绪检查是一次真委派而不是读 status，同时回读模型核对声明——G4 现在在 run 建立前就拦住，代价是每条件一轮短委派。效率表改后 dsh-exec 从 21.0 min / 3 轮变 11.9 min / 2 轮，results.jsonl 逐字节相同。`--only` 点到矩阵外的 missionId 拒绝整 run 而非忽略，接受——那基本只会是打错字。ankh-guard 的 flake 又拦了它一次 gate（expected 190 observed 178，单跑两次都过），仍归 mainline。
+- **T24**：极性归 rubric、verdict 契约只加可选 `ratio`，与追加文案一致；协议 v1-rev4 双语，两个 verdict 示例各钉夹具。权重表只有 `{task, id, weight, negative, kind, axis}`，实测 69 条判据里判据文字与 evidence 命中 0 处，泄题闸不受影响。报告对 ratio 做 `total > 0`、`0 ≤ passed ≤ total` 的边界检查，越界按缺失并在附注点名；表缺席时明说「极性未知」而不是显示成「没有缺陷」。pilot 副本上 F2 × codex × rep2 的 A-N2 进了缺陷清单、得分 18 → 17、加权 35；加权列没出现在 summary 是因为 pilot A 没记环境指纹、比较一节被诚实闸关着，不是实现缺口。两条接缝：T19 的探针仍把比例写在 evidence 前缀（T19b 改），权重表不含 `veto`（X-no-patch 读成 0 权重正向判据，暂无消费者）。`pass` 与 `passed === total` 的一致性校验不归 T26（datasets 看不到 verdict），追加给 T28 的 readVerdictFile。
 
 验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
@@ -846,7 +852,7 @@ datasets 测试全绿，gate 绿；对题库当前 commit 跑 validate：P0、F2
 分支名与 commit；Agent Note 路径；gate 输出；对题库两个 commit 的 validate 输出。
 ```
 
-第二波（2026-09-08 发出）：T17、T18b、T27、T28 互不依赖可即发；T19b 等 T24 回报后发。
+第二波（2026-09-08 发出）：T17、T18b、T27、T28 互不依赖可即发；T18b 已于同日验收。T19b 在 T24 合入后可发（2026-09-08），文案见下。
 
 ### T17 · local-agent：容器内 exec 包装（可发）
 
@@ -915,16 +921,16 @@ lab 测试全绿，gate 绿；用 T16 的镜像 acquire 一个 network=eval-net�
 分支名与 commit；Agent Note 路径；gate 输出；一份带三个新分量的指纹 JSON。
 ```
 
-### T19b · 题库：F3 的 objective 负分判据、计数对齐、比例字段（等 T24 回报后发）
+### T19b · 题库：F3 的 objective 负分判据、计数对齐、比例字段（可发）
 
 ```text
 # 任务 T19b：题库——F3 的 objective 负分判据、计数对齐、比例字段
 
 ## 背景
-T19 自测：A-N2「tradeoff 出现 worth-the-cost」的底层取值在三格上是 1/8、1/5、0/6，是阶段一二里唯一已经能自动判且有区分度的信号，但 F3 的 rubric 没有同形判据接住。另两处漂移：F2 verify/README 说 core 8 / bonus 7、rubric C1 说 9 条，standards.yml 实际 core 10 / bonus 8；F3 的 C1 把 G1 算进 core，两题口径不一致。T24 已把比例字段定进 dataseek.verdict/1（见其回报），verify-rollup 现在还把比例塞在 evidence 前缀里。
+T19 自测：A-N2「tradeoff 出现 worth-the-cost」的底层取值在三格上是 1/8、1/5、0/6，是阶段一二里唯一已经能自动判且有区分度的信号，但 F3 的 rubric 没有同形判据接住。另两处漂移：F2 verify/README 说 core 8 / bonus 7、rubric C1 说 9 条，standards.yml 实际 core 10 / bonus 8；F3 的 C1 把 G1 算进 core，两题口径不一致。T24 已合入 main（979e624）：dataseek.verdict/1 带可选 ratio: {passed, total}，§6.5 / §6.7 明写比例不得进 evidence 前缀，报告从此不解析那个前缀——T19b 落地前 C1 / C2 按严格布尔计分。verify-rollup 现在还把比例塞在 evidence 前缀里。
 
 ## 先读
-题库 docs/probes-selftest.md §四、§五；items/F2-* 与 F3-* 的 grading/rubric.yml、rubric.md、verify/README.md、standards.yml；T24 回报里 §6.5 的比例字段定义；T19 的探针（verify/helpers/lib 与两题 verify/probes）。
+题库 docs/probes-selftest.md §四、§五；items/F2-* 与 F3-* 的 grading/rubric.yml、rubric.md、verify/README.md、standards.yml；main 上 docs/dataset-authoring-protocol.md §6.5（v1-rev4）的 ratio 三条规矩与极性段落；T19 的探针（verify/helpers/lib 与两题 verify/probes）。
 
 ## 分支
 题库仓库：从 i1-walk 开 worktree（不在共享检出上 checkout），分支 i3-probes-b，只改 items/F2-*、items/F3-* 与 verify/helpers/。
@@ -933,6 +939,8 @@ T19 自测：A-N2「tradeoff 出现 worth-the-cost」的底层取值在三格上
 - F3 加一条 objective 负分判据，与 F2 A-N2 同形（id 按 F3 的 axis 命名，negative: true，负 weight 在 F3 负分上限内），evidence 指向 stage1.json:host_change_risks[].tradeoff，探针复用 worthTheCostChosen；rubric.md 同步加一行判读。
 - 两题的 core / bonus 计数以 standards.yml 为准，verify/README 与 rubric 的 C1 措辞改到一致；G1 是否计入 core 两题取同一口径，写明理由。
 - verify-rollup 输出比例字段，evidence 不再承担比例；docs/probes-selftest.md 重跑更新。
+- ratio 的写法照 §6.5：pass 仍是「完整成立」（pass === (passed === total)）；total 是扣除 skipped_standards 后实际判定的条数；evidence 只写哪几条过、哪几条没过、从哪儿查。
+- 新判据 negative: true 与负 weight 同时写（T26 的 validate 会查两者一致）；权重表由 eval 导出时从 rubric 派生，题库不用另写任何表。
 - 不新增其他判据，不改权重分配以外的数值。
 
 ## 交付
@@ -942,7 +950,7 @@ rubric.yml / rubric.md / verify README 的改动；探针更新；自测表重�
 run-all 在 pilot-a-round1 bundle 上：F3 新判据在三格上至少一格与其他格不同；C1 / C2 的比例出现在结构字段而不是 evidence。
 
 ## 回报
-题库 commit；新判据 id 与三格取值；validate 输出。
+题库 commit；新判据 id 与三格取值；C1 / C2 带 ratio 的 verdict 样例各一条；validate 输出。
 ```
 
 ### T27 · local-agent-tool-subagent：tools 注册开关，pack 关掉四家委派工具（可发）
@@ -1008,6 +1016,10 @@ eval 测试全绿，gate 绿；对 bundle 三格跑运行器：no-patch.sh 每�
 
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；三格的探针 outcome 摘要。
+
+## 追加（2026-09-08，T24 合入后）
+- T24 已合入 main（979e624），schema.ts 的 VERDICT_SCHEMA 已带可选 ratio，report.ts 已按它计分；先把 main 并进分支再继续。「不改 verdict schema」的约束照旧。
+- readVerdictFile 校验带 ratio 的 verdict 时加两条数值检查：passed / total 为整数且 total > 0、0 ≤ passed ≤ total；pass === (passed === total)。不符按「产物不合契约」计，与 schema 不过同一档，原因进 orchestrator ns。report.ts 里 T24 的 ratioOf 只做前一条并退回布尔——运行器在源头拦，报告兜底，两边都要在。
 ```
 
 ## 四、验收规程
