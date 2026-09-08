@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { LabService } from '../src/service.ts'
 import type {
-  AcquireSpec, CollectOptions, ManagedResource, MissionFace, PopulateOptions, UnitProvider,
-  VerifyOptions, VerifyResult,
+  AcquireSpec, CollectOptions, EnvironmentFingerprint, FingerprintComponents, ManagedResource,
+  MissionFace, PopulateOptions, UnitProvider, VerifyOptions, VerifyResult,
 } from '../src/types.ts'
 
 /** In-memory provider: records verbs, keeps a managed-resource list for reconcile. */
@@ -22,17 +22,28 @@ class FakeProvider implements UnitProvider {
   /** Files the fake collect/archive materializes into the target. */
   collectFiles: Record<string, string> = {}
 
-  fingerprint(_spec: AcquireSpec): Promise<string> {
-    return Promise.resolve(this.fingerprintValue)
+  fingerprint(_spec: AcquireSpec): Promise<EnvironmentFingerprint> {
+    return Promise.resolve({
+      fingerprint: this.fingerprintValue,
+      components: { ...this.fingerprintComponents, image: this.fingerprintValue },
+    })
   }
 
-  fingerprintValue = 'fp:test'
+  fingerprintValue = 'lab-env:test'
+  fingerprintComponents: FingerprintComponents = {
+    version: 1,
+    image: 'lab-env:test',
+    resources: { cpus: null, memory: null },
+    mounts: [],
+    envKeys: [],
+  }
 
-  acquire(id: string, spec: AcquireSpec, fingerprint: string): Promise<string> {
+  acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string> {
     const resource = `dsh-lab-${id}`
     const labels: Record<string, string> = {
       'dsh-lab.unit': id,
-      'dsh-lab.fingerprint': fingerprint,
+      'dsh-lab.fingerprint': fingerprint.fingerprint,
+      'dsh-lab.fingerprint-components': JSON.stringify(fingerprint.components),
       'dsh-lab.workdir': spec.workdir ?? '/workspace',
     }
     if (spec.missionId !== undefined) labels['dsh-lab.mission'] = spec.missionId
@@ -137,6 +148,7 @@ function makeService(overrides?: {
   mission?: MissionFace | undefined
   maxConcurrentUnits?: number
   provider?: FakeProvider
+  stateDir?: string
 }): { service: LabService; provider: FakeProvider; warnings: string[] } {
   const provider = overrides?.provider ?? new FakeProvider()
   const warnings: string[] = []
@@ -144,6 +156,7 @@ function makeService(overrides?: {
   const service = new LabService({
     providers: { docker: provider },
     maxConcurrentUnits: overrides?.maxConcurrentUnits ?? 4,
+    ...(overrides?.stateDir !== undefined ? { stateDir: overrides.stateDir } : {}),
     getMission: () => overrides?.mission,
     warn: (message) => warnings.push(message),
     idgen: () => `u${(counter += 1)}`,
@@ -161,19 +174,21 @@ describe('acquire', () => {
     const mission = fakeMission(true)
     const { service } = makeService({ mission })
     const info = await service.acquire({ image: 'app:latest', missionId: 'm-1', runId: 'r-1' })
-    expect(info).toMatchObject({ id: 'u1', resource: 'dsh-lab-u1', fingerprint: 'fp:test', missionId: 'm-1' })
-    expect(mission.refs).toEqual([{ missionId: 'm-1', refs: { resource: 'dsh-lab-u1', fingerprint: 'fp:test' } }])
+    expect(info).toMatchObject({ id: 'u1', resource: 'dsh-lab-u1', fingerprint: 'lab-env:test', missionId: 'm-1' })
+    // mission stores the opaque string only; the components stay lab-side.
+    expect(mission.refs).toEqual([{ missionId: 'm-1', refs: { resource: 'dsh-lab-u1', fingerprint: 'lab-env:test' } }])
+    expect(info.fingerprintComponents?.version).toBe(1)
   })
 
-  it('records a different fingerprint when the image differs (comparability mechanism)', async () => {
+  it('records a different fingerprint when the environment differs (comparability mechanism)', async () => {
     const mission = fakeMission(true)
     const provider = new FakeProvider()
     const { service } = makeService({ mission, provider })
     await service.acquire({ image: 'app:v1', missionId: 'm-1' })
-    provider.fingerprintValue = 'fp:other'
+    provider.fingerprintValue = 'lab-env:other'
     await service.acquire({ image: 'app:v2', missionId: 'm-2' })
-    expect(mission.refs[0]?.refs.fingerprint).toBe('fp:test')
-    expect(mission.refs[1]?.refs.fingerprint).toBe('fp:other')
+    expect(mission.refs[0]?.refs.fingerprint).toBe('lab-env:test')
+    expect(mission.refs[1]?.refs.fingerprint).toBe('lab-env:other')
   })
 
   it('refuses acquire at the maxConcurrentUnits ceiling with an explicit error', async () => {
@@ -432,14 +447,114 @@ describe('archive', () => {
     await service.archive(info.id, { target })
     expect(provider.collected).toEqual([{ source: '/repo', target: join(target, 'workspace') }])
     const manifest = JSON.parse(readFileSync(join(target, 'manifest.json'), 'utf8')) as {
-      unit: { id: string; fingerprint: string; workspace: string; missionId: string }
+      unit: { id: string; fingerprint: string; fingerprintComponents: FingerprintComponents | null; workspace: string; missionId: string }
       files: { path: string; sha256?: string; bytes?: number }[]
     }
-    expect(manifest.unit).toMatchObject({ id: 'u1', fingerprint: 'fp:test', workspace: '/repo', missionId: 'm-1' })
+    expect(manifest.unit).toMatchObject({ id: 'u1', fingerprint: 'lab-env:test', workspace: '/repo', missionId: 'm-1' })
     const out = manifest.files.find((f) => f.path === 'out.txt')
     expect(out?.sha256).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
     expect(out?.bytes).toBe(5)
     expect(mission.artifacts).toEqual([{ missionId: 'm-1', path: target, kind: 'archive' }])
+  })
+
+  it('carries the fingerprint components — the durable copy that outlives the released unit', async () => {
+    const provider = new FakeProvider()
+    const { service } = makeService({ provider })
+    const target = mkdtempSync(join(tmpdir(), 'lab-archive-'))
+    tmpDirs.push(target)
+    const info = await service.acquire({ image: 'app:latest' })
+    await service.archive(info.id, { target })
+    const manifest = JSON.parse(readFileSync(join(target, 'manifest.json'), 'utf8')) as {
+      unit: { fingerprintComponents: FingerprintComponents | null }
+    }
+    expect(manifest.unit.fingerprintComponents).toEqual(provider.fingerprintComponents)
+  })
+
+  it('records a null component set for a legacy bare-digest unit rather than inventing one', async () => {
+    const provider = new FakeProvider()
+    provider.managed = [{
+      id: 'legacy',
+      resource: 'dsh-lab-legacy',
+      labels: { 'dsh-lab.unit': 'legacy', 'dsh-lab.fingerprint': 'registry/app@sha256:old', 'dsh-lab.workdir': '/repo' },
+      running: true,
+    }]
+    const { service } = makeService({ provider })
+    const target = mkdtempSync(join(tmpdir(), 'lab-archive-'))
+    tmpDirs.push(target)
+    await service.archive('legacy', { target })
+    const manifest = JSON.parse(readFileSync(join(target, 'manifest.json'), 'utf8')) as {
+      unit: { fingerprint: string; fingerprintComponents: FingerprintComponents | null }
+    }
+    expect(manifest.unit.fingerprint).toBe('registry/app@sha256:old')
+    expect(manifest.unit.fingerprintComponents).toBeNull()
+  })
+})
+
+describe('the fingerprint mirror', () => {
+  it('writes one authority-free record per held unit and removes it at release', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'lab-state-'))
+    tmpDirs.push(stateDir)
+    const { service, provider } = makeService({ stateDir })
+    const info = await service.acquire({ image: 'app:latest' })
+    const file = join(stateDir, 'units', 'u1.json')
+    const record = JSON.parse(readFileSync(file, 'utf8')) as {
+      unit: string; resource: string; fingerprint: string; components: FingerprintComponents | null
+    }
+    expect(record).toMatchObject({ unit: 'u1', resource: 'dsh-lab-u1', fingerprint: 'lab-env:test' })
+    expect(record.components).toEqual(provider.fingerprintComponents)
+    await service.release(info.id, { force: true })
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('re-materializes from the provider labels for a unit adopted after a restart', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'lab-state-'))
+    tmpDirs.push(stateDir)
+    const components: FingerprintComponents = {
+      version: 1,
+      image: 'registry/app@sha256:aaa',
+      resources: { cpus: '2', memory: '4294967296' },
+      mounts: [{ target: '/input', type: 'bind', readonly: true }],
+      envKeys: ['EVAL_CELL'],
+    }
+    const provider = new FakeProvider()
+    provider.managed = [{
+      id: 'survivor',
+      resource: 'dsh-lab-survivor',
+      labels: {
+        'dsh-lab.unit': 'survivor',
+        'dsh-lab.fingerprint': 'lab-env:survivor',
+        'dsh-lab.fingerprint-components': JSON.stringify(components),
+      },
+      running: true,
+    }]
+    const { service } = makeService({ provider, stateDir })
+    const [row] = await service.status('survivor')
+    expect(row?.fingerprintComponents).toEqual(components)
+    const record = JSON.parse(readFileSync(join(stateDir, 'units', 'survivor.json'), 'utf8')) as { components: FingerprintComponents }
+    expect(record.components).toEqual(components)
+  })
+
+  it('accepts a legacy bare digest as a fingerprint with no components, and never crashes on an unreadable label', async () => {
+    const provider = new FakeProvider()
+    provider.managed = [
+      { id: 'legacy', resource: 'dsh-lab-legacy', labels: { 'dsh-lab.unit': 'legacy', 'dsh-lab.fingerprint': 'registry/app@sha256:old' }, running: true },
+      { id: 'garbled', resource: 'dsh-lab-garbled', labels: { 'dsh-lab.unit': 'garbled', 'dsh-lab.fingerprint': 'lab-env:x', 'dsh-lab.fingerprint-components': '{not json' }, running: true },
+    ]
+    const { service } = makeService({ provider })
+    const rows = await service.status()
+    expect(rows.find((row) => row.id === 'legacy')?.fingerprint).toBe('registry/app@sha256:old')
+    expect(rows.find((row) => row.id === 'legacy')?.fingerprintComponents).toBeUndefined()
+    expect(rows.find((row) => row.id === 'garbled')?.fingerprintComponents).toBeUndefined()
+  })
+
+  it('warns and still acquires when the mirror cannot be written', async () => {
+    const blocked = mkdtempSync(join(tmpdir(), 'lab-state-'))
+    tmpDirs.push(blocked)
+    writeFileSync(join(blocked, 'units'), 'not a directory')
+    const { service, warnings } = makeService({ stateDir: blocked })
+    const info = await service.acquire({ image: 'app:latest' })
+    expect(info.resource).toBe('dsh-lab-u1')
+    expect(warnings.some((w) => w.includes('could not mirror the fingerprint'))).toBe(true)
   })
 })
 

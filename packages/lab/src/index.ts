@@ -18,6 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { DockerProvider } from './docker.ts'
 import { LabService } from './service.ts'
+import { resolveStateDir } from './state.ts'
 import type { Exec, Lab, MissionFace } from './types.ts'
 
 /** Default held-unit ceiling (a safety valve, not a scheduler). */
@@ -27,10 +28,17 @@ const DEFAULT_MAX_CONCURRENT_UNITS = 4
 export interface LabConfig {
   /** Held-unit ceiling; `acquire` refuses at and above it. */
   maxConcurrentUnits?: number
+  /**
+   * Where the authority-free fingerprint mirror is written; defaults to
+   * `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`. Deleting it loses nothing —
+   * the daemon's labels remain the registry of record.
+   */
+  stateDir?: string
 }
 
 export const Config: z<LabConfig> = z.object({
   maxConcurrentUnits: z.natural().min(1).default(DEFAULT_MAX_CONCURRENT_UNITS),
+  stateDir: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -54,6 +62,7 @@ export function apply(ctx: Context, config: LabConfig): void {
   const service = new LabService({
     providers: { docker: new DockerProvider(subprocessExec(ctx)) },
     maxConcurrentUnits: config.maxConcurrentUnits ?? DEFAULT_MAX_CONCURRENT_UNITS,
+    stateDir: resolveStateDir(config.stateDir),
     getMission: () => (ctx.get as (service: string) => unknown).call(ctx, 'mission') as MissionFace | undefined,
     warn: (message) => {
       ctx.logger(name).warn(message)
@@ -99,8 +108,14 @@ function subprocessExec(ctx: Context): Exec {
   }
 }
 
-export { DockerProvider } from './docker.ts'
+export { COMPONENTS_LABEL, DockerProvider } from './docker.ts'
 export type { DockerProviderOptions } from './docker.ts'
+export {
+  canonicalJson, componentsFor, FINGERPRINT_SCHEME, hashComponents, isComposite,
+  normalizeCpus, normalizeMemory, parseComponents, shortFingerprint,
+} from './fingerprint.ts'
 export { LAB_ANNOTATION_NS, LabService } from './service.ts'
 export type { LabServiceOptions } from './service.ts'
+export { removeUnitState, resolveStateDir, unitStateFile, writeUnitState } from './state.ts'
+export type { UnitStateRecord } from './state.ts'
 export type * from './types.ts'

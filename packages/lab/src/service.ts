@@ -7,6 +7,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { parseComponents } from './fingerprint.ts'
+import { removeUnitState, writeUnitState } from './state.ts'
 import {
   DEFAULT_WORKSPACE,
   type AcquireSpec, type ArchiveOptions, type CheckpointOptions, type CollectOptions, type Lab,
@@ -24,6 +26,8 @@ export interface LabServiceOptions {
   getMission: () => MissionFace | undefined
   /** Warning channel (plugin logger in production). */
   warn: (message: string) => void
+  /** Directory for the authority-free fingerprint mirror; mirroring is skipped when unset. */
+  stateDir?: string
   /** Clock hook (tests). */
   now?: () => number
   /** Unit id hook (tests). */
@@ -68,7 +72,8 @@ export class LabService implements Lab {
       id,
       provider: kind,
       resource,
-      fingerprint,
+      fingerprint: fingerprint.fingerprint,
+      fingerprintComponents: fingerprint.components,
       workspace: spec.workdir ?? DEFAULT_WORKSPACE,
       createdAt: this.now(),
     }
@@ -76,6 +81,7 @@ export class LabService implements Lab {
     if (spec.runId !== undefined) info.runId = spec.runId
     this.units.set(id, info)
     this.runningUnits.add(id)
+    this.mirrorFingerprint(info)
     if (info.missionId !== undefined) await this.registerRefs(info)
     return info
   }
@@ -115,6 +121,15 @@ export class LabService implements Lab {
     await provider.terminate(unit.resource)
     this.units.delete(unitId)
     this.runningUnits.delete(unitId)
+    // The mirror never outlives the resource it describes; the durable copy
+    // of a released unit's environment is its archive manifest.
+    if (this.options.stateDir !== undefined) {
+      try {
+        removeUnitState(this.options.stateDir, unitId)
+      } catch (error) {
+        this.options.warn(`lab: could not remove the fingerprint mirror for ${unitId}: ${String(error)}`)
+      }
+    }
   }
 
   async checkpoint(unitId: string, options: CheckpointOptions): Promise<{ ref: string }> {
@@ -175,6 +190,9 @@ export class LabService implements Lab {
         provider: unit.provider,
         resource: unit.resource,
         fingerprint: unit.fingerprint,
+        // The durable copy of the components: the mirror dies with the unit,
+        // the archive is what a later report reads.
+        fingerprintComponents: unit.fingerprintComponents ?? null,
         workspace: unit.workspace,
         ...(unit.missionId !== undefined ? { missionId: unit.missionId } : {}),
         ...(unit.runId !== undefined ? { runId: unit.runId } : {}),
@@ -313,12 +331,43 @@ export class LabService implements Lab {
           workspace: managed.labels['dsh-lab.workdir'] ?? DEFAULT_WORKSPACE,
           createdAt: managed.createdAt ?? this.now(),
         }
+        // Absent for a unit acquired before the composite line: a legacy bare
+        // digest is accepted as a fingerprint with no components, never
+        // reinterpreted into one.
+        const components = parseComponents(managed.labels['dsh-lab.fingerprint-components'])
+        if (components !== undefined) info.fingerprintComponents = components
         const missionId = managed.labels['dsh-lab.mission']
         if (missionId !== undefined) info.missionId = missionId
         const runId = managed.labels['dsh-lab.run']
         if (runId !== undefined) info.runId = runId
         this.units.set(managed.id, info)
+        // Re-materialize the mirror for a unit this process is adopting (the
+        // host-restart case) — which is what makes the mirror provably
+        // derived rather than a second source of truth.
+        this.mirrorFingerprint(info)
       }
+    }
+  }
+
+  /**
+   * Mirror one unit's fingerprint components to the state directory. A write
+   * failure warns and skips, exactly like mission registration: the mirror
+   * carries no authority, so it must never block a resource verb.
+   */
+  private mirrorFingerprint(info: UnitInfo): void {
+    const stateDir = this.options.stateDir
+    if (stateDir === undefined) return
+    try {
+      writeUnitState(stateDir, {
+        unit: info.id,
+        provider: info.provider,
+        resource: info.resource,
+        fingerprint: info.fingerprint,
+        components: info.fingerprintComponents ?? null,
+        recordedAt: this.now(),
+      })
+    } catch (error) {
+      this.options.warn(`lab: could not mirror the fingerprint of ${info.id} into ${stateDir}: ${String(error)}`)
     }
   }
 

@@ -10,8 +10,10 @@
  */
 import { spawn } from 'node:child_process'
 import { DockerProvider } from './docker.ts'
+import { shortFingerprint } from './fingerprint.ts'
 import { LabService } from './service.ts'
-import type { Exec, ExecResult, MissionFace, MissionSnapshot, MountSpec, UnitStatus } from './types.ts'
+import { resolveStateDir } from './state.ts'
+import type { AcquireSpec, Exec, ExecResult, MissionFace, MissionSnapshot, MountSpec, UnitStatus } from './types.ts'
 
 /** Injected output channels. */
 export interface CliIo {
@@ -23,7 +25,8 @@ export interface CliIo {
 
 const USAGE = `dsh-lab <verb> [options]
 
-  acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]... [--workdir DIR] [--command JSON]
+  acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]...
+          [--cpus N] [--memory SIZE] [--workdir DIR] [--command JSON]
   populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
   collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
   checkpoint UNIT --name NAME
@@ -31,9 +34,16 @@ const USAGE = `dsh-lab <verb> [options]
   archive UNIT --target DIR [--kind K] [--artifact-path P]
   release UNIT [--force]
   status [UNIT] [--json]
+  fingerprint UNIT | --image IMG [--mount SRC:DST[:ro]]... [--env K=V]... [--cpus N] [--memory SIZE]
 
-Global: --max-concurrent N (acquire ceiling, default 4)
+Global: --max-concurrent N (acquire ceiling, default 4), --state-dir DIR
 Exit codes: 0 ok, 1 failure/refused, 2 usage.
+
+The environment fingerprint is composite: image digest + CPU/memory ceilings +
+mount layout (container paths only) + injected env KEY names (never values).
+\`fingerprint\` prints it with the components it was computed from — with a UNIT
+for one held unit, or with an acquire-shaped spec to resolve one without
+acquiring anything (diff two of those to see which component differs).
 
 Mission integration (when the dsh-mission bin is on PATH): release gates on
 \`dsh-mission is-releasable\` (exit 0/1, anything else fails closed), and
@@ -96,28 +106,33 @@ function appendFlag(parsed: Parsed, key: string, value: string): void {
 
 class UsageError extends Error {}
 
+/** Flags every verb accepts (service wiring, not verb semantics). */
+const GLOBAL_VALUE_FLAGS = ['max-concurrent', 'state-dir']
+
 /** Flags each verb accepts. Unknown flags are a usage error — with or without a value (a misspelled `--manifest-path` must never exit 0). */
 const VERB_FLAGS: Record<string, { values: string[]; booleans: string[] }> = {
-  acquire: { values: ['image', 'mission', 'run', 'mount', 'env', 'workdir', 'command', 'max-concurrent'], booleans: ['help'] },
-  populate: { values: ['source', 'target', 'manifest', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
-  collect: { values: ['source', 'target', 'kind', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
-  checkpoint: { values: ['name', 'max-concurrent'], booleans: ['help'] },
-  verify: { values: ['source', 'timeout-ms', 'max-concurrent'], booleans: ['help'] },
-  archive: { values: ['target', 'kind', 'artifact-path', 'max-concurrent'], booleans: ['help'] },
-  release: { values: ['max-concurrent'], booleans: ['force', 'help'] },
-  status: { values: ['max-concurrent'], booleans: ['help', 'json'] },
+  acquire: { values: ['image', 'mission', 'run', 'mount', 'env', 'cpus', 'memory', 'workdir', 'command'], booleans: ['help'] },
+  populate: { values: ['source', 'target', 'manifest', 'artifact-path'], booleans: ['help'] },
+  collect: { values: ['source', 'target', 'kind', 'artifact-path'], booleans: ['help'] },
+  checkpoint: { values: ['name'], booleans: ['help'] },
+  verify: { values: ['source', 'timeout-ms'], booleans: ['help'] },
+  archive: { values: ['target', 'kind', 'artifact-path'], booleans: ['help'] },
+  release: { values: [], booleans: ['force', 'help'] },
+  status: { values: [], booleans: ['help', 'json'] },
+  fingerprint: { values: ['image', 'mount', 'env', 'cpus', 'memory'], booleans: ['help'] },
 }
 
 /** Reject any flag the verb does not know (parse-time consumption already recorded it). */
 function validateFlags(parsed: Parsed, verb: string): void {
   const known = VERB_FLAGS[verb]
   if (known === undefined) throw new UsageError(`unknown verb ${JSON.stringify(verb)}`)
+  const values = [...known.values, ...GLOBAL_VALUE_FLAGS]
   for (const key of parsed.flags.keys()) {
-    if (!known.values.includes(key)) throw new UsageError(`unknown flag --${key} for ${verb}`)
+    if (!values.includes(key)) throw new UsageError(`unknown flag --${key} for ${verb}`)
   }
   for (const key of parsed.bools) {
     if (known.booleans.includes(key)) continue
-    if (known.values.includes(key)) throw new UsageError(`missing value for --${key}`)
+    if (values.includes(key)) throw new UsageError(`missing value for --${key}`)
     throw new UsageError(`unknown flag --${key} for ${verb}`)
   }
 }
@@ -142,6 +157,34 @@ function parseMount(raw: string): MountSpec {
   const mount: MountSpec = { source: parts[0] as string, target: parts[1] as string }
   if (parts[2] === 'ro') mount.readonly = true
   return mount
+}
+
+/**
+ * The spec fields `acquire` and `fingerprint` share — everything the composite
+ * fingerprint is computed from, so `fingerprint` can answer for a unit that
+ * has not been acquired.
+ */
+function specFromFlags(parsed: Parsed): AcquireSpec {
+  const spec: AcquireSpec = {
+    image: required(parsed, 'image'),
+    mounts: (parsed.flags.get('mount') ?? []).map(parseMount),
+  }
+  const env: Record<string, string> = {}
+  for (const pair of parsed.flags.get('env') ?? []) {
+    const eq = pair.indexOf('=')
+    if (eq === -1) throw new UsageError(`bad --env ${JSON.stringify(pair)} (want K=V)`)
+    env[pair.slice(0, eq)] = pair.slice(eq + 1)
+  }
+  if (Object.keys(env).length > 0) spec.env = env
+  const cpus = one(parsed, 'cpus')
+  const memory = one(parsed, 'memory')
+  if (cpus !== undefined || memory !== undefined) {
+    spec.resources = {
+      ...(cpus !== undefined ? { cpus } : {}),
+      ...(memory !== undefined ? { memory } : {}),
+    }
+  }
+  return spec
 }
 
 /** `child_process`-backed {@link Exec} with output caps and a SIGTERM→SIGKILL timeout. */
@@ -272,18 +315,17 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     }
     validateFlags(parsed, command)
     const mission = await probeMission(exec)
+    const provider = new DockerProvider(exec)
     const service = new LabService({
-      providers: { docker: new DockerProvider(exec) },
+      providers: { docker: provider },
       maxConcurrentUnits: Number(one(parsed, 'max-concurrent') ?? '4'),
+      stateDir: resolveStateDir(one(parsed, 'state-dir')),
       getMission: () => (mission ? cliMissionFace(exec) : undefined),
       warn,
     })
     switch (command) {
       case 'acquire': {
-        const spec: Parameters<LabService['acquire']>[0] = {
-          image: required(parsed, 'image'),
-          mounts: (parsed.flags.get('mount') ?? []).map(parseMount),
-        }
+        const spec = specFromFlags(parsed)
         const missionId = one(parsed, 'mission')
         if (missionId !== undefined) spec.missionId = missionId
         const runId = one(parsed, 'run')
@@ -292,14 +334,25 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         if (workdir !== undefined) spec.workdir = workdir
         const cmd = one(parsed, 'command')
         if (cmd !== undefined) spec.command = JSON.parse(cmd) as string[]
-        const env: Record<string, string> = {}
-        for (const pair of parsed.flags.get('env') ?? []) {
-          const eq = pair.indexOf('=')
-          if (eq === -1) throw new UsageError(`bad --env ${JSON.stringify(pair)} (want K=V)`)
-          env[pair.slice(0, eq)] = pair.slice(eq + 1)
-        }
-        if (Object.keys(env).length > 0) spec.env = env
         io.stdout(`${JSON.stringify(await service.acquire(spec), null, 2)}\n`)
+        return 0
+      }
+      case 'fingerprint': {
+        // Two questions, one verb: what IS this held unit's environment, and
+        // what WOULD this spec's environment be. The second acquires nothing,
+        // so two of them can be diffed before a run to see which component
+        // would make the cells incomparable.
+        const unitId = parsed.positional[0]
+        if (unitId !== undefined) {
+          const [row] = await service.status(unitId)
+          io.stdout(`${JSON.stringify({
+            unit: row?.id,
+            fingerprint: row?.fingerprint,
+            components: row?.fingerprintComponents ?? null,
+          }, null, 2)}\n`)
+          return 0
+        }
+        io.stdout(`${JSON.stringify(await provider.fingerprint(specFromFlags(parsed)), null, 2)}\n`)
         return 0
       }
       case 'populate': {
@@ -401,8 +454,11 @@ function ageCompact(ms: number): string {
 /**
  * The progress view: one row per unit joining container facts (running, age),
  * in-container activity, the mission state and coordinate labels (via the
- * mission face, absent-tolerant), and the materialization hash — identical
- * hashes across rows are the fairness proof, visible at a glance.
+ * mission face, absent-tolerant), the materialization hash, and the
+ * environment fingerprint — identical TASK hashes across rows are the
+ * fairness proof and identical ENV hashes the comparability proof, both
+ * visible at a glance. `dsh-lab fingerprint UNIT` expands an ENV cell into
+ * the components behind it.
  */
 function renderStatusTable(rows: UnitStatus[], now = Date.now()): string {
   if (rows.length === 0) return 'no units\n'
@@ -412,9 +468,10 @@ function renderStatusTable(rows: UnitStatus[], now = Date.now()): string {
     row.running ? `up ${ageCompact(now - row.createdAt)}` : 'exited',
     row.lastActivityAt !== undefined ? `${ageCompact(now - row.lastActivityAt)} ago` : '-',
     row.taskHash ?? '-',
+    row.fingerprint === '' ? '-' : shortFingerprint(row.fingerprint),
     row.missionLabels !== undefined ? Object.entries(row.missionLabels).map(([k, v]) => `${k}=${v}`).join(',') : '',
   ])
-  const header = ['UNIT', 'MISSION', 'CONTAINER', 'LAST-ACTIVITY', 'TASK', 'LABELS']
+  const header = ['UNIT', 'MISSION', 'CONTAINER', 'LAST-ACTIVITY', 'TASK', 'ENV', 'LABELS']
   const widths = header.map((h, i) => Math.max(h.length, ...cells.map((row) => (row[i] ?? '').length)))
   const render = (row: string[]): string => row.map((cell, i) => (cell ?? '').padEnd(widths[i] as number)).join('  ').trimEnd()
   return `${render(header)}\n${cells.map(render).join('\n')}\n`

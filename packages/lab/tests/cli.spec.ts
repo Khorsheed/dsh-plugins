@@ -57,7 +57,9 @@ async function runLab(args: string[], env: Record<string, string>, withMission: 
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx/esm', join(pkgRoot, 'src/cli.ts'), ...args], {
       cwd: pkgRoot,
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, LOG: log, ...env },
+      // DSH_HOME keeps the fingerprint mirror inside the throwaway dir instead
+      // of the package checkout.
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, LOG: log, DSH_HOME: dir, ...env },
     })
     let stdout = ''
     let stderr = ''
@@ -93,12 +95,44 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
   it('acquire prints the unit JSON and labels the container with the fingerprint', async () => {
     const run = await runLab(['acquire', '--image', 'app:latest'], {}, false)
     expect(run.code).toBe(0)
-    const info = JSON.parse(run.stdout) as { id: string; resource: string; fingerprint: string; workspace: string }
-    expect(info.fingerprint).toBe('registry/app@sha256:test')
+    const info = JSON.parse(run.stdout) as {
+      id: string; resource: string; fingerprint: string; workspace: string
+      fingerprintComponents: { image: string }
+    }
+    expect(info.fingerprint).toMatch(/^lab-env:[0-9a-f]{64}$/)
+    expect(info.fingerprintComponents.image).toBe('registry/app@sha256:test')
     expect(info.resource).toBe(`dsh-lab-${info.id}`)
     expect(info.workspace).toBe('/workspace')
     expect(run.log).toContain('docker run -d --name')
-    expect(run.log).toContain('dsh-lab.fingerprint=registry/app@sha256:test')
+    expect(run.log).toContain(`dsh-lab.fingerprint=${info.fingerprint}`)
+    expect(run.log).toContain('dsh-lab.fingerprint-components=')
+  })
+
+  it('acquire applies declared ceilings to the container', async () => {
+    const run = await runLab(['acquire', '--image', 'app:latest', '--cpus', '2.0', '--memory', '4g'], {}, false)
+    expect(run.code).toBe(0)
+    expect(run.log).toContain('--cpus 2')
+    expect(run.log).toContain('--memory 4294967296')
+  })
+
+  it('fingerprint resolves a spec without acquiring, and names the component that differs', async () => {
+    const small = await runLab(['fingerprint', '--image', 'app:latest', '--cpus', '2', '--memory', '4g'], {}, false)
+    const large = await runLab(['fingerprint', '--image', 'app:latest', '--cpus', '2', '--memory', '8g'], {}, false)
+    expect(small.code).toBe(0)
+    expect(small.log).not.toContain('docker run')
+    const a = JSON.parse(small.stdout) as { fingerprint: string; components: { image: string; resources: { memory: string } } }
+    const b = JSON.parse(large.stdout) as { fingerprint: string; components: { image: string; resources: { memory: string } } }
+    expect(a.fingerprint).not.toBe(b.fingerprint)
+    expect(a.components.image).toBe(b.components.image)
+    expect(a.components.resources.memory).toBe('4294967296')
+    expect(b.components.resources.memory).toBe('8589934592')
+  })
+
+  it('fingerprint UNIT prints the held unit\'s components, null for a legacy bare digest', async () => {
+    const env = { STUB_PS: 'dsh-lab-t1', STUB_INSPECT: UNIT_INSPECT }
+    const run = await runLab(['fingerprint', 't1'], env, false)
+    expect(run.code).toBe(0)
+    expect(JSON.parse(run.stdout)).toEqual({ unit: 't1', fingerprint: 'fp:t1', components: null })
   })
 
   it('release is refused when dsh-mission says not releasable (exit 1)', async () => {
@@ -182,6 +216,9 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
     expect(run.stdout).toContain('UNIT')
     expect(run.stdout).toContain('MISSION')
     expect(run.stdout).toContain('TASK')
+    // Identical ENV cells across rows are the comparability proof, next to
+    // TASK's fairness proof.
+    expect(run.stdout).toContain('ENV')
     expect(run.stdout).toContain('t1')
   })
 })

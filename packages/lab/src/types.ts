@@ -25,14 +25,57 @@ export interface MountSpec {
 /** Default in-unit working directory (checkpoint commits here; populate targets it by default). */
 export const DEFAULT_WORKSPACE = '/workspace'
 
+/**
+ * Resource ceilings declared at acquire time. They are applied to the unit
+ * AND hashed into the environment fingerprint — the same image under a
+ * different CPU or memory ceiling is a different environment, and a
+ * time-sensitive measurement taken under one ceiling is not comparable with
+ * one taken under another.
+ */
+export interface ResourceLimits {
+  /** Docker `--cpus`: a decimal count of CPUs (`'2'`, `'0.5'`). */
+  cpus?: string | number
+  /** Docker `--memory`: a byte count with an optional b/k/m/g suffix (`'4g'`). */
+  memory?: string | number
+}
+
+/**
+ * The four components the composite environment fingerprint hashes. The shape
+ * never varies: an undeclared ceiling is `null` rather than an omitted key, an
+ * undeclared list is empty. Host absolute paths and env VALUES never appear
+ * here — the components are printed, labeled, and archived.
+ */
+export interface FingerprintComponents {
+  /** Component-set schema version (hashed: widening the definition changes every fingerprint). */
+  version: number
+  /** Resolved image digest (repo digest, falling back to the local image id); null when unresolvable. */
+  image: string | null
+  /** Normalized ceilings — cpus as a decimal literal, memory as a byte count; null when undeclared. */
+  resources: { cpus: string | null; memory: string | null }
+  /** Mount layout as the container sees it, sorted by target — no host paths. */
+  mounts: { target: string; type: string; readonly: boolean }[]
+  /** Sorted names of the injected environment variables — names only, never values. */
+  envKeys: string[]
+}
+
+/** A resolved environment fingerprint: the opaque string plus what it was computed from. */
+export interface EnvironmentFingerprint {
+  /** `lab-env:<sha256 hex>` over the canonical component JSON; opaque to mission. */
+  fingerprint: string
+  /** The components that produced it, printable as-is. */
+  components: FingerprintComponents
+}
+
 /** What {@link Lab.acquire} needs to prepare one isolated unit. */
 export interface AcquireSpec {
   /** Provider kind; only `'docker'` ships in this line (the worktree shape is reserved). */
   provider?: 'docker'
-  /** Container image reference; the resolved digest becomes the environment fingerprint. */
+  /** Container image reference; its resolved digest is the fingerprint's image component. */
   image: string
   /** Zero-copy mounts declared now (container mounts cannot be added after creation). */
   mounts?: MountSpec[]
+  /** CPU and memory ceilings; applied to the unit and hashed into the fingerprint. */
+  resources?: ResourceLimits
   /** Extra environment entries inside the unit. */
   env?: Record<string, string>
   /** Keep-alive command; defaults to `['sleep', 'infinity']` (the image must ship it). */
@@ -53,8 +96,10 @@ export interface UnitInfo {
   provider: string
   /** Provider-side resource handle (container name) — opaque to callers. */
   resource: string
-  /** Environment fingerprint (image digest, falling back to image id). */
+  /** Composite environment fingerprint (`lab-env:<hex>`), or a legacy bare image digest. */
   fingerprint: string
+  /** What the fingerprint was computed from; absent for a legacy bare-digest unit. */
+  fingerprintComponents?: FingerprintComponents
   /** In-unit working directory (checkpoint commits here); from `workdir`, default `/workspace`. */
   workspace: string
   /** Mission this unit is registered to, when any. */
@@ -343,20 +388,21 @@ export interface UnitProvider {
   /** Provider kind key (`'docker'`). */
   readonly kind: string
   /**
-   * Resolve the environment fingerprint for a spec (image digest; pulls the
-   * image when absent locally).
+   * Resolve the composite environment fingerprint for a spec (image digest —
+   * pulling when absent locally — plus resource ceilings, mount layout, and
+   * injected env key names).
    * @param spec - acquire specification.
-   * @returns the fingerprint string recorded into mission refs.
+   * @returns the fingerprint string recorded into mission refs, with its components.
    */
-  fingerprint(spec: AcquireSpec): Promise<string>
+  fingerprint(spec: AcquireSpec): Promise<EnvironmentFingerprint>
   /**
    * Create and start the unit's resource.
    * @param id - unit id assigned by the service.
    * @param spec - acquire specification.
-   * @param fingerprint - resolved fingerprint (rides the resource labels).
+   * @param fingerprint - resolved fingerprint and components (both ride the resource labels).
    * @returns the provider-side resource handle.
    */
-  acquire(id: string, spec: AcquireSpec, fingerprint: string): Promise<string>
+  acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string>
   /**
    * Copy a host directory into the unit.
    * @param resource - provider resource handle.
