@@ -54,7 +54,12 @@ export const name = 'local-agent'
 export const inject = ['commands']
 
 export type {
+  ContainerExecLaunch,
+} from './container.ts'
+
+export type {
   DelegationCallOptions,
+  DelegationExecTarget,
   LocalAgentDelegationInfo,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
@@ -76,6 +81,7 @@ export type {
 } from './types.ts'
 
 export { delegationEnv } from './env.ts'
+export { containerExecSpawn, containerScopedHome } from './container.ts'
 
 /** Per-harness session listing: reads the harness's own records format. */
 export interface LocalAgentRecordsAdapter {
@@ -1091,6 +1097,10 @@ export class LocalAgentRegistry {
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
+      // The container exec target rides the same channel for the same
+      // reason: it is a family-private start fact, and the host
+      // SubagentStartRequest contract has no place for it.
+      ...options?.exec === undefined ? {} : { exec: options.exec },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -1204,6 +1214,9 @@ export class LocalAgentRegistry {
       childSessionId,
       cliSessionId,
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
+      // Repeat of the first round's target: the caller owns the pairing (the
+      // recorded anchor is the host cwd, which a container swap leaves equal).
+      ...options?.exec === undefined ? {} : { exec: options.exec },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()

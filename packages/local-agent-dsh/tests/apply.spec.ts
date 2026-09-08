@@ -110,11 +110,21 @@ describe('local-agent-dsh toggle controller', () => {
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
     // Synchronous on purpose: nothing to read from disk.
-    expect(await harness.effectiveSettings!()).toEqual({ drive: 'exec', baseUrlSet: false })
+    // `containerNodeOptions` is unconditional: the provider always injects
+    // `--use-env-proxy` on a container target, so the snapshot always names it.
+    expect(await harness.effectiveSettings!()).toEqual({
+      drive: 'exec',
+      baseUrlSet: false,
+      containerNodeOptions: '--use-env-proxy',
+    })
     // The live preference rides the same namespace; flipping it flips the
     // snapshot's drive on the next read.
     settings.set({ live: true })
-    expect(await harness.effectiveSettings!()).toEqual({ drive: 'live', baseUrlSet: false })
+    expect(await harness.effectiveSettings!()).toEqual({
+      drive: 'live',
+      baseUrlSet: false,
+      containerNodeOptions: '--use-env-proxy',
+    })
   })
 
   it('reports the inherited host model selection as provider/model', async () => {
@@ -127,6 +137,7 @@ describe('local-agent-dsh toggle controller', () => {
     expect(await harness.effectiveSettings!()).toEqual({
       drive: 'exec',
       baseUrlSet: false,
+      containerNodeOptions: '--use-env-proxy',
       model: 'deepseek/deepseek-chat',
     })
   })

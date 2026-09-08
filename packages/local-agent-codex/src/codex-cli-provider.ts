@@ -35,11 +35,14 @@ import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  containerExecSpawn,
+  containerScopedHome,
   delegationEnv,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
@@ -182,13 +185,18 @@ export class CodexCliProvider implements SubagentProvider {
     if (cwd === undefined) {
       throw new Error('subagent-codex: the parent session has no working directory to run the CLI in')
     }
+    // Container exec target: the same round, spawned through `docker exec`
+    // inside a unit the caller acquired. Validated here so a target missing
+    // the in-container scoped home fails before any session record is made.
+    const exec = intent?.exec
+    if (exec !== undefined) containerScopedHome(exec, 'CODEX_HOME', 'subagent-codex')
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
       assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-codex')
-      return this.startCodexResume(request, intent, cwd, homeDir)
+      return this.startCodexResume(request, intent, cwd, homeDir, exec)
     }
-    return this.startCodexFresh(request, cwd, homeDir)
+    return this.startCodexFresh(request, cwd, homeDir, exec)
   }
 
   /** Fresh round: record the child session, spawn `codex exec`, append after settle. */
@@ -196,6 +204,7 @@ export class CodexCliProvider implements SubagentProvider {
     request: ResolvedSubagentStartRequest,
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -230,7 +239,10 @@ export class CodexCliProvider implements SubagentProvider {
     // Live driver: the round goes to the resident app-server process (one per
     // member). A channel that fails at spawn/handshake falls through to the
     // exec one-shot below — and stays there until the breaker cools down.
-    const live = this.liveDriver(runId)
+    // A container target always takes the exec one-shot: the live driver runs
+    // a resident app-server on the HOST, which is the transport the target
+    // exists to replace.
+    const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       try {
         return await live.startRound(request, {
@@ -259,11 +271,15 @@ export class CodexCliProvider implements SubagentProvider {
     }
     // Member channel: register this run and carry the bridge declaration on
     // the spawn argv, so the CLI session starts with member_message available.
-    const member = this.memberRun(runId, request.parent.session.id)
+    // The member bridge is a host unix socket the container cannot reach, and
+    // its MCP declaration names a host node path — a containerized round
+    // therefore runs WITHOUT the member channel rather than with a broken one.
+    const member = exec === undefined ? this.memberRun(runId, request.parent.session.id) : undefined
     try {
       const run = await startCodexCliRun(request, {
         cwd,
         env: delegationEnv({ CODEX_HOME: homeDir }),
+        ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         sandbox: this.sandbox,
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -311,6 +327,7 @@ export class CodexCliProvider implements SubagentProvider {
     intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
     cwd: string,
     homeDir: string,
+    exec: DelegationExecTarget | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -335,7 +352,8 @@ export class CodexCliProvider implements SubagentProvider {
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
       // Live driver: continue the member's resident app-server thread. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
-      const live = this.liveDriver(intent.childSessionId)
+      // See the fresh path: a container target is exec-only.
+      const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
         try {
           const liveRun = await live.startRound(request, {
@@ -357,12 +375,14 @@ export class CodexCliProvider implements SubagentProvider {
       }
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
-      const member = this.memberRun(intent.childSessionId, request.parent.session.id)
+      // See the fresh path: no member channel across the container boundary.
+      const member = exec === undefined ? this.memberRun(intent.childSessionId, request.parent.session.id) : undefined
       let run: SubagentRun
       try {
         run = await startCodexCliRun(request, {
           cwd,
           env: delegationEnv({ CODEX_HOME: homeDir }),
+          ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           sandbox: this.sandbox,
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -410,6 +430,12 @@ export interface CodexCliRunSpec {
   readonly cwd: string
   /** Explicit environment layered after the shared credential scrub. */
   readonly env: Readonly<NodeJS.ProcessEnv>
+  /**
+   * Run the CLI inside this container instead of on the host: the argv below
+   * is wrapped in `docker exec` and {@link env} is forwarded through NAME-only
+   * `-e` flags. Absent means the host spawn, unchanged.
+   */
+  readonly exec?: DelegationExecTarget | undefined
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */
@@ -678,24 +704,32 @@ export function startCodexCliRun(
   // `exec` (the spike-verified position; `codex exec resume` accepts it too).
   const memberArgv = spec.member === undefined ? [] : ['-c', spec.member.configOverride]
 
+  // `--skip-git-repo-check` rides every exec argv. Codex refuses to start
+  // outside a Git repository ("Not inside a trusted directory and
+  // --skip-git-repo-check was not specified") and exits before producing a
+  // single stream event, so the run fails with no diagnosable output. The
+  // delegation cwd is the CALLER's choice — a scratch directory, an eval
+  // cell, any path the `cwd` option names — and none of those are required
+  // to be repositories. The check is codex's own guard for interactive use
+  // in a stray directory; a delegation has already been directed at its
+  // workspace by the caller, so the guard can only reject work the caller
+  // asked for. Sandboxing stays with `--sandbox`, which this does not touch.
+  const argv = spec.resume === undefined
+    ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
+    : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task]
+  // Container target: the same argv, wrapped in `docker exec`. The host cwd
+  // still applies — it is the docker CLIENT's working directory now, while
+  // the CLI's own is the target's in-container workdir.
+  const launch = spec.exec === undefined
+    ? { argv, env: spec.env }
+    : containerExecSpawn(spec.exec, { argv, env: spec.env }, 'subagent-codex')
+
   const child = spec.spawn({
-    // `--skip-git-repo-check` rides every exec argv. Codex refuses to start
-    // outside a Git repository ("Not inside a trusted directory and
-    // --skip-git-repo-check was not specified") and exits before producing a
-    // single stream event, so the run fails with no diagnosable output. The
-    // delegation cwd is the CALLER's choice — a scratch directory, an eval
-    // cell, any path the `cwd` option names — and none of those are required
-    // to be repositories. The check is codex's own guard for interactive use
-    // in a stray directory; a delegation has already been directed at its
-    // workspace by the caller, so the guard can only reject work the caller
-    // asked for. Sandboxing stays with `--sandbox`, which this does not touch.
-    argv: spec.resume === undefined
-      ? ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
-      : ['codex', 'exec', ...memberArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task],
+    argv: launch.argv,
     cwd: spec.cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
-    env: spec.env,
+    env: launch.env,
   })
   spec.onSpawned?.(child.pid)
   // The spawn moment anchors the rollout-locator time window: the run's

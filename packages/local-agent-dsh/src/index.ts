@@ -32,7 +32,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
-import { DshCliProvider } from './dsh-cli-provider.ts'
+import { CONTAINER_NODE_OPTIONS, DshCliProvider } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { listDshSessions } from './records.ts'
@@ -170,6 +170,13 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
         return {
           drive: scope.get().live ? 'live' : 'exec',
           baseUrlSet: false,
+          // dsh is the only harness that needs an extra node flag to run
+          // inside a container (undici does not read the proxy variables on
+          // its own). The provider injects it unconditionally on a container
+          // target, so the snapshot states it unconditionally — the condition
+          // file records the knob rather than leaving the fairest-to-compare
+          // difference between the four harnesses invisible.
+          containerNodeOptions: CONTAINER_NODE_OPTIONS,
           ...model !== undefined ? { model } : {},
         }
       },
