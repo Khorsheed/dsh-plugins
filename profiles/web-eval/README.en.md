@@ -153,6 +153,35 @@ The agent appears only in the planning and analysis phases and needs reading and
 
 The full capability map, the step-by-step trace from natural language to execution, and the list of generated files are in [docs/architecture.md](docs/architecture.md) (Chinese).
 
+### Frozen decision 12's execution point: the `eval` preset
+
+Tool exposure by domain bounds what the *profile layer* registers; the **preset** bounds the other half. An evaluation instance's agent runs on the pack's own `eval` preset (`presets/eval/`), whose composition is the shipped `standard` preset minus two classes of row:
+
+- **Anything that can run a host command**: `tool-bash` / `tool-pwsh`; `tool-workflow` and the `workflow-worker-thread` engine it needs — a workflow script is **model-authored JavaScript** executed as an async function body inside a Node worker thread, so it reaches `node:child_process` with no shell anywhere in the path; `tool-ralph` drives the same engine and goes with it.
+- **Anything whose vocabulary collides with this line's own**: `plan-mode`. Its prompt plans an *implementation* and forbids writing files, while this agent's whole output is a `dataseek.plan/1` written to disk and approved by a person. Two things called "plan" in one session is the confusion, not the missing capability.
+
+What stays is reading, drafting, and delegation to an agent **running on this same preset**: an in-process child runs on its parent's preset (the harness proves it in `subagent-in-process-driver/tests/preset-inheritance.spec.ts`), so a delegation cannot hand a child the shell this preset does not carry. Docker was never on the table: `lab` registers no model-facing tool at all, and every container verb lives on the orchestrator's service face.
+
+**The preset belongs to the pack**, for the same reason `cordis.patch.yml` does (see [Install](#install)): `install.sh` and `update.sh` both replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins `agent-presets`' `default` to `eval`. Keep personal preferences under a different preset id, not in this one.
+
+**How to confirm an instance is running it** — three layers, cheapest first: composition, files, session.
+
+```sh
+# composition: the default preset is eval, and the preset directory is in place
+dsh --profile web-eval --dump-config | grep -A3 'id: agent-presets'   # → default: eval
+ls "$DSH_HOME/.agent-presets/eval"                                     # → agent.cordis.yml  preset.yml
+
+# files: with the comments stripped, no execution row is left in the composition
+grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
+  | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → no output
+```
+
+The session layer needs the UI: Settings → Agent presets should show **评测模式** as the default, and a fresh session's Settings → Tools and skills should list no `bash` and no container tool. A session header records the preset it was created with, and a session that switched carries an `agent-preset/selected` event in its log.
+
+**This pins the default, not the reachable set.** The shipped standard / code / minimal / cordis presets stay on the roster: `apps/cli`'s `composeProfile` writes the shipped preset root into `roots` as the last overlay unconditionally, and no profile layer can remove them. A person who picks 标准模式 for a blank session gets Bash back. Decision 12 is aimed at **agent misoperation** — an agent has no tool for switching its own preset; switching is a human act.
+
+**Execution-class tools this preset cannot reach** (open for I3): the four players' delegation tools `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` are inserted at the **profile root** by each provider's own bundle patch, and a preset can only subtract rows it mounts itself. They are exactly the rows that start the local CLIs, with the sandbox opened up per [frozen decision](#frozen-decisions) 3. The three options and their trade-offs are in the [eval-preset Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md).
+
 ## Target flow
 
 ```mermaid
@@ -243,7 +272,7 @@ These are the apparatus's fairness baseline: written into the run meta before th
 9. **The judge must not be a contestant; de-fingerprint before judging; double-sample and report agreement.**
 10. **Cross-harness efficiency uses list-price cost or active seconds; tokens are compared only within one model.**
 11. **Run order is randomized and interleaved, with the seed recorded.**
-12. **A single destroy path.** The eval instance's agent preset carries no Bash and no docker; only the orchestrator holds the docker socket.
+12. **A single destroy path.** The eval instance's agent preset carries no Bash and no docker; only the orchestrator holds the docker socket. Its execution point has [its own section](#frozen-decision-12s-execution-point-the-eval-preset).
 
 ## Iteration plan
 
@@ -292,11 +321,13 @@ Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$
 
 The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not to personal preference, so they **belong to the pack**: they live in this profile's `cordis.patch.yml`, and both `install.sh` and `update.sh` overwrite that file — the one patch-layer difference from [dsh-web-dev](../web-dev/README.en.md). Leaving it to the user means an update can silently change the sandbox tier or the reasoning effort while run.meta still records the old one, and the report's "the subject under test is the same" stops meaning anything. Personal preferences go in a preset layer, not here.
 
+The agent preset **belongs to the pack** for the same reason: both scripts replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins it as the default preset ([frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)). It lands *outside* the profile directory — the preset roster is organized per `$DSH_HOME`, not per profile — so the uninstall `rm -rf` does not take it with it; see [Uninstall](#update-switch-add-or-remove-a-member-uninstall).
+
 The current pins (written by I2 · T15): `mission tools: read`, `datasets tools: authoring`, `eval tools: all` (tools by domain); `live: false` for all four harnesses (decision 2); codex `sandbox`, claude `permissionMode: skip`, kimi `thinkingEffort: high` (decisions 3 and 4); claude `baseUrl` and `proxyUrl` (decision 5 — the endpoint is part of the subject under test, and without the pin the provider falls back to the host process environment, so restarting from another terminal silently swaps the upstream; the values match the 3080 production profile — the official endpoint, egress through the local proxy — because the third-party address the host environment exports authenticates by API key, and `delegationEnv` strips that key). **On the host-direct stage codex takes `workspace-write`, not `danger-full-access`**: there is no container boundary on the host, and full access there puts the evaluation's side effects into a real home. The asymmetry is declared in each run's methodology; I3's containers restore `danger-full-access`, and only then do the four sit on the same tier.
 
 ## Update, switch, add or remove a member, uninstall
 
-Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile **and `cordis.patch.yml`** — the evaluation pins belong to the pack (see [Install](#install)), the one difference from [dsh-web-dev](../web-dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile. Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
+Switching is a same-port handoff; `update.sh` overwrites the member list, the lockfile, **`cordis.patch.yml` and `presets/eval/`** — the evaluation pins and the agent preset both belong to the pack (see [Install](#install)), the one difference from [dsh-web-dev](../web-dev/README.en.md#update); `dsh --profile web-eval plugin rm/add <pkg>` adds or removes one member; `rm -rf "$DSH_HOME/profiles/web-eval"` uninstalls the whole profile — the pack's agent preset is not under that directory, so add `rm -rf "$DSH_HOME/.agent-presets/eval"` to clear it too (leaving it is harmless: with no profile pinning it as the default it is just one more entry on the roster). Until I6, do not run `update.sh` on a source-mode install — it overwrites the member list back to npm ranges and the unpublished members start 404-ing; re-run `install.sh --source` instead.
 
 ## Related documents
 

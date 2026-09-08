@@ -152,6 +152,35 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
+### 冻结决策 12 的执行点：eval 预设
+
+「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/eval/`），它的组成表是随发行版的 `standard` 减去两类行：
+
+- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-worker-thread`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
+- **词汇与本线冲突的**：`plan-mode`。它的提示词规划的是**实现**并明令不要写文件，而这个 agent 的产出恰恰是写到盘上、由人批准的 `dataseek.plan/1`。一个会话里两个「plan」是混淆，不是能力缺口。
+
+留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
+
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）：`install.sh` 与 `update.sh` 都把 `presets/eval/` 整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把 `agent-presets` 的 `default` 钉成 `eval`。个人偏好另起一个预设 id，别改这个。
+
+**怎样确认实例正在用它**，三层，从便宜到贵——组成层、文件层、会话层：
+
+```sh
+# 组成层：默认预设是 eval，预设目录已就位
+dsh --profile web-eval --dump-config | grep -A3 'id: agent-presets'   # → default: eval
+ls "$DSH_HOME/.agent-presets/eval"                                     # → agent.cordis.yml  preset.yml
+
+# 文件层：去掉注释后，组成里没有任何执行类行
+grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
+  | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → 无输出
+```
+
+会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+
+**这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
+
+**这个预设够不到的执行类工具**（I3 待办）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` 由各 provider 的 bundle patch 装在 **profile 根**上，而预设只能挑掉自己挂的行。它们正是在宿主上起各家 CLI 的那批，沙箱按[冻结决策](#冻结决策) 3 放开。三条可选路径与取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)。
+
 ## 理想流程
 
 ```mermaid
@@ -242,7 +271,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 9. **判官不得是选手之一；判前去指纹；双采样报一致性。**
 10. **跨家效率用标价成本或活跃秒数；token 只在同模型内比。**
 11. **运行顺序随机交错并记录种子。**
-12. **销毁路径唯一。** 评测实例的 agent preset 不挂 Bash 与 docker；只有编排器持有 docker socket。
+12. **销毁路径唯一。** 评测实例的 agent preset 不挂 Bash 与 docker；只有编排器持有 docker socket。执行点见[同名小节](#冻结决策-12-的执行点eval-预设)。
 
 ## 迭代计划
 
@@ -291,11 +320,13 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-web-dev](../web-dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
 
+同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
+
 当前 pin（I2·T15 写入）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
 
 ## 更新、切换、装卸单个成员、卸载
 
-切换是同端口交接；`update.sh` 覆盖成员清单、lockfile **与 `cordis.patch.yml`**——评测 pin 归 pack（见[安装](#安装)），这是与 [dsh-web-dev](../web-dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml` 与 `presets/eval/`**——评测 pin 与 agent 预设都归 pack（见[安装](#安装)），这是与 [dsh-web-dev](../web-dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile——pack 的 agent 预设不在这个目录下，要一并清掉再加一条 `rm -rf "$DSH_HOME/.agent-presets/eval"`（留着它无害：没有 profile 把它钉成默认，它只是名册上多一个可选项）。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
 
 ## 相关文档
 

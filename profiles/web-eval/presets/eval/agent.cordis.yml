@@ -1,0 +1,171 @@
+# The `eval` agent preset: the planning-and-analysis agent of an evaluation
+# instance, and the execution point of FROZEN DECISION 12 — "the destruction
+# path is unique: the evaluation instance's agent preset carries no Bash and no
+# docker; only the orchestrator holds the docker socket" (README「冻结决策」).
+#
+# This file is an AGENT-PLANE composition, mounted once per process under a
+# standing scope; every session naming this preset joins by scope parentage.
+# It is derived from the shipped `standard` preset (apps/cli/config/agent-presets/
+# standard/agent.cordis.yml in the harness), with two classes of row removed:
+#
+#   (a) anything that can run a host command —
+#       `tool-bash` / `tool-pwsh` (the shell itself), and `tool-workflow` plus
+#       the `workflow-worker-thread` engine it needs: a workflow script is
+#       MODEL-AUTHORED JavaScript executed as an async function body in a Node
+#       worker thread, so it reaches `node:child_process` without a shell in
+#       sight. `tool-ralph` drives the same engine and goes with it.
+#   (b) `plan-mode`, whose vocabulary collides with this line's own: its
+#       prompt plans an IMPLEMENTATION and forbids writing files, while this
+#       agent's whole output is a `dataseek.plan/1` written to disk and
+#       approved by a person through the eval flow. Two things called "plan"
+#       in one session is the confusion, not the missing capability.
+#
+# What stays is read, draft, and delegation to an agent running on THIS preset:
+# an in-process child inherits its parent's preset (the harness proves it in
+# subagent-in-process-driver/tests/preset-inheritance.spec.ts), so a delegation
+# cannot hand a child the shell this preset does not carry.
+#
+# WHAT THIS PRESET CANNOT REACH: the family delegation tools `subagent_codex` /
+# `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` mount at the PROFILE
+# ROOT (each provider's own bundle patch inserts them), and a preset filters
+# nothing it does not mount. Those DO run host commands — that is their job, and
+# it is how the orchestrator drives the players. See the README section
+# 「冻结决策 12 的执行点」 for the gap and the options for closing it.
+#
+# A service row here MUST sit inside a group carrying an `isolate` realm;
+# without one it publishes into the process-global root realm and
+# `dsh-agent-presets` rejects the mount. Rows that only REGISTER into a host
+# registry (tools, skills) need no realm.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+# The persona states the missing shell on purpose: an agent that does not know
+# it has none spends turns discovering it, and the reason is not a defect it
+# should try to route around.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are the planning and analysis agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
+      Execution belongs to the deterministic orchestrator: you read the dataset repository and finished run bundles, draft plan and condition files for a person to approve, and write analysis drafts.
+      You have no shell and no container controls — that is the apparatus, not a gap to work around. Ask the person to run what needs running.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── filesystem: read, and draft ─────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so they
+# need no realm. `tool-fs` keeps `write`/`edit`: a plan, a condition and an
+# analysis draft are files, and writing one executes nothing. `glob`/`grep`
+# spawn the packaged ripgrep binary through `ctx.subprocess` rather than a
+# shell, and take no command from the model — they are read tools.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+# The task REGISTRY stays on the host plane; these are the model-facing
+# controls only. With the shell gone the sole producer left is a continuable
+# `tool-subagent` child, which is exactly what these collect and stop.
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# The skill registry is host-plane and layered per scope: these rows register
+# into THIS preset's layer, and the merged catalog also carries whatever the
+# profile registered globally. I5's `eval-planning` skill arrives this way.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+# Only the model-facing tool; the goal service and its `/goal` command stay on
+# the host plane. Goal state is bookkeeping — it starts nothing.
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# Reading bundles is long-context work, so this preset compacts. The pruner
+# shares the realm because `compaction-basic` resolves `toolResultPrune`
+# through `ctx.get`; the token meter deliberately stays on the host plane.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation ──────────────────────────────────────────────────────────────
+
+# The `subagents` registry and its spawn/fork backends are host-plane
+# singletons; a preset chooses only which delegation TOOLS its agent sees.
+# Both backends produce in-process dsh children, and a child runs on its
+# parent's preset — so a delegated reader is as shell-less as its parent.
+#
+# No `workflowEngine` realm here, unlike the shipped `standard` preset: the
+# rows that needed it are the three this preset drops.
+- id: tool-subagent-control
+  name: '@deepseek-ai/dsh-tool-subagent-control'
+
+- id: tool-subagent-list-agents
+  name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent
+    backgroundMode: continuable
+
+- id: tool-subagent-fork
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: fork
+    toolName: subagent_fork
+    backgroundMode: continuable
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session. `fetch: false` matches the shipped
+# presets: `web_search` only.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

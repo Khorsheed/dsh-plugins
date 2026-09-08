@@ -1,0 +1,3 @@
+name: 评测模式
+description: 评测实例的规划与分析 Agent：读题库、起草 plan 与 condition、读 bundle 写分析初稿；不挂 Bash，不挂容器控制。
+order: 0
