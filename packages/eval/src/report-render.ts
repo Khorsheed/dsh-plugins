@@ -75,6 +75,8 @@ function renderEfficiency(report: EvalReport): string[] {
     lines.push('')
     return lines
   }
+  lines.push('下表只统计**已完成**的格子（judged / archived / releasable / released）；未完成格子的耗时买到的工作量未知，混进来会让两列看着可比而其实不可比。')
+  lines.push('')
   lines.push('| 条件 | 模型 | 活跃时长 | 委派轮次 | 输出 token | 输入 token | cacheRead | 标价成本 |')
   lines.push('|---|---|---:|---:|---:|---:|---:|---:|')
   for (const efficiency of report.efficiency) {
@@ -95,6 +97,15 @@ function renderEfficiency(report: EvalReport): string[] {
     lines.push('token 跨模型**不适用**：上表 token 按条件如实记录，但只在同模型条件之间比较（冻结决策 10）。')
   } else if (models.length === 1) {
     lines.push(`token 口径：各条件同模型（${models[0]}），token 列可比；缓存列按记录如实呈现。`)
+  }
+  if (report.efficiencyExcluded.length > 0) {
+    const excluded = report.efficiencyExcluded
+      .map(entry => `${entry.condition} ${entry.state} × ${entry.count}`)
+      .join('；')
+    const total = report.efficiencyExcluded.reduce((sum, entry) => sum + entry.count, 0)
+    lines.push(`未计入上表的未完成格子（${total} 格）: ${excluded}——它们的委派时长如实存在于 results 之外的注解里，只是不进效率口径。`)
+  } else {
+    lines.push('未计入上表的未完成格子: 无——所有当前格子都已完成。')
   }
   const missingDelegation = report.efficiency.filter(e => e.rounds === null)
   if (missingDelegation.length > 0) {

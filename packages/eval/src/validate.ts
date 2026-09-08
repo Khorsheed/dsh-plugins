@@ -9,11 +9,12 @@
  *   explicit (null fields, missing locks, unpinned commits). validate lists
  *   them; the pre-run readiness gate (I2) is what refuses to start on them.
  */
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
 import { hashConditionDocument } from './hash.ts'
+import { llmDraftCriteria, pickRubricPath, probePaths } from './judge.ts'
 import {
   CONDITION_ID_RE,
   CONDITION_SCHEMA,
@@ -170,6 +171,8 @@ interface PlanSemantics {
   conditionIds: string[]
   judgeIds: string[]
   stages: string[]
+  items: string[]
+  expectedNs: string[] | null
   commit: unknown
 }
 
@@ -244,7 +247,17 @@ function planSemantics(plan: unknown): { diagnostics: EvalDiagnostic[]; semantic
       if (seen.has(id)) diagnostics.push({ code: 'JUDGE_IS_PLAYER', message: `judge condition ${JSON.stringify(id)} is also a player condition — the judge must not be a contestant` })
     }
   }
-  return { diagnostics, semantics: { conditionIds, judgeIds, stages, commit: dataset?.['commit'] } }
+  return {
+    diagnostics,
+    semantics: {
+      conditionIds,
+      judgeIds,
+      stages,
+      items: items.filter((item): item is string => typeof item === 'string'),
+      expectedNs: expectedNs === undefined ? null : expectedNs.filter((ns): ns is string => typeof ns === 'string'),
+      commit: dataset?.['commit'],
+    },
+  }
 }
 
 async function readJson(path: string): Promise<{ ok: true; value: unknown } | { ok: false; reason: 'missing' | 'malformed' }> {
@@ -353,6 +366,90 @@ export async function resolveConditionReadiness(id: string, root: string): Promi
   return readiness
 }
 
+/** Display paths under one of an item's layer directories; empty when absent. */
+async function layerPaths(itemRoot: string, layer: string): Promise<string[] | null> {
+  try {
+    const entries = await readdir(join(itemRoot, layer), { recursive: true, withFileTypes: true })
+    return entries
+      .filter(entry => entry.isFile())
+      .map(entry => join(entry.parentPath, entry.name).slice(join(itemRoot, layer).length + 1))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Cross-check what the plan EXPECTS to be judged by against what each item
+ * can actually produce (pilot A · G6, the plan half).
+ *
+ * `expectedNs` is a claim about verdict sources, and a source with nothing to
+ * run on an item is silently empty: F3 declared `script` while shipping no
+ * executable probe, and every F3 cell's `verdicts/` came back short — which
+ * only became visible when the archive gate refused them. Both checks are
+ * WARNINGS: whether an empty source is acceptable is the reviewer's call
+ * (a plan may name a source that a later item will supply), and refusing the
+ * plan would make the drafting loop unusable.
+ *
+ * Only the CONVENTIONAL item layout is inspected (`items/<id>/verify`,
+ * `items/<id>/grading`). A dataset that re-homes its layers is the dataset
+ * validator's business (T26); here an item whose directory is not there is
+ * left alone rather than reported on a guess.
+ */
+async function checkExpectedNsSources(
+  expectedNs: readonly string[] | null,
+  items: readonly string[],
+  root: string,
+  warnings: EvalDiagnostic[],
+): Promise<void> {
+  if (expectedNs === null) return
+  const wantsScript = expectedNs.includes('script')
+  const wantsLlmDraft = expectedNs.includes('llm-draft')
+  if (!wantsScript && !wantsLlmDraft) return
+  for (const item of items) {
+    const itemRoot = join(root, 'items', item)
+    if (!isDirectory(itemRoot)) continue
+    if (wantsScript) {
+      const verify = await layerPaths(itemRoot, 'verify')
+      const probes = verify === null ? [] : probePaths(verify)
+      if (probes.length === 0) {
+        warnings.push({
+          code: 'EXPECTED_NS_NO_PROBE',
+          message: `expectedNs declares "script" but item ${item} ships no executable probe (.mjs / .sh under a probes/ segment) in its verify layer`
+            + ' — that source can produce no verdict for this item',
+        })
+      }
+    }
+    if (wantsLlmDraft) {
+      const grading = await layerPaths(itemRoot, 'grading')
+      const rubricPath = grading === null ? null : pickRubricPath(grading)
+      if (rubricPath === null) {
+        warnings.push({
+          code: 'EXPECTED_NS_NO_RUBRIC',
+          message: `expectedNs declares "llm-draft" but item ${item} ships no rubric.yml in its grading layer — the judge has nothing to answer`,
+        })
+        continue
+      }
+      let criteria: number
+      try {
+        criteria = llmDraftCriteria(await readFile(join(itemRoot, 'grading', rubricPath), 'utf8')).length
+      } catch (error) {
+        warnings.push({
+          code: 'EXPECTED_NS_RUBRIC_UNPARSEABLE',
+          message: `item ${item}: grading/${rubricPath} could not be parsed as YAML (${error instanceof Error ? error.message : String(error)})`,
+        })
+        continue
+      }
+      if (criteria === 0) {
+        warnings.push({
+          code: 'EXPECTED_NS_NO_LLM_DRAFT_CRITERIA',
+          message: `expectedNs declares "llm-draft" but item ${item}'s grading/${rubricPath} has no kind: llm-draft leaf`
+            + ' — the judge would be handed an empty rubric and the cell would archive with no llm-draft verdict',
+        })
+      }
+    }
+  }
+}
+
 /** Lint the stage schemas a plan names (they gate mission transitions at run time). */
 async function checkStageSchemas(stages: readonly string[], root: string, errors: EvalDiagnostic[], warnings: EvalDiagnostic[]): Promise<void> {
   for (const stage of stages) {
@@ -433,6 +530,7 @@ export async function validatePlan(planPath: string): Promise<PlanValidation> {
   }
 
   await checkStageSchemas(semantics.stages, root, errors, warnings)
+  await checkExpectedNsSources(semantics.expectedNs, semantics.items, root, warnings)
   for (const id of semantics.conditionIds) {
     const readiness = await resolveConditionReadiness(id, root)
     errors.push(...readiness.errors)

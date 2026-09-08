@@ -123,14 +123,24 @@ export interface JudgeConsistency {
   details: string[]
 }
 
-/** Per-condition efficiency numbers — parallel columns, never one score. */
+/**
+ * Per-condition efficiency numbers — parallel columns, never one score.
+ *
+ * Every number here is summed over the condition's COMPLETED cells only
+ * (COMPLETED_STATES). An unfinished cell contributes real delegation time
+ * for a fraction of the work, so pooling it with finished ones produces a
+ * number that means nothing: pilot A's two harnesses both read 21.0 min of
+ * active time, and the tie was an artifact of one dsh cell that only ever
+ * ran stage one. What was excluded is reported beside the table, never
+ * folded into it.
+ */
 export interface ConditionEfficiency {
   condition: string
   /** Model the tokens/time belong to (observed readback preferred). */
   model: string | null
-  /** Sum of delegation durationMs — active time, not wall clock. */
+  /** Sum of delegation durationMs over completed cells — active time, not wall clock. */
   activeMs: number | null
-  /** Delegation count. */
+  /** Delegation count over completed cells. */
   rounds: number | null
   /** Mean delegation rounds per task (compared only on both-completed tasks). */
   roundsByTask: Record<string, number>
@@ -139,6 +149,13 @@ export interface ConditionEfficiency {
   cacheReadTokens: number | null
   /** Listed price if run.meta/condition recorded one; blank otherwise. */
   price: number | null
+}
+
+/** Cells excluded from one condition's efficiency row, grouped by their state. */
+export interface ExcludedCells {
+  condition: string
+  state: string
+  count: number
 }
 
 /** The analyzed bundle — everything summary rendering and tests consume. */
@@ -156,6 +173,8 @@ export interface EvalReport {
   singleCondition: boolean
   judge: JudgeConsistency
   efficiency: ConditionEfficiency[]
+  /** Cells the efficiency table left out, by condition and state — one line under the table. */
+  efficiencyExcluded: ExcludedCells[]
   /** Condition → tasks where ALL its current-attempt cells finished their stages (halted is not finished). */
   tasksCompletedBy: Record<string, string[]>
   /** expectedNs namespaces whose verdicts are ALL tool:-written — top red flag. */
@@ -688,6 +707,29 @@ function checkSubject(cells: BundleCell[], conditionEntries: Array<{ id: string;
   return { id: 'subject', title, status: 'ok', details: [`${current.length} 格锚点条件均落在 run.meta.conditions 内且哈希一致；模型回读与声明一致`] }
 }
 
+/**
+ * The subset line of the procedure section. A run that covered part of its
+ * plan says so here, in the same place the reader checks whether two
+ * conditions ran the same program — an unrecorded subset is how a partial run
+ * gets read as a complete one.
+ * @param meta - `run.meta`.
+ * @returns one detail line, or null when the run predates the field.
+ */
+function subsetDetail(meta: Record<string, unknown>): string | null {
+  const subset = isPlainObject(meta['subset']) ? meta['subset'] : undefined
+  if (subset === undefined) return null
+  const total = num(subset['totalCells'])
+  const selected = num(subset['selectedCells'])
+  const only = Array.isArray(subset['only']) ? subset['only'].filter((id): id is string => typeof id === 'string') : null
+  const maxCells = num(subset['maxCells'])
+  const span = total !== null && selected !== null ? `${selected}/${total} 格` : '格数未记录'
+  const knobs: string[] = []
+  if (only !== null && only.length > 0) knobs.push(`--only ${only.join('、')}`)
+  if (maxCells !== null) knobs.push(`--max-cells ${maxCells}`)
+  if (knobs.length === 0) return `子集：全矩阵（${span}，无 --only / --max-cells）`
+  return `子集：${knobs.join(' + ')}（${span}）——本 run 只覆盖了 plan 的一部分`
+}
+
 function checkProcedure(meta: Record<string, unknown>): InvariantCheck {
   const evalVersion = str(meta['evalVersion'])
   const planSha = str(meta['planSha'])
@@ -696,6 +738,10 @@ function checkProcedure(meta: Record<string, unknown>): InvariantCheck {
   else details.push('planSha 未记录')
   if (evalVersion !== null) details.push(`evalVersion ${evalVersion} 已记录`)
   else details.push('evalVersion 未记录（程序版本不可追溯）')
+  const subset = subsetDetail(meta)
+  // A run written before the field simply says nothing: absence here means
+  // "unrecorded", and claiming "full matrix" would be a guess.
+  if (subset !== null) details.push(subset)
   const ok = evalVersion !== null && planSha !== null
   return {
     id: 'procedure',
@@ -942,10 +988,15 @@ function efficiencyOf(
 ): ConditionEfficiency[] {
   const pricing = isPlainObject(meta['pricing']) ? meta['pricing'] : undefined
   const current = cells.filter(c => c.isCurrent)
+  // Only cells that finished their stages carry comparable effort. The
+  // condition ids still come from ALL current cells, so a condition whose
+  // every cell is unfinished appears in the table with blanks rather than
+  // vanishing from it.
+  const completed = current.filter(c => c.state !== null && COMPLETED_STATES.has(c.state))
   const conditionIds = [...new Set(current.map(c => c.condition).filter((c): c is string => c !== null))].sort()
   const out: ConditionEfficiency[] = []
   for (const condition of conditionIds) {
-    const cellsOf = current.filter(c => c.condition === condition)
+    const cellsOf = completed.filter(c => c.condition === condition)
     const delegations = cellsOf.flatMap(c => c.delegations)
     const activeMs = delegations.reduce((sum, d) => sum + (d.durationMs ?? 0), 0)
     const roundsByTask: Record<string, number> = {}
@@ -986,6 +1037,27 @@ function efficiencyOf(
     })
   }
   return out
+}
+
+/**
+ * The current-attempt cells the efficiency table left out: not in a completed
+ * state, so their delegation time buys an unknown fraction of the work.
+ * @param cells - every cell of the bundle.
+ * @returns one row per (condition, state), condition-then-state sorted.
+ */
+function excludedCellsOf(cells: BundleCell[]): ExcludedCells[] {
+  const counts = new Map<string, ExcludedCells>()
+  for (const cell of cells) {
+    if (!cell.isCurrent) continue
+    if (cell.state !== null && COMPLETED_STATES.has(cell.state)) continue
+    const condition = cell.condition ?? '(未知条件)'
+    const state = cell.state ?? '(未知状态)'
+    const key = `${condition}\u0000${state}`
+    const existing = counts.get(key)
+    if (existing === undefined) counts.set(key, { condition, state, count: 1 })
+    else existing.count += 1
+  }
+  return [...counts.values()].sort((a, b) => (a.condition < b.condition ? -1 : a.condition > b.condition ? 1 : a.state < b.state ? -1 : 1))
 }
 
 // --- assembly ----------------------------------------------------------------
@@ -1110,6 +1182,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
 
   const judge = judgeConsistencyOf(cells)
   const efficiency = efficiencyOf(cells, conditionEntries, meta)
+  const efficiencyExcluded = excludedCellsOf(cells)
 
   const tasksCompletedBy: Record<string, string[]> = {}
   for (const condition of seenConditions) {
@@ -1150,6 +1223,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     singleCondition,
     judge,
     efficiency,
+    efficiencyExcluded,
     tasksCompletedBy,
     toolOnlyNs: toolOnlyNsOf(expectedNs, writtenBy),
     nsCounts,

@@ -794,3 +794,131 @@ describe('dsh-eval report (CLI)', () => {
     expect(existsSync(join(bundle, 'report'))).toBe(false)
   })
 })
+
+// --- G15 · the efficiency table counts completed cells only ---------------------
+
+/**
+ * The pilot-a-round1 shape that made G15 visible: one condition finished all
+ * its cells, the other has a cell parked in `stage-2` after only stage one
+ * ran. Pooling that cell's delegation time with the finished ones is what
+ * made both harnesses read 21.0 min of active time.
+ */
+function partialRunBundle(root: string): string {
+  return writeBundle(root, {
+    runId: 'partial',
+    meta: {
+      conditions: [
+        conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+        conditionEntry('dsh-exec', baseConditionDoc({ harness: { name: 'dsh', version: '1.0', drive: 'exec' } }), 'bb'),
+      ],
+      subset: { only: null, maxCells: null, totalCells: 4, selectedCells: 4 },
+    },
+    missions: [
+      {
+        id: 'F2-codex-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [scriptNote('F2', [['c1', true]]), orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      },
+      {
+        id: 'F2-codex-exec-rep2',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [scriptNote('F2', [['c1', true]]), orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      },
+      {
+        id: 'F2-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [scriptNote('F2', [['c1', true]]), orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      },
+      {
+        // Stage one ran, stage two never did: the cell is parked mid-flight.
+        id: 'F2-dsh-exec-rep2',
+        attempts: [{
+          attempt: 1, state: 'stage-2', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      },
+    ],
+  })
+}
+
+describe('report — efficiency counts completed cells only (G15)', () => {
+  it('drops the unfinished cell from the sums and lists it beside the table', async () => {
+    const report = await analyzeBundle(partialRunBundle(tmpTree()))
+
+    const codex = report.efficiency.find(e => e.condition === 'codex-exec')
+    const dsh = report.efficiency.find(e => e.condition === 'dsh-exec')
+    // Two completed cells each ran 60s; the third dsh cell is unfinished, so
+    // dsh must NOT read the same 120s as codex — that tie was the artifact.
+    expect(codex?.activeMs).toBe(120_000)
+    expect(codex?.rounds).toBe(2)
+    expect(dsh?.activeMs).toBe(60_000)
+    expect(dsh?.rounds).toBe(1)
+
+    expect(report.efficiencyExcluded).toEqual([{ condition: 'dsh-exec', state: 'stage-2', count: 1 }])
+
+    // results.jsonl is untouched: the unfinished cell's verdicts (it has
+    // none here) and every other row still go through the same path.
+    expect(report.rows).toHaveLength(3)
+    expect(report.missions).toBe(4)
+  })
+
+  it('keeps a condition with no completed cell in the table, blank rather than absent', async () => {
+    const root = tmpTree()
+    const bundle = writeBundle(root, {
+      runId: 'none-complete',
+      meta: { conditions: [conditionEntry('dsh-exec', baseConditionDoc({ harness: { name: 'dsh', version: '1.0', drive: 'exec' } }), 'bb')] },
+      missions: [{
+        id: 'F2-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'stage-1', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [orchestratorNote('stage1', 1, 45_000, 100)],
+        }],
+      }],
+    })
+    const report = await analyzeBundle(bundle)
+    expect(report.efficiency.map(e => e.condition)).toEqual(['dsh-exec'])
+    expect(report.efficiency[0]?.activeMs).toBeNull()
+    expect(report.efficiency[0]?.rounds).toBeNull()
+    expect(report.efficiencyExcluded).toEqual([{ condition: 'dsh-exec', state: 'stage-1', count: 1 }])
+  })
+
+  it('summary.md says which cells the table left out, and prints the run subset', async () => {
+    const root = tmpTree()
+    const written = await writeEvalReport(partialRunBundle(root))
+    const summary = readFileSync(written.summaryPath, 'utf8')
+    expect(summary).toContain('只统计**已完成**的格子')
+    expect(summary).toContain('未计入上表的未完成格子（1 格）: dsh-exec stage-2 × 1')
+    expect(summary).toContain('子集：全矩阵（4/4 格，无 --only / --max-cells）')
+  })
+
+  it('prints the subset knobs when a run covered part of its plan', async () => {
+    const root = tmpTree()
+    const bundle = writeBundle(root, {
+      runId: 'subset',
+      meta: {
+        conditions: [conditionEntry('dsh-exec', baseConditionDoc({ harness: { name: 'dsh', version: '1.0', drive: 'exec' } }), 'bb')],
+        subset: { only: ['f2-dsh-exec-rep1'], maxCells: 1, totalCells: 12, selectedCells: 1 },
+      },
+      missions: [{
+        id: 'F2-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [scriptNote('F2', [['c1', true]]), orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      }],
+    })
+    const summary = readFileSync((await writeEvalReport(bundle)).summaryPath, 'utf8')
+    expect(summary).toContain('子集：--only f2-dsh-exec-rep1 + --max-cells 1（1/12 格）——本 run 只覆盖了 plan 的一部分')
+  })
+
+  it('says nothing about a subset for a bundle that predates the field', async () => {
+    const summary = readFileSync((await writeEvalReport(singleConditionBundle(tmpTree()))).summaryPath, 'utf8')
+    expect(summary).not.toContain('子集：')
+  })
+})

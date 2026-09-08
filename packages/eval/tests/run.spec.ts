@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
+import { READINESS_PROMPT } from '../src/readiness.ts'
 import type { DatasetsFace, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
 import type { DelegationResult, DelegationRun } from '../src/faces.ts'
 import { canonicalJson } from '../src/hash.ts'
@@ -339,6 +340,8 @@ interface DelegationCall {
   cwd?: string
   /** Set on judge delegations (the fake recognizes the blind-judging prompt). */
   judge?: true
+  /** Set on the pre-run readiness probe (the fake recognizes its prompt too). */
+  readiness?: true
 }
 
 /** The judge prompt's opening line — how the fake tells judging from playing. */
@@ -394,6 +397,20 @@ class FakeLocalAgent implements LocalAgentFace {
     judgeAnswer?: (call: number, cwd: string, criteria: string[]) => void
     /** T11 read-back; omitted, the fake emits nothing (a facade predating T11). */
     readback?: FakeReadback
+    /**
+     * How the pre-run readiness probe behaves. `completed` (the default) is a
+     * live condition; `refused` models the G4 case — a credential that reads
+     * authenticated and whose every delegation is rejected; `throw` models a
+     * provider that cannot even start.
+     */
+    readiness?: 'completed' | 'refused' | 'throw'
+    /**
+     * What the record reports for the READINESS child specifically. Set it to
+     * the declared model to let the probe pass while the stage rounds read
+     * back something else — the mid-run switch the run loop's own decision-5
+     * guard exists for, which the probe by construction cannot see.
+     */
+    readinessModel?: string
   } = {}) {
     // A facade predating T11 has no delegationOf at all — the face's method is
     // optional, so the fake drops it unless this run exercises the read-back.
@@ -409,6 +426,9 @@ class FakeLocalAgent implements LocalAgentFace {
   delegationOf?(childSessionId: string): { childSessionId: string; provider: string; parentSessionId: string; cwd?: string; observedModel?: string } | undefined {
     const call = this.calls.find(c => c.childSessionId === childSessionId)
     if (call === undefined) return undefined
+    if (call.readiness === true && this.options.readinessModel !== undefined) {
+      return { childSessionId, provider: call.provider, parentSessionId: PARENT_SESSION, observedModel: this.options.readinessModel }
+    }
     const recordModel = this.options.readback?.recordModel
     const visibleAt = this.recordVisibleAt.get(childSessionId)
     const visible = recordModel !== undefined && visibleAt !== undefined && Date.now() >= visibleAt
@@ -464,6 +484,33 @@ class FakeLocalAgent implements LocalAgentFace {
     })), null, 2)}\n`)
   }
 
+  /**
+   * The readiness probe: no files, no stage payload — just whether a
+   * delegation on this provider starts and completes. The run loop asks
+   * nothing else of it, so neither does the fake.
+   */
+  private readinessRun(
+    provider: string,
+    cwd: string | undefined,
+    onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void,
+  ): DelegationRun {
+    if (this.options.readiness === 'throw') {
+      this.calls.push({ kind: 'start', provider, prompt: READINESS_PROMPT, readiness: true, ...(cwd !== undefined ? { cwd } : {}) })
+      throw new Error('spawn failed: CLI binary not found')
+    }
+    const childSessionId = `readiness-${++this.seq}`
+    this.calls.push({ kind: 'start', provider, childSessionId, prompt: READINESS_PROMPT, readiness: true, ...(cwd !== undefined ? { cwd } : {}) })
+    if (this.options.readiness === 'refused') {
+      return { id: childSessionId, result: Promise.resolve({ stopReason: 'failed', diagnostic: '401 authentication failed' }) }
+    }
+    // A real facade emits the same events for the probe as for any other
+    // round, so the fake does too — that is how the probe reads the model
+    // back and how a misattribution is caught before the run exists.
+    this.emitProgress(onProgress)
+    this.armRecord(childSessionId)
+    return { id: childSessionId, result: Promise.resolve({ stopReason: 'completed' }) }
+  }
+
   private behaviorFor(prompt: string): 'valid' | 'invalid' | 'halt' {
     const stage1 = this.options.stage1Payload ?? 'valid'
     const stage2 = this.options.stage2Payload ?? 'valid'
@@ -474,7 +521,10 @@ class FakeLocalAgent implements LocalAgentFace {
 
   async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
     void parentSessionId
-    if (this.options.alwaysThrow === true || (this.options.failuresBeforeSuccess ?? 0) > this.calls.filter(c => c.kind === 'start').length) {
+    // The readiness probe is answered before any scripted failure: those
+    // script the STAGE rounds, and a run whose probe failed never gets there.
+    if ((prompt[0]?.text ?? '') === READINESS_PROMPT) return this.readinessRun(provider, options?.cwd, options?.onProgress)
+    if (this.options.alwaysThrow === true || (this.options.failuresBeforeSuccess ?? 0) > this.calls.filter(c => c.kind === 'start' && c.readiness !== true).length) {
       this.calls.push({ kind: 'start', provider, prompt: prompt[0]?.text ?? '', ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}) })
       throw new Error('spawn failed: CLI binary not found')
     }
@@ -578,14 +628,22 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
     expect(cell.finalState).toBe('archived')
     expect(cell.attempts).toBe(1)
 
+    // The readiness probe goes FIRST and is the run's own delegation, not a
+    // cell's: it must not appear among the stage rounds.
+    expect(localAgent.calls[0]?.readiness).toBe(true)
+    expect(report.readiness).toEqual([
+      expect.objectContaining({ kind: 'readiness', condition: 'dsh-exec', harness: 'dsh', ok: true }),
+    ])
+
     // Decision 4: the prompt is the stage prompt bytes + one newline + task.md bytes.
     const expectedPromptOne = PROMPT_ONE + '\n' + TASK
     const expectedPromptTwo = PROMPT_TWO + '\n' + TASK
-    expect(localAgent.calls[0]?.kind).toBe('start')
-    expect(localAgent.calls[0]?.prompt).toBe(expectedPromptOne)
-    expect(localAgent.calls[1]?.kind).toBe('resume')
-    expect(localAgent.calls[1]?.prompt).toBe(expectedPromptTwo)
-    expect(localAgent.calls[1]?.childSessionId).toBe(localAgent.calls[0]?.childSessionId)
+    const stageCalls = localAgent.calls.filter(call => call.readiness !== true)
+    expect(stageCalls[0]?.kind).toBe('start')
+    expect(stageCalls[0]?.prompt).toBe(expectedPromptOne)
+    expect(stageCalls[1]?.kind).toBe('resume')
+    expect(stageCalls[1]?.prompt).toBe(expectedPromptTwo)
+    expect(stageCalls[1]?.childSessionId).toBe(stageCalls[0]?.childSessionId)
 
     // Decision 3: the child ran in the per-cell directory (the fake writes there).
     const runId = report.runId
@@ -621,6 +679,8 @@ describe('runPlan — one cell, happy path (P0 × dsh × rep1, stages one-two)',
       { id: 'dsh-exec', sha: expect.stringMatching(/^[0-9a-f]{64}$/), condition: conditionDoc },
     ])
     expect(report.meta['order']).toEqual({ seed: 42, sequence: [cell.missionId] })
+    // The whole matrix ran: the subset record says so rather than staying silent.
+    expect(report.meta['subset']).toEqual({ only: null, maxCells: null, totalCells: 1, selectedCells: 1 })
     expect(report.meta['concurrency']).toBe(1)
     expect(report.meta['startedAt']).toBe(1_700_000_000_000)
     expect(mission.runs.get(runId)?.originSession).toBe(PARENT_SESSION)
@@ -861,7 +921,13 @@ describe('runPlan — T11 read-back (usage and model.observed)', () => {
     const root = makeDatasetTree()
     const planPath = writePlan(root, {}, 't8b-mismatch')
     const mission = new FakeMission(join(root, 'mission'))
-    const localAgent = new FakeLocalAgent({ readback: { recordModel: 'dsh/some-other-model' } })
+    // The probe reads back the declared model and passes; the STAGE rounds
+    // then read back another one. That mid-run switch is what this guard is
+    // for — the pre-run probe cannot see it by construction.
+    const localAgent = new FakeLocalAgent({
+      readback: { recordModel: 'dsh/some-other-model' },
+      readinessModel: DECLARED_MODEL,
+    })
     await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), readbackWaitMs: 100 },
       { datasets: fakeDatasets(root), mission, localAgent }))
       .rejects.toThrow(/misattributed/)
@@ -1393,5 +1459,182 @@ describe('runPlan — --finalize and the archive gate', () => {
     expect(cell.finalState).toBe('archived')
     const refusal = orchestratorNs(mission, report.runId, cell.missionId).find(e => e['kind'] === 'finalize-refused')
     expect(String(refusal?.['error'])).toContain('empty verdicts/')
+  })
+})
+
+/* ────────── the pre-run readiness check (pilot A · G4) ─────────── */
+
+describe('runPlan — readiness refuses before the run is created', () => {
+  it('probes every condition with one minimal delegation and creates nothing when one fails', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    // The G4 case: the delegation is refused, which no status surface sees.
+    const localAgent = new FakeLocalAgent({ readiness: 'refused' })
+    const mission = new FakeMission(join(root, 'mission'))
+
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }))
+      .rejects.toThrow(/1 of 1 condition\(s\) failed the pre-run readiness check/)
+
+    // Nothing was created: no run, no cell, no snapshot-driven work.
+    expect(mission.runs.size).toBe(0)
+    // Exactly one delegation was spent — the probe.
+    expect(localAgent.calls).toHaveLength(1)
+    expect(localAgent.calls[0]?.readiness).toBe(true)
+    expect(localAgent.calls[0]?.prompt).toBe(READINESS_PROMPT)
+    // Same cwd rule as a cell: the probe gets its own directory.
+    expect(localAgent.calls[0]?.cwd).toContain(join(root, 'state', 'readiness'))
+  })
+
+  it('carries the refusal reason so the operator reads the 401, not "a condition failed"', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const localAgent = new FakeLocalAgent({ readiness: 'refused' })
+    const mission = new FakeMission(join(root, 'mission'))
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }).catch((caught: unknown) => caught as EvalRunRefused)
+    expect(error).toBeInstanceOf(EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics[0]?.code).toBe('READINESS_FAILED')
+    expect((error as EvalRunRefused).diagnostics[0]?.message).toContain('401 authentication failed')
+    expect((error as EvalRunRefused).diagnostics[0]?.message).toContain('dsh-exec')
+  })
+
+  it('refuses a condition whose probe cannot even start', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const localAgent = new FakeLocalAgent({ readiness: 'throw' })
+    const mission = new FakeMission(join(root, 'mission'))
+    await expect(runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }))
+      .rejects.toThrow(/failed the pre-run readiness check/)
+    expect(mission.runs.size).toBe(0)
+  })
+
+  it('records the ready verdict on run.meta and on every cell of the condition', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    expect(report.readiness).toEqual([expect.objectContaining({
+      kind: 'readiness', condition: 'dsh-exec', harness: 'dsh', provider: 'subagent_dsh',
+      ok: true, declaredModel: DECLARED_MODEL, observedModel: null,
+    })])
+    expect(report.meta['readiness']).toEqual(report.readiness)
+    const cellId = report.cells[0]?.missionId as string
+    const readinessNotes = orchestratorNs(mission, report.runId, cellId).filter(e => e['kind'] === 'readiness')
+    expect(readinessNotes).toHaveLength(1)
+    expect(readinessNotes[0]?.['ok']).toBe(true)
+  })
+
+  it('fails the condition when the probe reads back a model the condition does not declare', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    // Frozen decision 5, caught at the probe instead of at the first stage round.
+    const localAgent = new FakeLocalAgent({ readback: { settledModel: 'some-other-model' } })
+    const mission = new FakeMission(join(root, 'mission'))
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent }).catch((caught: unknown) => caught as EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics[0]?.message).toContain('misattributed')
+    expect(mission.runs.size).toBe(0)
+  })
+})
+
+describe('runPlan — --ignore-readiness starts anyway and records why the cells produced nothing', () => {
+  it('skips every cell of the failed condition with the reason, without delegating', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, { reps: 2 })
+    const localAgent = new FakeLocalAgent({ readiness: 'refused' })
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      ignoreReadiness: true,
+    }, { datasets: fakeDatasets(root), mission, localAgent })
+
+    expect(report.cells).toHaveLength(2)
+    for (const cell of report.cells) {
+      expect(cell.skipped?.reason).toContain('failed the pre-run readiness check')
+      expect(cell.skipped?.reason).toContain('401 authentication failed')
+      expect(cell.finalState).toBe('pending')
+      expect(cell.activeMs).toBe(0)
+      expect(cell.childSessionIds).toEqual([])
+    }
+    // Only the probe was delegated: the doomed cells cost nothing more.
+    expect(localAgent.calls.filter(call => call.readiness !== true)).toEqual([])
+    const skipped = orchestratorNs(mission, report.runId, report.cells[0]?.missionId as string)
+      .filter(entry => entry['kind'] === 'cell-skipped')
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0]?.['reason']).toContain('--ignore-readiness')
+  })
+})
+
+/* ────────── the run subset: --only / --max-cells ─────────── */
+
+describe('runPlan — the subset is recorded, never implicit', () => {
+  it('--only runs exactly the named cells and records the subset in run.meta', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, { reps: 3 })
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      only: ['p0-placeholder-dsh-exec-rep2'],
+    }, { datasets: fakeDatasets(root), mission, localAgent })
+
+    expect(report.cells.map(cell => cell.missionId)).toEqual(['p0-placeholder-dsh-exec-rep2'])
+    expect(report.subset).toEqual({ only: ['p0-placeholder-dsh-exec-rep2'], maxCells: null, totalCells: 3, selectedCells: 1 })
+    expect(report.meta['subset']).toEqual(report.subset)
+    expect(report.meta['order']).toEqual({ seed: 42, sequence: ['p0-placeholder-dsh-exec-rep2'] })
+    // The template carries only the selected cell: an unselected mission
+    // would sit `pending` in the ledger forever and read as abandoned.
+    expect(report.template.missions?.map(m => m.id)).toEqual(['p0-placeholder-dsh-exec-rep2'])
+    expect([...(mission.runs.get(report.runId)?.missions.keys() ?? [])]).toEqual(['p0-placeholder-dsh-exec-rep2'])
+  })
+
+  it('--max-cells caps the seeded order and records the cap', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, { reps: 3 })
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const full = orderCells(expandMatrix({ dataset: { items: ['P0-placeholder'] }, conditions: ['dsh-exec'], reps: 3 }), 42, false)
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      maxCells: 2,
+    }, { datasets: fakeDatasets(root), mission, localAgent })
+
+    expect(report.cells.map(cell => cell.missionId)).toEqual(full.slice(0, 2).map(cell => cell.missionId))
+    expect(report.subset).toEqual({ only: null, maxCells: 2, totalCells: 3, selectedCells: 2 })
+    expect(report.meta['subset']).toEqual(report.subset)
+  })
+
+  it('refuses an --only id the matrix does not contain, before anything runs', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root)
+    const localAgent = new FakeLocalAgent()
+    const mission = new FakeMission(join(root, 'mission'))
+    const error = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      only: ['p0-placeholder-dsh-exec-rep9'],
+    }, { datasets: fakeDatasets(root), mission, localAgent }).catch((caught: unknown) => caught as EvalRunRefused)
+    expect(error).toBeInstanceOf(EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics[0]?.code).toBe('ONLY_UNKNOWN_CELL')
+    expect(mission.runs.size).toBe(0)
+    // Refused before the readiness probe: no delegation was spent.
+    expect(localAgent.calls).toEqual([])
+  })
+
+  it('a dry run rehearses the subset too', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, { reps: 3 })
+    const report = await runPlan(planPath, { dryRun: true, maxCells: 2 })
+    expect(report.subset).toEqual({ only: null, maxCells: 2, totalCells: 3, selectedCells: 2 })
+    expect((report.meta['order'] as { sequence: string[] }).sequence).toHaveLength(2)
+    expect(report.readiness).toEqual([])
   })
 })

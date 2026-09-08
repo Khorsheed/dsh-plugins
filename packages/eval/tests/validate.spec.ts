@@ -231,3 +231,122 @@ describe('validatePlan — contract errors', () => {
     expect(codes(malformed.errors)).toEqual(['PLAN_MALFORMED'])
   })
 })
+
+// --- expectedNs × the item's actual verdict sources (pilot A · G6) -------------
+
+/** A repo whose item ships whatever verify/grading files the test names. */
+function writeRepoWithItem(files: Record<string, string>): string {
+  const dir = tmpTree()
+  const repoPath = join(dir, 'repo')
+  const dataset = join(repoPath, 'datasets', 'ds')
+  writeJson(dataset, 'conditions/c1.json', { ...T1_CONDITION, notes: undefined })
+  for (const [rel, content] of Object.entries(files)) {
+    const path = join(dataset, 'items', 'I1', rel)
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, content)
+  }
+  return repoPath
+}
+
+const RUBRIC_WITH_LEAVES = `schema: dataseek.rubric/2
+items:
+  - id: A1-1
+    kind: llm-draft
+    criterion: 设计里给出了会话事件的投影路径
+    evidence: stage1.json 的 design_decisions
+`
+const RUBRIC_AXES_ONLY = `schema: dataseek.rubric/2
+axes:
+  - id: A
+    title: 设计质量
+items:
+  - id: A1-1
+    kind: objective
+    criterion: 产出了 stage1.json
+`
+
+async function validateAgainst(repoPath: string, expectedNs: string[]): Promise<{ codes: string[]; messages: string[] }> {
+  const planPath = writeJson(repoPath, 'datasets/ds/plans/p.json', planBody({
+    dataset: { repo: repoPath, commit: null, id: 'ds', items: ['I1'] },
+    expectedNs,
+  }))
+  const report = await validatePlan(planPath)
+  return { codes: codes(report.warnings), messages: report.warnings.map(w => w.message) }
+}
+
+describe('validatePlan — expectedNs against what the item can actually produce', () => {
+  it('warns when script is expected but the item ships no executable probe', async () => {
+    // Exactly pilot A's F3: a probes/ directory holding only prose.
+    const repo = writeRepoWithItem({
+      'verify/probes/README.md': '# 手工观察，不是探针\n',
+      'verify/probes/manual-observation.md': '见 rubric.md\n',
+      'grading/rubric.yml': RUBRIC_WITH_LEAVES,
+    })
+    const { codes: warnings, messages } = await validateAgainst(repo, ['script'])
+    expect(warnings).toContain('EXPECTED_NS_NO_PROBE')
+    expect(messages.join('\n')).toContain('item I1 ships no executable probe')
+  })
+
+  it('accepts an item that ships a real probe', async () => {
+    const repo = writeRepoWithItem({
+      'verify/probes/check.mjs': '#!/usr/bin/env node\n',
+      'grading/rubric.yml': RUBRIC_WITH_LEAVES,
+    })
+    const { codes: warnings } = await validateAgainst(repo, ['script'])
+    expect(warnings).not.toContain('EXPECTED_NS_NO_PROBE')
+  })
+
+  it('warns when llm-draft is expected but the rubric has no llm-draft leaf', async () => {
+    // Exactly pilot A's F3 rubric before the fix: axes, no judgeable leaves.
+    const repo = writeRepoWithItem({
+      'verify/probes/check.mjs': '#!/usr/bin/env node\n',
+      'grading/rubric.yml': RUBRIC_AXES_ONLY,
+    })
+    const { codes: warnings, messages } = await validateAgainst(repo, ['llm-draft'])
+    expect(warnings).toContain('EXPECTED_NS_NO_LLM_DRAFT_CRITERIA')
+    expect(messages.join('\n')).toContain('no kind: llm-draft leaf')
+  })
+
+  it('warns when llm-draft is expected but the item ships no rubric at all', async () => {
+    const repo = writeRepoWithItem({ 'verify/probes/check.mjs': '#!/usr/bin/env node\n' })
+    const { codes: warnings } = await validateAgainst(repo, ['llm-draft'])
+    expect(warnings).toContain('EXPECTED_NS_NO_RUBRIC')
+  })
+
+  it('reports an unparseable rubric rather than pretending it has no leaves', async () => {
+    const repo = writeRepoWithItem({ 'grading/rubric.yml': 'items:\n  - id: [unclosed\n' })
+    const { codes: warnings } = await validateAgainst(repo, ['llm-draft'])
+    expect(warnings).toContain('EXPECTED_NS_RUBRIC_UNPARSEABLE')
+  })
+
+  it('is a WARNING, never an error: the plan still validates', async () => {
+    const repo = writeRepoWithItem({ 'grading/rubric.yml': RUBRIC_AXES_ONLY })
+    writeJson(repo, 'datasets/ds/conditions/j1.json', { ...T1_CONDITION, notes: undefined, model: { declared: 'other-model', endpoint: null } })
+    const planPath = writeJson(repo, 'datasets/ds/plans/p.json', planBody({
+      dataset: { repo, commit: null, id: 'ds', items: ['I1'] },
+      expectedNs: ['script', 'llm-draft'],
+      judge: { conditions: ['j1'], samples: 2 },
+    }))
+    const report = await validatePlan(planPath)
+    expect(report.ok).toBe(true)
+    expect(codes(report.errors)).toEqual([])
+    expect(codes(report.warnings)).toEqual(expect.arrayContaining(['EXPECTED_NS_NO_PROBE', 'EXPECTED_NS_NO_LLM_DRAFT_CRITERIA']))
+  })
+
+  it('says nothing about human-final, and nothing when the item directory is not there', async () => {
+    const repo = writeRepoWithItem({})
+    const { codes: warnings } = await validateAgainst(repo, ['human-final'])
+    expect(warnings).not.toContain('EXPECTED_NS_NO_PROBE')
+    expect(warnings).not.toContain('EXPECTED_NS_NO_RUBRIC')
+    // No items/I1 tree at all: the conventional layout is absent, so the
+    // check stays silent rather than guessing at a re-homed one (T26 owns
+    // the dataset-side rules).
+    const bare = writeRepo()
+    const barePlan = writeJson(bare.repoPath, 'datasets/ds/plans/p.json', planBody({
+      dataset: { repo: bare.repoPath, commit: null, id: 'ds', items: ['I1'] },
+      expectedNs: ['script', 'llm-draft'],
+    }))
+    const report = await validatePlan(barePlan)
+    expect(codes(report.warnings)).not.toContain('EXPECTED_NS_NO_PROBE')
+  })
+})

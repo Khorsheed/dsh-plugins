@@ -14,6 +14,7 @@ import { CONDITION_SCHEMA_ID } from './schema.ts'
 import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
 import { generateTemplate, type GeneratedTemplate, type GenerateTemplateOptions } from './template.ts'
 import { runPlan, EvalRunRefused, type RunDeps, type RunOptions, type RunReport } from './run.ts'
+import { finalizeRun, EvalFinalizeRefused, type FinalizeOptions, type FinalizeReport } from './finalize.ts'
 import {
   EvalReadRefused,
   listConditions,
@@ -21,7 +22,7 @@ import {
   type ConditionsReport,
   type RunStatusReport,
 } from './read.ts'
-import type { DatasetsBindingFace, DatasetsFace, LocalAgentFace, MissionFace, MissionReadFace } from './faces.ts'
+import type { DatasetsBindingFace, DatasetsFace, LocalAgentFace, MissionFace, MissionFinalizeFace, MissionReadFace } from './faces.ts'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
@@ -181,9 +182,34 @@ export class EvalService {
     if (localAgent !== undefined) deps.localAgent = localAgent
     return runPlan(planPath, options, deps)
   }
+
+  /**
+   * Finalize a run that already stopped at `archived`: walk every archived
+   * cell through `archived → releasable → released` (the same gate
+   * `/eval run --finalize` takes) and report every cell that was not
+   * archived with its state. A gate refusal is recorded against that cell,
+   * never forced — the re-entry point pilot A had to improvise with
+   * per-cell `dsh-mission transition` calls (G13).
+   * @param runId - the run to finalize.
+   * @param options - caller tag and progress sink.
+   * @throws {@link EvalFinalizeRefused} when the composition mounts no
+   *   mission service, or the run cannot be projected.
+   */
+  finalize(runId: string, options: FinalizeOptions = {}): Promise<FinalizeReport> {
+    const mission = this.hosts?.get('mission') as MissionFinalizeFace | undefined
+    if (mission === undefined) {
+      return Promise.reject(new EvalFinalizeRefused(
+        'no mission service: the release gate lives in the mission ledger, so this composition cannot finalize a run '
+        + '— mount the dsh-mission plugin, or use the dsh-eval CLI (it drives the dsh-mission CLI in a child process)',
+      ))
+    }
+    return finalizeRun(mission, runId, options)
+  }
 }
 
 export { EvalRunRefused } from './run.ts'
-export type { RunOptions, RunReport, RunCellReport } from './run.ts'
+export type { RunOptions, RunReport, RunCellReport, RunSubset } from './run.ts'
+export { EvalFinalizeRefused } from './finalize.ts'
+export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './finalize.ts'
 export { EvalReadRefused } from './read.ts'
 export type { ConditionsReport, ConditionSummary, RunCellStatus, RunStatusReport } from './read.ts'
