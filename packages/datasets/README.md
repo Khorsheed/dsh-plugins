@@ -33,6 +33,27 @@ descriptor 还可带可选的 `register` 数组（数据集作者协议 §2）�
 
 **金丝雀（泄题取证）**：descriptor 可声明 `canary`——一个全局唯一串，建议格式 `dsh-canary:<dataset-id>:<uuid>`。声明之后，`validate` 检查每个可见层（`modelFacing: true`；题集级与 item 级都算，register 归位的文件按其角色层算）里的文本文件是否逐字包含它，缺的逐文件报 `CANARY_MISSING`。文本按扩展名白名单判定（`.md` / `.txt` / `.yml` / `.yaml` / `.json` 与无扩展名），其余文件跳过；敏感层与 item.json 不在检查范围。用途是日后拿这个串去搜模型的输出：搜到即证明本题库进过训练语料，成本几乎为零。插件只校验，从不生成也从不注入金丝雀——串由作者自己造、自己埋。未声明 `canary` 的数据集完全不做此检查。
 
+**可判性（一道题能不能被判，开跑前就知道）**：item 的 grading 层若带 rubric（层内 display 路径中文件名为 `rubric.yml` / `rubric.yaml` 者，多个取最短路径——约定式的 `rubric.yml` 与 register 改户的 `answers/rubric.yml` 都覆盖到），`validate` 就检查这份 rubric 判不判得动。只有 axes 没有叶子的 rubric 能过所有形状校验，然后三个判定源（探针、LLM 判官、判官台）读的全是叶子，一个都写不出判定：格子逐个记 judge-skipped，verdicts 为空，永远过不了归档闸——这是题库侧就能机械查出的事实，不该由一次 run 一格一格地发现。层名 `grading` / `verify` 取自数据集作者协议 §6.7/§6.8 的判定约定（编排器挂载的正是这两个名字）；grading 层里没有 rubric 的 item 完全不做此检查，因而不在判定约定里的数据集报告与从前逐字相同。
+
+### `validate` 规则表
+
+| 级别 | 代码 | 触发条件 |
+|---|---|---|
+| error | `SHAPE_INVALID` 等 | descriptor / item.json / register 的形状错误。逐数据集 fail loud，其余数据集照常校验 |
+| error | `RUBRIC_UNREADABLE` | rubric 不是可读的 YAML 文档，或在该 commit 上读不出来 |
+| error | `RUBRIC_NO_ITEMS` | rubric 没有叶子判据（`items` 缺失或为空）。只有轴判不了——判定源读的都是叶子 |
+| error | `RUBRIC_FIELD_MISSING` | 某条叶子缺 `id` / `axis` / `weight` / `kind` / `criterion` / `evidence`（`weight` 是数，其余是非空字符串）。逐叶子一条，一条里列全缺的字段 |
+| error | `RUBRIC_KIND_INVALID` | 叶子的 `kind` 不是 `objective` / `llm-draft` / `human`——第四种取值不通向任何判定源 |
+| error | `RUBRIC_POLARITY` | 叶子的 `negative: true` 与 `weight` 符号不一致，两个方向都报。极性只声明一次：负分叶子带负权重，判定方从不再取一次反 |
+| warn | `MODELFACING_UNDECLARED` | 混合敏感度数据集里未表态 `modelFacing` 的层，逐层 |
+| warn | `FIELD_NAME_SENSITIVE` | item.json 里出现 note / hint / answer / rubric / grading 词根的键 |
+| warn | `UNREGISTERED_FILES` | 未被任何层目录或 register 条目覆盖的文件——它们落在对每个绑定会话都可见的透传区 |
+| warn | `CANARY_MISSING` | 声明了 `canary` 的数据集里，某个可见层的文本文件没有逐字带上它 |
+| warn | `OBJECTIVE_NO_PROBE` | 该题有 `kind: objective` 的叶子，但 verify 层下没有可执行探针（`probes/` 段里的 `.mjs` / `.sh`）。探针是 objective 判定的唯一写入方，没有探针这些叶子就没人判 |
+| warn | `RUBRIC_REF_DANGLING` | `rubric.md` 引用了 `rubric.yml` 没声明的叶子 id。id 形状按正则宽松匹配，故意容许误报（看着像 id 的表格标号），因此只报警告——而陈旧引用不是误报 |
+
+`kind: llm-draft` 只要有叶子即视为有源：判官由 plan 提供，题库侧看不见它。`kind: human` 不查——判官台是人。plan 有没有给判官、plan 的 `expectedNs` 与题的判定源对不对得上，归 `dsh-eval validate`；本插件的检查止于题库。rubric 无叶子或读不出来时，后两条警告不再跑：那时每一条引用都必然悬空，噪声会把唯一要紧的那条 error 埋掉。
+
 内容以仓库内普通文件的方式进入数据集，走正常 git 流程提交；或由 agent 经 `datasets_put_item` 起草进工作树、人评审后提交。没有 import 动词，也没有复制式物化：单文件从 git 对象直读，整层经托管 worktree 消费。
 
 ## 安装与加载
@@ -79,7 +100,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 | `datasets_snapshot` | | 固化 `{repoPath, commit, datasetId}`，仓库演进中读稳定版本 |
 | `datasets_worktree_path` | 建托管 worktree | 整层只读视图路径（sparse-checkout 限层、按键去重） |
 | `datasets_put_item` | 写工作树 | 创建/更新 item 元数据与层文件；`git commit` 留给人 |
-| `datasets_validate` | | 作者卫生校验：形状错误 fail loud；四类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区 / 声明了 canary 但可见层文本文件没埋），警告不阻断 |
+| `datasets_validate` | | 作者卫生 + 可判性校验：形状错误与判不动的 rubric fail loud；六类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区 / 声明了 canary 但可见层文本文件没埋 / objective 判据无探针源 / rubric.md 引用悬空），警告不阻断。逐条见上面的[规则表](#validate-规则表) |
 
 **工具分组**：`tools` 配置决定注册哪一组工具——preset 挑不掉 profile 层已注册的工具，能决定的只有注册本身。四档是一条包含链：`read` = 六个读类动词（list / show / describe / read / snapshot / validate）；`authoring` = read + `put_item`（起草进工作树，提交仍然是人的）；`all`（缺省）= authoring + `worktree_path`（整层物化，会写托管 worktree）；`none` = 一个模型工具都不注册。系统提示词段只描述实际注册的工具，`none` 下连段都不贡献。服务、CLI、`/datasets` 与会话 tab 是人的面，任何档位都不动它们。**评测域建议 `authoring`**：规划期的 agent 要读题、要出题，但整层物化是编排器的动作，不该是 agent 能自己发起的一步。
 
@@ -126,17 +147,18 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 - npm release 线（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。会话 tab 已在 rc.8 的 web profile 上做过活实例冒烟（绑定 → 树 → 预览）；更早的 release 线共享同一套网关约定，但未做冒烟。
 - source 线（deepseek-harness master）：✅。
-- `tools` 分组与金丝雀校验都在插件内部完成（前者只是少调几次 `ctx.tools.register`，后者只读 git 对象），不依赖任何新的宿主能力，两条线表现一致。
+- `tools` 分组、金丝雀校验与可判性校验都在插件内部完成（第一项只是少调几次 `ctx.tools.register`，后两项只读 git 对象），不依赖任何新的宿主能力，两条线表现一致。
 - ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，模型工具与 CLI 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 
 ## Known Limitations and Deferred Work
 
-- **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，但本包依赖链上没有可用的 YAML 解析器、也刻意不为此加依赖，v1 读 `dataset.json`/`item.json`。未来若引入 YAML 能力可两者兼容。
+- **descriptor 是 JSON 不是 YAML**——布局约定称之为 `dataset.yml`/`item.yml`，v1 读 `dataset.json`/`item.json`。可判性检查要读 rubric（题库侧写成 YAML，不是本包能改的形状），因而 `js-yaml` 自那时起在本包依赖链上；descriptor 继续读 JSON 是形状决定，不再是「没有解析器」。要让 descriptor 两者兼容只差一次自觉的改动，没人做是因为没人要。
 - **item 元数据不按 `itemMetaSchema` 校验**——schema 仅声明、形状校验为对象并透传；对 item 元数据做完整 JSON-Schema 校验需要引入本包不接受的校验器依赖。
 - **会话 tab 的预览经 RPC 读整个文件**——`read` 返回完整文件内容、无字节上限（与工具同语义）；超大层文件更适合走 `worktree_path` 消费。
 - **fork 出的会话以未绑定开始**——绑定按会话 id 归档在插件自管存储里，不随 fork 继承；删除会话会留下其绑定记录（无害，一个小 JSON 文件）。
-- **金丝雀检查逐文件读内容**——`validate` 对每个可见层文本文件跑一次 `git show`，是插件里唯一读文件内容的校验；因此它只在 `validate` 上跑，`list`/`show` 的摘要警告仍然只有形状级的那条。
+- **金丝雀与可判性检查逐文件读内容**——`validate` 对每个可见层文本文件跑一次 `git show`（金丝雀），对每个带 rubric 的 item 再跑一到两次（rubric 与它的 `rubric.md`）；这是插件里仅有的两处读文件内容的校验，因此都只在 `validate` 上跑，`list`/`show` 的摘要警告仍然只有形状级的那条。
+- **可判性检查认死 `grading` / `verify` 两个层名**——判定约定（作者协议 §6.7/§6.8）就是按这两个名字写的，编排器挂载的也是它们。层名本身在本插件里是自由的，所以一个把 rubric 放进别的层名的题库不会被检查（也不会误报）。把层名做成 descriptor 可声明的，是协议侧的改动，不在本包单方面能定的范围。
 - **被消费方写脏的 worktree 由 `worktree prune` 重建**——只读契约由消费方的挂载（`:ro`）强制，插件不强制。
 - **`worktree prune` 需要 `--repo`**——注册表是 `git worktree list`，按仓库管理；已删除仓库残留的托管根手工清理。

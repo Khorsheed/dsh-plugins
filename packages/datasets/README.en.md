@@ -33,6 +33,27 @@ A descriptor may also carry an optional `register` array (the authoring protocol
 
 **The canary (leak forensics)**: a descriptor may declare a `canary` — one globally unique string, recommended shape `dsh-canary:<dataset-id>:<uuid>`. Once declared, `validate` checks that every text file of a visible layer (`modelFacing: true`; both levels, and a register-mapped file counts under its role layer) contains it verbatim, reporting each file that does not as `CANARY_MISSING`. Text is decided by an extension whitelist (`.md` / `.txt` / `.yml` / `.yaml` / `.json` and extensionless files); everything else is skipped, as are sensitive layers and item.json. The point is to search model output for that string later: finding it proves this dataset entered training data, at nearly zero cost. The plugin only checks — it never generates or injects a canary; the author mints it and embeds it. A dataset that declares no `canary` is not checked at all.
 
+**Judgeability (can this item be judged at all — known before anything runs)**: when an item's grading layer carries a rubric (a display path in that layer whose filename is `rubric.yml` / `rubric.yaml`, shortest path first — covering both the convention form `rubric.yml` and the register-re-homed `answers/rubric.yml`), `validate` checks whether that rubric can actually be judged. A rubric with axes but no leaves passes every shape check there was, and then all three judgement sources (probes, the LLM judge, the human bench) read LEAVES and none of them can write a single verdict: every cell records judge-skipped, its verdicts stay empty, and it never clears the archive gate — a fact the repository alone already knows, which a run should not have to discover one cell at a time. The layer names `grading` / `verify` come from the judging convention of the authoring protocol §6.7/§6.8 (the orchestrator mounts exactly those two). An item whose grading layer holds no rubric is not checked at all, so a dataset outside that convention reports byte-identically to before.
+
+### `validate` rule table
+
+| Level | Code | Fires when |
+|---|---|---|
+| error | `SHAPE_INVALID` etc. | A descriptor / item.json / register shape error. Fails loud per dataset; the other datasets still validate |
+| error | `RUBRIC_UNREADABLE` | The rubric is not a readable YAML document, or cannot be read at that commit |
+| error | `RUBRIC_NO_ITEMS` | The rubric declares no leaf criteria (`items` missing or empty). Axes alone cannot be judged — every judgement source reads leaves |
+| error | `RUBRIC_FIELD_MISSING` | A leaf is missing `id` / `axis` / `weight` / `kind` / `criterion` / `evidence` (`weight` a number, the rest non-empty strings). One error per leaf, naming every field it lacks |
+| error | `RUBRIC_KIND_INVALID` | A leaf's `kind` is not `objective` / `llm-draft` / `human` — a fourth value routes to no judgement source |
+| error | `RUBRIC_POLARITY` | A leaf's `negative: true` and its `weight` sign disagree, in either direction. Polarity is stated once: a negative leaf carries a negative weight, and a verdict source never re-reads the sign |
+| warn | `MODELFACING_UNDECLARED` | A layer of a mixed-sensitivity dataset left `modelFacing` undeclared, per layer |
+| warn | `FIELD_NAME_SENSITIVE` | An item.json key carries a note / hint / answer / rubric / grading root |
+| warn | `UNREGISTERED_FILES` | A file covered by no layer directory and no register entry — it sits in the passthrough zone, visible to every bound session |
+| warn | `CANARY_MISSING` | In a dataset declaring a `canary`, a text file of a visible layer does not carry it verbatim |
+| warn | `OBJECTIVE_NO_PROBE` | The item has `kind: objective` leaves but its verify layer carries no executable probe (a `.mjs` / `.sh` under a `probes/` segment). A probe is the only writer of an objective verdict, so without one those leaves are judged by nobody |
+| warn | `RUBRIC_REF_DANGLING` | `rubric.md` refers to a leaf id `rubric.yml` does not declare. The id shape is matched loosely and false positives (a table label that looks like an id) are deliberately tolerated, which is why this only warns — a stale reference is not one of them |
+
+A `kind: llm-draft` leaf counts as having a source the moment it exists: the judge comes from the plan, which the dataset side cannot see. `kind: human` is not checked — the bench is a person. Whether a plan supplies a judge at all, and whether its `expectedNs` matches the item's sources, belongs to `dsh-eval validate`; this plugin's check stops at the dataset. When the rubric has no leaves or cannot be read, the last two warnings are skipped: every reference would then be trivially dangling, and the noise would bury the one error that matters.
+
 Content enters a dataset as plain files in the repository, committed through the normal git flow, or drafted by an agent via `datasets_put_item` into the working tree and committed by a human after review. There is no import verb and no copy-out materialization: single files are read from git objects, whole layers are consumed through managed worktrees.
 
 ## Install and load
@@ -77,7 +98,7 @@ The whitelist is a session-level constraint, not a security boundary: a same-mac
 | `datasets_snapshot` | | Pin `{repoPath, commit, datasetId}` for stable reads while the repo evolves |
 | `datasets_worktree_path` | creates a managed worktree | Whole-layer read-only view path (sparse-checkout-limited, deduplicated) |
 | `datasets_put_item` | writes the working tree | Create/update an item's metadata and layer files; `git commit` stays with the human |
-| `datasets_validate` | | Authoring hygiene: shape errors fail loud; four warning kinds (undeclared modelFacing in a mixed dataset / sensitive-looking item.json field names / files falling into the passthrough zone / a declared canary missing from a visible-layer text file), never blocking |
+| `datasets_validate` | | Authoring hygiene + judgeability: shape errors and unjudgeable rubrics fail loud; six warning kinds (undeclared modelFacing in a mixed dataset / sensitive-looking item.json field names / files falling into the passthrough zone / a declared canary missing from a visible-layer text file / objective leaves with no probe source / a dangling rubric.md reference), never blocking. Rule by rule in the [rule table](#validate-rule-table) above |
 
 **Tool groups**: the `tools` config decides which group is registered — a preset cannot deselect a tool the profile already registered, so registration is the only place that can decide. The four tiers are one containment chain: `read` = the six read verbs (list / show / describe / read / snapshot / validate); `authoring` = read plus `put_item` (drafting into the working tree; committing stays the human's); `all` (the default) = authoring plus `worktree_path` (whole-layer materialization, which writes a managed worktree); `none` = no model tool at all. The prompt section describes only the tools actually registered, and contributes nothing under `none`. The service, the CLI, `/datasets` and the session tab are the human's faces — no tier touches them. **An eval domain wants `authoring`**: a planning agent reads and authors items, but whole-layer materialization is the orchestrator's action, not a step the agent should be able to start.
 
@@ -124,17 +145,18 @@ The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace
 
 - npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable across the line. The session tab is live-smoke-tested on the rc.8 web profile (bind → tree → preview); earlier release lines share the same gateway conventions but were not smoke-tested.
 - source line (deepseek-harness master): ✅.
-- The `tools` grouping and the canary check are both internal (the first only calls `ctx.tools.register` fewer times, the second only reads git objects) — no new host capability, identical on both lines.
+- The `tools` grouping, the canary check and the judgeability check are all internal (the first only calls `ctx.tools.register` fewer times, the other two only read git objects) — no new host capability, identical on both lines.
 - ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the model tools and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
 
 This section mirrors the `dsh.compat` field in package.json; the two move together.
 
 ## Known Limitations and Deferred Work
 
-- **Descriptors are JSON, not YAML** — the layout convention calls them `dataset.yml`/`item.yml`, but no YAML parser is available on this package's dependency chain and adding one is deliberately out of scope, so v1 reads `dataset.json`/`item.json`. A future YAML-capable line can accept both.
+- **Descriptors are JSON, not YAML** — the layout convention calls them `dataset.yml`/`item.yml`; v1 reads `dataset.json`/`item.json`. The judgeability check has to read rubrics (YAML on the suite side, a shape this package does not get to choose), so `js-yaml` has been on the dependency chain since; descriptors staying JSON is now a shape decision rather than "no parser available". Accepting both is one deliberate change away, unmade because nobody has asked.
 - **Item metadata is not validated against `itemMetaSchema`** — the schema is declared, shape-checked as an object, and passed through; full JSON-Schema validation of item metadata needs a validator dependency this package does not take.
 - **The session tab's preview reads whole files over RPC** — `read` serves full file content with no byte cap (the same semantics as the tool); very large layer files are better consumed through `worktree_path`.
 - **A forked session starts unbound** — the binding is filed under the session id in the plugin-owned store and does not follow a fork; deleting a session leaves its binding record behind (harmless, one small JSON file).
-- **The canary check reads file content, one file at a time** — `validate` runs one `git show` per visible-layer text file; it is the only content-reading check in the plugin, which is why it runs on `validate` only and the `list`/`show` summary warnings stay shape-level.
+- **The canary and judgeability checks read file content, one file at a time** — `validate` runs one `git show` per visible-layer text file (the canary), plus one or two more per item carrying a rubric (the rubric and its `rubric.md`); these are the only two content-reading checks in the plugin, which is why both run on `validate` only and the `list`/`show` summary warnings stay shape-level.
+- **The judgeability check hardcodes the layer names `grading` / `verify`** — the judging convention (authoring protocol §6.7/§6.8) is written in those two names, and the orchestrator mounts exactly them. Layer names are otherwise free in this plugin, so a suite that files its rubric under a different layer name is not checked (and not falsely reported either). Making the names descriptor-declarable is a protocol change, not one this package settles alone.
 - **A worktree a consumer dirtied is rebuilt by `worktree prune`** — the read-only contract is enforced by the consumer's mount (`:ro`), not by the plugin.
 - **`worktree prune` needs `--repo`** — the registry is `git worktree list`, which is per-repository; orphaned roots of deleted repositories are removed by hand.

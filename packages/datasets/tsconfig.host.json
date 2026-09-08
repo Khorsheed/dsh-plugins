@@ -15,6 +15,7 @@
     "src/index.ts",
     "src/invariant.ts",
     "src/remote.ts",
+    "src/rubric.ts",
     "src/service.ts",
     "src/types.ts",
     "src/worktree.ts"

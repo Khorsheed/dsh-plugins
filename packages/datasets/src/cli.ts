@@ -13,9 +13,13 @@
  *     `read` prints the raw file content, `worktree path` prints the path)
  *   worktree path    — acquire the managed whole-layer view (sparse-checkout-limited)
  *   worktree prune   — unlock + remove every managed worktree of a repository
- *   validate         — shape + author-hygiene report (errors exit 1, warnings
- *     never block: mixed-sensitivity undeclared modelFacing, sensitive-looking
- *     item.json field names, files uncovered by any layer or register entry)
+ *   validate         — shape + judgeability + author-hygiene report (errors
+ *     exit 1: descriptor shape, and an item's rubric with no leaves, a leaf
+ *     missing a required field, an unknown kind, or a polarity that disagrees
+ *     with its weight sign; warnings never block: mixed-sensitivity undeclared
+ *     modelFacing, sensitive-looking item.json field names, files uncovered by
+ *     any layer or register entry, a missing canary, objective leaves with no
+ *     probe source, a dangling rubric.md leaf reference)
  *   bind / unbind    — write a session's binding (the plugin-owned store is
  *     read per call, so binding a LIVE session is race-free)
  */

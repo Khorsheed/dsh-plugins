@@ -84,7 +84,13 @@ export interface DatasetLayerDecl {
   modelFacingDeclared: boolean
 }
 
-export type DescriptorWarningCode = 'MODELFACING_UNDECLARED' | 'FIELD_NAME_SENSITIVE' | 'UNREGISTERED_FILES' | 'CANARY_MISSING'
+export type DescriptorWarningCode =
+  | 'MODELFACING_UNDECLARED'
+  | 'FIELD_NAME_SENSITIVE'
+  | 'UNREGISTERED_FILES'
+  | 'CANARY_MISSING'
+  | 'OBJECTIVE_NO_PROBE'
+  | 'RUBRIC_REF_DANGLING'
 
 /** A non-fatal validation warning (shape checks fail loud on errors, warn on suspicion). */
 export interface DescriptorWarning {
@@ -94,11 +100,11 @@ export interface DescriptorWarning {
   message: string
   /** The layer the warning is about (MODELFACING_UNDECLARED, CANARY_MISSING). */
   layer?: string
-  /** The item the warning is about (FIELD_NAME_SENSITIVE). */
+  /** The item the warning is about (FIELD_NAME_SENSITIVE, OBJECTIVE_NO_PROBE, RUBRIC_REF_DANGLING). */
   item?: string
   /** The item.json field the warning is about (FIELD_NAME_SENSITIVE). */
   field?: string
-  /** The dataset-relative file the warning is about (UNREGISTERED_FILES, CANARY_MISSING). */
+  /** The dataset-relative file the warning is about (UNREGISTERED_FILES, CANARY_MISSING, the two rubric rules). */
   file?: string
 }
 
