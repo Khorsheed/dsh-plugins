@@ -25,8 +25,9 @@ export interface CliIo {
 
 const USAGE = `dsh-lab <verb> [options]
 
-  acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]...
-          [--cpus N] [--memory SIZE] [--workdir DIR] [--command JSON]
+  acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
+          [--env K=V]... [--cpus N] [--memory SIZE] [--network NET] [--user UID[:GID]]
+          [--workdir DIR] [--command JSON]
   populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
   collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
   checkpoint UNIT --name NAME
@@ -34,16 +35,18 @@ const USAGE = `dsh-lab <verb> [options]
   archive UNIT --target DIR [--kind K] [--artifact-path P]
   release UNIT [--force]
   status [UNIT] [--json]
-  fingerprint UNIT | --image IMG [--mount SRC:DST[:ro]]... [--env K=V]... [--cpus N] [--memory SIZE]
+  fingerprint UNIT | --image IMG [the same spec flags acquire takes]
 
 Global: --max-concurrent N (acquire ceiling, default 4), --state-dir DIR
 Exit codes: 0 ok, 1 failure/refused, 2 usage.
 
 The environment fingerprint is composite: image digest + CPU/memory ceilings +
-mount layout (container paths only) + injected env KEY names (never values).
-\`fingerprint\` prints it with the components it was computed from — with a UNIT
-for one held unit, or with an acquire-shaped spec to resolve one without
-acquiring anything (diff two of those to see which component differs).
+mount layout (container paths only) + injected env KEY names (never values) +
+docker network + in-container user. Without --network the unit lands on
+docker's default bridge, which HAS egress. \`fingerprint\` prints it with the
+components it was computed from — with a UNIT for one held unit, or with an
+acquire-shaped spec to resolve one without acquiring anything (diff two of
+those to see which component differs).
 
 Mission integration (when the dsh-mission bin is on PATH): release gates on
 \`dsh-mission is-releasable\` (exit 0/1, anything else fails closed), and
@@ -111,7 +114,7 @@ const GLOBAL_VALUE_FLAGS = ['max-concurrent', 'state-dir']
 
 /** Flags each verb accepts. Unknown flags are a usage error — with or without a value (a misspelled `--manifest-path` must never exit 0). */
 const VERB_FLAGS: Record<string, { values: string[]; booleans: string[] }> = {
-  acquire: { values: ['image', 'mission', 'run', 'mount', 'env', 'cpus', 'memory', 'workdir', 'command'], booleans: ['help'] },
+  acquire: { values: ['image', 'mission', 'run', 'mount', 'volume', 'env', 'cpus', 'memory', 'network', 'user', 'workdir', 'command'], booleans: ['help'] },
   populate: { values: ['source', 'target', 'manifest', 'artifact-path'], booleans: ['help'] },
   collect: { values: ['source', 'target', 'kind', 'artifact-path'], booleans: ['help'] },
   checkpoint: { values: ['name'], booleans: ['help'] },
@@ -119,7 +122,7 @@ const VERB_FLAGS: Record<string, { values: string[]; booleans: string[] }> = {
   archive: { values: ['target', 'kind', 'artifact-path'], booleans: ['help'] },
   release: { values: [], booleans: ['force', 'help'] },
   status: { values: [], booleans: ['help', 'json'] },
-  fingerprint: { values: ['image', 'mount', 'env', 'cpus', 'memory'], booleans: ['help'] },
+  fingerprint: { values: ['image', 'mount', 'volume', 'env', 'cpus', 'memory', 'network', 'user'], booleans: ['help'] },
 }
 
 /** Reject any flag the verb does not know (parse-time consumption already recorded it). */
@@ -150,12 +153,22 @@ function required(parsed: Parsed, key: string): string {
   return value
 }
 
-/** Parse `SRC:DST[:ro]` into a mount spec. */
-function parseMount(raw: string): MountSpec {
+/**
+ * Parse `SRC:DST[:ro]` into a mount spec. The kind is chosen by which FLAG the
+ * value came from, never inferred from the source text: docker's `-v` guesses
+ * bind-vs-volume from whether the source looks like a path, and a relative
+ * path silently becoming a volume is not a guess worth inheriting.
+ */
+function parseMount(raw: string, type: 'bind' | 'volume'): MountSpec {
+  const flag = type === 'bind' ? 'mount' : 'volume'
+  const want = type === 'bind' ? 'SRC:DST[:ro]' : 'NAME:DST[:ro]'
   const parts = raw.split(':')
-  if (parts.length < 2) throw new UsageError(`bad --mount ${JSON.stringify(raw)} (want SRC:DST[:ro])`)
+  if (parts.length < 2 || parts[0] === '' || parts[1] === '') {
+    throw new UsageError(`bad --${flag} ${JSON.stringify(raw)} (want ${want})`)
+  }
   const mount: MountSpec = { source: parts[0] as string, target: parts[1] as string }
   if (parts[2] === 'ro') mount.readonly = true
+  if (type === 'volume') mount.type = 'volume'
   return mount
 }
 
@@ -167,7 +180,10 @@ function parseMount(raw: string): MountSpec {
 function specFromFlags(parsed: Parsed): AcquireSpec {
   const spec: AcquireSpec = {
     image: required(parsed, 'image'),
-    mounts: (parsed.flags.get('mount') ?? []).map(parseMount),
+    mounts: [
+      ...(parsed.flags.get('mount') ?? []).map((raw) => parseMount(raw, 'bind')),
+      ...(parsed.flags.get('volume') ?? []).map((raw) => parseMount(raw, 'volume')),
+    ],
   }
   const env: Record<string, string> = {}
   for (const pair of parsed.flags.get('env') ?? []) {
@@ -183,6 +199,16 @@ function specFromFlags(parsed: Parsed): AcquireSpec {
       ...(cpus !== undefined ? { cpus } : {}),
       ...(memory !== undefined ? { memory } : {}),
     }
+  }
+  const network = one(parsed, 'network')
+  if (network !== undefined) {
+    if (network === '') throw new UsageError('--network wants a docker network name, or "none"')
+    spec.network = network
+  }
+  const user = one(parsed, 'user')
+  if (user !== undefined) {
+    if (user === '') throw new UsageError('--user wants UID[:GID] or a user name')
+    spec.user = user
   }
   return spec
 }

@@ -7,20 +7,32 @@
  * of injected environment variables are different environments, and a
  * fingerprint that cannot tell them apart lets an evaluation report license a
  * comparison it has no right to. So the fingerprint is sha256 over a
- * canonical JSON of four components — image digest, resource ceilings, mount
- * layout, injected env key names — carried as `lab-env:<hex>`.
+ * canonical JSON of the components — image digest, resource ceilings, mount
+ * layout, injected env key names, docker network, in-container user — carried
+ * as `lab-env:<hex>`.
  *
  * Two rules keep the components honest in the other direction, so environments
  * that really are identical never look different:
  *
  * - **Only container-side facts.** A mount contributes its in-container path,
- *   its type, and its read-only bit — never the host path, which differs per
- *   machine and per run for the same materialized input.
+ *   its type, and its read-only bit — never the host path or volume name,
+ *   which differ per machine and per run for the same materialized input. A
+ *   network NAME is the exception that proves the rule: it is a daemon-local
+ *   label naming a topology, not a location on someone's disk.
  * - **Key names, never values.** An env value is a credential or a per-cell
  *   coordinate; the environment's shape is the set of names.
  *
  * Values are normalized before hashing (`4g` and `4096m` are one ceiling;
  * mount declaration order is not a fact), so equal environments hash equally.
+ *
+ * And one rule keeps the component set growable: **an undeclared component
+ * contributes nothing to the hash.** A component added after the initial set
+ * is absent from the preimage when the spec does not declare it, so teaching
+ * the fingerprint about networks did not move the fingerprint of any unit that
+ * never declared one. That is not a compatibility shim — it follows from what
+ * a fingerprint means. A fingerprint must change when the environment changes;
+ * a unit that declared no network before and declares none now is running in
+ * the same place (docker's default bridge), so its fingerprint must not move.
  */
 import { createHash } from 'node:crypto'
 import type { AcquireSpec, FingerprintComponents, MountSpec, ResourceLimits } from './types.ts'
@@ -29,11 +41,20 @@ import type { AcquireSpec, FingerprintComponents, MountSpec, ResourceLimits } fr
 export const FINGERPRINT_SCHEME = 'lab-env:'
 
 /**
- * Component-set schema version. It is hashed, so teaching the fingerprint a
- * new component necessarily changes every fingerprint — which is correct:
- * units previously judged identical may not be under the wider definition.
+ * Version of the HASHING RULES — canonicalization, value normalization, and
+ * the undeclared-is-absent rule below. It is hashed. It does NOT number the
+ * component inventory: growing that inventory is handled by
+ * {@link ADDITIVE_COMPONENTS} instead, precisely so a wider definition does
+ * not move the fingerprint of a unit whose environment did not change.
  */
 export const COMPONENTS_VERSION = 1
+
+/**
+ * Components added after the initial set, omitted from the hash preimage when
+ * `null`. Every later addition joins this list; the initial four cannot,
+ * because their preimage bytes are what the stability rule is anchored to.
+ */
+const ADDITIVE_COMPONENTS = ['network', 'user'] as const
 
 /** Binary multipliers docker's own memory parser accepts. */
 const MEMORY_UNITS: Record<string, number> = {
@@ -92,13 +113,15 @@ function normalizeResources(resources: ResourceLimits | undefined): FingerprintC
 
 /**
  * Mount layout as the container sees it, sorted so declaration order — which
- * is not an environment fact — cannot split two identical units. The host
- * `source` is deliberately absent: the same input materializes at different
- * host paths on different machines.
+ * is not an environment fact — cannot split two identical units. The `source`
+ * is deliberately absent for both kinds: a bind's host path differs per
+ * machine, and a volume's name is per-cell by design (one credential volume
+ * per harness), while the layout — what is mounted where, and whether it can
+ * be written — is what the cells must share.
  */
 function normalizeMounts(mounts: MountSpec[] | undefined): FingerprintComponents['mounts'] {
   return (mounts ?? [])
-    .map((mount) => ({ target: mount.target, type: 'bind', readonly: mount.readonly === true }))
+    .map((mount) => ({ target: mount.target, type: mount.type ?? 'bind', readonly: mount.readonly === true }))
     .sort((a, b) => a.target.localeCompare(b.target) || a.type.localeCompare(b.type) || Number(a.readonly) - Number(b.readonly))
 }
 
@@ -117,6 +140,10 @@ export function componentsFor(spec: AcquireSpec, image: string | null): Fingerpr
     // Names only: a value is a credential or a per-cell coordinate, never the
     // shape of the environment.
     envKeys: Object.keys(spec.env ?? {}).sort(),
+    // Undeclared is a real, single value here — docker's default bridge, and
+    // the image's own USER — so recording it as null loses nothing.
+    network: spec.network ?? null,
+    user: spec.user ?? null,
   }
 }
 
@@ -137,12 +164,26 @@ export function canonicalJson(value: unknown): string {
 }
 
 /**
+ * The bytes actually hashed: the component set minus every
+ * {@link ADDITIVE_COMPONENTS} entry the spec did not declare. See the module
+ * header — an undeclared component contributes nothing, so a unit's
+ * fingerprint moves only when its environment does.
+ */
+function hashPreimage(components: FingerprintComponents): Record<string, unknown> {
+  const preimage: Record<string, unknown> = { ...components }
+  for (const key of ADDITIVE_COMPONENTS) {
+    if (preimage[key] === null || preimage[key] === undefined) delete preimage[key]
+  }
+  return preimage
+}
+
+/**
  * Hash a component set into the fingerprint string recorded in mission refs.
  * @param components - the component set.
  * @returns `lab-env:<sha256 hex>`.
  */
 export function hashComponents(components: FingerprintComponents): string {
-  return `${FINGERPRINT_SCHEME}${createHash('sha256').update(canonicalJson(components)).digest('hex')}`
+  return `${FINGERPRINT_SCHEME}${createHash('sha256').update(canonicalJson(hashPreimage(components))).digest('hex')}`
 }
 
 /**

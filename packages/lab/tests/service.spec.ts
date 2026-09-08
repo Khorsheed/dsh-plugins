@@ -36,6 +36,8 @@ class FakeProvider implements UnitProvider {
     resources: { cpus: null, memory: null },
     mounts: [],
     envKeys: [],
+    network: null,
+    user: null,
   }
 
   acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string> {
@@ -515,6 +517,8 @@ describe('the fingerprint mirror', () => {
       resources: { cpus: '2', memory: '4294967296' },
       mounts: [{ target: '/input', type: 'bind', readonly: true }],
       envKeys: ['EVAL_CELL'],
+      network: 'eval-net',
+      user: '1000:1000',
     }
     const provider = new FakeProvider()
     provider.managed = [{
