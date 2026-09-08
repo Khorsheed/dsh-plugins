@@ -150,6 +150,7 @@ The agent appears only in the planning and analysis phases and needs reading and
 | mission | only `run_list` `run_status` `list` `get` | every write method | export, retry, human-final |
 | lab | none | all | status, release |
 | eval | `eval_conditions` `eval_plan_validate` `eval_run_status`; no run | the kernel | approve, run, report |
+| tool-subagent (the four delegation tools) | none — three rows set `tools: none`, the fourth is not mounted by default (lands in I3·T27) | delegates the players through the local-agent face | the provider verbs: `/codex login`, `/kimi status`, … |
 
 The full capability map, the step-by-step trace from natural language to execution, and the list of generated files are in [docs/architecture.md](docs/architecture.md) (Chinese).
 
@@ -174,13 +175,20 @@ ls "$DSH_HOME/.agent-presets/eval"                                     # → age
 # files: with the comments stripped, no execution row is left in the composition
 grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
   | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → no output
+
+# composition (the three rows of the next subsection): all set to tools: none
+dsh --profile web-eval --dump-config \
+  | grep -A5 -E '^- id: tool-subagent-(codex-local|claude-code-local|kimi)$' \
+  | grep -c 'tools: none'                                              # → 3
 ```
 
-The session layer needs the UI: Settings → Agent presets should show **评测模式** as the default, and a fresh session's Settings → Tools and skills should list no `bash` and no container tool. A session header records the preset it was created with, and a session that switched carries an `agent-preset/selected` event in its log.
+The session layer needs the UI: Settings → Agent presets should show **评测模式** as the default, and a fresh session's Settings → Tools and skills should list no `bash`, no container tool, and no `subagent_<harness>` — a default session sees **36 tools** (39 at T21; 36 once T27 closed the three delegation tools), with the in-process `subagent` and `subagent_fork` still there. A session header records the preset it was created with, and a session that switched carries an `agent-preset/selected` event in its log.
 
 **This pins the default, not the reachable set.** The shipped standard / code / minimal / cordis presets stay on the roster: `apps/cli`'s `composeProfile` writes the shipped preset root into `roots` as the last overlay unconditionally, and no profile layer can remove them. A person who picks 标准模式 for a blank session gets Bash back. Decision 12 is aimed at **agent misoperation** — an agent has no tool for switching its own preset; switching is a human act.
 
-**Execution-class tools this preset cannot reach** (open for I3): the four players' delegation tools `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` are inserted at the **profile root** by each provider's own bundle patch, and a preset can only subtract rows it mounts itself. They are exactly the rows that start the local CLIs, with the sandbox opened up per [frozen decision](#frozen-decisions) 3. The three options and their trade-offs are in the [eval-preset Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md).
+**Execution-class tools this preset cannot reach, now closed in the plugin layer** (I3·T27): the four players' delegation tools `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` are inserted at the **profile root** by each provider's own bundle patch, and a preset can only subtract rows it mounts itself — so it cannot reach them, and they are exactly the rows that start the local CLIs, with the sandbox opened up per [frozen decision](#frozen-decisions) 3. Of the three options T21 recorded, the first was taken: `@khorsheed/dsh-local-agent-tool-subagent` gained a `tools: all | none` registration switch, and `cordis.patch.yml` sets the codex / claude-code / kimi rows to `none` (the trade-offs are in the [eval-preset Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md)). Only the model-visible tool is closed: the provider rows still mount, the orchestrator still delegates the players through the local-agent face, and `/codex login` and its siblings still work.
+
+**The fourth, `subagent_dsh`, is still an open path.** It has no config row — `local-agent-dsh`'s DeepSeek switch is off by default, and while ON the controller mounts the tool dynamically with a hardcoded config the profile layer cannot reach. By default it registers nothing (which is why it is absent from the 36-tool count above), but **a person who turns that switch on in 设置 → 本地 Agent gets `subagent_dsh` with the default `tools: all`**. Closing it for good means changing the provider package; the T27 Agent Note records it. As with the rest of decision 12, this pins the default, not the reachable set.
 
 ## Target flow
 
@@ -323,7 +331,7 @@ The evaluation pins (frozen decisions 2 through 4) belong to the apparatus, not 
 
 The agent preset **belongs to the pack** for the same reason: both scripts replace `$DSH_HOME/.agent-presets/eval` with `presets/eval/` whole, and `cordis.patch.yml` pins it as the default preset ([frozen decision 12's execution point](#frozen-decision-12s-execution-point-the-eval-preset)). It lands *outside* the profile directory — the preset roster is organized per `$DSH_HOME`, not per profile — so the uninstall `rm -rf` does not take it with it; see [Uninstall](#update-switch-add-or-remove-a-member-uninstall).
 
-The current pins (written by I2 · T15): `mission tools: read`, `datasets tools: authoring`, `eval tools: all` (tools by domain); `live: false` for all four harnesses (decision 2); codex `sandbox`, claude `permissionMode: skip`, kimi `thinkingEffort: high` (decisions 3 and 4); claude `baseUrl` and `proxyUrl` (decision 5 — the endpoint is part of the subject under test, and without the pin the provider falls back to the host process environment, so restarting from another terminal silently swaps the upstream; the values match the 3080 production profile — the official endpoint, egress through the local proxy — because the third-party address the host environment exports authenticates by API key, and `delegationEnv` strips that key). **On the host-direct stage codex takes `workspace-write`, not `danger-full-access`**: there is no container boundary on the host, and full access there puts the evaluation's side effects into a real home. The asymmetry is declared in each run's methodology; I3's containers restore `danger-full-access`, and only then do the four sit on the same tier.
+The current pins (written by I2 · T15, three rows added by I3 · T27): `mission tools: read`, `datasets tools: authoring`, `eval tools: all`, plus `tools: none` on the three delegation-tool rows (tools by domain); `live: false` for all four harnesses (decision 2); codex `sandbox`, claude `permissionMode: skip`, kimi `thinkingEffort: high` (decisions 3 and 4); claude `baseUrl` and `proxyUrl` (decision 5 — the endpoint is part of the subject under test, and without the pin the provider falls back to the host process environment, so restarting from another terminal silently swaps the upstream; the values match the 3080 production profile — the official endpoint, egress through the local proxy — because the third-party address the host environment exports authenticates by API key, and `delegationEnv` strips that key). **On the host-direct stage codex takes `workspace-write`, not `danger-full-access`**: there is no container boundary on the host, and full access there puts the evaluation's side effects into a real home. The asymmetry is declared in each run's methodology; I3's containers restore `danger-full-access`, and only then do the four sit on the same tier.
 
 ## Update, switch, add or remove a member, uninstall
 

@@ -218,6 +218,43 @@ describe('dsh-local-agent-tool-subagent', () => {
     expect(text(result)).toContain('unknown tool "subagent_test"')
   })
 
+  it('registers the tool under an explicit tools: all, exactly as the default does', async () => {
+    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test', tools: 'all' })
+    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeDefined()
+    const agent = fakeAgent()
+    const result = await callTool(ctx, { description: '建个文件', prompt: '创建 hello.txt' }, agent)
+    expect(text(result)).toContain('done: 创建 hello.txt')
+  })
+
+  it('registers nothing model-visible under tools: none, with the provider already present', async () => {
+    const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test', tools: 'none' })
+    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
+    // Nothing model-visible from this row at all — not a renamed or disabled
+    // registration the registry would still list.
+    expect(ctx.tools.schemas(fakeAgent()).map(schema => schema.name)).not.toContain('subagent_test')
+    // The provider face is untouched: the row only ever owned the tool.
+    expect(ctx.subagents.getProvider('mock')).toBeDefined()
+  })
+
+  it('stays unregistered under tools: none when the provider appears after the mount', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SubagentRuntime)
+    const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
+    ctx.provide(LOCAL_AGENT_SERVICE, registry)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+    await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent_test', tools: 'none' })
+    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
+
+    // The `all` mount registers on this very event (see the sibling case), so
+    // this pins that `none` does not re-open the tool through the late path.
+    const started: Array<{ label?: string; task: string }> = []
+    const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
+    mountScriptedProvider(ctx, { name: 'mock', started, taken })
+    expect(ctx.tools.get('subagent_test', fakeAgent())).toBeUndefined()
+  })
+
   it('registers tool-started runs in the active-delegation registry so /local-agent stop can cancel them', async () => {
     const deferred: Array<(result: SubagentResult) => void> = []
     const { ctx, registry } = await setup({ provider: 'mock', toolName: 'subagent_test' }, { deferred })

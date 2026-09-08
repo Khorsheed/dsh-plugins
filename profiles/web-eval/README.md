@@ -149,6 +149,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | mission | 只开 `run_list` `run_status` `list` `get` | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
 | eval | `eval_conditions` `eval_plan_validate` `eval_run_status`；不开 run | 内核 | 批准、run、report |
+| tool-subagent（四家委派工具） | 不开——三行 `tools: none`，第四家默认不挂（I3·T27 落地） | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -173,13 +174,20 @@ ls "$DSH_HOME/.agent-presets/eval"                                     # → age
 # 文件层：去掉注释后，组成里没有任何执行类行
 grep -vE '^\s*#' "$DSH_HOME/.agent-presets/eval/agent.cordis.yml" \
   | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'     # → 无输出
+
+# 组成层（下一小节的三行）：三个委派工具行都是 tools: none
+dsh --profile web-eval --dump-config \
+  | grep -A5 -E '^- id: tool-subagent-(codex-local|claude-code-local|kimi)$' \
+  | grep -c 'tools: none'                                              # → 3
 ```
 
-会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+会话层要看界面：「设置 → Agent 预设」里当前默认应显示**评测模式**；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **36 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
 
 **这条钉的是默认值，不是可达集。** 随发行版的 标准 / 代码 / 极简 / cordis 四个预设仍在名册上：apps/cli 的 `composeProfile` 把随发行版的预设根作为最后一层 overlay 无条件写进 `roots`，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
-**这个预设够不到的执行类工具**（I3 待办）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` 由各 provider 的 bundle patch 装在 **profile 根**上，而预设只能挑掉自己挂的行。它们正是在宿主上起各家 CLI 的那批，沙箱按[冻结决策](#冻结决策) 3 放开。三条可选路径与取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)。
+**这个预设够不到的执行类工具，已在插件层关上**（I3·T27）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh` 由各 provider 的 bundle patch 装在 **profile 根**上，预设只能挑掉自己挂的行，所以够不到它们——而它们正是在宿主上起各家 CLI 的那批，沙箱按[冻结决策](#冻结决策) 3 放开。T21 记下的三条路径取了第一条：`@khorsheed/dsh-local-agent-tool-subagent` 加了 `tools: all | none` 注册开关，`cordis.patch.yml` 把 codex / claude-code / kimi 三行设成 `none`（取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)）。关掉的只是模型可见的工具：provider 行照挂，编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。
+
+**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有配置行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时用写死的配置动态挂载，profile 层够不着。默认状态下它一个工具都不注册（所以上面那份 36 个工具的清单里没有它），但**人在「设置 → 本地 Agent」里打开那个开关，`subagent_dsh` 就会带默认 `tools: all` 出现**。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
 
 ## 理想流程
 
@@ -322,7 +330,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
+当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
 
 ## 更新、切换、装卸单个成员、卸载
 

@@ -12,6 +12,7 @@
 - **可续聊的委派**——一个可选的 `resume` 参数即可在后续轮次、同一个 dsh 子会话里继续同一个 CLI 会话。
 - **构造级安全**——续聊句柄只走参数;塞进 prompt 的被忽略,伪造的被拒绝。
 - **范围隔离继承**——工具自身不 spawn 任何进程;CLI 运行在 harness bundle 的 scoped home 之下。
+- **注册开关**——`tools: none` 让这一行不注册模型可见工具,provider 与它的斜杠动词照旧。
 
 ## 安装
 
@@ -28,6 +29,37 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
 单独移除本包不受支持——harness bundles 依赖它。
+
+## 配置
+
+| 键 | 取值 | 默认 | 含义 |
+|---|---|---|---|
+| `provider` | string(必填) | — | 起委派的 `ctx.subagents` 提供方名(如 `kimi-cli`) |
+| `toolName` | string | `subagent` | 模型可见的工具名;同时挂多行时各不相同 |
+| `tools` | `all` \| `none` | `all` | 这一行注不注册它的模型可见工具 |
+
+`tools: none` 只裁掉模型可见的那一个工具。provider 行照挂,`/codex login`、`/kimi status`
+这类动词与 `ctx.localAgent` 服务面都在 provider 包里,一概不受影响——所以经服务面驱动
+CLI 的编排器完全不受这个开关影响,受影响的只有会话里的模型。
+
+两个取值而不是分组清单:每挂一行只注册**一个**工具,没有可分的组(`datasets` 与 `mission`
+的 `tools` 分档是因为它们各注册一打)。
+
+要关就得关在这里,而不是 agent 预设里:这一行挂在 **profile 根**上,预设只能在已注册的
+工具里挑,减不掉任何一个。评测类组合正是这样把宿主 CLI 的执行路从模型手里拿走,而把
+同一批 CLI 经服务面留给编排器(见 `profiles/web-eval` 的「工具按域开放」)。
+
+```yaml
+- id: tool-subagent-kimi
+  name: '@khorsheed/dsh-local-agent-tool-subagent'
+  config:
+    provider: kimi-cli
+    toolName: subagent_kimi
+    tools: none
+```
+
+patch 层的 `config` 是整值**替换**而不是深合并,所以覆盖这一行时 `provider` 与 `toolName`
+要一并重抄——`provider` 必填,漏了整个组合会在 schema 校验上炸掉。
 
 ## Compatibility
 
