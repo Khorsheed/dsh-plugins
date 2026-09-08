@@ -192,22 +192,23 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
 | T16 ✅ | 运维 | 验证题集级镜像构建；四家 Linux CLI 安装方式实测；本地包镜像与白名单代理；各家凭证可写卷；`versions.lock` 填实 | 无 | 题库 `i3-env` `4004dfc`（并入 i1-walk `714b793`）；镜像 `sha256:ed988b33…`（linux/arm64）；`env/README` 与 `docs/i3-env-log.md`；dsh 是唯一被容器出网打破的选手 |
-| T17 | 代码 | local-agent：容器内 exec 包装（exec 传输层；「CLI 驱动抽成独立包」推迟，理由进 Agent Note） | T16 T18b | |
+| T17 ✅ | 代码 | local-agent：容器内 exec 包装（exec 传输层；「CLI 驱动抽成独立包」推迟，理由进 Agent Note） | T16 T18b | 合入 main `8efac1c`；门面 `exec: {container, workdir, env?}`，四家 argv 换成 `docker exec -w … -e NAME …`，值不上 argv；env 必须点名容器内作用域目录，否则起进程前报错；容器轮 exec-only、无成员通道；dsh 自动补 NODE_OPTIONS 并跳过宿主侧子 profile；四家容器内真委派：codex / dsh 完成，claude 授权过期，kimi 配额 |
 | T18 ✅ | 代码 | lab：复合指纹（镜像 digest + 资源限制 + 挂载布局 + env 键），分量可读 | 无 | 合入 main `b7dc599`；`lab-env:<sha256>` + 分量 JSON；acquire 真传 `--cpus` / `--memory` |
 | T18b ✅ | 代码 | lab：`network`（挂指定网或 none）、volume 挂载、`user`——T16 的三条硬缺口 | T18 | 合入 main `68e23d2`；三分量都真加到容器上再进指纹，未声明的分量不入哈希（旧指纹不变）；`--volume` 与 `--mount` 分立；pid 目录以 root 建 1777，非 root 单元才起得来 |
 | T19 ✅ | 数据 | 探针：F2 / F3 阶段一二的 objective 判据写成 `.mjs` 探针；F2 阶段三的 verify 探针与 `verify/helpers/` | 无 | 题库 `i3-probes` `050e22d`（并入 i1-walk `d3ee214`）；25 条判定过 schema；3 条 objective 判据无探针，理由在 `docs/probes-selftest.md` |
-| T19b | 数据 | F3 补一条与 A-N2 同形的 objective 负分判据；两题 core/bonus 计数对齐 standards.yml；探针改出 T24 定下的比例字段 | T24 | |
+| T19b ✅ | 数据 | F3 补一条与 A-N2 同形的 objective 负分判据；两题 core/bonus 计数对齐 standards.yml；探针改出 T24 定下的比例字段 | T24 | 题库 `i3-probes-b` `2142daf`（并入 i1-walk `22bc6bb`）；F3 新增 D-N1（D1，−2，negative），底层取值三格 1/8、1/5、0/6，一格 false；C1 / C2 出 `ratio`，34 条判定 pass 与 ratio 一致、evidence 无比例；两题 core 口径统一含 G1 |
+| T19c | 数据 | 探针接 T28 的运行器：EXIT_NOT_JUDGEABLE 2 → 3；删两题 verify/lib 副本，探针 import 题集级 lib；F3 rubric.md 三处悬空引用改现行 id；P0 最小探针；自测表重跑 | T19b T28 | |
 | T20 | 代码 | eval：容器路径（acquire / populate / checkpoint / verify / archive 交 lab；销毁路径唯一） | T17 T18b T28 | |
 | T21 ✅ | profile | eval preset：不挂 Bash 与 docker | 无 | 合入 main `e1e12f1`；工具 43 → 39，差集恰为 bash / exit_plan_mode / ralph / workflow；四个 `subagent_<harness>` 预设挑不掉 → T27 |
 | T22 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | |
 | T23 ✅ | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | 合入 main `0cd2139`；finalize 不强推、不碰 archived 以下；就绪检查每条件一次真委派，失败拒整 run；效率表只计已完成格子（pilot A 的 dsh-exec 21.0 → 11.9 min）；子集记 `run.meta.subset`；validate 对 expectedNs 出四种 warning；judge.ts 零改动 |
 | T24 ✅ | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现；**追加**：比例字段进 §6.5 | 无 | 合入 main `979e624`；协议 v1-rev4：极性归 rubric、`ratio: {passed, total}` 进 §6.5、§6.7 禁止 evidence 前缀；导出写 `report/rubric-weights.json`（只有编号与数字）；报告主轴改「得分判据数」+ 缺陷清单表；题库三份 rubric 审计零改动 |
-| T25 | 代码 | local-agent：`effectiveSettings.cliVersion` 填实（G1）；codex 回读在并发 run 里失效的原因与修复（G14）；status 增加「记录在、活性未知」一档（G4 的 local-agent 半边） | 无 | |
-| T26 | 代码 | datasets：`validate` 增加可判性检查（G6）——rubric 有叶子、每个 kind 在该题上有判定源 | 无 | |
-| T27 | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | |
-| T28 | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | |
+| T25 ✅ | 代码 | local-agent：`effectiveSettings.cliVersion` 填实（G1）；codex 回读在并发 run 里失效的原因与修复（G14）；status 增加「记录在、活性未知」一档（G4 的 local-agent 半边） | 无 | 合入 main `25e6196`；codex 回读失效的根因是 64 KB 尾窗而非并发，改为尾扫不到就有界整读、按本轮 cwd 定位、有歧义宁缺不错；四家 `cliVersion` 填实；`credentialState` present-unverified / absent 档；顺带修 usage 全 null（onProgress 路由 60 秒有界驻留） |
+| T26 ✅ | 代码 | datasets：`validate` 增加可判性检查（G6）——rubric 有叶子、每个 kind 在该题上有判定源 | 无 | 合入 main `b37633a`；按判定布局 opt-in，5 条 error（NO_ITEMS / FIELD_MISSING / KIND_INVALID / POLARITY / UNREADABLE）2 条 warn（OBJECTIVE_NO_PROBE / RUBRIC_REF_DANGLING）；在 F3 补叶子前的 commit 上把 pilot A 的「判官全跳过」复现为 1 error |
+| T27 ✅ | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | 合入 main `c8ba619`；none 下不注册工具也不挂生命周期监听；patch 三行 none（整值替换，故重抄 provider / toolName 并以 name 守卫）；新装实例 36 个工具，叠 all 回 39，差集恰为三家委派工具；第四家 `subagent_dsh` 在 profile 层关不掉，要改 provider 包 |
+| T28 ✅ | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | 合入 main `a6395e1`；两个 verify 层镜像题库布局物化，题集级探针对每题各跑一次；退出码 0 / 3 / 其余（取 3 不取 2：2 是 getopt 的用法错误码）；先回填再校验，ratio 边界与 pass 一致性在源头拦；协议 v1-rev5；题库仍退 2、仍留 lib 副本 → T19c |
 
-第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24 已验收；T25、T26 在跑。第二波（2026-09-08 发出）：T18b 已验收；T17、T27、T28 在跑；T19b 可发。T20 在 T17、T28 合入后发；T22 收尾。
+第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 可发；T22 在 T19c、T20 合入后发，文案已写好待放行。
 
 **第一波验收（2026-09-08）**：T21（`e1e12f1`）与 T18（`b7dc599`）合入 main，两条分支文件不重叠；合并态 gate 通过，lab 包 100 个测试在验收机上重跑全绿。T16 与 T19 在题库仓库：`i3-env`（`4004dfc`）与 `i3-probes`（`050e22d`）经临时 worktree 并入 `i1-walk`（`714b793`、`d3ee214`），未动共享检出的 HEAD；T16 的提交全文 grep 过凭据形状，无命中。
 
@@ -223,6 +224,17 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 - **T18b**：三个分量都是「真加到容器上再哈希」（`--network` / `--user` / `type=volume`），容器内实测 uid、网段地址、默认路由 0 条、卷已挂，与 docker inspect 对上。「未声明的分量不入哈希原像」取代了 T18「定义变宽必改所有指纹」的立场：两个 v1 指纹作字面基线钉进测试，改前改后相等；T18 的 Note 与 README 加了前向指针而不改写 rationale。代价写在 README——`network: null` 分不清「没人管过」与「确认过默认 bridge」，要断言隔离就得显式声明。顺带修了非 root 单元的硬伤：pid 目录原以容器用户建，非 root 建不了 /run 下的东西，每次非 root acquire 都会挂在那一行；现以 `exec --user 0` 建并置 1777，daemon 拒绝时回落。挂载分 `--mount` / `--volume` 两个标志而不从 source 形状猜，因为 docker `-v` 的推断在相对路径上恰好错且无声。一条给 T17 / T22 的事实：新建的 docker 卷是 root 所有 755，uid 1000 写不进，题库 `creds/stage.sh` 的 chown 正是为此。
 - **T23**：五项全落在 `packages/eval`，judge.ts 零 diff（validate.ts 只 import 三个已公开的纯函数），T28 可干净合入。finalize 的两条负保证（不强推、不碰 archived 以下）与 `releasable` 归 interrupted 的判断都对；pilot A 副本实测 0 released / 12 skipped，另造两格 archived 的 run 验证了释放与拒绝两条路。就绪检查是一次真委派而不是读 status，同时回读模型核对声明——G4 现在在 run 建立前就拦住，代价是每条件一轮短委派。效率表改后 dsh-exec 从 21.0 min / 3 轮变 11.9 min / 2 轮，results.jsonl 逐字节相同。`--only` 点到矩阵外的 missionId 拒绝整 run 而非忽略，接受——那基本只会是打错字。ankh-guard 的 flake 又拦了它一次 gate（expected 190 observed 178，单跑两次都过），仍归 mainline。
 - **T24**：极性归 rubric、verdict 契约只加可选 `ratio`，与追加文案一致；协议 v1-rev4 双语，两个 verdict 示例各钉夹具。权重表只有 `{task, id, weight, negative, kind, axis}`，实测 69 条判据里判据文字与 evidence 命中 0 处，泄题闸不受影响。报告对 ratio 做 `total > 0`、`0 ≤ passed ≤ total` 的边界检查，越界按缺失并在附注点名；表缺席时明说「极性未知」而不是显示成「没有缺陷」。pilot 副本上 F2 × codex × rep2 的 A-N2 进了缺陷清单、得分 18 → 17、加权 35；加权列没出现在 summary 是因为 pilot A 没记环境指纹、比较一节被诚实闸关着，不是实现缺口。两条接缝：T19 的探针仍把比例写在 evidence 前缀（T19b 改），权重表不含 `veto`（X-no-patch 读成 0 权重正向判据，暂无消费者）。`pass` 与 `passed === total` 的一致性校验不归 T26（datasets 看不到 verdict），追加给 T28 的 readVerdictFile。
+
+**第三波验收（2026-09-08）**：T26（`b37633a`）、T27（`c8ba619`）、T28（`a6395e1`）、T25（`25e6196`）、T17（`8efac1c`）依次合入 main。前三条彼此文件不重叠；T25 与 T17 在 local-agent 与四个 provider 包重叠 24 个文件，冲突八处（五个 README sidecar、两个 index.ts 的导出 / 导入清单、一个 tsconfig 的 files 列表），全是两边各加一项，协调者按两边保留解决，sidecar 按合并后的 blob 重录。合并态在验收机上重跑：local-agent 204、codex 124、claude-code 106、kimi 143、dsh 101、tool-subagent 15、eval 275、datasets 114 全绿，八个包 build 通过。题库侧 T19b：`i3-probes-b`（`2142daf`）经临时 worktree 并入 `i1-walk`（`22bc6bb`），共享检出 HEAD 未动；用 T26 的新校验器跑该分支：0 error，45 条 warning（41 条 UNREGISTERED_FILES 与基线相同，3 条 RUBRIC_REF_DANGLING，1 条 OBJECTIVE_NO_PROBE）。
+
+- **T25**：codex 回读失效的根因不是并发而是尾窗——turn_context 写在回合开头，回读只扫末尾 64 KB，一轮事件一多就被挤出窗口，38 KB 的 smoke 整文件在窗内才读得到，评测格 100–500 KB 读不到。修法是尾扫不到就补一次有界整读，并把本轮 cwd 算进定位，窗口有歧义又对不上目录时宁报缺位不报邻居。尾窗那一半用失败 run 的真实 506 / 488 KB 文件验证（undefined → gpt-5.6-sol），并发那一半用两条同时起的真委派验证；真机端到端跑出 >64 KB 一轮要更大的工具输出，没花那个 token，接受。顺带修的 usage 全 null 是另一半：门面在 settle 时就丢了 onProgress 路由，而 exec provider 的 settle 观测在那之后才算出来，现在路由有界驻留 60 秒。`credentialState` 只到 present-unverified 一档是对的——活性由 T23 的就绪委派验。
+- **T26**：按判定布局 opt-in，判定约定之外的题集报告逐字不变。规则与编排器的 rubric / 探针选取逐字一致，两种布局都经 register 映射解析。在 F3 补叶子之前的 commit 上复现出 RUBRIC_NO_ITEMS，与 pilot A「判官全跳过」的事实对上。三条交出：`validate --commit` 是死参数（动词只读 HEAD），归 datasets 人体工学；`dataseek.rubric/2` 的 axes 没有形状（F2 嵌套 map、F3 / P0 列表，三份的叶子 axis 都索引不到），所以本次只查 axis 存在；`schema_version` 无人校验且已漂（F2 /2、F3 与 P0 /1，items 结构相同）——协议侧要么声明 /1 与 /2 叶子层同构、版本只是标签，要么钉死 /2 与 /1 的差别，未定前不加规则。建议里 F3 的三条悬空引用与 P0 无探针归 T19c。
+- **T27**：none 下 apply 记一条日志就返回，不注册工具也不挂 provider 生命周期监听。与文案不同的一处是对的：applyEntryPatches 对 config 整值替换而不是深合并，只写 `tools: none` 会抹掉 provider bundle 写的必填 `provider`，三行都重抄了 provider / toolName 并带 name 守卫。36 个工具的清单不只靠 T21 的记录，同一实例叠 overlay 强推回 all 得 39，差集恰为三家委派工具。第四家 `subagent_dsh` 没有配置行——DeepSeek 开关 ON 时控制器用写死配置动态挂载，profile 层够不着，默认关所以清单里本就没有；要彻底关得改 provider 包，记为交出项。附带观察：`--dump-config` 有两条既有 loader 警告，两个 provider bundle 想 disable 的官方行在这个组合里不存在，归 profile 清理。
+- **T28**：两个 verify 层镜像题库布局物化，题内探针在题库与物化目录里用同一条相对路径 import 共享库；题集级探针对每题各跑一次，cwd 是该题 verify 层的根。退出码取 3 不取 2 的理由成立：2 是 getopt 的用法错误码，本包夹具探针缺 `--cell` 正是退 2，读成「判不了」会把每次误调用都咽下去。先回填后校验，探针可以整个不写 task / by，写了不一致以编排器为准并记 overwritten；追加的 ratio 两条数值检查在同处，部分行坏仍交出好行。gate 只挂在 ankh-guard 的 inventory mismatch，干净 main 上逐字复现，其余每步单独跑绿，接受。三格实跑：共享探针从「一次都不跑」变成每格各跑一次，但 outcome 是 probe-failed——题库还退 2；实施者在游离 worktree 预演了 2 → 3、删副本、改 import 三步，判定条数逐条相同。这三步没人认领（T19b 的文案没写），记 T19c。
+- **T17**：门面 `exec: {container, workdir, env?}` 随已 stage 的 intent 走，四家各在唯一的 spawn 处换成 `docker exec`，解析、settle、回读、记录零改动。与文案不同的一处是对的：`-e` 只带名字、值留在 docker 客户端环境里由它解析——`K=V` 会把子 dsh 的 API key 放进宿主进程表，Linux 上 /proc/*/cmdline 全局可读；name-only 语义先在 docker 28.1.1 上实测过。env 必须点名容器内作用域目录（CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME），否则起进程前 fail loud，照转宿主路径会让 CLI 从空目录起步且原因不出现在任何输出里。容器轮 exec-only、无成员通道，两条都明确放弃。dsh 自动补 NODE_OPTIONS 并跳过宿主侧子 profile provisioning（符号链接在单元里解析不到）。四家容器内真委派：codex 与 dsh 完成且回读到模型；claude 是 OAuth 过期，宿主对照同一条消息（第一次对照的 401 是验证脚本用 process.env 而不是 scrubbedParentEnv 当基底漏了本会话的 key，已更正）；kimi 仍是 T16 那条配额。「CLI 驱动抽成独立包」推迟，重新考虑的条件是出现第二个消费者。**交回环境侧四条**：镜像要备好 dsh 家族 headless bundle 及依赖闭包（自带的 in-box headless 不认 `--session-id`）；整份作用域目录 bind 进单元会把宿主专用设置带进去（claude settings.json 的 https_proxy 在容器里 Connection refused），挂什么由调用方备好；白名单缺 console.anthropic.com（claude 续期链末端 403）；kimi 账号配额未变。前三条进 T20 / T22 的文案。
+- **T19b**：D-N1 选 D1 而不是 F2 的 A3（dimensions.md 里 F3 不判 A3），F3 每轴负分额度都占满，所以在 D1 开 −2 预算，negative_max −12 → −14，正分 100 不动；docs/dimensions.md 在分支范围之外但 rubric 的 validation.note 明写与它逐轴对齐，只改一边立刻漂移，同步改了那一格，接受。两题 core 口径统一含 G1，理由写进 verify/README：G1 在 standards.yml 里就是 core 的一条，C1 问「达成多少条」、否决问「还算不算数」，两种用途不矛盾；F2 的 G1 从 X-no-patch 取反补上并写进 evidence。ratio 三条规矩都落实：pass === (passed === total) 34 条无一例外，total 记扣除防稀释之后的数（F3 C2 5 → 3 在判定方一侧），evidence 里比例数字 0 处。为拿带 ratio 的 VERDICT_SCHEMA 重建了 dsh-eval 的 lib/（gitignore 产物），无被跟踪文件改动。
+
+交出 mainline 的累计清单又长三条：ankh-guard 的 lane inventory mismatch 本轮拦了 T26 一次、T28 一次（干净 main 复现）；datasets `validate --commit` 死参数；协议 `dataseek.rubric` 的 axes 形状与 schema_version 语义。profile 侧一条：`--dump-config` 的两条 tool-subagent 官方行不存在的 loader 警告。provider 侧一条：`subagent_dsh` 的注册开关要进 local-agent-dsh。
 
 验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
@@ -787,7 +799,7 @@ eval 测试全绿，gate 绿；对 pilot-a-round1 bundle 副本补入权重表�
 
 **追加（2026-09-08，T19 验收后）**：`dataseek.verdict/1` 增加一个**可选**的比例字段（形如 `ratio: { passed, total }`，字段名自定并写进 §6.5，schema 的 additionalProperties 相应放行），供「按比例给分」的判据（F2 / F3 的 C1、C2）使用；报告对带比例的判据按比例计分而不是布尔；探针不再把比例塞进 evidence 前缀（T19 现在的 `通过 N/M` 前缀是临时的，T19b 改成字段）。这是 T19 与 T24 之间原本的口头契约，改为进契约。
 
-### T25 · local-agent：CLI 版本回读、codex 并发回读、status 活性档（可发）
+### T25 · local-agent：CLI 版本回读、codex 并发回读、status 活性档（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T25：local-agent——CLI 版本回读、codex 回读在并发 run 里失效、status 的活性档
@@ -819,7 +831,7 @@ packages/local-agent/src/types.ts（LocalAgentEffectiveSettings、cliVersion 注
 分支名与 commit；Agent Note 路径；gate 输出；四家 status 输出（脱敏）；codex 并发回读失败的根因一句话。
 ```
 
-### T26 · datasets：validate 增加可判性检查（可发）
+### T26 · datasets：validate 增加可判性检查（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T26：datasets validate 增加可判性检查
@@ -854,7 +866,7 @@ datasets 测试全绿，gate 绿；对题库当前 commit 跑 validate：P0、F2
 
 第二波（2026-09-08 发出）：T17、T18b、T27、T28 互不依赖可即发；T18b 已于同日验收。T19b 在 T24 合入后可发（2026-09-08），文案见下。
 
-### T17 · local-agent：容器内 exec 包装（可发）
+### T17 · local-agent：容器内 exec 包装（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T17：local-agent——委派可以在容器内执行（exec 传输层）
@@ -921,7 +933,7 @@ lab 测试全绿，gate 绿；用 T16 的镜像 acquire 一个 network=eval-net�
 分支名与 commit；Agent Note 路径；gate 输出；一份带三个新分量的指纹 JSON。
 ```
 
-### T19b · 题库：F3 的 objective 负分判据、计数对齐、比例字段（可发）
+### T19b · 题库：F3 的 objective 负分判据、计数对齐、比例字段（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T19b：题库——F3 的 objective 负分判据、计数对齐、比例字段
@@ -953,7 +965,7 @@ run-all 在 pilot-a-round1 bundle 上：F3 新判据在三格上至少一格与�
 题库 commit；新判据 id 与三格取值；C1 / C2 带 ratio 的 verdict 样例各一条；validate 输出。
 ```
 
-### T27 · local-agent-tool-subagent：tools 注册开关，pack 关掉四家委派工具（可发）
+### T27 · local-agent-tool-subagent：tools 注册开关，pack 关掉四家委派工具（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T27：local-agent-tool-subagent——tools 注册开关，pack 关掉四家委派工具
@@ -985,7 +997,7 @@ packages/local-agent-tool-subagent/src/index.ts（config schema、mount / unmoun
 分支名与 commit；Agent Note 路径；gate 输出；新装实例的工具列表（脱敏）。
 ```
 
-### T28 · eval 探针运行器：题集级 verify 层、退出码三态、回填顺序（可发）
+### T28 · eval 探针运行器：题集级 verify 层、退出码三态、回填顺序（已完成，2026-09-08 验收）
 
 ```text
 # 任务 T28：eval 探针运行器——题集级 verify 层、退出码三态、回填顺序
@@ -1020,6 +1032,111 @@ eval 测试全绿，gate 绿；对 bundle 三格跑运行器：no-patch.sh 每�
 ## 追加（2026-09-08，T24 合入后）
 - T24 已合入 main（979e624），schema.ts 的 VERDICT_SCHEMA 已带可选 ratio，report.ts 已按它计分；先把 main 并进分支再继续。「不改 verdict schema」的约束照旧。
 - readVerdictFile 校验带 ratio 的 verdict 时加两条数值检查：passed / total 为整数且 total > 0、0 ≤ passed ≤ total；pass === (passed === total)。不符按「产物不合契约」计，与 schema 不过同一档，原因进 orchestrator ns。report.ts 里 T24 的 ratioOf 只做前一条并退回布尔——运行器在源头拦，报告兜底，两边都要在。
+```
+
+### T19c · 题库：探针接上 T28 的运行器——退出码 3、删 lib 副本、悬空引用、P0 最小探针（可发）
+
+```text
+# 任务 T19c：题库——探针接上 T28 的运行器：退出码 3、删 lib 副本、悬空引用、P0 最小探针
+
+## 背景
+T28 已合入 main（a6395e1）：运行器把题集级 verify/helpers/ 与题内 verify/ 一起物化到 <tmp>/verify/… 与 <tmp>/items/<题 id>/verify/…，题内探针可以用 ../../../../verify/helpers/lib/<x>.mjs import 共享库（题库里同一条路径同样成立）；题集级 verify/helpers/probes/ 下的探针对每题各跑一次，cwd 是该题 verify 层的根；退出码三态——0 有判定、3 本轮判不了（记 probe-skipped，带 stderr 首行，不计失败）、其余 probe-failed。题库（i1-walk 22bc6bb）还停在 T19 的约定：verify/helpers/lib/probe-kit.mjs 的 EXIT_NOT_JUDGEABLE = 2，verify/helpers/probes/no-patch.sh 两处 exit 2，两题各留一份 verify/lib/ 副本并靠 run-all.mjs --check-shared 钉住。T28 用真实运行器跑 pilot-a-round1 三格：共享探针每格各跑一次这一半成立了，但 outcome 全是 probe-failed 而不是 probe-skipped；T28 在游离 worktree 里预演过下面三步，判定条数与改前逐条相同（14 个文件，+15 −1355）。T26 的 validate（已合入）在 i3-probes-b 上报 3 条 RUBRIC_REF_DANGLING（F3 rubric.md 引用 B2-2 / B2-3 / B3-2，rubric.yml 没有这些 id——补叶子前的旧编号，落成结构化行时改了名）与 1 条 OBJECTIVE_NO_PROBE（P0 七条 objective 判据全指向「verify/ 判定结果」，checks/probes/ 只有 README）。
+
+## 先读
+main 上 docs/dataset-authoring-protocol.md §6.7（v1-rev5：退出码三态、回填顺序）；T28 的 Agent Note（.agents/notes/implemented/bug-fix/2026-09-08-eval-probe-runner-contract-gaps.zh.md）；T26 的 Agent Note（validate 的规则清单）；题库 verify/helpers/README.md、run-all.mjs、lib/probe-kit.mjs；items/F2-*、items/F3-* 的 verify/probes/*.mjs 与 verify/lib/；items/F3-*/grading/rubric.md 与 rubric.yml；items/P0-placeholder 的 grading/rubric.yml、checks/ 与 verify/；docs/probes-selftest.md。
+
+## 分支
+题库仓库：从 i1-walk（22bc6bb）开 worktree（不在共享检出上 checkout），分支 i3-probes-c，只改 verify/helpers/、items/*/verify/、items/F3-*/grading/rubric.md、items/P0-placeholder/ 与 docs/probes-selftest.md。
+
+## 已定决定（照此实现）
+- EXIT_NOT_JUDGEABLE 改 3，no-patch.sh 两处 exit 2 改 exit 3。用法错误（缺 --cell / --out）仍退 1，那是 probe-failed，不要混进 3。
+- 删掉 items/*/verify/lib/；题内探针的 import 从 ../lib/<x>.mjs 改成 ../../../../verify/helpers/lib/<x>.mjs；run-all.mjs 的 --check-shared 与母本一致性检查随副本一起删，README 同步。
+- probe-kit.mjs 的 taskIdFrom / probeDisplayPath 可以不再回声 task / by（编排器先回填再校验）；保留也无害，以编排器为准。
+- F3 rubric.md 里 B2-2 / B2-3 / B3-2 的引用改成现行 id（以 rubric.yml 为准，对应 B1-1 一带与 B5-1）：只改散文的指认，不动判读文字、权重、叶子——不触碰「开跑前冻结」。
+- P0 补一个最小 .mjs 探针：读 verify/ 的判定结果，对 A1–A3 / B1 / C1 / N1 / N2 各出一条 verdict，结果文件不在就退 3。P0 是链路占位题，探针的意义是让 script 源那一档在容器链路上验得到。
+- 不改 rubric.yml、standards.yml、dimensions.md；schema_version 不动（协议侧未定）。
+
+## 交付
+上述改动；run-all 在 pilot-a-round1 bundle 上的重跑（判定条数与 T19b 逐格相同）；docs/probes-selftest.md 更新；dsh-datasets validate 输出。
+
+## 约束
+共享检出 HEAD 不动；不碰 3080；不改 dsh-plugins。
+
+## 完成判据
+用 main（T28 之后）的 eval 运行器对 pilot-a-round1 三格跑探针：no-patch.sh 与 verify-rollup 记 probe-skipped 而非 probe-failed，题内探针经题集级 lib 判定成功，判定条数与 T19b 逐格相同；validate 0 error，RUBRIC_REF_DANGLING 与 OBJECTIVE_NO_PROBE 归零（UNREGISTERED_FILES 41 条照旧）。
+
+## 回报
+题库 commit；三格探针 outcome 表；validate 输出；被改的 import 与退出码清单。
+```
+
+### T20 · eval：容器路径——一格一单元，acquire / populate / checkpoint / verify / archive 交 lab，销毁路径唯一（可发）
+
+```text
+# 任务 T20：dsh-eval 容器路径——一格一单元，五个动词交 lab，销毁路径唯一
+
+## 背景
+run.ts 至今是「阶段一二、宿主目录」：格子目录在 $DSH_HOME/state/eval 下，题面逐文件 read/write 物化并自算 materialization.json，委派只给 {cwd}，探针在宿主 execFile，归档是 cpSync。I3 的三块前置都已在 main：T17（8efac1c）门面有了 exec: {container, workdir, env?}，四家 argv 换成 docker exec，env 必须点名容器内作用域目录变量（CODEX_HOME / CLAUDE_CONFIG_DIR / KIMI_CODE_HOME / DSH_HOME），值不上 argv；T18b（68e23d2）lab 的 AcquireSpec 有 network / user / resources / mounts(type bind|volume) / env，全部真加到容器上并进复合指纹 lab-env:<sha256>，未声明分量不入哈希；T28（a6395e1）探针运行器把两个 verify 层物化进临时目录、退出码三态。lab 的服务面 ctx.lab 八个动词齐全：acquire → UnitInfo（resource 是容器名，fingerprint 是复合指纹）；populate 先哈希后拷贝并可写 manifest；checkpoint 在容器内 git commit + tag；verify 把材料拷进 /run/dsh-lab/verify 跑完即删，结果原样注解进 ns lab；archive 导出 workspace + manifest；release 是闸的执行点，绑定 mission 时 isReleasable 不过就拒绝，任何选项绕不过，无闸单元才需要 force。架构轨迹表第 11–17 步早就写成这个顺序，四不变量之二「环境一致」在 pilot A 上一直是 unverifiable——refs.fingerprint 没人写。
+
+## 先读
+packages/eval/src/run.ts（runCellOnce 477–805：物化、委派选项、两阶段推进、judgeCell、archive、finalize）、judge.ts（runProbes 与临时目录）、faces.ts（现有三个面）、readiness.ts（T23 的就绪委派）；packages/lab/README.md 与 src/types.ts（Lab 接口、AcquireSpec、MountSpec、PopulateOptions、VerifyResult）、service.ts 的 release 闸；packages/local-agent/src/types.ts 的 DelegationExecTarget 与 container.ts 的 containerScopedHome；profiles/web-eval/docs/architecture.md 的轨迹表、运行环境表、判定环境行、四不变量；题库 env/README.md 与 env/run-unit.sh（每家的容器内作用域路径与变量、NODE_OPTIONS、eval-net、非 root 1000）；T17 / T18b / T23 / T28 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-eval-container，分支 feat/eval-container-path，主要改 packages/eval/；lab 只准加不准改（新增可选项要带测试、README 双语与 sidecar，既有动词语义不动）；不改 local-agent、mission、datasets。
+
+## 已定决定（照此实现）
+- 开关在计划：dataseek.plan/1 加可选 unit 段 {image, network?, user?, resources?}。有它走容器路径；没有走宿主路径，与今天逐字节相同（pilot-a-round1 bundle 复算作回归）。image 取题库 env 层的 tag 或 digest，validate 不查镜像存在（docker 不一定在场），run 开跑前 acquire 第一个单元就是检查。
+- 凭证与作用域目录：每条件一个宿主目录，rw bind 到该条件声明的容器内路径（T17 决定：bind 不用 named volume，回读要直接读 rollout / session）。dataseek.condition/1 加可选 unit 字段 {scopedHome: {container: '/creds/codex', var: 'CODEX_HOME'}}，var 同时出现在 env.keys；宿主侧根目录由 run 选项 --creds-root DIR 给，约定 <DIR>/<condition id>，条件文件里不出现宿主路径。目录由人（T22）备好，编排器只检查存在、非空、属主是单元的 uid，不检查内容。契约改动记 v1-rev6，双语 + sidecar + 夹具。
+- 一格一单元，顺序固定：acquire（mounts 只有该条件的作用域目录一条；env 只有 var=容器内路径，dsh 再加 NODE_OPTIONS=--use-env-proxy；missionId / runId 都带上）→ populate（宿主物化目录 → /workspace，manifestPath 指向 materialization.json，sha 与今天算法相同）→ 每阶段一轮委派，exec = {container: unit.resource, workdir: '/workspace', env: {var: 容器内路径}}，cwd 选项不再传 → 每阶段结束 checkpoint(name: 阶段 id)，ref 进 mission → 探针经 lab.verify 在容器内跑（见下）→ archive(target: 归档目录/workspace) → transition archived。
+- 探针在容器内：judge.ts 的运行器抽成一个执行器接口，宿主执行器即今天的 execFile，容器执行器把物化好的 probeDir 作 lab.verify 的 source、command 是探针相对路径 + 参数，退出码三态与回填顺序逐字不变；探针 --out 写到 /run/dsh-lab/verdicts/<探针 id>/，跑完 lab.collect 回宿主再判、再删；不进 /workspace（归档不含判定产物）。lab.verify 的清理范围若碰到那个目录，给 verify 加一个可选 keep 列表而不是改探针契约。
+- refs.fingerprint = unit.fingerprint，每格 acquire 后立刻 setRefs；报告的「环境一致」从此可验，同 run 内不同指纹按既有规则 violated。
+- 销毁路径唯一：run.ts 只有一个 destroyUnit 函数，两个调用点——finalize 的 releasable 过闸后调 lab.release（不带 force），以及异常路径「先 archive 再 release」（架构 L139–149，同样过闸）。就绪检查（T23）在容器路径下也在单元里做：每条件 acquire 一个不绑 mission 的探活单元跑就绪委派，用完经同一个 destroyUnit 释放——这是 force 在 run.ts 里出现的唯一位置，因为 lab 对无闸单元要求显式 force，Agent Note 写明。run.ts 与 judge.ts 里不出现 docker 字样。
+- 并行度：容器路径默认串行（一格 acquire → archive 完再 acquire 下一格），acquire 超 maxConcurrentUnits 的拒绝当作缺陷而不是排队；并行留 I4。
+- 条件文件的 permissions 不动：codex 容器内 danger-full-access 是 pin（profile）与条件的事，归 T22。
+- --dry-run 打印每格的 AcquireSpec（不含 env 值）；validate 对带 unit 的计划核每条件都有 scopedHome、var 在 env.keys 里。
+
+## 交付
+LabFace（faces.ts）与容器路径；执行器接口；契约 rev6 双语 + sidecar + 夹具；README 双语（容器路径一节：顺序、目录约定、销毁路径、force 的唯一位置）；测试（假 LabFace 断言八个动词的调用顺序与参数、宿主路径逐字节回归、探针容器执行器的三态、readiness 单元释放、fingerprint 进 refs）；Agent Note（feature）。真机：~/.dsh-lab 的 web-eval 实例（3171）上 P0 × codex 一格在容器内跑完全流程到 released——acquire 取 T16 的镜像（sha256:ed988b33…）、eval-net、user 1000、探针在容器内判、archive、finalize 过闸、release；镜像里没有 dsh 家族 bundle（T17 发现，归 T22），所以选 codex 不选 dsh。
+
+## 约束
+不碰 ~/.dsh-official 与 3080；凭证目录按题库 env/creds/stage.sh 的方式备一家（codex），属主 1000，不进日志、回报、提交，验证完删除；docker socket 只在编排器进程；不改 verdict / probe 契约；不改 lab 既有动词语义；pilot-a-round1 bundle 的宿主路径复算逐字节相同。
+
+## 完成判据
+eval 测试全绿，gate 绿（ankh-guard 的 inventory mismatch 若在干净 main 上复现，其余步骤单独跑绿即可）；真机一格：lab status 里该单元 TASK 哈希与 mission 一致、refs.fingerprint 非空、探针 outcome 表（no-patch.sh 记 probe-skipped——需 T19c 已并入 i1-walk，否则记 probe-failed 并注明）、archive 目录含 workspace + manifest + verdicts、release 被闸拒绝过至少一次（verdicts 空时）且容器仍在、最终 released 且容器已删；report 对该 run 的「环境一致」为 ok。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；真机一格的时间线（acquire → … → released，含单元名与指纹前 12 位）；探针 outcome 表；report 的不变量四行。
+```
+
+### T22 · 运维：环境侧收尾 + 容器内 F2 阶段三一格 + 四家同一题（T19c、T20 合入后可发）
+
+```text
+# 任务 T22：运维——环境侧收尾、容器内 F2 阶段三一格、四家同一题
+
+## 背景
+T20 已让一格在容器内走完全流程（P0 × codex）。I3 的完成判据还差一半：「四家在容器内跑通同一题」，且 F2 阶段三（verify 探针的主场）还没在容器里跑过。T17 交回环境侧四条、T18b 一条，都还没人做：一、镜像自带的 in-box headless 不认 --session-id，dsh 容器轮要镜像备好 dsh 家族 headless bundle 及其运行期依赖闭包（T17 手工备进单元后同一轮跑通）；二、整份作用域目录 bind 进单元会把宿主专用设置带进去（claude settings.json 里给宿主守护进程的 https_proxy 在容器里 Connection refused），容器用的作用域目录要单独备；三、白名单缺 console.anthropic.com（claude 续期链末端 403，授权恢复后会咬人）；四、kimi 账号配额未变（403 monthly usage limit）；五、新建 docker 卷与目录要 1000:1000，否则单元写不进。另有 profile 一条：宿主直跑阶段 codex 取 workspace-write，README 决策 3 与 L333 写明容器化后改回 danger-full-access，四家才落在同一档。
+
+## 先读
+本文 I3 表与三波验收记录；T16 / T17 / T18b / T20 的 Agent Note；题库 env/README.md、env/run-unit.sh、env/creds/stage.sh、docs/i3-env-log.md、docs/pilot-a-log.md；profiles/web-eval/README.md 冻结决策 3 / 5 / 12 与「当前 pin」段；packages/eval/README.md 的容器路径一节（T20）。
+
+## 分支
+dsh-plugins：从 main 开 worktree ../dsh-plugins-wt-web-eval-container-pins，分支 feat/web-eval-container-pins，只改 profiles/web-eval/（cordis.patch.yml 的 codex sandbox 改 danger-full-access，README 双语「当前 pin」段与 L333 那句、sidecar）。题库：从 i1-walk 开 worktree，分支 i3-env-b，只改 env/（镜像构建、versions.lock、refs.fingerprint、白名单、creds 目录约定）与 docs/（新建 docs/pilot-b-log.md）。运行记录进题库 docs，不进 dsh-plugins。
+
+## 步骤
+1. 镜像：把 dsh 家族 headless bundle 与依赖闭包备进 eval-env（T16 的方式：本地包镜像 + versions.lock），重建 eval-env:pinned，refs.fingerprint 与 i3-env-log 更新；白名单加 console.anthropic.com。四家最小 exec 复测（T16 §那张表再跑一遍）。
+2. 凭证：宿主上先 claude login 一次（3171 实例的作用域，不碰 ~/.dsh-official）；按 T20 的 --creds-root 约定备四家容器用作用域目录（settings 不带宿主代理；属主 1000）；kimi 仍 403 就记实际错误，不等配额。
+3. profile：codex sandbox 改 danger-full-access，条件文件 permissions 同步，methodology 里的不对称句改成「容器内四家同档」。
+4. 容器内 F2 阶段三一格（codex，1 rep，--only）：T23 就绪检查过、三阶段跑完、verify 探针（verify-rollup 的 ratio）在容器内出判定、archive、finalize 过闸、released。报告的四条不变量首次全 ok。
+5. 四家同一题：F3 阶段一二 × 四家 × 1 rep（最便宜且 D-N1 有区分度）；kimi 若配额未复，跑三家并记原因。报告比较节首次打开：得分判据数、加权分、缺陷清单、效率表。
+6. pilot-b-log.md：与 pilot A 同一格式——每格时间线、就绪检查、指纹、探针 outcome、报告摘录、缺口清单。
+
+## 约束
+不碰 ~/.dsh-official 与 3080；凭据不进日志、回报、提交；题库写操作一律 worktree；不跑满题目——每格 1 rep，总 token 预算先报再跑，超预算停下回报。
+
+## 完成判据
+I3 行的完成判据整句成立：容器内一格走完全流程、release 经闸；四家（或三家 + kimi 的实际错误）在容器内跑通同一题；两个 run 的报告不变量四行全 ok；镜像可复现（内容指纹逐行相同）。
+
+## 回报
+两条分支与题库 commit；镜像 digest 与 refs.fingerprint；四家容器内 exec 复测表；两个 run 的报告摘录（不变量、得分判据数、缺陷清单、效率表）；pilot-b-log.md 路径；剩余缺口清单。
 ```
 
 ## 四、验收规程
