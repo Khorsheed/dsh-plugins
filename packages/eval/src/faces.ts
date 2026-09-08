@@ -43,6 +43,13 @@ export interface DatasetsFace {
   }): Promise<{ path: string; commit: string; layers: string[]; reused: boolean }>
   show(scope: DatasetsScope, datasetId: string, itemId?: string, commit?: string): Promise<{
     items: Array<{ id: string; layers: Record<string, string[]> }>
+    /**
+     * Dataset-level (shared) layer content, layer name → layer-relative paths.
+     * OPTIONAL on the face: a facade predating it simply materializes no
+     * shared verify layer, and the item's own probes still run — degrade,
+     * don't explode.
+     */
+    datasetLayers?: Record<string, string[]>
   }>
   read(scope: DatasetsScope, query: {
     dataset: string

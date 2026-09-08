@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev4** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev5** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -644,7 +644,10 @@ datasets/<id>/
 
 ### 6.7 探针契约 —— script 判定怎么产生
 
-`script` 是三个判定源里唯一确定性的一个，只由探针写。探针是题目自带的可执行文件，住在**该题 verify 层下任意 `probes/` 段**里，后缀 `.mjs` 或 `.sh`（`probes/room-identity.mjs`、被 register 改过户的 `checks/probes/x.sh` 都算）。
+`script` 是三个判定源里唯一确定性的一个，只由探针写。探针是可执行文件，后缀 `.mjs` 或 `.sh`，住在**任意 `probes/` 段**里（`probes/room-identity.mjs`、被 register 改过户的 `checks/probes/x.sh` 都算），来源有两处：
+
+- **题内探针**——该题 verify 层下的，只判这道题；
+- **题集级共享探针**——题集级 verify 层下的（`verify/helpers/probes/no-patch.sh` 这类），**对每道题各跑一次**。一条判据在每道题里都成立、判法也应当逐字相同（「没改宿主源码」「普通会话无污染」），这类判据只该有一把尺子；各题各写一份，严格程度会悄悄漂移。
 
 **调用约定**（编排器在格子跑完阶段、进入 `judged` 后逐个执行）：
 
@@ -658,13 +661,30 @@ datasets/<id>/
 | `--rubric` | 该题 grading 层 rubric 的宿主副本路径。题目没有 rubric 时**不给这个参数** |
 | `--out` | 探针把判定写到这个路径 |
 
-**退出码就是契约**：`0` 表示**已判定**——包括判 `pass: false`，「做到了没有」和「探针能不能判」是两件事；非 `0` 表示**探针失败**，本次不产生任何判定，失败原因进 orchestrator ns。退出 `0` 却没写出可读的 `--out`，同样按探针失败记——它声称判了又拿不出可核对的东西。
+**退出码就是契约，三个状态**：
 
-**输出形状**是 §6.5 `dataseek.verdict/1` 的**数组**（只有一条时写成单个对象也接受）。按比例给分的判据写 `ratio: {passed, total}`，**不把比例写进 `evidence` 前缀**（§6.5）。其中 `task` 与 `by` 由编排器回填（`by` = 探针在 verify 层的 display 路径），探针自己写了也会被覆盖：这两项是编排器知道的坐标，判定方只是回声，写错会污染报告的每一次 join。
+| 退出码 | 状态 | 编排器怎么记 |
+|---|---|---|
+| `0` | **已判定**——包括判 `pass: false`，「做到了没有」和「探针能不能判」是两件事 | 判定进 `script` ns，outcome 记 `judged` |
+| `3` | **本轮不适用**——探针没坏、判据也没不成立，只是这一轮的输入不在位（阶段三还没跑、harness 工作树不在格子里） | outcome 记 `probe-skipped`，附 stderr 首行；**不算失败** |
+| 其余非 `0` | **探针失败**，本次不产生任何判定 | outcome 记 `probe-failed`，原因进 orchestrator ns |
 
-**执行环境**：编排器把该题 verify 层**整层**物化进宿主临时目录并以它为 cwd（探针因此能按相对路径读同层的 checklist 与 helper），`.mjs` 交 node、`.sh` 交 `/bin/sh`，每个探针 5 分钟墙钟上限，跑完整个目录删除——verify 层是答案，不留过夜。I3 起这一步交给 `lab.verify` 在容器内执行，**契约不变**。
+第三态是必须的：没有它，一个只跑了阶段一二的 run 每格都会多出几条「探针失败」，噪声掩盖真的失败。**用 `3` 而不是 `2`**——`2` 是 getopt 传统里的「用法错误」码，探针参数给错时正是退 `2`，把它读成「判不了」等于把每一次误调用都咽下去。退出 `0` 却没写出可读的 `--out`，按**探针失败**记——它声称判了又拿不出可核对的东西。
 
-**落点**：判定写进 mission 的 `script` ns，并落到 `attempt-N/archive/verdicts/script.json`。题目没有探针就什么都不写——不写空文件，不写空注解。
+**输出形状**是 §6.5 `dataseek.verdict/1` 的**数组**（只有一条时写成单个对象也接受）。按比例给分的判据写 `ratio: {passed, total}`，**不把比例写进 `evidence` 前缀**（§6.5）。`ratio` 的两条数值约束由编排器在**产出处**核，不符按「产物不合契约」记（与 schema 不过同一档，原因进 orchestrator ns）：
+
+- `passed` / `total` 为整数，`total > 0`，`0 ≤ passed ≤ total`；
+- `pass === (passed === total)`——`pass` 恒为「判据完整成立」，对比例判据即分子等于分母。两者互相矛盾时无从判断哪个是笔误。
+
+报告侧（§6.5）对已落盘的数据同样兜底：越界的比例按缺失处理、退回布尔。两边都在——源头拦下的是能改的错，报告兜住的是已经写死的账。
+
+**`task` 与 `by` 由编排器回填，回填在校验之前。** 探针自己写了也会被覆盖：这两项是编排器知道的坐标，判定方只是回声，写错会污染报告的每一次 join。**探针可以整个不写**——两项都是 `required` 且 schema `additionalProperties: false`，先校验后回填会把一份本来完整的判定判成废品，所以顺序是**先补、后校**；写了但与编排器不一致的，以编排器为准并把 `overwritten` 记进 orchestrator ns。`by` 的取值：题内探针 = 它在该题 verify 层的 display 路径（`probes/stage1-structure.mjs`）；题集级共享探针 = `shared/` + 它在题集级 verify 层的 display 路径（`shared/helpers/probes/no-patch.sh`）。`shared/` 是**命名空间不是目录**，它标出这条判定出自题集的尺子而非本题的，也让两个 `by` 空间永不相撞。
+
+**执行环境**：编排器把**两个 verify 层都整层物化**进宿主临时目录，**相对布局与题库一致**——题集级层在 `<tmp>/verify/…`，该题的层在 `<tmp>/items/<题 id>/verify/…`。布局一致是这条的全部意义：题内探针用**在题库里同样成立的相对路径**（`../../../../verify/helpers/lib/x.mjs`）就能 import 到题集级共享库，一把尺子服务所有题，不必每题放一份会各自漂移的副本。
+
+cwd 一律是**该题 verify 层的根**，共享探针也一样——共享探针是同一把尺子按题各量一次，它读到的 checklist 就该是这道题的那份。`.mjs` 交 node、`.sh` 交 `/bin/sh`，每个探针 5 分钟墙钟上限，跑完整个目录删除——verify 层是答案，不留过夜。I3 起这一步交给 `lab.verify` 在容器内执行，**契约不变**。
+
+**落点**：判定写进 mission 的 `script` ns，并落到 `attempt-N/archive/verdicts/script.json`。两个层都没有探针就什么都不写——不写空文件，不写空注解。
 
 ### 6.8 判官契约 —— llm-draft 判定怎么产生
 
@@ -676,7 +696,7 @@ datasets/<id>/
 
 **判官 prompt** 由编排器拼装，判官不自带提示词：该题 grading 层 rubric 里 `kind: llm-draft` 的判据（`objective` 归探针、`human` 归判官台，都不给判官看）+ 去指纹材料 + 输出要求。rubric 的选取规则是「grading 层 display 路径中文件名为 `rubric.yml` / `rubric.yaml` 者，多个取最短路径」——两种题目布局（约定式的 `rubric.yml` 与 register 改户的 `answers/rubric.yml`）都覆盖到。
 
-**输出**与探针同形：判官把 §6.5 的数组写进自己 cwd 下的 `verdicts.json`，`task` 与 `by`（= 判官条件 id）由编排器回填。读不出来就记 orchestrator ns 并**重试一次**，再失败该样本如实丢弃，不补造。
+**输出**与探针同形：判官把 §6.5 的数组写进自己 cwd 下的 `verdicts.json`，`task` 与 `by`（= 判官条件 id）由编排器回填，**回填顺序同 §6.7：先补后校**。读不出来就记 orchestrator ns 并**重试一次**，再失败该样本如实丢弃，不补造。
 
 **落点**：每个样本一条 `llm-draft` 注解，形状 `{sample, judgeCondition, judgeSha, promptSha, verdicts}`——出处与判定放在一起，报告拆信封取 `verdicts`；同时落 `attempt-N/archive/verdicts/llm-draft-<判官条件>-<样本号>.json`。判官的用量与耗时记进 orchestrator ns 的 `kind: judge`，**不算进选手的效率表**。判官材料目录（prompt + 去指纹材料 + 判官的回答）在 run 结束后保留，供复核。
 

@@ -23,7 +23,7 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { DatasetsFace, LocalAgentFace, MissionFace } from './faces.ts'
 import { validateJson, VERDICT_SCHEMA, VERDICT_SCHEMA_ID } from './schema.ts'
@@ -214,16 +214,93 @@ export function pickRubricPath(gradingPaths: readonly string[]): string | null {
 }
 
 /**
- * The executable probes among an item's `verify` layer display paths: any
- * `.mjs` or `.sh` file under a `probes/` segment. Both layouts again:
- * `probes/x.mjs` (convention) and `checks/probes/x.mjs` (register).
- * @param verifyPaths - display paths of the item's verify layer.
+ * The executable probes among ONE verify layer's display paths: any `.mjs` or
+ * `.sh` file under a `probes/` segment. Both layouts again: `probes/x.mjs`
+ * (convention) and `checks/probes/x.mjs` (register). The same rule reads the
+ * item's verify layer and the DATASET-level one — a shared probe is a probe.
+ * @param verifyPaths - display paths of one verify layer.
  * @returns probe display paths, sorted — that order is the execution order.
  */
 export function probePaths(verifyPaths: readonly string[]): string[] {
   return verifyPaths
     .filter(path => /(?:^|\/)probes\/[^/]+\.(?:mjs|sh)$/i.test(path))
     .sort((a, b) => (a < b ? -1 : 1))
+}
+
+/**
+ * The exit code that means THIS ROUND CANNOT BE JUDGED: the probe is fine and
+ * the criterion is not false — the input it needs is simply not in place
+ * (stage three never ran, the harness worktree is not in the cell). It is the
+ * third state §6.7 gained, and it is recorded WITHOUT being counted a failure.
+ *
+ * `3` rather than `2` on purpose: `2` is the conventional "usage error" code
+ * (this package's own fixture probe exits 2 on a missing `--cell`), so reading
+ * 2 as "not applicable" would silently swallow every mis-invoked probe.
+ */
+export const PROBE_EXIT_NOT_APPLICABLE = 3
+
+/**
+ * The judging directory mirrors the DATASET's own layout, so a relative path
+ * that resolves in the repository resolves here too: the dataset-level verify
+ * layer at `<judging>/verify/…`, the item's at `<judging>/items/<id>/verify/…`.
+ * That is what lets an item probe reach the shared library the dataset keeps
+ * for every item (`../../../../verify/helpers/lib/x.mjs`) instead of carrying
+ * a verbatim copy of it.
+ */
+export const DATASET_VERIFY_ROOT = 'verify'
+
+/** The item's verify-layer root inside the judging directory, and its cwd. */
+export function itemVerifyRoot(taskId: string): string {
+  return `items/${taskId}/${DATASET_VERIFY_ROOT}`
+}
+
+/** One probe to execute: which layer it came from, and what it is called. */
+export interface ProbeRef {
+  /** `item` — the item's own verify layer; `dataset` — the shared one. */
+  origin: 'item' | 'dataset'
+  /** The probe's display path within its OWN verify layer. */
+  display: string
+  /** Its path inside the judging directory, relative to that directory's root. */
+  file: string
+  /** The `by` the orchestrator backfills (§6.7). */
+  by: string
+}
+
+/**
+ * Every probe one cell runs: the dataset's shared probes FIRST (the veto probe
+ * lives there and the dataset asks for it first), then the item's own.
+ *
+ * A shared probe runs ONCE PER ITEM, with that item's verify root as cwd — it
+ * is the same ruler applied to each item, so it must be applied as many times
+ * as there are items, and it must be able to read the item's own checklist
+ * beside it.
+ * @param input.datasetVerifyPaths - absent when the facade does not report the
+ *   dataset-level layer at all; then only the item's own probes run.
+ */
+export function collectProbes(input: {
+  taskId: string
+  itemVerifyPaths: readonly string[]
+  datasetVerifyPaths?: readonly string[]
+}): ProbeRef[] {
+  const itemRoot = itemVerifyRoot(input.taskId)
+  return [
+    // `shared/` is a NAMESPACE, not a directory: it marks the verdict as
+    // coming from the dataset's ruler rather than this item's, and keeps the
+    // two `by` spaces from ever colliding. It is also the prefix the datasets
+    // already use to reference these probes from their checklists.
+    ...probePaths(input.datasetVerifyPaths ?? []).map((display): ProbeRef => ({
+      origin: 'dataset',
+      display,
+      file: `${DATASET_VERIFY_ROOT}/${display}`,
+      by: `shared/${display}`,
+    })),
+    ...probePaths(input.itemVerifyPaths).map((display): ProbeRef => ({
+      origin: 'item',
+      display,
+      file: `${itemRoot}/${display}`,
+      by: display,
+    })),
+  ]
 }
 
 /** Build the judge prompt (the byte source of `promptSha`). */
@@ -299,19 +376,41 @@ function slug(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'x'
 }
 
+/**
+ * What one probe run amounted to (§6.7's three states, spelled out):
+ * - `judged` — exit 0 with a readable `--out`, `pass: false` included;
+ * - `probe-failed` — any other non-zero exit, or exit 0 with nothing checkable;
+ * - `probe-skipped` — {@link PROBE_EXIT_NOT_APPLICABLE}: not this round's question.
+ */
+export type ProbeStatus = 'judged' | 'probe-failed' | 'probe-skipped'
+
 /** One probe's outcome (the orchestrator ns record). */
 export interface ProbeOutcome {
-  /** The probe's display path in the verify layer. */
+  /** The probe's `by` — its display path, `shared/`-prefixed for a dataset probe. */
   probe: string
+  /** Which verify layer it came from. */
+  origin: 'item' | 'dataset'
   /** Process exit code; null when the process could not be spawned or was signalled. */
   exitCode: number | null
-  /** True when the probe both exited 0 and produced a readable verdict array. */
+  /** Which of the three states this run reached. */
+  outcome: ProbeStatus
+  /**
+   * `outcome === 'judged'`. Kept beside `outcome` because the orchestrator ns
+   * record already carried it before the third state existed, and pilot A's
+   * archives are read with it.
+   */
   ok: boolean
-  /** Verdicts the probe wrote (empty when it failed). */
+  /** Verdicts the probe wrote (empty unless it judged). */
   verdicts: Array<Record<string, unknown>>
   durationMs: number
-  /** Why the probe is not `ok` — non-zero exit, unreadable output, or contract violations. */
+  /** Why the probe FAILED — non-zero exit, unreadable output, or contract violations. */
   error?: string
+  /** Why this round could not be judged (the probe's first stderr line). */
+  reason?: string
+  /** Coordinates the probe wrote differently and the orchestrator overwrote. */
+  overwritten?: string[]
+  /** Rows dropped as off-contract while others in the same file stood. */
+  dropped?: string[]
 }
 
 /** Spawn one probe and capture its exit code (never throws). */
@@ -333,8 +432,71 @@ function spawnProbe(command: string, args: readonly string[], cwd: string, timeo
   })
 }
 
-/** Read + contract-check a probe's or judge's verdict file. */
-function readVerdictFile(path: string): { ok: true; verdicts: Array<Record<string, unknown>> } | { ok: false; error: string } {
+/**
+ * The two coordinates the ORCHESTRATOR knows and the judging side only echoes.
+ * A probe or judge that mislabels `task` or `by` would corrupt every
+ * downstream join (the report keys rows by task and prints `by` as the
+ * verdict's origin); `criterion`, `pass`, `ratio` and `evidence` are the
+ * judging side's own and are never touched.
+ */
+export interface VerdictAnchor {
+  task: string
+  by: string
+}
+
+/**
+ * The two numeric facts about `ratio` that JSON Schema cannot state, checked
+ * where the artifact is produced rather than where it is read.
+ *
+ * `report.ts` re-checks the bounds and falls back to the strict boolean, which
+ * is the right thing for data already on disk — but a ratio that silently
+ * degrades in the report is a verdict whose author never learned it was
+ * wrong. Refusing it here is what puts the reason in front of the probe.
+ * @returns the violation, or null when the verdict carries no ratio or a sound one.
+ */
+function ratioViolation(verdict: Record<string, unknown>): string | null {
+  const raw = verdict['ratio']
+  if (raw === undefined) return null
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return 'ratio is not an object'
+  const { passed, total } = raw as { passed?: unknown; total?: unknown }
+  if (typeof passed !== 'number' || typeof total !== 'number'
+    || !Number.isInteger(passed) || !Number.isInteger(total)
+    || total <= 0 || passed < 0 || passed > total) {
+    return `ratio {passed: ${JSON.stringify(passed)}, total: ${JSON.stringify(total)}} is out of bounds`
+      + ' — passed and total must be integers with total > 0 and 0 <= passed <= total'
+  }
+  // `pass` stays the boolean fact that the criterion FULLY holds (§6.5), so
+  // for a proportional criterion it IS `passed === total`. The two disagreeing
+  // means one of them is a typo, and there is no way to tell which.
+  if (verdict['pass'] !== (passed === total)) {
+    return `pass: ${JSON.stringify(verdict['pass'])} contradicts ratio ${passed}/${total}`
+      + ' — pass is the boolean fact that the criterion fully holds, i.e. passed === total'
+  }
+  return null
+}
+
+/**
+ * Read + contract-check a probe's or judge's verdict file.
+ *
+ * **Backfill comes BEFORE validation.** §6.7 says `task` and `by` are the
+ * orchestrator's and are overwritten whatever the judging side wrote — but
+ * both are `required` under `additionalProperties: false`, so validating
+ * first would void an otherwise complete answer for omitting two fields the
+ * orchestrator was about to supply anyway. Everything the schema is actually
+ * protecting (`criterion`, `pass`, `ratio`, `evidence`) is still checked, on
+ * the anchored document.
+ * @param anchor - the coordinates to force in.
+ * @returns the anchored verdicts, which coordinates were overwritten (present
+ *   but disagreeing — absence is silent, disagreement is recorded), and the
+ *   rows that were dropped. A file whose rows are only PARTLY unusable still
+ *   yields the good ones, and the dropped ones still have to say why.
+ */
+function readVerdictFile(path: string, anchor: VerdictAnchor): {
+  ok: true
+  verdicts: Array<Record<string, unknown>>
+  overwritten: string[]
+  dropped: string[]
+} | { ok: false; error: string } {
   if (!existsSync(path)) return { ok: false, error: `no ${basename(path)} was written` }
   let parsed: unknown
   try {
@@ -348,32 +510,33 @@ function readVerdictFile(path: string): { ok: true; verdicts: Array<Record<strin
   const items = Array.isArray(parsed) ? parsed : [parsed]
   const verdicts: Array<Record<string, unknown>> = []
   const violations: string[] = []
+  const overwritten = new Set<string>()
   for (const [index, item] of items.entries()) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       violations.push(`[${index}]: not a JSON object`)
       continue
     }
-    const problems = validateJson(VERDICT_SCHEMA, item)
+    const written = item as Record<string, unknown>
+    for (const field of ['task', 'by'] as const) {
+      if (written[field] !== undefined && written[field] !== anchor[field]) overwritten.add(field)
+    }
+    const anchored: Record<string, unknown> = { ...written, task: anchor.task, by: anchor.by }
+    const problems = validateJson(VERDICT_SCHEMA, anchored)
     if (problems.length > 0) {
       violations.push(`[${index}]: ${problems.join('; ')}`)
       continue
     }
-    verdicts.push(item as Record<string, unknown>)
+    const ratio = ratioViolation(anchored)
+    if (ratio !== null) {
+      violations.push(`[${index}]: ${ratio}`)
+      continue
+    }
+    verdicts.push(anchored)
   }
   if (verdicts.length === 0) {
     return { ok: false, error: `${basename(path)} carries no valid ${VERDICT_SCHEMA_ID}: ${violations.join(' | ') || 'the array is empty'}` }
   }
-  return { ok: true, verdicts }
-}
-
-/**
- * Force the two coordinates the ORCHESTRATOR knows and the judge only echoes.
- * A judge that mislabels `task` or `by` would corrupt every downstream join
- * (the report keys rows by task and prints `by` as the verdict's origin);
- * `criterion`, `pass` and `evidence` are the judge's own and are untouched.
- */
-function anchorVerdicts(verdicts: readonly Record<string, unknown>[], taskId: string, by: string): Array<Record<string, unknown>> {
-  return verdicts.map(verdict => ({ ...verdict, task: taskId, by }))
+  return { ok: true, verdicts, overwritten: [...overwritten].sort(), dropped: violations }
 }
 
 /** What {@link runProbes} needs from its caller. */
@@ -385,7 +548,7 @@ export interface ProbeRunInput {
   commit: string
   /** The player's cell directory — probes READ it, and are never run inside it. */
   cellDir: string
-  /** Host-side scratch the verify layer is materialized into (removed afterwards). */
+  /** Host-side scratch the two verify layers are materialized into (removed afterwards). */
   probeDir: string
   /** The rubric display path in the grading layer, or null when the item ships none. */
   rubricPath: string | null
@@ -400,13 +563,62 @@ export interface ProbeRunResult {
 }
 
 /**
- * Materialize the item's `verify` layer into a host-side directory and run
- * every probe under it against the cell, per the protocol §6.7 contract:
- * `<probe> --cell <cellDir> --rubric <rubric> --out <verdicts.json>`; exit 0
- * means JUDGED (including `pass: false`), non-zero means the probe failed.
+ * Join a layer-relative path onto the judging directory, refusing anything
+ * that would land outside it. The datasets service already rejects unsafe
+ * relative paths, so this guards the SEAM rather than the service: probes run
+ * as host processes, and the directory they are handed must be the one this
+ * module built.
+ */
+function withinProbeDir(probeDir: string, rel: string): string | null {
+  const root = resolve(probeDir)
+  const target = resolve(root, rel)
+  return target.startsWith(root + sep) ? target : null
+}
+
+/** Materialize one verify layer under `root` inside the judging directory. */
+async function materializeVerifyLayer(
+  input: ProbeRunInput,
+  root: string,
+  paths: readonly string[],
+  itemId: string | undefined,
+): Promise<void> {
+  for (const rel of paths) {
+    const target = withinProbeDir(input.probeDir, join(root, rel))
+    if (target === null) continue
+    const file = await input.datasets.read({ repo: input.repo, layers: ['verify'] }, {
+      dataset: input.datasetId,
+      ...(itemId !== undefined ? { item: itemId } : {}),
+      layer: 'verify',
+      path: rel,
+      commit: input.commit,
+    })
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, file.content, 'utf8')
+  }
+}
+
+/** The first line of a probe's stderr — what it said before it gave up. */
+function firstLine(stderr: string): string {
+  return stderr.trim().split('\n')[0]?.trim().slice(0, 400) ?? ''
+}
+
+/**
+ * Materialize the verify layers into a host-side directory and run every probe
+ * against the cell, per the protocol §6.7 contract:
+ * `<probe> --cell <cellDir> --rubric <rubric> --out <verdicts.json>`.
  *
- * An item with no probes produces nothing at all, honestly: no empty file and
- * no annotation. The probe directory is the caller's to discard
+ * BOTH verify layers are materialized, in the dataset's own relative layout:
+ * the item's at `items/<id>/verify/` and the dataset-level one at `verify/`.
+ * That layout is the whole point — an item probe reaches the dataset's shared
+ * library by the same relative path that resolves in the repository, so one
+ * ruler serves every item instead of a verbatim copy per item drifting apart.
+ * The item's verify root is the cwd for every probe, the shared ones included:
+ * a shared probe is the same ruler applied once per item, and it reads that
+ * item's checklist beside it.
+ *
+ * The exit code carries the three states of {@link ProbeStatus}. An item with
+ * no probes produces nothing at all, honestly: no empty file and no
+ * annotation. The probe directory is the caller's to discard
  * ({@link discardProbeDir}) — the verify layer is the answer key and does not
  * outlive its use (architecture §4).
  */
@@ -418,27 +630,26 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
     input.commit,
   )
   const item = shown.items.find(candidate => candidate.id === input.taskId)
-  const verifyFiles = item?.layers['verify'] ?? []
-  const probes = probePaths(verifyFiles)
+  const itemVerifyPaths = item?.layers['verify'] ?? []
+  const datasetVerifyPaths = shown.datasetLayers?.['verify'] ?? []
+  const probes = collectProbes({ taskId: input.taskId, itemVerifyPaths, datasetVerifyPaths })
   if (probes.length === 0) return { outcomes: [], verdicts: [] }
 
-  mkdirSync(input.probeDir, { recursive: true })
-  // The whole verify layer is materialized, not just the probe files: a probe
-  // reads the checklist beside it and sources its shared helpers by relative
-  // path, exactly as it does in the repository.
-  for (const rel of verifyFiles) {
-    const file = await input.datasets.read({ repo: input.repo, layers: ['verify'] }, {
-      dataset: input.datasetId,
-      item: input.taskId,
-      layer: 'verify',
-      path: rel,
-      commit: input.commit,
-    })
-    mkdirSync(dirname(join(input.probeDir, rel)), { recursive: true })
-    writeFileSync(join(input.probeDir, rel), file.content, 'utf8')
-  }
-  // The rubric rides along as a sibling: the contract hands every probe a
-  // --rubric path, and the grading layer must not be reachable from the cell.
+  const itemRoot = itemVerifyRoot(input.taskId)
+  const cwd = join(input.probeDir, itemRoot)
+  // The cwd exists even when the item ships no verify layer of its own: the
+  // dataset's shared probes still have to run somewhere, once for this item.
+  mkdirSync(cwd, { recursive: true })
+  // Whole layers, not just the probe files: a probe reads the checklist beside
+  // it and imports its helpers by relative path, exactly as in the repository.
+  // The dataset layer is materialized even when it ships no probes at all —
+  // it is the shared library the item's own probes import.
+  await materializeVerifyLayer(input, itemRoot, itemVerifyPaths, input.taskId)
+  await materializeVerifyLayer(input, DATASET_VERIFY_ROOT, datasetVerifyPaths, undefined)
+
+  // The rubric rides along OUTSIDE the mirrored layout (a dotfile at the
+  // judging root): the contract hands every probe a --rubric path, and the
+  // grading layer must not be reachable from the cell.
   let rubricArg = ''
   if (input.rubricPath !== null) {
     const rubric = await input.datasets.read({ repo: input.repo, layers: ['grading'] }, {
@@ -457,45 +668,60 @@ export async function runProbes(input: ProbeRunInput): Promise<ProbeRunResult> {
   const outcomes: ProbeOutcome[] = []
   const verdicts: Array<Record<string, unknown>> = []
   for (const probe of probes) {
-    const probeFile = join(input.probeDir, probe)
-    const outFile = join(outDir, `${slug(probe)}.json`)
+    const probeFile = join(input.probeDir, probe.file)
+    const outFile = join(outDir, `${slug(probe.by)}.json`)
     const args = ['--cell', input.cellDir, ...(rubricArg !== '' ? ['--rubric', rubricArg] : []), '--out', outFile]
     const startedAt = Date.now()
     const spawned = await spawnProbe(
-      /\.sh$/i.test(probe) ? '/bin/sh' : process.execPath,
+      /\.sh$/i.test(probe.display) ? '/bin/sh' : process.execPath,
       [probeFile, ...args],
-      input.probeDir,
+      cwd,
       input.timeoutMs,
     )
     const durationMs = Date.now() - startedAt
-    if (spawned.code !== 0) {
+    const common = { probe: probe.by, origin: probe.origin, exitCode: spawned.code, verdicts: [], durationMs }
+    if (spawned.code === PROBE_EXIT_NOT_APPLICABLE) {
+      // Not a failure and not a verdict: the probe is fine, the criterion is
+      // untouched, and the input it needs is not in this cell. Counting it as
+      // a failure is what buried the real failures in pilot A.
       outcomes.push({
-        probe,
-        exitCode: spawned.code,
+        ...common,
+        outcome: 'probe-skipped',
         ok: false,
-        verdicts: [],
-        durationMs,
-        error: spawned.spawnError ?? `probe exited ${String(spawned.code)}${spawned.stderr.trim() !== '' ? `: ${spawned.stderr.trim().slice(0, 400)}` : ''}`,
+        reason: firstLine(spawned.stderr) || 'the probe reported nothing on stderr',
       })
       continue
     }
-    const read = readVerdictFile(outFile)
+    if (spawned.code !== 0) {
+      outcomes.push({
+        ...common,
+        outcome: 'probe-failed',
+        ok: false,
+        error: spawned.spawnError ?? `probe exited ${String(spawned.code)}${spawned.stderr.trim() !== '' ? `: ${firstLine(spawned.stderr)}` : ''}`,
+      })
+      continue
+    }
+    const read = readVerdictFile(outFile, { task: input.taskId, by: probe.by })
     if (!read.ok) {
       // Exit 0 with unusable output is a CONTRACT violation, not a verdict:
       // the probe claimed it judged and then produced nothing checkable.
       outcomes.push({
-        probe,
-        exitCode: 0,
+        ...common,
+        outcome: 'probe-failed',
         ok: false,
-        verdicts: [],
-        durationMs,
-        error: `${probe} exited 0 but produced no readable verdict: ${read.error}`,
+        error: `${probe.by} exited 0 but produced no readable verdict: ${read.error}`,
       })
       continue
     }
-    const anchored = anchorVerdicts(read.verdicts, input.taskId, probe)
-    outcomes.push({ probe, exitCode: 0, ok: true, verdicts: anchored, durationMs })
-    verdicts.push(...anchored)
+    outcomes.push({
+      ...common,
+      outcome: 'judged',
+      ok: true,
+      verdicts: read.verdicts,
+      ...(read.overwritten.length > 0 ? { overwritten: read.overwritten } : {}),
+      ...(read.dropped.length > 0 ? { dropped: read.dropped } : {}),
+    })
+    verdicts.push(...read.verdicts)
   }
   return { outcomes, verdicts }
 }
@@ -577,7 +803,7 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
         writeFileSync(join(sampleDir, 'prompt.md'), prompt, 'utf8')
 
         const startedAt = input.now()
-        let outcome: { ok: true; verdicts: Array<Record<string, unknown>> } | { ok: false; error: string }
+        let outcome: { ok: true; verdicts: Array<Record<string, unknown>>; overwritten: string[]; dropped: string[] } | { ok: false; error: string }
         try {
           const run = await input.localAgent.start(input.parentSessionId, judge.provider, [{ type: 'text', text: prompt }], {
             label: `${input.runId}/${input.missionId} judge:${judge.id}#${sample}`,
@@ -587,9 +813,9 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
           if (result.stopReason !== 'completed') {
             outcome = { ok: false, error: `judge delegation ended with stopReason ${JSON.stringify(result.stopReason)}${result.diagnostic !== undefined ? `: ${result.diagnostic}` : ''}` }
           } else {
-            const read = readVerdictFile(join(sampleDir, 'verdicts.json'))
+            const read = readVerdictFile(join(sampleDir, 'verdicts.json'), { task: input.taskId, by: judge.id })
             outcome = read.ok
-              ? { ok: true, verdicts: anchorVerdicts(read.verdicts, input.taskId, judge.id) }
+              ? { ok: true, verdicts: read.verdicts, overwritten: read.overwritten, dropped: read.dropped }
               : { ok: false, error: read.error }
           }
           // The judge's cost belongs to the JUDGE, not to the contestant:
@@ -607,6 +833,10 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
             durationMs: input.now() - startedAt,
             usage: result.usage ?? null,
             model: { declared: judge.declaredModel, observed: result.observedModel ?? null },
+            // Same discipline as the probes: a coordinate the judge wrote
+            // differently is overwritten, and the fact that it was is recorded.
+            ...(outcome.ok && outcome.overwritten.length > 0 ? { overwritten: outcome.overwritten } : {}),
+            ...(outcome.ok && outcome.dropped.length > 0 ? { dropped: outcome.dropped } : {}),
           }, { runId: input.runId, by: input.by }).catch(() => {})
         } catch (error) {
           outcome = { ok: false, error: `judge delegation failed: ${error instanceof Error ? error.message : String(error)}` }
