@@ -145,7 +145,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 | 插件 | agent 工具（eval 域） | 编排器服务面 | 人 |
 |---|---|---|---|
-| datasets | 读类全开；`put_item` 留给出题 | snapshot、worktree_path、read（显式层） | bind、tab、validate |
+| datasets | 读类全开（含 snapshot，它只解析当前 commit）；`put_item` 留给出题 | worktree_path、read（显式层） | bind、tab、validate |
 | mission | 只开 `run_list` `run_status` `list` `get` | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
 | eval | `eval_conditions` `eval_plan_validate` `eval_run_status`；不开 run | 内核 | 批准、run、report |
@@ -262,7 +262,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 1. **rep 是独立 mission；attempt 只用于基础设施故障重跑。** retry 带原因枚举，报告分开计数。
 2. **驱动全 exec。** live 是常驻进程，空闲回收、崩溃续跑、审批自动应答都是额外因子。
-3. **沙箱交给容器边界。** codex 容器内 `danger-full-access`，claude `skip`，kimi 自动批准，dsh 无限制；四家一致。
+3. **沙箱交给容器边界。** codex 容器内 `danger-full-access`，claude `skip`，kimi 自动批准，dsh 无限制；四家一致。容器以非 root 用户跑题：claude 的 `skip` 档在 root 下被拒绝（T16 实测）。
 4. **推理强度每家显式 pin 并记录。** 现状 kimi 由 provision 写死 high，其余各家默认，属未受控。
 5. **模型显式 pin 且从输出回读。** 声明与实际不符即 fail loud；claude 走代理时代理地址进条件。
 6. **prompt 是 visible 层文件的逐字节内容。** 母 agent 不参与 prompt 构造；prompt 哈希入 refs。
