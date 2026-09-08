@@ -1,6 +1,6 @@
 # Dataset Authoring Protocol
 
-**Version: v1-rev3** · [中文](dataset-authoring-protocol.md)
+**Version: v1-rev4** · [中文](dataset-authoring-protocol.md)
 
 This protocol defines what a dataset looks like inside a git repository. It is toolchain-independent: the `@khorsheed/dsh-datasets` plugin's validator, the bind form's prefill, and the `dataset-authoring` skill all derive from it. Every JSON example in this protocol feeds the validator's test fixtures directly (drift-proof by construction).
 
@@ -550,6 +550,23 @@ Both probe scripts and judges emit this shape; the orchestrator writes it into t
     "pass": {
       "type": "boolean"
     },
+    "ratio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "total"
+      ],
+      "description": "Optional partial credit for a proportional criterion (rubric 的「按比例给分」). pass stays the boolean fact — the criterion FULLY holds — and ratio refines it; a reader that ignores ratio degrades to the strict boolean, never upward.",
+      "properties": {
+        "passed": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
     "evidence": {
       "type": "string",
       "description": "A checkable fact, not an opinion."
@@ -572,6 +589,52 @@ Both probe scripts and judges emit this shape; the orchestrator writes it into t
   "by": "probes/dispatch-trace.mjs"
 }
 ```
+
+**`ratio` — criteria scored proportionally.** Some criteria are not binary by nature: F2 / F3's `C1` (core standards passed) and `C2` (bonus standards passed) say «scored proportionally» in the rubric itself. Such a verdict carries an optional `ratio: {passed, total}`:
+
+```json
+{
+  "schema": "dataseek.verdict/1",
+  "task": "F2-multi-agent-room",
+  "criterion": "C1",
+  "pass": false,
+  "ratio": {
+    "passed": 6,
+    "total": 9
+  },
+  "evidence": "core 标准 R1 R2 R3 R5 R6 G1 通过，R4 R7 B2 未过（../verify/ 判定结果）",
+  "by": "probes/standards-run.mjs"
+}
+```
+
+Three rules:
+
+- **`ratio` refines `pass`; it does not replace it.** `pass` remains the boolean fact — **the criterion fully holds**, i.e. `passed === total` for a proportional one. A consumer that does not understand `ratio` degrades to the strict boolean: it can only under-count, never over-count.
+- **The proportion is a field, not a phrasing.** A verdict source **must not** encode the proportion in an `evidence` prefix (`通过 6/9 …` and the like) — that makes every consumer parse prose, and the parsing breaks silently the moment the prose is reworded. `evidence` still states the checkable fact (which ones passed, which did not, where to check); the proportion's *value* travels only in `ratio`.
+- **The denominator is the one the verdict source saw.** `total` is the number of items actually judged this time: entries the rubric allows excluding (e.g. standards the contestant listed in `skipped_standards` with a reason) stay out of the denominator, and `ratio` records the figure after that deduction. Guarding against dilution is the verdict source's job; the report does not re-derive it.
+
+`dsh-eval report` scores accordingly: a criterion carrying `ratio` contributes `passed / total` rather than 1/0 (a negative criterion contributes `1 − passed / total`), and the weighted score multiplies `weight` by the same fraction. A ratio with `total <= 0` or a `passed` out of range is treated as absent and falls back to the boolean — bad data must not quietly become a score.
+
+**Polarity is not in the verdict; it is in the rubric.** `pass` always means **the criterion holds**, exactly as the criterion is worded, and never "this went well". A negative criterion words a DEFECT ("the tradeoff says worth-the-cost", "the design pushes protocol knowledge onto the user"), so its holding means the defect is present. Polarity is therefore a property **of the criterion**, and its single source is the leaf in that item's grading-layer rubric: `negative: true` (a negative `weight` is the equivalent statement; a disagreement between the two is an error from `dsh-eval validate`).
+
+The boundary is deliberate, for three reasons:
+
+- **Verdict sources do not interpret.** A probe and a judge answer one question — does this criterion hold — and it is checkable on the spot. Letting them invert buries the scoring policy in two independent implementations that are also replaceable; the same criterion would then come back with opposite `pass` values from the probe and the judge, each side honestly reporting.
+- **The contract must not move when the scoring does.** A verdict is a RECORD of a judgement, not a score. Adding a field (`negative`, `score`, `polarity`) gives one fact two statements, and annotations are append-only — change the scoring rule once and every historical verdict is void.
+- **Polarity is the dataset author's editorial call.** Whether a criterion rewards or penalizes is written in the rubric and does not depend on how often it was judged; the rubric freezes with the run's commit, so every historical verdict can still recover the polarity it was judged under.
+
+`dsh-eval report` scores accordingly. The main axis is the **scored-criterion count**: a positive criterion scores 1 when it holds, a negative one scores 0 when it holds and 1 when it does not. The weighted score is the sum of `weight` over the criteria that HOLD — a negative weight subtracts on its own, with no second rule. The summary carries a separate «negative criteria that held» table (which cell, which criterion, what evidence); that list, not the count, is what a reader comes for.
+
+**The weight table rides with the bundle.** A rubric lives in the `modelFacing: false` grading layer and a run's automatic export includes visible layers only (§3 — the leak gate is right), so a self-contained bundle can read neither polarity nor weights. The export therefore DERIVES a weight table from the grading layer and writes it into the bundle as `report/rubric-weights.json`:
+
+```text
+{ "schema": "dataseek.rubric-weights/1",
+  "dataset": <dataset id>, "commit": <frozen commit>,
+  "tasks": [<tasks that ship a rubric>],
+  "criteria": [ { "task", "id", "weight", "negative", "kind", "axis" }, … ] }
+```
+
+Identifiers and numbers only: **no criterion text, no evidence, no notes**, which is why it does not pass through the leak gate; the executable probes and the rubric itself still stay out of the bundle. With the table absent the report behaves as before (counts only) but prints plainly that the polarity is unknown and the counting assumes every criterion positive, and reports the negative-criterion count as unknown — **"cannot tell" is never rendered as "no defects"**.
 
 ### 6.6 Hash rules and stage schemas
 
@@ -597,7 +660,7 @@ Both probe scripts and judges emit this shape; the orchestrator writes it into t
 
 **The exit code is the contract**: `0` means **judged** — including `pass: false`, because "did it hold?" and "could the probe tell?" are different questions; non-zero means **the probe failed** and produces no verdict at all, with the reason recorded in the orchestrator ns. Exiting `0` without leaving a readable `--out` counts as a probe failure too: it claimed a judgement and then produced nothing checkable.
 
-**The output** is an **array** of §6.5 `dataseek.verdict/1` documents (a lone object is accepted as a one-element array). `task` and `by` are overwritten by the orchestrator (`by` = the probe's display path in the verify layer) whatever the probe wrote: those two are coordinates the orchestrator knows and the judging side only echoes — getting them wrong would corrupt every join the report performs.
+**The output** is an **array** of §6.5 `dataseek.verdict/1` documents (a lone object is accepted as a one-element array). A proportionally scored criterion carries `ratio: {passed, total}` and **never encodes the proportion in an `evidence` prefix** (§6.5). `task` and `by` are overwritten by the orchestrator (`by` = the probe's display path in the verify layer) whatever the probe wrote: those two are coordinates the orchestrator knows and the judging side only echoes — getting them wrong would corrupt every join the report performs.
 
 **The execution environment**: the orchestrator materializes the item's **whole** verify layer into a host-side temporary directory and uses it as the cwd (so a probe can read the checklist and helpers beside it by relative path), runs `.mjs` under node and `.sh` under `/bin/sh` with a five-minute wall-clock cap each, and removes the directory afterwards — the verify layer is the answer key and does not stay overnight. From I3 this step is executed inside the container by `lab.verify`; **the contract is unchanged**.
 

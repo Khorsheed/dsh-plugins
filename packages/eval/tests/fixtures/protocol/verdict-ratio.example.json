@@ -1,0 +1,12 @@
+{
+  "schema": "dataseek.verdict/1",
+  "task": "F2-multi-agent-room",
+  "criterion": "C1",
+  "pass": false,
+  "ratio": {
+    "passed": 6,
+    "total": 9
+  },
+  "evidence": "core 标准 R1 R2 R3 R5 R6 G1 通过，R4 R7 B2 未过（../verify/ 判定结果）",
+  "by": "probes/standards-run.mjs"
+}

@@ -1,6 +1,6 @@
 # 数据集作者协议（Dataset Authoring Protocol）
 
-**Version: v1-rev3** · [English](dataset-authoring-protocol.en.md)
+**Version: v1-rev4** · [English](dataset-authoring-protocol.en.md)
 
 本协议定义「一个数据集在 git 仓库里长什么样」。它独立于任何 agent 工具链：`@khorsheed/dsh-datasets` 插件的校验器、绑定表单预填、`dataset-authoring` skill 都从本协议派生。协议里的每个 JSON 示例都直接进校验器的测试夹具（防漂移）。
 
@@ -550,6 +550,23 @@ datasets/<id>/
     "pass": {
       "type": "boolean"
     },
+    "ratio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "total"
+      ],
+      "description": "Optional partial credit for a proportional criterion (rubric 的「按比例给分」). pass stays the boolean fact — the criterion FULLY holds — and ratio refines it; a reader that ignores ratio degrades to the strict boolean, never upward.",
+      "properties": {
+        "passed": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
     "evidence": {
       "type": "string",
       "description": "A checkable fact, not an opinion."
@@ -572,6 +589,52 @@ datasets/<id>/
   "by": "probes/dispatch-trace.mjs"
 }
 ```
+
+**`ratio` —— 按比例给分的判据。** 有些判据天生不是二值的：F2 / F3 的 `C1`（core 标准通过条数）、`C2`（bonus 标准通过条数）在 rubric 里就写着「按比例给分」。这类判定带一个可选的 `ratio: {passed, total}`：
+
+```json
+{
+  "schema": "dataseek.verdict/1",
+  "task": "F2-multi-agent-room",
+  "criterion": "C1",
+  "pass": false,
+  "ratio": {
+    "passed": 6,
+    "total": 9
+  },
+  "evidence": "core 标准 R1 R2 R3 R5 R6 G1 通过，R4 R7 B2 未过（../verify/ 判定结果）",
+  "by": "probes/standards-run.mjs"
+}
+```
+
+规矩三条：
+
+- **`ratio` 细化 `pass`，不取代它。** `pass` 仍是那个布尔事实——**判据完整成立**，对比例判据即 `passed === total`。读不懂 `ratio` 的消费者退回严格布尔，只会低估、绝不会高估。
+- **比例是字段，不是措辞。** 判定方**不得**把比例编进 `evidence` 前缀（`通过 6/9 …` 这类）——那样每个消费者都得去解析散文，而散文一改，解析就静默错位。`evidence` 仍写可查证的事实（哪几条过、哪几条没过、从哪儿查），比例的**数值**只走 `ratio`。
+- **分母是判定方看到的分母。** `total` 是本次实际参与判定的条数：rubric 允许排除的条目（如 `skipped_standards` 里选手明确排除并给出理由的）不进分母，`ratio` 记的就是扣除之后的数——防稀释是判定方的责任，报告不再二次换算。
+
+报告（`dsh-eval report`）据此按比例计分：带 `ratio` 的判据贡献 `passed / total` 而不是 1/0（负向判据则贡献 `1 − passed / total`），加权分同理按比例乘 `weight`。`total <= 0` 或 `passed` 越界的比例按缺失处理，退回布尔——坏数据不该悄悄变成一个分数。
+
+**极性不在 verdict 里，在 rubric 里。** `pass` 恒为「**判据成立**」，与 criterion 的字面一致，永远不表示「做得好」。负分判据的 criterion 写的是缺陷（「tradeoff 中出现 worth-the-cost」「把协议知识推给用户」），成立即缺陷存在。所以判据的极性是**判据的属性**，唯一来源是该题 grading 层 rubric 的叶子：`negative: true`（`weight` 为负与之等价；两者不一致由 `dsh-eval validate` 报错）。
+
+这条边界是刻意的，理由有三：
+
+- **判定方不做解释。** 探针与判官只回答「这条判据成不成立」——一个能就地核对的事实。让它们自行取反，等于把评分策略埋进两个各自独立、还会被换掉的实现里；同一条判据在探针和判官口中会得出相反的 `pass`，而两边都自称如实。
+- **契约不该随记分方式变。** verdict 是判定的**记录**，不是分数。加字段（`negative`、`score`、`polarity`）会让同一事实有两个说法，且注解一旦落盘就不可改——记分口径改一次，历史 verdict 全部作废。
+- **极性是题库的编辑决定。** 一条判据是奖是罚由出题人写在 rubric 里，与它被判过几次无关；rubric 随 run 的 commit 一同冻结，因此每条历史判定都能取回它当时的极性。
+
+报告据此计分（`dsh-eval report`）：主轴是**得分判据数**——正向判据成立计 1，负向判据成立计 0、不成立计 1；加权分 = 成立判据的 `weight` 之和，负 `weight` 自然扣分，不需要第二条规则。摘要单列「负向判据命中」表（哪格、哪条、证据）——那才是读者要的缺陷清单。
+
+**权重表随 bundle 走。** rubric 住在 `modelFacing: false` 的 grading 层，run 的自动导出只收可见层（§3，泄题闸是对的），因而自包含 bundle 里读不到极性与权重。导出时便从 grading 层**派生**一份权重表写进 bundle 的 `report/rubric-weights.json`：
+
+```text
+{ "schema": "dataseek.rubric-weights/1",
+  "dataset": <题集 id>, "commit": <冻结 commit>,
+  "tasks": [<有 rubric 的题>],
+  "criteria": [ { "task", "id", "weight", "negative", "kind", "axis" }, … ] }
+```
+
+只有编号与数字：**不含 criterion 文字、不含 evidence、不含 note**，因而不经泄题闸；可执行的探针与 rubric 全文仍不进 bundle。表缺席时报告行为不变（只出计数），但会明确打印「极性未知，计数按正向处理」并把负向判据数记为 unknown——**不把「无从判断」显示成「没有缺陷」**。
 
 ### 6.6 哈希规则与阶段 schema
 
@@ -597,7 +660,7 @@ datasets/<id>/
 
 **退出码就是契约**：`0` 表示**已判定**——包括判 `pass: false`，「做到了没有」和「探针能不能判」是两件事；非 `0` 表示**探针失败**，本次不产生任何判定，失败原因进 orchestrator ns。退出 `0` 却没写出可读的 `--out`，同样按探针失败记——它声称判了又拿不出可核对的东西。
 
-**输出形状**是 §6.5 `dataseek.verdict/1` 的**数组**（只有一条时写成单个对象也接受）。其中 `task` 与 `by` 由编排器回填（`by` = 探针在 verify 层的 display 路径），探针自己写了也会被覆盖：这两项是编排器知道的坐标，判定方只是回声，写错会污染报告的每一次 join。
+**输出形状**是 §6.5 `dataseek.verdict/1` 的**数组**（只有一条时写成单个对象也接受）。按比例给分的判据写 `ratio: {passed, total}`，**不把比例写进 `evidence` 前缀**（§6.5）。其中 `task` 与 `by` 由编排器回填（`by` = 探针在 verify 层的 display 路径），探针自己写了也会被覆盖：这两项是编排器知道的坐标，判定方只是回声，写错会污染报告的每一次 join。
 
 **执行环境**：编排器把该题 verify 层**整层**物化进宿主临时目录并以它为 cwd（探针因此能按相对路径读同层的 checklist 与 helper），`.mjs` 交 node、`.sh` 交 `/bin/sh`，每个探针 5 分钟墙钟上限，跑完整个目录删除——verify 层是答案，不留过夜。I3 起这一步交给 `lab.verify` 在容器内执行，**契约不变**。
 

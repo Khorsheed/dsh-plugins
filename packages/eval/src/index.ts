@@ -125,11 +125,19 @@ export type {
   FactorPair,
   InvariantCheck,
   JudgeConsistency,
+  NegativeHit,
   PairComparison,
   PairTaskDelta,
   ReportRow,
   ReportWrite,
+  RubricPolarity,
+  VerdictRatio,
 } from './report.ts'
+export {
+  buildRubricWeightTable, readRubricWeightTable, rubricWeightRows, writeRubricWeightTable,
+  RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA,
+} from './weights.ts'
+export type { RubricWeightRow, RubricWeightTable } from './weights.ts'
 export { bootstrapMeanCi, cohenKappa, fnv1a, mean, mulberry32, allEqualRate } from './stats.ts'
 export { generateTemplate, generateTemplateFromManifest, stageStateName, ARCHIVE_FILE_CHECK } from './template.ts'
 export type { GeneratedTemplate, GenerateTemplateOptions, TemplateMissionDoc, TemplateTransitionDoc, TemplateGuardDoc } from './template.ts'

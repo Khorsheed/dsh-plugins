@@ -2,11 +2,14 @@
  * summary.md rendering for the eval report. Pure function of the analyzed
  * {@link EvalReport} — no file access, no clock beyond the generation stamp.
  * Section order follows the task contract: red flags at the very top, the
- * four invariants next, and comparison sections ONLY when the invariants
- * allowed them (facts-only otherwise).
+ * four invariants next, the negative-criteria hit list among the fact tables
+ * (a defect list is a fact, so it prints whether or not comparison is
+ * allowed), and comparison sections ONLY when the invariants allowed them
+ * (facts-only otherwise).
  * @module @khorsheed/dsh-eval
  */
 import type { ConditionEfficiency, EvalReport, PairComparison } from './report.ts'
+import { RUBRIC_WEIGHTS_PATH } from './weights.ts'
 
 const STATUS_MARK: Record<string, string> = { ok: '✅ 成立', violated: '❌ 不成立', unverifiable: '⚠️ 无法核验' }
 
@@ -44,8 +47,8 @@ function renderPair(comparison: PairComparison): string[] {
   }
   const weighted = comparison.perTask.some(t => t.aWeighted !== null && t.bWeighted !== null)
   const head = weighted
-    ? '| 题 | ' + `${comparison.a} 通过 | ${comparison.b} 通过 | Δ 通过 | ${comparison.a} 加权 | ${comparison.b} 加权 | Δ 加权 | 逐 rep Δ | n |`
-    : '| 题 | ' + `${comparison.a} 通过 | ${comparison.b} 通过 | Δ 通过 | 逐 rep Δ | n |`
+    ? '| 题 | ' + `${comparison.a} 得分 | ${comparison.b} 得分 | Δ 得分 | ${comparison.a} 加权 | ${comparison.b} 加权 | Δ 加权 | 逐 rep Δ | n |`
+    : '| 题 | ' + `${comparison.a} 得分 | ${comparison.b} 得分 | Δ 得分 | 逐 rep Δ | n |`
   lines.push(head)
   lines.push(`|${' --- |'.repeat(head.split('|').length - 2)}`)
   for (const task of comparison.perTask) {
@@ -131,6 +134,38 @@ function renderEfficiency(report: EvalReport): string[] {
   return lines
 }
 
+/**
+ * The negative-criteria section: what the polarity table says, and every
+ * defect criterion that actually held. The scored count says how many there
+ * were; this table is the list a reader comes for.
+ */
+function renderNegative(report: EvalReport): string[] {
+  const lines: string[] = ['## 负向判据命中（缺陷清单）', '']
+  const polarity = report.polarity
+  if (!polarity.available) {
+    lines.push(`**极性未知**：bundle 未带判据权重表（\`${RUBRIC_WEIGHTS_PATH}\`），dataset 层也无 rubric。`)
+    lines.push('得分判据数按「全部判据都是正向」计算，负向判据数 **unknown**——本表不代表没有缺陷，只代表无从判断。')
+    lines.push('')
+    return lines
+  }
+  lines.push(`极性来源 \`${polarity.origin}\`：${polarity.criteria} 条判据，其中负向 ${polarity.negative} 条。`
+    + '负向判据的 `pass: true` 表示缺陷存在——计 0 分，其负 weight 在加权分里自然扣分。')
+  lines.push('')
+  if (report.negativeHits.length === 0) {
+    lines.push('各格最新 attempt 上没有任何负向判据成立。')
+    lines.push('')
+    return lines
+  }
+  lines.push('| 题 | 条件 | rep | 判据 | 比例 | weight | ns | 证据 |')
+  lines.push('|---|---|---:|---|---:|---:|---|---|')
+  for (const hit of report.negativeHits) {
+    const ratio = hit.ratio === null ? DASH : `${hit.ratio.passed}/${hit.ratio.total}`
+    lines.push(`| ${hit.task ?? DASH} | ${hit.condition ?? DASH} | ${hit.rep ?? DASH} | ${hit.criterion} | ${ratio} | ${hit.weight ?? DASH} | ${hit.ns} | ${hit.evidence.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |`)
+  }
+  lines.push('')
+  return lines
+}
+
 /** Render the full summary.md. */
 export function renderSummaryMd(report: EvalReport): string {
   const lines: string[] = []
@@ -176,6 +211,8 @@ export function renderSummaryMd(report: EvalReport): string {
   }
   lines.push('')
 
+  lines.push(...renderNegative(report))
+
   lines.push('## 条件与因子')
   lines.push('')
   if (report.conditions.length === 0) {
@@ -205,7 +242,9 @@ export function renderSummaryMd(report: EvalReport): string {
   } else if (report.comparisonAllowed && report.comparisons.length > 0) {
     lines.push('## 配对比较（以题为区组）')
     lines.push('')
-    lines.push('通过数取各格最权威可用的判定源（human-final > llm-draft > script），同判据多样本按多数计。')
+    lines.push('得分判据数取各格最权威可用的判定源（human-final > llm-draft > script），同判据多样本按多数计；'
+      + '正向判据成立计 1，负向判据成立计 0、不成立计 1；带 `ratio` 的按比例给分判据计 passed/total（负向则计其余量）。'
+      + '加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。')
     lines.push('')
     for (const comparison of report.comparisons) lines.push(...renderPair(comparison))
   }
