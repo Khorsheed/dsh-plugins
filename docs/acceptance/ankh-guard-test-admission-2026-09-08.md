@@ -34,8 +34,24 @@ macOS，8 个逻辑 CPU，Node v22.21.1，pnpm 11.20.0。开发树 `fix/ankh-gua
 
 ## 卡住的地方与边界
 
-- 本次修复和上述本地验收已经完成，未合并 main、未 push。共享 gate 改动与包内改动同在实现提交中，交 mainline 一起复核；未擅自更改 CI 或其他包的 worker 配置。
+- 首次记录上述本地验收时尚未合并 main、未 push。共享 gate 改动与包内改动同在实现提交中；未更改 CI 或其他包的 worker 配置。随后经用户明确要求完成合并与部署，见下节。
 - 历史三次 `190 → 178/163` 缺少逐任务原始证据，仍不能断言是哪条测试失败、是否 OOM。已证明旧正则会把失败优先的整片汇总漏算；另独立捕获并修复了一条同步阻塞/RPC 错误路径。
 - 准入只协调新版 gate 与 lane。旧 worktree、直接 Vitest、独立 build、其他程序仍可能争用资源；崩溃持有者留下的准入锁需要先审计后代，再人工处理，不自动杀进程或回收不明所有权。
 - 未复跑冷装 CI 或 npm 发布。没有将集成覆盖移出 gate，也没有自动重试失败测试。
 - checkpoint 审计发现明确的 web-eval 重启脚本调用点，使用 profile 安装的 CLI。当前源码的 clean checkpoint 不创建新提交，dirty checkpoint 需显式授权；历史空提交不能证明是现版 watchdog 自动提交。本轮不改生产 checkpoint 协议，不更新安装产物。
+
+## 后续合并与 3080 部署
+
+用户确认后，main 从 `17e0ce8` 快进至 `f134afd`，完整包含实现 `fdc57c5` 和本报告。没有 push；主 checkout 原有的 release-status 文档改动保持不变。
+
+部署前备份了旧 tarball 与 profile package.json、pnpm-workspace.yaml、pnpm-lock.yaml；移走旧 lib 后，从 main 干净构建，通过规定的 `pnpm deploy:3080 --package packages/ankh-guard --initiator ankh-guard-owner` 完成部署。流程耗时 155 秒，main 上 194/194 通过，composition preflight PASS，随后按闸重启及 canary PASS。profile 引用 `khorsheed-dsh-ankh-guard-0.1.1+2609081151.tgz`，不是 link；旧包保存在本次私有部署备份中，部署工具清理的旧时间戳 tarball 可以由此恢复。
+
+2026-09-08 19:51（Asia/Shanghai）的实机结果：
+
+- 宿主 listener PID 从 1932 变为 78304，supervisor direct child 为 78295；所有权稳定窗口 3 秒，retry=0。
+- 19:51:38 ready，19:51:39 canary PASS 并记录 deployment proof；后续 HTTP `/` 为 200。
+- `check-env` 显示 launchd 监督 watchdog PID 1904，skill 注册记录为成功。
+- CLI、插件入口、preflight runner、watchdog 脚本的安装字节与 main 构建产物 SHA-256 全部匹配。
+- 宿主 checkout 仍为官方 `dsh-v0.1.1-rc.2`，没有修改宿主源码或启动配置。
+
+本轮代码改动是测试工具及 gate，不改变发布的运行时代码；部署前比较也已证明线上 CLI、入口与 watchdog 和本轮版本一致。因此保留已有 watchdog PID 1904，仅让其按协议重启宿主，不能把这次描述为“替换了新版 supervisor 进程”。测试排队的效果在仓库新入口中验证；浏览器界面没有对应的新功能。生产会话中的手动 skill 调用/自重启体验交由用户继续验证，本次未为验收创建模型会话。
