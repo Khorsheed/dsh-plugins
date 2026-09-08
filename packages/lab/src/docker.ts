@@ -106,18 +106,33 @@ export class DockerProvider implements UnitProvider {
     ]
     if (spec.missionId !== undefined) argv.push('--label', `${MISSION_LABEL}=${spec.missionId}`)
     if (spec.runId !== undefined) argv.push('--label', `${RUN_LABEL}=${spec.runId}`)
-    // Declared ceilings are applied, not merely hashed — a fingerprint that
-    // claims a limit the container does not carry would be a lie.
+    // Everything declared is applied, not merely hashed — a fingerprint that
+    // claims an isolation the container does not carry would be a lie, and
+    // the network is the one where the lie is dangerous: undeclared means
+    // docker's default bridge, which has egress.
     if (spec.resources?.cpus !== undefined) argv.push('--cpus', normalizeCpus(spec.resources.cpus))
     if (spec.resources?.memory !== undefined) argv.push('--memory', normalizeMemory(spec.resources.memory))
+    if (spec.network !== undefined) argv.push('--network', spec.network)
+    if (spec.user !== undefined) argv.push('--user', spec.user)
     for (const mount of spec.mounts ?? []) {
-      argv.push('--mount', `type=bind,source=${mount.source},target=${mount.target}${mount.readonly === true ? ',readonly' : ''}`)
+      const type = mount.type ?? 'bind'
+      argv.push('--mount', `type=${type},source=${mount.source},target=${mount.target}${mount.readonly === true ? ',readonly' : ''}`)
     }
     for (const [key, value] of Object.entries(spec.env ?? {})) argv.push('--env', `${key}=${value}`)
     if (spec.workdir !== undefined) argv.push('--workdir', spec.workdir)
     argv.push(spec.image, ...(spec.command ?? ['sleep', 'infinity']))
     await this.run(argv)
-    await this.run(['exec', resource, 'mkdir', '-p', PID_DIR])
+    // The pid directory must exist before the first wrapped exec, and the unit
+    // may well run as a non-root user — a declared `user`, or the image's own
+    // USER (the evaluation image runs as `node` because one CLI refuses its
+    // sandbox mode under root). Such a user cannot create anything under /run,
+    // so create it as root and make it sticky-writable like /tmp: the wrapper
+    // then drops pidfiles whoever the unit runs as, and lab never has to learn
+    // the uid. Falls back to a plain create where the daemon refuses `--user 0`
+    // (userns-remap), which is exactly the behavior before non-root units.
+    const prepare = `mkdir -p ${PID_DIR} && chmod 1777 ${PID_DIR}`
+    const asRoot = await this.docker(['exec', '--user', '0', resource, 'sh', '-c', prepare])
+    if (asRoot.exitCode !== 0) await this.run(['exec', resource, 'sh', '-c', prepare])
     return resource
   }
 

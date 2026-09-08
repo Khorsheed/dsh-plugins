@@ -12,14 +12,23 @@
  * @module @khorsheed/dsh-lab
  */
 
-/** A bind mount declared at acquire time — the zero-copy, read-only path for inputs. */
+/** A mount declared at acquire time — the zero-copy path for inputs and for persistent state. */
 export interface MountSpec {
-  /** Host directory (e.g. a datasets worktree_path product). */
+  /**
+   * What is mounted: a host directory for `'bind'` (e.g. a datasets
+   * `worktree_path` product), a docker volume NAME for `'volume'`.
+   */
   source: string
   /** Absolute path inside the unit. */
   target: string
   /** Mounted read-only when true (the input-materialization default). */
   readonly?: boolean
+  /**
+   * Mount kind; defaults to `'bind'`. A `'volume'` mount is how state that
+   * must outlive one unit is carried — a per-harness credential volume whose
+   * token refresh has to be written back, for instance.
+   */
+  type?: 'bind' | 'volume'
 }
 
 /** Default in-unit working directory (checkpoint commits here; populate targets it by default). */
@@ -40,22 +49,31 @@ export interface ResourceLimits {
 }
 
 /**
- * The four components the composite environment fingerprint hashes. The shape
- * never varies: an undeclared ceiling is `null` rather than an omitted key, an
+ * The components the composite environment fingerprint hashes. The shape never
+ * varies: an undeclared scalar is `null` rather than an omitted key, an
  * undeclared list is empty. Host absolute paths and env VALUES never appear
  * here — the components are printed, labeled, and archived.
  */
 export interface FingerprintComponents {
-  /** Component-set schema version (hashed: widening the definition changes every fingerprint). */
+  /** Version of the HASHING RULES (canonicalization, normalization, the undeclared-is-absent rule). */
   version: number
   /** Resolved image digest (repo digest, falling back to the local image id); null when unresolvable. */
   image: string | null
   /** Normalized ceilings — cpus as a decimal literal, memory as a byte count; null when undeclared. */
   resources: { cpus: string | null; memory: string | null }
-  /** Mount layout as the container sees it, sorted by target — no host paths. */
+  /** Mount layout as the container sees it, sorted by target — no host paths, no volume names. */
   mounts: { target: string; type: string; readonly: boolean }[]
   /** Sorted names of the injected environment variables — names only, never values. */
   envKeys: string[]
+  /**
+   * Docker network the unit joins (`'none'`, or a network name); null when
+   * undeclared, which is docker's default bridge — a NAT'd network with
+   * egress. A network name is a daemon-local label, not host information, so
+   * unlike a mount's `source` it is safe to record.
+   */
+  network: string | null
+  /** In-container user (`uid[:gid]` or a name); null when undeclared, which is the image's own `USER`. */
+  user: string | null
 }
 
 /** A resolved environment fingerprint: the opaque string plus what it was computed from. */
@@ -76,6 +94,20 @@ export interface AcquireSpec {
   mounts?: MountSpec[]
   /** CPU and memory ceilings; applied to the unit and hashed into the fingerprint. */
   resources?: ResourceLimits
+  /**
+   * Docker network the unit joins — a network name, or `'none'` for no
+   * networking. Undeclared means docker's default bridge, which HAS egress;
+   * "the unit cannot reach the internet" is only expressible by naming an
+   * `--internal` network here. Applied to the unit and hashed.
+   */
+  network?: string
+  /**
+   * In-container user (`uid[:gid]` or a name); undeclared means the image's
+   * own `USER`. Applied to the unit and hashed — some CLIs refuse their
+   * sandbox mode under root, so the user is part of what makes two cells
+   * comparable.
+   */
+  user?: string
   /** Extra environment entries inside the unit. */
   env?: Record<string, string>
   /** Keep-alive command; defaults to `['sleep', 'infinity']` (the image must ship it). */

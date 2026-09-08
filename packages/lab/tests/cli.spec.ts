@@ -115,6 +115,51 @@ describe('dsh-lab CLI', { timeout: 30000 }, () => {
     expect(run.log).toContain('--memory 4294967296')
   })
 
+  it('acquire joins a network, runs as a user, and mounts a named volume', async () => {
+    const run = await runLab([
+      'acquire', '--image', 'app:latest',
+      '--network', 'eval-net', '--user', '1000:1000',
+      '--volume', 'eval-creds-codex:/creds/codex',
+      '--mount', '/host/layer:/input:ro',
+    ], {}, false)
+    expect(run.code).toBe(0)
+    expect(run.log).toContain('--network eval-net')
+    expect(run.log).toContain('--user 1000:1000')
+    expect(run.log).toContain('type=volume,source=eval-creds-codex,target=/creds/codex')
+    expect(run.log).toContain('type=bind,source=/host/layer,target=/input,readonly')
+    const info = JSON.parse(run.stdout) as { fingerprintComponents: { network: string; user: string; mounts: { target: string; type: string }[] } }
+    expect(info.fingerprintComponents.network).toBe('eval-net')
+    expect(info.fingerprintComponents.user).toBe('1000:1000')
+    expect(info.fingerprintComponents.mounts).toContainEqual({ target: '/creds/codex', type: 'volume', readonly: false })
+  })
+
+  it('a bad --volume is a usage error, not a silently mangled mount', async () => {
+    const run = await runLab(['acquire', '--image', 'app:latest', '--volume', 'novolume'], {}, false)
+    expect(run.code).toBe(2)
+    expect(run.stderr).toContain('bad --volume')
+  })
+
+  it('fingerprint reports the network and user for a spec, and status --json for a held unit', async () => {
+    const spec = await runLab(['fingerprint', '--image', 'app:latest', '--network', 'none', '--user', 'node'], {}, false)
+    expect(spec.code).toBe(0)
+    const resolved = JSON.parse(spec.stdout) as { components: { network: string; user: string } }
+    expect(resolved.components).toMatchObject({ network: 'none', user: 'node' })
+
+    const acquired = await runLab(['acquire', '--image', 'app:latest', '--network', 'eval-net', '--user', '1000'], {}, false)
+    const info = JSON.parse(acquired.stdout) as { id: string; resource: string; fingerprint: string; fingerprintComponents: unknown }
+    const env = { STUB_PS: info.resource, STUB_INSPECT: JSON.stringify([{
+      Name: `/${info.resource}`,
+      Config: { Labels: {
+        'dsh-lab.managed': 'true', 'dsh-lab.unit': info.id, 'dsh-lab.fingerprint': info.fingerprint,
+        'dsh-lab.fingerprint-components': JSON.stringify(info.fingerprintComponents),
+      } },
+      State: { Running: true },
+    }]) }
+    const status = await runLab(['status', '--json'], env, false)
+    const rows = JSON.parse(status.stdout) as { fingerprintComponents: { network: string; user: string } }[]
+    expect(rows[0]?.fingerprintComponents).toMatchObject({ network: 'eval-net', user: '1000' })
+  })
+
   it('fingerprint resolves a spec without acquiring, and names the component that differs', async () => {
     const small = await runLab(['fingerprint', '--image', 'app:latest', '--cpus', '2', '--memory', '4g'], {}, false)
     const large = await runLab(['fingerprint', '--image', 'app:latest', '--cpus', '2', '--memory', '8g'], {}, false)

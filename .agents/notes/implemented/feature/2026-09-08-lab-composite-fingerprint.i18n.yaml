@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-lab-composite-fingerprint.md
-.agents/notes/implemented/feature/2026-09-08-lab-composite-fingerprint.md: 057587718ee2a811418bc46fb1c5205d20405968
-.agents/notes/implemented/feature/2026-09-08-lab-composite-fingerprint.zh.md: e4025ba3dfa49b9dee7360e83a2a359cdab7ed58
+.agents/notes/implemented/feature/2026-09-08-lab-composite-fingerprint.md: 38721110c432c5d1efa0d07c8ac0e92359393838
+.agents/notes/implemented/feature/2026-09-08-lab-composite-fingerprint.zh.md: 6ac3db83451a55dc845c2147ca3b48fd88a3e991

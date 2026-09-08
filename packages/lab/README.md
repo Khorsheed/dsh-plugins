@@ -15,22 +15,28 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 ## 工作原理
 
 - **单元**——一个带标签的容器（`dsh-lab-<id>`）。docker daemon 即注册表：单元 id、指纹与其分量、mission 绑定都骑在资源标签上，`status` / `release` 靠 reconcile 重建——宿主机重启不丢。lab 唯一的宿主目录是**指纹镜像**（见下），它没有权威，删掉不丢任何东西。
-- **复合环境指纹**——环境变了结果就不可比，所以「同一环境」必须是机制而不是约定。指纹是四个分量的规范化 JSON 的 sha256，形如 `lab-env:<hex>`：
+- **复合环境指纹**——环境变了结果就不可比，所以「同一环境」必须是机制而不是约定。指纹是各分量的规范化 JSON 的 sha256，形如 `lab-env:<hex>`：
 
   | 分量 | 内容 | 刻意排除 |
   |---|---|---|
   | `image` | `acquire` 解析出的 repo digest（无 digest 时回退镜像 id，本地没有则先 pull） | — |
   | `resources` | `--cpus` 与 `--memory` 上限，规范化后比较（`4g` 与 `4096m` 是同一个上限） | — |
-  | `mounts` | 每个挂载的**容器内**路径、类型、只读位，按容器内路径排序 | 宿主路径（同一份输入在不同机器上落在不同位置）、声明顺序 |
+  | `mounts` | 每个挂载的**容器内**路径、类型（`bind` / `volume`）、只读位，按容器内路径排序 | 宿主路径与卷名（同一份输入在不同机器上落在不同位置；凭证卷本就一家一个）、声明顺序 |
   | `envKeys` | 注入的环境变量**键名**，排序 | 值（凭据或每格坐标，不是环境的形状） |
+  | `network` | 单元加入的 docker 网络名，或 `'none'` | — |
+  | `user` | 容器内用户（`uid[:gid]` 或用户名） | — |
 
-  分量形状恒定：未声明的上限记 `null` 而不是省略键。同一镜像配不同资源上限、多挂一个卷、多注入一个键，都会得到不同指纹——这正是旧的裸 digest 指纹判不出的三种情况。声明的上限会真的加到容器上（`--cpus` / `--memory`），指纹不会宣称一个容器并不具备的限制。
+  分量形状恒定：未声明的标量记 `null` 而不是省略键。同一镜像配不同资源上限、多挂一个卷、多注入一个键、换一张网、换一个用户，都会得到不同指纹。声明的东西会**真的加到容器上**（`--cpus` / `--memory` / `--network` / `--user`），指纹不会宣称一个容器并不具备的隔离。
+
+  网络这条最要紧：**不声明 `network` 就是 docker 默认 bridge，那是有 NAT 出网的**。「容器无外网」只有通过声明一张 `--internal` 网络才表达得出来。
+
+  **未声明的分量不参与哈希。** 分量集后来变宽时，没声明新分量的单元指纹**不变**——这不是兼容垫片，是指纹本身的含义：指纹只应在它描述的环境变化时变化，而当初没声明网络、现在也没声明的单元，跑在同一个地方（docker 默认 bridge）。`version` 编的是**哈希规则**（规范化、归一化、这条「未声明即缺席」），不是分量清单。
 - **指纹镜像**——`acquire` 把 `{ fingerprint, components }` 同时写进容器标签和 `stateDir`（默认 `$DSH_HOME/lab`，否则 `<cwd>/.dsh-lab-state`）下的 `units/<id>.json`。标签是记录，文件是派生副本：reconcile 领养宿主重启后幸存的单元时会重新写出它，`release` 会连同单元一起删掉它。它只是为了让「这两格为什么不可比」不必去解析 `docker inspect` 的输出；被释放单元的持久副本在归档的 `manifest.json` 里。
 - **旧指纹**——本线之前记下的裸 digest 继续被接受为「无分量的指纹」，不会被反向解释成分量；这样的单元在 `status` 的 ENV 列照常显示，`fingerprint` 子命令的 `components` 为 `null`。
-- **输入**——两条路：acquire 时声明 `mounts` 获得零拷贝只读绑定挂载（容器创建后无法追加挂载）；或 `populate` 把宿主机目录拷入运行中的单元（进入单元可写层的一份拷贝）。目录路径就是全部接口——datasets `worktree_path` 的产出或调用方自供路径皆可；lab 对 datasets 无代码级依赖，层白名单由产出路径的那一侧强制。
+- **输入**——两条路：acquire 时声明 `mounts` 获得零拷贝挂载（容器创建后无法追加挂载），`type` 取 `bind`（缺省，`source` 是宿主目录）或 `volume`（`source` 是卷名——跨格持久的可写状态走这条，例如一家一个、续期要回写的凭证卷）；或 `populate` 把宿主机目录拷入运行中的单元（进入单元可写层的一份拷贝）。目录路径就是全部接口——datasets `worktree_path` 的产出或调用方自供路径皆可；lab 对 datasets 无代码级依赖，层白名单由产出路径的那一侧强制。
 - **物化清单**——`populate` 返回 `{ sha, count, files }`（逐文件内容哈希 + 排序后的整体哈希），给了 `manifestPath` 会写出清单文件并登记为 kind `materialization` 的 mission 产物。输入相同则哈希相同——并行单元拿到字节级相同题面的公平性证据——同时它还是 collect 的反向基线（哪些是给进去的、哪些是产出的）。
 - **活动事实，不是动词时间戳**——`status` 的 `lastActivityAt` 取自单元内 workspace 文件的最新 mtime（干活就会写文件；那段时间 lab 根本不被调用，动词时间戳是假指标），辅以 cgroup `cpu.stat` 的容器累计 CPU。由于 `docker cp` 保留源文件 mtime，`populate` 会在目标目录打入 `.lab-materialized` 标记作为活动基线——否则刚 populate 完的单元会显得已闲置了源文件的整个年龄。
-- **孤儿进程补偿**——lab 自己 spawn 的每条容器内命令都经过一层 wrapper，把自身 pid 记到 `/run/dsh-lab/pids/`；`release` 先进容器按 pid SIGTERM 清扫，再移除容器。覆盖范围是 provider 自己的 exec 路径——他人 exec 进容器的进程不在 lab 的视野内。
+- **孤儿进程补偿**——lab 自己 spawn 的每条容器内命令都经过一层 wrapper，把自身 pid 记到 `/run/dsh-lab/pids/`；`release` 先进容器按 pid SIGTERM 清扫，再移除容器。覆盖范围是 provider 自己的 exec 路径——他人 exec 进容器的进程不在 lab 的视野内。该目录由 `acquire` 以 root 建好并置为 `1777`（像 `/tmp`），因为单元很可能以非 root 跑（声明了 `user`，或镜像自带 `USER`——评测镜像就是，因为有一家 CLI 在 root 下拒绝进它的沙箱档），而非 root 建不了 `/run` 下的东西。
 - **`maxConcurrentUnits`**——一个纯数字上限（config，默认 4）：达到上限 `acquire` 拒绝并报错明确。lab 不理解"哪些阶段可并发"（那是调用方的语义），一个数字足以挡住误并发——而误并发会悄悄毁掉对耗时敏感的测量。
 - **检查点**——提交工作区（首次 checkpoint 时自动 `git init`）并打 tag；commit sha 写入 mission 检查点的 `ref`。只读挂载的工作区会在此处报错——它无法被提交，这正是正确的信号。
 - **验证**——可选地把验证物拷入临时目录、在工作区里执行命令、移除验证物，把结果**原样**（退出码、stdout、stderr、耗时、超时事实）记进 mission 的 `lab` 注解命名空间。整条代码路径上没有任何通过/失败分支。
@@ -59,11 +65,16 @@ dsh plugin --profile web add @khorsheed/dsh-lab         # 本插件
 const unit = await ctx.lab.acquire({
   image: 'eval-env:latest',
   missionId: 'F1-a-r1',                       // 可选的 mission 绑定
-  mounts: [{ source: worktreePath, target: '/input', readonly: true }],
-  resources: { cpus: '2', memory: '4g' },     // 加到容器上，并进复合指纹
+  mounts: [
+    { source: worktreePath, target: '/input', readonly: true },        // bind（缺省）
+    { source: 'eval-creds-codex', target: '/creds', type: 'volume' },  // 跨格持久的凭证卷
+  ],
+  resources: { cpus: '2', memory: '4g' },     // 以下四项都加到容器上，并进复合指纹
+  network: 'eval-net',                        // 不声明 = docker 默认 bridge，有出网
+  user: '1000:1000',                          // 不声明 = 镜像自带的 USER
 })
 // unit.fingerprint = 'lab-env:<hex>'（写进 mission 的 refs，对 mission 不透明）
-// unit.fingerprintComponents = { version, image, resources, mounts, envKeys }
+// unit.fingerprintComponents = { version, image, resources, mounts, envKeys, network, user }
 await ctx.lab.populate(unit.id, { source: '/path/to/layer', manifestPath: '/host/run-data/materialization.json' })
 // → { sha, count, files } —— 登记为 'materialization' 产物
 const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
@@ -82,8 +93,9 @@ mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addC
 `dsh-lab <动词>`（或 `node lib/cli.js`）；数据走 stdout（有值的动词输出 JSON），诊断走 stderr。退出码：`0` 正常，`1` 失败/拒绝，`2` 用法错误。
 
 ```sh
-dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]...
-                [--cpus N] [--memory SIZE] [--workdir DIR] [--command JSON]
+dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
+                [--env K=V]... [--cpus N] [--memory SIZE] [--network NET] [--user UID[:GID]]
+                [--workdir DIR] [--command JSON]
 dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
 dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
 dsh-lab checkpoint UNIT --name NAME
@@ -91,10 +103,10 @@ dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
 dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
 dsh-lab release UNIT [--force]
 dsh-lab status [UNIT] [--json]
-dsh-lab fingerprint UNIT | --image IMG [--mount ...]... [--env K=V]... [--cpus N] [--memory SIZE]
+dsh-lab fingerprint UNIT | --image IMG [acquire 的同一套 spec 标志]
 ```
 
-全局：`--max-concurrent N`、`--state-dir DIR`。
+全局：`--max-concurrent N`、`--state-dir DIR`。挂载分两个标志而不是靠 `source` 的形状去猜：`--mount` 是宿主目录，`--volume` 是卷名——docker 的 `-v` 按「看起来像不像路径」来判 bind 还是 volume，而一个相对路径悄悄变成卷不是值得继承的行为。
 
 裸 `dsh-lab status` 输出进度表——每行一个单元，join 容器事实（运行时长）、容器内活动（workspace mtime）、mission 状态与坐标标签（经 mission 面，缺席降级）、物化清单哈希、环境指纹：
 
@@ -145,6 +157,6 @@ CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面�
 - **checkpoint 需要可写工作区**——工作区在首次 checkpoint 时自动 `git init`；只读挂载的工作区无法提交，会报错（此时应 checkpoint 一个 populate 出来的目录）。
 - **M3 范围**——`lab_*` 模型工具已在提案中设计，本线刻意缺席。
 - **指纹记的是声明，不是实测**——`resources` 分量记的是 `acquire` 声明并加到容器上的上限，不是 daemon 事后回读的值；镜像自带的 `ENV`、cgroup 之外的宿主差异（内核、CPU 型号、网络策略）都不在分量里。它挡的是「同一批 run 里配置被改了」，不是「两台机器完全一样」。
-- **分量集扩了就换指纹**——`components.version` 参与哈希，所以将来新增一个分量会让所有指纹改变。这是对的：定义变宽后，先前判为相同的单元未必仍然相同。跨版本的报告不要比指纹字符串。
+- **分量集可以变宽而不动老指纹**——未声明的分量不参与哈希，所以新增分量只改变**声明了它**的单元的指纹。代价是「没声明网络」与「网络分量还不存在」在指纹上无法区分：`network: null` 的单元跑在 docker 默认 bridge 上，但那是因为没人管过它的网络，不是因为有人确认过它该在那里。要断言隔离就得显式声明。
 - **`lastActivityAt` 需要镜像内有 GNU `stat` 或 busybox `date -r`**——两者都没有时 mtime 探测降级为无读数（该行显示 `-`）；CPU 事实需要 cgroup `cpu.stat`（v2）或 `cpuacct.usage`（v1）。
 - **CLI 模式的登记走 mission 二进制**——要求 PATH 上有 `dsh-mission`，覆盖面正好是其动词集（set-refs / add-artifact / add-checkpoint / annotate / is-releasable / get）；更丰富的登记走进程内服务面。

@@ -157,7 +157,35 @@ describe('DockerProvider.fingerprint (composite components)', () => {
       resources: { cpus: null, memory: null },
       mounts: [],
       envKeys: [],
+      network: null,
+      user: null,
     })
+  })
+
+  it('separates the network and the in-container user', async () => {
+    const bare = await fingerprintOf({})
+    const isolated = await fingerprintOf({ network: 'eval-net' })
+    const none = await fingerprintOf({ network: 'none' })
+    const asNode = await fingerprintOf({ user: '1000:1000' })
+    expect(new Set([bare, isolated, none, asNode]).size).toBe(4)
+  })
+
+  it('names the network and user components, so an incomparable pair is diagnosable', async () => {
+    const resolved = await pinnedImageProvider().fingerprint({
+      image: 'app:latest',
+      network: 'eval-net',
+      user: '1000:1000',
+    })
+    expect(resolved.components.network).toBe('eval-net')
+    expect(resolved.components.user).toBe('1000:1000')
+  })
+
+  it('separates a volume mount from a bind, but not one volume name from another', async () => {
+    const bind = await fingerprintOf({ mounts: [{ source: '/host/creds', target: '/creds' }] })
+    const codex = await fingerprintOf({ mounts: [{ source: 'eval-creds-codex', target: '/creds', type: 'volume' }] })
+    const claude = await fingerprintOf({ mounts: [{ source: 'eval-creds-claude', target: '/creds', type: 'volume' }] })
+    expect(codex).not.toBe(bind)
+    expect(codex).toBe(claude)
   })
 
   it('refuses a ceiling it cannot normalize instead of hashing the raw literal', async () => {
@@ -204,7 +232,27 @@ describe('DockerProvider.acquire', () => {
     expect(text).toContain('--env MODE=x')
     expect(text).toContain('--workdir /work')
     expect(run.slice(-3)).toEqual(['app:latest', 'sleep', 'infinity'])
-    expect(calls[1]).toEqual(['exec', 'dsh-lab-abc123', 'mkdir', '-p', '/run/dsh-lab/pids'])
+    expect(calls[1]).toEqual([
+      'exec', '--user', '0', 'dsh-lab-abc123', 'sh', '-c',
+      'mkdir -p /run/dsh-lab/pids && chmod 1777 /run/dsh-lab/pids',
+    ])
+  })
+
+  it('prepares the pid directory as root and world-writable, so a non-root unit can drop pidfiles', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest', user: '1000:1000' }, RESOLVED)
+    const prepare = calls[1] ?? []
+    expect(prepare.slice(0, 4)).toEqual(['exec', '--user', '0', 'dsh-lab-abc123'])
+    expect(prepare[6]).toContain('chmod 1777 /run/dsh-lab/pids')
+    expect(calls).toHaveLength(2)
+  })
+
+  it('falls back to a plain create when the daemon refuses --user 0 (userns-remap)', async () => {
+    const { exec, calls } = fakeExec((argv) => (
+      argv[0] === 'exec' && argv[1] === '--user' ? { exitCode: 1, stdout: '', stderr: 'unable to find user' } : undefined
+    ))
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
+    expect(calls[2]?.slice(0, 4)).toEqual(['exec', 'dsh-lab-abc123', 'sh', '-c'])
   })
 
   it('labels the container with the components, so reconcile recovers them without a state file', async () => {
@@ -230,6 +278,48 @@ describe('DockerProvider.acquire', () => {
     await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
     expect((calls[0] ?? []).join(' ')).not.toContain('--cpus')
     expect((calls[0] ?? []).join(' ')).not.toContain('--memory')
+  })
+
+  it('joins the declared network and runs as the declared user', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', {
+      image: 'app:latest',
+      network: 'eval-net',
+      user: '1000:1000',
+    }, RESOLVED)
+    const run = calls[0] ?? []
+    expect(run[run.indexOf('--network') + 1]).toBe('eval-net')
+    expect(run[run.indexOf('--user') + 1]).toBe('1000:1000')
+  })
+
+  it('passes no --network when none is declared — which is docker\'s default bridge, WITH egress', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
+    expect((calls[0] ?? []).join(' ')).not.toContain('--network')
+    expect((calls[0] ?? []).join(' ')).not.toContain('--user 1000')
+  })
+
+  it('mounts a named volume as type=volume and keeps binds unchanged', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', {
+      image: 'app:latest',
+      mounts: [
+        { source: 'eval-creds-codex', target: '/creds/codex', type: 'volume' },
+        { source: '/data/layer', target: '/input', readonly: true },
+      ],
+    }, RESOLVED)
+    const text = (calls[0] ?? []).join(' ')
+    expect(text).toContain('type=volume,source=eval-creds-codex,target=/creds/codex')
+    expect(text).toContain('type=bind,source=/data/layer,target=/input,readonly')
+  })
+
+  it('mounts a read-only volume with the readonly option', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', {
+      image: 'app:latest',
+      mounts: [{ source: 'snapshot', target: '/snapshot', type: 'volume', readonly: true }],
+    }, RESOLVED)
+    expect((calls[0] ?? []).join(' ')).toContain('type=volume,source=snapshot,target=/snapshot,readonly')
   })
 })
 

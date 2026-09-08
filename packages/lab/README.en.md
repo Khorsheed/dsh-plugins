@@ -15,22 +15,28 @@ Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over 
 ## How it works
 
 - **Unit** — one labeled container (`dsh-lab-<id>`). The docker daemon is the registry of record: unit id, fingerprint with its components, and mission binding ride resource labels, so `status` / `release` reconcile and survive a host restart. lab's one host directory is the **fingerprint mirror** (below); it holds no authority, and deleting it loses nothing.
-- **Composite environment fingerprint** — environments differ → results aren't comparable, so "the same environment" has to be a mechanism rather than a convention. The fingerprint is sha256 over a canonical JSON of four components, carried as `lab-env:<hex>`:
+- **Composite environment fingerprint** — environments differ → results aren't comparable, so "the same environment" has to be a mechanism rather than a convention. The fingerprint is sha256 over a canonical JSON of the components, carried as `lab-env:<hex>`:
 
   | Component | Content | Deliberately excluded |
   |---|---|---|
   | `image` | the repo digest `acquire` resolves (falling back to the image id, pulling when absent locally) | — |
   | `resources` | the `--cpus` and `--memory` ceilings, compared normalized (`4g` and `4096m` are one ceiling) | — |
-  | `mounts` | each mount's **in-container** path, type, and read-only bit, sorted by that path | host paths (the same input lands elsewhere on another machine), declaration order |
+  | `mounts` | each mount's **in-container** path, kind (`bind` / `volume`), and read-only bit, sorted by that path | host paths and volume NAMES (the same input lands elsewhere on another machine; one credential volume per harness is by design), declaration order |
   | `envKeys` | the **names** of the injected environment variables, sorted | values (a credential or a per-cell coordinate, not the shape of the environment) |
+  | `network` | the docker network the unit joins, or `'none'` | — |
+  | `user` | the in-container user (`uid[:gid]` or a name) | — |
 
-  The component shape never varies: an undeclared ceiling is `null` rather than a missing key. One image under different resource ceilings, with one extra mounted volume, or with one extra injected key now fingerprints differently — the three cases the old bare-digest fingerprint could not tell apart. Declared ceilings are really applied to the container (`--cpus` / `--memory`): the fingerprint never claims a limit the container does not carry.
+  The component shape never varies: an undeclared scalar is `null` rather than a missing key. One image under different resource ceilings, with one extra mounted volume, one extra injected key, a different network, or a different user all fingerprint differently. Everything declared is really applied to the container (`--cpus` / `--memory` / `--network` / `--user`): the fingerprint never claims an isolation the container does not carry.
+
+  The network matters most: **without a declared `network` the unit lands on docker's default bridge, which HAS NAT egress**. "The unit cannot reach the internet" is only expressible by naming an `--internal` network.
+
+  **An undeclared component contributes nothing to the hash.** When the component set later grows, the fingerprint of a unit that declares none of the new components does NOT move — not a compatibility shim, but what a fingerprint means: it should change when the environment it describes changes, and a unit that declared no network before and declares none now is running in the same place. `version` numbers the **hashing rules** (canonicalization, normalization, this undeclared-is-absent rule), not the component inventory.
 - **Fingerprint mirror** — `acquire` writes `{ fingerprint, components }` both to the container labels and to `units/<id>.json` under `stateDir` (default `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`). The labels are the record; the file is a derived copy — reconcile re-materializes it when it adopts a unit that survived a host restart, and `release` removes it with the unit. It exists so that "why did these two cells not compare?" does not require parsing `docker inspect`; the durable copy for a released unit is in its archive's `manifest.json`.
 - **Legacy fingerprints** — a bare digest recorded before this line is still accepted, as a fingerprint with no components; it is never reinterpreted into one. Such a unit still shows an ENV cell in `status`, and the `fingerprint` verb reports `components: null` for it.
-- **Inputs** — two paths: declare `mounts` at acquire for a zero-copy read-only bind mount (container mounts cannot be added after creation), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
+- **Inputs** — two paths: declare `mounts` at acquire for a zero-copy mount (container mounts cannot be added after creation), with `type` either `bind` (the default; `source` is a host directory) or `volume` (`source` is a volume name — the path for writable state that must outlive one unit, such as a per-harness credential volume whose token refresh is written back), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
 - **Materialization manifest** — `populate` returns `{ sha, count, files }` (per-file content hashes plus an overall hash over the sorted list), and with `manifestPath` writes the manifest file and registers it as a mission artifact of kind `materialization`. Identical inputs hash identically — the byte-level fairness proof across parallel units — and the manifest doubles as the baseline a later `collect` diffs against (what was given vs what was produced).
 - **Activity facts, not verb timestamps** — `status` reports `lastActivityAt` from the newest workspace file mtime inside the unit (work writes files; lab is not invoked meanwhile, so a verb-call timestamp would be a fake metric), plus cumulative container CPU from cgroup `cpu.stat` as the secondary fact. Because `docker cp` preserves source mtimes, `populate` stamps a `.lab-materialized` marker into the target as the activity baseline — otherwise a freshly populated unit would look idle for the source's whole age.
-- **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach.
+- **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach. `acquire` creates that directory as root and makes it `1777` (like `/tmp`), because the unit may well run as a non-root user — a declared `user`, or the image's own `USER` (the evaluation image runs as `node` because one CLI refuses its sandbox mode under root) — and such a user cannot create anything under `/run`.
 - **`maxConcurrentUnits`** — a plain ceiling (config, default 4): `acquire` refuses at the limit with an explicit error. lab doesn't know which phases may overlap (that's the caller's semantics); one number blocks accidental concurrency, which silently corrupts timing-sensitive measurements.
 - **Checkpoint** — commit the workspace (auto-initialized as a git repo on first checkpoint) and tag it; the commit sha goes into the mission's checkpoint `ref`. A read-only mounted workspace fails loud — it cannot be committed, which is the correct signal.
 - **Verify** — optionally copy verification material into a scratch dir, run the command in the workspace, remove the material, and record the outcome *verbatim* (exit code, stdout, stderr, duration, timeout fact) into the mission's `lab` annotation namespace. There is no pass/fail branch anywhere in the code path.
@@ -59,11 +65,16 @@ Other plugins and scripts consume `ctx.get('lab')` (typed as `ctx.lab`):
 const unit = await ctx.lab.acquire({
   image: 'eval-env:latest',
   missionId: 'F1-a-r1',                       // optional mission binding
-  mounts: [{ source: worktreePath, target: '/input', readonly: true }],
-  resources: { cpus: '2', memory: '4g' },     // applied to the container, and hashed into the fingerprint
+  mounts: [
+    { source: worktreePath, target: '/input', readonly: true },        // bind (the default)
+    { source: 'eval-creds-codex', target: '/creds', type: 'volume' },  // state that outlives the unit
+  ],
+  resources: { cpus: '2', memory: '4g' },     // these four are applied to the container AND hashed
+  network: 'eval-net',                        // undeclared = docker's default bridge, which has egress
+  user: '1000:1000',                          // undeclared = the image's own USER
 })
 // unit.fingerprint = 'lab-env:<hex>' (written into the mission's refs, opaque there)
-// unit.fingerprintComponents = { version, image, resources, mounts, envKeys }
+// unit.fingerprintComponents = { version, image, resources, mounts, envKeys, network, user }
 await ctx.lab.populate(unit.id, { source: '/path/to/layer', manifestPath: '/host/run-data/materialization.json' })
 // → { sha, count, files } — registered as a 'materialization' artifact
 const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
@@ -82,8 +93,9 @@ The mission integration is a probed structural face (`setRefs` / `addArtifact` /
 `dsh-lab <verb>` (or `node lib/cli.js`); data on stdout (JSON where the verb produces a value), diagnostics on stderr. Exit codes: `0` ok, `1` failure/refused, `2` usage.
 
 ```sh
-dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--env K=V]...
-                [--cpus N] [--memory SIZE] [--workdir DIR] [--command JSON]
+dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
+                [--env K=V]... [--cpus N] [--memory SIZE] [--network NET] [--user UID[:GID]]
+                [--workdir DIR] [--command JSON]
 dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
 dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
 dsh-lab checkpoint UNIT --name NAME
@@ -91,10 +103,10 @@ dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
 dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
 dsh-lab release UNIT [--force]
 dsh-lab status [UNIT] [--json]
-dsh-lab fingerprint UNIT | --image IMG [--mount ...]... [--env K=V]... [--cpus N] [--memory SIZE]
+dsh-lab fingerprint UNIT | --image IMG [the same spec flags acquire takes]
 ```
 
-Global: `--max-concurrent N`, `--state-dir DIR`.
+Global: `--max-concurrent N`, `--state-dir DIR`. Mounts take two flags rather than guessing from the shape of `source`: `--mount` is a host directory, `--volume` a volume name — docker's `-v` decides bind-vs-volume by whether the source looks like a path, and a relative path silently becoming a volume is not a behavior worth inheriting.
 
 Bare `dsh-lab status` prints the progress table — one row per unit joining container facts (up-time), in-container activity (workspace mtime), the mission state and coordinate labels (via the mission face, absent-tolerant), the materialization hash, and the environment fingerprint:
 
@@ -145,6 +157,6 @@ The integration suite runs this loop end to end (`scripts/integration-triad.spec
 - **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
 - **M3 scope** — the `lab_*` model tools are designed in the proposal and deliberately absent here.
 - **The fingerprint records declarations, not measurements** — the `resources` component is the ceiling `acquire` declared and applied, not a value read back from the daemon afterwards; the image's own baked-in `ENV`, and host differences outside the cgroup (kernel, CPU model, network policy), are not components. It catches "the configuration changed mid-run", not "these two machines are identical".
-- **Widening the component set changes every fingerprint** — `components.version` is hashed, so adding a component later shifts all fingerprints. That is correct: under a wider definition, units previously judged identical may not be. Do not compare fingerprint strings across component-set versions.
+- **The component set can widen without moving old fingerprints** — an undeclared component contributes nothing to the hash, so a new component shifts the fingerprint only of units that declare it. The cost is that "declared no network" and "the network component did not exist yet" are indistinguishable in the fingerprint: a `network: null` unit is on docker's default bridge because nobody addressed its networking, not because anyone confirmed that is where it belongs. Asserting isolation requires declaring it.
 - **`lastActivityAt` needs GNU `stat` or busybox `date -r` in the image** — the workspace-mtime probe degrades to "no reading" on images with neither (the row shows `-`); the CPU fact needs cgroup `cpu.stat` (v2) or `cpuacct.usage` (v1).
 - **CLI-mode registration goes through the mission bin** — it requires `dsh-mission` on PATH and covers exactly its verb set (set-refs / add-artifact / add-checkpoint / annotate / is-releasable / get); anything richer belongs to the in-host service face.

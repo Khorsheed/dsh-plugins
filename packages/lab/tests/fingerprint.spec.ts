@@ -55,7 +55,34 @@ describe('componentsFor', () => {
       resources: { cpus: null, memory: null },
       mounts: [],
       envKeys: [],
+      network: null,
+      user: null,
     })
+  })
+
+  it('records the declared network and user, and defaults a mount to a bind', () => {
+    const components = componentsFor({
+      image: 'app:latest',
+      network: 'eval-net',
+      user: '1000:1000',
+      mounts: [{ source: 'eval-creds-codex', target: '/creds/codex', type: 'volume' }, { source: '/h/a', target: '/input' }],
+    }, 'sha256:abc')
+    expect(components.network).toBe('eval-net')
+    expect(components.user).toBe('1000:1000')
+    expect(components.mounts).toEqual([
+      { target: '/creds/codex', type: 'volume', readonly: false },
+      { target: '/input', type: 'bind', readonly: false },
+    ])
+  })
+
+  it('records neither the host path of a bind nor the NAME of a volume', () => {
+    const components = componentsFor({
+      image: 'app:latest',
+      mounts: [{ source: 'eval-creds-codex', target: '/creds', type: 'volume' }],
+    }, 'sha256:abc')
+    // The volume name is per-cell by design (one credential volume per
+    // harness); the layout is what the cells must share.
+    expect(JSON.stringify(components)).not.toContain('eval-creds-codex')
   })
 
   it('records an unresolvable image as null rather than omitting the component', () => {
@@ -80,6 +107,8 @@ describe('fingerprint strings', () => {
     resources: { cpus: '2', memory: '4294967296' },
     mounts: [],
     envKeys: [],
+    network: null,
+    user: null,
   }
 
   it('carries the scheme so a composite is distinguishable from a legacy bare digest', () => {
@@ -94,6 +123,60 @@ describe('fingerprint strings', () => {
     expect(shortFingerprint(`lab-env:${'9f2c1a2b'}0000`)).toBe('9f2c1a2b')
     expect(shortFingerprint('registry/app@sha256:aabbccddee')).toBe('aabbccdd')
     expect(shortFingerprint('bare')).toBe('bare')
+  })
+})
+
+/**
+ * The values below were produced by the implementation BEFORE `network` and
+ * `user` existed. They are pinned, not recomputed: a fingerprint must move
+ * only when the environment it describes moves, and a spec that declared no
+ * network then and declares none now is running in the same place. Recording
+ * the literals is the only way a future component addition gets caught
+ * shifting them.
+ */
+describe('a spec that declares none of a later component keeps its fingerprint', () => {
+  it('holds for a bare spec', () => {
+    expect(hashComponents(componentsFor({ image: 'app:latest' }, 'sha256:abc')))
+      .toBe('lab-env:c2e5b51960ef4672e723887406e9ebb6c4f5704d2bb2a088f3d7c564fddc3c4b')
+  })
+
+  it('holds for a spec that declares every component the initial set had', () => {
+    expect(hashComponents(componentsFor({
+      image: 'app:latest',
+      resources: { cpus: '2', memory: '4g' },
+      mounts: [{ source: '/h/a', target: '/input', readonly: true }],
+      env: { B: '2', A: '1' },
+    }, 'registry/app@sha256:aaa')))
+      .toBe('lab-env:982547479d11ad0035bedea93d73ba0a10a35f0fb4558aee17bb343173520664')
+  })
+
+  it('holds when the components carry the later keys explicitly as null', () => {
+    // An undeclared component contributes nothing: the null keys and their
+    // absence are the same environment, so they must hash the same.
+    const withNulls = componentsFor({ image: 'app:latest' }, 'sha256:abc')
+    const { network: _network, user: _user, ...withoutKeys } = withNulls
+    expect(hashComponents(withNulls)).toBe(hashComponents(withoutKeys as FingerprintComponents))
+  })
+
+  it('but moves as soon as one of them IS declared', () => {
+    const bare = hashComponents(componentsFor({ image: 'app:latest' }, 'sha256:abc'))
+    const networked = hashComponents(componentsFor({ image: 'app:latest', network: 'eval-net' }, 'sha256:abc'))
+    const isolated = hashComponents(componentsFor({ image: 'app:latest', network: 'none' }, 'sha256:abc'))
+    const asUser = hashComponents(componentsFor({ image: 'app:latest', user: '1000:1000' }, 'sha256:abc'))
+    const both = hashComponents(componentsFor({ image: 'app:latest', network: 'eval-net', user: '1000:1000' }, 'sha256:abc'))
+    expect(new Set([bare, networked, isolated, asUser, both]).size).toBe(5)
+  })
+
+  it('separates a volume mount from a bind at the same target', () => {
+    const bind = hashComponents(componentsFor({ image: 'app:latest', mounts: [{ source: '/h/c', target: '/creds' }] }, 'sha256:abc'))
+    const volume = hashComponents(componentsFor({ image: 'app:latest', mounts: [{ source: 'vol', target: '/creds', type: 'volume' }] }, 'sha256:abc'))
+    expect(bind).not.toBe(volume)
+  })
+
+  it('ignores which volume NAME backs a mount — one credential volume per harness is by design', () => {
+    const codex = hashComponents(componentsFor({ image: 'app:latest', mounts: [{ source: 'eval-creds-codex', target: '/creds', type: 'volume' }] }, 'sha256:abc'))
+    const claude = hashComponents(componentsFor({ image: 'app:latest', mounts: [{ source: 'eval-creds-claude', target: '/creds', type: 'volume' }] }, 'sha256:abc'))
+    expect(codex).toBe(claude)
   })
 })
 
