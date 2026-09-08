@@ -44,7 +44,7 @@ scoped home（`$DSH_HOME/local-agent/dsh`）被有意保留——里面存着子
 | `liveIdleMs` | `1800000`（30 分钟） | 长驻 runtime 的空闲回收时限 |
 | `liveMirrorGranularity` | `event` | live 镜像粒度；`token` 额外把 `assistant/chunk` 增量写入子会话（写放大，opt-in） |
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：无头子 dsh 没有沙箱或权限旋钮（web-eval 冻结基线称其无限制——字段缺位本身就是诚实的条件输入），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——无头子 dsh 复制的就是父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：无头子 dsh 没有沙箱或权限旋钮（web-eval 冻结基线称其无限制——字段缺位本身就是诚实的条件输入），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

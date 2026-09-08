@@ -11,7 +11,7 @@
 - **会话内登录**——device-code `/codex login`，设置 → 本地 Agent 显示认证状态并提供退出登录按钮。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程。
 - **自定义端点**——经作用域 `config.toml` 的自定义 provider 把 Codex 的 LLM 请求路由到你自己的路由端点。
-- **模型回读与独立工作目录**——每轮从输出侧回读实际模型（流内未标注时读 rollout 的 `turn_context`），写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
+- **回读与独立工作目录**——每轮从本轮 rollout 回读实际模型、CLI 版本与用量写进委派记录；定位按 threadId + cwd + 时间窗，并发跑也读的是自己那一轮。编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 ## 安装
 
 前置依赖：一个可运行的 dsh profile 和 `PATH` 上的 Codex CLI（`codex`）——插件不安装它、也不替你登录。
@@ -60,7 +60,7 @@ model_provider = "dsh-router"
 
 ⚠️ **凭据暴露**：作用域 `auth.json` token 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)、已配置模型(读作用域 config 的顶层 `model`,没有就不给字段)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(读作用域 config 的自定义 provider,只报主机名)、已配置模型(读作用域 config 的顶层 `model`,没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 
@@ -84,7 +84,9 @@ model_provider = "dsh-router"
 
 **会话记录。** `/codex sessions` 列出作用域目录的 `sessions/YYYY/MM/DD/rollout-*.jsonl` 文件——仅本插件委派产生的会话，绝不含你的私人会话。设置分区把列表收窄到 `workDir` 与当前会话 cwd 一致的记录。
 
-**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把从自身输出侧读到的模型标识（codex 0.144.0 的 exec 流事件不带 model，回退读本轮 rollout 文件的 `turn_context` 行——按本轮时间窗过滤，resume 线程里先前轮次的模型不会被误读）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
+**回读与 cwd 覆盖。** 每轮 settle 后，provider 从本轮自己的 rollout 文件里回读三件事，随 `settled` 进度事件上报并合并进 `delegations.jsonl`：模型（`turn_context.payload.model`——codex 0.144.0 的 exec 流事件根本不带 model，rollout 是唯一权威；按本轮时间窗过滤，resume 线程里先前轮次的模型不会被误读）、CLI 版本（`session_meta.payload.cli_version`——服务本轮的那个 codex build 自己写下的，比事后探测可执行文件更准）、以及非正常结束时流里缺失的 token 用量（最后一条 `token_count`）。取不到即缺位，绝不猜测。
+
+定位与扫描两处都按并发校准过。`turn_context` 是 codex 在**回合开始**时写的，所以一轮里之后产生的事件一多就会把它挤出文件尾——只扫尾部会读回 null（一次真实评测跑就是这么丢的：38 KB 的 smoke 轮读得到，100–500 KB 的正式格读不到），因此尾部扫不到就再做一次有界的整文件读。定位则在 threadId 之外把**本轮 cwd** 也算进去：并发委派会让多个格的文件落进同一个时间窗，`session_meta.payload.cwd` 才是区分它们的字段；窗口里有候选却没有一个对得上本轮目录时，宁可什么都不报也不报邻居那一轮（窗口里只有一个候选除外——那是路径写法差异，不是歧义）。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
 **续聊（resume）。** 家族工具（`@khorsheed/dsh-local-agent-tool-subagent`）在官方 `description`/`prompt` 子集上增加可选 `resume` 参数。首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；后续轮次传回它即在**同一个** dsh 子会话里继续**同一个** codex 线程（`codex exec --json resume <thread_id>`），按轮记账。句柄只从 `resume` 参数读取，localAgent registry 仅对记录该委派的同一 parent 会话与 provider 解析——伪造句柄在任何 CLI 进程启动前就被拒绝。
 

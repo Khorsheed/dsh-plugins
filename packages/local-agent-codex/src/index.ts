@@ -17,7 +17,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
-import { CodexCliProvider } from './codex-cli-provider.ts'
+import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { codexAuthenticated, listCodexSessions } from './records.ts'
@@ -128,10 +128,11 @@ export function apply(ctx: Context, config: Config): void {
       // live from the scoped config, which codex itself reads — a
       // person-edited value is exactly what the rounds run with.
       effectiveSettings: async () => {
-        const [reasoningEffort, baseUrl, model] = await Promise.all([
+        const [reasoningEffort, baseUrl, model, cliVersion] = await Promise.all([
           readCodexReasoningEffort(homeDir).catch(() => undefined),
           readCodexBaseUrl(homeDir).catch(() => undefined),
           readCodexModel(homeDir).catch(() => undefined),
+          codexCliVersion(ctx, homeDir).catch(() => undefined),
         ])
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined
         return {
@@ -141,6 +142,7 @@ export function apply(ctx: Context, config: Config): void {
           baseUrlSet: baseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
           ...model !== undefined ? { model } : {},
+          ...cliVersion !== undefined ? { cliVersion } : {},
         }
       },
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {

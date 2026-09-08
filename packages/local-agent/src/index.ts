@@ -34,6 +34,7 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
+  LocalAgentCredentialState,
   LocalAgentDelegationInfo,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
@@ -55,6 +56,7 @@ export const inject = ['commands']
 
 export type {
   DelegationCallOptions,
+  LocalAgentCredentialState,
   LocalAgentDelegationInfo,
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
@@ -76,6 +78,15 @@ export type {
 } from './types.ts'
 
 export { delegationEnv } from './env.ts'
+
+export {
+  CLI_VERSION_FAILURE_TTL_MS,
+  CLI_VERSION_PROBE_TIMEOUT_MS,
+  clearCliVersionCache,
+  parseCliVersion,
+  probeCliVersion,
+} from './cli-version.ts'
+export type { CliVersionProbe } from './cli-version.ts'
 
 /** Per-harness session listing: reads the harness's own records format. */
 export interface LocalAgentRecordsAdapter {
@@ -268,6 +279,22 @@ export const MANUAL_LOGIN_LIMIT_MS = 5 * 60_000
 
 /** Heartbeat interval for facade-tracked in-flight runs. */
 export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
+
+/**
+ * How long after a run's result settles the facade still routes progress to
+ * that call's `onProgress`.
+ *
+ * A round's settle OBSERVATION (its observed model, CLI version, and token
+ * usage) is only knowable once the CLI process has exited and its whole
+ * output stream has been parsed — which, on every exec-drive provider, is
+ * strictly after `run.result` resolves (a cancelled run settles at the cancel
+ * moment, before the process is even reaped). Clearing the tracked run at
+ * result-settle therefore dropped exactly the one report the caller asked for:
+ * the `settled` payload reached the cordis event and nothing else. The entry's
+ * cancel lever and heartbeat still stop at result-settle — only the progress
+ * route is held open, and it closes the moment the `settled` report arrives.
+ */
+export const RUN_PROGRESS_SETTLE_GRACE_MS = 60_000
 
 /** Socket filename of the member-bridge listener, under the shared homes root. */
 export const MEMBER_BRIDGE_SOCKET_FILENAME = 'member-bridge.sock'
@@ -476,6 +503,7 @@ function renderStatus(status: LocalAgentStatus): string {
   return [
     `harness: ${status.name}`,
     `authenticated: ${status.authenticated ? 'yes' : 'no'}`,
+    `credentialState: ${status.credentialState}`,
     `homeDir: ${status.homeDir}`,
     ...status.delegationProvider !== undefined ? [`provider: ${status.delegationProvider}`] : [],
     ...status.effectiveSettings !== undefined ? renderEffectiveSettings(status.effectiveSettings) : [],
@@ -535,6 +563,17 @@ export class LocalAgentRegistry {
    */
   private readonly authFailures = new Map<string, number>()
   /**
+   * Delegation-reported auth SUCCESSES per harness (epoch ms of the report):
+   * a round that reached the CLI's endpoint and completed, which is the only
+   * evidence a host has that a present credential is actually live. Cleared
+   * when a login starts or a logout lands, because both change which account
+   * the scoped home holds — a verification of the previous credential says
+   * nothing about the next one. Per host process on purpose: after a restart
+   * a present credential is `present-unverified` until a round exercises it,
+   * which is exactly what is known.
+   */
+  private readonly authSuccesses = new Map<string, number>()
+  /**
    * In-flight runs registered with the member channel, by per-run token. The
    * bridge MCP server presents its token (and parent pid) on every callback;
    * entries are invalidated on the run's settle path.
@@ -568,6 +607,17 @@ export class LocalAgentRegistry {
     heartbeat?: ReturnType<typeof setInterval>
   }>()
   /**
+   * Progress routes held open past their run's result-settle, by child session
+   * id — see {@link RUN_PROGRESS_SETTLE_GRACE_MS}. An entry carries only the
+   * call's `onProgress` (never a cancel lever: a settled run is not
+   * cancellable) and self-destructs on the `settled` report or the grace
+   * timer, whichever comes first.
+   */
+  private readonly settledRuns = new Map<string, {
+    onProgress: (event: LocalAgentRunProgress) => void
+    timer: ReturnType<typeof setTimeout>
+  }>()
+  /**
    * Detach disposers for child sessions the facade reattached into the live
    * store (see {@link LocalAgentRegistry.resume} step 5). Held for the plugin
    * lifetime — the same lifecycle a provider-created child session has — and
@@ -591,6 +641,8 @@ export class LocalAgentRegistry {
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
       }
+      for (const entry of this.settledRuns.values()) clearTimeout(entry.timer)
+      this.settledRuns.clear()
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
     })
@@ -682,6 +734,30 @@ export class LocalAgentRegistry {
   }
 
   /**
+   * Record a delegation-observed authentication SUCCESS: a round reached the
+   * harness CLI's endpoint and completed, so the scoped credential is known
+   * live and the status grades it `verified` instead of `present-unverified`.
+   * The counterpart of {@link reportAuthFailure}; providers wire both from the
+   * same settle path. A success newer than a failure mark also clears the
+   * `rejected` grade — a completed round outranks a stale rejection.
+   * @param name - the harness whose credential just worked.
+   */
+  reportAuthSuccess(name: string): void {
+    this.authSuccesses.set(name, Date.now())
+  }
+
+  /**
+   * Forget what delegation rounds observed about one harness's credential.
+   * Called where the account itself can change — a login starting, a logout
+   * landing — because a verdict about the previous credential describes
+   * nothing about the next one.
+   */
+  private forgetCredentialObservations(name: string): void {
+    this.authSuccesses.delete(name)
+    this.authFailures.delete(name)
+  }
+
+  /**
    * Query one harness's auth status.
    * @param name - the harness name.
    * @returns the status snapshot.
@@ -689,15 +765,11 @@ export class LocalAgentRegistry {
   async statusOf(name: string): Promise<LocalAgentStatus> {
     const harness = this.requireHarness(name)
     const homeDir = this.homeDir(name)
-    let authenticated = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
-    const failedAt = this.authFailures.get(name)
-    if (authenticated && failedAt !== undefined && harness.credentialStamp !== undefined) {
-      // A delegation reported an auth failure (e.g. a server-side revocation
-      // the presence probe cannot see). Stay unauthenticated until the
-      // credential marker is rewritten by a real re-login.
-      const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
-      authenticated = stamp !== undefined && stamp > failedAt
-    }
+    const credentialState = await this.credentialStateOf(harness, homeDir)
+    // The boolean is exactly the two grades that mean "there is a credential
+    // worth trying", so every surface written before the grade existed keeps
+    // reading what it always read.
+    const authenticated = credentialState === 'verified' || credentialState === 'present-unverified'
     // Degrade, don't explode: the snapshot reads scoped-config files, and a
     // read failure must not break the status surface — the field drops out
     // and the failure is logged instead.
@@ -713,6 +785,7 @@ export class LocalAgentRegistry {
       name: harness.name,
       displayName: harness.displayName,
       authenticated,
+      credentialState,
       homeDir,
       // Explicit capability flags so surfaces never offer a login/logout
       // action the harness would answer with an error (the dsh harness has
@@ -723,6 +796,37 @@ export class LocalAgentRegistry {
       ...harness.delegationProvider !== undefined ? { delegationProvider: harness.delegationProvider } : {},
       ...effectiveSettings !== undefined ? { effectiveSettings } : {},
     }
+  }
+
+  /**
+   * Grade one harness's credential from the two channels a status read has:
+   * the scoped home's own shape ({@link LocalAgentHarness.isAuthenticated})
+   * and what delegation rounds reported. Presence alone can only ever say
+   * `present-unverified` — an expired, unrefreshable record has exactly the
+   * shape of a working one, and saying so is this grade's whole point.
+   * @param harness - the harness to grade.
+   * @param homeDir - its scoped home.
+   * @returns the credential grade.
+   */
+  private async credentialStateOf(
+    harness: LocalAgentHarness,
+    homeDir: string,
+  ): Promise<LocalAgentCredentialState> {
+    const present = await (harness.isAuthenticated?.(homeDir) ?? Promise.resolve(false))
+    if (!present) return 'absent'
+    const failedAt = this.authFailures.get(harness.name)
+    const verifiedAt = this.authSuccesses.get(harness.name)
+    // A completed round outranks a stale rejection: the endpoint answered.
+    if (verifiedAt !== undefined && (failedAt === undefined || verifiedAt > failedAt)) return 'verified'
+    if (failedAt !== undefined && harness.credentialStamp !== undefined) {
+      // A delegation reported an auth failure (e.g. a server-side revocation
+      // the presence probe cannot see). Stay rejected until the credential
+      // marker is rewritten by a real re-login. A harness without a stamp has
+      // no recovery signal at all, so its mark cannot pin the grade down.
+      const stamp = await harness.credentialStamp(homeDir).catch(() => undefined)
+      return stamp !== undefined && stamp > failedAt ? 'present-unverified' : 'rejected'
+    }
+    return 'present-unverified'
   }
 
   /**
@@ -929,12 +1033,16 @@ export class LocalAgentRegistry {
    */
   recordRoundSettled(
     childSessionId: string,
-    round: { readonly observedModel?: string; readonly usage?: TokenUsage },
+    round: { readonly observedModel?: string; readonly cliVersion?: string; readonly usage?: TokenUsage },
   ): void {
-    if (round.observedModel !== undefined) {
+    if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
       if (record !== undefined) {
-        const updated = { ...record, observedModel: round.observedModel }
+        const updated = {
+          ...record,
+          ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
+          ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
+        }
         this.delegations.set(childSessionId, updated)
         this.persistDelegation(updated)
       }
@@ -942,6 +1050,7 @@ export class LocalAgentRegistry {
     this.reportRunProgress(childSessionId, {
       kind: 'settled',
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
+      ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
       ...round.usage === undefined ? {} : { usage: round.usage },
     })
   }
@@ -1414,14 +1523,33 @@ export class LocalAgentRegistry {
       this.reportRunProgress(childSessionId, { kind: 'heartbeat', elapsedMs: Date.now() - startedAt })
     }, RUN_PROGRESS_HEARTBEAT_MS)
     heartbeat.unref()
+    // A resume round reuses the child session id, so a previous round's parked
+    // route (whose settle report never arrived) must not outlive it.
+    this.dropSettledRun(childSessionId)
     this.runs.set(childSessionId, { controller, run, onProgress, startedAt, heartbeat })
     const clear = (): void => {
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       clearInterval(entry.heartbeat)
       this.runs.delete(childSessionId)
+      // The provider computes this round's settle observation AFTER the result
+      // resolves (the CLI's stream is only complete once the process is
+      // reaped), so the route stays open for it — bounded, and closed by the
+      // report itself. See RUN_PROGRESS_SETTLE_GRACE_MS.
+      if (onProgress === undefined) return
+      const timer = setTimeout(() => { this.dropSettledRun(childSessionId) }, RUN_PROGRESS_SETTLE_GRACE_MS)
+      timer.unref()
+      this.settledRuns.set(childSessionId, { onProgress, timer })
     }
     void run.result.then(clear, clear)
+  }
+
+  /** Close one parked progress route, if any. */
+  private dropSettledRun(childSessionId: string): void {
+    const parked = this.settledRuns.get(childSessionId)
+    if (parked === undefined) return
+    clearTimeout(parked.timer)
+    this.settledRuns.delete(childSessionId)
   }
 
   /**
@@ -1437,7 +1565,17 @@ export class LocalAgentRegistry {
    */
   reportRunProgress(childSessionId: string, progress: LocalAgentRunProgress): void {
     this.ctx.emit('localAgent/run-progress', childSessionId, progress)
-    this.runs.get(childSessionId)?.onProgress?.(progress)
+    const tracked = this.runs.get(childSessionId)
+    if (tracked !== undefined) {
+      tracked.onProgress?.(progress)
+      return
+    }
+    // The run's result already settled; its call's route is parked for the
+    // provider's late settle observation and closes on delivery.
+    const parked = this.settledRuns.get(childSessionId)
+    if (parked === undefined) return
+    parked.onProgress(progress)
+    if (progress.kind === 'settled') this.dropSettledRun(childSessionId)
   }
 
   /**
@@ -1503,7 +1641,12 @@ export class LocalAgentRegistry {
   /** Dispatch `/login`, `/status`, and `/sessions` for one harness. */
   private handle(invocation: CommandInvocation, harness: LocalAgentHarness): Promise<CommandResult> {
     const input = invocation.rawInput.trim()
-    if (input === 'login') return this.login(harness)
+    if (input === 'login') {
+      // A login changes which account the scoped home holds, so whatever
+      // rounds observed about the previous credential stops describing it.
+      this.forgetCredentialObservations(harness.name)
+      return this.login(harness)
+    }
     if (input.startsWith('code ')) return Promise.resolve(this.submitLoginCode(harness, input.slice('code '.length).trim()))
     if (input === 'status') {
       return this.statusOf(harness.name).then(status => ({ kind: 'success', text: renderStatus(status) }))
@@ -1520,7 +1663,10 @@ export class LocalAgentRegistry {
         })
       }
       return harness.logout(this.homeDir(harness.name))
-        .then(() => ({ kind: 'success', text: `${harness.displayName} signed out of the scoped home; log in again to switch accounts.` }))
+        .then(() => {
+          this.forgetCredentialObservations(harness.name)
+          return { kind: 'success', text: `${harness.displayName} signed out of the scoped home; log in again to switch accounts.` }
+        })
     }
     if (harness.subcommand !== undefined) {
       const extra = harness.subcommand(input, invocation)

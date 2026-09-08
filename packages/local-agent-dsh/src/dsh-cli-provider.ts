@@ -33,6 +33,7 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
   delegationEnv,
+  probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -258,6 +259,7 @@ export class DshCliProvider implements SubagentProvider {
         ctx: this.ctx,
         ...member === undefined ? {} : { memberEnv: member.env },
         onSpawned: (pid) => { member?.bind(pid) },
+        cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
       })
       // The member-channel token dies with the run, whatever its stop reason.
       if (member !== undefined) void run.result.then(member.release, member.release)
@@ -331,6 +333,7 @@ export class DshCliProvider implements SubagentProvider {
           ctx: this.ctx,
           ...member === undefined ? {} : { memberEnv: member.env },
           onSpawned: (pid) => { member?.bind(pid) },
+          cliVersion: () => dshCliVersion(this.ctx, this.config, homeDir),
         })
         void run.result.then(
           () => {
@@ -386,6 +389,12 @@ export interface DshCliRunSpec {
   readonly memberEnv?: Readonly<NodeJS.ProcessEnv> | undefined
   /** Called with the spawned CLI pid right after spawn (member-channel pid binding). */
   readonly onSpawned?: (pid: number) => void
+  /**
+   * The dsh build the round runs, resolved lazily and cached by the family
+   * probe. The sub-dsh session log names its model but never its build, so
+   * this is the only version channel the round's read-back has.
+   */
+  readonly cliVersion?: (() => Promise<string | undefined>) | undefined
 }
 
 /** Validate and join the one-shot task before crossing the process boundary. */
@@ -423,6 +432,42 @@ export function dshLaunchArgv(config: LocalAgentDshConfig): readonly string[] {
   // to [] without an explicit default); treat it as no override.
   if (config.cliLaunch !== undefined && config.cliLaunch.length > 0) return config.cliLaunch
   return [process.execPath, ...process.execArgv, process.argv[1] ?? 'dsh']
+}
+
+/**
+ * Mark the harness credential verified after a completed round, degrading
+ * silently on a core that predates the mark (the family's companion-pair
+ * rule: a provider paired with an older core loses the grade, never the run).
+ * @param ctx - host context carrying the family registry.
+ */
+function markCredentialVerified(ctx: Context): void {
+  const registry = ctx.get('localAgent')
+  if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
+  registry.reportAuthSuccess('dsh')
+}
+
+/**
+ * The dsh build the sub-dsh runs, probed by asking the very launch argv the
+ * delegation would spawn for its `--version` (the sub-dsh replicates the
+ * parent instance's own node + entry point, so the parent's build IS the
+ * child's). Cached by the family probe against that entry script's identity,
+ * so a harness upgrade re-probes and an unchanged one never spawns twice.
+ * @param ctx - host context carrying the subprocess seam.
+ * @param config - plugin config carrying the optional launch override.
+ * @param homeDir - the harness's scoped home.
+ * @returns the version, or undefined when the launch cannot be asked.
+ */
+export function dshCliVersion(ctx: Context, config: LocalAgentDshConfig, homeDir: string): Promise<string | undefined> {
+  // Degrade, don't explode: a composition without the subprocess seam simply
+  // reports no version, exactly as an unaskable CLI does.
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return Promise.resolve(undefined)
+  return probeCliVersion({
+    argv: [...dshLaunchArgv(config), '--version'],
+    cwd: homeDir,
+    spawn: spec => subprocess.spawn(spec),
+    env: delegationEnv({ DSH_HOME: homeDir }),
+  })
 }
 
 /**
@@ -514,11 +559,15 @@ export async function startDshCliRun(
     localAgent.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
     if (alwaysReport) {
       // The settle pass also reports the round's settled observation — the
-      // sub-dsh session's own model attribution and the round's token usage —
-      // through the registry's observation channel: the delegation record's
-      // `observedModel` merge plus the `settled` run-progress event.
+      // sub-dsh session's own model attribution, the dsh build the round ran,
+      // and the round's token usage — through the registry's observation
+      // channel: the delegation record's merge plus the `settled` event. The
+      // sub-dsh replicates the parent's own launch, so its build is what that
+      // launch answers to `--version`.
+      const cliVersion = await spec.cliVersion?.()
       localAgent.recordRoundSettled(childSession.id, {
         ...delta.observedModel === undefined ? {} : { observedModel: delta.observedModel },
+        ...cliVersion === undefined ? {} : { cliVersion },
         ...delta.usage === undefined ? {} : { usage: delta.usage },
       })
     }
@@ -608,6 +657,9 @@ export async function startDshCliRun(
     signal: request.signal,
     onAbort,
   }).then((settled) => {
+    // A completed round proves the resolved credential is live — the sub-dsh
+    // reached its endpoint and produced an answer.
+    if (settled.stopReason === 'completed') markCredentialVerified(ctx)
     // The turn closes at the real settle moment, so the timing projection's
     // duration equals the actual CLI runtime. Every terminal path closes the
     // window — a failed or cancelled run settles 'error'/'aborted' instead of

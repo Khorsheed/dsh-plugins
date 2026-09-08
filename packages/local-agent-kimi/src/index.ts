@@ -16,7 +16,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
-import { KimiCliProvider } from './kimi-cli-provider.ts'
+import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
@@ -181,11 +181,12 @@ export function apply(ctx: Context, config: Config): void {
       // would have written. Provisioning-time values only ever reach a home
       // that had none.
       effectiveSettings: async () => {
-        const [reasoningEffort, baseUrl, autoApprove, defaultModel] = await Promise.all([
+        const [reasoningEffort, baseUrl, autoApprove, defaultModel, cliVersion] = await Promise.all([
           readKimiReasoningEffort(homeDir).catch(() => undefined),
           readKimiBaseUrl(homeDir).catch(() => undefined),
           readKimiAutoApprove(homeDir).catch(() => false),
           readKimiDefaultModel(homeDir).catch(() => undefined),
+          kimiCliVersion(ctx, homeDir).catch(() => undefined),
         ])
         // The managed endpoint IS kimi's own service — routing through it is
         // the default, not a pinned custom route.
@@ -198,6 +199,7 @@ export function apply(ctx: Context, config: Config): void {
           baseUrlSet: custom,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
           ...defaultModel !== undefined ? { model: defaultModel } : {},
+          ...cliVersion !== undefined ? { cliVersion } : {},
         }
       },
     })

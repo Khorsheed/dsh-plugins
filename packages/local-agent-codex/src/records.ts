@@ -2,18 +2,18 @@
  * Codex session records adapter: scans the scoped home's `sessions/`
  * rollout files (one JSONL per session under `sessions/YYYY/MM/DD/`).
  * The LISTING reads only the head of each file — the first `session_meta`
- * line carries the id, cwd, and started-at timestamp it needs. The usage
- * recovery path ({@link codexRolloutUsage}) instead locates one run's file
- * (by thread id or a time window) and scans its TAIL for the last
- * `token_count` event, so an aborted/error exec round that never saw
- * `turn.completed` still books the tokens codex recorded on disk. Files are
- * treated as append-only with torn-tail tolerance, and contents are always
- * untrusted input.
+ * line carries the id, cwd, and started-at timestamp it needs. The READ-BACK
+ * path ({@link codexRolloutRoundFacts}) instead locates one run's file (by
+ * thread id, working directory, or a time window) and reads that round's
+ * usage, model, and codex build out of it — the facts the exec `--json` wire
+ * either omits entirely (the model) or drops on a non-completed round (the
+ * usage). Files are treated as append-only with torn-tail tolerance, and
+ * contents are always untrusted input.
  * @module @khorsheed/dsh-local-agent-codex/records
  */
 
 import { open, readFile, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
 
@@ -239,6 +239,10 @@ interface RolloutCandidate {
   readonly id: string | undefined
   /** Epoch-ms session start (head timestamp, falling back to the filename). */
   readonly startedAt: number | undefined
+  /** The head's `cwd` — the directory this session's CLI actually ran in. */
+  readonly workDir: string | undefined
+  /** The head's `cli_version` — the codex build that wrote the file. */
+  readonly cliVersion: string | undefined
 }
 
 /** Parse the ISO timestamp embedded in a `rollout-<ISO>-<uuid>.jsonl` name. */
@@ -252,37 +256,32 @@ function rolloutFilenameTimestamp(name: string): number | undefined {
 }
 
 /**
- * Read a bounded suffix of a rollout file and scan it for the last
- * `token_count`; a tail that holds no token_count (a single giant trailing
- * event can push it out of the window) falls back to a bounded full read.
- * @param path - the rollout file path.
- * @returns the mapped usage, or undefined when the file holds none.
+ * The codex build that wrote one rollout file, from its `session_meta` head
+ * (`payload.cli_version`, present since codex 0.14x). This is the AUTHORITY
+ * for the version a delegation round actually ran: it is codex's own record of
+ * itself, written by the process that served the round, so it cannot drift
+ * from the binary the way a later `--version` probe can.
+ * @param text - the raw rollout head.
+ * @returns the version, or undefined when the head names none.
  */
-async function rolloutFileTokenUsage(path: string): Promise<TokenUsage | undefined> {
-  const handle = await open(path, 'r')
+export function rolloutCliVersion(text: string): string | undefined {
+  const line = text.split('\n')[0]
+  if (line === undefined) return undefined
+  let event: { type?: unknown; payload?: unknown }
   try {
-    const { size } = await handle.stat()
-    let scanned = ''
-    if (size > 0) {
-      const tailLength = Math.min(TAIL_BYTES, size)
-      const buffer = Buffer.alloc(tailLength)
-      const { bytesRead } = await handle.read(buffer, 0, tailLength, size - tailLength)
-      scanned = buffer.subarray(0, bytesRead).toString('utf8')
-    }
-    let usage = codexRolloutTokenUsage(scanned)
-    if (usage === undefined && size > TAIL_BYTES) {
-      const buffer = Buffer.alloc(Math.min(FULL_BYTES, size))
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-      usage = codexRolloutTokenUsage(buffer.subarray(0, bytesRead).toString('utf8'))
-    }
-    return usage
-  } finally {
-    await handle.close()
+    event = JSON.parse(line) as { type?: unknown; payload?: unknown }
+  } catch {
+    return undefined
   }
+  if (event.type !== 'session_meta' || typeof event.payload !== 'object' || event.payload === null) {
+    return undefined
+  }
+  const version = (event.payload as { cli_version?: unknown }).cli_version
+  return typeof version === 'string' && version !== '' ? version : undefined
 }
 
-/** Locator for one run's rollout file, resolved by thread id or a time window. */
-export interface CodexRolloutUsageLocator {
+/** Locator for one run's rollout file, resolved by thread id, cwd, and a time window. */
+export interface CodexRolloutLocator {
   /**
    * The thread id observed from the run's NDJSON stream (`thread.started`);
    * the primary locator — matches the session_meta head id.
@@ -294,24 +293,46 @@ export interface CodexRolloutUsageLocator {
    * `thread.started`).
    */
   readonly windowStart?: number | undefined
+  /**
+   * The directory the run's CLI process was spawned in. Only the time-window
+   * fallback uses it, and there it is decisive: concurrent delegations put
+   * several runs' files inside one window, and the head's `cwd` is what tells
+   * them apart (an orchestrator gives every cell its own directory).
+   */
+  readonly cwd?: string | undefined
 }
+
+/**
+ * How far before the run's spawn moment a `turn_context` timestamp may sit and
+ * still count as THIS run's turn (sub-second ordering between the host's
+ * spawn clock and the CLI's own stamps).
+ */
+const ROLLOUT_CONTEXT_SLACK_MS = 2_000
 
 /**
  * Locate ONE run's rollout file. Walks the scoped home's `sessions/YYYY/MM/DD/`
  * tree reading each file's head (the same bounded walk as
  * {@link listCodexSessions}), then prefers the file whose session id equals
- * `locator.threadId`; otherwise — or when the id matched nothing — the file
- * whose start falls in the window around `locator.windowStart`, newest first.
- * Shared by the usage recovery ({@link codexRolloutUsage}) and the model
- * observation ({@link codexRolloutTurnModel}).
+ * `locator.threadId`; otherwise the file whose start falls in the window
+ * around `locator.windowStart`, newest first.
+ *
+ * **Concurrency**: the window alone cannot separate two runs started seconds
+ * apart, so when the locator names a `cwd` the window set is restricted to
+ * files whose head records that same directory. A window that holds candidates
+ * but none in the run's directory resolves to NOTHING rather than to a
+ * neighbour's file — unless the window holds exactly one candidate, where
+ * there is no other run to confuse it with and the mismatch is path skew (a
+ * symlinked temp root) rather than ambiguity. A misattributed model is a
+ * worse answer than an absent one: the evaluation fails a run loud on
+ * declared ≠ observed.
  * @param homeDir - the `codex` harness's scoped home.
- * @param locator - the thread id and/or the run's start-time window.
- * @returns the located file path, or undefined when nothing locates.
+ * @param locator - the thread id, working directory, and/or start-time window.
+ * @returns the located candidate, or undefined when nothing locates.
  */
-async function locateCodexRolloutFile(
+async function locateCodexRollout(
   homeDir: string,
-  locator: CodexRolloutUsageLocator,
-): Promise<string | undefined> {
+  locator: CodexRolloutLocator,
+): Promise<RolloutCandidate | undefined> {
   const candidates: RolloutCandidate[] = []
   let years: string[]
   try {
@@ -362,6 +383,8 @@ async function locateCodexRolloutFile(
               path,
               id: record?.id,
               startedAt: record?.startedAt ?? rolloutFilenameTimestamp(name),
+              workDir: record?.workDir,
+              cliVersion: rolloutCliVersion(text),
             })
           } catch {
             continue
@@ -374,102 +397,143 @@ async function locateCodexRolloutFile(
   const threadMatch = locator.threadId === undefined
     ? undefined
     : candidates.find(candidate => candidate.id === locator.threadId)
-  let chosen = threadMatch
-  if (chosen === undefined && locator.windowStart !== undefined) {
-    const windowStart = locator.windowStart - ROLLOUT_WINDOW_SLACK_MS
-    const windowEnd = Date.now() + ROLLOUT_WINDOW_FUTURE_MS
-    const inWindow = candidates
-      .filter(candidate => candidate.startedAt !== undefined
-        && candidate.startedAt >= windowStart && candidate.startedAt <= windowEnd)
-      .sort((left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0))
-    chosen = inWindow[0]
-  }
-  return chosen?.path
+  if (threadMatch !== undefined) return threadMatch
+  if (locator.windowStart === undefined) return undefined
+  const windowStart = locator.windowStart - ROLLOUT_WINDOW_SLACK_MS
+  const windowEnd = Date.now() + ROLLOUT_WINDOW_FUTURE_MS
+  const inWindow = candidates
+    .filter(candidate => candidate.startedAt !== undefined
+      && candidate.startedAt >= windowStart && candidate.startedAt <= windowEnd)
+    .sort((left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0))
+  if (locator.cwd === undefined) return inWindow[0]
+  const wanted = resolve(locator.cwd)
+  const sameCwd = inWindow.filter(candidate => candidate.workDir !== undefined && resolve(candidate.workDir) === wanted)
+  if (sameCwd.length > 0) return sameCwd[0]
+  return inWindow.length === 1 ? inWindow[0] : undefined
+}
+
+/** What one scan of a rollout file's text yielded. */
+interface RolloutScan {
+  usage?: TokenUsage
+  model?: string
 }
 
 /**
- * Recover the last `token_count` usage of ONE run's rollout file. The file is
- * located by {@link locateCodexRolloutFile}; only its tail is read.
- * @param homeDir - the `codex` harness's scoped home.
- * @param locator - the thread id and/or the run's start-time window.
- * @returns the mapped last token_count usage, or undefined when nothing
- *   locates or the file holds no token_count (hard-killed before any turn
- *   boundary writes one).
+ * Scan rollout text for this run's two read-back facts: the LAST `token_count`
+ * usage, and the model of the LAST `turn_context` whose top-level `timestamp`
+ * falls inside the run's window (`windowStart` onward) — the turn codex
+ * actually started for this round, so a resumed thread's earlier rounds are
+ * never misread and a round killed mid-turn still observes the model it
+ * started with. A torn line is skipped.
  */
-export async function codexRolloutUsage(
-  homeDir: string,
-  locator: CodexRolloutUsageLocator,
-): Promise<TokenUsage | undefined> {
-  const path = await locateCodexRolloutFile(homeDir, locator)
-  if (path === undefined) return undefined
+function scanRolloutText(text: string, windowStart: number | undefined): RolloutScan {
+  const usage = codexRolloutTokenUsage(text)
+  const scan: RolloutScan = usage === undefined ? {} : { usage }
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '') continue
+    let event: { type?: unknown; timestamp?: unknown; payload?: unknown }
+    try {
+      event = JSON.parse(line) as typeof event
+    } catch {
+      continue
+    }
+    if (event.type !== 'turn_context' || typeof event.payload !== 'object' || event.payload === null) continue
+    if (windowStart !== undefined) {
+      const stamped = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : undefined
+      if (stamped === undefined || !Number.isFinite(stamped) || stamped < windowStart) continue
+    }
+    const candidate = (event.payload as { model?: unknown }).model
+    if (typeof candidate === 'string' && candidate !== '') scan.model = candidate
+  }
+  return scan
+}
+
+/**
+ * Read one located rollout file for the round's usage and model.
+ *
+ * The tail is read first because it is where `token_count` lives (codex writes
+ * one per turn boundary, so the last is at the end). `turn_context` is the
+ * opposite: codex writes it when the turn STARTS, so a round that then
+ * produces more than {@link TAIL_BYTES} of events pushes it out of the tail
+ * entirely — which is exactly how a real evaluation run reported a null model
+ * against rollout files that named it plainly, while a short smoke round (a
+ * whole file smaller than the tail window) read back fine. So whenever the
+ * tail leaves either fact missing, a bounded full read from offset 0 fills it
+ * in.
+ */
+async function readRolloutFacts(path: string, windowStart: number | undefined): Promise<RolloutScan> {
+  const handle = await open(path, 'r')
   try {
-    return await rolloutFileTokenUsage(path)
-  } catch {
-    return undefined
+    const { size } = await handle.stat()
+    if (size === 0) return {}
+    const tailLength = Math.min(TAIL_BYTES, size)
+    const tail = Buffer.alloc(tailLength)
+    const tailRead = await handle.read(tail, 0, tailLength, size - tailLength)
+    const scan = scanRolloutText(tail.subarray(0, tailRead.bytesRead).toString('utf8'), windowStart)
+    if ((scan.usage !== undefined && scan.model !== undefined) || size <= TAIL_BYTES) return scan
+    const full = Buffer.alloc(Math.min(FULL_BYTES, size))
+    const fullRead = await handle.read(full, 0, full.length, 0)
+    const wide = scanRolloutText(full.subarray(0, fullRead.bytesRead).toString('utf8'), windowStart)
+    // The tail's answers are the file's LAST ones; the full read only fills
+    // what the tail did not carry (its own "last" stops at FULL_BYTES).
+    const usage = scan.usage ?? wide.usage
+    const model = scan.model ?? wide.model
+    return {
+      ...usage === undefined ? {} : { usage },
+      ...model === undefined ? {} : { model },
+    }
+  } finally {
+    await handle.close()
   }
 }
 
-/**
- * How far before the run's spawn moment a `turn_context` timestamp may sit and
- * still count as THIS run's turn (sub-second ordering between the host's
- * spawn clock and the CLI's own stamps).
- */
-const ROLLOUT_CONTEXT_SLACK_MS = 2_000
+/** One delegation round's facts, read back from the run's own rollout file. */
+export interface CodexRoundFacts {
+  /** The round's last `token_count` usage, in the shared caliber. */
+  readonly usage?: TokenUsage
+  /** The model the round's turn ran with (`turn_context.model`). */
+  readonly model?: string
+  /** The codex build that served the round (`session_meta.cli_version`). */
+  readonly cliVersion?: string
+}
 
 /**
- * Read ONE run's model identifier from its rollout file: the LAST
- * `turn_context` line whose top-level `timestamp` falls inside the run's
- * window (`windowStart` onward) — the turn codex actually started for this
- * round, so a resumed thread's earlier rounds' models are never misread, and
- * a round killed mid-turn still observes the model it started with. A tail
- * scan suffices (later turns append later lines); a torn final line is
- * skipped. Absent when nothing locates, the window holds no turn_context
- * (the round never started a turn), or the payload names no model — absence
+ * Read ONE run's facts back from its rollout file: the token usage a
+ * non-completed round never streamed, the model the exec `--json` wire does
+ * not carry at all (codex 0.144.0), and the codex build that served it. One
+ * locate and one file open serve all three.
+ *
+ * Every field is absent on a miss — no rollout file, an unreadable home, a
+ * hard kill before any turn boundary, a window with no turn_context. Absence
  * is recorded, never guessed.
  * @param homeDir - the `codex` harness's scoped home.
- * @param locator - the thread id and/or the run's start-time window.
- * @returns the observed model identifier, or undefined.
+ * @param locator - the thread id, working directory, and/or start-time window.
+ * @returns the round's read-back facts.
  */
-export async function codexRolloutTurnModel(
+export async function codexRolloutRoundFacts(
   homeDir: string,
-  locator: CodexRolloutUsageLocator,
-): Promise<string | undefined> {
-  const path = await locateCodexRolloutFile(homeDir, locator)
-  if (path === undefined) return undefined
+  locator: CodexRolloutLocator,
+): Promise<CodexRoundFacts> {
+  let located: RolloutCandidate | undefined
+  try {
+    located = await locateCodexRollout(homeDir, locator)
+  } catch {
+    return {}
+  }
+  if (located === undefined) return {}
   const windowStart = locator.windowStart === undefined
     ? undefined
     : locator.windowStart - ROLLOUT_CONTEXT_SLACK_MS
+  let scan: RolloutScan = {}
   try {
-    const handle = await open(path, 'r')
-    try {
-      const { size } = await handle.stat()
-      if (size === 0) return undefined
-      const tailLength = Math.min(TAIL_BYTES, size)
-      const buffer = Buffer.alloc(tailLength)
-      const { bytesRead } = await handle.read(buffer, 0, tailLength, size - tailLength)
-      let model: string | undefined
-      for (const raw of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
-        const line = raw.trim()
-        if (line === '') continue
-        let event: { type?: unknown; timestamp?: unknown; payload?: unknown }
-        try {
-          event = JSON.parse(line) as typeof event
-        } catch {
-          continue
-        }
-        if (event.type !== 'turn_context' || typeof event.payload !== 'object' || event.payload === null) continue
-        if (windowStart !== undefined) {
-          const stamped = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : undefined
-          if (stamped === undefined || !Number.isFinite(stamped) || stamped < windowStart) continue
-        }
-        const candidate = (event.payload as { model?: unknown }).model
-        if (typeof candidate === 'string' && candidate !== '') model = candidate
-      }
-      return model
-    } finally {
-      await handle.close()
-    }
+    scan = await readRolloutFacts(located.path, windowStart)
   } catch {
-    return undefined
+    // An unreadable file still yields the head fact the locator already read.
+  }
+  return {
+    ...scan.usage === undefined ? {} : { usage: scan.usage },
+    ...scan.model === undefined ? {} : { model: scan.model },
+    ...located.cliVersion === undefined ? {} : { cliVersion: located.cliVersion },
   }
 }

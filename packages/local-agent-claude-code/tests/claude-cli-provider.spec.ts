@@ -6,7 +6,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
-import { parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -45,6 +45,22 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
   }
   return { handle, done }
 }
+
+describe('claudeVersionFromInit', () => {
+  it('reads VERSION out of the build-info object claude 2.1.x sends', () => {
+    expect(claudeVersionFromInit({ VERSION: '2.1.263', GIT_SHA: '37ae3f3' })).toBe('2.1.263')
+  })
+
+  it('accepts a bare string, in case a later release simplifies the field', () => {
+    expect(claudeVersionFromInit('2.2.0')).toBe('2.2.0')
+  })
+
+  it('reports nothing for a missing or shape-skewed field', () => {
+    expect(claudeVersionFromInit(undefined)).toBeUndefined()
+    expect(claudeVersionFromInit({})).toBeUndefined()
+    expect(claudeVersionFromInit({ VERSION: 7 })).toBeUndefined()
+  })
+})
 
 describe('claude stream-json parsing', () => {
   it('extracts the ordered transcript, final answer, usage, and session id', () => {
@@ -690,6 +706,31 @@ describe('claude-cli-provider observed model and cwd', () => {
     // context-variant suffix included.
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'claude-opus-5[1m]',
+      usage: { inputTokens: 2, outputTokens: 5 },
+    })
+  })
+
+  it('records the CLI version the stream’s init event names, alongside the model', async () => {
+    // claude 2.1.x serializes its whole build-info object into the init
+    // event's claude_code_version; the version is a field of it.
+    const stream = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-obs',
+        model: 'claude-opus-5[1m]',
+        claude_code_version: { PACKAGE_URL: '@anthropic-ai/claude-code', VERSION: '2.1.263', GIT_SHA: '37ae3f3' },
+      }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } }),
+      JSON.stringify({ type: 'result', is_error: false, session_id: 's-obs', usage: { input_tokens: 2, output_tokens: 5 } }),
+    ].join('\n')
+    const { provider, settled } = await mountObserved({ stream })
+    const run = await provider.start(OBS_REQUEST)
+    await run.result
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), {
+      observedModel: 'claude-opus-5[1m]',
+      cliVersion: '2.1.263',
       usage: { inputTokens: 2, outputTokens: 5 },
     })
   })

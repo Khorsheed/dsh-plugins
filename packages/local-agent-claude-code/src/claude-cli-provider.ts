@@ -38,6 +38,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   delegationEnv,
+  probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -134,6 +135,41 @@ export function registerClaudeMemberRun(
  * configured (`live: true`), rounds instead go to the resident stream-json
  * process (see live-driver.ts); the exec path below stays the fallback.
  */
+/**
+ * Mark the harness credential verified after a completed round, degrading
+ * silently on a core that predates the mark (the family's companion-pair
+ * rule: a provider paired with an older core loses the grade, never the run).
+ * @param ctx - host context carrying the family registry.
+ */
+function markCredentialVerified(ctx: Context): void {
+  const registry = ctx.get('localAgent')
+  if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
+  registry.reportAuthSuccess('claude-code')
+}
+
+/**
+ * The version `claude --version` reports, probed through the shared subprocess
+ * seam against the SCOPED config directory (never the user's own
+ * installation) and cached by the family probe against the executable's
+ * identity. The effective-settings snapshot uses it; a settled round prefers
+ * the version its own stream named.
+ * @param ctx - host context carrying the subprocess seam.
+ * @param homeDir - the harness's scoped home.
+ * @returns the version, or undefined when the CLI cannot be asked.
+ */
+export function claudeCliVersion(ctx: Context, homeDir: string): Promise<string | undefined> {
+  // Degrade, don't explode: a composition without the subprocess seam simply
+  // reports no version, exactly as an unaskable CLI does.
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return Promise.resolve(undefined)
+  return probeCliVersion({
+    argv: ['claude', '--version'],
+    cwd: homeDir,
+    spawn: spec => subprocess.spawn(spec),
+    env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir }),
+  })
+}
+
 export class ClaudeCliProvider implements SubagentProvider {
   readonly name = 'claude-local'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -275,6 +311,8 @@ export class ClaudeCliProvider implements SubagentProvider {
         },
         onSpawned: (pid) => { member?.bind(pid) },
         onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
+        onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        cliVersion: () => claudeCliVersion(this.ctx, homeDir),
         ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
@@ -376,6 +414,8 @@ export class ClaudeCliProvider implements SubagentProvider {
           },
           onSpawned: (pid) => { member?.bind(pid) },
           onAuthFailure: (detail) => { this.ctx.localAgent.reportAuthFailure('claude-code', detail) },
+          onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+          cliVersion: () => claudeCliVersion(this.ctx, homeDir),
           ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
           childSession,
           ctx: this.ctx,
@@ -436,6 +476,18 @@ export interface ClaudeCliRunSpec {
    * this to the family registry's auth-failure mark.
    */
   readonly onAuthFailure?: ((detail: string) => void) | undefined
+  /**
+   * Called when the round SETTLED COMPLETED — the CLI reached its endpoint and
+   * produced an answer, which is the only evidence a host has that the scoped
+   * credential is live. The provider wires this to the family registry's
+   * auth-success mark (the `verified` credential grade).
+   */
+  readonly onAuthSuccess?: (() => void) | undefined
+  /**
+   * The version the executable reports, resolved lazily and cached by the
+   * family probe. Only consulted when the round's own stream named none.
+   */
+  readonly cliVersion?: (() => Promise<string | undefined>) | undefined
   /**
    * Member channel: the bridge MCP declaration for this run, injected as
    * `--mcp-config <json>` plus a `--allowedTools` entry for the bridge's one
@@ -524,6 +576,14 @@ interface ClaudeStreamFoldState {
    * terminal `result` event. Absent when neither carries one.
    */
   model: string | undefined
+  /**
+   * The CLI's own version, from the `system` init event's
+   * `claude_code_version` (claude 2.1.x puts its whole build-info object
+   * there, so the `VERSION` field is read out of it; a plain string is
+   * accepted too). Absent when the stream names none — the provider then
+   * falls back to the family's `--version` probe.
+   */
+  cliVersion: string | undefined
   error: string | undefined
   /** Whether the stream's terminal `result` event was folded. */
   completed: boolean
@@ -582,6 +642,22 @@ function appendTodosIfChanged(childSession: Session, todos: TodoItem[]): boolean
 }
 
 /**
+ * The CLI version named by a `system` init event's `claude_code_version`.
+ * claude 2.1.x serializes its whole build-info module there
+ * (`{ VERSION, BUILD_TIME, GIT_SHA, … }`), so the version is a field of it; a
+ * future release that emits a bare string is accepted unchanged. Anything
+ * else yields undefined and the probe answers instead.
+ * @param value - the event's `claude_code_version` field.
+ * @returns the version string, or undefined.
+ */
+export function claudeVersionFromInit(value: unknown): string | undefined {
+  if (typeof value === 'string' && value !== '') return value
+  if (typeof value !== 'object' || value === null) return undefined
+  const version = (value as { VERSION?: unknown }).VERSION
+  return typeof version === 'string' && version !== '' ? version : undefined
+}
+
+/**
  * Fold one NDJSON line into the stream state. Shared by
  * {@link parseClaudeStreamJson} (settle-time whole-stream parse) and
  * {@link ClaudeStreamParser} (live incremental parse) so the two paths cannot
@@ -599,6 +675,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     usage?: unknown
     session_id?: unknown
     result?: unknown
+    claude_code_version?: unknown
   }
   try {
     event = JSON.parse(line) as typeof event
@@ -608,6 +685,8 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   if (event.type === 'system' && typeof event.session_id === 'string') {
     state.sessionId = event.session_id
     if (typeof event.model === 'string' && event.model !== '') state.model = event.model
+    const version = claudeVersionFromInit(event.claude_code_version)
+    if (version !== undefined) state.cliVersion = version
     return
   }
   if (event.type === 'result') {
@@ -699,6 +778,7 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
   usage: TokenUsage | undefined
   sessionId: string | undefined
   model: string | undefined
+  cliVersion: string | undefined
   error: string | undefined
   completed = false
   todos: TodoItem[] | undefined
@@ -734,6 +814,8 @@ export function parseClaudeStreamJson(output: string): {
   error?: string
   sessionId?: string
   model?: string
+  /** The CLI version the stream's init event named, when it carried one. */
+  cliVersion?: string
   /** The stream's last TodoWrite translation, when one was folded. */
   todos?: TodoItem[]
   /** Whether a shape-skewed TodoWrite degraded to the text fold. */
@@ -746,6 +828,7 @@ export function parseClaudeStreamJson(output: string): {
     usage: undefined,
     sessionId: undefined,
     model: undefined,
+    cliVersion: undefined,
     error: undefined,
     completed: false,
     todos: undefined,
@@ -758,6 +841,7 @@ export function parseClaudeStreamJson(output: string): {
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.error === undefined ? {} : { error: state.error },
     ...state.sessionId === undefined ? {} : { sessionId: state.sessionId },
+    ...state.cliVersion === undefined ? {} : { cliVersion: state.cliVersion },
     ...state.model === undefined ? {} : { model: state.model },
     ...state.todos === undefined ? {} : { todos: state.todos },
     ...state.todoSkew === false ? {} : { todoSkew: true },
@@ -978,6 +1062,10 @@ export async function startClaudeCliRun(
     signal: request.signal,
     onAbort,
   }).then((settled) => {
+    // A completed round proves the scoped credential is live — the endpoint
+    // answered. Reported here rather than from the mirror so it lands whether
+    // or not the round is session-backed.
+    if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
     // Every terminal path closes the turn so the timing window never stays
     // open on a failed or cancelled run. The turn/end timestamp is the real
     // settle moment; an in-stream error result or a non-zero exit settles
@@ -1349,10 +1437,14 @@ async function mirrorClaudeAfterExit(
     const fromLines = live?.mirroredLines ?? 0
     const userMirrored = live?.userMirrored ?? false
     // The round's settled observation rides out even when nothing streamed:
-    // an empty stream is still a settled round. The model comes from the
-    // stream's init/result events; absent when the stream carried none.
+    // an empty stream is still a settled round. The model and the CLI version
+    // both come from the stream's own init/result events — claude names both
+    // on the wire, so nothing else is consulted unless the stream was
+    // truncated before its init event; then the `--version` probe answers.
+    const cliVersion = parsed.cliVersion ?? await spec.cliVersion?.()
     spec.onRoundSettled?.({
       ...parsed.model === undefined ? {} : { observedModel: parsed.model },
+      ...cliVersion === undefined ? {} : { cliVersion },
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
     })
     // Nothing streamed at all (e.g. the CLI died before the first event):

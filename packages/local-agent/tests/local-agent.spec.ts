@@ -626,6 +626,87 @@ describe('LocalAgentRegistry', () => {
     })
   })
 
+  describe('credential state', () => {
+    /** A harness whose probe and stamp the test controls directly. */
+    function stampedHarness(state: { authenticated: boolean; stamp: number | undefined }): LocalAgentHarness {
+      return harness({
+        isAuthenticated: async () => state.authenticated,
+        credentialStamp: async () => state.stamp,
+        logout: async () => { state.authenticated = false },
+      })
+    }
+
+    it('walks absent → present-unverified → verified → rejected, and back', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('credential-state-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      const state = { authenticated: false, stamp: undefined as number | undefined }
+      registry.register(stampedHarness(state))
+
+      // No credential in the scoped home: nothing to try.
+      expect(await registry.statusOf('fake')).toMatchObject({ credentialState: 'absent', authenticated: false })
+
+      // A record lands. Presence is all that is known — it could be an expired
+      // grant that no longer refreshes and would look exactly like this.
+      state.authenticated = true
+      state.stamp = Date.now() - 60_000
+      expect(await registry.statusOf('fake')).toMatchObject({
+        credentialState: 'present-unverified',
+        authenticated: true,
+      })
+
+      // A completed delegation round proves it live.
+      registry.reportAuthSuccess('fake')
+      expect(await registry.statusOf('fake')).toMatchObject({ credentialState: 'verified', authenticated: true })
+
+      // The endpoint later rejects it (a revocation presence cannot see).
+      registry.reportAuthFailure('fake', '401 OAuth access token has been revoked')
+      expect(await registry.statusOf('fake')).toMatchObject({ credentialState: 'rejected', authenticated: false })
+
+      // A fresh login rewrites the marker: the rejection is stale, but so is
+      // the verification — the account may be a different one entirely.
+      state.stamp = Date.now() + 1_000
+      expect(await registry.statusOf('fake')).toMatchObject({
+        credentialState: 'present-unverified',
+        authenticated: true,
+      })
+
+      // Signing out returns the harness to absent.
+      await ctx.commands.execute(agent, '/fake logout', [], new AbortController().signal)
+      expect(await registry.statusOf('fake')).toMatchObject({ credentialState: 'absent', authenticated: false })
+    })
+
+    it('a completed round outranks a stale rejection mark', async () => {
+      const { ctx } = await harnessMount({ homesRoot: tempDir('credential-outrank-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      registry.register(stampedHarness({ authenticated: true, stamp: Date.now() - 60_000 }))
+      registry.reportAuthFailure('fake', '403')
+      await new Promise(resolve => setTimeout(resolve, 2))
+      registry.reportAuthSuccess('fake')
+      expect(await registry.statusOf('fake')).toMatchObject({ credentialState: 'verified', authenticated: true })
+    })
+
+    it('starting a login forgets what earlier rounds observed', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('credential-login-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      registry.register(harness({
+        isAuthenticated: async () => true,
+        login: { command: fakeCli('printf "code ABC-DEF\n"'), args: [], capture: 'stdout' },
+      }))
+      registry.reportAuthSuccess('fake')
+      expect((await registry.statusOf('fake')).credentialState).toBe('verified')
+      await ctx.commands.execute(agent, '/fake login', [], new AbortController().signal)
+      expect((await registry.statusOf('fake')).credentialState).toBe('present-unverified')
+    })
+
+    it('prints the grade on the status reply', async () => {
+      const { ctx, agent } = await harnessMount({ homesRoot: tempDir('credential-print-') })
+      const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+      registry.register(harness({ isAuthenticated: async () => true }))
+      const execution = await ctx.commands.execute(agent, '/fake status', [], new AbortController().signal)
+      expectSuccess(execution, 'credentialState: present-unverified')
+    })
+  })
+
   describe('subagentDelegationLabel', () => {
     it('prefixes the description with the harness display name', () => {
       expect(localAgent.subagentDelegationLabel('Kimi Code', '建个文件')).toBe('Kimi Code: 建个文件')

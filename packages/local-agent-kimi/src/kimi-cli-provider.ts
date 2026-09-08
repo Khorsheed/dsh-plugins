@@ -30,6 +30,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import {
   assertResumeCwdUnchanged,
   delegationEnv,
+  probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -64,6 +65,41 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
  * fresh path, including `NO_START_CAPABILITIES` — continuation is the family's
  * own resume mechanism, not the official Agent-type continuable seam.
  */
+/**
+ * Mark the harness credential verified after a completed round, degrading
+ * silently on a core that predates the mark (the family's companion-pair
+ * rule: a provider paired with an older core loses the grade, never the run).
+ * @param ctx - host context carrying the family registry.
+ */
+function markCredentialVerified(ctx: Context): void {
+  const registry = ctx.get('localAgent')
+  if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
+  registry.reportAuthSuccess('kimi')
+}
+
+/**
+ * The version `kimi --version` reports, probed through the shared subprocess
+ * seam inside the SCOPED home (never the user's own installation) and cached
+ * by the family probe against the executable's identity. Kimi's wire log names
+ * no build, so this is the only version channel the harness has — both the
+ * effective-settings snapshot and a settled round's read-back read it.
+ * @param ctx - host context carrying the subprocess seam.
+ * @param homeDir - the harness's scoped home.
+ * @returns the version, or undefined when the CLI cannot be asked.
+ */
+export function kimiCliVersion(ctx: Context, homeDir: string): Promise<string | undefined> {
+  // Degrade, don't explode: a composition without the subprocess seam simply
+  // reports no version, exactly as an unaskable CLI does.
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return Promise.resolve(undefined)
+  return probeCliVersion({
+    argv: ['kimi', '--version'],
+    cwd: homeDir,
+    spawn: spec => subprocess.spawn(spec),
+    env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+  })
+}
+
 export class KimiCliProvider implements SubagentProvider {
   readonly name = 'kimi-cli'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -250,6 +286,8 @@ export class KimiCliProvider implements SubagentProvider {
           this.ctx.localAgent.reportAuthFailure('kimi', detail)
         },
         onSpawned: (pid) => { member?.bind(pid) },
+        onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        cliVersion: () => kimiCliVersion(this.ctx, homeDir),
         childSession,
         homeDir,
         ctx: this.ctx,
@@ -353,6 +391,8 @@ export class KimiCliProvider implements SubagentProvider {
             this.ctx.localAgent.reportAuthFailure('kimi', detail)
           },
           onSpawned: (pid) => { member?.bind(pid) },
+          onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+          cliVersion: () => kimiCliVersion(this.ctx, homeDir),
           childSession,
           homeDir,
           ctx: this.ctx,
@@ -434,7 +474,24 @@ export interface KimiCliRunSpec {
    * record's `observedModel` merge and the `settled` run-progress event).
    * Fires for fresh and resume rounds alike, on every terminal state.
    */
-  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
+  readonly onRoundSettled?: ((round: {
+    readonly observedModel?: string
+    readonly cliVersion?: string
+    readonly usage?: TokenUsage
+  }) => void) | undefined
+  /**
+   * Called when the round SETTLED COMPLETED — the CLI reached its endpoint and
+   * produced an answer, which is the only evidence a host has that the scoped
+   * credential is live. The provider wires this to the family registry's
+   * auth-success mark (the `verified` credential grade).
+   */
+  readonly onAuthSuccess?: (() => void) | undefined
+  /**
+   * The version the executable reports, resolved lazily and cached by the
+   * family probe. Kimi's wire log names no CLI version, so this is the only
+   * channel the round's read-back has.
+   */
+  readonly cliVersion?: (() => Promise<string | undefined>) | undefined
   /**
    * Live-mirror poll interval during the run; absent disables nothing — the
    * default ({@link DEFAULT_LIVE_MIRROR_INTERVAL_MS}) applies. Tests inject a
@@ -729,6 +786,10 @@ export function startKimiCliRun(
     signal: request.signal,
     onAbort,
   }).then((settled) => {
+    // A completed round proves the scoped credential is live — the endpoint
+    // answered. Reported here rather than from the mirror so it lands whether
+    // or not the round is session-backed.
+    if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
     // The turn closes at the real settle moment, so the timing projection's
     // duration equals the actual CLI runtime. Every terminal path closes the
     // window — a failed or cancelled run settles 'error'/'aborted' instead of
@@ -776,8 +837,12 @@ export function startKimiCliRun(
       enqueueMirror(async () => {
         const settled = await mirrorKimiAfterExit(spec, stderr)
         addRoundUsage(settled?.usage)
+        // The wire log names the model but never the CLI build, so the version
+        // is the executable's own answer, probed once per binary.
+        const cliVersion = await spec.cliVersion?.()
         spec.onRoundSettled?.({
           ...settled?.model === undefined ? {} : { observedModel: settled.model },
+          ...cliVersion === undefined ? {} : { cliVersion },
           ...roundUsage === undefined ? {} : { usage: roundUsage },
         })
       })

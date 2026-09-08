@@ -18,7 +18,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
-import { ClaudeCliProvider } from './claude-cli-provider.ts'
+import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, syncClaudeCredentialFile } from './records.ts'
@@ -169,13 +169,17 @@ export function apply(ctx: Context, config: Config): void {
       effectiveSettings: async () => {
         const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
         const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
-        const model = await readClaudeConfiguredModel(homeDir).catch(() => undefined)
+        const [model, cliVersion] = await Promise.all([
+          readClaudeConfiguredModel(homeDir).catch(() => undefined),
+          claudeCliVersion(ctx, homeDir).catch(() => undefined),
+        ])
         return {
           drive: scope.get().live ? 'live' : 'exec',
           permissionMode,
           baseUrlSet: effectiveBaseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
           ...model !== undefined ? { model } : {},
+          ...cliVersion !== undefined ? { cliVersion } : {},
         }
       },
       subcommand: (input: string, invocation: CommandInvocation): Promise<CommandResult> | undefined => {
