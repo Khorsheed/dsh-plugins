@@ -12,10 +12,11 @@
  * exec path only — processes others exec into the unit are out of lab's
  * reach, as the proposal's risk section states.
  */
+import { componentsFor, hashComponents, normalizeCpus, normalizeMemory } from './fingerprint.ts'
 import {
   DEFAULT_WORKSPACE,
-  type AcquireSpec, type CollectOptions, type Exec, type ExecResult, type ManagedResource,
-  type PopulateOptions, type UnitProvider, type VerifyOptions, type VerifyResult,
+  type AcquireSpec, type CollectOptions, type EnvironmentFingerprint, type Exec, type ExecResult,
+  type ManagedResource, type PopulateOptions, type UnitProvider, type VerifyOptions, type VerifyResult,
 } from './types.ts'
 
 const MANAGED_LABEL = 'dsh-lab.managed'
@@ -23,6 +24,8 @@ const UNIT_LABEL = 'dsh-lab.unit'
 const MISSION_LABEL = 'dsh-lab.mission'
 const RUN_LABEL = 'dsh-lab.run'
 const FINGERPRINT_LABEL = 'dsh-lab.fingerprint'
+/** Label carrying the fingerprint's component JSON, so reconcile recovers it without a state file. */
+export const COMPONENTS_LABEL = 'dsh-lab.fingerprint-components'
 const WORKSPACE_LABEL = 'dsh-lab.workdir'
 
 /** In-container directory holding one pidfile per provider-spawned process. */
@@ -61,18 +64,25 @@ export class DockerProvider implements UnitProvider {
     this.now = options.now ?? (() => Date.now())
   }
 
-  async fingerprint(spec: AcquireSpec): Promise<string> {
-    const local = await this.inspectImage(spec.image)
-    if (local !== undefined) return local
-    await this.run(['pull', spec.image])
-    const pulled = await this.inspectImage(spec.image)
-    if (pulled === undefined) {
+  /**
+   * The composite fingerprint: the resolved image digest is only one of four
+   * components. The image resolves first (pulling when absent) because it is
+   * the one component that needs the daemon; the rest come from the spec.
+   */
+  async fingerprint(spec: AcquireSpec): Promise<EnvironmentFingerprint> {
+    let image = await this.inspectImage(spec.image)
+    if (image === undefined) {
+      await this.run(['pull', spec.image])
+      image = await this.inspectImage(spec.image)
+    }
+    if (image === undefined) {
       throw new Error(`lab: cannot resolve an environment fingerprint for image ${JSON.stringify(spec.image)}`)
     }
-    return pulled
+    const components = componentsFor(spec, image)
+    return { fingerprint: hashComponents(components), components }
   }
 
-  /** The fingerprint is the first repo digest, falling back to the local image id. */
+  /** The image component is the first repo digest, falling back to the local image id. */
   private async inspectImage(image: string): Promise<string | undefined> {
     const result = await this.docker(['image', 'inspect', image, '--format', '{{json .RepoDigests}} {{.Id}}'])
     if (result.exitCode !== 0) return undefined
@@ -81,17 +91,25 @@ export class DockerProvider implements UnitProvider {
     return digests[0] ?? id
   }
 
-  async acquire(id: string, spec: AcquireSpec, fingerprint: string): Promise<string> {
+  async acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string> {
     const resource = `dsh-lab-${id}`
     const argv = [
       'run', '-d', '--name', resource,
       '--label', `${MANAGED_LABEL}=true`,
       '--label', `${UNIT_LABEL}=${id}`,
-      '--label', `${FINGERPRINT_LABEL}=${fingerprint}`,
+      '--label', `${FINGERPRINT_LABEL}=${fingerprint.fingerprint}`,
+      // The components ride the daemon too: reconcile after a host restart
+      // must recover WHY two units share (or do not share) a fingerprint,
+      // with no host-side file in the trust path.
+      '--label', `${COMPONENTS_LABEL}=${JSON.stringify(fingerprint.components)}`,
       '--label', `${WORKSPACE_LABEL}=${spec.workdir ?? DEFAULT_WORKSPACE}`,
     ]
     if (spec.missionId !== undefined) argv.push('--label', `${MISSION_LABEL}=${spec.missionId}`)
     if (spec.runId !== undefined) argv.push('--label', `${RUN_LABEL}=${spec.runId}`)
+    // Declared ceilings are applied, not merely hashed — a fingerprint that
+    // claims a limit the container does not carry would be a lie.
+    if (spec.resources?.cpus !== undefined) argv.push('--cpus', normalizeCpus(spec.resources.cpus))
+    if (spec.resources?.memory !== undefined) argv.push('--memory', normalizeMemory(spec.resources.memory))
     for (const mount of spec.mounts ?? []) {
       argv.push('--mount', `type=bind,source=${mount.source},target=${mount.target}${mount.readonly === true ? ',readonly' : ''}`)
     }

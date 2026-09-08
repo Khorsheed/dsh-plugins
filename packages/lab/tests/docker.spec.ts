@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DockerProvider } from '../src/docker.ts'
-import type { Exec, ExecResult } from '../src/types.ts'
+import type { AcquireSpec, EnvironmentFingerprint, Exec, ExecResult } from '../src/types.ts'
 
 /** A scripted host command runner recording every invocation (docker prefix asserted, then stripped). */
 function fakeExec(handler: (argv: string[], options?: { timeoutMs?: number }) => ExecResult | undefined): { exec: Exec; calls: string[][] } {
@@ -20,15 +20,29 @@ function makeProvider(exec: Exec): DockerProvider {
   return new DockerProvider(exec, { sleep: noopSleep })
 }
 
-describe('DockerProvider.fingerprint', () => {
-  it('prefers the first repo digest', async () => {
-    const { exec } = fakeExec(() => ({ exitCode: 0, stdout: '["registry/app@sha256:aaa","registry/app@sha256:bbb"] sha256:local\n', stderr: '' }))
-    await expect(makeProvider(exec).fingerprint({ image: 'app:latest' })).resolves.toBe('registry/app@sha256:aaa')
+/** A provider whose image inspect always answers with one stable repo digest. */
+function pinnedImageProvider(): DockerProvider {
+  const { exec } = fakeExec(() => ({ exitCode: 0, stdout: '["registry/app@sha256:aaa","registry/app@sha256:bbb"] sha256:local\n', stderr: '' }))
+  return makeProvider(exec)
+}
+
+/** The fingerprint string for one spec, off the pinned image. */
+async function fingerprintOf(spec: Omit<AcquireSpec, 'image'>): Promise<string> {
+  const { fingerprint } = await pinnedImageProvider().fingerprint({ image: 'app:latest', ...spec })
+  return fingerprint
+}
+
+describe('DockerProvider.fingerprint (image component)', () => {
+  it('prefers the first repo digest and carries it as the image component', async () => {
+    const resolved = await pinnedImageProvider().fingerprint({ image: 'app:latest' })
+    expect(resolved.components.image).toBe('registry/app@sha256:aaa')
+    expect(resolved.fingerprint).toMatch(/^lab-env:[0-9a-f]{64}$/)
   })
 
   it('falls back to the image id when no digest exists', async () => {
     const { exec } = fakeExec(() => ({ exitCode: 0, stdout: '[] sha256:local\n', stderr: '' }))
-    await expect(makeProvider(exec).fingerprint({ image: 'app:latest' })).resolves.toBe('sha256:local')
+    const resolved = await makeProvider(exec).fingerprint({ image: 'app:latest' })
+    expect(resolved.components.image).toBe('sha256:local')
   })
 
   it('pulls a missing image, then resolves the fingerprint', async () => {
@@ -42,7 +56,8 @@ describe('DockerProvider.fingerprint', () => {
       }
       return undefined
     })
-    await expect(makeProvider(exec).fingerprint({ image: 'app:latest' })).resolves.toBe('registry/app@sha256:pulled')
+    const resolved = await makeProvider(exec).fingerprint({ image: 'app:latest' })
+    expect(resolved.components.image).toBe('registry/app@sha256:pulled')
     expect(calls.some((argv) => argv[0] === 'pull' && argv[1] === 'app:latest')).toBe(true)
   })
 
@@ -50,7 +65,120 @@ describe('DockerProvider.fingerprint', () => {
     const { exec } = fakeExec((argv) => argv[0] === 'image' ? { exitCode: 1, stdout: '', stderr: 'No such image' } : undefined)
     await expect(makeProvider(exec).fingerprint({ image: 'ghost:latest' })).rejects.toThrow(/fingerprint/)
   })
+
+  it('changes when the image digest changes, everything else equal', async () => {
+    const { exec } = fakeExec(() => ({ exitCode: 0, stdout: '["registry/app@sha256:other"] sha256:local\n', stderr: '' }))
+    const other = await makeProvider(exec).fingerprint({ image: 'app:latest' })
+    expect(other.fingerprint).not.toBe(await fingerprintOf({}))
+  })
 })
+
+describe('DockerProvider.fingerprint (composite components)', () => {
+  it('separates the same image under different resource ceilings', async () => {
+    const small = await fingerprintOf({ resources: { cpus: '2', memory: '4g' } })
+    const large = await fingerprintOf({ resources: { cpus: '2', memory: '8g' } })
+    const wide = await fingerprintOf({ resources: { cpus: '4', memory: '4g' } })
+    const none = await fingerprintOf({})
+    expect(new Set([small, large, wide, none]).size).toBe(4)
+  })
+
+  it('names which component differs, so an incomparable pair is diagnosable', async () => {
+    const small = await pinnedImageProvider().fingerprint({ image: 'app:latest', resources: { cpus: '2', memory: '4g' } })
+    const large = await pinnedImageProvider().fingerprint({ image: 'app:latest', resources: { cpus: '2', memory: '8g' } })
+    expect(small.components.image).toBe(large.components.image)
+    expect(small.components.resources).toEqual({ cpus: '2', memory: '4294967296' })
+    expect(large.components.resources).toEqual({ cpus: '2', memory: '8589934592' })
+  })
+
+  it('reads equal ceilings written in different units as one ceiling', async () => {
+    expect(await fingerprintOf({ resources: { cpus: '2', memory: '4g' } }))
+      .toBe(await fingerprintOf({ resources: { cpus: 2.0, memory: '4096m' } }))
+  })
+
+  it('ignores mount declaration order — it is not an environment fact', async () => {
+    const forward = await fingerprintOf({
+      mounts: [
+        { source: '/host/a', target: '/input', readonly: true },
+        { source: '/host/b', target: '/skills' },
+      ],
+    })
+    const reversed = await fingerprintOf({
+      mounts: [
+        { source: '/host/b', target: '/skills' },
+        { source: '/host/a', target: '/input', readonly: true },
+      ],
+    })
+    expect(forward).toBe(reversed)
+  })
+
+  it('ignores the host side of a mount — the same input lands at different host paths per machine', async () => {
+    expect(await fingerprintOf({ mounts: [{ source: '/run-1/worktree', target: '/input', readonly: true }] }))
+      .toBe(await fingerprintOf({ mounts: [{ source: '/run-2/worktree', target: '/input', readonly: true }] }))
+  })
+
+  it('separates an extra mount, a moved target, and a dropped read-only bit', async () => {
+    const base = await fingerprintOf({ mounts: [{ source: '/host/a', target: '/input', readonly: true }] })
+    const extra = await fingerprintOf({
+      mounts: [{ source: '/host/a', target: '/input', readonly: true }, { source: '/host/b', target: '/creds' }],
+    })
+    const moved = await fingerprintOf({ mounts: [{ source: '/host/a', target: '/data', readonly: true }] })
+    const writable = await fingerprintOf({ mounts: [{ source: '/host/a', target: '/input' }] })
+    expect(new Set([base, extra, moved, writable]).size).toBe(4)
+  })
+
+  it('ignores env VALUES and separates env KEYS', async () => {
+    const cellA = await fingerprintOf({ env: { EVAL_CELL: 'a', TOKEN: 'secret-a' } })
+    const cellB = await fingerprintOf({ env: { EVAL_CELL: 'b', TOKEN: 'secret-b' } })
+    const reordered = await fingerprintOf({ env: { TOKEN: 'secret-b', EVAL_CELL: 'b' } })
+    const extraKey = await fingerprintOf({ env: { EVAL_CELL: 'a', TOKEN: 'secret-a', HTTP_PROXY: 'x' } })
+    expect(cellA).toBe(cellB)
+    expect(cellA).toBe(reordered)
+    expect(cellA).not.toBe(extraKey)
+  })
+
+  it('leaks neither host paths nor env values into the printed components', async () => {
+    const resolved = await pinnedImageProvider().fingerprint({
+      image: 'app:latest',
+      mounts: [{ source: '/srv/private/secret-worktree', target: '/input', readonly: true }],
+      env: { TOKEN: 'sk-live-do-not-print' },
+    })
+    const serialized = JSON.stringify(resolved.components)
+    expect(serialized).not.toContain('/srv/private')
+    expect(serialized).not.toContain('sk-live-do-not-print')
+    expect(resolved.components.envKeys).toEqual(['TOKEN'])
+    expect(resolved.components.mounts).toEqual([{ target: '/input', type: 'bind', readonly: true }])
+  })
+
+  it('keeps the component shape fixed — an undeclared ceiling is null, not a missing key', async () => {
+    const resolved = await pinnedImageProvider().fingerprint({ image: 'app:latest' })
+    expect(resolved.components).toEqual({
+      version: 1,
+      image: 'registry/app@sha256:aaa',
+      resources: { cpus: null, memory: null },
+      mounts: [],
+      envKeys: [],
+    })
+  })
+
+  it('refuses a ceiling it cannot normalize instead of hashing the raw literal', async () => {
+    await expect(pinnedImageProvider().fingerprint({ image: 'app:latest', resources: { memory: '4 gigs' } }))
+      .rejects.toThrow(/resources\.memory/)
+    await expect(pinnedImageProvider().fingerprint({ image: 'app:latest', resources: { cpus: 'many' } }))
+      .rejects.toThrow(/resources\.cpus/)
+  })
+})
+
+/** A resolved fingerprint standing in for one the provider computed. */
+const RESOLVED: EnvironmentFingerprint = {
+  fingerprint: 'lab-env:feedface',
+  components: {
+    version: 1,
+    image: 'registry/app@sha256:fp',
+    resources: { cpus: null, memory: null },
+    mounts: [{ target: '/input', type: 'bind', readonly: true }],
+    envKeys: ['MODE'],
+  },
+}
 
 describe('DockerProvider.acquire', () => {
   it('runs a detached labeled container and prepares the pid directory', async () => {
@@ -62,14 +190,14 @@ describe('DockerProvider.acquire', () => {
       mounts: [{ source: '/data/layer', target: '/input', readonly: true }],
       env: { MODE: 'x' },
       workdir: '/work',
-    }, 'registry/app@sha256:fp')
+    }, RESOLVED)
     expect(resource).toBe('dsh-lab-abc123')
     const run = calls[0] ?? []
     expect(run.slice(0, 4)).toEqual(['run', '-d', '--name', 'dsh-lab-abc123'])
     const text = run.join(' ')
     expect(text).toContain('dsh-lab.managed=true')
     expect(text).toContain('dsh-lab.unit=abc123')
-    expect(text).toContain('dsh-lab.fingerprint=registry/app@sha256:fp')
+    expect(text).toContain('dsh-lab.fingerprint=lab-env:feedface')
     expect(text).toContain('dsh-lab.mission=m-1')
     expect(text).toContain('dsh-lab.run=r-1')
     expect(text).toContain('type=bind,source=/data/layer,target=/input,readonly')
@@ -77,6 +205,31 @@ describe('DockerProvider.acquire', () => {
     expect(text).toContain('--workdir /work')
     expect(run.slice(-3)).toEqual(['app:latest', 'sleep', 'infinity'])
     expect(calls[1]).toEqual(['exec', 'dsh-lab-abc123', 'mkdir', '-p', '/run/dsh-lab/pids'])
+  })
+
+  it('labels the container with the components, so reconcile recovers them without a state file', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
+    const label = (calls[0] ?? []).find((arg) => arg.startsWith('dsh-lab.fingerprint-components='))
+    expect(JSON.parse((label ?? '').slice('dsh-lab.fingerprint-components='.length))).toEqual(RESOLVED.components)
+  })
+
+  it('applies the declared ceilings — a fingerprint may not claim a limit the container lacks', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', {
+      image: 'app:latest',
+      resources: { cpus: 2.0, memory: '4g' },
+    }, RESOLVED)
+    const run = calls[0] ?? []
+    expect(run[run.indexOf('--cpus') + 1]).toBe('2')
+    expect(run[run.indexOf('--memory') + 1]).toBe('4294967296')
+  })
+
+  it('declares no ceiling flags when the spec declares none', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
+    expect((calls[0] ?? []).join(' ')).not.toContain('--cpus')
+    expect((calls[0] ?? []).join(' ')).not.toContain('--memory')
   })
 })
 

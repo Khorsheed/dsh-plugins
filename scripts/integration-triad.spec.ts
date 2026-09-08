@@ -52,7 +52,10 @@ describe.runIf(docker.ok)('datasets → lab → mission integration (first half,
     expect(unit.resource).toBe(`dsh-lab-${unit.id}`)
     expect(refsAfterAcquire.resource).toBe(unit.resource)
     expect(refsAfterAcquire.fingerprint).toBe(unit.fingerprint)
-    expect(unit.fingerprint).toMatch(/sha256:/)
+    // The fingerprint is composite; the real daemon-resolved digest this
+    // assertion used to check is now its image component.
+    expect(unit.fingerprint).toMatch(/^lab-env:[0-9a-f]{64}$/)
+    expect(unit.fingerprintComponents?.image).toMatch(/sha256:/)
     expect(unit.missionId).toBe(TRIAD_MISSION_ID)
     expect(unit.runId).toBe(TRIAD_RUN_ID)
     expect(image).toBeTruthy()

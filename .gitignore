@@ -17,6 +17,9 @@ scratch-*
 # pnpm v11 local store created by sandboxed installs
 .pnpm-store/
 
+# dsh-lab's fingerprint mirror when a CLI run happens outside a $DSH_HOME
+.dsh-lab-state/
+
 # Debug screenshots are scratch and stay untracked; doc-referenced images in
 # docs/screenshots/ and profiles/*/docs/screenshots/ are the deliberate
 # exception (git add -f).
