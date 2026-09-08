@@ -23,10 +23,13 @@
 #                          pack 自带的 eval（不挂 Bash、不挂容器控制）+ 三家
 #                          委派工具行 tools: none（预设够不到的那批，见下）
 #
-# 阶段一二在宿主上直跑，没有容器边界，所以 codex 的 sandbox 取
-# workspace-write 而不是 danger-full-access：宿主上给满权限等于把评测的
-# 副作用放进真实 home。这条不对称写进 methodology.md，I3 容器化后改回
-# danger-full-access，届时四家才真正落在同一档上。
+# codex 的 sandbox 取 danger-full-access（I3·T22 改回）。宿主直跑阶段它是
+# workspace-write——那时没有容器边界，满权限等于把评测副作用放进真实 home，
+# 而那条不对称每次 run 都要写进 methodology.md。容器路径落地后边界由单元提供
+# （无外网、只有白名单代理、非 root、一格一单元用完即毁），满权限的作用域就是
+# 那个一次性单元，四家因此真正落在同一档上。**这条 pin 与容器路径是一对**：
+# 谁要在宿主上再跑一次阶段一二，必须先把它改回 workspace-write 并在
+# methodology 里重新声明那条不对称，而不是带着满权限直跑宿主。
 
 # ── 默认预设（冻结决策 12）──────────────────────────────────────────
 # 评测实例的 agent 走 pack 自带的 `eval` 预设：presets/eval/ 随 install.sh 与
@@ -120,7 +123,7 @@
 - id: local-agent-codex
   config:
     live: false
-    sandbox: workspace-write   # 宿主直跑阶段；I3 容器内改 danger-full-access
+    sandbox: danger-full-access   # 容器边界已就位（I3·T22）；宿主直跑要改回 workspace-write
 
 - id: local-agent-claude-code
   config:
