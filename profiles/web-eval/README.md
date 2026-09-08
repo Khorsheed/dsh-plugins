@@ -330,7 +330,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**宿主直跑阶段 codex 取 `workspace-write` 而不是 `danger-full-access`**：宿主上没有容器边界，给满权限等于把评测的副作用放进真实 home；这条不对称随每次 run 写进 methodology，I3 容器化后改回 `danger-full-access`，届时四家才真正落在同一档上。
+当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
