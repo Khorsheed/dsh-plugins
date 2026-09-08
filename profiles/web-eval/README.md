@@ -132,7 +132,7 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
 | 基础体验 | 与 web-dev 相同的 12 个 | ✅ / 🔶 | 无 |
-| 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装，或把 CLI 驱动抽成独立包。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
+| 本地 Agent 家族 | `local-agent` + kimi / codex / claude-code / dsh 四个 provider + `tool-subagent` | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
 | 评测机制 | `datasets` / `mission` / `lab` / `eval` | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
 第 23 个成员是 **`@khorsheed/dsh-eval`**（编排器，I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。待补：判官委派（T9）、`dsh-eval report`（T10）、只读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status`（T14）。
