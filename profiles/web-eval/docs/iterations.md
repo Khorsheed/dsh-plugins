@@ -203,7 +203,7 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T19d | 数据 | F2 阶段三的数据缺口：prompts/stage3.md、schemas/stage3.json 的文件引用形态、L2 四个驱动型探针（T19 + T28 量级）；I3 收口不依赖它，跑阶段三的 token 另批 | T19c | |
 | T21 ✅ | profile | eval preset：不挂 Bash 与 docker | 无 | 合入 main `e1e12f1`；工具 43 → 39，差集恰为 bash / exit_plan_mode / ralph / workflow；四个 `subagent_<harness>` 预设挑不掉 → T27 |
 | T22 🔄 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | 第 1–4 步完成：profile `126990b`（codex danger-full-access）、题库 `i3-env-b` `0bcd824`（并入 i1-walk `913be11`）；新镜像 `sha256:4da0cfff…` 两炉内容指纹逐行相同，dsh 与 claude 容器内 exec 首次真通；F2 × codex × rep1 阶段一二在容器内到 released，四条不变量首次全 ✅，A-N2 首次进缺陷清单；第 5 步等 T20c，走 3171 |
-| T20c | 代码 | eval：容器路径挂 local-agent 的作用域目录而不是 `--creds-root`（回读才读得到 rollout）；就绪检查覆盖判官条件 | T20b | |
+| T20c ✅ | 代码 | eval：容器路径挂 local-agent 的作用域目录而不是 `--creds-root`（回读才读得到 rollout）；就绪检查覆盖判官条件 | T20b | 合入 main `28c0c17`；`--creds-root` 删净，挂载源取 `homeDir(家名)`，契约 v1-rev7 只改描述；真机 P0 × codex 容器内真 CLI：就绪检查回读 gpt-5.6-sol，四条不变量全 ✅，报告第一次 comparison allowed；判官条件不通时 run 在就绪检查被拒（READINESS_FAILED，1 of 2），run 记录不创建；同一家两个条件今天共用作用域目录，「每条件一份」等 T29 |
 | T23 ✅ | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | 合入 main `0cd2139`；finalize 不强推、不碰 archived 以下；就绪检查每条件一次真委派，失败拒整 run；效率表只计已完成格子（pilot A 的 dsh-exec 21.0 → 11.9 min）；子集记 `run.meta.subset`；validate 对 expectedNs 出四种 warning；judge.ts 零改动 |
 | T24 ✅ | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现；**追加**：比例字段进 §6.5 | 无 | 合入 main `979e624`；协议 v1-rev4：极性归 rubric、`ratio: {passed, total}` 进 §6.5、§6.7 禁止 evidence 前缀；导出写 `report/rubric-weights.json`（只有编号与数字）；报告主轴改「得分判据数」+ 缺陷清单表；题库三份 rubric 审计零改动 |
 | T25 ✅ | 代码 | local-agent：`effectiveSettings.cliVersion` 填实（G1）；codex 回读在并发 run 里失效的原因与修复（G14）；status 增加「记录在、活性未知」一档（G4 的 local-agent 半边） | 无 | 合入 main `25e6196`；codex 回读失效的根因是 64 KB 尾窗而非并发，改为尾扫不到就有界整读、按本轮 cwd 定位、有歧义宁缺不错；四家 `cliVersion` 填实；`credentialState` present-unverified / absent 档；顺带修 usage 全 null（onProgress 路由 60 秒有界驻留） |
@@ -211,7 +211,7 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T27 ✅ | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | 合入 main `c8ba619`；none 下不注册工具也不挂生命周期监听；patch 三行 none（整值替换，故重抄 provider / toolName 并以 name 守卫）；新装实例 36 个工具，叠 all 回 39，差集恰为三家委派工具；第四家 `subagent_dsh` 在 profile 层关不掉，要改 provider 包 |
 | T28 ✅ | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | 合入 main `a6395e1`；两个 verify 层镜像题库布局物化，题集级探针对每题各跑一次；退出码 0 / 3 / 其余（取 3 不取 2：2 是 getopt 的用法错误码）；先回填再校验，ratio 边界与 pass 一致性在源头拦；协议 v1-rev5；题库仍退 2、仍留 lib 副本 → T19c |
 
-第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 已验收。第四波（2026-09-08 发出）：T20b、T30a 已验收；T22 第 1–4 步已验收，第 5 步等 T20c 合入后走 3171 实例。第五波（2026-09-08 发出）：T20c 可发。阶段三是题库数据缺口，记 T19d，I3 收口不等它。
+第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 已验收。第四波（2026-09-08 发出）：T20b、T30a 已验收；T22 第 1–4 步已验收，第 5 步等 T20c 合入后走 3171 实例。第五波（2026-09-08 发出）：T20c 已验收（2026-09-09）；T22 第 5 步可以跑，走 3171 实例。阶段三是题库数据缺口，记 T19d，I3 收口不等它。
 
 **第一波验收（2026-09-08）**：T21（`e1e12f1`）与 T18（`b7dc599`）合入 main，两条分支文件不重叠；合并态 gate 通过，lab 包 100 个测试在验收机上重跑全绿。T16 与 T19 在题库仓库：`i3-env`（`4004dfc`）与 `i3-probes`（`050e22d`）经临时 worktree 并入 `i1-walk`（`714b793`、`d3ee214`），未动共享检出的 HEAD；T16 的提交全文 grep 过凭据形状，无命中。
 
@@ -257,6 +257,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 - **两处越界都接受**：一、改了四个条件文件——不补 `unit.scopedHome` 容器路径起不来（SCOPED_HOME_MISSING），codex 的 permissions 同步 danger-full-access 是第 3 步明写的；条件哈希从此与 pilot A 不同，对。二、F3 rubric.md 除追加要求的题眼指认（A2-1 → A4-1）外多改一句：「全表权重最高」不成立（C1 18、C2 7 更高，但那是阶段三四的汇总行），限定成「阶段一二判读里权重最高」；判读文字与权重未动。
 - **途中两个坑**：一、creds/stage.sh 会灌空壳凭证且不报错——macOS keychain 同名 service 取第一条，这台机器那条 token 是空串，灌进单元后报「OAuth session expired」，与真过期逐字相同，宿主对照却答得出 4，读起来像容器出不去网；已改成逐个候选验 token 非空、取不到当场失败并打印该跑哪条 login。二、**容器轮的 rollout 写在 bind 进去的凭证目录，而 local-agent 回读读 homeDir(家名)**，两个宿主目录不是一处，指错不报错、只让回读永远为空——就绪检查报 ready, model —，报告「受试对象一致」只剩 ⚠️；T22 在 tsx 驱动里把 homeDir 指向凭证目录才拿到那条 ✅，3171 的产品路径没有这个手段，第 5 步会原样踩上。根因在 T20 的文案：T17 定的是「scoped home 是宿主目录，rw bind 进容器，回读直接读它」，T20 另立 `--creds-root DIR/<条件 id>` 与之分叉，是协调者的失误，记 T20c。
 - **剩余缺口**：判官条件不进就绪检查（本轮判官两个样本全掉——判官那条链没构建——run 却照走到 released，同类失败在选手条件上会拒整个 run）→ T20c；token 四列缺席（G14 下半截，第 5 步走真门面时复核）；reportAuthFailure 收到普通流事件（日志里 `auth-failure(codex): {"type":"thread.started"…}`）→ local-agent 交出；kimi 重登后必须重灌——失败的续期会清空凭证目录，实测第二次直接 no credential configured；阶段三是数据缺口（T19d），output_schema.stage3 还是协议已退役的内联草记，wants 的 delivery.md 与 run 循环收的 <stageId>.json 对不上，L2 四个驱动型探针（room-identity / nonce-flow / dispatch-trace / stats-crosscheck）连文案都没有；P0 探针改回 import 题集级 lib 留到第 5 步后。
+
+**T20c 验收（2026-09-09）**：`fix/eval-scoped-home-readiness-judge`（`437d98c`）合入 main `28c0c17`，只动 packages/eval 与协议文档，eval 316 全绿，gate --all 通过。`--creds-root` 删净；容器路径的挂载源取 LocalAgentFace 新声明的 `homeDir(家名)`（local-agent 服务类原有，只在 eval 的结构面上声明一行，local-agent 零改动），面上缺它时 fail loud 而不是静默挂错。真机一：P0 × codex 容器内真 CLI，就绪检查回读到 gpt-5.6-sol，报告四条不变量全 ✅，`comparison allowed`——报告第一次愿意做比较；run.meta.readiness 带 role / observedModel / unit。真机二：judge 换成 OAuth 已过期的 claude，`READINESS_FAILED · 1 of 2 · judge claude-exec … exceeded 120s and was cancelled`，run 记录未创建；此前同一份计划会走到 released 而判官命名空间为空。契约 v1-rev7 只改 `unit.scopedHome` 的描述，条件文件不动。写明的边界接受：homeDir 按家给不按条件给，同一家的两个条件今天共用一份作用域目录，只能在模型、推理强度这类不落在作用域目录里的因子上不同；「每条件一份」等 I4 的 T29。
 
 验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
@@ -1179,6 +1181,11 @@ I3 行的完成判据整句成立：容器内一格走完全流程、release 经
 - 第 5 步等 T20c 合入：产品路径上容器轮的作用域挂载源改为 local-agent 该家的宿主作用域目录，`--creds-root` 删除。凭证不再 stage 副本——在 3171 实例上直接 `/codex login`、`/claude-code login`、`/kimi login`，写进的就是要挂的目录；续期失败清空的是评测实例自己的作用域目录，重登即可，不碰 ~/.dsh-official。
 - 第 5 步的就绪检查会带判官条件（T20c），判官那条链要先在 3171 上建好。
 - 第 5 步报告要看到：四条不变量全 ✅、四个单元指纹各异且差异项逐格列出、比较节首次打开、效率表 token 四列是否仍缺席（缺席就记 G14 下半截的复现证据）。
+
+## 追加（2026-09-09，T20c 合入后）
+- T20c 已在 main（28c0c17），第 5 步可以开跑：先把 main 并进 feat/web-eval-container-pins，在 3171 上重装 profile（install.sh / update.sh），`/eval run` 不再有 `--creds-root`。
+- 3171 上四家各 login 一次（kimi 要重新授权）；判官条件也进就绪检查，判官那家的登录与链先备好，否则 run 在开跑前被拒。
+- 四家只有一个 rep、同一题（F3 阶段一二）；kimi 若仍不通，就绪检查会把整个 run 拒掉——这时把 kimi 从计划里拿掉跑三家，把拒绝原文记进 pilot-b-log，不要用 --ignore-readiness。
 ```
 
 ### T20b · eval：「环境一致」的口径、register 布局的物化路径、物化哈希统一（已完成，2026-09-08 验收）
@@ -1215,7 +1222,7 @@ eval / lab 测试全绿，gate 绿；用 T20 的 P0 bundle 加三个只差作用
 分支名与 commit；Agent Note 路径；gate 输出；那份四条件 run 的不变量一节原文；物化 sha 跨路径相等的两行。
 ```
 
-### T20c · eval：容器路径挂 local-agent 的作用域目录而不是 `--creds-root`；就绪检查覆盖判官条件（可发）
+### T20c · eval：容器路径挂 local-agent 的作用域目录而不是 `--creds-root`；就绪检查覆盖判官条件（已完成，2026-09-09 验收）
 
 ```text
 # 任务 T20c：dsh-eval——容器轮挂 local-agent 的作用域目录，删 --creds-root；就绪检查加判官条件
