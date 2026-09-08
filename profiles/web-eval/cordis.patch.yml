@@ -19,12 +19,33 @@
 #   4 推理强度显式 pin    → kimi thinkingEffort（其余三家的 CLI 没有对应旋钮，
 #                          条件文件的 reasoning.effort 记 default）
 #   5 端点进条件         → claude 的第三方代理地址
-#   12 销毁路径唯一       → 工具按域开放（README 的同名小节）
+#   12 销毁路径唯一       → 工具按域开放（README 的同名小节）+ 默认预设换成
+#                          pack 自带的 eval（不挂 Bash、不挂容器控制）
 #
 # 阶段一二在宿主上直跑，没有容器边界，所以 codex 的 sandbox 取
 # workspace-write 而不是 danger-full-access：宿主上给满权限等于把评测的
 # 副作用放进真实 home。这条不对称写进 methodology.md，I3 容器化后改回
 # danger-full-access，届时四家才真正落在同一档上。
+
+# ── 默认预设（冻结决策 12）──────────────────────────────────────────
+# 评测实例的 agent 走 pack 自带的 `eval` 预设：presets/eval/ 随 install.sh 与
+# update.sh 落到 $DSH_HOME/.agent-presets/eval（dsh-agent-presets 默认追加的
+# 可写根），组成里没有 Bash / pwsh，也没有任何能执行宿主命令的行。预设归 pack
+# 的理由与本文件同：它是装置，不是偏好。
+#
+# 这一行只钉默认值。patch 的 config 覆盖是整块**替换**而不是深合并（见
+# vendor/include 的 applyEntryPatches：`target[key] = value`），这里替换掉的是
+# web-app bundle 写的 `{default: standard}`，不含别的键，所以什么都没丢；
+# `roots`（随发行版的系统预设根）由 apps/cli 的 composeProfile 在本层之后作为
+# 最后一层 overlay 追加，`includeUserRoot` 保持 schema 默认 true。
+#
+# 随发行版的 标准/代码/极简/cordis 四个预设仍在名册上、仍可被人在「设置 →
+# Agent 预设」里选中，本层删不掉它们（composeProfile 无条件写 roots）。这条
+# 钉的是**新会话默认拿到什么**，不是**人能够到什么**——决策 12 针对的是
+# 「agent 误操作」，而 agent 没有切换自身预设的工具，切换是人的动作。
+- id: agent-presets
+  config:
+    default: eval
 
 # ── 工具按域开放（README「工具按域开放」）────────────────────────────
 # 执行期没有 agent，写类动词归编排器服务面与人的 CLI。

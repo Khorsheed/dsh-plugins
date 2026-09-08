@@ -32,6 +32,19 @@ DEST="$DSH_HOME/profiles/web-eval"
 # template files HERE.
 PROFILE_FILES="package.json cordis.patch.yml pnpm-workspace.yaml pnpm-lock.yaml"
 
+# The pack's agent presets, by preset id; each is a directory under presets/
+# holding `agent.cordis.yml` (+ optional `preset.yml`). They do NOT live under
+# the profile directory: `dsh-agent-presets` scans `$DSH_HOME/.agent-presets`,
+# and the roster is per-HOME, not per-profile. Each listed id is replaced whole
+# on install and on update, for the same reason cordis.patch.yml is (see
+# update.sh): the eval preset is frozen decision 12's execution point —
+# apparatus, not preference. A locally authored preset of the same id is
+# overwritten; author your own under a different id.
+#
+# Because they sit outside $DSH_HOME/profiles/web-eval, uninstalling the
+# profile does NOT remove them — the README says so beside the `rm -rf`.
+PRESET_IDS="eval"
+
 # Members not on npm yet — docs/release-status.md in the dsh-plugins checkout
 # is the authority; when a member ships, remove its directory here (and when
 # the last one does, source mode retires). Dependency order: the family core
@@ -85,6 +98,15 @@ mkdir -p "$DEST"
 trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2' 0
 for f in $PROFILE_FILES; do
   [ -e "$SRC/$f" ] && cp -R "$SRC/$f" "$DEST/$f"
+done
+
+PRESET_ROOT="$DSH_HOME/.agent-presets"
+for id in $PRESET_IDS; do
+  [ -d "$SRC/presets/$id" ] || { echo "dsh-web-eval: presets/$id missing from the clone" >&2; exit 1; }
+  mkdir -p "$PRESET_ROOT"
+  rm -rf "$PRESET_ROOT/$id"
+  cp -R "$SRC/presets/$id" "$PRESET_ROOT/$id"
+  echo "dsh-web-eval: installed agent preset \"$id\" into $PRESET_ROOT/$id"
 done
 
 if [ -n "$SOURCE" ]; then
