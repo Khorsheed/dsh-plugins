@@ -28,3 +28,7 @@ scratch-*
 *.jpeg
 *.gif
 *.webp
+
+# Work-in-progress skill (integration/dsh-self-upgrade-rc1-next); kept out of the
+# published tree until it is ready — the branch re-adds it on merge.
+skills/self-upgrade/
