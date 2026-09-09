@@ -188,3 +188,16 @@
     # 这是一条**机器级前置条件**，每台评测机都要有；备法写在题库 env/README。
     # 它是接缝不是答案——scoped home 该不该自足，交回 local-agent 定。
     headlessBundleDir: /opt/dsh-headless/node_modules/@khorsheed/dsh-local-agent-dsh-headless
+
+    # **入口同理**（I3·T22 第 5 步实测）。cliLaunch 不配时解析为
+    # `[process.execPath, ...process.execArgv, process.argv[1]]`——**宿主的 node
+    # 与宿主的 dsh 入口脚本的绝对路径**。容器轮把这串原样塞进 `docker exec`，
+    # 而单元里那两个路径都不存在，于是委派以 stopReason "error" 收场，
+    # 就绪检查只看得到「the delegation ended with stopReason "error"」。
+    # 这与上面 headlessBundleDir 是同一个结构性问题的第二处：dsh 的容器轮里
+    # 每一个「宿主绝对路径默认值」都要换成两个文件系统都成立的值。
+    #
+    # `dsh` 这个名字两边都成立：单元里是 /usr/local/bin/dsh（镜像自带），
+    # 宿主上要求评测实例以带 dsh 的 PATH 启动——与 /opt/dsh-headless 并列的
+    # 第二条机器级前置，写在题库 env/README。判官走宿主轮，靠的正是这一条。
+    cliLaunch: [dsh]
