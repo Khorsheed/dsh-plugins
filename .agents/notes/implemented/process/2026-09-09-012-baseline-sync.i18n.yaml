@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-09-012-baseline-sync.md
+.agents/notes/implemented/process/2026-09-09-012-baseline-sync.md: 7ab7f1dee4bb1e5c73bc930a9f4da679f560ef0d
+.agents/notes/implemented/process/2026-09-09-012-baseline-sync.zh.md: 0dde7e4e9b6ba2268965277b015808d0d2802a00

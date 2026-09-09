@@ -1,0 +1,35 @@
+# Agent Note: 0.1.2-rc.1 baseline migration — compat-branch merge, rc.1 delta wave, minHost floor move
+
+Status: implemented
+
+English | [中文](2026-09-09-012-rc1-baseline-migration.zh.md)
+
+## Problem
+
+`deepseek-harness` shipped `0.1.2-rc.1` to npm as `latest` on 2026-09-03, which satisfied the merge condition recorded in the [0.1.2 assessment note](../../proposed/architecture/2026-08-28-host-0.1.2-alpha1-assessment.md): the `feat/host-0.1.2-alpha1-compat` branch (86 commits of dual-line adaptation, live-acceptance-verified on port 3091) was cleared to land. Two gaps remained: the branch targeted `0.1.2-alpha.1` while the npm line had moved four alphas further (`Session.events` removal, `SessionSeq` branding, `settingsNamespace()` removal, `JsonValue` relocation, namespaced error codes), and main had drifted 558 commits since the branch's last merge. The declared goal: re-pin the mainline baseline to `0.1.2-rc.1`, deploy to 3080, and cut a release wave.
+
+## Decision
+
+- **Merged, not re-adapted.** The compat branch merged into main through worktree `feat/baseline-0.1.2-rc1`; 84 conflict files resolved under one doctrine — main's feature work wins, the branch's API migration is re-applied on top of it. The branch's live-acceptance evidence (three rounds of runtime-only break hunting) carried over intact.
+- **rc.1 delta wave on top of the merge**, from a mechanical audit of `dsh-v0.1.2-alpha.1..dsh-v0.1.2-rc.1` against every package's hit surface: `session.events` → `snapshotEvents()`/`eventAt(SessionSeq(…))` (room, message-tools, file-preview, local-agent-dsh-headless + tests); `SessionSeq` wrapping at every `session.append` surface op (message-tools); `settingsNamespace(…)` calls dropped for plain literals (7 packages, official ui-locale/ui-chat pattern); `JsonValue` imports moved to `@deepseek-ai/dsh-util-values` (5 packages); `session-title-edit` accepts both `title-invalid` and the namespaced `session/title-invalid`; file-preview's dispatch fold recognises both `tool/code-dispatch` and `tool/ptc-dispatch` (rc.1 still emits the old name — dual-name recognition is forward-compat, not version-sniffing).
+- **Baseline files re-pinned** per the [baseline-sync note](2026-09-09-012-baseline-sync.md): all `@deepseek-ai/*` devDeps `^0.1.2-rc.1`, workspace `overrides`/`minimumReleaseAgeExclude` regenerated from the lockfile (73 packages, zero `0.1.1-rc` residue), CI gates seed tag `dsh-v0.1.2-rc.1`, `dsh-client-runtime` purged including peer declarations (auto-install-peers would otherwise resurrect `0.1.0-rc.8` and drag in the unpublished-at-0.1.2 `dsh-host-apiproxy`).
+- **The minHost floor moved to `0.1.2-rc.1` on every package — deliberately.** Earlier waves kept the floor because artifacts stayed dual-line. This wave removes the rc.2 arms where the host removed the seat (`useChat` single-seat, `sessions.create/open`, `snapshotEvents`, mandatory ui-primitives labels); claiming rc.2 compatibility would be an unverified lie. Old release lines remain on npm for old hosts. `verifiedHost: 0.1.2-rc.1` everywhere; README Compatibility sections and `docs/release-status.md` regenerated to match.
+- **New degraded items recorded**, not hidden: ui-file-preview / local-files / worktrees hide external-open buttons on 0.1.2 (host description no longer carries `canOpenPath`; restoration is a follow-up via the `remote.session.canOpenWorkspacePath` RPC probe); whalesong's blocked bell now subscribes `ctx.uiSession.pendingInteractions` and degrades silently without it.
+- **Seam registry renumbered**: the duplicate S9 (runtime-skill `source`) became S10 and later entries shifted by one; all cross-references in AGENTS.md, proposals, and notes updated.
+
+## Packages with source changes (owner notification per the merge-window rule)
+
+Behaviour-affecting: room, message-tools, file-preview, local-agent (core + kimi + claude-code + codex + dsh + headless), taskpilot, message-timeline, worktrees, ui-file-preview, local-files, ui-shortcuts, whalesong, session-title-edit, capability-catalog, datasets. Import/metadata-only: mission, eval, context-guard, inline-html-render, local-agent-tool-subagent. Untouched: lab, ankh-guard (its `session.events` iteratee is its own `PersistedPresetSource`, not the host Session). Owners should re-pull and develop on the new baseline; the merge-window hold on merging feature worktrees lifts once this lands on main.
+
+## Alternatives considered
+
+- **Re-adapt from scratch on main instead of merging the compat branch** — rejected: the branch carries 86 commits including three rounds of runtime-only findings no compiler can reproduce; discarding it would re-buy that risk.
+- **Keep dual-line artifacts indefinitely** — rejected: the rc.2 seats are deleted upstream, so the rc arms are dead code on the target line; every probe doubles the audit surface of future upgrades.
+- **Keep minHost at `0.1.0-rc.6`/`rc.8` and claim degraded operation** — rejected: the adapted code hard-calls 0.1.2 APIs (`snapshotEvents` does not exist on rc.2 hosts); the honest floor is the line we verified.
+
+## Consequences
+
+- Full monorepo green on the rc.1 baseline: 2814 tests passed, build clean, `pnpm install` exits 0 (taskpilot's `prepare` was the last red), `check:plugins`/`check:builds`/`check:hygiene` all clean, 233 translation pairs in sync.
+- The prod-3080 host flip follows the guard's `reconfigure` path: tsx-from-source cannot boot 0.1.2 (`const enum FiberState` is erased in built artifacts), so the launch command switches to `node apps/cli/lib/bin.js web --no-open`, preflight surface `source` → `built`, credentials re-recorded against the rc.1 HEAD after a green build+test on the deploy checkout. Session data needs no action (format v0 on both lines; SQLite backend removal irrelevant — this HOME is jsonl).
+- What this wave deliberately did **not** do: adopt any 0.1.3/0.1.5-alpha capability (sidebar-right tabs, surface ops for message-tools restore, open-in-app). Those belong to the pre-research branch, which must never merge generated typert artifacts back into mainline.
+- Known leftovers: the S10(b) corrupt-frame `session.list` hazard persists upstream (quarantine repair playbook stays); `composeProfile` is still not exported (ankh-guard's preflight-runner mirror and drift tripwire stay); the external-open restore follow-up is tracked in the three packages' `dsh.compat.notes`.

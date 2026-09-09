@@ -73,14 +73,14 @@
 - **退役方式**：需求被我方设计变更消除（T6，2026-09-05，commit e2de301）——headless 不再声明 `dsh.bundle`，provisioner 把 patch 从 bundle 目录的已知文件名（`cordis.patch.yml`）拷进子 profile 自己的 patch 层；reconcile 对该包永远返回"非 bundle"，旧 profile 的脏行在升级后自动摘除。哨兵不变量与 patch 测试留作防御。上游拆分（`dsh.bundle.autoMount: false` / `profileOnly`）仍是**未来**任何家族内部 bundle 的一般解法；届时内部 bundle 可放心作直接依赖（例如显式锁定版本）。
 - **状态**：已退役（2026-09-05，@khorsheed/dsh-local-agent-dsh-headless 我方撤声明；非官方落地）。
 
-### S9. runtime skill 注册的 `source` 只在加载期校验
+### S10. runtime skill 注册的 `source` 只在加载期校验
 
 - **需求**：`ctx.skills.register()` 在注册期就要求（或默认）`source`——官方 `register()` 默认了 `provider`/`invocation` 但不默认 `source`，而加载路径 `validateDefinition` 强制 `source` 为 string：于是注册成功、catalog 正常列出、调用才炸（8.9 的 `dsh-self-restart-guard` 就是这个炸法）。
 - **现状绕行**：调用方显式传 `source: 'runtime'`（ankh-guard hotfix f38a616）；并用真实 `SkillRegistry` 的 list + get 往返测试守住契约（记录桩测不出加载期校验）。
 - **退役条件**：官方 `register()` 默认 `source: 'runtime'`，或 `validateRuntimeSkill` 在注册期就强制 `source`。落地后调用方的显式字段保留无害，往返测试可保留为行为回归。
 - **状态**：绕行中（@khorsheed/dsh-ankh-guard 的 skill 注册）。
 
-### S10. 会话日志的崩溃恢复会写 seq 分叉，且单文件损坏拖垮 session.list
+### S11. 会话日志的崩溃恢复会写 seq 分叉，且单文件损坏拖垮 session.list
 
 - **需求**:(a) 重启/崩溃打断在途工具调用时，恢复机制不应向日志写入与真实结果冲突的伪"中断"块——seq 空间不应分叉;(b) `session.list` 等读取路径应把损坏的单文件隔离/跳过并警告，而不是整个列表 500(一个坏会话 = 全 home 侧边栏"暂无会话")。
 - **实证**:2026-08-28 prod 3080。18:40 部署重启打断 turn 47 step 5 的工具调用，恢复逻辑写入伪中断块，与真实工具结果 seq 重叠(408273 写两遍、内容冲突),`scanLog` 报 `seq gap in committed region`;同时该文件曾被修成单帧，触发 `first frame is not exactly one header line`。两层都只对活体可见。
@@ -92,7 +92,7 @@
 - **退役条件**:官方恢复逻辑在写伪中断块前检测 seq 冲突并和解(或不写);`sessionPersistence` 的 list/read 对单文件损坏降级为跳过 + 警告。落地后删除本条绕行说明， quarantine 目录里的坏文件样本可留作回归素材。
 - **状态**:绕行中(未上报;修复手法已在本条固化)。另:ankh-guard 的重启只是 SIGTERM 触发器，官方关机路径(`fiber.dispose()`,5s 宽限)不在途 turn 结算——任何重启方式在工具调用进行中都会产生同样的撕裂,与 guard 无关;guard 侧可选增强是重启前查"静默窗口"(无活跃 turn 才 schedule-exit),已转 guard owner 评估。
 
-### S11. 恢复被撤回的助手文本无法保持 assistant role（@khorsheed/dsh-client-message-tools）
+### S12. 恢复被撤回的助手文本无法保持 assistant role（@khorsheed/dsh-client-message-tools）
 
 - **需求**：撤回后「恢复」（restore）时，被撤回的**助手回复**应以 assistant role 回到模型上下文，而不是被当作一条新的用户输入。当前 `restore` 把助手文本重放成 `user/message`（plugin source, `op:'restore-assistant'`），模型看到的是 user-role 内容，无法区分「这是历史助手引用」与「用户的新指令」——语义上改变了"助手说的"这个事实，可能被模型误执行。
 - **为何不能自包含修**：`assistant/message` 是模型自有事件类型，官方 `assertMessageEventShape` 强制 `source.kind === 'model'` 且有真实 `provider`/`model`，`createAssistantMessage` 也硬编码 `source:{kind:'model'}`；插件无法合法伪造 model source（会谎报审计/语义）。且 harness 对所有 `user/message`（无论 source 是 user/plugin/agent-instructions）一视同仁投影为 user-role 传给模型，**没有**把 plugin 信封转成 system/assistant role 的 API。`agent/pre-step` 只能替换新 claim 的用户消息，`agent/request` 明确不能改模型可见消息——没有诚实的"历史助手内容插入缝"。
@@ -100,7 +100,7 @@
 - **退役条件**：官方提供能保留原始 provenance、又投影成 assistant-role（或至少明确的"历史引用"语义）的持久化事件/投影机制——例如插件可 append 一个带 `source`/`op` 标记、模型侧投影为 context-引用而非新指令的事件；或提供"重放历史助手内容 seam"。落地后 `restore` 改走该 seam，`RESTORED_ASSISTANT_NOTICE` 前缀与 `restore-assistant` 用户消息退场，UI 保持。
 - **状态**：绕行中（@khorsheed/dsh-client-message-tools；未上报官方，等官方 rc 评估是否已有可用机制）。
 
-### S12. 工具注册表不暴露来源（ToolSchema 无 source/owner）
+### S13. 工具注册表不暴露来源（ToolSchema 无 source/owner）
 
 - **需求**：`ctx.tools.schemas()` 只投影 `{ name, description, parameters }`，不携带「官方内置 / 插件 / MCP / 哪个插件注册的」来源。任何下游（能力目录、审计、UI 分组）都无法归因工具来源。
 - **为什么 catalog 拿不到**：`ToolSchema`（`@deepseek-ai/dsh-llm`）只有三字段；`ToolsRegistry.schemaOf()`（`packages/core/tools/src/index.ts:1256`）白名单化时硬编码这三个字段。catalog 只能靠 `mcp__` 前缀 / 官方白名单 / 启动时基线差分猜测 channel，于是**启动时已注册的插件工具（`subagent_kimi` / `subagent_dsh`、message-tools 等）全被误判为「内置（推断）」**，插件分段恒为 0。
@@ -110,7 +110,7 @@
 - **状态**：绕行中（@khorsheed/dsh-capability-catalog；提案已写，官方落地即退役）。
 
 
-### S13. `AgentStatus` 是二元的，无法区分「在跑」与「泊着等用户输入」
+### S14. `AgentStatus` 是二元的，无法区分「在跑」与「泊着等用户输入」
 
 - **需求**：任何需要判断「agent 真在干活，还是在等人回话」的插件都拿不到这个事实。`AgentStatus` 只有 `'idle' | 'running'`，而回合阻塞在等待用户输入时（`ask_user_question` 未答、审批未决）状态**仍是 `running`**。
 - **为什么拿不到**：`UserQuestionService` 是 provider 注册表，不是 pending-state store，**不存在可查询的待答状态**；SIGTERM 处理器也无法 await，即使有查询也用不上（见 `.agents/notes/implemented/feature/2026-08-23-parked-turn-resume.md` 的 Alternatives）。

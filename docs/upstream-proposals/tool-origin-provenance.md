@@ -3,7 +3,7 @@
 - **状态**：提案（待上游评审）
 - **提出方**：`@khorsheed/dsh-capability-catalog`（社区）
 - **目标读者**：deepseek-harness 上游维护者（`packages/core/tools`、`@deepseek-ai/dsh-llm`）
-- **登记**：`docs/upstream-seam-registry.md` → S12
+- **登记**：`docs/upstream-seam-registry.md` → S13
 
 ## 一句话
 
@@ -57,7 +57,7 @@
 
 ## 闭环 / 退役条件
 
-官方落地后：`@khorsheed/dsh-capability-catalog` 的 `attributeToolChannel` 改为**首选读 `ToolSchema.source` / `owner`**，启发式退为兜底；`mcp__` 前缀可保留为 MCP 桥的提示信号。`docs/upstream-seam-registry.md` 的 S12 状态从 `绕行中` 改 `已退役`。
+官方落地后：`@khorsheed/dsh-capability-catalog` 的 `attributeToolChannel` 改为**首选读 `ToolSchema.source` / `owner`**，启发式退为兜底；`mcp__` 前缀可保留为 MCP 桥的提示信号。`docs/upstream-seam-registry.md` 的 S13 状态从 `绕行中` 改 `已退役`。
 
 ## 备选方案（若上游暂不接受 PR）
 
