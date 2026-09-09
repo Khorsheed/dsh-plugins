@@ -3,6 +3,8 @@
 ## 0.2.0（2026-09-10）
 
 - **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.1`）
+- 新增进程内 `requestRestart` 触发缝与 boot 代际浏览器刷新通道：应用内服务可直接驱动受门禁约束的重启，重启后按 boot 代际刷新已登记标签页
+- preflight 快照跳过运行时条目：socket/FIFO（含指向它们的符号链接）不再导致 `reconfigure` 拒绝；顶层 `scratch/` 目录从 home 复制中排除；复制耗时超过凭证窗口一半时提前警告
 - 适配宿主 0.1.2 线：dev/peer 依赖面迁移到 0.1.2 API（`@deepseek-ai/dsh-skill` 归位 0.1.2 范围），`dsh.compat` 地板同步前移
 - preflight 执行面成为 launch spec 的显式契约：持久化 source/built、runner 可执行方式/路径/内容 SHA、实际 dsh 安装锚点与 target command SHA；`reconfigure` 在隔离 home 先运行与该 SHA 绑定的一等 candidate command probe，再用同一 source/npm-built 模块面做 composition preflight，不再从 `process.execArgv` 猜测或误读 checkout source
 - candidate probe 是调用方提供并与 target command 摘要共同绑定的信任边界；Guard 不声称能从任意 shell command 自动证明 argv 同源，随包 Skill 负责按同一 DSH executable/launcher argv 生成 `--dump-config` probe
