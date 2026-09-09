@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.2.0（2026-09-10）
+
+适配宿主 0.1.2 线。
+
+- **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.0`）
+- blocked 铃改订阅 `ctx.uiSession.pendingInteractions`（ui-session 服务）；该服务缺席的组合里 blocked 铃静默关闭，完成铃不受影响
+- 导入面迁移：client bundle 不再引用宿主已删除的 `dsh-client-runtime`
+
 ## 0.1.0（2026-08-22）
 
 首个公开发布。

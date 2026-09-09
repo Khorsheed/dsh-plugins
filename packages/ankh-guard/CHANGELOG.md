@@ -1,7 +1,9 @@
 # 变更记录
 
-## 未发布
+## 0.2.0（2026-09-10）
 
+- **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.1`）
+- 适配宿主 0.1.2 线：dev/peer 依赖面迁移到 0.1.2 API（`@deepseek-ai/dsh-skill` 归位 0.1.2 范围），`dsh.compat` 地板同步前移
 - preflight 执行面成为 launch spec 的显式契约：持久化 source/built、runner 可执行方式/路径/内容 SHA、实际 dsh 安装锚点与 target command SHA；`reconfigure` 在隔离 home 先运行与该 SHA 绑定的一等 candidate command probe，再用同一 source/npm-built 模块面做 composition preflight，不再从 `process.execArgv` 猜测或误读 checkout source
 - candidate probe 是调用方提供并与 target command 摘要共同绑定的信任边界；Guard 不声称能从任意 shell command 自动证明 argv 同源，随包 Skill 负责按同一 DSH executable/launcher argv 生成 `--dump-config` probe
 - preflight snapshot 复制物理节点并把 pnpm/Cordis 链接图重建到副本内，保留合法依赖循环；外部 target 在哈希命名区域按 canonical path 去重物化，链接逐条审计确保可写解析结果不逃出 snapshot。经内部/外部链接写入不会触达原字节，悬空/不可解析链接、特殊文件、可写逃逸或复制失败均在运行 candidate、创建 cutover、停止 previous 前 fail closed

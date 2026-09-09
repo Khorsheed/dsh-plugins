@@ -2,21 +2,23 @@
 
 English | [中文](README.md)
 
-Host service for dsh's file-preview surface: lists every file a session's tool calls touched — each write/edit change's diff included — and serves any file's current content for preview. Pair it with `@khorsheed/dsh-client-ui-file-preview` and the web GUI gains a Produced-files tab with inline previews and reveal-in-folder.
+Every file the agent touched, on one page: what changed, and what it looks like now.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="the companion client's file-preview pane: file list and inline markdown preview">
+This package is the host half of file preview. Install it together with the companion client, and the web GUI gains a Produced-files tab: every file the session read, wrote, or edited is listed there, each write/edit change comes with its diff, and clicking any file shows its current content. Files the agent happened to write through bash (heredocs, redirects, and the like) are collected too. The whole service is read-only — it looks at files, never touches them.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the Produced tab's file preview: file list and inline markdown preview">
 
 ## Features
 
 - **Session file list** — every file the session's `read`/`write`/`edit` calls touched, with each write/edit change's diff attached.
-- **Content reads** — current text, capped and flagged when truncated; images as browser-loadable URLs on web hosts; binary, missing, and oversized files answer classified notices.
+- **Content reads** — current text, capped and flagged when truncated; images as browser-loadable URLs on web hosts; binary, missing, and oversized files answer classified notices instead of errors.
 - **Bash-write capture** — files written through `bash` (heredocs, redirects, `tee`, `sed -i`) merged into the list, stat-verified and rebuilt after a host restart.
 - **Reveal in folder** — opens the file's folder with the file selected, on macOS, Windows, WSL, and desktop Linux.
 - **Read-only by design** — no session state, no writes; a restarted host loses nothing.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="per-artifact change history: pageable per-turn diffs">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote, at a glance">
 
 ## Install
 
@@ -24,7 +26,7 @@ Host service for dsh's file-preview surface: lists every file a session's tool c
 dsh plugin --profile web add @khorsheed/dsh-file-preview
 ```
 
-Host half only — install the companion client for the visible surface (Produced tab, preview drawer, per-turn change card):
+Host half only — the visible surface (Produced tab, preview drawer, per-turn change card) lives in the companion client:
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
@@ -53,6 +55,8 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.1`).
 
 ## Known Limitations
 

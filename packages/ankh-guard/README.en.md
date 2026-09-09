@@ -198,6 +198,8 @@ None.
 - Historical verification: a live npm-host 0.1.1-rc.2 → 0.1.2-alpha.4 isolated cutover passed (transition preflight removed a v3 whole-unit projection cache with an old-schema record from a home copy, live apply quarantined the old file, and target completed Token URL → 303 → cookie 200, the ownership stability window, and canary at zero retries; the old file remained byte-exact in the cutover directory. An untransitioned control over the same home failed on the missing Alpha.4 record fields, demonstrating that acceptance covered the real schema break).
 - source line (deepseek-harness master, fork or upstream): ✅ (verifiedHost: 0.1.2-rc.1) — the gate runs through the standalone `preflight-runner` (resolves the published `@deepseek-ai/dsh-app-boot` etc. from the live checkout), so no fork patch is required.
 
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.1`).
+
 ## Known Limitations and Deferred Work
 
 - **The gate is enforced in `restart`/`supervise`, not the launcher** — both refuse to stop the instance on a denial, but a manual `kill`/start outside the guard still bypasses it; the watchdog is the automatic safety net that makes a bypassed gate recoverable.

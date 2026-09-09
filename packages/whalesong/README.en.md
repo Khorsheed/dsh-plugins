@@ -1,20 +1,20 @@
-# 🐳 dsh-whalesong
-
-> 任务跑着,鲸鱼喷水。Whale song while tasks run.
+# @khorsheed/dsh-whalesong
 
 English | [中文](README.md)
 
-A status-ambience plugin for the dsh web GUI: while any session is running, the sidebar whale spouts water and the tab favicon animates; when a task finishes or blocks on you, a short chime plays. Zero patches to official files, zero model-visible effects — install it and the page simply feels alive.
+While tasks run, the whale spouts; when they wrap up, you get a chime.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="480" alt="sidebar droplets while tasks run">
+A pure ambience plugin: you don't have to stare at the page to know whether the agent is still working. Whenever any session is running, the tab icon turns into an animated bubble-blowing whale and the sidebar whale spouts droplets too; when a task finishes — or the agent gets stuck waiting for you — a short chime plays. No patches to official files, nothing the model can see — install it and the page simply feels alive.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="480" alt="a chime when the run finishes, and the tab icon changes with it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong1.png" width="640" alt="while tasks run: the sidebar whale spouts and the tab icon animates with bubbles">
 
 ## Features
 
 - **Favicon waterline bubbles (primary indicator)** — the tab icon animates while anything runs and rests as a static, page-palette-matched whale when idle (the stock icon's OS-driven `prefers-color-scheme` can render an invisible white whale on light pages).
 - **Sidebar droplets** — three DeepSeek-blue droplets rise from the sidebar whale's blowhole while work is in flight.
 - **Chimes** — completion and blocked get distinct synthesized tones (no audio assets). Honors `prefers-reduced-motion`: animation hidden, chimes silent.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/whalesong2.png" width="640" alt="a chime when the run finishes, and the tab icon changes with it">
 
 ## Install
 
@@ -43,6 +43,8 @@ Optional, hot-applied within one poll round-trip (no browser refresh), in the pr
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface, full build+test green; the blocked chime now subscribes `ctx.uiSession.pendingInteractions` (the ui-session service), and in an assembly without that service the blocked chime degrades off silently while completion chimes keep working. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

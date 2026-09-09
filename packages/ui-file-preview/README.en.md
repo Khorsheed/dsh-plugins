@@ -1,14 +1,12 @@
-# @khorsheed/dsh-client-ui-file-preview
+# dsh-client-ui-file-preview
 
 English | [中文](README.md)
 
-Preview your session's files right in the dsh web GUI — no IDE needed. A 产物/Produced tab lists everything the session wrote or edited, and selecting one shows its current content and full change history in the page.
+See every file the agent wrote or edited — content and each individual change — without opening an IDE.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="480" alt="previewing a markdown file rendered as a document">
+The agent worked for an hour; which files did it actually touch, and what did they end up looking like? With this plugin, the session grows a Produced tab listing every file the session touched; select one and preview it right in the page — markdown rendered as a document, JSON as an inspector tree, CSV as a table, images inline — and page back through the diff of every write/edit. Each finished turn also ends with a small card summarizing which files changed and by how many lines. The data comes from the companion host half `@khorsheed/dsh-file-preview`; install both to get the UI, and without the host half it simply renders an empty state, never an error.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="480" alt="per-artifact change history: pageable per-turn diffs">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="480" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote listed on the left, the selected file's current content previewed on the right">
 
 ## Features
 
@@ -18,13 +16,20 @@ Preview your session's files right in the dsh web GUI — no IDE needed. A 产�
 - **Turn mutation card** — each finished turn ends with a collapsible "N files changed" card with per-file line deltas.
 - **In-place drawer** — previews open in a content-only drawer with content search; copy-path always, show-in-folder/open-in-IDE when the deployment can hand paths to a native desktop.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the per-turn 'N files changed' card at the end of a turn, and a produced file opened in the right-hand drawer with copy-path, folder, and IDE buttons in its header">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/file-preview2.png" width="640" alt="the drawer's change-history tab: page through every per-turn diff recorded for the file">
+
 ## Install
 
+The UI and the data are two packages — install both:
+
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview
+dsh plugin --profile web add @khorsheed/dsh-file-preview            # host half: folds the file list, reads content
+dsh plugin --profile web add @khorsheed/dsh-client-ui-file-preview  # this package: the UI
 ```
 
-Then restart the web instance.
+Then restart the web instance. Uninstall this package (the host half may stay or go):
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
@@ -34,6 +39,8 @@ dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ⚠️ degraded — preview and folding are intact; the external-open buttons (open in folder / open in IDE) are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (the capability became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1; same external-open degradation)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

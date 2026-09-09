@@ -2,18 +2,20 @@
 
 [English](README.en.md) | 中文
 
-dsh Web GUI 的上下文窗口压缩提醒：当**上下文占用**——与输入框旁边进度环显示的是同一个数——越过模型上下文窗口的配置比例时，输入框工具栏里会自动出现一枚压缩按钮，点击即执行官方 `/compact` 命令。卸载即清除它添加的所有界面。
+上下文快撑爆之前，输入框里会冒出一枚「立即压缩」按钮。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="480" alt="上下文占用越过配置比例后，聊天框出现压缩按钮">
+聊得越久，上下文占用越高，涨到头 provider 会直接拒收请求——这堵墙比进度环的 100% 来得更早（请求还要给输出留位置）。这个插件就是干这个的：占用一过你设的比例，输入框工具栏里就出现一枚琥珀色按钮，点一下等于亲手输入 `/compact`。它不替你自动压缩，只在你还来得及的时候提醒你。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="480" alt="提醒比例可在设置中按偏好调整(0.01–1)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="上下文占用越过配置比例后，输入框工具栏里出现琥珀色的压缩按钮">
 
-## 特性
+## 功能
 
-- **输入框里的压缩按钮**——低于阈值时隐藏，越过后以琥珀警示色自动出现。
-- **与进度环同一个数**——由官方 `contextPressure` 投影驱动，按钮与进度环永不打架。
-- **执行官方 `/compact`**——空闲门控、压缩锁与流程节点展示都由宿主负责。
-- **一个实时可调项**——占用阈值，在设置 → 插件里改，无需重启。
+- **输入框里的压缩按钮**——低于阈值时看不见，越过后自动出现。
+- **和进度环同一个数**——由官方 `contextPressure` 投影驱动，按钮和进度环永远不会打架。
+- **执行官方 `/compact`**——空闲门控、压缩锁和流程展示都由宿主负责，点击的效果和手打命令一模一样。
+- **一个实时可调项**——提醒阈值在设置里改，保存即生效，不用重启。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="提醒比例可在设置中按偏好调整（0.01–1）">
 
 ## 安装
 
@@ -21,7 +23,7 @@ dsh Web GUI 的上下文窗口压缩提醒：当**上下文占用**——与输�
 dsh plugin --profile web add @khorsheed/dsh-context-guard
 ```
 
-安装后重启 web 实例。卸载：
+安装后重启 web 实例。卸载即清除它添加的所有界面：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-context-guard
@@ -43,12 +45,14 @@ plugins:
 
 **该字段只影响按钮出现的时机**——真实压缩时机仍由官方压缩引擎自己的 `thresholdRatio` / `auto` 配置决定。
 
-## 兼容性
+## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
 
-## 已知限制
+**版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
+
+## Known Limitations
 
 - **提醒，不是保证**——从按钮出现到点击之间上下文可能继续增长，agent 运行中 `/compact` 可能报 `busy`。
 - **没有输出上限旋钮**——拒绝墙取决于 `window − maxTokens`，这是模型属性而非用户偏好。

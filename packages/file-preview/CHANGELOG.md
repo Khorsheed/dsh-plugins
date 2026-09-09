@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.2.0（2026-09-10）
+
+适配宿主 0.1.2 线。
+
+- **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.1`）
+- 会话事件读取走 `Session.snapshotEvents()`（`session.events` 已随宿主移除）
+- 嵌套 dispatch 事件按名探测（feature detection，非版本判断）：同时识别 Code Mode 的 `tool/code-dispatch` 与 PTC 更名后的 `tool/ptc-dispatch`
+
 ## 0.1.1（2026-08-23）
 
 - 修复：随包 skill 在目录里可见、调用即炸——宿主在 load 时才校验注册的 `source` 字段，之前没传；已补 `source: 'runtime'`，并加了真实 SkillRegistry 往返测试（list + load）防回归

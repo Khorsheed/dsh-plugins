@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.2.0（2026-09-10）
+
+适配宿主 0.1.2 线。
+
+- **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.0`）
+- external-open 按钮（打开目录 / 在 IDE 打开）在 0.1.2 上隐藏：host description 快照不再携带 `canOpenPath`（该能力已改为 RPC 探测），loopback 闸门无法确认；恢复是 follow-up，官方 seam 为 `remote.session.canOpenWorkspacePath` RPC。预览与折叠主体不受影响
+- 导入面迁移：client bundle 不再引用宿主已删除的 `dsh-client-runtime`，ui-primitives 组件补齐强制 labels
+
 ## 0.1.0（2026-08-22）
 
 首个公开发布。

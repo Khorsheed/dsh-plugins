@@ -2,11 +2,11 @@
 
 English | [中文](README.md)
 
-A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's left edge with one row per user message. Hover to reveal previews, click to scroll the transcript straight to that message.
+Every message you sent in a long conversation — visible at a glance, one click to jump back.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="480" alt="floating message timeline along the chat's left edge">
+Once a session gets long, finding that requirement you mentioned three messages ago means scrolling up forever. This plugin parks a timeline on the chat's left edge: one row per message you sent, with a one-line preview. At rest it's just a strip of dimmed ticks that stays out of the way; hover to expand it, and clicking a row scrolls the transcript straight to that message. It only reads the session and never sends anything — the model doesn't notice it at all.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="480" alt="the timeline rests as a thin rail out of sight, expanding on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="the expanded message timeline on the chat's left edge: one row per user message, click a row to jump to it">
 
 ## Features
 
@@ -16,6 +16,8 @@ A jump-to-message timeline for the dsh web GUI: a floating rail on the chat's le
 - **Click to jump** — a row scrolls the transcript to that message; the list follows the reading position.
 - **Long-history friendly** — a short list centers vertically; a long one scrolls and pages older history at its top, its bottom-most row flush with the chat input box; goal/todo dock cards never push the timeline up.
 - **Never covers the message flow** — the panel's width is capped by the scrollport's left gutter; a gutter too small for the minimum width hides it rather than overlapping the transcript.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a strip of dimmed ticks that stays out of the way, expanding on hover">
 
 ## Install
 
@@ -42,6 +44,8 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

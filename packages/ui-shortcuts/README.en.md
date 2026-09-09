@@ -1,10 +1,12 @@
-# @khorsheed/dsh-ui-shortcuts
+# dsh-ui-shortcuts
 
 English | [中文](README.md)
 
-Keyboard shortcuts for the dsh web GUI: `Esc` pauses the running turn, `Ctrl/Cmd+S` steer-sends the draft, `Ctrl/Cmd+O` starts a new session — every key rebindable in Settings.
+Esc to stop, Cmd+S to steer-send your draft, Cmd+O for a new session — every key rebindable.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="480" alt="keyboard shortcuts card in Settings">
+Want to halt a runaway turn? No hunting for the tiny stop button — Esc does it. A finished draft that shouldn't wait in line goes out with Cmd/Ctrl+S; Cmd/Ctrl+O starts a new session from anywhere. Don't like the defaults? Click a binding in Settings → Plugins → Keyboard shortcuts and record your own. These shortcuts call the same actions the on-screen buttons do — they never send anything extra to the model.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/07-ui-shortcuts.png" width="640" alt="the keyboard-shortcuts card in Settings: pause the current task (Esc), send with priority (Ctrl/Cmd+S), new session (Ctrl/Cmd+O) — click a binding to re-record it">
 
 ## Features
 
@@ -26,6 +28,8 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

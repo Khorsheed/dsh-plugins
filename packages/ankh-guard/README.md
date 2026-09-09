@@ -197,6 +197,8 @@ dsh-ankh-guard restart \
 - 历史验证：npm host 的 0.1.1-rc.2 → 0.1.2-alpha.4 隔离切换已通过（transition preflight 在 home 副本上移开带旧 schema record 的 v3 whole-unit projection cache，live apply 隔离旧文件，target 以零重试完成 Token URL → 303 → Cookie 200、ownership 稳定窗口与 canary；旧文件逐字节保留在 cutover 目录。相同 home 的无 transition 对照因缺少 Alpha.4 record 字段而拒绝，证明验收覆盖了真实 schema 断裂面）。
 - 源码线（deepseek-harness master，fork 或上游）：✅（verifiedHost: 0.1.2-rc.1）——门禁通过独立的 `preflight-runner` 运行（从在线 checkout 解析已发布的 `@deepseek-ai/dsh-app-boot` 等），不再需要 fork 补丁。
 
+**版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.1`）。
+
 ## Known Limitations and Deferred Work
 
 - **闸门在 `restart`/`supervise` 里强制，launcher 里还没有**——两者在拒绝时会拒绝停实例，但绕开 guard 的手动 `kill`/启动仍可绕过；watchdog 是让被绕过的闸门可恢复的自动安全网。

@@ -1,12 +1,12 @@
-# dsh-taskpilot
+# @khorsheed/dsh-taskpilot
 
 English | [中文](README.md)
 
-Two capsule entries above the composer card — "Background jobs" and "Subagents" — for viewing, stopping, interrupting, and opening a job detail drawer.
+See every background job and subagent at a glance above the composer — and stop any of them on the spot.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="480" alt="the sub-agent pill rides above the composer — open it to inspect or interrupt runs">
+Once the agent starts background jobs or fans out a tree of subagents, you used to dig through the header list to follow along. This plugin puts two small capsules above the composer: one lists the current session's background jobs, the other the full subagent lineage, each with live timing and token spend. Stop any of them with one click; for a closer look, open the detail drawer on the right — command, status, and the execution trail are all in there.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="480" alt="background-job pills and the job detail drawer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="the subagent pill rides above the composer — open it to inspect or interrupt runs">
 
 ## Features
 
@@ -15,6 +15,8 @@ Two capsule entries above the composer card — "Background jobs" and "Subagents
 - **Detail drawer** — right-side overlay with command/kind/status/start-end/duration plus an execution trail folded from the session log, collapsed by default. While open on a wide viewport it **pushes the conversation and composer left** by the drawer width so nothing sits underneath it; on narrow viewports (where the remaining chat column would be too cramped) it overlays instead.
 - **Session-scoped visibility** — switching sessions switches data; each capsule renders only when its own data is non-empty.
 - **Zero intrusion** — product extension points only (slots, commands, mirrors, session log); no new RPC, no product files touched.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="background-job pills and the job detail drawer">
 
 ## Install
 
@@ -33,7 +35,9 @@ Restart the host afterwards; re-running add is safe (deduped by package name).
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
-## Known limitations
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
+
+## Known Limitations
 
 - The drawer's **execution trail is model-perspective**: only the `job_output` deltas the model actually read (and that survived log truncation); full raw output (spill files) is not shown.
 - After log compaction, older jobs may show only summaries.

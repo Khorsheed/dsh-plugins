@@ -1,12 +1,12 @@
-# @khorsheed/dsh-client-session-title-edit
+# dsh-client-session-title-edit
 
 English | [中文](README.md)
 
-Rename a session right in the dsh web GUI chat header: click the pencil next to the title and the title itself becomes an inline editor. Enter commits, Escape cancels, over-long drafts are blocked with a localized warning — and the model never sees any of it.
+Rename a session whenever you like: click the little pencil by the title, hit Enter, done.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="480" alt="inline session title editor in the chat header">
+Auto-generated session titles are often off the mark, and finding a session again two days later is pure luck. This plugin puts a pencil next to the title in the chat header: one click and the title becomes an input in place, prefilled and fully selected. Enter saves, Escape cancels, and a draft that's too long gets a warning instead of silent truncation. Renames go through the official `session.rename` RPC, and the title never enters the model context — the model knows nothing about it.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="480" alt="click the pencil and the title becomes an input — Enter saves">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="the pencil button beside the title in the chat header, with a rename-session tooltip on hover">
 
 ## Features
 
@@ -15,6 +15,8 @@ Rename a session right in the dsh web GUI chat header: click the pencil next to 
 - **Auto-fitting input** — the field widens with the draft up to the official 220px cap.
 - **Budget-aware** — drafts past the host's 80-UTF-8-byte title budget are blocked with a warning, never silently truncated.
 - **Zero footprint** — rides the official `session.rename` RPC; the title never enters model context (no token or KV-cache effect).
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="after clicking the pencil the title becomes an input in place — edit and press Enter to save">
 
 ## Install
 
@@ -32,6 +34,8 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

@@ -2,18 +2,20 @@
 
 English | [中文](README.md)
 
-A context-window compaction reminder for the dsh web GUI: once **context occupancy** — the same number the composer's context ring shows — crosses a configured share of the model's context window, a compact button appears in the composer, and clicking it runs the official `/compact` command. Uninstalling removes every surface it adds.
+A "compact now" button that shows up in the composer before your context runs out.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="480" alt="the compact button appears in the composer once context occupancy crosses the configured ratio">
+The longer a conversation runs, the fuller the context gets — and at the far end the provider starts rejecting requests outright. That wall arrives earlier than the 100% the context ring suggests, because every request also reserves room for the output. This plugin's job is simple: once occupancy crosses the ratio you set, an amber button appears in the composer's toolbar, and clicking it is the same as typing `/compact` yourself. It never compacts for you — it just reminds you while you still can.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="480" alt="the trigger ratio is configurable in settings (0.01–1)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="the compact button appears in the composer toolbar once context occupancy crosses the configured ratio">
 
 ## Features
 
-- **Compact button in the composer** — hidden below the threshold, appears in the amber warning tint above it.
+- **Compact button in the composer** — invisible below the threshold, appears automatically above it.
 - **Same number as the context ring** — driven by the official `contextPressure` projection, so button and ring never disagree.
-- **Runs the official `/compact`** — idle-gating, the compaction lock, and presentation stay host-owned.
-- **One live tunable** — the occupancy threshold, editable in Settings → Plugins with no restart.
+- **Runs the official `/compact`** — idle-gating, the compaction lock, and presentation stay host-owned; a click behaves exactly like the typed command.
+- **One live tunable** — the reminder threshold, editable in settings with no restart.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-web-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="the trigger ratio is configurable in settings (0.01–1)">
 
 ## Install
 
@@ -21,7 +23,7 @@ A context-window compaction reminder for the dsh web GUI: once **context occupan
 dsh plugin --profile web add @khorsheed/dsh-context-guard
 ```
 
-Restart the web instance after adding. Uninstall:
+Restart the web instance after adding. Uninstalling removes every surface it adds:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-context-guard
@@ -47,6 +49,8 @@ plugins:
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+
+**Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
 ## Known Limitations
 

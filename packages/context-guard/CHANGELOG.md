@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.2.0（2026-09-10）
+
+适配宿主 0.1.2 线。
+
+- **BREAKING**：minHost 前移至 `0.1.2-rc.1`；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 线（末版 `0.1.0`）
+- 导入面迁移：client bundle 不再引用宿主已删除的 `dsh-client-runtime`（类型改自 `dsh-client-ui-settings` / `dsh-session` 等 0.1.2 导出面），`apply` 签名回到 cordis `Context`
+- 设置注册改用裸命名空间（`settingsNamespace()` 已随宿主移除）
+
 ## 0.1.0（2026-08-22）
 
 首个公开发布。
