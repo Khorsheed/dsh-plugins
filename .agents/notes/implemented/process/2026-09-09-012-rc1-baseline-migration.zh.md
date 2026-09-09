@@ -30,6 +30,7 @@ Status: implemented
 ## Consequences
 
 - 全仓在 rc.1 基线上全绿：2814 测试通过、构建干净、`pnpm install` 退出 0（taskpilot 的 `prepare` 是最后一块红）、`check:plugins`/`check:builds`/`check:hygiene` 全净、233 对翻译配对同步。
-- prod 3080 的宿主翻线走 guard 的 `reconfigure` 路径：0.1.2 无法 tsx 从源码启动（`const enum FiberState` 在构建产物中被擦除），启动命令改为 `node apps/cli/lib/bin.js web --no-open`，preflight surface 从 `source` 改 `built`，检出 reset 到 rc.1 且 build+test 跑绿后重录凭证。会话数据无需动作（两条线都是格式 v0；SQLite 后端移除无关——本 HOME 是 jsonl）。
+- prod 3080 的宿主翻线已经 guard 的 `reconfigure` 路径落地（2026-09-09）：启动命令切到 `node apps/cli/lib/bin.js web --no-open`，preflight surface 从 `source` 改 `built`；target canary PASS、浏览器交接已确认、未触发恢复、rc.1 HEAD 的部署证明已录。注意评估笔记里"0.1.2 无法 tsx 启动"的结论在 rc.1 上**不成立**——restore-previous 拉起的 tsx 实例在 rc.1 检出上正常 boot；built CLI 仍切换完成，因为它是官方可支持的运行面。会话数据无需动作（两条线都是格式 v0；SQLite 后端移除无关——本 HOME 是 jsonl）。
+- **cutover 教训（下次翻线照此办理）**：① reconfigure 的隔离 home 快照会复制整个 `$DSH_HOME`——这次里面有 24GB scratch（23GB `scratch/typert-overlay`，带数千个悬空软链），既弄断复制（悬空链拒绝）又把 prepare+canary 拖过 10 分钟凭证有效期（第一次 cutover 的 target canary 正是栽在凭证过期，`restore-previous` 正确触发）。先瘦身 home 再翻；隔离出的垃圾在 `~/.dsh-scratch-quarantine-typert-overlay-2026-09-09`。② 快照同样拒绝特殊文件——在跑实例的 `local-agent/member-bridge.sock` 途中被解链（下次 boot 会重建）；guard 应学会跳过 socket。③ 检出翻线后 `schedule-exit` 会因绑定的 install-anchor SHA 漂移而拒绝——reconfigure 是唯一通道，凭证窗口因此才要紧。
 - 本波**有意不做**的事：采用任何 0.1.3/0.1.5-alpha 能力（sidebar-right tabs、message-tools 恢复走 surface op、open-in-app）。那些属于预研分支，预研分支生成的 typert 产物永不回并主线。
 - 已知遗留：S10(b) 单文件 zstd 帧损坏拖垮 `session.list` 的上游隐患仍在（隔离修复 playbook 保留）；`composeProfile` 仍未导出（ankh-guard 的 preflight-runner 自镜像与漂移绊线保留）；external-open 恢复 follow-up 在三个包的 `dsh.compat.notes` 里跟踪。
