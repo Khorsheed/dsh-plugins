@@ -4,12 +4,12 @@
 
 | 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | dsh-web-basic 成员 |
 | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | 0.1.1 | 0.1.1 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-ankh-guard` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-capability-catalog` | 未发布 | 0.1.95 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
-| `@khorsheed/dsh-context-guard` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-context-guard` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-datasets` | 未发布 | 0.1.0-rc.1 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-eval` | 未发布 | 0.1.0-rc.1 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
-| `@khorsheed/dsh-file-preview` | 0.1.1 | 0.1.1 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-file-preview` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-inline-html-render` | 未发布 | 0.1.13 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-lab` | 未发布 | 0.1.0-rc.1 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-local-agent` | 未发布 | 0.1.0-rc.6 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
@@ -20,15 +20,15 @@
 | `@khorsheed/dsh-local-agent-kimi` | 未发布 | 0.1.0-rc.6 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-local-agent-tool-subagent` | 未发布 | 0.1.0-rc.6 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-local-files` | 未发布 | 0.1.0-rc.1 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
-| `@khorsheed/dsh-message-timeline` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-client-message-tools` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-message-timeline` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-client-message-tools` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-mission` | 未发布 | 0.1.0-rc.1 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 | `@khorsheed/dsh-room` | 未发布 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
-| `@khorsheed/dsh-client-session-title-edit` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-taskpilot` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-client-ui-file-preview` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-ui-shortcuts` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
-| `@khorsheed/dsh-whalesong` | 0.1.0 | 0.1.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-client-session-title-edit` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-taskpilot` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-client-ui-file-preview` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-ui-shortcuts` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
+| `@khorsheed/dsh-whalesong` | 0.2.0 | 0.2.0 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-worktrees` | 未发布 | 0.1.0-rc.9 | 0.1.2-rc.1 | 0.1.2-rc.1 |  |
 
 - **npm 已发布**：registry 上的最新版本；`未发布` = 第一波/第二波均未含此包
