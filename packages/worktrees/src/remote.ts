@@ -16,8 +16,9 @@ import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
-  LocalImageResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadRepoImageRequest,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
+  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
+  ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
   SessionSummary, WorktreeInfo, WorktreesService,
 } from './service.ts'
 
@@ -144,10 +145,35 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
     return this.worktrees.readFileAtCommit(this.cwd(agent), request.path, request.commit)
   }
 
+  /** List one local directory — the git-agnostic browser's directory plane.
+   * The path is absolute and independent of the session workspace, so the
+   * method takes NO caller lookup parameter (pure JSON args): any session or
+   * the global frame may call it. */
+  @Remote('listLocalDirectory')
+  listLocalDirectory(request: ListLocalDirectoryRequest): Promise<ListLocalDirectoryResult> {
+    return this.worktrees.listLocalDirectory(request.path)
+  }
+
+  /** Read one local file for preview — the git-agnostic browser's content
+   * plane. The path is absolute and independent of the session workspace, so
+   * the method takes NO caller lookup parameter (pure JSON args). */
+  @Remote('readLocalFile')
+  readLocalFile(request: ReadLocalFileRequest): Promise<ReadLocalFileResult> {
+    return this.worktrees.readLocalFile(request.path)
+  }
+
   /** Read a repo-relative file as an inline image (the repo browser's data
    * plane; resolves the session's repository, like the other git data face). */
   @Remote('readRepoImage')
   readRepoImage(agent: Agent, request: ReadRepoImageRequest): Promise<LocalImageResult> {
     return this.worktrees.readRepoImage(this.cwd(agent), request.path)
+  }
+
+  /** Read one local file as an inline image — the git-agnostic browser's image
+   * plane. The path is absolute and independent of the session workspace, so
+   * the method takes NO caller lookup parameter (pure JSON args). */
+  @Remote('readLocalImage')
+  readLocalImage(request: ReadLocalImageRequest): Promise<LocalImageResult> {
+    return this.worktrees.readLocalImage(request.path)
   }
 }

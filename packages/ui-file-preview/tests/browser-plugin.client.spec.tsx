@@ -11,7 +11,8 @@
  */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
 import type { FilePreviewDrawerInjected, FilePreviewViewInjected } from '../src/client/contract.ts'
@@ -20,7 +21,7 @@ import { apply, inject } from '../src/client/index.ts'
 const sid = (k: string): SessionId => k as SessionId
 
 /** Boot the plugin over fake faces; the filePreview Remote records calls. */
-async function bench(opts: { current?: SessionId | undefined } = {}) {
+async function bench(opts: { current?: SessionId | undefined; connectionSeat?: 'rc' | 'alpha' } = {}) {
   const current = 'current' in opts ? opts.current : sid('s1')
   const ctx = new Context()
   const calls: { method: string; args: unknown[] }[] = []
@@ -58,10 +59,17 @@ async function bench(opts: { current?: SessionId | undefined } = {}) {
   })
   const openPath = vi.fn(async () => {})
   ctx.provide('workspaces', { openPath })
-  ctx.provide('connection', {
-    isLoopback: true,
-    hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
-  })
+  ctx.provide('connection', opts.connectionSeat === 'alpha'
+    // 0.1.2 folded the host facts into the generation's opening frame
+    // (Connection.hostDescription removed, upstream e14d354e83).
+    ? {
+      isLoopback: true,
+      generation: { getSnapshot: () => ({ host: { home: '/h' } }), subscribe: () => () => {} },
+    }
+    : {
+      isLoopback: true,
+      hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
+    })
   ctx.provide('locale', new LocaleRuntime(ctx))
   await ctx.plugin(SlotRegistry).await()
   // Declare the target slots (normally declared by ui-conversation / ui-layout).
@@ -130,6 +138,15 @@ describe('ui-file-preview browser plugin', () => {
     const drawerEntry = b.ctx.slots.entries('shell.overlay')[0]
     expect(drawerEntry?.options).toMatchObject({ id: 'file-preview-drawer', order: 110 })
     expect(drawerEntry?.inject).toBeTypeOf('function')
+  })
+
+  it('derives the host-facts hook from the connection generation on hosts without hostDescription (0.1.2)', async () => {
+    const b = await bench({ connectionSeat: 'alpha' })
+    const { injected } = viewApi(b)
+    expect(injected?.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
+    const drawer = drawerApi(b)
+    expect(drawer.injected?.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
+    await b.fiber.dispose()
   })
 
   it('routes view callbacks through the generated filePreview Remote', async () => {

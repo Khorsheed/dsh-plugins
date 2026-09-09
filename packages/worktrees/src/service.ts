@@ -10,7 +10,7 @@
  *
  * @module @khorsheed/dsh-worktrees
  */
-import { readFile, realpath } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import {
   entryAt, git, gitAllowFailure, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
@@ -158,6 +158,54 @@ export interface ReadRepoImageRequest {
   path: string
 }
 
+/** Read an absolute local file as an inline image (the local-browser data plane). */
+export interface ReadLocalImageRequest {
+  path: string
+}
+
+/** Local-directory listing request (absolute path, git-agnostic). */
+export interface ListLocalDirectoryRequest {
+  /** Absolute local directory path to list. */
+  path: string
+}
+
+/** One entry in a local directory listing. */
+export interface LocalFileEntry {
+  /** Entry name (basename; '' only for the synthetic root). */
+  name: string
+  /** Whether this entry is a directory (vs a file). */
+  isDir: boolean
+  /** File size in bytes (null for directories / unreadable). */
+  size: number | null
+  /** Modified time as epoch seconds (null when unreadable). */
+  mtime: number | null
+}
+
+/** A local directory listing (git-agnostic file-system view). */
+export interface ListLocalDirectoryResult {
+  /** The requested path, canonicalized (symlink-resolved). */
+  path: string
+  /** The parent directory path ('' at the filesystem root). */
+  parent: string
+  /** Directory entries, directories first then files, both alpha-sorted. */
+  entries: readonly LocalFileEntry[]
+}
+
+/** Local file content read request (absolute path, git-agnostic). */
+export interface ReadLocalFileRequest {
+  /** Absolute local file path to preview. */
+  path: string
+}
+
+/** Local file preview read result. */
+export interface ReadLocalFileResult {
+  /** UTF-8 content, or null when the file is binary / not text-decodable. */
+  content: string | null
+  /** Whether the full file was read (false when truncated at the cap). */
+  complete: boolean
+  /** File size in bytes. */
+  size: number
+}
 
 /** Thrown for client-supplied paths that escape the repository. */
 export class UnsafePathError extends Error {
@@ -183,6 +231,30 @@ export function assertSafePath(path: string): string {
   return segments.join('/')
 }
 
+/** Thrown for client-supplied local paths that fail the absolute-path rules. */
+export class UnsafeLocalPathError extends Error {
+  constructor(path: string) {
+    super(`worktrees: invalid local path: ${path}`)
+    this.name = 'UnsafeLocalPathError'
+  }
+}
+
+/**
+ * Validate a client-supplied local path for the git-agnostic browser: must be
+ * absolute, and must not traverse upward (`..`) after normalization. The check
+ * is lexical — the browser surface is the user's own machine (file-preview
+ * trust model), so the guard exists to reject malformed/traversal shapes, not
+ * to jail browsing to a subtree.
+ * @param path - the candidate absolute path.
+ * @returns the normalized absolute path.
+ * @throws {UnsafeLocalPathError} when the path escapes the absolute rule.
+ */
+export function assertSafeLocalPath(path: string): string {
+  if (path === '' || !isAbsolute(path)) throw new UnsafeLocalPathError(path)
+  const segments = path.split(sep).filter(segment => segment !== '' && segment !== '.')
+  if (segments.some(segment => segment === '..')) throw new UnsafeLocalPathError(path)
+  return `${sep}${segments.join(sep)}`
+}
 
 /**
  * The worktrees service. One instance per plugin mount; holds only the
@@ -503,6 +575,89 @@ export class WorktreesService {
    * @param path - absolute local directory path.
    * @returns the canonical path, its parent, and the sorted entries.
    */
+  async listLocalDirectory(path: string): Promise<ListLocalDirectoryResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => safe)
+    const info = await stat(canonical).catch(() => null)
+    if (info === null || !info.isDirectory()) {
+      throw new Error(`worktrees: not a directory: ${path}`)
+    }
+    const names = await readdir(canonical)
+    const entries: LocalFileEntry[] = []
+    for (const name of names) {
+      const full = join(canonical, name)
+      const entryStat = await stat(full).catch(() => null)
+      if (entryStat === null) {
+        entries.push({ name, isDir: false, size: null, mtime: null })
+        continue
+      }
+      entries.push({
+        name,
+        isDir: entryStat.isDirectory(),
+        size: entryStat.isDirectory() ? null : entryStat.size,
+        mtime: Math.floor(entryStat.mtimeMs / 1000),
+      })
+    }
+    entries.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name, 'en'))
+    return { path: canonical, parent: dirname(canonical), entries }
+  }
+
+  /** Fraction of NUL/control bytes above which a preview is treated as binary. */
+  private static readonly BINARY_THRESHOLD = 0.02
+
+  /**
+   * Read one local file for preview — the git-agnostic browser's content
+   * plane. Reads at most {@link MAX_CONTENT_BYTES}; reports `complete: false`
+   * when the file is larger. Binary detection: if the decoded text's
+   * NUL/control-byte ratio exceeds the threshold, content is null and the
+   * client shows a non-text placeholder.
+   * @param path - absolute local file path.
+   * @returns the preview content (or null for binary) plus size/completeness.
+   */
+  async readLocalFile(path: string): Promise<ReadLocalFileResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => safe)
+    const info = await stat(canonical).catch(() => null)
+    if (info === null || info.isDirectory()) {
+      throw new Error(`worktrees: not a file: ${path}`)
+    }
+    const handle = await readFile(canonical)
+    const complete = handle.byteLength <= MAX_CONTENT_BYTES
+    const buffer = handle.subarray(0, MAX_CONTENT_BYTES)
+    const text = buffer.toString('utf8')
+    let controls = 0
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i)
+      if (code === 0 || (code < 9) || (code > 13 && code < 32)) controls++
+    }
+    const binary = text.length > 0 && controls / text.length > WorktreesService.BINARY_THRESHOLD
+    return { content: binary ? null : text, complete, size: info.size }
+  }
+
+  /**
+   * Read one local file as an inline image — the git-agnostic browser's image
+   * plane. Reads the bytes and encodes them as a base64 data URL so the client
+   * can render the image directly. The path is absolute and independent of any
+   * session workspace; callers gate by {@link isImagePath}.
+   * @param path - absolute local file path.
+   * @returns a base64 data URL plus the content type.
+   */
+  async readLocalImage(path: string): Promise<LocalImageResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => safe)
+    const info = await stat(canonical).catch(() => null)
+    if (info === null || info.isDirectory()) {
+      throw new Error(`worktrees: not a file: ${path}`)
+    }
+    const buffer = await readFile(canonical)
+    if (buffer.byteLength > MAX_CONTENT_BYTES) {
+      throw new Error(`worktrees: file exceeds ${MAX_CONTENT_BYTES} bytes — preview truncated`)
+    }
+    const mime = imageMimeOf(path) ?? 'application/octet-stream'
+    return { dataUrl: `data:${mime};base64,${Buffer.from(buffer).toString('base64')}`, mime }
+  }
+
+  /** Uncommitted changed-file count in one worktree (0 when clean/transient). */
   private async dirtyOf(path: string): Promise<number> {
     try {
       const out = await git(path, ['status', '--porcelain'])

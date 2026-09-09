@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { PANEL_WIDTH_MIN } from './config.ts'
+import { chatHookOf } from './chat-hook.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import { foldHiddenSpans, isSeqHidden } from './hidden-spans.ts'
@@ -44,13 +45,18 @@ const DEGRADED_WIDTH_RATIO = 0.4
  * @returns nothing visible in the seat; the floating panel while the chat view shows.
  */
 export function TimelineRail({
-  useSession, sessionId,
+  sessionId,
   includeSteering, panelWidth, initialPages,
   loadOlder, jumpTo, useRail, t,
+  ...standard
 }: TimelineRailProps) {
   const rail = useRail(s => s)
-  const order = useSession(s => s.chat.order)
-  const nodes = useSession(s => s.chat.nodes)
+  // Chat data moved out of the session snapshot into the `useChat` standard
+  // prop on host 0.1.2; the helper picks whichever seat this host provides.
+  const useChatSlice = chatHookOf(standard as { useSession: TimelineRailProps['useSession'] })
+  const useSession = standard.useSession
+  const order = useChatSlice(c => c.order)
+  const nodes = useChatSlice(c => c.nodes)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
 

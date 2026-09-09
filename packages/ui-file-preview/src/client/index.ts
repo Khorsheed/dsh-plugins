@@ -16,8 +16,8 @@
  * Composing this plugin out of cordis.yml removes every surface it adds.
  */
 import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -55,6 +55,40 @@ export { FilePreviewDrawer, FilePreviewView, FilePreviewController }
  * isolation scope. */
 export const inject = ['slots', 'sessions', 'workspaces', 'connection', 'remote', 'locale']
 
+/** Static absence: no host-facts source on an unrecognized line (never reached on rc or 0.1.2). */
+const ABSENT_HOST_DESCRIPTION: HostDescriptionSource = {
+  getSnapshot: () => undefined,
+  subscribe: () => () => {},
+}
+
+/**
+ * Host-facts source for the view/drawer hooks, probed per host line: rc
+ * hosts expose `Connection.hostDescription` directly; 0.1.2 folded the facts
+ * into the connection generation's opening frame (upstream e14d354e83), so
+ * the source is derived from `connection.generation` there. The derived
+ * snapshot carries `home` but no `canOpenPath` (that capability became an
+ * RPC probe), which reads as unavailable and hides the "show in folder" /
+ * "open in IDE" buttons — the intended degrade on 0.1.2.
+ * @param connection - the connection service handle.
+ * @returns an observable HostDescription source on either host line.
+ */
+function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionSource {
+  const probe = connection as unknown as {
+    hostDescription?: HostDescriptionSource
+    generation?: {
+      getSnapshot(): { readonly host: unknown } | undefined
+      subscribe(listener: () => void): () => void
+    }
+  }
+  if (probe.hostDescription !== undefined) return probe.hostDescription
+  const generation = probe.generation
+  if (generation === undefined) return ABSENT_HOST_DESCRIPTION
+  return {
+    getSnapshot: () => generation.getSnapshot()?.host,
+    subscribe: listener => generation.subscribe(listener),
+  } as HostDescriptionSource
+}
+
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the panel
  * controller, the file view tab, the per-turn file row, and the drawer.
@@ -87,7 +121,17 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     return snapshot.current === undefined ? undefined : snapshot.byId[snapshot.current]?.cwd
   }
   const openOnHost = (sessionId: SessionId | undefined, path: string): void => {
-    void ctx.workspaces.openPath(resolveWorkspacePath(sessionCwd(sessionId), path)).catch(() => {
+    // rc hosts expose workspaces.openPath; 0.1.2 moved path opens to the
+    // session Remote namespace (remote.session.openWorkspacePath) — probe
+    // both, degrade to a no-op when neither exists.
+    const legacy = (ctx.workspaces as unknown as { openPath?: (path: string) => Promise<unknown> }).openPath
+    const opened = legacy !== undefined
+      ? legacy.call(ctx.workspaces, resolveWorkspacePath(sessionCwd(sessionId), path))
+      : ((ctx.remote as unknown as {
+        session?: { openWorkspacePath(request: { path: string }): Promise<unknown> }
+      }).session?.openWorkspacePath({ path: resolveWorkspacePath(sessionCwd(sessionId), path) })
+        ?? Promise.resolve(false))
+    void Promise.resolve(opened).catch(() => {
       // Host/OS open failures stay silent in the drawer; the native app
       // surfaces its own error dialog when the path is unusable.
     })
@@ -135,7 +179,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         listFiles: (sid: SessionId) => remote.list(sid),
         readFile: (sid: SessionId, path: string) => remote.read(sid, path),
         isLoopback: connection.isLoopback,
-        hooks: { hostDescription: connection.hostDescription },
+        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
         openExternal: (path) => { openOnHost(sessionId, path) },
         revealFolder: (path) => { revealFolder(sessionId, path) },
         copyPath: (path) => copyPathFor(sessionId, path),
@@ -179,7 +223,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         listFiles: (sid: SessionId) => remote.list(sid),
         readFile: (sid: SessionId, path: string) => remote.read(sid, path),
         isLoopback: connection.isLoopback,
-        hooks: { hostDescription: connection.hostDescription },
+        hooks: { hostDescription: hostDescriptionSourceOf(connection) },
         openExternal: (path) => { openOnHost(undefined, path) },
         revealFolder: (path) => { revealFolder(undefined, path) },
         copyPath: (path) => copyPathFor(undefined, path),

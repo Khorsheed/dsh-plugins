@@ -17,35 +17,40 @@ import {
   collectWithdrawnEntries, countHiddenInSpan, foldHiddenRanges, hasRestoreForSpan, isRestoreSuperseded,
   type WithdrawnEntry,
 } from './withdrawn-node.ts'
+import { chatHookOf } from './chat-hook.ts'
 import type { WithdrawnDividerViewProps } from './slots.ts'
 import css from './WithdrawnDividerView.module.css'
 
 /** The withdrawal divider: collapsed marker row plus the expandable replay. */
 export function WithdrawnDividerView({
-  node, t, useSession, restoreMessage,
+  node, t, restoreMessage,
+  ...standard
 }: WithdrawnDividerViewProps): ReactNode {
   const data = node.data
   const [expanded, setExpanded] = useState(false)
   const [entries, setEntries] = useState<readonly WithdrawnEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  // Chat data moved out of the session snapshot into the `useChat` standard
+  // prop on host 0.1.2; the helper picks whichever seat this host provides.
+  const useChatSlice = chatHookOf(standard as Pick<WithdrawnDividerViewProps, 'useSession'>)
   // The node store is a stable live reader: the count/badge selectors read
   // through it, and the expand click folds the replay from the live snapshot
   // (event handlers may read live snapshots; render code subscribes).
-  const nodesStore = useSession(snapshot => snapshot.chat.nodes)
-  const count = useSession(snapshot => countHiddenInSpan(
-    snapshot.chat.nodes.values(), data.hiddenStartSeq, data.seq,
+  const nodesStore = useChatSlice(chat => chat.nodes)
+  const count = useChatSlice(chat => countHiddenInSpan(
+    chat.nodes.values(), data.hiddenStartSeq, data.seq,
   ))
   // The badge tracks a LIVE restore row: withdrawing the restored rows again
   // clears it. A superseded divider still shows its historical marker, but its
   // restore action is disabled because the later re-withdrawal divider is now
   // the active restore point for the same logical content.
-  const restored = useSession((snapshot) => {
-    const nodes = snapshot.chat.nodes.values()
+  const restored = useChatSlice((chat) => {
+    const nodes = chat.nodes.values()
     return hasRestoreForSpan(nodes, data.hiddenStartSeq, foldHiddenRanges(nodes))
   })
-  const superseded = useSession((snapshot) => {
-    const nodes = snapshot.chat.nodes.values()
+  const superseded = useChatSlice((chat) => {
+    const nodes = chat.nodes.values()
     return isRestoreSuperseded(nodes, data.hiddenStartSeq, foldHiddenRanges(nodes))
   })
 

@@ -7,9 +7,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import {
-  createSnapshotStore,
-  type ChatConversationViewNode, type ConversationSnapshot,
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {
+  ChatConversationViewNode, ConversationSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { en } from '../src/client/locales.ts'
 import { TimelineRail } from '../src/client/TimelineRail.tsx'
@@ -285,6 +285,22 @@ describe('the flat timeline panel', () => {
     expect(items()).toHaveLength(2)
     expect(panel().textContent).toContain('你好')
     expect(panel().textContent).toContain('谢谢')
+  })
+
+  it('reads chat data from the useChat prop when the session snapshot has no chat slice (host 0.1.2)', () => {
+    // alpha split the chat snapshot out of the session snapshot: the entry
+    // gets useChat (top-level order/nodes) and a chat-less useSession.
+    const chatless = sessionSnapshot() as unknown as Record<string, unknown>
+    delete chatless['chat']
+    renderRail({
+      useSession: bindSnapshotSelector(createSnapshotStore(chatless)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['k1', 'k2', 'k3'],
+        nodes: { get: (key: string) => NODES[key] },
+      })),
+    } as Partial<TimelineRailProps>)
+    expect(items()).toHaveLength(3)
+    expect(panel().textContent).toContain('你好')
   })
 
   it('drops steering rows when includeSteering is off', () => {

@@ -1,7 +1,7 @@
 /** Conversation view tab: the session's touched files (list) with inline preview. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   IconCheckOutline16, IconCodeOutline16, IconCopyOutline16, IconFolderOpenOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'

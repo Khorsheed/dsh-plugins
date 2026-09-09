@@ -1,24 +1,32 @@
 /**
  * The worktrees panel controller: the cross-plugin face the session-scoped
- * badge entry calls to open the root-scoped drawer. The drawer's store actions
- * are attached by its shell.overlay entry's inject; a gesture that lands before
- * the surface ever mounted is a no-op (the surface opens on the next real open).
+ * badge entries call to open the root-scoped drawer or the local-files
+ * browser. The surfaces' store actions are attached by their shell.overlay
+ * entries' inject; a gesture that lands before the surface ever mounted is a
+ * no-op (the surface opens on the next real open).
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { createLocalFilesStore } from './store-local.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
 /** The drawer store's bound action set (framework-baked, draft params peeled). */
 export type WorktreesActions = BoundActions<ReturnType<typeof createWorktreesStore>>
 
+/** The local-files browser store's bound action set. */
+export type LocalFilesActions = BoundActions<ReturnType<typeof createLocalFilesStore>>
+
 /** The outward worktrees panel face. */
 export interface IWorktreesPanel {
   /** Open the drawer in one mode (no-op when already open). */
   open(mode: DrawerMode): void
+  /** Open the local-files browser from a starting directory for one session. */
+  openLocalFiles(sessionId: string, start: string): void
 }
 
 /** Cross-plugin panel-action face (ctx.worktreesPanel). */
 export class WorktreesController implements IWorktreesPanel {
   #drawer: WorktreesActions | undefined
+  #localFiles: LocalFilesActions | undefined
   #version = 0
   #listeners = new Set<() => void>()
 
@@ -30,6 +38,15 @@ export class WorktreesController implements IWorktreesPanel {
    */
   attachDrawer(actions: WorktreesActions): void {
     this.#drawer = actions
+  }
+
+  /**
+   * Adopt the local-files browser's store actions. Called from that entry's
+   * inject, same assembly contract as {@link attachDrawer}.
+   * @param actions - bound actions of the local-files store instance.
+   */
+  attachLocalFiles(actions: LocalFilesActions): void {
+    this.#localFiles = actions
   }
 
   /** Open the drawer in one mode. */
@@ -52,5 +69,10 @@ export class WorktreesController implements IWorktreesPanel {
   bumpVersion(): void {
     this.#version += 1
     for (const listener of this.#listeners) listener()
+  }
+
+  /** Open the local-files browser from a starting directory for one session. */
+  openLocalFiles(sessionId: string, start: string): void {
+    this.#localFiles?.open(sessionId, start)
   }
 }

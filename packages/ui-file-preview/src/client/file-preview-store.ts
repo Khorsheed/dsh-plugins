@@ -7,7 +7,8 @@
  * derives its PropsStore share from the return type, and the panel controller
  * receives the bound actions through the registration's inject hook.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { FilePreviewEntry, FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 
 /** The view's state; fetched results are whole values, null until loaded. */

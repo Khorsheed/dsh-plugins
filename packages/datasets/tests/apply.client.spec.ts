@@ -2,7 +2,7 @@
 /** The browser half's apply: Remote mount, the conversation.view entry, the injected face, teardown. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { DatasetsViewInjected } from '../src/client/contract.ts'
@@ -20,7 +20,7 @@ function remoteStub() {
 }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub remotes. */
-async function bench(options: { mountFails?: boolean } = {}) {
+async function bench(options: { mountFails?: boolean; connectionSeat?: 'rc' | 'alpha' } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -34,10 +34,17 @@ async function bench(options: { mountFails?: boolean } = {}) {
   ctx.provide('remote.datasets', remote as never)
   const workspaces = { pickDirectory: vi.fn(async () => '/picked') }
   ctx.provide('workspaces', workspaces as never)
-  ctx.provide('connection', {
-    isLoopback: true,
-    hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
-  } as never)
+  ctx.provide('connection', options.connectionSeat === 'alpha'
+    // 0.1.2 folded the host facts into the generation's opening frame
+    // (Connection.hostDescription removed, upstream e14d354e83).
+    ? {
+      isLoopback: true,
+      generation: { getSnapshot: () => ({ host: { home: '/h' } }), subscribe: () => () => {} },
+    } as never
+    : {
+      isLoopback: true,
+      hostDescription: { getSnapshot: () => ({ canOpenPath: true }), subscribe: () => () => {} },
+    } as never)
   const slots = ctx.get('slots') as SlotRegistry
   // The view ring as ui-conversation declares it in production.
   slots.register({
@@ -106,6 +113,14 @@ describe('datasets client apply', () => {
     expect(face.hooks.hostDescription.getSnapshot()).toEqual({ canOpenPath: true })
     await expect(face.pickDirectory()).resolves.toBe('/picked')
     expect(workspaces.pickDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it('derives the host-facts hook from the connection generation on hosts without hostDescription (0.1.2)', async () => {
+    const { ctx, slots } = await bench({ connectionSeat: 'alpha' })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.view')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => DatasetsViewInjected)('s1')
+    expect(face.hooks.hostDescription.getSnapshot()).toEqual({ home: '/h' })
   })
 
   it('collapses the view entry on teardown', async () => {

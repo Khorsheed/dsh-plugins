@@ -7,7 +7,8 @@
  * the framework instantiates per entry) and the view derives its PropsStore
  * share from the return type.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { DatasetBinding, DatasetSummary, ItemRecord, ListItemsResult, ReadResult } from '../types.ts'
 
 /** One selected file: a layer file, or a passthrough-zone file (either readable). */

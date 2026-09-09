@@ -31,13 +31,13 @@ async function bench(over: BenchOptions = {}) {
   const startSession = vi.fn()
   const workspaces = runtime.ctx.get('workspaces') as { startSession: () => void } | undefined
   if (workspaces !== undefined) workspaces.startSession = startSession
-  runtime.provide('conversation', {
+  runtime.ctx.provide('conversation', {
     input: { for: () => ({ submit }) },
     cancel,
   } as never)
-  runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
-  runtime.provide('locale', locale)
+  runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   // The Plugins section declares the keyed card slot in production; the test
   // root declares it here so the registration lands.

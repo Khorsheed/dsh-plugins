@@ -18,7 +18,9 @@
  * session only: flow keys are session-scoped (seq-like ids collide across
  * sessions), and only one chat view is mounted at a time.
  */
-import type { ChatConversationViewNode, ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode, ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import { chatSourceOf, type ChatSlice } from './chat-hook.ts'
 import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
 
@@ -113,11 +115,11 @@ export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {
   let retrying = false
   let retryObserver: MutationObserver | undefined
   let retryTimer: ReturnType<typeof setTimeout> | undefined
-  let latest: ConversationSnapshot | undefined
+  let latest: ChatSlice | undefined
 
-  const applyRules = (snapshot: ConversationSnapshot): void => {
-    latest = snapshot
-    const nodes = snapshot.chat.nodes.values()
+  const applyRules = (chat: ChatSlice): void => {
+    latest = chat
+    const nodes = chat.nodes.values()
     const ranges = foldHiddenRanges(nodes)
     const nextSignature = `${ranges.join(',')}:${nodes.length}`
     if (nextSignature === signature) return
@@ -181,16 +183,16 @@ export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {
     retryTimer = setTimeout(() => { if (probeFound()) passProbe(); else failProbe() }, probeRetryWindowMs)
   }
 
-  const onSnapshot = (snapshot: ConversationSnapshot): void => {
-    latest = snapshot
+  const onSnapshot = (chat: ChatSlice): void => {
+    latest = chat
     if (disabled) return
     if (probed) {
-      applyRules(snapshot)
+      applyRules(chat)
       return
     }
     // Probe on the first non-empty rule set, one frame out so React has
     // committed the rows the rules target.
-    if (hiddenFlowKeys(snapshot.chat.nodes.values()).length === 0) return
+    if (hiddenFlowKeys(chat.nodes.values()).length === 0) return
     if (probeScheduled || retrying) return
     probeScheduled = true
     nextFrame(() => {
@@ -212,18 +214,27 @@ export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {
     signature = ''
     style.textContent = ''
     if (current === undefined) return
-    const binding = ctx.sessions.binding(current)
-    if (binding === undefined) return
-    onSnapshot(binding.session.getSnapshot())
-    stopSession = binding.session.subscribe(() => { onSnapshot(binding.session.getSnapshot()) })
+    // Chat data lives inside the Session snapshot on rc hosts and in the
+    // uiConversation binding's chat target on 0.1.2 — chatSourceOf picks.
+    const source = chatSourceOf(ctx, current)
+    if (source === undefined) return
+    onSnapshot(source.getSnapshot())
+    stopSession = source.subscribe(() => { onSnapshot(source.getSnapshot()) })
   }
 
   const stopList = ctx.sessions.list.subscribe(bindCurrent)
-  const stopProvide = ctx.sessions.currentProvideInfo.subscribe(bindCurrent)
+  // Host 0.1.2-alpha.1 removed ISessions.currentProvideInfo (commit
+  // be531688f3, with the runtime package). It was only an extra rebind
+  // trigger here — bindCurrent re-resolves the session binding on every
+  // list snapshot, and alpha's binding() is pure addressing available as
+  // soon as the session is listed — so subscribe when the feed exists
+  // (rc hosts) and go without it when it does not.
+  const provideFeed = (ctx.sessions as { currentProvideInfo?: HostObservable<unknown> }).currentProvideInfo
+  const stopProvide = provideFeed?.subscribe(bindCurrent)
   bindCurrent()
   return () => {
     stopList()
-    stopProvide()
+    stopProvide?.()
     stopSession?.()
     stopRetry()
     style.remove()

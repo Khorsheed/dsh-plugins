@@ -29,8 +29,18 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
  * with no runtime identity to share (no Symbol/instanceof/singleton state).
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
+ *
+ * dsh-client-store (the snapshot-store engine) and dsh-util-workspace-path
+ * inline by deliberate exception: hosts ≤0.1.1 answer the engine through the
+ * removed dsh-client-runtime row, hosts ≥0.1.2-alpha.1 seed dsh-client-store —
+ * inlining a private copy is the one artifact shape that boots on both lines.
+ * Safety premise (verified against the 0.1.2-alpha.1 sources): store handles
+ * cross the plugin/host boundary only as structural objects (create/subscribe/
+ * getSnapshot; ui-renderer's bindSnapshotSelector is the single uSES bridge),
+ * never through instanceof/brand identity, so a per-bundle engine copy is
+ * behavior-identical to the shared one.
  */
-export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
+export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand|client-store|util-workspace-path)(\/|$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -49,20 +59,8 @@ const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
  */
 const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 
-/**
- * Documented TEMPORARY exemption, not a platform module (hence not in
- * platform.ts): the snapshot-store engine (createSnapshotStore/defineStore/
- * shallowEqual) lives in runtime pending its promotion-time rehoming, and
- * five importers (locale, ui-layout, ui-conversation ×3) ride this single
- * exemption. At runtime the lazy CJS table answers the require natively:
- * runtime is an immediately-tier row, its factory is registered before any
- * dependent bundle materializes. TODO(webload/store-rehome): remove with the
- * store-engine relocation follow-up.
- */
-const RUNTIME_STORE_EXEMPTION = '@deepseek-ai/dsh-client-runtime/client'
-
-/** Externals resolved from the loader module table: the platform seed entries plus the documented runtime exemption. */
-export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME_STORE_EXEMPTION]
+/** Externals resolved from the loader module table: exactly the platform seed entries. */
+export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES]
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 

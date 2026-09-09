@@ -1,12 +1,15 @@
 /**
  * TaskPilot browser half: the dock pills and the job detail drawer.
  *
- * Two registrations share one drawer store (the dock opens, the drawer
  * renders). Data flows entirely through product channels — the `useSessions`
- * mirrors for live jobs/subagents, `session.history` via the connection API
- * for the trail, and `remote.commands.execute` for the two verbs — so the
- * bundle adds no RPC surface and touches no product code. Uninstalling the
- * bundle removes both registrations with their effects.
+ * mirrors for live jobs/subagents, a capability-probed history loader for the
+ * trail (./history-loader.ts: alpha's generated `remote.session.follow`/`page`
+ * when mounted — read via `ctx.get('remote.session')` since the namespace is
+ * absent on rc.2 and must not sit in the inject list — rc.2's
+ * `connection.api.sessions.history` otherwise), and `remote.commands.execute`
+ * for the two verbs — so the bundle adds no RPC surface and touches no
+ * product code. Uninstalling the bundle removes both registrations with their
+ * effects.
  *
  * @module dsh-taskpilot/client
  */
@@ -22,13 +25,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-commands/remote'
-import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 import { en, NS, zh, type TaskPilotLocaleKey } from './locales.ts'
 import { createDrawerStore, type DrawerActions } from './drawer-store.ts'
 import { TaskPilotDock, type TaskPilotDockInjected } from './TaskPilotDock.tsx'
-import { JobDrawer, type JobDrawerInjected, type HistoryPage } from './JobDrawer.tsx'
+import { JobDrawer, type JobDrawerInjected } from './JobDrawer.tsx'
+import { createHistoryLoader } from './history-loader.ts'
 import { pollActiveDelegations } from './active-delegations.ts'
 import { renderTaskPilotCommand } from '../types.ts'
 
@@ -48,7 +52,13 @@ export function apply(ctx: Context): void {
 
   // One handle shared by the dock (opens) and the drawer (renders).
   const drawer = createDrawerStore()
-  const connection = ctx.get('connection') as ConnectionHandle
+
+  // Capability-probed at apply time: alpha's session remote namespace when
+  // mounted, rc.2's connection api otherwise (see ./history-loader.ts). The
+  // namespace comes through ctx.get, not the ctx.remote proxy: declaring
+  // 'remote.session' in inject would pend the plugin on rc.2, and the proxy
+  // throws on undeclared sub-service access.
+  const loadHistory = createHistoryLoader(ctx.get('remote.session'), ctx.get('connection'))
 
   // The drawer owns the store under the root-scope slot (one handle, one
   // scope). Its registered actions are captured into the apply closure; the
@@ -89,17 +99,7 @@ export function apply(ctx: Context): void {
     inject: (actions): JobDrawerInjected => {
       drawerActions = actions
       return {
-        loadHistory: async (
-          sessionId: SessionId,
-          beforeSeq: number | undefined,
-          maxMessages: number,
-        ): Promise<HistoryPage | undefined> => {
-          const payload = beforeSeq === undefined
-            ? { sessionId, maxMessages }
-            : { sessionId, beforeSeq, maxMessages }
-          const response = await connection.api.sessions.history(payload)
-          return response.result.ok ? response.result.value : undefined
-        },
+        loadHistory,
         close: () => { actions.close() },
       }
     },

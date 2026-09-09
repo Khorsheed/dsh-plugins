@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   activeRowKey, flowLeftX, installRailTracker, jumpRow, measureGeometry,
 } from '../src/client/rail-tracker.ts'
@@ -412,6 +412,43 @@ describe('installRailTracker', () => {
   it('jumpTo is a no-op while no scrollport is bound', () => {
     const tracker = installRailTracker(fakeCtx(undefined) as unknown as ClientContext, true)
     expect(() => { tracker.jumpTo('k1') }).not.toThrow()
+    tracker.dispose()
+  })
+
+  it('binds without the currentProvideInfo feed (host 0.1.2-alpha.1 removed it)', async () => {
+    document.body.innerHTML = '<div data-conversation-scroll=""><div data-chat-flow=""><div data-chat-anchor-key="u1" data-chat-flow-kind="user"></div></div></div>'
+    const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
+    const sessions: Partial<ReturnType<typeof fakeSessions>> = fakeSessions('s1')
+    delete sessions.currentProvideInfo
+
+    const tracker = installRailTracker({ sessions } as unknown as ClientContext, true)
+    await frame()
+
+    expect(tracker.state.getSnapshot()).toMatchObject({ sessionId: 's1', ready: true, left: 16 })
+    tracker.dispose()
+  })
+
+  it('re-binds when the host remounts the scrollport under a stable session', async () => {
+    document.body.innerHTML = '<div data-conversation-scroll=""></div>'
+    const first = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    rect(first, { top: 20, left: 10, width: 400, height: 300 })
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    await frame()
+    expect(tracker.state.getSnapshot().left).toBe(16)
+
+    // The conversation view remounts: the scrollport node is replaced. The
+    // body MutationObserver cadence re-resolves it on the next frame.
+    first.remove()
+    const second = document.createElement('div')
+    second.setAttribute('data-conversation-scroll', '')
+    document.body.appendChild(second)
+    rect(second, { top: 20, left: 40, width: 400, height: 300 })
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    await frame()
+    await frame()
+
+    expect(tracker.state.getSnapshot().left).toBe(46)
     tracker.dispose()
   })
 

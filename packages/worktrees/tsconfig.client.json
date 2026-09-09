@@ -28,11 +28,14 @@
     "src/client/Drawer.tsx",
     "src/client/FileTree.tsx",
     "src/client/index.ts",
+    "src/client/LocalFilesDrawer.tsx",
     "src/client/language.ts",
+    "src/client/local-root.ts",
     "src/client/structured.tsx",
     "src/client/locales.ts",
     "src/client/Overview.tsx",
     "src/client/panel-service.ts",
+    "src/client/store-local.ts",
     "src/client/store.ts"
   ]
 }
