@@ -278,7 +278,7 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T29 | 代码 | local-agent：每次委派可覆盖 scoped home / 配置 | T3 | |
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
 | T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型；前置：dsh-local-agent-dsh-headless 开一条按次传模型的启动路，dsh 才能拿到 model 键 | T29 T30a | |
-| T30c | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | |
+| T30c ✅ | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | 合入 main `fc5141d`（2026-09-10）；四家都在已走过的折叠分支里数，byName 记各家自己的名字（codex 是 command_execution 不是卡片上的 Bash）；kimi / dsh 按本轮不按镜像窗口；usage.jsonl 每轮一行，多 `attempt` 与 `counted` 两列，效率表从 counted:true 加总复现；未报计数打「—」不补零；codex 的 function_call 未数（0.144.0 的 exec 流里 provider 本就不解析它）；只有 exec 路径报 settle 观测 |
 | T29b | 代码 | eval + profile：`/eval run` 脱离会话轮次（后台 job，发起端断开不中止，CI 无浏览器也能发起）；plan 路径展开 `~`；install.sh 的 dsh 前置检查前移 | 无 | |
 | T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选）；一并定冻结决策 9 与「四家同一题」的互斥怎么解（第五个模型，或判官与选手同家不同模型） | T29 T30b | |
 | T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
@@ -287,6 +287,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用数没人采；采集面已有、只差汇总，合成一条，不依赖 I3 与 T29。计价不让实施者做（2026-09-09 定）：token 与工具调用按轮落库即可，单价表由 bundle 之外的非模型环节套用。
 
 模型切换（2026-09-08 定）：「配置能切模型、切了新 run 照新的走、缺省与今天一致、前端能切能指定」拆成两半。配置切换与设置卡是 T30a，不依赖 I3 与 T29，可与 T22 并行发；按次委派指定是 T30b，与条件 provision（T31）一起才有意义。界面上「指定某次 run 用哪个模型」走 I5 的计划审阅（T36）读条件文件，不另做入口。
+
+**T30c 验收（2026-09-10）**：`feat/tool-calls-and-pricing`（`ae5244d`）合入 main `fc5141d`，只动 local-agent 家族与 eval；合并态 eval 324、local-agent 205、codex 150、claude-code 137、kimi 171、dsh 104 全绿。计数都折在各家已经走过的解析分支里，没有新增解析路径；byName 记各家自己的名字——codex 同一次调用计数写 command_execution、镜像卡片写 Bash，这正是「不做跨家归一」的可见处。kimi 与 dsh 按本轮而非镜像窗口数，live 轮询清空过 delta 的 settle 照样报得出，resume 轮不继承。真机 codex 与 claude 各两轮，toolCalls 与镜像出的工具卡片逐条对上。pilot A 复算 results.jsonl 逐字节相同，usage.jsonl 新增 7 行，counted:true 加总正好复现效率表的 21.0 min / 4 轮与 11.9 min / 2 轮。三条判断都接受：一、usage.jsonl 比文案多 `attempt` 与 `counted` 两列——重试格沿用同一 mission id，只有 cell 分不开两次 attempt；counted:false 的行留着，外部计价才能自选口径。二、codex 的 function_call 没数：0.144.0 的 exec 流里 provider 解析的是 command_execution / web_search_call / function_call_output，没有 function_call 分支，按「不新增解析路径」只数前两个，README 写明；要补是另一个决定。三、只有 exec 路径报 toolCalls，因为长驻驱动根本不发 settled（usage 与 observedModel 在那里本来就缺），评测钉的是 exec，口径不受影响；补长驻的 settled 通道另开。验收机上 verify-translation-pairing 报 packages/context-guard 的 sidecar 过期，那是另一位 agent 在主检出里未提交的 0.1.2-rc.1 适配工作，与本分支无关，未动。
 
 验收：README I4 行；report 的因子列由 condition diff 自动推出。
 
@@ -1303,7 +1305,7 @@ eval 测试全绿，gate 绿；真机两次结果如上；run.meta.readiness 里
 分支名与 commit；Agent Note 路径；gate 输出；三家两轮回读表（脱敏）；每家用的是旗标还是配置写入。
 ```
 
-### T30c · local-agent + eval：工具调用计数进 settle 观测与效率表；每轮 token 与工具调用落库（可发）
+### T30c · local-agent + eval：工具调用计数进 settle 观测与效率表；每轮 token 与工具调用落库（已完成，2026-09-10 验收）
 
 ```text
 # 任务 T30c：工具调用计数进 settle 观测与效率表；每轮 token 与工具调用落进 bundle
