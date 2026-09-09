@@ -562,10 +562,22 @@ interface SnapshotDirectoryMetadata {
 
 interface SnapshotCopyContext {
   externalRoot: string
+  /** Canonical path of the source home root; only its direct children are skippable. */
+  rootCanonical: string
   destinations: Map<string, string>
   pendingLinks: SnapshotLink[]
   directories: SnapshotDirectoryMetadata[]
+  /** Runtime entries (sockets, FIFOs) dropped instead of copied — counted for the caller's log line. */
+  skippedRuntimeEntries: number
 }
+
+/**
+ * Top-level home entries that never join a preflight snapshot: scratch is
+ * ephemeral by definition, and copying it can push prepare+canary past the
+ * credential's freshness window (observed: a 24 GB scratch expired the
+ * credential mid-cutover, the target canary then failed and restored).
+ */
+const SNAPSHOT_SKIPPED_TOP_LEVEL: ReadonlySet<string> = new Set(['scratch'])
 
 function canonicalSnapshotSource(source: string): string {
   try {
@@ -594,6 +606,15 @@ function copySnapshotNode(source: string, destination: string, context: Snapshot
     return
   }
 
+  // Sockets and FIFOs have no copyable content — a live instance's own
+  // runtime endpoints (member-bridge.sock et al.) are recreated by whichever
+  // process boots on the snapshot. Device nodes and anything more exotic
+  // still fail closed.
+  if (linkMetadata.isSocket() || linkMetadata.isFIFO()) {
+    context.skippedRuntimeEntries++
+    return
+  }
+
   if (!linkMetadata.isDirectory() && !linkMetadata.isFile()) {
     throw new Error(`preflight snapshot refused a special filesystem entry at ${source}`)
   }
@@ -616,6 +637,7 @@ function copySnapshotNode(source: string, destination: string, context: Snapshot
     })
     try {
       for (const name of readdirSync(canonical)) {
+        if (canonical === context.rootCanonical && SNAPSHOT_SKIPPED_TOP_LEVEL.has(name)) continue
         copySnapshotNode(join(canonical, name), join(destination, name), context)
       }
     } catch (error) {
@@ -658,6 +680,12 @@ function resolveSnapshotLinks(context: SnapshotCopyContext): void {
       metadata = statSync(target)
     } catch (error) {
       throw snapshotCopyError(link.source, error)
+    }
+    // A link to a socket/FIFO is dropped with the same rule as the entry
+    // itself; a link to a device node or anything more exotic still refuses.
+    if (metadata.isSocket() || metadata.isFIFO()) {
+      context.skippedRuntimeEntries++
+      continue
     }
     if (!metadata.isDirectory() && !metadata.isFile()) {
       throw new Error(`preflight snapshot refused a link to a special filesystem entry at ${link.source}`)
@@ -725,10 +753,13 @@ function finalizeSnapshotDirectories(context: SnapshotCopyContext): void {
  * links are rebuilt against copied nodes; external targets are deduplicated in
  * a snapshot-owned materialization area. No retained link resolves outside the
  * snapshot root, so writes through pnpm/Cordis links cannot reach live bytes.
+ * Runtime entries without copyable content (sockets, FIFOs — and links to
+ * them) are skipped and counted, never copied; the top-level scratch/ tree is
+ * excluded for size. Device nodes still fail closed.
  * @param sourceHome - Live dsh home to read.
- * @returns Isolated home and an idempotent cleanup callback.
+ * @returns Isolated home, an idempotent cleanup callback, and the count of skipped runtime entries.
  */
-export function createPreflightSnapshot(sourceHome: string): { home: string; root: string; cleanup(): void } {
+export function createPreflightSnapshot(sourceHome: string): { home: string; root: string; skippedRuntimeEntries: number; cleanup(): void } {
   const root = mkdtempSync(join(tmpdir(), 'ankh-transition-preflight-'))
   const home = join(root, 'home')
   try {
@@ -736,15 +767,17 @@ export function createPreflightSnapshot(sourceHome: string): { home: string; roo
     const source = canonicalDirectory(sourceHome, 'preflight source home')
     const context: SnapshotCopyContext = {
       externalRoot: join(root, 'materialized'),
+      rootCanonical: source,
       destinations: new Map(),
       pendingLinks: [],
       directories: [],
+      skippedRuntimeEntries: 0,
     }
     copySnapshotNode(source, home, context)
     resolveSnapshotLinks(context)
     assertSnapshotLinksContained(root, realpathSync(root))
     finalizeSnapshotDirectories(context)
-    return { home, root, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
+    return { home, root, skippedRuntimeEntries: context.skippedRuntimeEntries, cleanup: () => { rmSync(root, { recursive: true, force: true }) } }
   } catch (error) {
     rmSync(root, { recursive: true, force: true })
     throw error
