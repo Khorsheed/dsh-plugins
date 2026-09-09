@@ -89,7 +89,7 @@ describe('browser handoff host bridge', () => {
     const capability = 'A'.repeat(43)
     prepare(dir, id)
     const identityMatches = (): boolean => true
-    const oldHandler = createBrowserHandoffHandler({ stateDir: dir, pid: 103, now: () => 1100, identityMatches })
+    const oldHandler = createBrowserHandoffHandler({ stateDir: dir, pid: 103, now: () => 1100, identityMatches, identityProvider: () => null })
 
     await withHandler(oldHandler, async (setHandler, origin) => {
       const arm = await post(origin, { version: 1, operation: 'poll', capability })
@@ -116,6 +116,7 @@ describe('browser handoff host bridge', () => {
         pid: 204,
         now: () => 1300,
         identityMatches,
+        identityProvider: () => null,
         connection: {
           requestRejection: request => request.headers.cookie === 'dsh=valid' ? undefined : 401,
           authenticatedUrl: base => `${base}/?token=process-only`,
@@ -162,7 +163,7 @@ describe('browser handoff host bridge', () => {
     const capability = 'C'.repeat(43)
     prepare(dir, id)
     const identityMatches = (): boolean => true
-    const oldHandler = createBrowserHandoffHandler({ stateDir: dir, pid: 103, identityMatches })
+    const oldHandler = createBrowserHandoffHandler({ stateDir: dir, pid: 103, identityMatches, identityProvider: () => null })
     await withHandler(oldHandler, async (setHandler, origin) => {
       expect((await post(
         origin, { version: 1, operation: 'poll', capability }, undefined, 'http://foreign.invalid',
@@ -181,6 +182,7 @@ describe('browser handoff host bridge', () => {
         stateDir: dir,
         pid: 304,
         identityMatches,
+        identityProvider: () => null,
         connectionProvider: () => connection,
       }))
       // A protected final route can beat its optional connection service to
@@ -220,6 +222,7 @@ describe('browser handoff host bridge', () => {
       stateDir: dir,
       pid: 404,
       identityMatches: () => true,
+      identityProvider: () => null,
       connection: { requestRejection: request => request.headers.cookie === 'dsh=valid' ? undefined : 401 },
     }), async (_setHandler, origin) => {
       const ack = {
@@ -250,7 +253,7 @@ describe('browser handoff host bridge', () => {
     const secondCapability = 'E'.repeat(43)
     const identityMatches = (): boolean => true
     await withHandler(createBrowserHandoffHandler({
-      stateDir: dir, pid: 103, identityMatches, longPollMs: 250, longPollIntervalMs: 5,
+      stateDir: dir, pid: 103, identityMatches, identityProvider: () => null, longPollMs: 250, longPollIntervalMs: 5,
     }), async (setHandler, origin) => {
       const firstPoll = post(origin, { version: 1, operation: 'poll', capability: firstCapability })
       await new Promise(resolve => setTimeout(resolve, 20))
@@ -271,7 +274,7 @@ describe('browser handoff host bridge', () => {
       )
       recordCutoverEvent(dir, id, 'canary', ['pass'], 4002)
       setHandler(createBrowserHandoffHandler({
-        stateDir: dir, pid: 504, identityMatches, longPollMs: 0,
+        stateDir: dir, pid: 504, identityMatches, identityProvider: () => null, longPollMs: 0,
       }))
       expect(await (await post(origin, {
         version: 1, operation: 'poll', capability: firstCapability,
@@ -301,6 +304,94 @@ describe('browser handoff host bridge', () => {
       expect(readBrowserHandoffRequest(dir)?.registrations.every(item => (
         item.acknowledgedAt !== undefined
       ))).toBe(true)
+    })
+  })
+})
+
+describe('browser handoff boot-generation channel', () => {
+  it('teaches the boot id on idle and reloads a stale tab when no cutover is active', async () => {
+    const dir = stateDir()
+    const capability = 'G'.repeat(43)
+    await withHandler(createBrowserHandoffHandler({
+      stateDir: dir, pid: 103, identityMatches: () => true, longPollMs: 0,
+      identityProvider: pid => ({ pid, startToken: 'token-A' }),
+    }), async (_setHandler, origin) => {
+      // First contact: no known id, learn the serving boot id from the idle response.
+      expect(await (await post(origin, { version: 1, operation: 'poll', capability })).json())
+        .toEqual({ state: 'idle', bootId: '103:token-A' })
+      // A current id stays idle.
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability, knownBootId: '103:token-A',
+      })).json()).toEqual({ state: 'idle', bootId: '103:token-A' })
+      // A stale id means the process this tab knew is gone: reload once.
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability, knownBootId: '999:stale',
+      })).json()).toEqual({
+        state: 'ready', action: 'reload', authentication: 'existing-cookie', bootId: '103:token-A',
+      })
+    })
+  })
+
+  it('defers to the receipt channel during a cutover and stays one-shot after it settles', async () => {
+    const dir = stateDir()
+    const id = 'cutover-generation-defer'
+    const capability = 'H'.repeat(43)
+    prepare(dir, id)
+    const identityMatches = (): boolean => true
+    const oldHandler = createBrowserHandoffHandler({
+      stateDir: dir, pid: 103, identityMatches,
+      identityProvider: pid => ({ pid, startToken: 'token-A' }),
+    })
+    await withHandler(oldHandler, async (setHandler, origin) => {
+      // Stale known id + ACTIVE cutover: the receipt protocol owns the pacing —
+      // the generation branch must not short-circuit the registration dance.
+      const arm = await post(origin, { version: 1, operation: 'poll', capability, knownBootId: '999:stale' })
+      expect(await arm.json()).toEqual({ state: 'waiting', cutoverId: id, bootId: '103:token-A' })
+
+      recordCutoverEvent(dir, id, 'child-started', ['target', '1', '203', 'child-203'], 1200)
+      recordCutoverEvent(
+        dir, id, 'ownership-stable',
+        ['target', '203', 'child-203', '204', 'listener-204', '3000', '0'], 1201,
+      )
+      recordCutoverEvent(dir, id, 'canary', ['pass'], 1202)
+      setHandler(createBrowserHandoffHandler({
+        stateDir: dir, pid: 204, identityMatches, longPollMs: 0,
+        identityProvider: pid => ({ pid, startToken: 'token-B' }),
+      }))
+      // The successor's ready teaches ITS boot id — the tab stores it before reloading.
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability, knownBootId: '103:token-A',
+      })).json()).toEqual({
+        state: 'ready', action: 'reload', cutoverId: id, role: 'target',
+        authentication: 'existing-cookie', bootId: '204:token-B',
+      })
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'original-tab',
+        authentication: 'existing-cookie', capability,
+      })).status).toBe(204)
+      recordCutoverEvent(
+        dir, id, 'browser-handoff',
+        ['acknowledged', 'original-tab', 'existing-cookie', new URL(origin).host], 1203,
+      )
+      recordCutoverEvent(dir, id, 'ready', ['target'], 1204)
+
+      // One-shot: the acked tab learned the successor's id, so the settled
+      // receipt must not trigger a second (generation) reload.
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability, knownBootId: '204:token-B',
+      })).json()).toEqual({ state: 'idle', bootId: '204:token-B' })
+    })
+  })
+
+  it('degrades to the pre-generation flow when the serving identity is unavailable', async () => {
+    const dir = stateDir()
+    await withHandler(createBrowserHandoffHandler({
+      stateDir: dir, pid: 103, identityMatches: () => true, longPollMs: 0,
+      identityProvider: () => null,
+    }), async (_setHandler, origin) => {
+      expect(await (await post(origin, {
+        version: 1, operation: 'poll', capability: 'I'.repeat(43), knownBootId: '999:stale',
+      })).json()).toEqual({ state: 'idle' })
     })
   })
 })

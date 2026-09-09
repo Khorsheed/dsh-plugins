@@ -8,6 +8,14 @@
  * (its cookie is still valid) or that process's authenticated URL. The URL
  * exists only in the response object and the browser's location.replace call:
  * it never enters a state file, receipt, or log.
+ *
+ * Alongside the cutover channel, a boot-generation channel covers ordinary
+ * restarts (unsupervised `restart`/`schedule-exit`, watchdog crash respawns):
+ * the serving process's own pid + start token is its boot id, a polling tab
+ * carries the boot id it last saw, and a stale id with no active cutover
+ * means the process it knew is gone — answer ready/reload. A cutover receipt
+ * always wins over the generation check: during a cutover the old tab's known
+ * id is already stale, and the receipt protocol owns the pacing.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -15,7 +23,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { activeCutover, readCutoverReceipt, type CutoverProcessOwnership, type LaunchRole } from './launch-spec.ts'
-import { processIdentityMatches } from './processes.ts'
+import { processIdentity, processIdentityMatches, type ProcessIdentity } from './processes.ts'
 import { stateFile } from './state-files.ts'
 
 export const BROWSER_HANDOFF_ROUTE = '/_ankh-guard/browser-handoff'
@@ -58,6 +66,8 @@ interface PollMessage {
   version: 1
   operation: 'poll'
   capability: string
+  /** The boot id this tab last learned, when it has one (boot-generation channel). */
+  knownBootId?: string
 }
 
 interface AcknowledgeMessage {
@@ -89,6 +99,8 @@ interface BrowserHandoffDependencies {
   pid?: number
   now?: () => number
   identityMatches?: typeof processIdentityMatches
+  /** Boot-id source for the generation channel; production default is the serving process itself. */
+  identityProvider?: (pid: number) => ProcessIdentity | null
   connection?: ConnectionSlice
   /** Resolve lazily because WebServer can activate before the optional connection service. */
   connectionProvider?: () => ConnectionSlice | undefined
@@ -112,7 +124,11 @@ function capabilitySha256(capability: string): string {
 function parseMessage(value: unknown): BrowserMessage | null {
   if (!isObject(value) || value.version !== 1) return null
   if (value.operation === 'poll' && isCapability(value.capability)) {
-    return { version: 1, operation: 'poll', capability: value.capability }
+    // Opaque to the server; length-capped so a poll cannot carry bulk data.
+    const knownBootId = typeof value.knownBootId === 'string' && value.knownBootId.length <= 256
+      ? value.knownBootId
+      : undefined
+    return { version: 1, operation: 'poll', capability: value.capability, ...(knownBootId === undefined ? {} : { knownBootId }) }
   }
   if (value.operation !== 'ack' || typeof value.cutoverId !== 'string' || value.cutoverId === '') return null
   if (value.channel !== 'original-tab' && value.channel !== 'fallback-tab') return null
@@ -346,8 +362,19 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
   const pid = dependencies.pid ?? process.pid
   const now = dependencies.now ?? Date.now
   const identityMatches = dependencies.identityMatches ?? processIdentityMatches
+  const identityProvider = dependencies.identityProvider ?? processIdentity
   const longPollMs = dependencies.longPollMs ?? DEFAULT_LONG_POLL_MS
   const longPollIntervalMs = dependencies.longPollIntervalMs ?? DEFAULT_LONG_POLL_INTERVAL_MS
+  // Cached: a process's boot id never changes over its lifetime, and the
+  // platform lookup (ps/python3) must not run per held poll.
+  let bootIdCache: string | null | undefined
+  const thisBootId = (): string | undefined => {
+    if (bootIdCache === undefined) {
+      const identity = identityProvider(pid)
+      bootIdCache = identity === null ? null : `${String(identity.pid)}:${identity.startToken}`
+    }
+    return bootIdCache ?? undefined
+  }
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const connection = dependencies.connectionProvider?.() ?? dependencies.connection
     if (req.method !== 'POST' || req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
@@ -368,6 +395,25 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
 
     if (message.operation === 'poll') {
       const digest = capabilitySha256(message.capability)
+      // The serving process's boot id rides every poll response so a tab can
+      // learn it. Computed once: a process's identity never changes while it
+      // lives. Unavailable identity (ps blocked) disables the generation
+      // channel — polls degrade to the pre-generation flow, like an old client.
+      const bootId = thisBootId()
+      const respond = (status: number, body: Record<string, unknown>): void => {
+        json(res, status, bootId === undefined ? body : { ...body, bootId })
+      }
+      // Boot-generation channel: a stale known id with NO active cutover means
+      // the process this tab knew is gone (ordinary restart or crash respawn).
+      // Short-circuits before the held-poll wait — this process's boot id
+      // cannot change under it. During a cutover the receipt protocol owns the
+      // pacing: the old tab's known id is already stale, and answering here
+      // would race the registration/ack dance.
+      if (bootId !== undefined && message.knownBootId !== undefined && message.knownBootId !== bootId
+        && activeCutover(dependencies.stateDir) === null) {
+        respond(200, { state: 'ready', action: 'reload', authentication: 'existing-cookie' })
+        return
+      }
       const pollHasState = (): boolean => {
         const active = activeCutover(dependencies.stateDir)
         if (active !== null) {
@@ -398,7 +444,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         || (active === null && (ready === null || registered === undefined))
         || active?.receipt.phase === 'awaiting-user'
         || active?.receipt.browserHandoff.status === 'off') {
-        json(res, 200, { state: 'idle' })
+        respond(200, { state: 'idle' })
         return
       }
       const previous = active?.receipt.ownership.previous
@@ -414,7 +460,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
           armedAt: now(),
         }
         const selected = registerBrowserTab(dependencies.stateDir, active.receipt.id, registration)
-        json(res, 200, registrationMatches(
+        respond(200, registrationMatches(
           selected, active.receipt.id, requestAuthority.authority, digest,
         )
           ? { state: 'waiting', cutoverId: active.receipt.id }
@@ -426,7 +472,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         || !registrationMatches(
           registration, ready?.cutoverId ?? '', requestAuthority.authority, digest,
         )) {
-        json(res, 200, active === null
+        respond(200, active === null
           ? { state: 'idle' }
           : { state: 'waiting', cutoverId: active.receipt.id })
         return
@@ -435,7 +481,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
       // connection service settles. Do not misclassify that startup window as
       // a public/valid-cookie host and strand the original tab on a bare 401.
       if (ready.protected && connection?.requestRejection === undefined) {
-        json(res, 200, { state: 'waiting', cutoverId: ready.cutoverId })
+        respond(200, { state: 'waiting', cutoverId: ready.cutoverId })
         return
       }
       const cookieState = authenticationState(connection, req)
@@ -444,14 +490,14 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         return
       }
       if (cookieState !== 'unauthenticated') {
-        json(res, 200, {
+        respond(200, {
           state: 'ready', action: 'reload', cutoverId: ready.cutoverId,
           role: ready.role, authentication: 'existing-cookie',
         })
         return
       }
       if (connection?.authenticatedUrl === undefined) {
-        json(res, 200, { state: 'waiting', cutoverId: ready.cutoverId })
+        respond(200, { state: 'waiting', cutoverId: ready.cutoverId })
         return
       }
       let launchUrl: string
@@ -471,7 +517,7 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         json(res, 500, { state: 'unavailable' })
         return
       }
-      json(res, 200, {
+      respond(200, {
         state: 'ready', action: 'replace', cutoverId: ready.cutoverId,
         role: ready.role, authentication: 'launch-url', launchUrl,
       })

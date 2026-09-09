@@ -183,6 +183,8 @@ dsh-ankh-guard restart \
 
 以 cordis 插件挂载（base bundle）后，同一套能力以 `selfRestartGuard` 服务的形式供应用内闸门使用。配置：`maxAgeMinutes`（默认 10）、`stateDir`、`repoDir`、`reportRestartContext`（默认 `followup`）、`fallbackGraceMs`（默认 300000）。
 
+除 verify/record/canary 等闸门外，服务还暴露 `requestRestart({ start, profile, initiator })`——UI 级调用方（如 mode-switcher）的进程内重启触发缝：`initiator` 必填（发起会话的真实 id），端口从 launch 记录自知；无活 watchdog 走 `restart`，受监督走 `reconfigure` 事务 cutover（受监督下唯一安全的换命令通道），凭证/preflight/marker/lock 全套闸门与 CLI 同源，拒绝返回结构化 `{ accepted, stage, reason }` 且绝不停机。浏览器侧，除 cutover receipt 通道外还有 boot 代际通道：普通重启或崩溃救回后，打开的标签页经 handoff 长轮询发现进程 boot id 已变，自动全页刷新一次拿到新 bundle；持续断连约 5 秒挂中性遮罩（不承诺自动恢复），瞬时抖动不闪屏。
+
 ## Model Experience
 
 一个随包 skill，加两条 followup 消息，无工具 schema。`dsh-self-restart-guard` skill 在 apply 时注册：完整重启协议挂在 skill catalog 上，agent 在涉及重启实例的任务里按需发现——没有逐会话的推送通知。每次 boot 都会记录注册结果（`skill-registration.json`)，在 `check-env` 的 `skill:` 行可见；无 skill 能力的组合现在会在启动日志告警——迁移或重打包把 skill 弄丢时会在这里现形，而不是无声消失。重启后，重启报告/被中断会话的续跑只到达发起会话和被中断的会话，以插件来源的 followup 用户消息形式注入；其余会话完全无感。

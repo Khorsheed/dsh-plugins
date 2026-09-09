@@ -36,7 +36,7 @@ import {
   proveCurrentDeployment, verifyRestartAuthorization, verifyRestartEvidence,
   type RestartAuthorization, type RestartEvidenceResult,
 } from './deployment-proof.ts'
-import { lastGoodBootRevision, stateFile } from './state-files.ts'
+import { lastGoodBootRevision, livePidIn, liveWatchdogPid, pidAlive, stateFile } from './state-files.ts'
 import {
   discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree,
   processIdentity, processIdentityMatches,
@@ -173,42 +173,6 @@ function resolveInitiator(explicit: string | undefined, io: CliIo): string | und
     io.stderr(`warning: --initiator ${JSON.stringify(explicit)} does not match this session's DSH_SESSION_ID ${JSON.stringify(fromEnv)} — the restart report will be routed to ${JSON.stringify(explicit)} and THIS session will not be woken. Omit --initiator to route it to the current session.\n`)
   }
   return explicit !== undefined && explicit !== '' ? explicit : fromEnv
-}
-
-/**
- * Whether the pid named by this raw pid/lock-file content is alive. Empty
- * content reads as NO holder: Number('') is 0 and kill(0, 0) probes our own
- * process group (always succeeds), which once read as "alive" and refused
- * every restart forever — the bug that had to be fixed in two copies of this
- * logic before it was consolidated here.
- */
-function pidAlive(raw: string): boolean {
-  const pid = Number(raw)
-  if (raw === '' || !Number.isInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** The live pid named by a pid/lock file (as the raw string), or null when absent/stale. */
-function livePidIn(file: string): string | null {
-  try {
-    const raw = readFileSync(file, 'utf8').trim()
-    return pidAlive(raw) ? raw : null
-  } catch {
-    return null
-  }
-}
-
-/** The live supervising watchdog's pid, or null when none is (pidfile + kill 0). */
-function liveWatchdogPid(stateDir: string): number | null {
-  const raw = livePidIn(stateFile(stateDir, 'watchdogPid'))
-  const pid = raw === null ? null : Number(raw)
-  appendTestLifecycleEvent('watchdog-liveness-probe', { pid: pid ?? 0, live: pid !== null }, 'parent-observer')
-  return pid
 }
 
 function testChildEnv(
@@ -1377,12 +1341,46 @@ function rollbackToKnownGood(stateDir: string, repoDir: string, io: CliIo): void
 }
 
 /**
+ * A machine-readable refusal verdict: which gate denied, plus a one-line
+ * reason. In-process callers (the selfRestartGuard.requestRestart service
+ * seam) read it back from the verdict file named by DSH_ANKH_VERDICT_FILE
+ * instead of scraping the human stderr text.
+ */
+export interface CliRefusal {
+  stage: string
+  reason: string
+}
+
+/**
  * Run one CLI invocation against the guard state.
  * @param argv - arguments after the subcommand name.
  * @param io - output sinks.
  * @returns the process exit code: 0 ok, 1 gate denied / failure, 2 usage error.
  */
 export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
+  // The FIRST refusal is the verdict; later ones are fallout of the same stop.
+  // The verdict file is a courtesy channel for the service seam — a write
+  // failure changes nothing, the human refusal text stands either way.
+  const verdictFile = process.env.DSH_ANKH_VERDICT_FILE
+  let recorded: CliRefusal | undefined
+  const note = (stage: string, reason: string): void => {
+    if (recorded !== undefined) return
+    recorded = { stage, reason }
+    if (verdictFile !== undefined) {
+      try { writeFileSync(verdictFile, `${JSON.stringify(recorded)}\n`, { mode: 0o600 }) } catch { /* courtesy channel */ }
+    }
+  }
+  /** Record + print a one-line refusal, preserving the site's exit code. */
+  const refuse = (stage: string, message: string, code = 1): number => {
+    note(stage, message.trim().split('\n', 1)[0] ?? message.trim())
+    io.stderr(message.endsWith('\n') ? message : `${message}\n`)
+    return code
+  }
+  /** Record a refusal whose human text a gate already printed. */
+  const refuseQuiet = (stage: string, reason: string, code = 1): number => {
+    note(stage, reason)
+    return code
+  }
   const parsed = parse(argv)
   if ('error' in parsed) {
     io.stderr(parsed.error)
@@ -1872,11 +1870,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       const inFlightCutover = activeCutover(stateDir)
       if (inFlightCutover !== null) {
-        io.stderr(`reconfigure refused: launch cutover ${inFlightCutover.receipt.id} is still ${inFlightCutover.receipt.phase}; inspect it with \`launch-status\` and settle/retry that transaction first\n`)
-        return 1
+        return refuse('cutover-active', `reconfigure refused: launch cutover ${inFlightCutover.receipt.id} is still ${inFlightCutover.receipt.phase}; inspect it with \`launch-status\` and settle/retry that transaction first\n`)
       }
       const previous = resolvePreviousSpec(stateDir, io)
-      if (previous === undefined) return 2
+      if (previous === undefined) {
+        return refuseQuiet('previous-spec', 'reconfigure refused: could not resolve the active launch specification (see stderr)', 2)
+      }
       let target = launchSpec({
         command: options.start,
         port: options.port ?? previous.port,
@@ -1892,12 +1891,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return 2
       }
       if (target.port !== previous.port) {
-        io.stderr(`reconfigure refused: online supervisor handoff keeps one authority and port (${previous.port}); target requested ${target.port}. Move ports as a separately supervised deployment, then cut traffic over.\n`)
-        return 2
+        return refuse('port-mismatch', `reconfigure refused: online supervisor handoff keeps one authority and port (${previous.port}); target requested ${target.port}. Move ports as a separately supervised deployment, then cut traffic over.\n`, 2)
       }
       if (sameLaunchSpec(previous, target)) {
-        io.stderr('reconfigure refused: target launch specification is identical to the active specification\n')
-        return 2
+        return refuse('identical', 'reconfigure refused: target launch specification is identical to the active specification\n', 2)
       }
       let transitionPlan: TransitionPlan | undefined
       if (options.transitionFile !== undefined) {
@@ -1918,31 +1915,34 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       const previousSupervisorPid = liveWatchdogPid(stateDir)
       if (previousSupervisorPid === null) {
-        io.stderr('reconfigure refused: no live watchdog owns the old instance. Establish supervision first; an online handoff cannot promise continuity without an old supervisor.\n')
-        return 1
+        return refuse('unsupervised', 'reconfigure refused: no live watchdog owns the old instance. Establish supervision first; an online handoff cannot promise continuity without an old supervisor.\n')
       }
       const gate = verifyRepoCredential(stateDir, target.credentialRepo, options.maxAgeMinutes)
       if (!gate.ok) {
-        io.stderr(`reconfigure refused: ${gate.reason}\n`)
-        return 1
+        return refuse('credential', `reconfigure refused: ${gate.reason}\n`)
       }
-      if (!sandboxGate('reconfigure', options, io)) return 1
+      if (!sandboxGate('reconfigure', options, io)) {
+        return refuseQuiet('sandbox', 'reconfigure refused: the environment is sandboxed, so the detached replacement supervisor would be reaped mid-flight')
+      }
       let snapshot: { home: string; cleanup(): void }
       try {
         snapshot = transitionPlan === undefined
           ? createPreflightSnapshot(target.home)
           : createTransitionPreflightSnapshot(transitionPlan)
       } catch (error) {
-        io.stderr(`reconfigure refused: could not prepare an isolated${transitionPlan === undefined ? '' : ' transitioned'} home: ${String(error)}\n`)
-        return 1
+        return refuse('preflight-snapshot', `reconfigure refused: could not prepare an isolated${transitionPlan === undefined ? '' : ' transitioned'} home: ${String(error)}\n`)
       }
       try {
         const timeout = options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS
-        if (!(await candidateProbeGate(target, timeout, io, snapshot.home))) return 1
+        if (!(await candidateProbeGate(target, timeout, io, snapshot.home))) {
+          return refuseQuiet('preflight', 'reconfigure refused: the candidate probe failed (see stderr)')
+        }
         if (!(await preflightGate(
           'reconfigure', target.profile, timeout,
           io, target.harnessRoot, snapshot.home, target.preflight,
-        ))) return 1
+        ))) {
+          return refuseQuiet('preflight', 'reconfigure refused: the composition preflight failed (see stderr for the failing entries)')
+        }
         io.stdout(`${transitionPlan === undefined ? 'candidate' : 'filesystem transition'} preflight PASS on an isolated copy of the live home\n`)
       } finally {
         snapshot.cleanup()
@@ -1950,15 +1950,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 
       const lock = acquireRestartLock(stateDir)
       if (!lock.ok) {
-        io.stderr(`reconfigure refused: a restart is in flight (pid ${lock.holder})\n`)
-        return 1
+        return refuse('lock', `reconfigure refused: a restart is in flight (pid ${lock.holder})\n`)
       }
       const cutoverId = `${Date.now()}-${process.pid}`
       let driverPid: number | undefined
       try {
         if (restartMarkerState(stateDir) === 'fresh') {
-          io.stderr('reconfigure refused: a scheduled exit is already pending\n')
-          return 1
+          return refuse('marker', 'reconfigure refused: a scheduled exit is already pending\n')
         }
         const initiator = resolveInitiator(options.initiator, io)
         const previousSupervisor = processIdentity(previousSupervisorPid)
@@ -2007,10 +2005,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           '--supervisor-yield-timeout-ms', String(options.supervisorYieldTimeoutMs ?? 15_000),
           ...(initiator !== undefined ? ['--initiator', initiator] : []),
         ]
+        const cutoverDriverEnv: NodeJS.ProcessEnv = { ...process.env }
+        // Same verdict-file hygiene as the restart driver: the caller-side
+        // verdict is the caller's; this long-lived driver must not rewrite it.
+        delete cutoverDriverEnv.DSH_ANKH_VERDICT_FILE
         const driver = spawn(process.execPath, cliInvocation(driverArgs), {
           detached: true,
           stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-          env: testChildEnv('cutover-supervisor-driver', { ...process.env }, { port: previous.port, tempRoot: stateDir }),
+          env: testChildEnv('cutover-supervisor-driver', cutoverDriverEnv, { port: previous.port, tempRoot: stateDir }),
         })
         registerSpawnedTestProcess(driver, 'cutover-supervisor-driver', { port: previous.port, tempRoot: stateDir })
         driver.unref()
@@ -2047,8 +2049,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           await waitForExit(driverPid, 2_000)
         }
         try { recordCutoverEvent(stateDir, cutoverId, 'prepare-failed', [String(error)], Date.now()) } catch { /* preparation may have failed before the receipt */ }
-        io.stderr(`reconfigure refused before stopping the old instance: ${String(error)}\n`)
-        return 1
+        return refuse('preparation', `reconfigure refused before stopping the old instance: ${String(error)}\n`)
       } finally {
         lock.release()
       }
@@ -2065,30 +2066,29 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       const restartCutover = activeCutover(stateDir)
       if (restartCutover !== null) {
-        io.stderr(`restart refused: launch cutover ${restartCutover.receipt.id} is ${restartCutover.receipt.phase}; a second stop would violate its recovery policy\n`)
-        return 1
+        return refuse('cutover-active', `restart refused: launch cutover ${restartCutover.receipt.id} is ${restartCutover.receipt.phase}; a second stop would violate its recovery policy\n`)
       }
       const isDriver = process.env.DSH_ANKH_RESTART_DRIVER === '1'
       // THE GATE: never stop an instance on a denial.
       const gate = verifyRepoCredential(stateDir, repoDir, options.maxAgeMinutes)
       if (!gate.ok) {
-        io.stderr(`restart refused: ${gate.reason}\n`)
-        return 1
+        return refuse('credential', `restart refused: ${gate.reason}\n`)
       }
       // THE ENVIRONMENT GATE: a sandboxed turn reaps the detached restart
       // mid-flight — refuse before anything is stopped.
-      if (!sandboxGate('restart', options, io)) return 1
+      if (!sandboxGate('restart', options, io)) {
+        return refuseQuiet('sandbox', 'restart refused: the environment is sandboxed, so the detached restart driver would be reaped mid-flight')
+      }
       // THE COMPOSITION GATE (caller side only — the detached driver inherits
       // a composition the caller already proved; re-running it would double a
       // minute-long dry-run). A green build does not prove the profile boots.
       if (!isDriver && !(await preflightGate('restart', resolveProfileName(options), options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS, io, preflightHarnessRoot(options, stateDir)))) {
-        return 1
+        return refuseQuiet('preflight', 'restart refused: the composition preflight failed (see stderr for the failing entries)')
       }
       // See every other pending stop before becoming one: a scheduled exit's
       // agent would SIGTERM the instance this restart starts.
       if (restartMarkerState(stateDir) === 'fresh') {
-        io.stderr('restart refused: a scheduled exit is still pending (restart-requested.json) — its exit agent would kill the instance this restart starts; wait for it or remove the stale marker\n')
-        return 1
+        return refuse('marker', 'restart refused: a scheduled exit is still pending (restart-requested.json) — its exit agent would kill the instance this restart starts; wait for it or remove the stale marker\n')
       }
       if (options.sync !== true && !isDriver) {
         // SELF-DETACH: the stop→start→canary half must outlive the caller. A
@@ -2098,26 +2098,28 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // exit agent and the watchdog, provably survives.
         const logPath = options.log ?? stateFile(stateDir, 'restartLog')
         mkdirSync(dirname(logPath), { recursive: true })
+        const restartDriverEnv: NodeJS.ProcessEnv = { ...process.env, DSH_ANKH_RESTART_DRIVER: '1' }
+        // The caller-side verdict belongs to the caller: a later driver-side
+        // refusal must not overwrite it after the caller already returned.
+        delete restartDriverEnv.DSH_ANKH_VERDICT_FILE
         const driver = spawn(process.execPath, cliInvocation(argv), {
           detached: true,
           stdio: ['ignore', openSync(logPath, 'a'), openSync(logPath, 'a')],
-          env: testChildEnv('restart-driver', { ...process.env, DSH_ANKH_RESTART_DRIVER: '1' }, { port, tempRoot: stateDir }),
+          env: testChildEnv('restart-driver', restartDriverEnv, { port, tempRoot: stateDir }),
         })
         registerSpawnedTestProcess(driver, 'restart-driver', { port, tempRoot: stateDir })
         driver.unref()
         if (driver.pid === undefined) {
-          io.stderr('restart refused: could not detach the restart driver\n')
-          return 1
+          return refuse('spawn', 'restart refused: could not detach the restart driver\n')
         }
         // ONE restart at a time across sessions: the lock names the DRIVER
         // (it outlives this caller by design); a live holder refuses.
         const lock = acquireRestartLock(stateDir, driver.pid)
         if (!lock.ok) {
           try { process.kill(driver.pid, 'SIGKILL') } catch { /* already gone */ }
-          io.stderr(/^\d+$/.test(lock.holder)
+          return refuse('lock', /^\d+$/.test(lock.holder)
             ? `restart refused: another restart is already in flight (pid ${lock.holder})\n`
             : `restart refused: cannot claim the restart lock (${lock.holder}) — remove ${stateFile(stateDir, 'restartLock')} if it is stale\n`)
-          return 1
         }
         io.stdout(`restart driver detached (pid ${driver.pid}) — log ${logPath}\nthe instance stops in ${options.delayMs ?? 0} ms and comes back on its own; check the log or \`status\` afterwards\n`)
         return 0
@@ -2129,7 +2131,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       if (options.sync === true) {
         const lock = acquireRestartLock(stateDir)
         if (!lock.ok) {
-          io.stderr(/^\d+$/.test(lock.holder)
+          refuse('lock', /^\d+$/.test(lock.holder)
             ? `restart refused: another restart is already in flight (pid ${lock.holder})\n`
             : `restart refused: cannot claim the restart lock (${lock.holder}) — remove ${stateFile(stateDir, 'restartLock')} if it is stale\n`)
           return 1
@@ -2370,6 +2372,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       // must not turn an ordinary spawn into a takeover or point it at a
       // foreign state directory.
       const supervisorBaseEnv = { ...process.env }
+      // A caller-side verdict file belongs to that caller, not to the
+      // long-lived watchdog this spawn becomes.
+      delete supervisorBaseEnv.DSH_ANKH_VERDICT_FILE
       for (const key of Object.keys(supervisorBaseEnv)) {
         if (key.startsWith('WD_')) delete supervisorBaseEnv[key]
       }
