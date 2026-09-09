@@ -24,12 +24,23 @@ sh dsh-web-basic/scripts/restart-into-web-basic.sh   # hands the running instanc
 
 `restart-into-web-basic.sh` stops your current instance and brings web-basic up **on the same port** — just refresh the browser tab you already have. To run the pack side by side instead, boot it on a different port: `dsh --profile web-basic --port 3090`.
 
-> **Status**: all 10 member plugins are live on npm (0.1.0).
+> **Status**: all 10 member plugins are live on npm (0.2.0, requires host ≥ 0.1.2-rc.1 — see "Version fit" above).
 
 <details>
 <summary><strong>Install guide for agents</strong> (follow this when the user says "install this for me")</summary>
 
-When the user asks you to install https://github.com/Khorsheed/dsh-web-basic, run the three stages below. No browser-level verification is needed anywhere.
+When the user asks you to install https://github.com/Khorsheed/dsh-web-basic, run the stages below. No browser-level verification is needed anywhere.
+
+**0. Pick the release line by host version first (skipping this can install plugins that won't boot)**
+
+```sh
+dsh --version    # or read the host version from the running instance's process info
+```
+
+- Host `0.1.2` or newer (any rc included) → use the main line (clone the default branch); member plugins are 0.2.x.
+- Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
+
+`dsh plugin add` without a version installs npm `latest` (the 0.2.x line), which breaks on older hosts — this step must come before any install command.
 
 **1. Install and self-check offline (do not touch the running instance)**
 

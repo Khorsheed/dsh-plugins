@@ -24,12 +24,23 @@ sh dsh-web-basic/scripts/restart-into-web-basic.sh   # 当前实例同端口交�
 
 `restart-into-web-basic.sh` 会停掉你当前运行的实例、**在同一个端口**拉起 web-basic——浏览器刷新原地址即可，不用记新端口。想并存对照的话，直接 `dsh --profile web-basic --port 3090` 起在新端口即可。
 
-> **状态**：10 个成员插件已上架 npm（0.1.0）。
+> **状态**：10 个成员插件已上架 npm（0.2.0，要求宿主 ≥ 0.1.2-rc.1——见上方「版本适配」）。
 
 <details>
 <summary><strong>给 Agent 的安装指南</strong>（用户说"帮我装一下"时，照此执行）</summary>
 
 用户把你叫来说"帮我装一下 https://github.com/Khorsheed/dsh-web-basic"时，按下面三段做，全程不需要浏览器级验证。
+
+**〇、先按宿主版本选线（跳过这步可能装出打不开的插件）**
+
+```sh
+dsh --version    # 或从运行中实例的启动命令/进程信息里确认宿主版本
+```
+
+- 宿主是 `0.1.2` 或更新（含各 rc）→ 用主线（clone 默认分支即可），成员插件 0.2.x。
+- 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-web-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
+
+`dsh plugin add` 不带版本号会装 npm 的 latest（0.2.x 线），在旧宿主上装了就坏——所以这一步必须在动手之前做。
 
 **一、安装与离线自检（不碰运行中的实例）**
 
