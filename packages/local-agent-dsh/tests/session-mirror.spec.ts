@@ -187,6 +187,63 @@ describe('mirrorDshSession', () => {
     expect(results[0]?.sourceEventSeqs).toEqual([calls[0]!.seq])
   })
 
+  it('reports the round\'s tool-call accounting off the round window', async () => {
+    const home = tempHome()
+    const call = (seq: number, name: string, callId: string): object => ({
+      type: 'tool/call',
+      seq,
+      time: seq,
+      data: { turn: 1, step: seq, callId, name, arguments: '{}' },
+    })
+    writeSubDshSession(home, 'child-tool-count', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+      userLine('干活', 'user'),
+      call(3, 'Bash', 'c1'),
+      call(4, 'Bash', 'c2'),
+      call(5, 'Read', 'c3'),
+      assistantLine(1, '做完了'),
+      { type: 'turn/end', seq: 7, time: 7, data: { turn: 1, reason: { kind: 'completed' } } },
+      // A SECOND round's calls must not leak into the first round's count.
+      { type: 'turn/start', seq: 8, time: 8, data: { turn: 2 } },
+      call(9, 'WebSearch', 'c4'),
+      assistantLine(2, '第二轮'),
+      { type: 'turn/end', seq: 11, time: 11, data: { turn: 2, reason: { kind: 'completed' } } },
+    ])
+    const child = childWithRounds('child-tool-count', 1)
+    const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-count')
+    expect(delta.toolCalls).toEqual({ count: 3, byName: { Bash: 2, Read: 1 } })
+  })
+
+  it('a settle pass a live poll already drained still reports the round count', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-tool-drained', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+      userLine('干活', 'user'),
+      { type: 'tool/call', seq: 3, time: 3, data: { turn: 1, step: 1, callId: 'c1', name: 'Bash', arguments: '{}' } },
+      assistantLine(1, '做完了'),
+      { type: 'turn/end', seq: 5, time: 5, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const child = childWithRounds('child-tool-drained', 1)
+    const first = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-drained')
+    expect(first.toolCalls).toEqual({ count: 1, byName: { Bash: 1 } })
+    // Second pass: the prefix skip leaves nothing new to mirror, but the
+    // accounting is read off the round window, so it still comes back.
+    const second = await mirrorDshSession(fakeCtx(), child, home, 'child-tool-drained')
+    expect(second.texts).toEqual([])
+    expect(second.toolCalls).toEqual({ count: 1, byName: { Bash: 1 } })
+  })
+
+  it('a round that called no tool reports no accounting at all', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-no-tools', twoRoundLines())
+    const child = childWithRounds('child-no-tools', 1)
+    const delta = await mirrorDshSession(fakeCtx(), child, home, 'child-no-tools')
+    // Absent, not `{count: 0}`: the table prints a dash for "not observed".
+    expect(delta.toolCalls).toBeUndefined()
+  })
+
   it('is a no-op when the sub-dsh session never materialized', async () => {
     const child = childWithRounds('child-3', 1)
     await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toEqual({ texts: [], total: 0 })

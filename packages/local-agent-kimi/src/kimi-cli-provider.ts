@@ -36,7 +36,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
@@ -535,6 +535,7 @@ export interface KimiCliRunSpec {
     readonly observedModel?: string
     readonly cliVersion?: string
     readonly usage?: TokenUsage
+    readonly toolCalls?: LocalAgentToolCalls
   }) => void) | undefined
   /**
    * Called when the round SETTLED COMPLETED — the CLI reached its endpoint and
@@ -649,18 +650,24 @@ export async function mirrorKimiDelta(
 async function mirrorKimiAfterExit(
   spec: KimiCliRunSpec,
   stderr: string,
-): Promise<{ model?: string; usage?: TokenUsage } | undefined> {
+): Promise<{ model?: string; usage?: TokenUsage; toolCalls?: LocalAgentToolCalls } | undefined> {
   if (spec.childSession === undefined || spec.homeDir === undefined || spec.ctx === undefined) return undefined
   try {
     const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
     if (spec.resume === undefined) spec.onCliSessionId?.(kimiSessionId)
-    const delta = await mirrorKimiDelta(spec.ctx, spec.childSession, spec.homeDir, kimiSessionId)
+    // The round's turn selects which transcript lines the tool-call accounting
+    // belongs to — the mirror window would under-count a settle pass a live
+    // poll already drained, and over-count a resume round's earlier turns.
+    const delta = await mirrorKimiDelta(spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, {
+      turn: spec.resume?.turn ?? 1,
+    })
     // Report the final mirrored-line count even when the live mirror already
     // advanced the offset (empty delta): the settle report is authoritative.
     spec.ctx.get('localAgent')?.reportRunProgress(spec.childSession.id, { kind: 'mirror', mirroredLines: delta.total })
     return {
       ...delta.model === undefined ? {} : { model: delta.model },
       ...delta.usage === undefined ? {} : { usage: delta.usage },
+      ...delta.toolCalls === undefined ? {} : { toolCalls: delta.toolCalls },
     }
   } catch (error) {
     spec.onError?.(thrown(error), 'error')
@@ -914,6 +921,7 @@ export function startKimiCliRun(
           ...settled?.model === undefined ? {} : { observedModel: settled.model },
           ...cliVersion === undefined ? {} : { cliVersion },
           ...roundUsage === undefined ? {} : { usage: roundUsage },
+          ...settled?.toolCalls === undefined ? {} : { toolCalls: settled.toolCalls },
         })
       })
     },

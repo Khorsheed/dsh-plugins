@@ -113,6 +113,12 @@ The `options` argument of `registry.start(parent, provider, prompt, options)` an
 | `cwd` | The round's CLI working directory; a resume round must repeat the first round's, or it fails loud before any spawn |
 | `exec` | Run this round inside an **already-acquired container**: `{ container, workdir, env? }` |
 
+**One settled observation per round.** A provider calls `recordRoundSettled` once its round's output stream is fully parsed, and the family turns it into one `settled` progress event: the round's `observedModel`, `cliVersion`, `usage`, and its `toolCalls` (`{ count, byName }`). Every field stays absent when the round did not yield it — never guessed, never zero-filled.
+
+`toolCalls` is counted only from the transcript events the provider ALREADY parses — no new parse path and no second pass over the stream. `byName` keys are each CLI's own tool vocabulary (codex's `command_execution`, claude's `Bash`/`Read`, the tool names kimi's and dsh's own events carry), kept verbatim and **never normalized across harnesses**: cross-harness comparison is therefore `count` only, and `byName` is for a reader. Normalizing would invent an equivalence the CLIs never agreed to.
+
+`observedModel` and `cliVersion` merge into the delegation record (which states the delegation's latest state); `toolCalls` rides the EVENT only — it belongs to one round, and merging it would silently overwrite the previous round's count with the newest one.
+
 **Container delegation (the `exec` target).** Given one, the provider spawns `docker exec -w <workdir> [-e NAME…] <container> <the same argv>`; stdio stays piped, and the stream parse, settle, readback and `delegations.jsonl` record are byte-for-byte the host path's. The family owns exactly one docker verb, `exec` — acquiring, mounting and destroying a container belong to the caller (lab).
 
 - **Values never ride the argv.** Each forwarded variable appears only as `-e NAME`, and the docker CLI resolves it from its own environment — so a credential the provider resolved stays out of the host process table. What is forwarded: the defined entries of the provider's explicit env layer, overridden per key by `target.env`; the ambient allowlist (`PATH`, `HOME`, the proxy variables) is **not** forwarded — inside the container those belong to the image and the `docker run` that created it.

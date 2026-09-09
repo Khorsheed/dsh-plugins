@@ -280,12 +280,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           outDir: result.outDir,
           resultsPath: result.resultsPath,
           summaryPath: result.summaryPath,
+          usagePath: result.usagePath,
           rows: result.rowCount,
+          usageRows: result.usageRowCount,
           comparisonAllowed: result.report.comparisonAllowed,
           toolOnlyNs: result.report.toolOnlyNs,
           invariants,
         }, null, 2)}\n`)
-        io.stderr(`dsh-eval: report → ${result.resultsPath} + ${result.summaryPath} (${result.rowCount} verdict row(s), comparison ${result.report.comparisonAllowed ? 'allowed' : 'REFUSED by invariants'})\n`)
+        io.stderr(`dsh-eval: report → ${result.resultsPath} + ${result.usagePath} + ${result.summaryPath} (${result.rowCount} verdict row(s), ${result.usageRowCount} delegation round(s), comparison ${result.report.comparisonAllowed ? 'allowed' : 'REFUSED by invariants'})\n`)
         return 0
       }
       default:

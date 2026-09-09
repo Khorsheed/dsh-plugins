@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
@@ -103,6 +104,13 @@ export interface KimiMirrorDelta {
    * Absent when the wire carried none.
    */
   model?: string
+  /**
+   * The ROUND's tool-call accounting, counted from the transcript's own
+   * `tool.call` lines (`options.turn` selects the round). Keyed by the name
+   * the wire gave the tool, never normalized. Absent when no turn was named
+   * or the round called none.
+   */
+  toolCalls?: LocalAgentToolCalls
 }
 
 /** Mirror behavior switches shared by the exec and live paths. */
@@ -115,6 +123,15 @@ export interface KimiMirrorOptions {
    * returned on the delta instead of being attached.
    */
   skipAssistantContent?: boolean
+  /**
+   * The round this pass belongs to (the wire's 1-based turn, which matches
+   * the provider's own turn numbering). Given, the delta reports that ROUND's
+   * tool-call accounting — counted over the transcript lines carrying this
+   * turn, not over the mirror window, so a settle pass that a live poll
+   * already drained still reports the round's real count. Absent, no
+   * accounting is reported.
+   */
+  turn?: number
 }
 
 /**
@@ -212,6 +229,11 @@ export async function mirrorKimiSessionDelta(
   const newTotal = transcript.lines.length
   const delta = transcript.lines.slice(fromLines)
   const observedModel = transcript.model
+  // The ROUND's tool calls, counted over the transcript lines carrying this
+  // round's turn — deliberately NOT over the mirror window: a settle pass
+  // whose delta a live poll already drained still owes the round its real
+  // count, and a resume round must not inherit the earlier rounds' calls.
+  const toolCalls = roundToolCalls(transcript.lines, options?.turn)
   // No early return on an empty delta: a result that merged into an
   // already-mirrored tool line does not change the line count, and the
   // backfill below still owes that call its `tool/result` event.
@@ -290,6 +312,7 @@ export async function mirrorKimiSessionDelta(
       texts,
       ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
       ...observedModel !== undefined ? { model: observedModel } : {},
+      ...toolCalls !== undefined ? { toolCalls } : {},
     }
   }
   for (let index = 0; index < delta.length; index += 1) {
@@ -354,7 +377,32 @@ export async function mirrorKimiSessionDelta(
     texts,
     ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
     ...observedModel !== undefined ? { model: observedModel } : {},
+    ...toolCalls !== undefined ? { toolCalls } : {},
   }
+}
+
+/**
+ * Count one round's tool calls out of a kimi transcript, keyed by the name the
+ * wire gave each tool. No turn named, or no `tool.call` line carrying it,
+ * yields undefined — a round reports nothing rather than a zero it did not
+ * observe. Reads only the transcript lines the mirror already folded.
+ * @param lines - the whole session transcript.
+ * @param turn - the round's 1-based turn, when the caller named one.
+ * @returns the round's accounting, or undefined.
+ */
+export function roundToolCalls(
+  lines: readonly KimiTranscriptLine[],
+  turn: number | undefined,
+): LocalAgentToolCalls | undefined {
+  if (turn === undefined) return undefined
+  const byName: Record<string, number> = {}
+  let count = 0
+  for (const line of lines) {
+    if (line.kind !== 'tool' || line.turn !== turn) continue
+    count += 1
+    byName[line.name] = (byName[line.name] ?? 0) + 1
+  }
+  return count === 0 ? undefined : { count, byName }
 }
 
 /**

@@ -39,7 +39,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, hashConditionDocument } from './hash.ts'
 import type {
-  DelegationProgress, DelegationResult, DelegationUsage,
+  DelegationProgress, DelegationResult, DelegationToolCalls, DelegationUsage,
   DatasetsFace, LabFace, LabUnitInfo, LocalAgentFace, MissionFace,
 } from './faces.ts'
 import { conditionDiagnostics, validatePlan, type EvalDiagnostic, type PlanValidation } from './validate.ts'
@@ -819,7 +819,12 @@ async function runCellOnce(
     // T11 read-back: the settled progress event carries the round's observed
     // model and usage; kept here and merged with delegationOf after settle
     // (either channel may have the value the other missed).
-    let settled: { observedModel?: string; usage?: DelegationUsage } | undefined
+    let settled: {
+      observedModel?: string
+      cliVersion?: string
+      usage?: DelegationUsage
+      toolCalls?: DelegationToolCalls
+    } | undefined
     // What the record already carried before this round — a later value that
     // differs from it is this round's own observation.
     const priorObserved = childSessionId === undefined
@@ -850,7 +855,9 @@ async function runCellOnce(
           if (event.kind !== 'settled') return
           settled = {
             ...event.observedModel !== undefined ? { observedModel: event.observedModel } : {},
+            ...event.cliVersion !== undefined ? { cliVersion: event.cliVersion } : {},
             ...event.usage !== undefined ? { usage: event.usage } : {},
+            ...event.toolCalls !== undefined ? { toolCalls: event.toolCalls } : {},
           }
         },
       }
@@ -909,6 +916,10 @@ async function runCellOnce(
     const observedModel = settled?.observedModel
       ?? await awaitObservedModel(localAgent, run.id, priorObserved, env.readbackWaitMs)
     const usage = settled?.usage ?? null
+    // `usage` stays an explicit null (its shape predates this field and the
+    // report reads the key), but the two newer facts are OMITTED when the
+    // round did not report them: absence is what "the harness counted none"
+    // has to look like, and a zero would read as a round that used no tools.
     await mission.annotate(missionId, 'orchestrator', {
       kind: 'delegation',
       stage: stageId,
@@ -918,6 +929,8 @@ async function runCellOnce(
       startedAt,
       durationMs,
       usage,
+      ...settled?.toolCalls !== undefined ? { toolCalls: settled.toolCalls } : {},
+      ...settled?.cliVersion !== undefined ? { cliVersion: settled.cliVersion } : {},
       model: { declared: env.condition.declaredModel, observed: observedModel },
     }, { runId: env.runId, by: env.by })
     if (timedOut) {

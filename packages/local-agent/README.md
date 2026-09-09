@@ -113,6 +113,12 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 | `cwd` | 本轮 CLI 的工作目录；resume 轮必须与首轮记录一致，否则进程启动前 fail loud |
 | `exec` | 本轮在**已取得的容器里**跑：`{ container, workdir, env? }` |
 
+**每轮的 settle 观测。** provider 在一轮的输出流解析完之后调用 `recordRoundSettled`，家族把它转成一条 `settled` 进度事件：本轮的 `observedModel`、`cliVersion`、`usage`，以及本轮的 `toolCalls`（`{ count, byName }`）。每个字段取不到就缺位，绝不猜、绝不补零。
+
+`toolCalls` 只从 provider **已经解析过**的转录事件里数出来——不新开解析路径、不再走一遍流。`byName` 的键是各家 CLI 自己的工具词汇（codex 的 `command_execution`、claude 的 `Bash`/`Read`、kimi 与 dsh 各自事件里的工具名），原样保留、**不跨家归一**：因此横比只比 `count`，`byName` 是给人读的。归一化会凭空造出一份 CLI 之间从未约定过的等价关系。
+
+`observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。
+
 **容器内委派（`exec` 目标）。** 给了它，provider 把 argv 换成 `docker exec -w <workdir> [-e NAME…] <container> <原 argv>`；stdio 仍是 pipe，流解析、settle、回读、`delegations.jsonl` 记录全部与宿主路径逐字节相同。家族只用 `exec` 这一个 docker 动词——取得、挂载、销毁容器是调用方（lab）的事。
 
 - **值不上 argv。** 每个转发的变量只以 `-e NAME` 出现，值留在 docker 客户端自己的环境里由它解析——provider 解析出的凭据因此不进宿主进程表。转发集 = provider 显式 env 层里有值的项，按键被 `target.env` 覆盖；`PATH`/`HOME`/代理这些走继承白名单的变量**不转发**，容器里它们属于镜像与 `docker run`。

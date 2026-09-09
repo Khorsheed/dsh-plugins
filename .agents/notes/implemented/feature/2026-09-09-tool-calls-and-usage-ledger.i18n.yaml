@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-tool-calls-and-usage-ledger.md
+.agents/notes/implemented/feature/2026-09-09-tool-calls-and-usage-ledger.md: b7c305b4a97edab9262f23bb7827fa26f346afc8
+.agents/notes/implemented/feature/2026-09-09-tool-calls-and-usage-ledger.zh.md: 6b73bc8be494a83e8f054852ffaaaabe3de9356e

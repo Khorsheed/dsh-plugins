@@ -43,7 +43,7 @@ import {
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
-import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { readCodexBaseUrl } from './provision.ts'
@@ -565,7 +565,11 @@ export interface CodexCliRunSpec {
    * the `settled` run-progress event). Fires for fresh and resume rounds
    * alike, on every terminal state.
    */
-  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
+  readonly onRoundSettled?: ((round: {
+    readonly observedModel?: string
+    readonly usage?: TokenUsage
+    readonly toolCalls?: LocalAgentToolCalls
+  }) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -623,6 +627,40 @@ interface CodexStreamFoldState {
   model: string | undefined
   /** Whether the stream's terminal `turn.completed` event was folded. */
   completed: boolean
+  /**
+   * Tool calls this stream made, keyed by codex's OWN item type
+   * (`command_execution`, `web_search_call`) — not the display names the
+   * transcript lines carry (`Bash`, `WebSearch`), because the accounting
+   * reports what the CLI called the thing. Counted in the same branches that
+   * already fold the item, so no event is parsed twice and none is parsed
+   * that was not parsed before. `function_call_output` is a RESULT and never
+   * counts: it merges into the call that preceded it.
+   */
+  readonly toolCalls: Map<string, number>
+}
+
+/** Count one tool call under the CLI's own name for the item. */
+function countToolCall(state: CodexStreamFoldState, name: string): void {
+  state.toolCalls.set(name, (state.toolCalls.get(name) ?? 0) + 1)
+}
+
+/**
+ * Fold a tool-call counter into the settled shape: `{count, byName}` with the
+ * per-name values summing to `count`. An empty map yields undefined — a
+ * stream that named no tool call reports nothing rather than a zero it did
+ * not observe.
+ * @param counts - the fold's per-name tally.
+ * @returns the settled accounting, or undefined when nothing was counted.
+ */
+export function toolCallsOf(counts: ReadonlyMap<string, number>): LocalAgentToolCalls | undefined {
+  if (counts.size === 0) return undefined
+  let count = 0
+  const byName: Record<string, number> = {}
+  for (const [name, value] of counts) {
+    count += value
+    byName[name] = value
+  }
+  return { count, byName }
 }
 
 /**
@@ -665,6 +703,9 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     state.lines.push({ kind: 'text', text: item.text })
     state.text = item.text
   } else if (item.type === 'command_execution') {
+    // Counted before the fold's own "did it carry anything to show" filter: a
+    // command with neither text nor output is still a call the CLI made.
+    countToolCall(state, 'command_execution')
     const command = typeof item.command === 'string' ? item.command : undefined
     const output = typeof item.aggregated_output === 'string' && item.aggregated_output.trim() !== ''
       ? item.aggregated_output
@@ -679,6 +720,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       })
     }
   } else if (item.type === 'web_search_call') {
+    countToolCall(state, 'web_search_call')
     state.lines.push({
       kind: 'tool',
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
@@ -715,6 +757,7 @@ export class CodexStreamParser implements CodexStreamFoldState {
   threadId: string | undefined
   model: string | undefined
   completed = false
+  readonly toolCalls = new Map<string, number>()
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
   push(chunk: string): void {
@@ -746,15 +789,18 @@ export function parseCodexJsonStream(stream: string): {
   usage?: TokenUsage
   threadId?: string
   model?: string
+  toolCalls?: LocalAgentToolCalls
 } {
-  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false }
+  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false, toolCalls: new Map() }
   for (const raw of stream.split('\n')) foldCodexStreamLine(state, raw)
+  const toolCalls = toolCallsOf(state.toolCalls)
   return {
     lines: state.lines,
     ...state.text === undefined ? {} : { text: state.text },
     ...state.usage === undefined ? {} : { usage: state.usage },
     ...state.threadId === undefined ? {} : { threadId: state.threadId },
     ...state.model === undefined ? {} : { model: state.model },
+    ...toolCalls === undefined ? {} : { toolCalls },
   }
 }
 
@@ -1359,6 +1405,7 @@ async function mirrorCodexAfterExit(
       ...observedModel === undefined ? {} : { observedModel },
       ...cliVersion === undefined ? {} : { cliVersion },
       ...usage === undefined ? {} : { usage },
+      ...parsed.toolCalls === undefined ? {} : { toolCalls: parsed.toolCalls },
     })
     // Nothing streamed at all (e.g. the CLI died before the first item): keep
     // the pre-live-mirror behavior of recording nothing.

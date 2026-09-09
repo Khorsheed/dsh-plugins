@@ -160,6 +160,17 @@ export interface DelegationUsage {
 }
 
 /**
+ * One settled round's tool-call accounting as the facade reports it. `count`
+ * is the only cross-harness comparable: `byName` keys are each CLI's own tool
+ * vocabulary, recorded verbatim and never normalized (see the family's
+ * `LocalAgentToolCalls`).
+ */
+export interface DelegationToolCalls {
+  count: number
+  byName?: Record<string, number>
+}
+
+/**
  * One progress event as the facade emits it. Only the `settled` kind carries
  * the read-back; every other kind (heartbeat / mirror / delta) is ignored
  * here, so `kind` stays open and the payload optional — a facade emitting
@@ -170,8 +181,12 @@ export interface DelegationProgress {
   kind: string
   /** `settled` only: the model the provider observed for this round (T11). */
   observedModel?: string
+  /** `settled` only: the CLI build the round actually ran, when read back. */
+  cliVersion?: string
   /** `settled` only: the round's token usage, when the harness reported one. */
   usage?: DelegationUsage
+  /** `settled` only: the round's tool calls, when the harness counted any. */
+  toolCalls?: DelegationToolCalls
 }
 
 /**
