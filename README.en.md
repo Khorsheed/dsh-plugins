@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **15 packages** that extend the official web GUI. 14 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The 15th (the local-agent family's delegation tool) rides the harnesses and uninstalls with them. Of the 14 bundles, all but `@khorsheed/dsh-room` (WIP, not on production) already run together on the production profile, and nothing about the official UI is patched or replaced.
+Community plugin monorepo for the **dsh** ecosystem (DeepSeek Harness): **26 packages** that extend the official web GUI. 24 are self-mounting bundles — each installs with one command and uninstalls with one command, and each is a pure increment: it mounts only its own loader row, touches official extension points (slots, commands, Remote services, session mirrors), and removes cleanly when uncomposed. The other two (the local-agent family's delegation tool and the local-agent-dsh headless sub-bundle) ride the harnesses and uninstall with them. 21 of the 26 (including the WIP `@khorsheed/dsh-room`) already run together on the production profile, and nothing about the official UI is patched or replaced.
 
-**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (0.1.0). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission packages in this repo are incubating work-in-progress and not on any release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
+**Release status**: wave one — the 10 members of the [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) bundle (the first 10 rows below) — is live on npm (**0.2.0**, the 2026-09-10 wave aligned with host 0.1.2-rc.1). The local-agent family (the last 5 rows) is feature-complete (member-channel M1–M3 across all four providers) and publishes as one wave two once accepted. The datasets / lab / mission / eval packages in this repo are incubating work-in-progress and not on any release line. **Version lines**: 0.2.0 and up require a host ≥ 0.1.2-rc.1; hosts ≤ 0.1.1-rc.2 stay on the 0.1.x release line. The per-package release and host-compatibility matrix lives in [docs/release-status.md](docs/release-status.md) (regenerated after every release).
 
 This README is the catalog: what each plugin does, how to load it, and exactly how to unload it. The repo is also a developer workspace — see [Development](#development).
 
@@ -22,6 +22,7 @@ Published (wave one, the dsh-web-basic members):
 | `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | Background-job / subagent dock pills above the composer with stop/interrupt and a detail drawer |
 | `@khorsheed/dsh-whalesong` | client | `whalesong` | Task ambience: the whale spouts, the favicon animates, chimes on completion/blocked |
 | `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | User-rebindable keyboard shortcuts: pause, steer-send, new session |
+| `@khorsheed/dsh-context-guard` | host + client | `context-guard` | One-click **compact reminder** in the composer once context occupancy crosses a configurable threshold |
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | Safety gate for self-modification restarts: green-build credential + preflight + watchdog rollback |
 
 Pending release (wave two, the local-agent family, published together):
@@ -45,14 +46,14 @@ One exception to know: host images that already mount an `ankh-guard` row (histo
 
 ## Install
 
-Prerequisites: a dsh host ≥ `0.1.0-rc.6` (every bundle declares `minHost`), any profile (`web` / `headless` / custom). Every bundle declares `dsh.bundle`, so one command installs it **and** mounts its loader row — no hand-edited `cordis.yml`. Restart the web instance afterwards.
+Prerequisites: a dsh host ≥ `0.1.2-rc.1` (every bundle declares `minHost`), any profile (`web` / `headless` / custom). Every bundle declares `dsh.bundle`, so one command installs it **and** mounts its loader row — no hand-edited `cordis.yml`. Restart the web instance afterwards.
 
 ```sh
 # one plugin, by npm name
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
 # from a tarball / a source directory
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.2.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
@@ -138,7 +139,7 @@ A read-only Remote service: `list` folds one session's log into the files its `r
 
 #### `dsh-client-ui-file-preview` — the browser surface
 
-A 「产物」 tab in the conversation view ring (beside chat and trajectory) listing the session's files with inline preview, a change-history tab stepping through every diff, and content search; a per-turn "N files changed" card at the end of each finished turn; a content-only drawer with show-in-folder / open-in-IDE gestures. Pairs with `dsh-file-preview` (declared as a peer, auto-installed); without the host row the surfaces render a degraded/empty state instead of failing boot.
+A 「产物」 tab in the conversation view ring (beside chat and trajectory) listing the session's files with inline preview, a change-history tab stepping through every diff, and content search; a per-turn "N files changed" card at the end of each finished turn; a content-only drawer with show-in-folder / open-in-IDE gestures (temporarily hidden on 0.1.2 hosts — `canOpenPath` moved to an RPC probe, restoration is a follow-up). Pairs with `dsh-file-preview` (declared as a peer, auto-installed); without the host row the surfaces render a degraded/empty state instead of failing boot.
 
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`; remove both halves together unless you keep the headless service.
 
@@ -220,15 +221,15 @@ For self-hosting scenarios where an AI agent edits code and restarts the service
 
 Six-step protocol: `checkpoint` → modify → build+test → `record` → `verify` → restart + `canary`. The same surface is available as the `selfRestartGuard` service in-app.
 
-Compatibility note: on the npm release line the composition-preflight gate degrades (it rides the fork's `dsh preflight` command); every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
+Compatibility note: on the npm release line the composition-preflight gate runs through a standalone `preflight-runner` (host 0.1.2-rc.1 still does not export `composeProfile`, so the runner assembles via the published `@deepseek-ai/dsh-app-boot` primitives, with a drift-tripwire test) and runs in full wherever it can resolve the dsh app layout (`--harness-root`, a durable launch spec, `DSH_HARNESS`, or the default checkout path); a pure-npm deployment without a harness checkout degrades the gate to proceed-with-notice. Every other capability (restart/supervise gating, watchdog, rollback-to-known-good) stays fully intact.
 
 **Uninstall** — `dsh plugin --profile web remove @khorsheed/dsh-ankh-guard`: the row and its CLI/service surface go away; guard state under `stateDir` (default `$DSH_HOME/state`) is kept by design — delete it for a clean slate. If the host image already mounts the `ankh-guard` row, don't add the profile row at all (duplicate entry id → boot fail); disable the duplicate instead.
 
 ## Compatibility with host lines
 
-All packages declare `minHost: 0.1.0-rc.6` and touch only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery):
+All packages declare `minHost: 0.1.2-rc.1` and touch only the official public stable surface (slots, core services, core events, cordis 4.x, schemastery):
 
-- npm release line: ✅ full — the single exception is `dsh-ankh-guard`, ⚠️ degraded (composition-preflight gate depends on the fork's `dsh preflight`; without it the guard proceeds with a notice, everything else intact).
+- npm release line: ✅ full — the single exception is `dsh-ankh-guard`, ⚠️ degraded (the composition-preflight gate runs through a standalone `preflight-runner` over the published `@deepseek-ai/dsh-app-boot` primitives; a pure-npm deployment without a harness checkout degrades the gate to proceed-with-notice, everything else intact).
 - source line (deepseek-harness master): ✅
 
 ## Model impact at a glance

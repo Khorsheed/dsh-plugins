@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**15 个纯增量插件**。其中 14 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;第 15 个(local-agent 家族的委派工具)随 harness 挂载、随 harness 卸载。14 个 bundle 中除 `@khorsheed/dsh-room`(WIP,未上生产)外的 13 个已经同时跑在生产 profile 上,卸载即精确还原。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**26 个纯增量插件包**。其中 24 个是自挂载 bundle——一个命令装一个、一个命令卸一个,每个只挂自己的 loader 行,全部走官方扩展点(slots、commands、Remote 服务、会话镜像)接入,不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;另外 2 个(local-agent 家族的委派工具、local-agent-dsh 的 headless 子包)随 harness 挂载、随 harness 卸载。26 个包中的 21 个(含 WIP 的 `@khorsheed/dsh-room`)已经同时跑在生产 profile 上,卸载即精确还原。
 
-**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(0.1.0);local-agent 家族(后 5 行)功能已完整(member-channel M1–M3 四 provider 全通),待验收后作为第二波整体发布。仓库里的 datasets / lab / mission 是孵化中的在途工作,不计入发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
+**发布状态**:第一波是 [dsh-web-basic](https://github.com/Khorsheed/dsh-web-basic) 整合包的 10 个成员(下表前 10 行),已上架 npm(**0.2.0**,2026-09-10 发布波,对齐宿主 0.1.2-rc.1);local-agent 家族(后 5 行)功能已完整(member-channel M1–M3 四 provider 全通),待验收后作为第二波整体发布。仓库里的 datasets / lab / mission / eval 等是孵化中的在途工作,不计入发布线。**版本线对照**:0.2.0 起要求宿主 ≥ 0.1.2-rc.1;宿主 ≤ 0.1.1-rc.2 的用户请停留在 0.1.x 发布线。各包的发布版本与宿主兼容性矩阵见 [docs/release-status.md](docs/release-status.md)(每次发版后重新生成)。
 
 本文档即插件目录:每个插件能做什么、怎么装、怎么卸。仓库同时是开发工作区,开发相关内容见[开发](#开发)。
 
@@ -22,6 +22,7 @@
 | `@khorsheed/dsh-taskpilot` | host + client | `taskpilot` | 聊天框上方**后台任务/子 Agent 胶囊**,停止/中断 + 详情抽屉 |
 | `@khorsheed/dsh-whalesong` | client | `whalesong` | 任务氛围:鲸鱼喷水、favicon 动画、完成/阻塞提示音 |
 | `@khorsheed/dsh-ui-shortcuts` | client | `ui-shortcuts` | 可自定义键位的**快捷键**:暂停、插队发送、新建会话 |
+| `@khorsheed/dsh-context-guard` | host + client | `context-guard` | 上下文占用越过可配阈值时聊天框上的**一键 compact 提醒** |
 | `@khorsheed/dsh-ankh-guard` | host | `ankh-guard` | 自修改重启的**安全门禁**:绿色凭证 + preflight + watchdog 回滚 |
 
 待发布(第二波,local-agent 家族,整体发布):
@@ -45,14 +46,14 @@
 
 ## 安装
 
-前置:dsh 宿主 ≥ `0.1.0-rc.6`(每个 bundle 声明 `minHost`),任意 profile(`web` / `headless` / 自定义)。每个 bundle 都声明 `dsh.bundle`:`dsh plugin add` 一条命令完成安装并自动挂载 loader 行,**无需手改 cordis.yml**。装完**重启 web 实例**生效。
+前置:dsh 宿主 ≥ `0.1.2-rc.1`(每个 bundle 声明 `minHost`),任意 profile(`web` / `headless` / 自定义)。每个 bundle 都声明 `dsh.bundle`:`dsh plugin add` 一条命令完成安装并自动挂载 loader 行,**无需手改 cordis.yml**。装完**重启 web 实例**生效。
 
 ```sh
 # 按 npm 名装单个
 dsh plugin --profile web add @khorsheed/dsh-whalesong
 
 # 从 tarball / 源码目录装(开发态)
-dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.1.0.tgz
+dsh plugin --profile web add ./khorsheed-dsh-whalesong-0.2.0.tgz
 dsh plugin --profile web add /path/to/dsh-plugins/packages/message-timeline
 ```
 
@@ -138,7 +139,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 #### `dsh-client-ui-file-preview` —— 浏览器界面
 
-与「对话」「轨迹」并列的会话「产物」tab:列出会话写入/编辑过的文件(按最近活动倒序),内联预览当前内容,改动记录 tab 逐条步进每次 write/edit 的 diff(每条带所属轮次/步骤),带内容搜索(高亮 + 逐个跳转);每个已完成回合末尾出现「N 个文件已修改」汇总卡;点文件打开仅内容的抽屉,宿主支持时提供「在文件夹中打开 / 在 IDE 打开」。与 `dsh-file-preview` 成对(声明为 peer,自动安装);没有宿主行时界面渲染降级/空态,而不是 boot 失败。
+与「对话」「轨迹」并列的会话「产物」tab:列出会话写入/编辑过的文件(按最近活动倒序),内联预览当前内容,改动记录 tab 逐条步进每次 write/edit 的 diff(每条带所属轮次/步骤),带内容搜索(高亮 + 逐个跳转);每个已完成回合末尾出现「N 个文件已修改」汇总卡;点文件打开仅内容的抽屉,宿主支持时提供「在文件夹中打开 / 在 IDE 打开」(0.1.2 宿主上该按钮暂隐——`canOpenPath` 已改为 RPC 探测,恢复是 follow-up)。与 `dsh-file-preview` 成对(声明为 peer,自动安装);没有宿主行时界面渲染降级/空态,而不是 boot 失败。
 
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`;除非保留 headless 服务,建议两个半边一起卸。
 
@@ -220,15 +221,15 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi   # 或 -codex / -c
 
 六步自我重启协议:`checkpoint` → 修改 → build+test → `record` → `verify` → 重启+`canary`。应用内同一能力以 `selfRestartGuard` 服务暴露。
 
-兼容性注意:npm 发布线上组合 preflight 门禁**降级**(依赖 fork 的 `dsh preflight` 命令),其余能力(restart/supervise 门禁、watchdog、回滚到已知良好)全部完整。
+兼容性注意:npm 发布线上组合 preflight 门禁经独立的 `preflight-runner` 运行(0.1.2-rc.1 宿主仍未导出 `composeProfile`,runner 改经已发布的 `@deepseek-ai/dsh-app-boot` 原语组装,带漂移绊线测试),能解析到 dsh app 布局(`--harness-root`、耐久 launch spec、`DSH_HARNESS` 或默认检出路径)即完整运行;没有 harness 检出的纯 npm 部署下门禁降级为提示后放行。其余能力(restart/supervise 门禁、watchdog、回滚到已知良好)全部完整。
 
 **卸载** —— `dsh plugin --profile web remove @khorsheed/dsh-ankh-guard`:行与 CLI/服务面消失;`stateDir`(默认 `$DSH_HOME/state`)下的守护状态按设计保留,删除即清。宿主镜像已挂 `ankh-guard` 行的不要以 profile bundle 添加本包(重复行 id → 启动失败),禁用重复行即可。
 
 ## 兼容性
 
-所有包声明 `minHost: 0.1.0-rc.6`,运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery):
+所有包声明 `minHost: 0.1.2-rc.1`,运行时只依赖官方公开稳定面(slots、核心服务、核心事件、cordis 4.x、schemastery):
 
-- npm 发布线:全部 ✅ **完整**,唯一例外是 `dsh-ankh-guard` ⚠️ **降级**(组合 preflight 门禁依赖 fork 的 `dsh preflight`,缺失时守护放行并提示,其余能力完整)。
+- npm 发布线:全部 ✅ **完整**,唯一例外是 `dsh-ankh-guard` ⚠️ **降级**(组合 preflight 门禁经独立 `preflight-runner` 用已发布的 `@deepseek-ai/dsh-app-boot` 原语运行;没有 harness 检出的纯 npm 部署降级为提示后放行,其余能力完整)。
 - 源码线(deepseek-harness master):全部 ✅。
 
 ## 模型影响总表
