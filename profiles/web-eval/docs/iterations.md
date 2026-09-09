@@ -202,7 +202,7 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T20b ✅ | 代码 | eval：「环境一致」的口径——去掉条件自有项再比；register 布局按题库真实路径物化；两条路径的物化哈希统一 | T20 T19c | 合入 main `d623952`；环境类 = 单元分量去掉条件自有挂载与 env 键后经 lab 新增的纯动词 `fingerprintOf` 再算；四个只差作用域项的条件同 run 环境类一致、单元指纹各异且逐格点名差异；宿主与容器路径的物化 sha 同题同 commit 相等；register 夹具题探针经题集级 lib 判定成功；pilot-a-round1 results.jsonl 逐字节不变。单元完整指纹进 orchestrator ns 注解与归档 manifest，进不了 refs（mission setRefs 只认三个键）→ 交出 |
 | T19d | 数据 | F2 阶段三的数据缺口：prompts/stage3.md、schemas/stage3.json 的文件引用形态、L2 四个驱动型探针（T19 + T28 量级）；I3 收口不依赖它，跑阶段三的 token 另批 | T19c | |
 | T21 ✅ | profile | eval preset：不挂 Bash 与 docker | 无 | 合入 main `e1e12f1`；工具 43 → 39，差集恰为 bash / exit_plan_mode / ralph / workflow；四个 `subagent_<harness>` 预设挑不掉 → T27 |
-| T22 🔄 | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | 第 1–4 步完成：profile `126990b`（codex danger-full-access）、题库 `i3-env-b` `0bcd824`（并入 i1-walk `913be11`）；新镜像 `sha256:4da0cfff…` 两炉内容指纹逐行相同，dsh 与 claude 容器内 exec 首次真通；F2 × codex × rep1 阶段一二在容器内到 released，四条不变量首次全 ✅，A-N2 首次进缺陷清单；第 5 步等 T20c，走 3171 |
+| T22 ✅ | 运维 | 容器内跑 F2 阶段三一格；再跑四家同一题 | T16–T21 T27 T28 | 第 5 步（2026-09-09）：profile `9396b2e`（撤 claude proxyUrl、pin dsh headlessBundleDir / cliLaunch、拒绝路径带证据），题库 `i3-env-b` `b869cb8`（并入 i1-walk `511e096`）；3171 实例上 P0 × 四家 × 1 rep 全部 released，四条不变量全 ✅、四个单元指纹各异且差异逐格点名、comparison allowed、效率表 token 四列有数；run B 三家 + 判官，判官就绪通过、κ 1.0（P0 无争议）；阶段三归 T19d。第 1–4 步：profile `126990b`（codex danger-full-access）、题库 `i3-env-b` `0bcd824`（并入 i1-walk `913be11`）；新镜像 `sha256:4da0cfff…` 两炉内容指纹逐行相同，dsh 与 claude 容器内 exec 首次真通；F2 × codex × rep1 阶段一二在容器内到 released，四条不变量首次全 ✅，A-N2 首次进缺陷清单；第 5 步等 T20c，走 3171 |
 | T20c ✅ | 代码 | eval：容器路径挂 local-agent 的作用域目录而不是 `--creds-root`（回读才读得到 rollout）；就绪检查覆盖判官条件 | T20b | 合入 main `28c0c17`；`--creds-root` 删净，挂载源取 `homeDir(家名)`，契约 v1-rev7 只改描述；真机 P0 × codex 容器内真 CLI：就绪检查回读 gpt-5.6-sol，四条不变量全 ✅，报告第一次 comparison allowed；判官条件不通时 run 在就绪检查被拒（READINESS_FAILED，1 of 2），run 记录不创建；同一家两个条件今天共用作用域目录，「每条件一份」等 T29 |
 | T23 ✅ | 代码 | eval：`finalize <runId>` 再入口（G13）；开跑前就绪检查做一次最小委派而不信 `authenticated`（G4）；效率表只计已完成格子（G15）；run 的 `--only` / `--max-cells` 记进 run.meta；validate 交叉核 plan.expectedNs 与题的判定源（G6 的 eval 半边） | 无 | 合入 main `0cd2139`；finalize 不强推、不碰 archived 以下；就绪检查每条件一次真委派，失败拒整 run；效率表只计已完成格子（pilot A 的 dsh-exec 21.0 → 11.9 min）；子集记 `run.meta.subset`；validate 对 expectedNs 出四种 warning；judge.ts 零改动 |
 | T24 ✅ | 代码+数据 | 负分判据进报告（G11 + G12）：verdict 契约不动，极性取 rubric 叶子的 `negative` / 负 weight；导出时把权重表（id → weight、negative）写进 bundle `report/`，报告以「得分判据数」与加权分呈现；**追加**：比例字段进 §6.5 | 无 | 合入 main `979e624`；协议 v1-rev4：极性归 rubric、`ratio: {passed, total}` 进 §6.5、§6.7 禁止 evidence 前缀；导出写 `report/rubric-weights.json`（只有编号与数字）；报告主轴改「得分判据数」+ 缺陷清单表；题库三份 rubric 审计零改动 |
@@ -211,7 +211,7 @@ pilot 的 14 条缺口见题库 `docs/pilot-a-log.md`。六条拦路的（G4 `au
 | T27 ✅ | 代码 | local-agent-tool-subagent：`tools: all \| none` 注册开关（T12/T13 同款）；pack 的 patch 把四家委派工具行设为 none | 无 | 合入 main `c8ba619`；none 下不注册工具也不挂生命周期监听；patch 三行 none（整值替换，故重抄 provider / toolName 并以 name 守卫）；新装实例 36 个工具，叠 all 回 39，差集恰为三家委派工具；第四家 `subagent_dsh` 在 profile 层关不掉，要改 provider 包 |
 | T28 ✅ | 代码 | eval 探针运行器：题集级 verify 层随题物化、题内探针可 import 共享库；退出码三态（判不了 ≠ 失败）；先回填 task / by 再校验，§6.7 措辞对齐 | 无 | 合入 main `a6395e1`；两个 verify 层镜像题库布局物化，题集级探针对每题各跑一次；退出码 0 / 3 / 其余（取 3 不取 2：2 是 getopt 的用法错误码）；先回填再校验，ratio 边界与 pass 一致性在源头拦；协议 v1-rev5；题库仍退 2、仍留 lib 副本 → T19c |
 
-第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 已验收。第四波（2026-09-08 发出）：T20b、T30a 已验收；T22 第 1–4 步已验收，第 5 步等 T20c 合入后走 3171 实例。第五波（2026-09-08 发出）：T20c 已验收（2026-09-09）；T22 第 5 步可以跑，走 3171 实例。阶段三是题库数据缺口，记 T19d，I3 收口不等它。
+第一波（2026-09-08 发出）：T16、T18、T19、T21、T23、T24、T25、T26 已验收。第二波（2026-09-08 发出）：T18b、T17、T27、T28、T19b 已验收。第三波（2026-09-08 发出）：T19c、T20 已验收。第四波（2026-09-08 发出）：T20b、T30a 已验收；T22 第 1–4 步已验收，第 5 步等 T20c 合入后走 3171 实例。第五波（2026-09-08 发出）：T20c 已验收（2026-09-09）；T22 第 5 步已验收（2026-09-09）。**I3 收口（2026-09-09）**：README I3 行的两条完成判据都成立。阶段三是题库数据缺口，记 T19d，另批预算。
 
 **第一波验收（2026-09-08）**：T21（`e1e12f1`）与 T18（`b7dc599`）合入 main，两条分支文件不重叠；合并态 gate 通过，lab 包 100 个测试在验收机上重跑全绿。T16 与 T19 在题库仓库：`i3-env`（`4004dfc`）与 `i3-probes`（`050e22d`）经临时 worktree 并入 `i1-walk`（`714b793`、`d3ee214`），未动共享检出的 HEAD；T16 的提交全文 grep 过凭据形状，无命中。
 
@@ -260,6 +260,13 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 
 **T20c 验收（2026-09-09）**：`fix/eval-scoped-home-readiness-judge`（`437d98c`）合入 main `28c0c17`，只动 packages/eval 与协议文档，eval 316 全绿，gate --all 通过。`--creds-root` 删净；容器路径的挂载源取 LocalAgentFace 新声明的 `homeDir(家名)`（local-agent 服务类原有，只在 eval 的结构面上声明一行，local-agent 零改动），面上缺它时 fail loud 而不是静默挂错。真机一：P0 × codex 容器内真 CLI，就绪检查回读到 gpt-5.6-sol，报告四条不变量全 ✅，`comparison allowed`——报告第一次愿意做比较；run.meta.readiness 带 role / observedModel / unit。真机二：judge 换成 OAuth 已过期的 claude，`READINESS_FAILED · 1 of 2 · judge claude-exec … exceeded 120s and was cancelled`，run 记录未创建；此前同一份计划会走到 released 而判官命名空间为空。契约 v1-rev7 只改 `unit.scopedHome` 的描述，条件文件不动。写明的边界接受：homeDir 按家给不按条件给，同一家的两个条件今天共用一份作用域目录，只能在模型、推理强度这类不落在作用域目录里的因子上不同；「每条件一份」等 I4 的 T29。
 
+**第七波验收（2026-09-09，T22 第 5 步）**：`feat/web-eval-container-pins`（`99bcb43`、`fb0d96f`，已并 main）合入 main `9396b2e`，只动 cordis.patch.yml 与 eval 的 slash.ts，eval 316 全绿；题库 `i3-env-b`（`f5e9bfc`…`b869cb8`）经临时 worktree 并入 `i1-walk`（`511e096`），共享检出 HEAD 未动，新校验器 0 error、46 条 UNREGISTERED_FILES。
+
+- **做成的**：3171 实例上 `/eval run` 发起，P0 × 四家 × 1 rep（run A）四格 released，容器全部销毁；就绪检查四家都带回读模型（codex gpt-5.6-sol、claude claude-opus-5[1m]、kimi kimi-for-coding、dsh deepseek-v4-flash）；四条不变量全 ✅，「环境一致」下四个单元指纹各异、被排除项逐格列出；comparison allowed，六对配对全部列出并如实标「不可排名（n=1 < 3）」；效率表 token 四列首次在产品路径上有数（claude 输出 41k / cacheRead 702k，codex 9.8k / 235k，dsh 52k / 606k，kimi 9.4k / 297k）——第 4 步四列全空是 tsx 驱动那半的事，不是编排器缺口。run B 三家 + 判官：判官就绪通过，llm-draft 30 + script 3，双采样 κ 1.000（P0 判据无争议，不能当判官一致性的证据）。途中被拒的就绪原文都拿到了：claude 授权链断、kimi 实跑 kimi-for-coding 与声明 k3 不符、dsh cliLaunch 是宿主绝对路径、判官实跑 v4-flash 与声明 v4-pro 不符、JUDGE_IS_PLAYER——T23 的设计在产品路径上第一次完整兑现。
+- **两处越界都接受**：一、slash.ts 的拒绝路径原先只留 error.message，把逐条就绪原因与 EvalRunRefused 的 diagnostics 都扔了——「打印那个 401 而不是『某条件失败』」正是 T23 的要点，产品路径上本来拿不到，改对了；分支声明只改 profile，实施者已把它单独成 commit。二、撤 claude 的 `proxyUrl` pin：provider 把它写进作用域 settings.json 的 env 块，T20c 之后容器轮挂的就是这个目录，127.0.0.1:6152 在单元里当场 Connection refused；provisionClaudeHome 在 proxyUrl 未配时直接 return 不退回宿主环境，单元出网由镜像烧进去的白名单代理给。与决策 5 不矛盾——决策 5 pin 的是端点（baseUrl 仍钉着），proxyUrl 是「从哪台机器怎么出网」的宿主事实，不该写进会被挂进单元的目录。README「当前 pin」段已由协调者同步。dsh 的 `headlessBundleDir` 与 `cliLaunch` pin 成宿主与单元里同时成立的路径：provisionDshSubProfile 写的是指向宿主安装的绝对符号链接，单元里悬空；「容器轮跳过 provisioning」防不住已经写在那儿的那条（判官走宿主 dsh 委派，就绪检查一探就重新 provision）。这是接缝不是答案，scoped home 该不该自足交回 local-agent-dsh。
+- **交出**：local-agent-claude-code 两条——`syncClaudeCredentialFile` 用 `security find-generic-password -s <svc> -w` 不带 `-a`，同名 service 多条时取第一条，本机第一条是 token 全空的历史残留，于是 login 成功、status 已认证、每次委派报「OAuth session expired」，与真过期逐字相同；凭证两个存储 + 单向同步 + 容器轮会写文件，续期链一分叉即自毁，毁的是实例本体那一份。local-agent-dsh 一条：scoped home 里的 headless bundle 链接是宿主绝对路径。kimi 失败续期清空凭证目录要重登（已知）。**冻结决策 9（判官 ≠ 选手）与「四家同一题」互斥**：四家都当选手时判官没有第五个模型可用，本轮只能拆成 run A（四家无判官）与 run B（三家 + 判官）；要么第五个模型，要么 T30b 的按次委派模型让判官与选手同家不同模型——归 T31 一起定。eval / profile 三条小的记 T29b：`/eval run` 挂在会话轮次上，发起端一断整个 run 中止，CI 里没有浏览器，比 pilot A 的 G2 更硬；plan 路径不展开 `~`；install.sh 的 dsh 前置检查在最后一步才做，前面 pack / build 白做并留下半装 profile。
+- **I3 收口（2026-09-09）**：README I3 行的完成判据「容器内一格走完全流程，release 经闸」由 T20c 的真机一（P0 × codex 真 CLI 到 released、闸拒绝过一次）成立；「四家在容器内跑通同一题」由本步 run A 成立。剩在 I3 表里的只有 T19d（阶段三的数据缺口，另批预算）。四不变量首次全部成立、比较节首次打开、token 列首次有数，都发生在同一份 run 上；pilot B 的结论仍是缺口清单而不是名次（P0 是占位题）。
+
 验收：README I3 行；lab `status` 表里四格 TASK 哈希一致；release 被闸拒绝过至少一次且容器仍在；F2 阶段一二的 `script` 源非空且报告的负分判据方向正确。
 
 ### I4 · 放宽因子
@@ -272,7 +279,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
 | T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型；前置：dsh-local-agent-dsh-headless 开一条按次传模型的启动路，dsh 才能拿到 model 键 | T29 T30a | |
 | T30c | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | |
-| T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选） | T29 T30b | |
+| T29b | 代码 | eval + profile：`/eval run` 脱离会话轮次（后台 job，发起端断开不中止，CI 无浏览器也能发起）；plan 路径展开 `~`；install.sh 的 dsh 前置检查前移 | 无 | |
+| T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选）；一并定冻结决策 9 与「四家同一题」的互斥怎么解（第五个模型，或判官与选手同家不同模型） | T29 T30b | |
 | T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
 
@@ -1137,7 +1145,7 @@ eval 测试全绿，gate 绿（ankh-guard 的 inventory mismatch 若在干净 ma
 分支名与 commit；Agent Note 路径；gate 输出；真机一格的时间线（acquire → … → released，含单元名与指纹前 12 位）；探针 outcome 表；report 的不变量四行。
 ```
 
-### T22 · 运维：环境侧收尾 + 容器内 F2 阶段三一格 + 四家同一题（可发；第 5 步等 T20b 合入）
+### T22 · 运维：环境侧收尾 + 容器内 F2 阶段三一格 + 四家同一题（已完成，2026-09-09 验收；阶段三归 T19d）
 
 ```text
 # 任务 T22：运维——环境侧收尾、容器内 F2 阶段三一格、四家同一题
