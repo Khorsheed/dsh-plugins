@@ -4,6 +4,8 @@
 
 **One profile, and your dsh web GUI feels finished.** Edit or withdraw sent messages, jump through long conversations, preview every file the agent touched, watch background jobs at a glance, get nudged before context runs out — the quality-of-life layer most users reach for first, installed in one go.
 
+**Version fit**: the current line requires host ≥ `0.1.2-rc.1` (all member plugins 0.2.0+ support only this host line). On host `0.1.0-rc.6` ~ `0.1.1-rc.2`, use the `host-0.1.1-line` tag instead (members stay on the 0.1.x line; no further updates).
+
 ## Install
 
 **With an agent (recommended)**: once you have [dsh](https://github.com/deepseek-ai/deepseek-harness), just tell it:
