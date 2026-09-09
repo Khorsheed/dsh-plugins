@@ -8,6 +8,13 @@ import { mirrorFiles } from './sync-mirror.mts'
 // git tracks may cross. A disk walk (the pre-fix behaviour) also picked up
 // gitignored local state sitting in the artifact dir — build tarballs,
 // *.tsbuildinfo, debug screenshots.
+//
+// The skill-kind fixture is skills/self-upgrade, currently gitignored while it
+// bakes on its integration branch (2026-09-10); the two skill-kind assertions
+// sit out until the branch merges it back. The probe must follow git, not the
+// disk: the directory still exists locally (untracked) and mirrorFiles lists
+// tracked files only.
+const skillFixturePresent = execFileSync('git', ['ls-files', '--', 'skills/self-upgrade/SKILL.md'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' }).trim() !== ''
 
 const root = join(import.meta.dirname, '..')
 
@@ -27,7 +34,8 @@ function tracked(): Set<string> {
 
 describe('mirrorFiles', () => {
   it('emits only files git tracks — no gitignored local state', () => {
-    for (const [kind, name] of [['package', 'ankh-guard'], ['profile', 'web-basic'], ['skill', 'self-upgrade']] as const) {
+    const fixtures = [['package', 'ankh-guard'], ['profile', 'web-basic'], ['skill', 'self-upgrade']] as const
+    for (const [kind, name] of fixtures.filter(([, name]) => name !== 'self-upgrade' || skillFixturePresent)) {
       const untracked = mirrorFiles(kind, name).filter((f: string) => !tracked().has(`${kind}s/${name}/${f}`))
       expect(untracked, `${kind}s/${name} would ship untracked files`).toEqual([])
     }
@@ -40,7 +48,7 @@ describe('mirrorFiles', () => {
     expect(files).toContain('src/index.ts')
   })
 
-  it("honours the kind's skip set — the skill's tests/ rig stays home", () => {
+  it.skipIf(!skillFixturePresent)("honours the kind's skip set — the skill's tests/ rig stays home", () => {
     const files = mirrorFiles('skill', 'self-upgrade')
     expect(files.filter((f: string) => f.startsWith('tests/'))).toEqual([])
     expect(files).toContain('SKILL.md')
