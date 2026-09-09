@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -71,7 +72,7 @@ describe('claudeAuthenticated credential file', () => {
   /** A scoped home with only a .credentials.json carrying the given expiry. */
   function homeWithCredentialFile(expiresAt: number): string {
     const home = tempHome('claude-credfile-')
-    writeFileSync(join(home, '.credentials.json'), JSON.stringify({ claudeAiOauth: { expiresAt } }))
+    writeFileSync(join(home, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'tok', expiresAt } }))
     return home
   }
 
@@ -88,7 +89,7 @@ describe('claudeAuthenticated credential file', () => {
   it('accepts an expired access token while its refresh token is still valid (the CLI refreshes on use)', async () => {
     const home = tempHome('claude-credfile-refresh-')
     writeFileSync(join(home, '.credentials.json'), JSON.stringify({
-      claudeAiOauth: { expiresAt: Date.now() - 1_000, refreshTokenExpiresAt: Date.now() + 3_600_000 },
+      claudeAiOauth: { accessToken: 'tok', expiresAt: Date.now() - 1_000, refreshTokenExpiresAt: Date.now() + 3_600_000 },
     }))
     await expect(claudeAuthenticated(home)).resolves.toBe(true)
   })
@@ -96,12 +97,13 @@ describe('claudeAuthenticated credential file', () => {
   it('mirrors a fresher keychain credential over the file before judging (refresh-on-run case)', async () => {
     const home = tempHome('claude-credfile-stale-')
     writeFileSync(join(home, '.credentials.json'), JSON.stringify({
-      claudeAiOauth: { expiresAt: Date.now() - 1_000 },
+      claudeAiOauth: { accessToken: 'stale-tok', expiresAt: Date.now() - 1_000 },
     }))
-    const fresh = JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + 3_600_000 } })
+    const fresh = JSON.stringify({ claudeAiOauth: { accessToken: 'fresh-tok', expiresAt: Date.now() + 3_600_000 } })
     const savedExec = internals.exec
     internals.exec = (async (file: string, args: string[]) => {
       expect(file).toBe('security')
+      if (args[0] === 'dump-keychain') return { stdout: '', stderr: '' }
       expect(args[0]).toBe('find-generic-password')
       return { stdout: fresh + '\n', stderr: '' }
     }) as never
@@ -123,6 +125,7 @@ describe('keychain credential sync', () => {
       // subcommand as an argument — calling execFile('find-generic-password')
       // was the shipped bug this suite exists to catch.
       expect(file).toBe('security')
+      if (args[0] === 'dump-keychain') return { stdout: '', stderr: '' }
       expect(args[0]).toBe('find-generic-password')
       if (blob === undefined) throw new Error('item not found')
       return { stdout: blob + '\n', stderr: '' }
@@ -135,7 +138,7 @@ describe('keychain credential sync', () => {
 
   it('writes the keychain blob into .credentials.json (0600)', async () => {
     const home = tempHome('claude-sync-')
-    const blob = JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + 3_600_000 } })
+    const blob = JSON.stringify({ claudeAiOauth: { accessToken: 'tok', expiresAt: Date.now() + 3_600_000 } })
     stubKeychain(blob)
     try {
       await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
@@ -153,6 +156,117 @@ describe('keychain credential sync', () => {
     try {
       await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
       await expect(claudeAuthenticated(home)).resolves.toBe(false)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  /** The service name the scoped home hashes to (mirrors src). */
+  function serviceFor(home: string): string {
+    return `Claude Code-credentials-${createHash('sha256').update(home).digest('hex').slice(0, 8)}`
+  }
+
+  /** A `security dump-keychain` rendering of the given items (metadata only). */
+  function dumpKeychainOutput(items: ReadonlyArray<{ acct: string; svce: string; mdat: string }>): string {
+    return items.map((item) => [
+      'keychain: "/home/user/Library/Keychains/login.keychain-db"',
+      'version: 512',
+      'class: "genp"',
+      'attributes:',
+      `    "acct"<blob>="${item.acct}"`,
+      `    "mdat"<timedate>=0x3245584546494b45  "${item.mdat}"`,
+      `    "svce"<blob>="${item.svce}"`,
+    ].join('\n')).join('\n')
+  }
+
+  /** Stub the keychain as a service with several items, one blob per account. */
+  function stubKeychainMulti(
+    dump: string,
+    blobs: Readonly<Record<string, string>>,
+  ): void {
+    internals.exec = (async (file: string, args: string[]) => {
+      expect(file).toBe('security')
+      if (args[0] === 'dump-keychain') return { stdout: dump, stderr: '' }
+      expect(args[0]).toBe('find-generic-password')
+      const account = args[args.indexOf('-a') + 1]
+      const blob = account === undefined ? undefined : blobs[account]
+      if (blob === undefined) throw new Error(`unexpected read: ${args.join(' ')}`)
+      return { stdout: blob + '\n', stderr: '' }
+    }) as never
+  }
+
+  it('enumerates the service and mirrors the non-empty entry, never the empty shell', async () => {
+    const home = tempHome('claude-sync-multi-')
+    const service = serviceFor(home)
+    const shell = JSON.stringify({ claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: 0 } })
+    const real = JSON.stringify({ claudeAiOauth: { accessToken: 'real-tok', expiresAt: Date.now() + 3_600_000 } })
+    stubKeychainMulti(dumpKeychainOutput([
+      // The shell is the NEWER write — an unscoped `-w` read returns it first,
+      // which was the shipped bug. Usability, not recency, must win.
+      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+      { acct: 'tester', svce: service, mdat: '2026-08-01 00:00:00 +0000' },
+      // An unrelated service's item is ignored by the enumeration.
+      { acct: 'other', svce: 'unrelated-service', mdat: '2026-09-02 00:00:00 +0000' },
+    ]), { unknown: shell, tester: real })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
+      await expect(claudeAuthenticated(home)).resolves.toBe(true)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('prefers the newest write among several usable entries', async () => {
+    const home = tempHome('claude-sync-rotation-')
+    const service = serviceFor(home)
+    const older = JSON.stringify({ claudeAiOauth: { accessToken: 'old-tok', expiresAt: Date.now() + 1_000_000 } })
+    const newer = JSON.stringify({ claudeAiOauth: { accessToken: 'new-tok', expiresAt: Date.now() + 3_600_000 } })
+    stubKeychainMulti(dumpKeychainOutput([
+      { acct: 'old', svce: service, mdat: '2026-08-01 00:00:00 +0000' },
+      { acct: 'new', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+    ]), { old: older, new: newer })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(newer)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('returns false with all entries empty and removes a previously mirrored empty shell', async () => {
+    const home = tempHome('claude-sync-shell-')
+    const service = serviceFor(home)
+    const shell = JSON.stringify({ claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: 0 } })
+    writeFileSync(join(home, '.credentials.json'), shell)
+    stubKeychainMulti(dumpKeychainOutput([
+      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+    ]), { unknown: shell })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(claudeAuthenticated(home)).resolves.toBe(false)
+    } finally {
+      restoreExec()
+    }
+  })
+
+  it('keeps a usable credentials file when the keychain has nothing usable', async () => {
+    const home = tempHome('claude-sync-keep-')
+    const service = serviceFor(home)
+    const shell = JSON.stringify({ claudeAiOauth: { accessToken: '', refreshToken: '', expiresAt: 0 } })
+    const real = JSON.stringify({ claudeAiOauth: { accessToken: 'real-tok', expiresAt: Date.now() + 3_600_000 } })
+    writeFileSync(join(home, '.credentials.json'), real)
+    stubKeychainMulti(dumpKeychainOutput([
+      { acct: 'unknown', svce: service, mdat: '2026-09-01 00:00:00 +0000' },
+    ]), { unknown: shell })
+    try {
+      await expect(syncClaudeCredentialFile(home)).resolves.toBe(false)
+      const { readFile } = await import('node:fs/promises')
+      await expect(readFile(join(home, '.credentials.json'), 'utf8')).resolves.toBe(real)
     } finally {
       restoreExec()
     }

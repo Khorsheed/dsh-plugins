@@ -14,7 +14,7 @@
 
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { open, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
@@ -57,29 +57,156 @@ function keychainService(homeDir: string): string {
 }
 
 /**
- * The stored credential's expiry (epoch ms), read from the macOS keychain
- * entry for this scoped home; undefined when the entry is missing, unreadable,
- * or carries no expiry (presence alone then decides, as before). The blob
- * nests the token record under `claudeAiOauth`. The READ side takes the LATER
- * of the access-token and refresh-token expiries: the CLI refreshes on use,
- * so a live refresh token means the credential still works.
+ * Whether a credential blob is USABLE: the token record nests under
+ * `claudeAiOauth`, and a blob whose access AND refresh tokens are both empty
+ * is a shell. macOS keeps historical items under the same service (an early
+ * claude wrote an `acct=unknown` placeholder with blank tokens and
+ * `expiresAt: 0`), and mirroring one into the credentials file makes every
+ * delegation report "OAuth session expired and could not be refreshed" —
+ * indistinguishable from a real expiry while login looks successful. A
+ * non-empty token is the bar for mirroring a blob or keeping a file.
+ * @param text - the raw credential JSON.
+ * @returns true when the blob carries a non-empty token.
+ */
+function credentialUsable(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as { claudeAiOauth?: { accessToken?: unknown; refreshToken?: unknown } }
+    const oauth = parsed.claudeAiOauth
+    return (typeof oauth?.accessToken === 'string' && oauth.accessToken !== '')
+      || (typeof oauth?.refreshToken === 'string' && oauth.refreshToken !== '')
+  } catch {
+    return false
+  }
+}
+
+/** One keychain item under the credential service: its account and write stamp. */
+interface KeychainItem {
+  acct: string
+  mdat: number
+}
+
+/**
+ * A `security dump-keychain` timedate (`2026-09-01 02:03:04 +0000`) as epoch
+ * ms; undefined when the shape is not recognized (the item then sorts as
+ * oldest).
+ * @param text - the quoted timedate string from the dump.
+ * @returns the epoch milliseconds, or undefined.
+ */
+function keychainTimestamp(text: string): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$/.exec(text.trim())
+  if (match === null) return undefined
+  const part = (index: number): number => Number(match[index])
+  const offsetMinutes = (part(8) * 60 + part(9)) * (match[7] === '+' ? 1 : -1)
+  const ms = Date.UTC(part(1), part(2) - 1, part(3), part(4), part(5), part(6)) - offsetMinutes * 60_000
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+/**
+ * Every account holding an item under the service, newest write first. macOS
+ * allows SEVERAL items per service, and an unscoped `find-generic-password
+ * -w` returns the FIRST match — which can be a historical empty shell (see
+ * `credentialUsable`) — so the sync enumerates instead of trusting the first
+ * hit. The dump prints metadata only (no secrets); a failing dump or a parse
+ * miss yields an empty list, and the caller then falls back to the unscoped
+ * read.
+ * @param service - the keychain service name.
+ * @returns the accounts, newest modification first.
+ */
+async function keychainItems(service: string): Promise<KeychainItem[]> {
+  let stdout: string
+  try {
+    ({ stdout } = await internals.exec('security', ['dump-keychain']))
+  } catch {
+    return []
+  }
+  const items: KeychainItem[] = []
+  let svce: string | undefined
+  let acct: string | undefined
+  let mdat = 0
+  const flush = (): void => {
+    if (svce === service && acct !== undefined) items.push({ acct, mdat })
+    svce = undefined
+    acct = undefined
+    mdat = 0
+  }
+  for (const line of stdout.split('\n')) {
+    // Each item block opens with its `keychain:` header line.
+    if (line.startsWith('keychain:')) {
+      flush()
+      continue
+    }
+    const trimmed = line.trim()
+    const svceMatch = /^"svce"<blob>="(.*)"$/.exec(trimmed)
+    if (svceMatch !== null) {
+      svce = svceMatch[1]
+      continue
+    }
+    const acctMatch = /^"acct"<blob>="(.*)"$/.exec(trimmed)
+    if (acctMatch !== null) {
+      acct = acctMatch[1]
+      continue
+    }
+    const mdatMatch = /^"mdat"<timedate>=0x[0-9a-fA-F]+\s+"(.*)"$/.exec(trimmed)
+    if (mdatMatch !== null) mdat = keychainTimestamp(mdatMatch[1] ?? '') ?? 0
+  }
+  flush()
+  return items.sort((a, b) => b.mdat - a.mdat)
+}
+
+/**
+ * One keychain read: the item for `acct` when given, else the first match.
+ * Returns the raw blob only when it is USABLE (non-empty token); anything
+ * else — missing item, unreadable payload, an empty shell — is undefined.
+ * @param service - the keychain service name.
+ * @param acct - the account to read, or undefined for the unscoped first match.
+ * @returns the credential blob, or undefined.
+ */
+async function readKeychainEntry(service: string, acct: string | undefined): Promise<string | undefined> {
+  try {
+    const args = ['find-generic-password', '-s', service]
+    if (acct !== undefined) args.push('-a', acct)
+    args.push('-w')
+    const { stdout } = await internals.exec('security', args)
+    const blob = stdout.trim()
+    return credentialUsable(blob) ? blob : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The usable credential blob for this scoped home, or undefined. Every
+ * account under the service is tried newest-write-first and the first
+ * non-empty token wins; when enumeration itself is unavailable (not macOS, a
+ * failing dump) the legacy unscoped read still runs, held to the same
+ * non-empty-token bar.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ * @returns the credential blob, or undefined when nothing usable is stored.
+ */
+async function readKeychainCredential(homeDir: string): Promise<string | undefined> {
+  const service = keychainService(homeDir)
+  const items = await keychainItems(service)
+  for (const item of items) {
+    const blob = await readKeychainEntry(service, item.acct)
+    if (blob !== undefined) return blob
+  }
+  // An enumerated-but-all-empty service has no fallback worth trying.
+  return items.length > 0 ? undefined : readKeychainEntry(service, undefined)
+}
+
+/**
+ * The stored credential's expiry (epoch ms), read from the USABLE macOS
+ * keychain item for this scoped home (see `readKeychainCredential`);
+ * undefined when no usable item exists or it carries no expiry (presence
+ * alone then decides, as before). The READ side takes the LATER of the
+ * access-token and refresh-token expiries: the CLI refreshes on use, so a
+ * live refresh token means the credential still works.
  * @param homeDir - the `claude-code` harness's scoped home.
  * @returns the expiry, or undefined when unknown.
  */
 async function readCredentialExpiry(homeDir: string): Promise<number | undefined> {
-  try {
-    const { stdout } = await internals.exec('security', ['find-generic-password', '-s', keychainService(homeDir), '-w'])
-    const parsed = JSON.parse(stdout.trim()) as { claudeAiOauth?: { expiresAt?: unknown; refreshTokenExpiresAt?: unknown } }
-    const access = parsed.claudeAiOauth?.expiresAt
-    const refresh = parsed.claudeAiOauth?.refreshTokenExpiresAt
-    const accessMs = typeof access === 'number' ? access : undefined
-    const refreshMs = typeof refresh === 'number' ? refresh : undefined
-    if (accessMs === undefined && refreshMs === undefined) return undefined
-    return Math.max(accessMs ?? 0, refreshMs ?? 0)
-  } catch {
-    // Not on macOS, no such entry, or an unreadable payload: no expiry info.
-    return undefined
-  }
+  const blob = await readKeychainCredential(homeDir)
+  return blob === undefined ? undefined : credentialFileExpiry(blob)
 }
 
 /**
@@ -88,20 +215,26 @@ async function readCredentialExpiry(homeDir: string): Promise<number | undefined
  * READS the credentials file at runtime (the same write/read split as the
  * Linux #47661 bug) — a login that lands only in the keychain still answers
  * "Not logged in". Called from the login watch so a completed login becomes
- * readable; idempotent and content-compare before write.
+ * readable; idempotent and content-compare before write. Only a USABLE blob
+ * (non-empty token, see `readKeychainCredential`) is mirrored; with none in
+ * the keychain, a file holding an empty-token shell — debris from an earlier
+ * first-match read — is REMOVED, so the runtime says "Not logged in" instead
+ * of the misleading "OAuth session expired".
  * @param homeDir - the `claude-code` harness's scoped home.
  * @returns true when the file holds the current keychain credential after the call.
  */
 export async function syncClaudeCredentialFile(homeDir: string): Promise<boolean> {
-  let blob: string
-  try {
-    const { stdout } = await internals.exec('security', ['find-generic-password', '-s', keychainService(homeDir), '-w'])
-    blob = stdout.trim()
-    JSON.parse(blob)
-  } catch {
+  const file = join(homeDir, '.credentials.json')
+  const blob = await readKeychainCredential(homeDir)
+  if (blob === undefined) {
+    try {
+      const existing = await readFile(file, 'utf8')
+      if (!credentialUsable(existing)) await rm(file, { force: true })
+    } catch {
+      // Absent or unreadable: nothing to heal.
+    }
     return false
   }
-  const file = join(homeDir, '.credentials.json')
   try {
     if ((await readFile(file, 'utf8')).trim() === blob) return true
   } catch {
