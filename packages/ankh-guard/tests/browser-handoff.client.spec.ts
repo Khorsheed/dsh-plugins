@@ -5,6 +5,7 @@ import { apply } from '../src/client/index.ts'
 
 const CAPABILITY_KEY = 'ankh-guard.browser-handoff-capability.v1'
 const PENDING_KEY = 'ankh-guard.browser-handoff-pending.v1'
+const BOOT_ID_KEY = 'ankh-guard.browser-handoff-boot-id.v1'
 
 function response(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -153,5 +154,82 @@ describe('browser handoff client lifecycle', () => {
       expect(document.getElementById('ankh-guard-browser-handoff')).toBeNull()
     })
     dispose()
+  })
+
+  it('learns the serving boot id from idle and carries it on the next poll', async () => {
+    vi.stubGlobal('location', {
+      hash: '',
+      href: 'http://127.0.0.1:3080/',
+      origin: 'http://127.0.0.1:3080',
+      reload: vi.fn(),
+      replace: vi.fn(),
+    })
+    const bodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return response(200, { state: 'idle', bootId: '100:a' })
+    }))
+
+    const dispose = apply({} as never)
+    await vi.waitFor(() => { expect(bodies.length).toBeGreaterThanOrEqual(2) })
+    expect(bodies[0]).not.toHaveProperty('knownBootId')
+    expect(sessionStorage.getItem(BOOT_ID_KEY)).toBe('100:a')
+    expect(bodies[1]?.knownBootId).toBe('100:a')
+    dispose()
+  })
+
+  it('reloads once on a boot-generation change without the cutover ack dance', async () => {
+    const reload = vi.fn()
+    vi.stubGlobal('location', {
+      hash: '',
+      href: 'http://127.0.0.1:3080/session/one',
+      origin: 'http://127.0.0.1:3080',
+      reload,
+      replace: vi.fn(),
+    })
+    sessionStorage.setItem(BOOT_ID_KEY, '100:old')
+    const bodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return response(200, {
+        state: 'ready', action: 'reload', authentication: 'existing-cookie', bootId: '200:new',
+      })
+    }))
+
+    const dispose = apply({} as never)
+    await vi.waitFor(() => { expect(reload).toHaveBeenCalledOnce() })
+    expect(bodies[0]?.knownBootId).toBe('100:old')
+    // The successor's id is stored BEFORE the reload — the next page polls as
+    // a current tab, which is what makes the generation reload one-shot.
+    expect(sessionStorage.getItem(BOOT_ID_KEY)).toBe('200:new')
+    expect(sessionStorage.getItem(PENDING_KEY)).toBeNull()
+    dispose()
+  })
+
+  it('shows the neutral disconnected overlay only after sustained failure', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('location', {
+        hash: '',
+        href: 'http://127.0.0.1:3080/',
+        origin: 'http://127.0.0.1:3080',
+        reload: vi.fn(),
+        replace: vi.fn(),
+      })
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('connection refused') }))
+
+      const dispose = apply({} as never)
+      // 1s + 2s of backoff: three failures, 3s elapsed — under the 5s threshold.
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(document.getElementById('ankh-guard-browser-handoff')).toBeNull()
+      // Next retry lands at 7s elapsed — sustained, so the neutral copy shows.
+      await vi.advanceTimersByTimeAsync(5_000)
+      const overlay = document.getElementById('ankh-guard-browser-handoff')
+      expect(overlay).not.toBeNull()
+      expect(overlay?.textContent).toContain('waiting for the service to recover')
+      dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

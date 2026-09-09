@@ -39,6 +39,7 @@ import { listeningPortsForPid } from './processes.ts'
 import { cutoverBlocksWake } from './launch-spec.ts'
 import { stateFile } from './state-files.ts'
 import { registerBrowserHandoff } from './browser-handoff.ts'
+import { requestRestart, type RestartRequest, type RestartRequestResult } from './restart-request.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
   isParkedOnUserInput,
@@ -216,6 +217,17 @@ export interface SelfRestartGuard {
    * @returns one check line per probe; ok only when every check passed.
    */
   canary(options?: { port?: number }): Promise<CanaryResult>
+  /**
+   * Trigger a guarded restart onto a new launch command (a UI-grade
+   * mode/profile switch). Dispatches on supervision: no live watchdog → the
+   * restart verb's stop→start→canary; supervised → reconfigure's transactional
+   * cutover (the only safe way to change the launch command under a live
+   * watchdog). The full gate chain applies — credential, composition
+   * preflight, marker/lock — and a refusal never stops the running instance.
+   * @param request - start: the successor launch command; profile: the dsh profile to preflight; initiator: the session id the restart report returns to (required — the UI caller knows the real session, never invent one).
+   * @returns the structured verdict; terminal hint text never crosses this seam.
+   */
+  requestRestart(request: RestartRequest): Promise<RestartRequestResult>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -658,6 +670,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       return result
     },
     reset: sha => resetToCheckpoint(repoDir, sha),
+    requestRestart: request => requestRestart(request, { stateDir, repoDir }),
     canary: async (options) => {
       const checks: CanaryCheck[] = []
       const verdict = service.verify()

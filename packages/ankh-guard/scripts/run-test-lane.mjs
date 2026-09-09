@@ -22,6 +22,7 @@ const pureSpecs = [
   'tests/deployment-proof.spec.ts',
   'tests/patch.spec.ts',
   'tests/preset-derive.spec.ts',
+  'tests/restart-request.spec.ts',
   'tests/state-files.spec.ts',
   'tests/transition.spec.ts',
   'tests/test-runner.spec.ts',
@@ -48,7 +49,7 @@ const integrationTasks = [
   { name: 'lifecycle-drift', args: ['tests/process-lifecycle.spec.ts', 'tests/preflight-drift.spec.ts'] },
 ]
 const tasks = lane === 'unit' ? unitTasks : lane === 'integration' ? integrationTasks : [...integrationTasks, ...unitTasks]
-const inventory = { pure: 43, 'self-unit': 21, 'supervise-1-of-4': 15, 'supervise-2-of-4': 10,
+const inventory = { pure: 53, 'self-unit': 21, 'supervise-1-of-4': 15, 'supervise-2-of-4': 10,
   'supervise-3-of-4': 15, 'supervise-4-of-4': 12, 'self-process': 67, 'lifecycle-drift': 11 }
 for (const task of tasks) task.expected = inventory[task.name]
 const artifacts = mkdtempSync(join(tmpdir(), 'ankh-test-results-'))
