@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -292,14 +293,35 @@ describe('filesystem transition', () => {
     expect(() => createPreflightSnapshot(danglingHome)).toThrow(/could not safely copy/)
   })
 
-  it('fails closed on special filesystem entries', () => {
+  it('skips runtime entries (sockets, FIFOs, links to them) instead of refusing, and excludes top-level scratch', async () => {
     const mkfifo = ['/usr/bin/mkfifo', '/bin/mkfifo'].find(existsSync)
     if (mkfifo === undefined) return
-    const root = temporaryDirectory('ankh-snapshot-special-')
+    const root = temporaryDirectory('ankh-snapshot-runtime-')
     const home = join(root, 'home')
-    mkdirSync(home)
+    mkdirSync(join(home, 'scratch'), { recursive: true })
+    writeFileSync(join(home, 'scratch', 'heavy.txt'), 'ephemeral')
+    writeFileSync(join(home, 'config.yaml'), 'live')
     execFileSync(mkfifo, [join(home, 'pipe')])
+    // A live unix socket, exactly the member-bridge.sock shape: held open by a
+    // running process, recreated by whoever boots next — nothing to copy.
+    const server = createServer()
+    await new Promise<void>((resolveListen, rejectListen) => {
+      server.once('error', rejectListen)
+      server.listen(join(home, 'member-bridge.sock'), () => { resolveListen() })
+    })
+    cleanups.push(() => { server.close() })
+    symlinkSync('member-bridge.sock', join(home, 'bridge-link'))
 
-    expect(() => createPreflightSnapshot(home)).toThrow(/special filesystem entry/)
+    const snapshot = createPreflightSnapshot(home)
+    try {
+      expect(existsSync(join(snapshot.home, 'member-bridge.sock'))).toBe(false)
+      expect(existsSync(join(snapshot.home, 'pipe'))).toBe(false)
+      expect(lstatSync(join(snapshot.home, 'bridge-link'), { throwIfNoEntry: false })).toBeUndefined()
+      expect(existsSync(join(snapshot.home, 'scratch'))).toBe(false)
+      expect(readFileSync(join(snapshot.home, 'config.yaml'), 'utf8')).toBe('live')
+      expect(snapshot.skippedRuntimeEntries).toBe(3)
+    } finally {
+      snapshot.cleanup()
+    }
   })
 })

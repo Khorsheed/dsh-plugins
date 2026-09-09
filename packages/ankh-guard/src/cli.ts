@@ -1924,6 +1924,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       if (!sandboxGate('reconfigure', options, io)) {
         return refuseQuiet('sandbox', 'reconfigure refused: the environment is sandboxed, so the detached replacement supervisor would be reaped mid-flight')
       }
+      const snapshotStartedAt = Date.now()
       let snapshot: { home: string; cleanup(): void }
       try {
         snapshot = transitionPlan === undefined
@@ -1931,6 +1932,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           : createTransitionPreflightSnapshot(transitionPlan)
       } catch (error) {
         return refuse('preflight-snapshot', `reconfigure refused: could not prepare an isolated${transitionPlan === undefined ? '' : ' transitioned'} home: ${String(error)}\n`)
+      }
+      // A large home copy eats the credential's freshness window: the post-boot
+      // canary revalidates the same credential, so a slow prepare can expire it
+      // mid-cutover and force a restore (observed with a 24 GB scratch tree —
+      // scratch/ is now excluded; warn early when the remaining copy is slow).
+      const snapshotMs = Date.now() - snapshotStartedAt
+      if (snapshotMs > options.maxAgeMinutes * 60_000 / 2) {
+        io.stdout(`note: the isolated-home snapshot took ${Math.round(snapshotMs / 1000)}s — over half the ${options.maxAgeMinutes}min credential window; re-record the credential immediately before reconfigure, and keep the home slim (top-level scratch/ is excluded from the copy)\n`)
       }
       try {
         const timeout = options.preflightTimeoutMs ?? DEFAULT_PREFLIGHT_TIMEOUT_MS
