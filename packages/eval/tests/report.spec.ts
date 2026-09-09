@@ -20,9 +20,18 @@ const verdict = (task: string, criterion: string, pass: boolean, by = 'probes/pr
   evidence: `${criterion} ${pass ? '通过' : '未过'}（可查证事实）`, by,
 })
 
-const delegation = (stage: string, round: number, durationMs: number, outputTokens: number, observed = 'gpt-x'): Record<string, unknown> => ({
+const delegation = (
+  stage: string,
+  round: number,
+  durationMs: number,
+  outputTokens: number,
+  observed = 'gpt-x',
+  toolCalls?: { count: number; byName?: Record<string, number> },
+): Record<string, unknown> => ({
   kind: 'delegation', stage, round, childSessionId: `sess-${round}`, promptSha: sha('ab'), startedAt: 0,
-  durationMs, usage: { inputTokens: outputTokens * 3, outputTokens }, model: { declared: 'gpt-x', observed },
+  durationMs, usage: { inputTokens: outputTokens * 3, outputTokens },
+  ...(toolCalls === undefined ? {} : { toolCalls }),
+  model: { declared: 'gpt-x', observed },
 })
 
 interface FixtureAnnotation {
@@ -178,9 +187,17 @@ const scriptNote = (task: string, docs: Array<[string, boolean, unknown?]>, by =
 })
 
 /** One delegation annotation for a cell. */
-const orchestratorNote = (stage: string, round: number, durationMs: number, tokens: number, observed = 'gpt-x', createdAt = 0): FixtureAnnotation => ({
+const orchestratorNote = (
+  stage: string,
+  round: number,
+  durationMs: number,
+  tokens: number,
+  observed = 'gpt-x',
+  createdAt = 0,
+  toolCalls?: { count: number; byName?: Record<string, number> },
+): FixtureAnnotation => ({
   ns: 'orchestrator', by: 'orchestrator', createdAt,
-  payload: [delegation(stage, round, durationMs, tokens, observed)],
+  payload: [delegation(stage, round, durationMs, tokens, observed, toolCalls)],
 })
 
 const matArtifact = (matSha: string): { artifacts: Array<{ path: string; kind: string }>; files: Record<string, string> } => ({
@@ -1197,5 +1214,153 @@ describe('report — efficiency counts completed cells only (G15)', () => {
   it('says nothing about a subset for a bundle that predates the field', async () => {
     const summary = readFileSync((await writeEvalReport(singleConditionBundle(tmpTree()))).summaryPath, 'utf8')
     expect(summary).not.toContain('子集：')
+  })
+})
+
+// --- T30c · tool calls in the efficiency table and the per-round ledger ---------
+
+/**
+ * A bundle where one condition's rounds carry tool-call accountings and the
+ * other's carry none — the two cases the table must render differently: a
+ * number, and a dash that is not a zero.
+ */
+function toolCallBundle(root: string): string {
+  return writeBundle(root, {
+    runId: 'toolcalls',
+    meta: {
+      conditions: [
+        conditionEntry('codex-exec', baseConditionDoc(), 'aa'),
+        conditionEntry('dsh-exec', baseConditionDoc({ harness: { name: 'dsh', version: '1.0', drive: 'exec' } }), 'bb'),
+      ],
+    },
+    missions: [
+      {
+        id: 'F2-codex-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [
+            scriptNote('F2', [['c1', true]]),
+            orchestratorNote('stage1', 1, 60_000, 100, 'gpt-x', 0, { count: 3, byName: { command_execution: 2, web_search_call: 1 } }),
+            orchestratorNote('stage2', 2, 30_000, 50, 'gpt-x', 1, { count: 1, byName: { command_execution: 1 } }),
+          ],
+        }],
+      },
+      {
+        // The unfinished cell's rounds are real spend the table excludes; the
+        // ledger still carries them, marked `counted: false`.
+        id: 'F2-codex-exec-rep2',
+        attempts: [{
+          attempt: 1, state: 'stage-2', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [orchestratorNote('stage1', 1, 10_000, 10, 'gpt-x', 0, { count: 9, byName: { command_execution: 9 } })],
+        }],
+      },
+      {
+        // No harness accounting at all — the column must stay blank for it.
+        id: 'F2-dsh-exec-rep1',
+        attempts: [{
+          attempt: 1, state: 'released', refs: goodRefs(), ...matArtifact(sha('m1')),
+          annotations: [scriptNote('F2', [['c1', true]]), orchestratorNote('stage1', 1, 60_000, 100)],
+        }],
+      },
+    ],
+  })
+}
+
+describe('report — tool calls (T30c)', () => {
+  it('sums the completed cells\u2019 tool calls, and leaves an unreported condition null', async () => {
+    const report = await analyzeBundle(toolCallBundle(tmpTree()))
+    const codex = report.efficiency.find(e => e.condition === 'codex-exec')
+    const dsh = report.efficiency.find(e => e.condition === 'dsh-exec')
+    // 3 + 1 from the completed cell; the unfinished cell's 9 stay out (T23).
+    expect(codex?.toolCalls).toBe(4)
+    // Null, never 0: no round of this condition reported an accounting.
+    expect(dsh?.toolCalls).toBeNull()
+  })
+
+  it('the table prints a dash for the unreported condition, not a zero', async () => {
+    const { summaryPath } = await writeEvalReport(toolCallBundle(tmpTree()))
+    const summary = readFileSync(summaryPath, 'utf8')
+    const header = summary.split('\n').find(line => line.includes('| 条件 | 模型 |'))
+    expect(header).toContain('工具调用')
+    // The efficiency rows are the ones under the header, in its column order.
+    const lines = summary.split('\n')
+    const headerIndex = lines.findIndex(line => line.includes('| 条件 | 模型 |'))
+    const columns = lines[headerIndex]!.split('|').map(cell => cell.trim())
+    const toolColumn = columns.indexOf('工具调用')
+    const rowOf = (condition: string): string[] | undefined =>
+      lines.slice(headerIndex).find(line => line.startsWith(`| ${condition} `))?.split('|').map(cell => cell.trim())
+    expect(rowOf('codex-exec')?.[toolColumn]).toBe('4')
+    expect(rowOf('dsh-exec')?.[toolColumn]).toBe('—')
+    expect(summary).toContain('未报工具调用计数的条件: dsh-exec')
+  })
+
+  it('carries the cell\u2019s tool calls onto every one of its verdict rows', async () => {
+    const report = await analyzeBundle(toolCallBundle(tmpTree()))
+    const codexRows = report.rows.filter(row => row.condition === 'codex-exec')
+    expect(codexRows.length).toBeGreaterThan(0)
+    for (const row of codexRows) {
+      expect(row.toolCalls).toEqual({ count: 4, byName: { command_execution: 3, web_search_call: 1 } })
+    }
+    // A cell whose rounds reported none carries NO key — which is what keeps a
+    // report recomputed over an older bundle byte-identical.
+    for (const row of report.rows.filter(r => r.condition === 'dsh-exec')) {
+      expect('toolCalls' in row).toBe(false)
+    }
+  })
+
+  it('writes one usage.jsonl line per delegation round, unaggregated', async () => {
+    const bundle = toolCallBundle(tmpTree())
+    const write = await writeEvalReport(bundle)
+    const text = readFileSync(write.usagePath, 'utf8')
+    const rows = text.trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    // 2 rounds (completed codex cell) + 1 (unfinished codex cell) + 1 (dsh).
+    expect(rows).toHaveLength(4)
+    expect(write.usageRowCount).toBe(4)
+    expect(rows[0]).toMatchObject({
+      run: 'toolcalls',
+      cell: 'F2-codex-exec-rep1',
+      attempt: 1,
+      condition: 'codex-exec',
+      task: 'F2',
+      stage: 'stage1',
+      round: 1,
+      counted: true,
+      observedModel: 'gpt-x',
+      durationMs: 60_000,
+      usage: { outputTokens: 100, inputTokens: 300 },
+      toolCalls: { count: 3, byName: { command_execution: 2, web_search_call: 1 } },
+    })
+    // The unfinished cell's round is kept and marked out of the table's scope.
+    const excluded = rows.find(row => row['cell'] === 'F2-codex-exec-rep2')
+    expect(excluded).toMatchObject({ counted: false, toolCalls: { count: 9 } })
+    // Unreported facts are absent, never zero-filled.
+    const dshRow = rows.find(row => row['condition'] === 'dsh-exec')
+    expect('toolCalls' in dshRow!).toBe(false)
+    expect('cliVersion' in dshRow!).toBe(false)
+  })
+
+  it('the ledger\u2019s counted rows reproduce the efficiency table exactly', async () => {
+    const bundle = toolCallBundle(tmpTree())
+    const write = await writeEvalReport(bundle)
+    const rows = readFileSync(write.usagePath, 'utf8').trim().split('\n')
+      .map(line => JSON.parse(line) as Record<string, unknown>)
+      .filter(row => row['counted'] === true)
+    for (const efficiency of write.report.efficiency) {
+      const mine = rows.filter(row => row['condition'] === efficiency.condition)
+      const sum = (pick: (row: Record<string, unknown>) => number | undefined): number =>
+        mine.reduce((total, row) => total + (pick(row) ?? 0), 0)
+      expect(mine).toHaveLength(efficiency.rounds ?? 0)
+      expect(sum(row => row['durationMs'] as number | undefined)).toBe(efficiency.activeMs ?? 0)
+      expect(sum(row => (row['usage'] as { outputTokens?: number } | undefined)?.outputTokens)).toBe(efficiency.outputTokens ?? 0)
+      expect(sum(row => (row['toolCalls'] as { count?: number } | undefined)?.count)).toBe(efficiency.toolCalls ?? 0)
+    }
+  })
+
+  it('a bundle whose rounds recorded no accounting still gets the ledger file', async () => {
+    const write = await writeEvalReport(partialRunBundle(tmpTree()))
+    const rows = readFileSync(write.usagePath, 'utf8').trim().split('\n').filter(line => line !== '')
+    // Every round is a line, none of them carrying a toolCalls key.
+    expect(rows).toHaveLength(4)
+    for (const line of rows) expect(line).not.toContain('toolCalls')
   })
 })

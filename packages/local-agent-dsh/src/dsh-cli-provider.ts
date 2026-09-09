@@ -634,6 +634,7 @@ export async function startDshCliRun(
         ...delta.observedModel === undefined ? {} : { observedModel: delta.observedModel },
         ...cliVersion === undefined ? {} : { cliVersion },
         ...delta.usage === undefined ? {} : { usage: delta.usage },
+        ...delta.toolCalls === undefined ? {} : { toolCalls: delta.toolCalls },
       })
     }
   }

@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run.ts'
 import { READINESS_PROMPT } from '../src/readiness.ts'
 import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
-import type { DelegationResult, DelegationRun } from '../src/faces.ts'
+import type { DelegationProgress, DelegationResult, DelegationRun } from '../src/faces.ts'
 import { canonicalJson } from '../src/hash.ts'
 import { expandMatrix, orderCells } from '../src/matrix.ts'
 import { validateJson } from '../src/schema.ts'
@@ -393,6 +393,10 @@ interface FakeReadback {
   /** Emitted on the settled progress event (undefined = the event carries none). */
   settledModel?: string
   settledUsage?: { inputTokens: number; outputTokens: number }
+  /** The round's tool-call accounting on the settled event (undefined = none reported). */
+  settledToolCalls?: { count: number; byName?: Record<string, number> }
+  /** The CLI build the settled event names (undefined = none read back). */
+  settledCliVersion?: string
   /** Returned by delegationOf (undefined = the record never carries one). */
   recordModel?: string
   /** Milliseconds after the result settles before the record carries it (default 0). */
@@ -483,7 +487,7 @@ class FakeLocalAgent implements LocalAgentFace {
   }
 
   /** Emit the progress events of one settled round, in the facade's order. */
-  private emitProgress(onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void): void {
+  private emitProgress(onProgress?: (event: DelegationProgress) => void): void {
     if (onProgress === undefined) return
     onProgress({ kind: 'heartbeat' })
     const readback = this.options.readback
@@ -491,7 +495,9 @@ class FakeLocalAgent implements LocalAgentFace {
     onProgress({
       kind: 'settled',
       ...(readback.settledModel !== undefined ? { observedModel: readback.settledModel } : {}),
+      ...(readback.settledCliVersion !== undefined ? { cliVersion: readback.settledCliVersion } : {}),
       ...(readback.settledUsage !== undefined ? { usage: readback.settledUsage } : {}),
+      ...(readback.settledToolCalls !== undefined ? { toolCalls: readback.settledToolCalls } : {}),
     })
   }
 
@@ -543,7 +549,7 @@ class FakeLocalAgent implements LocalAgentFace {
   private readinessRun(
     provider: string,
     options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } } | undefined,
-    onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void,
+    onProgress?: (event: DelegationProgress) => void,
   ): DelegationRun {
     // The probe's label is `readiness <condition id>` — the only place the
     // facade learns WHICH condition it is being asked about.
@@ -590,7 +596,7 @@ class FakeLocalAgent implements LocalAgentFace {
     return options?.cwd !== undefined ? { cwd: options.cwd } : {}
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
     void parentSessionId
     // The readiness probe is answered before any scripted failure: those
     // script the STAGE rounds, and a run whose probe failed never gets there.
@@ -613,7 +619,7 @@ class FakeLocalAgent implements LocalAgentFace {
     return this.makeRun(childSessionId)
   }
 
-  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: { kind: string; observedModel?: string; usage?: { inputTokens: number; outputTokens: number } }) => void }): Promise<DelegationRun> {
+  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
     const text = prompt[0]?.text ?? ''
     this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...this.addressed(options) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', this.target(options), this.behaviorFor(text))
@@ -659,7 +665,7 @@ function expectDelegationAnnotations(
   entries: Array<Record<string, unknown>>,
   stages: string[],
   childIds: string[],
-  readback: { usage?: unknown; observed?: string | null } = {},
+  readback: { usage?: unknown; observed?: string | null; toolCalls?: unknown; cliVersion?: string } = {},
 ): void {
   const declared = DECLARED_MODEL
   const delegations = entries.filter(e => e['kind'] === 'delegation')
@@ -672,6 +678,12 @@ function expectDelegationAnnotations(
     expect(typeof entry['startedAt']).toBe('number')
     expect(entry['durationMs']).toBeGreaterThanOrEqual(0)
     expect(entry['usage']).toEqual(readback.usage ?? null)
+    // toolCalls / cliVersion are OMITTED when unreported — a key that is not
+    // there is how "the harness counted none" differs from a zero.
+    if (readback.toolCalls === undefined) expect('toolCalls' in entry).toBe(false)
+    else expect(entry['toolCalls']).toEqual(readback.toolCalls)
+    if (readback.cliVersion === undefined) expect('cliVersion' in entry).toBe(false)
+    else expect(entry['cliVersion']).toBe(readback.cliVersion)
     expect(entry['model']).toEqual({ declared, observed: readback.observed ?? null })
   }
 }
@@ -965,6 +977,39 @@ describe('runPlan — T11 read-back (usage and model.observed)', () => {
       orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
       { usage, observed: DECLARED_MODEL },
     )
+  })
+
+  it('carries the settled event\u2019s tool-call count and CLI build into the annotation', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't30c-toolcalls')
+    const mission = new FakeMission(join(root, 'mission'))
+    const usage = { inputTokens: 900, outputTokens: 300 }
+    const toolCalls = { count: 3, byName: { Bash: 2, Read: 1 } }
+    const localAgent = new FakeLocalAgent({
+      readback: { settledModel: DECLARED_MODEL, settledUsage: usage, settledToolCalls: toolCalls, settledCliVersion: '0.144.0' },
+    })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    expectDelegationAnnotations(
+      orchestratorNs(mission, report.runId, cell.missionId), ['stage1', 'stage2'], cell.childSessionIds,
+      { usage, observed: DECLARED_MODEL, toolCalls, cliVersion: '0.144.0' },
+    )
+  })
+
+  it('omits toolCalls entirely when the harness reported no accounting', async () => {
+    const root = makeDatasetTree()
+    const planPath = writePlan(root, {}, 't30c-no-toolcalls')
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent({ readback: { settledModel: DECLARED_MODEL } })
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') },
+      { datasets: fakeDatasets(root), mission, localAgent })
+
+    const cell = report.cells[0] as { missionId: string; childSessionIds: string[] }
+    const delegations = orchestratorNs(mission, report.runId, cell.missionId).filter(e => e['kind'] === 'delegation')
+    expect(delegations).toHaveLength(2)
+    for (const entry of delegations) expect('toolCalls' in entry).toBe(false)
   })
 
   it('falls back to delegationOf when the settled event carries no model', async () => {

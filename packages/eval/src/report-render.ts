@@ -80,14 +80,15 @@ function renderEfficiency(report: EvalReport): string[] {
   }
   lines.push('下表只统计**已完成**的格子（judged / archived / releasable / released）；未完成格子的耗时买到的工作量未知，混进来会让两列看着可比而其实不可比。')
   lines.push('')
-  lines.push('| 条件 | 模型 | 活跃时长 | 委派轮次 | 输出 token | 输入 token | cacheRead | 标价成本 |')
-  lines.push('|---|---|---:|---:|---:|---:|---:|---:|')
+  lines.push('| 条件 | 模型 | 活跃时长 | 委派轮次 | 工具调用 | 输出 token | 输入 token | cacheRead | 标价成本 |')
+  lines.push('|---|---|---:|---:|---:|---:|---:|---:|---:|')
   for (const efficiency of report.efficiency) {
     lines.push(`| ${[
       efficiency.condition,
       modelOf(efficiency),
       efficiency.activeMs === null ? DASH : fmtMs(efficiency.activeMs),
       efficiency.rounds === null ? DASH : String(efficiency.rounds),
+      efficiency.toolCalls === null ? DASH : efficiency.toolCalls.toLocaleString('en-US'),
       efficiency.outputTokens === null ? DASH : efficiency.outputTokens.toLocaleString('en-US'),
       efficiency.inputTokens === null ? DASH : efficiency.inputTokens.toLocaleString('en-US'),
       efficiency.cacheReadTokens === null ? DASH : efficiency.cacheReadTokens.toLocaleString('en-US'),
@@ -109,6 +110,11 @@ function renderEfficiency(report: EvalReport): string[] {
     lines.push(`未计入上表的未完成格子（${total} 格）: ${excluded}——它们的委派时长如实存在于 results 之外的注解里，只是不进效率口径。`)
   } else {
     lines.push('未计入上表的未完成格子: 无——所有当前格子都已完成。')
+  }
+  // 工具调用缺席与 0 是两回事：没有 harness 报过计数就打「—」，报过而为 0 才是 0。
+  const missingToolCalls = report.efficiency.filter(e => e.rounds !== null && e.toolCalls === null)
+  if (missingToolCalls.length > 0) {
+    lines.push(`未报工具调用计数的条件: ${missingToolCalls.map(e => e.condition).join('、')}——该列打「${DASH}」而非补零（“没人报过”不是“一次没用”）。`)
   }
   const missingDelegation = report.efficiency.filter(e => e.rounds === null)
   if (missingDelegation.length > 0) {

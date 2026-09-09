@@ -66,6 +66,17 @@ export interface VerdictRatio {
   total: number
 }
 
+/**
+ * One round's (or one cell's) tool-call accounting as the bundle recorded it.
+ * `count` is the cross-harness comparable; `byName` is each CLI's own tool
+ * vocabulary, carried verbatim for a reader and never normalized — comparing
+ * two harnesses by name would invent an equivalence they never agreed to.
+ */
+export interface ToolCallCounts {
+  count: number
+  byName?: Record<string, number>
+}
+
 /** One line of results.jsonl — one verdict, carrying its cell coordinates. */
 export interface ReportRow {
   task: string | null
@@ -83,6 +94,14 @@ export interface ReportRow {
   weight?: number
   /** Present only when the rubric's polarity is known for this criterion. */
   negative?: boolean
+  /**
+   * The CELL's tool calls, summed over its delegation rounds — present only
+   * when at least one round reported an accounting. Repeated on every one of
+   * the cell's verdict rows, exactly as the cell's other coordinates are; a
+   * bundle whose rounds recorded none carries no key at all, so a report
+   * recomputed over an older bundle is byte-identical to the one before.
+   */
+  toolCalls?: ToolCallCounts
   evidence: string
   by: string
 }
@@ -176,6 +195,12 @@ export interface ConditionEfficiency {
   outputTokens: number | null
   inputTokens: number | null
   cacheReadTokens: number | null
+  /**
+   * Tool calls summed over the condition's completed cells — null when no
+   * round reported an accounting, which the table prints as a dash rather
+   * than a zero it never observed.
+   */
+  toolCalls: number | null
   /** Listed price if run.meta/condition recorded one; blank otherwise. */
   price: number | null
 }
@@ -237,6 +262,8 @@ export interface EvalReport {
   singleCondition: boolean
   judge: JudgeConsistency
   efficiency: ConditionEfficiency[]
+  /** Per-round token/tool ledger — the source `report/usage.jsonl` is written from. */
+  usageRows: UsageRow[]
   /** Cells the efficiency table left out, by condition and state — one line under the table. */
   efficiencyExcluded: ExcludedCells[]
   /** Condition → tasks where ALL its current-attempt cells finished their stages (halted is not finished). */
@@ -256,13 +283,54 @@ export interface EvalReport {
   notes: string[]
 }
 
+/**
+ * One line of `report/usage.jsonl` — ONE DELEGATION ROUND, with the cell
+ * coordinates that place it. This is the per-round ledger the efficiency
+ * table is summed from and the only file an external pricing step needs to
+ * read: it never prices anything itself (the unit prices live outside this
+ * bundle, applied by a non-model step), it just states what each round spent.
+ *
+ * Every observation field is OMITTED when the round did not report it — no
+ * zero-filling, because "the harness reported nothing" and "the round spent
+ * nothing" are different facts and only absence can say the first one.
+ */
+export interface UsageRow {
+  /** The run this bundle belongs to; null when its meta names none. */
+  run: string | null
+  /** The cell's mission id. */
+  cell: string
+  /** Attempt number — a retried cell keeps the same mission id. */
+  attempt: number
+  condition: string | null
+  task: string | null
+  stage: string | null
+  round: number | null
+  /**
+   * Whether this round is inside the efficiency table's scope: the CURRENT
+   * attempt of a cell that finished its stages (T23's rule). Summing the
+   * `counted: true` rows of one condition reproduces its table row exactly;
+   * the `false` rows are the spend the table deliberately excludes, kept here
+   * rather than dropped so an external reader can choose its own scope.
+   */
+  counted: boolean
+  observedModel?: string
+  cliVersion?: string
+  durationMs?: number
+  usage?: { outputTokens?: number; inputTokens?: number; cacheReadTokens?: number }
+  toolCalls?: ToolCallCounts
+}
+
 /** Files written by {@link writeEvalReport}. */
 export interface ReportWrite {
   bundleDir: string
   outDir: string
   resultsPath: string
   summaryPath: string
+  /** `report/usage.jsonl` — the per-round token and tool-call ledger. */
+  usagePath: string
   rowCount: number
+  /** Delegation rounds written to {@link ReportWrite.usagePath}. */
+  usageRowCount: number
   report: EvalReport
 }
 
@@ -281,6 +349,10 @@ interface DelegationRecord {
   usage: { outputTokens: number | null; inputTokens: number | null; cacheReadTokens: number | null }
   modelDeclared: string | null
   modelObserved: string | null
+  /** The CLI build the round ran, when the harness read one back. */
+  cliVersion: string | null
+  /** The round's tool calls, when the harness counted any; null is "not reported". */
+  toolCalls: ToolCallCounts | null
 }
 
 interface CellVerdict {
@@ -422,6 +494,43 @@ function anchorOf(payload: unknown): CellAnchor | null {
   return null
 }
 
+/**
+ * Read one recorded tool-call accounting. A payload without a finite `count`
+ * is not an accounting — null, never a substituted zero, because "no round
+ * reported it" and "the round used no tools" are different facts and only the
+ * first one may be blank in the table.
+ * @param value - the annotation's `toolCalls` field, whatever it holds.
+ * @returns the accounting, or null when none was recorded.
+ */
+function toolCallsOf(value: unknown): ToolCallCounts | null {
+  if (!isPlainObject(value)) return null
+  const count = num(value['count'])
+  if (count === null) return null
+  const byName: Record<string, number> = {}
+  if (isPlainObject(value['byName'])) {
+    for (const [name, raw] of Object.entries(value['byName'])) {
+      const times = num(raw)
+      if (times !== null) byName[name] = times
+    }
+  }
+  return { count, ...Object.keys(byName).length === 0 ? {} : { byName } }
+}
+
+/** Sum tool-call accountings, keeping the per-name tallies under their own names. */
+function sumToolCalls(records: readonly (ToolCallCounts | null)[]): ToolCallCounts | null {
+  const reported = records.filter((entry): entry is ToolCallCounts => entry !== null)
+  if (reported.length === 0) return null
+  let count = 0
+  const byName: Record<string, number> = {}
+  for (const entry of reported) {
+    count += entry.count
+    for (const [name, times] of Object.entries(entry.byName ?? {})) {
+      byName[name] = (byName[name] ?? 0) + times
+    }
+  }
+  return { count, ...Object.keys(byName).length === 0 ? {} : { byName } }
+}
+
 /** Extract delegation records from an orchestrator-ns payload (object or array). */
 function delegationsOf(payload: unknown): DelegationRecord[] {
   const items = Array.isArray(payload) ? payload : [payload]
@@ -441,6 +550,8 @@ function delegationsOf(payload: unknown): DelegationRecord[] {
       },
       modelDeclared: model === undefined ? null : str(model['declared']),
       modelObserved: model === undefined ? null : str(model['observed']),
+      cliVersion: str(item['cliVersion']),
+      toolCalls: toolCallsOf(item['toolCalls']),
     })
   }
   return out
@@ -1353,6 +1464,7 @@ function efficiencyOf(
       outputTokens: delegations.some(d => d.usage.outputTokens !== null) ? outputTokens : null,
       inputTokens: delegations.some(d => d.usage.inputTokens !== null) ? inputTokens : null,
       cacheReadTokens: anyCacheRead ? cacheRead : null,
+      toolCalls: sumToolCalls(delegations.map(d => d.toolCalls))?.count ?? null,
       price: priceDirect ?? priceModel,
     })
   }
@@ -1365,6 +1477,46 @@ function efficiencyOf(
  * @param cells - every cell of the bundle.
  * @returns one row per (condition, state), condition-then-state sorted.
  */
+/**
+ * The per-round ledger `report/usage.jsonl` is written from: one row per
+ * delegation round of every cell, in bundle order, each marked with whether
+ * the efficiency table counts it (T23's rule — current attempt, finished
+ * stages). Nothing is aggregated here and nothing is priced: this is the
+ * ledger both the table and any outside pricing step read.
+ * @param cells - every cell in the bundle, current and retried alike.
+ * @param runId - the run this bundle belongs to, when its meta names one.
+ * @returns one row per delegation round.
+ */
+function usageRowsOf(cells: readonly BundleCell[], runId: string | null): UsageRow[] {
+  const out: UsageRow[] = []
+  for (const cell of cells) {
+    const counted = cell.isCurrent && cell.state !== null && COMPLETED_STATES.has(cell.state)
+    for (const delegation of cell.delegations) {
+      const usage: { outputTokens?: number; inputTokens?: number; cacheReadTokens?: number } = {
+        ...delegation.usage.outputTokens === null ? {} : { outputTokens: delegation.usage.outputTokens },
+        ...delegation.usage.inputTokens === null ? {} : { inputTokens: delegation.usage.inputTokens },
+        ...delegation.usage.cacheReadTokens === null ? {} : { cacheReadTokens: delegation.usage.cacheReadTokens },
+      }
+      out.push({
+        run: runId,
+        cell: cell.missionId,
+        attempt: cell.attempt,
+        condition: cell.condition,
+        task: cell.task,
+        stage: delegation.stage,
+        round: delegation.round,
+        counted,
+        ...delegation.modelObserved === null ? {} : { observedModel: delegation.modelObserved },
+        ...delegation.cliVersion === null ? {} : { cliVersion: delegation.cliVersion },
+        ...delegation.durationMs === null ? {} : { durationMs: delegation.durationMs },
+        ...Object.keys(usage).length === 0 ? {} : { usage },
+        ...delegation.toolCalls === null ? {} : { toolCalls: delegation.toolCalls },
+      })
+    }
+  }
+  return out
+}
+
 function excludedCellsOf(cells: BundleCell[]): ExcludedCells[] {
   const counts = new Map<string, ExcludedCells>()
   for (const cell of cells) {
@@ -1456,6 +1608,9 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
 
   const rows: ReportRow[] = []
   for (const cell of cells) {
+    // One accounting per CELL, repeated on its verdict rows: the rounds are
+    // the cell's, and a verdict has no round of its own to attribute to.
+    const cellToolCalls = sumToolCalls(cell.delegations.map(d => d.toolCalls))
     for (const verdict of cell.verdicts) {
       const facts = cell.task === null ? undefined : polarityMap.get(cell.task)?.get(verdict.criterion)
       const weight = facts?.weight ?? undefined
@@ -1472,6 +1627,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
         ...(verdict.ratio !== null ? { ratio: verdict.ratio } : {}),
         ...(weight !== undefined ? { weight } : {}),
         ...(facts !== undefined ? { negative: facts.negative } : {}),
+        ...(cellToolCalls !== null ? { toolCalls: cellToolCalls } : {}),
         evidence: typeof verdict.doc['evidence'] === 'string' ? verdict.doc['evidence'] : '',
         by: typeof verdict.doc['by'] === 'string' ? verdict.doc['by'] : '',
       })
@@ -1507,6 +1663,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
   const judge = judgeConsistencyOf(cells)
   const efficiency = efficiencyOf(cells, conditionEntries, meta)
   const efficiencyExcluded = excludedCellsOf(cells)
+  const usageRows = usageRowsOf(cells, runId)
 
   const tasksCompletedBy: Record<string, string[]> = {}
   for (const condition of seenConditions) {
@@ -1564,6 +1721,7 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
     singleCondition,
     judge,
     efficiency,
+    usageRows,
     efficiencyExcluded,
     tasksCompletedBy,
     toolOnlyNs: toolOnlyNsOf(expectedNs, writtenBy),
@@ -1581,7 +1739,8 @@ export async function analyzeBundle(bundleDir: string): Promise<EvalReport> {
 // --- output ------------------------------------------------------------------
 
 /**
- * Build the report for a bundle and write `results.jsonl` + `summary.md`.
+ * Build the report for a bundle and write `results.jsonl`, `usage.jsonl` and
+ * `summary.md`.
  * The out directory defaults to `<bundleDir>/report` and those two files are
  * overwritten on re-run: a report is derived state, unlike the append-only
  * bundle itself. `report/rubric-weights.json` is NOT touched — the export
@@ -1593,8 +1752,23 @@ export async function writeEvalReport(bundleDir: string, options: { out?: string
   await mkdir(outDir, { recursive: true })
   const resultsPath = join(outDir, 'results.jsonl')
   const summaryPath = join(outDir, 'summary.md')
+  const usagePath = join(outDir, 'usage.jsonl')
   const lines = report.rows.map(row => JSON.stringify(row))
   await writeFile(resultsPath, lines.length === 0 ? '' : `${lines.join('\n')}\n`)
+  // The per-round ledger is written even when it is empty: an empty file says
+  // "no delegation round was recorded", while a missing one cannot be told
+  // apart from an export that predates the ledger.
+  const usageLines = report.usageRows.map(row => JSON.stringify(row))
+  await writeFile(usagePath, usageLines.length === 0 ? '' : `${usageLines.join('\n')}\n`)
   await writeFile(summaryPath, renderSummaryMd(report), 'utf8')
-  return { bundleDir, outDir, resultsPath, summaryPath, rowCount: report.rows.length, report }
+  return {
+    bundleDir,
+    outDir,
+    resultsPath,
+    summaryPath,
+    usagePath,
+    rowCount: report.rows.length,
+    usageRowCount: report.usageRows.length,
+    report,
+  }
 }

@@ -44,6 +44,7 @@ import type {
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
+  LocalAgentToolCalls,
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -1035,11 +1036,17 @@ export class LocalAgentRegistry {
    * (the round failed before the CLI session was learned) is skipped for the
    * merge; the event still reports.
    * @param childSessionId - the dsh child session id of the settled round.
-   * @param round - the round's observed model and/or usage, either optional.
+   * @param round - the round's observed model, version, usage and tool-call
+   *   accounting, each optional.
    */
   recordRoundSettled(
     childSessionId: string,
-    round: { readonly observedModel?: string; readonly cliVersion?: string; readonly usage?: TokenUsage },
+    round: {
+      readonly observedModel?: string
+      readonly cliVersion?: string
+      readonly usage?: TokenUsage
+      readonly toolCalls?: LocalAgentToolCalls
+    },
   ): void {
     if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
@@ -1053,11 +1060,16 @@ export class LocalAgentRegistry {
         this.persistDelegation(updated)
       }
     }
+    // `toolCalls` rides the EVENT only, never the record: the record carries a
+    // delegation's latest state (its model, its build), while a tool-call
+    // count belongs to one round and merging it would silently overwrite the
+    // previous round's count with the newest one.
     this.reportRunProgress(childSessionId, {
       kind: 'settled',
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
       ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
       ...round.usage === undefined ? {} : { usage: round.usage },
+      ...round.toolCalls === undefined ? {} : { toolCalls: round.toolCalls },
     })
   }
 

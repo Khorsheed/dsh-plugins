@@ -37,6 +37,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionEventMap, SessionSeq } from '@deepseek-ai/dsh-session'
 // Type-only: the 'todo/write' SessionEventMap merge (the passthrough mirror).
 import type {} from '@deepseek-ai/dsh-tool-todo'
+import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -132,6 +133,14 @@ export interface DshMirrorDelta {
    * the tokenUsage projection sums). Absent when the round recorded none.
    */
   usage?: TokenUsage
+  /**
+   * The round's tool-call accounting: the span's `tool/call` events counted
+   * under the names they carry. Read off the SAME round window the model and
+   * usage come from — the pre-skip span, so a settle pass a live poll already
+   * drained still reports the round's real count. Absent when the round made
+   * no tool call.
+   */
+  toolCalls?: LocalAgentToolCalls
 }
 
 /**
@@ -163,10 +172,25 @@ function addEventUsage(total: TokenUsage | undefined, usage: unknown): TokenUsag
    the LAST assistant event's `message.source` names the model that ran, and
  * the assistant events' `usage` fields sum to the round's accounting.
  */
-function roundObservation(span: readonly SessionEvent[]): { observedModel?: string; usage?: TokenUsage } {
+function roundObservation(span: readonly SessionEvent[]): {
+  observedModel?: string
+  usage?: TokenUsage
+  toolCalls?: LocalAgentToolCalls
+} {
   let observedModel: string | undefined
   let usage: TokenUsage | undefined
+  // Tool calls counted over the same round window, keyed by the name the
+  // sub-dsh's own `tool/call` event carries — the tool's dsh name, verbatim.
+  const byName: Record<string, number> = {}
+  let toolCount = 0
   for (const event of span) {
+    if (event.type === 'tool/call') {
+      const name = (event.data as { name?: unknown }).name
+      toolCount += 1
+      const key = typeof name === 'string' && name !== '' ? name : 'tool'
+      byName[key] = (byName[key] ?? 0) + 1
+      continue
+    }
     if (event.type !== 'assistant/message') continue
     const data = event.data as {
       message?: { source?: { provider?: unknown; model?: unknown } }
@@ -185,6 +209,10 @@ function roundObservation(span: readonly SessionEvent[]): { observedModel?: stri
   return {
     ...observedModel === undefined ? {} : { observedModel },
     ...usage === undefined ? {} : { usage },
+    // Zero is not reported: a round that made no tool call and a round whose
+    // events were never read are different facts, and only absence can say
+    // the second one honestly.
+    ...toolCount === 0 ? {} : { toolCalls: { count: toolCount, byName } },
   }
 }
 

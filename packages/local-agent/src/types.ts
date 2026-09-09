@@ -410,6 +410,27 @@ export type LocalAgentDelegationIntent =
   }
 
 /**
+ * One settled round's tool-call accounting, counted from the events the
+ * provider ALREADY parses for its transcript mirror — no second parse, no new
+ * readback channel. Per round, never cumulative.
+ *
+ * `byName` keys are whatever the harness's own CLI calls the tool, verbatim
+ * and un-normalized: codex reports its stream item types (`command_execution`,
+ * `web_search_call`), claude the `tool_use` name (`Bash`, `Read`, `TodoWrite`,
+ * an MCP tool's full name), kimi and dsh the tool name their own events carry.
+ * Cross-harness comparison is therefore `count` ONLY — the names are for a
+ * reader, and normalizing them would invent an equivalence the CLIs never
+ * agreed to. `byName` is absent when the events carried no usable name, and
+ * its values always sum to `count`.
+ */
+export interface LocalAgentToolCalls {
+  /** Tool calls the round made. Zero is a real observation — the round used none. */
+  readonly count: number
+  /** Per-tool counts under the CLI's own names; absent when no name was available. */
+  readonly byName?: Readonly<Record<string, number>>
+}
+
+/**
  * One progress update for a delegation run. Providers report the data-bearing
  * kinds ({@link reportRunProgress} on the registry — the facade only forwards);
  * the facade itself emits the `heartbeat` kind while a facade-tracked run is
@@ -448,6 +469,13 @@ export type LocalAgentRunProgress =
     readonly cliVersion?: string
     /** The settled round's token usage, when the harness reported one. */
     readonly usage?: TokenUsage
+    /**
+     * The round's tool-call accounting, counted from the transcript events the
+     * provider already parsed. Absent when the harness reported none for this
+     * round — absence is "not observed", which is not the same fact as a
+     * `count: 0` round that ran no tools, so it is never filled in with zero.
+     */
+    readonly toolCalls?: LocalAgentToolCalls
   }
 
 /**

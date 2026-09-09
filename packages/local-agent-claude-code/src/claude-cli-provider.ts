@@ -44,7 +44,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { DelegationExecTarget } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
@@ -577,7 +577,11 @@ export interface ClaudeCliRunSpec {
    * delegation record's `observedModel` merge and the `settled` run-progress
    * event). Fires for fresh and resume rounds alike, on every terminal state.
    */
-  readonly onRoundSettled?: ((round: { readonly observedModel?: string; readonly usage?: TokenUsage }) => void) | undefined
+  readonly onRoundSettled?: ((round: {
+    readonly observedModel?: string
+    readonly usage?: TokenUsage
+    readonly toolCalls?: LocalAgentToolCalls
+  }) => void) | undefined
 }
 
 function thrown(value: unknown): Error {
@@ -652,6 +656,32 @@ interface ClaudeStreamFoldState {
   todos: TodoItem[] | undefined
   /** A TodoWrite whose input missed the documented shape (degraded to the text fold). */
   todoSkew: boolean
+  /**
+   * Tool calls this stream made, keyed by the `tool_use` block's own `name` —
+   * claude's vocabulary verbatim (`Bash`, `Read`, `TodoWrite`, an MCP tool's
+   * full `mcp__server__tool`), never normalized across harnesses. Counted in
+   * the branch that already folds the block, so no event is parsed twice.
+   */
+  readonly toolCalls: Map<string, number>
+}
+
+/**
+ * Fold a tool-call counter into the settled shape: `{count, byName}` with the
+ * per-name values summing to `count`. An empty map yields undefined — a
+ * stream that named no tool call reports nothing rather than a zero it did
+ * not observe.
+ * @param counts - the fold's per-name tally.
+ * @returns the settled accounting, or undefined when nothing was counted.
+ */
+export function toolCallsOf(counts: ReadonlyMap<string, number>): LocalAgentToolCalls | undefined {
+  if (counts.size === 0) return undefined
+  let count = 0
+  const byName: Record<string, number> = {}
+  for (const [name, value] of counts) {
+    count += value
+    byName[name] = value
+  }
+  return { count, byName }
 }
 
 /**
@@ -774,6 +804,10 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
       state.lines.push({ kind: 'think', text: record['thinking'] as string })
     } else if (kind === 'tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
+      // Counted here, ahead of the TodoWrite intercept below: that intercept
+      // diverts the block out of the transcript, but the CLI still called the
+      // tool, and an accounting that skipped it would under-report the round.
+      state.toolCalls.set(name, (state.toolCalls.get(name) ?? 0) + 1)
       if (name === 'TodoWrite') {
         const todos = todosFromTodoWrite(record['input'])
         if (todos !== undefined) {
@@ -840,6 +874,7 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
   completed = false
   todos: TodoItem[] | undefined
   todoSkew = false
+  readonly toolCalls = new Map<string, number>()
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
   push(chunk: string): void {
@@ -877,10 +912,13 @@ export function parseClaudeStreamJson(output: string): {
   todos?: TodoItem[]
   /** Whether a shape-skewed TodoWrite degraded to the text fold. */
   todoSkew?: boolean
+  /** The round's tool-call accounting, absent when the stream made none. */
+  toolCalls?: LocalAgentToolCalls
 } {
   const state: ClaudeStreamFoldState = {
     lines: [],
     callsById: new Map(),
+    toolCalls: new Map(),
     text: undefined,
     usage: undefined,
     sessionId: undefined,
@@ -892,6 +930,7 @@ export function parseClaudeStreamJson(output: string): {
     todoSkew: false,
   }
   for (const raw of output.split('\n')) foldClaudeStreamLine(state, raw)
+  const toolCalls = toolCallsOf(state.toolCalls)
   return {
     lines: state.lines,
     ...state.text === undefined ? {} : { text: state.text },
@@ -902,6 +941,7 @@ export function parseClaudeStreamJson(output: string): {
     ...state.model === undefined ? {} : { model: state.model },
     ...state.todos === undefined ? {} : { todos: state.todos },
     ...state.todoSkew === false ? {} : { todoSkew: true },
+    ...toolCalls === undefined ? {} : { toolCalls },
   }
 }
 
@@ -1516,6 +1556,7 @@ async function mirrorClaudeAfterExit(
       ...parsed.model === undefined ? {} : { observedModel: parsed.model },
       ...cliVersion === undefined ? {} : { cliVersion },
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      ...parsed.toolCalls === undefined ? {} : { toolCalls: parsed.toolCalls },
     })
     // Nothing streamed at all (e.g. the CLI died before the first event):
     // keep the pre-live-mirror behavior of recording nothing. A todos-only
