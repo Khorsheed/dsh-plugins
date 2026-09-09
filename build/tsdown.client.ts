@@ -166,6 +166,10 @@ function clientLibraryConfig(
 }
 
 function clientConfig(id: string, entry: string): UserConfig {
+  // Emitted `//#region` markers quote the virtual id verbatim, so the id must
+  // not carry the builder's absolute path (repo hygiene forbids it in
+  // published artifacts); the Map keeps the real path for load()/watch.
+  const cssVirtualPaths = new Map<string, string>()
   return {
     name: `${id}/client`,
     entry: { client: entry },
@@ -226,11 +230,13 @@ function clientConfig(id: string, entry: string): UserConfig {
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
         const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        const virtualId = CSS_VIRTUAL_PREFIX + relative(process.cwd(), abs) + CSS_VIRTUAL_SUFFIX
+        cssVirtualPaths.set(virtualId, abs)
+        return virtualId
       },
       async load(virtualId: string) {
-        if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssVirtualPaths.get(virtualId)
+        if (fileId === undefined) return null
         // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
