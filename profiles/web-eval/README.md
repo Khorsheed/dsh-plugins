@@ -4,7 +4,7 @@
 
 **在一个界面里跑对照实验：同一批题交给不同的 harness、模型、preset 或 skill，按题配对比较。** 题库、条件、计划进 git 评审；执行由确定性编排器驱动；判定分脚本、LLM 初评、人终评三源互不覆盖；结论随自包含 bundle 导出。基础体验与本地 Agent 家族全部内含。
 
-> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 进行中：容器化 + 阶段三四，第一波先做 pilot A 的缺口。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
+> **状态**：I2 已收口（2026-09-08）：编排器 v0（run 循环、判官、报告、只读工具）合入 main；pilot A 在宿主上真跑 F2 + F3 × codex / dsh 三格到 released，报告因无环境指纹如实拒绝比较，判官一致性 κ 0.655（单格支撑），第一份结论是 14 条缺口而不是名次（题库 `docs/pilot-a-log.md`）。I3 已收口（2026-09-09）：一格在容器内走完全流程、release 经闸；四家在容器内跑通同一题（P0），报告四条不变量首次全部成立、比较节首次打开、效率表 token 四列有数（题库 `docs/pilot-b-log.md`）；阶段三的数据缺口记 T19d。I4 进行中：放宽因子。本文先把理想架构、依赖插件、理想流程与最终 UI 立住，再按迭代逼近，每个迭代的完成判据写死在[迭代计划](#迭代计划)里；逐任务的状态与文案见 [docs/iterations.md](docs/iterations.md)。路线图里的「dsh-eval 整合包」即本 profile。
 
 ## 定位
 
@@ -330,7 +330,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：`presets/eval/` 由两个脚本整目录覆盖到 `$DSH_HOME/.agent-presets/eval`，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。它落在 profile 目录**之外**（预设名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它——见[卸载](#更新切换装卸单个成员卸载)。
 
-当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl` 与 `proxyUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同，官方端点 + 本机代理出网，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
+当前 pin（I2·T15 写入，I3·T27 补三行）：`mission tools: read`、`datasets tools: authoring`、`eval tools: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
