@@ -275,7 +275,7 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 
 | 任务 | 类型 | 内容 | 依赖 | 产出 |
 |---|---|---|---|---|
-| T29 | 代码 | local-agent：每次委派可覆盖 scoped home / 配置 | T3 | |
+| T29 | 代码 | local-agent：作用域目录按 scope 命名，每次委派可指定 scope；登录、状态、记录、回读、exec 挂载源都跟着走；eval 条件加 `scope` 字段 | 无 | |
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
 | T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型；前置：dsh-local-agent-dsh-headless 开一条按次传模型的启动路，dsh 才能拿到 model 键 | T29 T30a | |
 | T30c ✅ | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | 合入 main `fc5141d`（2026-09-10）；四家都在已走过的折叠分支里数，byName 记各家自己的名字（codex 是 command_execution 不是卡片上的 Bash）；kimi / dsh 按本轮不按镜像窗口；usage.jsonl 每轮一行，多 `attempt` 与 `counted` 两列，效率表从 counted:true 加总复现；未报计数打「—」不补零；codex 的 function_call 未数（0.144.0 的 exec 流里 provider 本就不解析它）；只有 exec 路径报 settle 观测 |
@@ -283,6 +283,8 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选）；一并定冻结决策 9 与「四家同一题」的互斥怎么解（第五个模型，或判官与选手同家不同模型） | T29 T30b | |
 | T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
+
+T29（2026-09-10 文案发出）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
 
 T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用数没人采；采集面已有、只差汇总，合成一条，不依赖 I3 与 T29。计价不让实施者做（2026-09-09 定）：token 与工具调用按轮落库即可，单价表由 bundle 之外的非模型环节套用。
 
@@ -1336,6 +1338,43 @@ local-agent 家族与 eval 测试全绿，gate 绿；真机两家的 toolCalls �
 
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；两家 toolCalls 表；效率表原文。
+```
+
+### T29 · local-agent：作用域目录按 scope 命名，每次委派可指定 scope（可发）
+
+```text
+# 任务 T29：local-agent——作用域目录按 scope 命名，每次委派可指定 scope；eval 条件加 scope 字段
+
+## 背景
+今天 homeDir(name) = join(homesRoot, name)（index.ts:663），只认家名：register 时建目录并 provision 一次，登录、状态、delegations.jsonl、listSessions、回读、CLI 版本探测、live 驱动、kimi 的 mcp.json、dsh 的子 profile 全都落在这一份目录里；四家 provider 在 apply 时与每轮 start 时各自调 ctx.localAgent.homeDir('<家名>')；DelegationCallOptions 只有 cwd 与 exec，intent 与委派记录都不带作用域目录，resume 只核 cwd。eval 侧 T20c 把容器轮的挂载源定为 faces.localAgent.homeDir(条件的家名)（run.ts:1532），所以同一家的两个条件共用一份作用域目录——只能在模型、推理强度这类不落在目录里的因子上不同，一个 run 要两次不同登录今天表达不了。I4 的 T30b（按次委派模型）、T31（条件 provision）、T33 的 pilot D（同 harness 两 preset）都要先有「每条件一份作用域目录」。
+
+## 先读
+packages/local-agent/src/index.ts（LocalAgentRegistry：homeDir、register 的 provision、statusOf、sessionsOf、persistDelegation / loadDelegations、handle 的 login / status / sessions / logout、ptyLogin / runLogin、authFailures / authSuccesses / logins 三个按家名键的 map）；types.ts（DelegationCallOptions、LocalAgentDelegationIntent 的 fresh / resume、LocalAgentDelegationRecord、LocalAgentStatus.homeDir、DelegationExecTarget 的注释块）；gateway.ts 的 status(name)；四家 provider 的 index.ts（apply 时闭包住的 homeDir 与 effectiveSettings 的读法）、*-cli-provider.ts 的 start（每轮 homeDir、containerScopedHome）、provision.ts、records.ts（回读读哪个目录；claude 的 keychain 项按目录路径哈希）；packages/eval/src/schema.ts 的条件 schema 与 unit.scopedHome、unit.ts 的 resolveCellUnit、run.ts 的挂载源与委派选项、readiness.ts 的 probeIn、faces.ts 的 LocalAgentFace；T11 / T17 / T20c / T25 / T30a 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-local-agent-scope，分支 feat/local-agent-scoped-home；改 packages/local-agent、四个 provider 包、packages/eval（各自 README 双语 + sidecar）；不改 lab、mission、datasets；不改 provider 的流解析、settle、回读算法。
+
+## 已定决定（照此实现）
+- scope 是一个名字，不是路径。homeDir(name, scope?)：缺省 scope 仍是 join(homesRoot, name)，逐字节与今天相同；命名 scope 落在同级的 join(homesRoot, `${name}@${scope}`)。scope 只允许 [a-z0-9-]，不接受任何路径——作用域目录永远在 homesRoot 之下。不把命名 scope 嵌在缺省目录里面：那会污染各家 CLI 自己的状态树。
+- 命名 scope 惰性建立：第一次被 login / status / 委派点名时 mkdir 0700 + 该家的 provision（与 register 对缺省目录做的相同）；建了没登录的 scope，status 报 credentialState absent，委派照今天的规则失败。
+- 委派：DelegationCallOptions 加 scope?: string；intent 的 fresh 与 resume 都带 scope，记录（LocalAgentDelegationRecord）记 scope；resume 不带或带不同的 scope 一律拒绝，与 cwd 的 assertResumeCwdUnchanged 同款。provider 每轮用 homeDir(家名, intent.scope) 起 CLI、写 env 的家变量、回读；apply 时闭包住的那份缺省目录只服务缺省 scope。
+- 登录与状态：/<家> login | status | sessions | logout 加可选 --scope <名>，缺省不变；LocalAgentStatus 加 scope 字段，homeDir 报该 scope 的目录；Remote status(name, scope?) 同步。authFailures / authSuccesses / logins 三个 map 改按 (家名, scope) 键。effectiveSettings 改为接 homeDir（harness 契约的方法签名变，四家的读函数本来就吃 homeDir 参数），status 与 eval 快照按 scope 取值。
+- delegations.jsonl 属于目录：每个 scope 目录一份，惰性加载；缺省目录的加载时机不变。
+- 凭证不复制：每个 scope 各自 login。claude 的 keychain 项按目录路径哈希，命名 scope 自动得到自己的项——这是今天唯一天然按路径安全的部分，README 写明。
+- 边界（本任务不做，README 与 Agent Note 写明）：live 驱动、LiveDriverSwitch、kimi 的成员桥 mcp.json 仍只绑缺省 scope，带 scope 的委派若撞上 live: true 直接拒绝（评测钉的是 exec，决策 2）；member-bridge.sock 仍是 homesRoot 级单例；dsh 的子 profile 随目录走，无需特殊处理。
+- eval：条件文档加可选顶层字段 scope（同样只允许 [a-z0-9-]），缺省即缺省 scope；委派选项与就绪检查都带 scope；容器轮挂载源改为 faces.localAgent.homeDir(家名, 条件.scope)，LocalAgentFace 的 homeDir 签名同步；run.meta.unit.scopedHomes 已按条件记宿主目录，照旧。契约记 v1-rev8，双语 + sidecar + 夹具。scope 在条件文档里，因此进条件哈希——两个只差 scope 的条件是两个受试对象，对。
+
+## 交付
+local-agent 与四家的 scope 支持；eval 的条件字段与挂载源；测试（homeDir 的两种取值与非法 scope 拒绝；惰性建立与 provision；resume 跨 scope 拒绝；记录带 scope；status / login 的 --scope；effectiveSettings 按目录；eval 两个只差 scope 的条件各挂各的目录、就绪检查各探各的）；README 双语；Agent Note（feature，Alternatives 至少记三条：DelegationCallOptions 直接收宿主路径、scope 之间复制凭证、命名 scope 嵌在缺省目录内，以及各自被拒的理由）。真机：本机 codex 建一个命名 scope 并 login，缺省与命名各委派一轮，两条记录的 scope 与回读模型各自成立、rollout 各落各的目录；eval 宿主路径 P0 × 两个只差 scope 的 codex 条件 × 1 rep（tsx 驱动即可）：就绪检查两条各通过，两格 archived，run.meta.unit.scopedHomes 两个不同目录。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；凭据不复制、不进日志与回报；不改 lab / mission / datasets；缺省 scope 的一切行为逐字节不变（现有测试全部原样通过）。
+
+## 完成判据
+local-agent 家族与 eval 测试全绿，gate 绿；真机两条委派记录与那份两条件 run 的就绪原文；缺省 scope 下 pilot-a-round1 bundle 复算逐字节不变。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两条委派记录（脱敏）；两条件 run 的就绪原文与 run.meta.unit.scopedHomes。
 ```
 
 ## 四、验收规程
