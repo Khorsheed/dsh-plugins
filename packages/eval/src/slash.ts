@@ -10,6 +10,7 @@
  * transition, archive, export) are the orchestrator's service face, not
  * model surface.
  */
+import { EvalRunRefused } from './run.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { EvalService } from './service.ts'
@@ -278,7 +279,21 @@ export async function handleEvalCommand(service: EvalService, invocation: Comman
     return renderReport(lines, report)
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error)
-    return { kind: 'error', text: `eval refused: ${text}` }
+    // The refusal path carries the evidence, not just the verdict. `lines`
+    // already holds one `readiness <condition>: NOT READY — <reason>` per
+    // probed condition, and an EvalRunRefused carries the diagnostics that
+    // stopped it; dropping both here turns T23's whole point ("print the 401,
+    // not 'a condition failed'") back into "a condition failed" for anyone
+    // driving through /eval run. The refusal message stays the first line, so
+    // a reader who only sees a truncated summary still sees the verdict.
+    const diagnostics = error instanceof EvalRunRefused
+      ? error.diagnostics.map(d => `  [${d.code}] ${d.message}`)
+      : []
+    const evidence = [...lines.map(line => `  ${line}`), ...diagnostics]
+    return {
+      kind: 'error',
+      text: evidence.length === 0 ? `eval refused: ${text}` : `eval refused: ${text}\n${evidence.join('\n')}`,
+    }
   }
 }
 
