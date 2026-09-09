@@ -61,6 +61,13 @@ export interface CellUnitPlan {
   resources?: { cpus?: string | number; memory?: string | number }
   /** The scoped credential directory: host side (never in a data file), unit side, and its variable. */
   scopedHome: { host: string; container: string; var: string }
+  /**
+   * The condition's named harness scope, when it declares one — the NAME
+   * behind the host side above (`<harness>@<scope>`). Recorded so the run's
+   * own metadata can say that two cells of one harness mounted two different
+   * directories without ever writing a host path into the bundle.
+   */
+  scope?: string
   /** Extra unit environment beyond the scoped-home variable (dsh's node flag). */
   extraEnv: Record<string, string>
 }
@@ -146,6 +153,10 @@ export function conditionUnitDiagnostics(conditionId: string, condition: unknown
  * @param condition - the condition document.
  * @param hostHome - the harness's own scoped home on this host: what gets
  *   mounted, and what the read-back reads. The two must be one directory.
+ *   For a condition declaring a `scope` this is that scope's directory
+ *   (`<homesRoot>/<harness>@<scope>`), which the caller resolved through the
+ *   family — the mount source and the read-back source stay one directory in
+ *   exactly the way they do for the default scope.
  * @returns the resolved plan, or the diagnostics that stopped it.
  */
 export function resolveCellUnit(
@@ -159,11 +170,13 @@ export function resolveCellUnit(
   const decl = conditionUnitOf(condition) as ConditionUnitDecl
   const harness = isPlainObject(condition) && isPlainObject(condition['harness']) ? condition['harness'] : undefined
   const harnessName = typeof harness?.['name'] === 'string' ? harness['name'] : ''
+  const scope = isPlainObject(condition) && typeof condition['scope'] === 'string' ? condition['scope'] : undefined
   const plan: CellUnitPlan = {
     conditionId,
     image: planUnit.image,
     scopedHome: { host: hostHome, container: decl.scopedHome.container, var: decl.scopedHome.var },
     extraEnv: harnessName === 'dsh' ? { NODE_OPTIONS: DSH_CONTAINER_NODE_OPTIONS } : {},
+    ...(scope === undefined ? {} : { scope }),
   }
   if (planUnit.network !== undefined) plan.network = planUnit.network
   if (planUnit.user !== undefined) plan.user = planUnit.user

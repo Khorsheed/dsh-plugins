@@ -64,6 +64,8 @@ export interface ReadinessRecord {
   childSessionId: string | null
   /** The condition's declared model. */
   declaredModel: string | null
+  /** The named scoped home the probe ran against; absent means the default one. */
+  scope?: string
   /** The model the facade read back for the probe; null when it reads none. */
   observedModel: string | null
   /** Why the condition is not ready; absent when it is. */
@@ -85,6 +87,13 @@ export interface ReadinessSubject {
   provider: string
   /** Defaults to `player`; the plan's judge conditions come through as `judge`. */
   role?: ReadinessRole
+  /**
+   * The condition's named scoped home, when it declares one. The probe runs
+   * against the SAME scope the cells will, because that is where the
+   * credential it is proving lives: probing the default scope for a
+   * scope-`b` condition would prove another account's login.
+   */
+  scope?: string
 }
 
 /**
@@ -191,6 +200,7 @@ async function probeOne(
       harness: condition.harnessName,
       provider: condition.provider,
       declaredModel: condition.declaredModel,
+      ...(condition.scope === undefined ? {} : { scope: condition.scope }),
       ok: false,
       startedAt,
       durationMs: env.now() - startedAt,
@@ -232,6 +242,7 @@ async function probeIn(
     harness: condition.harnessName,
     provider: condition.provider,
     declaredModel: condition.declaredModel,
+    ...(condition.scope === undefined ? {} : { scope: condition.scope }),
   }
   const startedAt = env.now()
   // Inside a unit the host cwd means nothing: the round runs in the unit's
@@ -264,6 +275,10 @@ async function probeIn(
       label: `readiness ${condition.id}`,
       signal: controller.signal,
       ...(unit === undefined ? { cwd: env.cwd } : { exec: unit.exec }),
+      // The scope is orthogonal to where the round runs: it names WHICH
+      // scoped home the round reads credentials from, on the host and inside
+      // a unit alike (the unit bind-mounts that same directory).
+      ...(condition.scope === undefined ? {} : { scope: condition.scope }),
       onProgress: (event: DelegationProgress) => {
         if (event.kind === 'settled' && event.observedModel !== undefined) settledModel = event.observedModel
       },

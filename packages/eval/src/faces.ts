@@ -220,6 +220,19 @@ export interface EvalDelegationOptions {
    * the argv.
    */
   exec?: { container: string; workdir: string; env?: Record<string, string> }
+  /**
+   * T29's scoped home: run this round against the harness's NAMED scoped home
+   * (`<homesRoot>/<harness>@<scope>`) instead of its default one — the
+   * condition's own `scope` field, so two conditions of the same harness can
+   * be two accounts. Absent means the default scoped home, which is what
+   * every condition without the field asks for.
+   *
+   * The scope must be the same on a cell's later rounds as on its first: the
+   * family anchors it in the delegation record and refuses a resume that
+   * names another (continuing a CLI session under another account's
+   * credentials is not a thing that can be repaired later).
+   */
+  scope?: string
 }
 
 /** The read-only delegation projection T11's `delegationOf` returns. */
@@ -229,6 +242,8 @@ export interface DelegationInfo {
   parentSessionId: string
   cwd?: string
   observedModel?: string
+  /** The named scoped home the delegation ran against; absent means the default one. */
+  scope?: string
 }
 
 /** The localAgent verbs the run loop uses. */
@@ -254,11 +269,16 @@ export interface LocalAgentFace {
    * past ⚠️. That is the bug T20 shipped by staging a separate credential
    * tree, and pilot B paid for it before anyone saw it.
    *
+   * The second parameter names a SCOPE: with it the facade returns — and
+   * materializes — `<homesRoot>/<harness>@<scope>`, the sibling directory
+   * that condition's rounds read their credentials from, so two conditions of
+   * one harness mount two different directories.
+   *
    * OPTIONAL on the face: only the container path needs it, and a facade that
    * predates it makes that path a refusal naming the method, never a silent
    * mount of the wrong directory.
    */
-  homeDir?(harness: string): string
+  homeDir?(harness: string, scope?: string): string
 }
 
 /**

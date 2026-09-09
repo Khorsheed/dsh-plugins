@@ -62,8 +62,20 @@ export interface LocalAgentStatus {
    * behind {@link LocalAgentStatus.authenticated}. Always present.
    */
   credentialState: LocalAgentCredentialState
-  /** Absolute scoped home. */
+  /**
+   * Absolute scoped home — of the SCOPE this status was asked about (see
+   * {@link LocalAgentStatus.scope}), which for the default scope is the
+   * directory it always was.
+   */
   homeDir: string
+  /**
+   * The named scope this status describes, when it describes one. Absent
+   * means the default scope — the only one that existed before named scopes,
+   * so every surface written before the field keeps reading exactly what it
+   * read. A named scope holds its own account: its credential grade, its
+   * session records and its delegation mappings are its own.
+   */
+  scope?: string
   /** Subagent provider name, when the harness delegates. */
   delegationProvider?: string
   /**
@@ -229,6 +241,15 @@ export interface LocalAgentDelegationRecord {
    */
   cwd?: string
   /**
+   * The named scope whose scoped home this delegation ran against — the
+   * anchor a resume round must repeat. Absent means the DEFAULT scope, which
+   * is what every record written before the field existed is; a resume that
+   * names a scope against such a record (or names none against a scoped one)
+   * is refused rather than continuing the CLI session under another account's
+   * credentials.
+   */
+  scope?: string
+  /**
    * The model identifier the provider observed in its own output stream for
    * the latest settled round (claude's stream-json init, codex's rollout
    * turn_context, kimi's wire usage/request records, the sub-dsh session's
@@ -389,6 +410,12 @@ export type LocalAgentDelegationIntent =
      * call option riding the same staged intent). Absent means the host.
      */
     readonly exec?: DelegationExecTarget
+    /**
+     * The named scope whose scoped home the round runs against (the `scope`
+     * call option riding the same staged intent). Absent means the default
+     * scope — the provider then resolves the same directory it always did.
+     */
+    readonly scope?: string
   }
   | {
     readonly kind: 'resume'
@@ -407,6 +434,12 @@ export type LocalAgentDelegationIntent =
      * the first round's target; nothing recorded can verify that for it.
      */
     readonly exec?: DelegationExecTarget
+    /**
+     * The named scope the resume round runs against. Unlike the container
+     * target this one IS anchored: the record carries the first round's
+     * scope, and a round naming another (or none) is refused.
+     */
+    readonly scope?: string
   }
 
 /**
@@ -564,4 +597,22 @@ export interface DelegationCallOptions {
    * so a swapped container is a caller error the record cannot catch.
    */
   readonly exec?: DelegationExecTarget
+  /**
+   * Run the round against a NAMED scoped home of the harness
+   * (`<homesRoot>/<harness>@<scope>`) instead of the default one. A scope is
+   * a name matching `[a-z0-9-]`, never a path; the directory is materialized
+   * (0700, then the harness's own provisioning) the first time anything names
+   * it, and it holds its own credentials — nothing is copied from the default
+   * scope, so a fresh scope needs its own `/<harness> login --scope <name>`.
+   *
+   * On a resume the scope must be the one the first round recorded, absence
+   * included: continuing a CLI session against another account's credentials
+   * is refused rather than attempted.
+   *
+   * Absent everywhere means the default scope — byte for byte the behavior
+   * before scopes existed. A scoped round is exec-only (the live drivers bind
+   * the default scoped home) and, on kimi, carries no member channel (the
+   * bridge declaration is written into the default scope's `mcp.json`).
+   */
+  readonly scope?: string
 }

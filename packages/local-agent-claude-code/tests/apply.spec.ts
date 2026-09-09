@@ -95,15 +95,21 @@ describe('local-agent-claude-code apply', () => {
       delegationProvider: 'claude-local',
     })
     // The pty login: the CLI runs on a real terminal so it opens the browser
-    // itself; the declaration scrubs the relay env and pins the scoped home.
+    // itself; the declaration scrubs the relay env and pins the scoped home
+    // it is HANDED — the argv is built per login, so `--scope` authorizes the
+    // scope's own directory instead of the default one.
     const login = registered[0]?.login
     expect(login !== undefined && 'pty' in login).toBe(true)
     if (login !== undefined && 'pty' in login) {
       expect(login.pty.command).toBe('env')
-      expect(login.pty.args).toEqual([
+      expect(typeof login.pty.args).toBe('function')
+      const argv = typeof login.pty.args === 'function' ? login.pty.args(home) : login.pty.args
+      expect(argv).toEqual([
         '-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL',
         `CLAUDE_CONFIG_DIR=${home}`, 'claude', 'auth', 'login',
       ])
+      const scoped = typeof login.pty.args === 'function' ? login.pty.args(`${home}@eval-b`) : login.pty.args
+      expect(scoped).toContain(`CLAUDE_CONFIG_DIR=${home}@eval-b`)
     }
     expect(registered[0]?.records).toBeDefined()
     // The scoped home is provisioned eagerly.
@@ -169,10 +175,10 @@ describe('local-agent-claude-code apply', () => {
     // a host shell that exports it changes the honest answer. The defaults
     // case pins the env empty; the env-set behavior has its own test below.
     vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
-    const { registered } = mount()
+    const { home, registered } = mount()
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       permissionMode: 'skip',
       baseUrlSet: false,
@@ -180,9 +186,9 @@ describe('local-agent-claude-code apply', () => {
   })
 
   it('reports the configured permission mode, live drive, and pinned endpoint', async () => {
-    const { registered } = mount({ live: true }, { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' })
+    const { home, registered } = mount({ live: true }, { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' })
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'live',
       permissionMode: 'normal',
       baseUrlSet: true,
@@ -200,7 +206,7 @@ describe('local-agent-claude-code apply', () => {
     const { registered, home } = mount()
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }, undefined, 2))
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toEqual({
+    await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'exec',
       permissionMode: 'skip',
       baseUrlSet: false,
@@ -217,26 +223,26 @@ describe('local-agent-claude-code apply', () => {
     const { registered, home } = mount()
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ env: {} }, undefined, 2))
     const harness = registered[0]!
-    const snapshot = await harness.effectiveSettings!()
+    const snapshot = await harness.effectiveSettings!(home)
     expect(snapshot).toEqual({ drive: 'exec', permissionMode: 'skip', baseUrlSet: false })
     expect('model' in snapshot).toBe(false)
   })
 
   it('the host environment supplies the endpoint when the config item is absent', async () => {
-    const { registered } = mount()
+    const { home, registered } = mount()
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://relay.example.com/v1')
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       baseUrlSet: true,
       baseUrlHost: 'relay.example.com',
     })
   })
 
   it('the config endpoint wins over the host environment', async () => {
-    const { registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
+    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://env.example.com/v1')
     const harness = registered[0]!
-    await expect(harness.effectiveSettings!()).resolves.toMatchObject({
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       baseUrlSet: true,
       baseUrlHost: 'config.example.com',
     })
@@ -269,18 +275,18 @@ describe('local-agent-claude-code model key', () => {
   it('snapshot order: the plugin key wins over the scoped settings.json', async () => {
     const { home, registered } = mount({ model: 'claude-opus-5' })
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'scoped-model' }, undefined, 2))
-    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'claude-opus-5' })
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'claude-opus-5' })
   })
 
   it('snapshot order: with no key, the scoped settings.json still decides', async () => {
     const { home, registered } = mount()
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'scoped-model' }, undefined, 2))
-    await expect(registered[0]!.effectiveSettings!()).resolves.toMatchObject({ model: 'scoped-model' })
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'scoped-model' })
   })
 
   it('snapshot order: neither one names a model, so the field stays absent', async () => {
-    const { registered } = mount()
-    const snapshot = await registered[0]!.effectiveSettings!()
+    const { home, registered } = mount()
+    const snapshot = await registered[0]!.effectiveSettings!(home)
     expect('model' in snapshot).toBe(false)
   })
 })

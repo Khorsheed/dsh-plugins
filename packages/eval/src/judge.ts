@@ -876,6 +876,13 @@ export interface ResolvedJudge {
   harnessName: string
   declaredModel: string | null
   provider: string
+  /**
+   * The judge condition's named harness scope, when it declares one. The
+   * judge delegates from the orchestrator rather than from a cell, but it
+   * reads its credentials from the same place any other condition of that
+   * harness does — the scope it named.
+   */
+  scope?: string
 }
 
 /** One llm-draft sample's record. */
@@ -951,6 +958,7 @@ export async function runJudgeSamples(input: JudgeRunInput): Promise<JudgeRunRes
           const run = await input.localAgent.start(input.parentSessionId, judge.provider, [{ type: 'text', text: prompt }], {
             label: `${input.runId}/${input.missionId} judge:${judge.id}#${sample}`,
             cwd: sampleDir,
+            ...(judge.scope === undefined ? {} : { scope: judge.scope }),
           })
           const result = await run.result
           if (result.stopReason !== 'completed') {

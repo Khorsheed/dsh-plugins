@@ -29,6 +29,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
+  assertResumeScopeUnchanged,
+  assertScopeExecOnly,
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
@@ -74,10 +76,12 @@ export const DEFAULT_LIVE_MIRROR_INTERVAL_MS = 2_000
  * rule: a provider paired with an older core loses the grade, never the run).
  * @param ctx - host context carrying the family registry.
  */
-function markCredentialVerified(ctx: Context): void {
+function markCredentialVerified(ctx: Context, scope?: string): void {
   const registry = ctx.get('localAgent')
   if (registry === undefined || typeof registry.reportAuthSuccess !== 'function') return
-  registry.reportAuthSuccess('kimi')
+  // The grade belongs to the scope the round ran against: each scoped home
+  // holds its own account.
+  registry.reportAuthSuccess('kimi', scope)
 }
 
 /**
@@ -193,11 +197,15 @@ export class KimiCliProvider implements SubagentProvider {
   }
 
   async start(request: ResolvedSubagentStartRequest): Promise<SubagentRun> {
-    const homeDir = this.ctx.localAgent.homeDir('kimi')
     // The family tool stages exactly one intent per delegation call; the
     // provider consumes exactly one per start. A resume intent continues the
     // recorded kimi session inside the existing child session.
     const intent = this.ctx.localAgent.takeDelegationIntent(request.parent.session.id, this.name)
+    // The scoped home this round runs against: the staged intent's scope
+    // names a sibling directory under the homes root, absent means the
+    // default one — the directory every round used before scopes existed.
+    const scope = intent?.scope
+    const homeDir = this.ctx.localAgent.homeDir('kimi', scope)
     // The effective cwd: the caller's override (the staged intent's `cwd`,
     // riding DelegationCallOptions.cwd) when present, else the parent
     // session's workspace — the behavior before overrides existed.
@@ -213,10 +221,13 @@ export class KimiCliProvider implements SubagentProvider {
     if (intent !== undefined && intent.kind === 'resume') {
       // A CLI session continues in the directory its first round ran in; a
       // round resolving elsewhere is rejected before any process spawns.
-      assertResumeCwdUnchanged(this.ctx.localAgent.getDelegation(intent.childSessionId), cwd, 'subagent-kimi')
-      return this.startKimiResume(request, intent, cwd, homeDir, exec)
+      const record = this.ctx.localAgent.getDelegation(intent.childSessionId)
+      assertResumeCwdUnchanged(record, cwd, 'subagent-kimi')
+      // …and in the scoped home its first round ran in.
+      assertResumeScopeUnchanged(record, scope, 'subagent-kimi')
+      return this.startKimiResume(request, intent, cwd, homeDir, exec, scope)
     }
-    return this.startKimiFresh(request, cwd, homeDir, exec)
+    return this.startKimiFresh(request, cwd, homeDir, exec, scope)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
@@ -225,6 +236,7 @@ export class KimiCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     const runId = SessionId(randomUUID())
     let childSession: Session | undefined
@@ -271,6 +283,9 @@ export class KimiCliProvider implements SubagentProvider {
     // target exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
     if (live !== undefined && childSession !== undefined && !live.disabled) {
+      // A scoped round is exec-only: the resident `kimi acp` process is
+      // started per member against the DEFAULT scoped home.
+      assertScopeExecOnly(scope, 'subagent-kimi')
       try {
         return await live.startRound(request, {
           cwd,
@@ -288,6 +303,8 @@ export class KimiCliProvider implements SubagentProvider {
               // The round's resolved working directory anchors the
               // resume-consistency check.
               cwd,
+              // …and its scoped home anchors the resume-scope check.
+              ...scope === undefined ? {} : { scope },
             })
           },
         })
@@ -302,7 +319,13 @@ export class KimiCliProvider implements SubagentProvider {
     // its declaration is written INTO the scoped home's mcp.json naming a host
     // node path — a containerized round therefore runs WITHOUT the member
     // channel rather than leaving a broken server in a shared config file.
-    const member = exec === undefined ? this.memberRun(runId, request.parent.session.id, homeDir) : undefined
+    // A scoped round also runs without it: the bridge declaration is written
+    // INTO a scoped home's `mcp.json`, and the member channel's socket and
+    // roster are the default scope's — the family binds one member bridge per
+    // homes root, not one per scope. A named absence beats a half-wired one.
+    const member = exec === undefined && scope === undefined
+      ? this.memberRun(runId, request.parent.session.id, homeDir)
+      : undefined
     try {
       const run = await startKimiCliRun(request, {
         cwd,
@@ -319,10 +342,10 @@ export class KimiCliProvider implements SubagentProvider {
           // The sentinel: an empty-shell wipe restored here makes the
           // caller's retry (or the next round) succeed.
           void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
-          this.ctx.localAgent.reportAuthFailure('kimi', detail)
+          this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
         },
         onSpawned: (pid) => { member?.bind(pid) },
-        onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+        onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
         cliVersion: () => kimiCliVersion(this.ctx, homeDir),
         childSession,
         homeDir,
@@ -339,6 +362,8 @@ export class KimiCliProvider implements SubagentProvider {
             // The round's resolved working directory anchors the
             // resume-consistency check.
             cwd,
+            // …and its scoped home anchors the resume-scope check.
+            ...scope === undefined ? {} : { scope },
           })
         },
         // Every settled round reports its observed model and usage through the
@@ -363,6 +388,7 @@ export class KimiCliProvider implements SubagentProvider {
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
+    scope: string | undefined,
   ): Promise<SubagentRun> {
     // One in-flight resume per child session: a second resume of the same
     // child fails loud instead of racing the first process. The lock releases
@@ -388,6 +414,9 @@ export class KimiCliProvider implements SubagentProvider {
       // See the fresh path: a container target is exec-only.
       const live = exec === undefined ? this.liveDriver(intent.childSessionId) : undefined
       if (live !== undefined && !live.disabled) {
+        // See the fresh path: a scoped round never goes to the resident
+        // process, which binds the default scoped home.
+        assertScopeExecOnly(scope, 'subagent-kimi')
         try {
           const liveRun = await live.startRound(request, {
             cwd,
@@ -409,7 +438,8 @@ export class KimiCliProvider implements SubagentProvider {
       // Member channel: register the resume round (same child session, fresh
       // per-run token) and declare the bridge MCP before the spawn.
       // See the fresh path: no member channel across the container boundary.
-      const member = exec === undefined
+      // See the fresh path: a scoped round carries no member channel either.
+      const member = exec === undefined && scope === undefined
         ? this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
         : undefined
       const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
@@ -431,10 +461,10 @@ export class KimiCliProvider implements SubagentProvider {
             // The sentinel: an empty-shell wipe restored here makes the
             // caller's retry (or the next round) succeed.
             void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
-            this.ctx.localAgent.reportAuthFailure('kimi', detail)
+            this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
           },
           onSpawned: (pid) => { member?.bind(pid) },
-          onAuthSuccess: () => { markCredentialVerified(this.ctx) },
+          onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
           cliVersion: () => kimiCliVersion(this.ctx, homeDir),
           childSession,
           homeDir,

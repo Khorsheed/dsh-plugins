@@ -147,6 +147,11 @@ export function apply(ctx: Context, config: Config): void {
       // fallback for remote terminals.
       login: { pty: { command: 'codex', args: ['login'] } },
       records: { listSessions: homeDir => listCodexSessions(homeDir) },
+      // A NAMED scope's directory is provisioned through this hook when the
+      // registry materializes it — the same `config.toml` storage pin the
+      // default scope gets from the apply above, so a scope's first login
+      // lands in its own `auth.json` instead of the macOS keychain.
+      provision: scopedHome => provisionCodexConfig(scopedHome).then(() => {}),
       isAuthenticated: codexAuthenticated,
       credentialStamp: codexCredentialStamp,
       logout: codexLogout,
@@ -157,12 +162,16 @@ export function apply(ctx: Context, config: Config): void {
       // fixed order: the plugin config key (it overrides the file on every
       // argv) before the scoped config's own `model`, absent when neither
       // names one.
-      effectiveSettings: async () => {
+      // The directory is a PARAMETER, not the apply-time capture: a status
+      // read (or an evaluation snapshot) of a named scope must report the
+      // config that scope's rounds would run with, which is the config in
+      // that scope's own directory.
+      effectiveSettings: async (scopedHome) => {
         const [reasoningEffort, baseUrl, scopedModel, cliVersion] = await Promise.all([
-          readCodexReasoningEffort(homeDir).catch(() => undefined),
-          readCodexBaseUrl(homeDir).catch(() => undefined),
-          readCodexModel(homeDir).catch(() => undefined),
-          codexCliVersion(ctx, homeDir).catch(() => undefined),
+          readCodexReasoningEffort(scopedHome).catch(() => undefined),
+          readCodexBaseUrl(scopedHome).catch(() => undefined),
+          readCodexModel(scopedHome).catch(() => undefined),
+          codexCliVersion(ctx, scopedHome).catch(() => undefined),
         ])
         const model = resolveModel() ?? scopedModel
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined

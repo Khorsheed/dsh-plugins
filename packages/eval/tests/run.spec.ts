@@ -364,6 +364,8 @@ interface DelegationCall {
   cwd?: string
   /** T17's container target, when the round was addressed at a unit instead of a cwd. */
   exec?: { container: string; workdir: string; env?: Record<string, string> }
+  /** T29's scoped home, when the condition named one. */
+  scope?: string
   /** Set on judge delegations (the fake recognizes the blind-judging prompt). */
   judge?: true
   /** Set on the pre-run readiness probe (the fake recognizes its prompt too). */
@@ -501,9 +503,14 @@ class FakeLocalAgent implements LocalAgentFace {
     })
   }
 
-  /** The instance's scoped home for one harness — what the container path mounts. */
-  homeDir(name: string): string {
-    return join(this.options.homesRoot ?? '/nonexistent-homes', name)
+  /**
+   * The instance's scoped home for one harness — what the container path
+   * mounts. A NAMED scope resolves to the sibling directory `<name>@<scope>`,
+   * exactly as the real facade does, so two conditions of one harness mount
+   * two directories.
+   */
+  homeDir(name: string, scope?: string): string {
+    return join(this.options.homesRoot ?? '/nonexistent-homes', scope === undefined ? name : `${name}@${scope}`)
   }
 
   get(name: string): { delegationProvider?: string } | undefined {
@@ -548,7 +555,7 @@ class FakeLocalAgent implements LocalAgentFace {
    */
   private readinessRun(
     provider: string,
-    options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } } | undefined,
+    options: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string } | undefined,
     onProgress?: (event: DelegationProgress) => void,
   ): DelegationRun {
     // The probe's label is `readiness <condition id>` — the only place the
@@ -591,12 +598,15 @@ class FakeLocalAgent implements LocalAgentFace {
   }
 
   /** How this round was addressed, for the call record. */
-  private addressed(options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> } }): Record<string, unknown> {
-    if (options?.exec !== undefined) return { exec: options.exec }
-    return options?.cwd !== undefined ? { cwd: options.cwd } : {}
+  private addressed(options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string }): Record<string, unknown> {
+    // The scope is orthogonal to the address: it says which scoped home the
+    // round reads its credentials from, on either path.
+    const scope = options?.scope !== undefined ? { scope: options.scope } : {}
+    if (options?.exec !== undefined) return { exec: options.exec, ...scope }
+    return { ...options?.cwd !== undefined ? { cwd: options.cwd } : {}, ...scope }
   }
 
-  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
+  async start(parentSessionId: string, provider: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; label?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
     void parentSessionId
     // The readiness probe is answered before any scripted failure: those
     // script the STAGE rounds, and a run whose probe failed never gets there.
@@ -619,7 +629,7 @@ class FakeLocalAgent implements LocalAgentFace {
     return this.makeRun(childSessionId)
   }
 
-  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
+  async resume(_parentSessionId: string, provider: string, childSessionId: string, prompt: Array<{ type: 'text'; text: string }>, options?: { cwd?: string; exec?: { container: string; workdir: string; env?: Record<string, string> }; scope?: string; onProgress?: (event: DelegationProgress) => void }): Promise<DelegationRun> {
     const text = prompt[0]?.text ?? ''
     this.calls.push({ kind: 'resume', provider, childSessionId, prompt: text, ...this.addressed(options) })
     this.writeStageOutputs(text.startsWith('STAGE-ONE') ? 'stage1' : 'stage2', this.target(options), this.behaviorFor(text))
@@ -2051,13 +2061,27 @@ function writeUnitCondition(root: string, id = 'dsh-unit'): void {
 /**
  * The scoped home local-agent would have provisioned for a harness, with a
  * credential in it. The container path mounts THIS — the instance's own — so
- * a round's rollout lands where the read-back reads it.
+ * a round's rollout lands where the read-back reads it. With a `scope` it is
+ * the NAMED scoped home (`<harness>@<scope>`), the sibling directory that
+ * scope's own `/<harness> login --scope <name>` writes into.
  */
-function stageScopedHome(root: string, harness = 'dsh'): string {
+function stageScopedHome(root: string, harness = 'dsh', scope?: string): string {
   const homesRoot = join(root, 'homes')
-  mkdirSync(join(homesRoot, harness), { recursive: true })
-  writeFileSync(join(homesRoot, harness, 'auth.json'), '{"written by /<harness> login": true}\n')
+  const dir = join(homesRoot, scope === undefined ? harness : `${harness}@${scope}`)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'auth.json'), '{"written by /<harness> login": true}\n')
   return homesRoot
+}
+
+/** The unit condition, plus the named harness scope its rounds run against. */
+function writeScopedUnitCondition(root: string, id: string, scope: string): void {
+  const base = JSON.parse(readFileSync(join(FIXTURE_DATASET, 'conditions', 'dsh-exec.json'), 'utf8')) as Record<string, unknown>
+  writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', `${id}.json`), `${JSON.stringify({
+    ...base,
+    scope,
+    env: { keys: ['DEEPSEEK_API_KEY', 'DSH_HOME'] },
+    unit: { scopedHome: { container: '/creds/dsh', var: 'DSH_HOME' } },
+  }, null, 2)}\n`)
 }
 
 /** The probes the container cells judge with (the same fixtures the host path uses). */
@@ -2161,6 +2185,64 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
     const probe = agent.calls.find(call => call.readiness === true)
     expect(probe?.cwd).toBeUndefined()
     expect(probe?.exec).toMatchObject({ container: 'dsh-lab-u1', workdir: '/workspace' })
+  })
+
+  it('gives two conditions that differ only in scope two scoped homes, two probes and two mounts', async () => {
+    // T29's whole point: one harness, two logins. The two conditions are
+    // byte-identical except for `scope`, which makes them two SUBJECTS — and
+    // every directory the run touches for them has to be two directories.
+    const root = makeDatasetTree()
+    writeUnitCondition(root, 'dsh-unit-a')
+    writeScopedUnitCondition(root, 'dsh-unit-b', 'eval-b')
+    const homesRoot = stageScopedHome(root)
+    stageScopedHome(root, 'dsh', 'eval-b')
+    const planPath = writePlan(root, { conditions: ['dsh-unit-a', 'dsh-unit-b'], unit: UNIT_SEGMENT }, 'container-scoped')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ homesRoot, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true,
+    }, { datasets: fakeDatasets(root, { verify: unitProbes() }), mission, localAgent: agent, lab })
+
+    // Two cells, and two conditions with different hashes: `scope` is a
+    // factor, so the two documents are not the same subject.
+    expect(report.cells).toHaveLength(2)
+    const shas = (report.meta['conditions'] as Array<{ id: string; sha: string }>).map(entry => entry.sha)
+    expect(new Set(shas).size).toBe(2)
+
+    // The mount source per cell: each condition's OWN scoped home.
+    const sources = lab.acquired.filter(spec => spec.missionId !== undefined).map(spec => spec.mounts?.[0]?.source)
+    expect(new Set(sources)).toEqual(new Set([join(homesRoot, 'dsh'), join(homesRoot, 'dsh@eval-b')]))
+    expect(sources).toContain(agent.homeDir('dsh', 'eval-b'))
+
+    // The readiness probe proves the credential of the scope the cells use.
+    const probes = agent.calls.filter(call => call.readiness === true)
+    expect(probes).toHaveLength(2)
+    expect(probes.filter(call => call.scope === 'eval-b')).toHaveLength(1)
+    expect(probes.filter(call => call.scope === undefined)).toHaveLength(1)
+    expect((report.meta['readiness'] as Array<{ condition: string; ok: boolean; scope?: string }>)
+      .map(record => [record.condition, record.ok, record.scope ?? null]))
+      .toEqual([['dsh-unit-a', true, null], ['dsh-unit-b', true, 'eval-b']])
+
+    // Every stage round of the scoped cell names the scope; the default
+    // cell's rounds name none — byte for byte the pre-scope call.
+    const stageRounds = agent.calls.filter(call => call.readiness !== true && call.judge !== true)
+    expect(stageRounds.filter(call => call.scope === 'eval-b').length).toBeGreaterThan(0)
+    expect(stageRounds.filter(call => call.scope === undefined).length).toBeGreaterThan(0)
+
+    // run.meta records which scope each condition ran against. The HOST paths
+    // stay out of the bundle (an operator fact), so the scope NAME is what
+    // makes the two entries legible as two directories.
+    expect(report.meta['unit']).toMatchObject({
+      scopedHomes: [
+        { condition: 'dsh-unit-a', container: '/creds/dsh', var: 'DSH_HOME' },
+        { condition: 'dsh-unit-b', container: '/creds/dsh', var: 'DSH_HOME', scope: 'eval-b' },
+      ],
+    })
+    for (const cell of report.cells) expect(cell.finalState).toBe('released')
   })
 
   it('writes the unit fingerprint into refs, which is what makes «环境一致» checkable', async () => {
@@ -2320,6 +2402,17 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
     expect(JSON.stringify(units[0]?.acquire)).toContain('scoped home of dsh')
     expect(units[0]?.acquire['envKeys']).toEqual(['DSH_HOME', 'NODE_OPTIONS'])
     expect(units[0]?.acquire).not.toHaveProperty('env')
+  })
+
+  it('names the scope in the rehearsed mount shape when a condition declares one', async () => {
+    const root = makeDatasetTree()
+    writeScopedUnitCondition(root, 'dsh-unit-b', 'eval-b')
+    const planPath = writePlan(root, { conditions: ['dsh-unit-b'], unit: UNIT_SEGMENT }, 'container-scoped-dry')
+    const report = await runPlan(planPath, { dryRun: true })
+    const units = report.meta['units'] as Array<{ condition: string; acquire: Record<string, unknown> }>
+    // The shape says WHICH scoped home, so a reviewer of the rehearsal can see
+    // that two conditions of one harness mount two directories.
+    expect(JSON.stringify(units[0]?.acquire)).toContain('scoped home of dsh@eval-b')
   })
 })
 
