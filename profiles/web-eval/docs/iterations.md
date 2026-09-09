@@ -1188,7 +1188,7 @@ I3 行的完成判据整句成立：容器内一格走完全流程、release 经
 ## 追加（2026-09-09，T20c 合入后）
 - T20c 已在 main（28c0c17），第 5 步可以开跑：先把 main 并进 feat/web-eval-container-pins，在 3171 上重装 profile（install.sh / update.sh），`/eval run` 不再有 `--creds-root`。
 - 3171 上四家各 login 一次（kimi 要重新授权）；判官条件也进就绪检查，判官那家的登录与链先备好，否则 run 在开跑前被拒。
-- 四家只有一个 rep、同一题（F3 阶段一二）；kimi 若仍不通，就绪检查会把整个 run 拒掉——这时把 kimi 从计划里拿掉跑三家，把拒绝原文记进 pilot-b-log，不要用 --ignore-readiness。
+- 第 5 步用 P0 × 四家 × 1 rep 收 I3（2026-09-09 定）：它验的是实例路径、四家同一题、环境类、判官就绪、比较节打开、token 列是否落地，P0 就是为这个准备的占位题，几十 k token 够了；不另造新题。F3 阶段一二 × 四家 × 1 rep 是内容轮（记作 5b），四家两阶段加盲评约 1–2.5M token，预算另批，跑不跑不影响 I3 收口。kimi 若仍不通，就绪检查会把整个 run 拒掉——这时把 kimi 从计划里拿掉跑三家，把拒绝原文记进 pilot-b-log，不要用 --ignore-readiness。
 ```
 
 ### T20b · eval：「环境一致」的口径、register 布局的物化路径、物化哈希统一（已完成，2026-09-08 验收）
