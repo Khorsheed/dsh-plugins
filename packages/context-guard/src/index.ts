@@ -9,7 +9,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: pulls the ctx.settings service merge.
+import type {} from '@deepseek-ai/dsh-settings'
 import { CONTEXT_GUARD_NS } from './namespace.ts'
 import { ContextGuardSettingsSchema } from './settings.ts'
 
@@ -24,7 +25,7 @@ export { ContextGuardSettingsSchema } from './settings.ts'
 export function apply(ctx: Context, config: Record<string, unknown> = {}): void {
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(
-      settingsNamespace(CONTEXT_GUARD_NS),
+      CONTEXT_GUARD_NS,
       ContextGuardSettingsSchema,
       { base: config },
     )

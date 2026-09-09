@@ -349,7 +349,7 @@ describe('kimi live driver rounds', () => {
     expect(spawn.fake!.requests.map(r => r.method)).toEqual(['initialize', 'session/new', 'session/prompt'])
     expect(spawn.fake!.requests[1]?.params).toMatchObject({ cwd: '/tmp', mcpServers: [] })
     // Turn boundaries are the parent's own.
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     // The settle mirror pass ran (no wire.jsonl yet → total 0) and reported.
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
     await m.driver.disposeAll()
@@ -370,10 +370,10 @@ describe('kimi live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => {
-      expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-      expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     })
-    const assistant = child.events.find(e => e.type === 'assistant/message')
+    const assistant = child.snapshotEvents().find(e => e.type === 'assistant/message')
     expect(assistant?.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expect(m.mirrorOffsets.get('child-kimi-2')).toBe(2)
     await m.driver.disposeAll()
@@ -391,7 +391,7 @@ describe('kimi live driver rounds', () => {
     expect(m.spawns).toHaveLength(1)
     // The session stays loaded: no session/load on reuse.
     expect(m.spawns[0]!.fake!.requests.map(r => r.method)).toEqual(['initialize', 'session/new', 'session/prompt', 'session/prompt'])
-    expect(child.events.filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
     await m.driver.disposeAll()
   })
 
@@ -438,7 +438,7 @@ describe('kimi live driver rounds', () => {
     expect((await run.result).stopReason).toBe('aborted')
     expect(fake.notifications.some(n => n['method'] === 'session/cancel')).toBe(true)
     expect(fake.terminated).toBe(false)
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
@@ -491,7 +491,7 @@ describe('kimi live driver rounds', () => {
     off.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['hel', 'lo'] }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     await off.driver.disposeAll()
 
     const on = mount({ config: { liveMirrorGranularity: 'token' } })
@@ -499,7 +499,7 @@ describe('kimi live driver rounds', () => {
     on.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['hel', 'lo'] }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    expect(onChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     await on.driver.disposeAll()
   })
 
@@ -519,8 +519,8 @@ describe('kimi live driver rounds', () => {
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '建好了' } })
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     // One final at the stream's own (turn, step): the projection replaces the
     // stream with it — no duplicated content, no dangling interrupted badge.
     expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
@@ -545,8 +545,8 @@ describe('kimi live driver rounds', () => {
     controller.abort()
     expect((await run.result).stopReason).toBe('aborted')
     fake.resolvePrompt({ stopReason: 'cancelled' })
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
     await m.driver.disposeAll()
@@ -574,19 +574,19 @@ describe('kimi live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     // A mid-run update triggers a mirror pass that folds the tool card FIRST.
     fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', content: {} })
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1) })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1) })
     // Text streams after the tool card folded.
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
     // The tool card folded at step 1; the stream reserved the step after it.
-    expect((child.events.find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
-    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+    expect((child.snapshotEvents().find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
+    for (const chunk of child.snapshotEvents().filter(e => e.type === 'assistant/chunk')) {
       expect((chunk.data as { step: number }).step).toBe(2)
     }
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect((final.data as { step: number }).step).toBe(2)
     await m.driver.disposeAll()
   })
@@ -597,7 +597,7 @@ describe('kimi live driver rounds', () => {
     m.queueChild(new FakeAcpServer({ failSessionNew: 'Authentication required' }))
     await expect(m.driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('Authentication required')
     await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
-    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(0)
     // A round failure, not a broken channel.
     expect(m.driver.disabled).toBe(false)
   })
@@ -628,7 +628,7 @@ describe('kimi live driver lifecycle', () => {
     const run = await pending
     expect(Date.now() - start).toBeLessThan(5_000)
     expect((await run.result).stopReason).toBe('aborted')
-    expect(child.events).toHaveLength(0)
+    expect(child.snapshotEvents()).toHaveLength(0)
     await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
     expect(m.driver.disabled).toBe(false)
   })
@@ -709,7 +709,7 @@ describe('kimi live driver review fixes', () => {
     m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: [], stopReason: 'end_turn' }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
     await m.driver.disposeAll()
   })
 
@@ -735,7 +735,7 @@ describe('kimi live driver review fixes', () => {
     // The round-start user/message is already there (the driver appends it at
     // turn start); the wire's copy folds to a dedupe skip, so the offset has
     // nothing new to advance yet.
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1) })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1) })
     expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBeUndefined()
     // The full wire lands by turn end — in the real kimi order, where the
     // request's usage.record sits BEFORE the content parts it accounts for
@@ -747,21 +747,21 @@ describe('kimi live driver review fixes', () => {
     ].join('\n') + '\n')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) })
     // The offset advanced past the strict persistence double's rejection, so
     // the settle pass did NOT re-fold the user line; the usage record on the
     // delta boundary still attached to the answer it accounts for.
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-    expect(child.events.filter(e => e.type === 'assistant/message')[0]?.data).toMatchObject({
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')[0]?.data).toMatchObject({
       usage: { inputTokens: 10, outputTokens: 4 },
     })
     expect(m.mirrorOffsets.get('child-kimi-livepersist')).toBe(2)
     // The question precedes everything else in the turn (round-start append),
     // so streamed chunks can never render above it.
-    const userSeq = child.events.find(e => e.type === 'user/message')!.seq
-    const turnStartSeq = child.events.find(e => e.type === 'turn/start')!.seq
+    const userSeq = child.snapshotEvents().find(e => e.type === 'user/message')!.seq
+    const turnStartSeq = child.snapshotEvents().find(e => e.type === 'turn/start')!.seq
     expect(userSeq).toBeGreaterThan(turnStartSeq)
-    expect(userSeq).toBeLessThan(child.events.filter(e => e.type === 'assistant/message')[0]!.seq)
+    expect(userSeq).toBeLessThan(child.snapshotEvents().filter(e => e.type === 'assistant/message')[0]!.seq)
     await m.driver.disposeAll()
   })
 
@@ -783,8 +783,8 @@ describe('kimi live driver review fixes', () => {
     // The answer lands in the wire 500ms after the prompt response — inside
     // the quiescence window (3 stable reads at 300ms).
     setTimeout(() => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '文件建好了') }, 500)
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     expect(m.mirrorOffsets.get('child-kimi-flushrace')).toBe(2)
     await m.driver.disposeAll()
   })
@@ -852,11 +852,11 @@ describe('kimi live driver drain (settings handoff)', () => {
     m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['一', '二'] }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
     await second.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

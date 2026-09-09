@@ -226,7 +226,7 @@ describe('dsh-cli-provider fresh run', () => {
 
     // A live poll mirrors it while the process is STILL running.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
     expect(reports.some(report => report.progress.kind === 'delta' && report.progress.text === '第一条回复')).toBe(true)
 
@@ -238,8 +238,8 @@ describe('dsh-cli-provider fresh run', () => {
     await vi.waitFor(() => {
       expect(reports.some(report => report.progress.kind === 'mirror')).toBe(true)
     })
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     await done
   })
 
@@ -330,7 +330,7 @@ describe('dsh-cli-provider resume run', () => {
     await vi.waitFor(() => {
       expect(locks.released).toEqual(['child-1'])
     })
-    const turnEnd = liveChild.events.find(event => event.type === 'turn/end')
+    const turnEnd = liveChild.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string } } | undefined
     expect(endData?.turn).toBe(2)
     expect(endData?.reason?.kind).toBe('completed')

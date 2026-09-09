@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { createTurnFilesLoader } from '../src/client/turn-files-cache.ts'
 import type { FilePreviewRemote } from '../src/client/contract.ts'
 

@@ -28,7 +28,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedCredential } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import * as toolModule from '@khorsheed/dsh-local-agent-tool-subagent'
@@ -93,7 +93,7 @@ export const Config: z<LocalAgentDshConfig> = z.object({
  * the user layer inherits the YAML value — the settings card only ever stores
  * deliberate overrides.
  */
-export const DSH_SETTINGS_NAMESPACE = settingsNamespace('local-agent-dsh')
+export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
 
 /**
  * The card's schema: `enabled` OFF (default) means the official in-process

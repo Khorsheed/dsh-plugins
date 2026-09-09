@@ -31,9 +31,9 @@ export function WithdrawnDividerView({
   const [entries, setEntries] = useState<readonly WithdrawnEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  // Chat data moved out of the session snapshot into the `useChat` standard
-  // prop on host 0.1.2; the helper picks whichever seat this host provides.
-  const useChatSlice = chatHookOf(standard as Pick<WithdrawnDividerViewProps, 'useSession'>)
+  // Chat data lives in the `useChat` session standard prop on host 0.1.2
+  // (the helper degrades to the frozen empty snapshot without it).
+  const useChatSlice = chatHookOf(standard as Pick<WithdrawnDividerViewProps, 'useChat'>)
   // The node store is a stable live reader: the count/badge selectors read
   // through it, and the expand click folds the replay from the live snapshot
   // (event handlers may read live snapshots; render code subscribes).

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ObservableSnapshot, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createWhalesongRuntime, RECONCILE_MS } from '../src/client/controller.ts'
 import type { WhalesongSound } from '../src/client/sound.ts'
 
@@ -15,22 +18,27 @@ function state(rows: Record<string, RowSpec>): SessionListState {
   return { ids: Object.keys(rows), byId, current: undefined, phase: 'ready', subagentsByParent: {} } as unknown as SessionListState
 }
 
+/** A pending-interaction frame: one approval-shaped entry per session id. */
+function pending(...ids: string[]): SessionPendingInteractionSnapshot {
+  return new Map(ids.map(id => [id as SessionId, { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId }]))
+}
+
 /** Controllable snapshot feed mirroring SnapshotStore's observable face. */
-class FakeList implements ObservableSnapshot<SessionListState> {
+class FakeFeed<T> implements ObservableSnapshot<T> {
   private readonly listeners = new Set<() => void>()
-  constructor(private snapshot: SessionListState) {}
-  getSnapshot(): SessionListState { return this.snapshot }
+  constructor(private snapshot: T) {}
+  getSnapshot(): T { return this.snapshot }
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn)
     return () => { this.listeners.delete(fn) }
   }
   get listenerCount(): number { return this.listeners.size }
-  set(next: SessionListState): void {
+  set(next: T): void {
     this.snapshot = next
     for (const fn of [...this.listeners]) fn()
   }
   /** Change the snapshot WITHOUT notifying (simulates a lost notification). */
-  setSilent(next: SessionListState): void {
+  setSilent(next: T): void {
     this.snapshot = next
   }
 }
@@ -59,13 +67,15 @@ interface FakeFavicon {
 
 /** Runtime wired to fakes; tracks every created instance. */
 function setup(initial: SessionListState): {
-  list: FakeList
+  list: FakeFeed<SessionListState>
+  pending: FakeFeed<SessionPendingInteractionSnapshot>
   sounds: FakeSound[]
   overlays: FakeOverlay[]
   favicons: FakeFavicon[]
   runtime: ReturnType<typeof createWhalesongRuntime>
 } {
-  const list = new FakeList(initial)
+  const list = new FakeFeed<SessionListState>(initial)
+  const pendingFeed = new FakeFeed<SessionPendingInteractionSnapshot>(pending())
   const sounds: FakeSound[] = []
   const overlays: FakeOverlay[] = []
   const favicons: FakeFavicon[] = []
@@ -73,6 +83,7 @@ function setup(initial: SessionListState): {
     doc: document,
     win: window,
     list,
+    pending: pendingFeed,
     createOverlay: () => {
       const overlay: FakeOverlay = { disposed: false, sync() {}, dispose() { this.disposed = true } }
       overlays.push(overlay)
@@ -101,7 +112,7 @@ function setup(initial: SessionListState): {
       return favicon
     },
   })
-  return { list, sounds, overlays, favicons, runtime }
+  return { list, pending: pendingFeed, sounds, overlays, favicons, runtime }
 }
 
 describe('createWhalesongRuntime', () => {
@@ -124,14 +135,40 @@ describe('createWhalesongRuntime', () => {
   })
 
   it('drives chimes and the body class off session edges while enabled', () => {
-    const { list, sounds, runtime } = setup(state({ a: { running: true } }))
+    const { list, pending: pendingFeed, sounds, runtime } = setup(state({ a: { running: true } }))
     runtime.applyConfig({ enabled: true, volume: 1 })
     list.set(state({ a: { running: false } }))
     expect(sounds[0].plays).toEqual(['completed'])
     expect(document.body.classList.contains('dsh-whalesong-on')).toBe(false)
     list.set(state({ a: { running: true } }))
-    list.set(state({ a: { running: true, pendingInteraction: 'approval' } }))
+    pendingFeed.set(pending('a'))
     expect(sounds[0].plays).toEqual(['completed', 'blocked'])
+    runtime.dispose()
+  })
+
+  it('runs without the pending feed: completion chimes fire, the blocked chime degrades off', () => {
+    const list = new FakeFeed<SessionListState>(state({ a: { running: true } }))
+    const sounds: FakeSound[] = []
+    const runtime = createWhalesongRuntime({
+      doc: document,
+      win: window,
+      list,
+      createSound: () => {
+        const sound: FakeSound = {
+          plays: [],
+          volumes: [],
+          disposed: false,
+          setVolume(volume) { this.volumes.push(volume) },
+          play(kind) { this.plays.push(kind) },
+          dispose() { this.disposed = true },
+        }
+        sounds.push(sound)
+        return sound as never
+      },
+    })
+    runtime.applyConfig({ enabled: true, volume: 1 })
+    list.set(state({ a: { running: false } }))
+    expect(sounds[0].plays).toEqual(['completed'])
     runtime.dispose()
   })
 

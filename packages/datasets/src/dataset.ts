@@ -28,7 +28,7 @@
  * dependency chain, and adding one is deliberately out of scope (see README
  * Known Limitations).
  */
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { listFiles, showFile } from './git.ts'
 
 /** A JSON object (constrained — every value here is JSON.parse output). */

@@ -8,8 +8,14 @@
  * adds.
  * @module @khorsheed/dsh-worktrees/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { HostDescriptionSource } from './host-description.ts'
+// Type-only: pulls the ctx.workspaces service merge.
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -90,7 +96,7 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
  * @param path - absolute host path.
  * @returns the opener's completion; failures resolve, never throw.
  */
-function openHostPath(ctx: ClientContext, path: string): Promise<unknown> {
+function openHostPath(ctx: Context, path: string): Promise<unknown> {
   const legacy = (ctx.workspaces as unknown as { openPath?: (path: string) => Promise<unknown> }).openPath
   if (legacy !== undefined) return legacy.call(ctx.workspaces, path)
   const session = (ctx.remote as unknown as {
@@ -107,7 +113,7 @@ function openHostPath(ctx: ClientContext, path: string): Promise<unknown> {
  * @param ctx - client root context.
  * @returns the chosen path, or null on cancel/unavailable.
  */
-function pickHostDirectory(ctx: ClientContext): Promise<string | null> {
+function pickHostDirectory(ctx: Context): Promise<string | null> {
   const legacy = (ctx.workspaces as unknown as { pickDirectory?: () => Promise<string | null> }).pickDirectory
   if (legacy !== undefined) return legacy.call(ctx.workspaces)
   const getService = ctx.get.bind(ctx) as (name: string) => unknown
@@ -120,7 +126,7 @@ function pickHostDirectory(ctx: ClientContext): Promise<string | null> {
  * session-header badge, and the frame drawer.
  * @param ctx - client root context.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(worktreesRemote))

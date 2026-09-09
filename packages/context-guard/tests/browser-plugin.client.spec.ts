@@ -11,8 +11,9 @@ import { describe, expect, it, vi } from 'vitest'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type { SessionId, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
-import { SettingsProvider, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
@@ -205,7 +206,7 @@ describe('context-guard node half', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply: applyNode }, { thresholdRatio: 0.7 })
     await fiber.await()
-    const ns = settingsNamespace(CONTEXT_GUARD_NS)
+    const ns = CONTEXT_GUARD_NS
     expect(ctx.settings.describe().map(row => row.ns)).toContain(ns)
     // The composition entry becomes the section's base layer: the resolved
     // section carries the composed threshold over the schema default.

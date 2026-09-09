@@ -15,7 +15,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
@@ -101,7 +101,7 @@ export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 's
  * composition `base` layer, so a field absent from the user layer inherits the
  * YAML value — the card only ever stores deliberate overrides.
  */
-export const CLAUDE_SETTINGS_NAMESPACE = settingsNamespace('local-agent-claude-code')
+export const CLAUDE_SETTINGS_NAMESPACE = 'local-agent-claude-code'
 
 /**
  * The card's schema; field defaults are the innermost layer below `base`.

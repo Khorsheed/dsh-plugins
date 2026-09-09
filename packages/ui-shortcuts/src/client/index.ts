@@ -15,17 +15,21 @@
  *   overlay (`[role="dialog"]/menu/listbox` — modals, menus, and the settings
  *   panel close on Escape without preventDefault), or a non-composer editable
  *   target (inline rename, search fields).
- * - new-session starts a session through the public `workspaces.startSession()`
- *   (the same entry the sidebar New-session button calls). Its layering is
- *   `global`, like steer-send.
+ * - new-session starts a session through the public `sessions.create()` →
+ *   `sessions.open()` pair (the same entry the sidebar New-session button
+ *   rides). Its layering is `global`, like steer-send.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+// Type-only: pulls the Controller service merge (ctx.sessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the locale Context merge (ctx.locale), the settings-scope
 // merge (ctx.settingsScope), and the conversation service merge
 // (ctx.conversation) into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge, so the card
 // registration below type-checks against the official contract.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
@@ -49,7 +53,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required by the shortcuts plugin. */
-export const inject = ['slots', 'sessions', 'conversation', 'workspaces', 'settingsScope', 'locale']
+export const inject = ['slots', 'sessions', 'conversation', 'settingsScope', 'locale']
 
 /** IME guard: a composition in flight never triggers a shortcut. */
 function isComposing(event: KeyboardEvent): boolean {
@@ -87,7 +91,7 @@ function anyOverlayOpen(): boolean {
  * itself rejects an empty draft.
  * @param ctx - client root context.
  */
-function steerSendDraft(ctx: ClientContext): void {
+function steerSendDraft(ctx: Context): void {
   const sessions = ctx.get('sessions')
   const id = sessions?.list.getSnapshot().current
   // v8 ignore next -- defensive: the inject list guarantees the sessions service.
@@ -105,7 +109,7 @@ function steerSendDraft(ctx: ClientContext): void {
  * promptError, exactly as the composer's own stop path.
  * @param ctx - client root context.
  */
-function pauseCurrentTask(ctx: ClientContext): void {
+function pauseCurrentTask(ctx: Context): void {
   const sessions = ctx.get('sessions')
   const id = sessions?.list.getSnapshot().current
   // v8 ignore next -- defensive: the inject list guarantees the sessions service.
@@ -126,12 +130,18 @@ function pauseCurrentTask(ctx: ClientContext): void {
 }
 
 /**
- * Start a new session through the public workspaces service — the same entry
- * the sidebar New-session button calls. An absent service is a silent no-op.
+ * Start a new session through the public sessions service — the same
+ * create-then-open pair the sidebar New-session button rides. An absent
+ * service is a silent no-op.
  * @param ctx - client root context.
  */
-function startNewSession(ctx: ClientContext): void {
-  ctx.get('workspaces')?.startSession()
+function startNewSession(ctx: Context): void {
+  const sessions = ctx.get('sessions')
+  if (sessions === undefined) return
+  void sessions.create().then(
+    (id) => { sessions.open(id) },
+    () => { /* the creation failure surfaces through the host's own error path */ },
+  )
 }
 
 /**
@@ -171,7 +181,7 @@ function dispatch(event: KeyboardEvent, layering: ShortcutLayering, registry: Sh
  * wiring stands down entirely while the card records a new binding.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const registry = new ShortcutRegistryRuntime(
     ctx.settingsScope.bind<ShortcutSettings>({ namespace: UI_SHORTCUTS_NAMESPACE }),
   )

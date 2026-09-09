@@ -117,7 +117,7 @@ describe('mirrorDshSession', () => {
     writeSubDshSession(home, 'child-1', twoRoundLines())
     const child = childWithRounds('child-1', 1)
     await mirrorDshSession(fakeCtx(), child, home, 'child-1')
-    const mirrored = child.events.filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+    const mirrored = child.snapshotEvents().filter(event => event.type === 'user/message' || event.type === 'assistant/message')
     // Exactly the round-1 task and reply cross; the round-2 content stays behind.
     expect(mirrored).toHaveLength(2)
     const [task, reply] = mirrored
@@ -128,8 +128,8 @@ describe('mirrorDshSession', () => {
     // Usage rides the verbatim assistant event into the projection.
     expect(JSON.stringify(reply?.data)).toContain('"inputTokens":100')
     // Scaffolding (agent-instructions / plugin context) never crosses.
-    expect(JSON.stringify(child.events)).not.toContain('agent-instructions')
-    expect(JSON.stringify(child.events)).not.toContain('runtime context')
+    expect(JSON.stringify(child.snapshotEvents())).not.toContain('agent-instructions')
+    expect(JSON.stringify(child.snapshotEvents())).not.toContain('runtime context')
   })
 
   it('mirrors only the resumed round incrementally on a later round', async () => {
@@ -137,10 +137,10 @@ describe('mirrorDshSession', () => {
     writeSubDshSession(home, 'child-2', twoRoundLines())
     const child = childWithRounds('child-2', 2)
     await mirrorDshSession(fakeCtx(), child, home, 'child-2')
-    const mirrored = child.events.filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+    const mirrored = child.snapshotEvents().filter(event => event.type === 'user/message' || event.type === 'assistant/message')
     expect(mirrored).toHaveLength(2)
     expect(JSON.stringify(mirrored[1]?.data)).toContain('第二轮回答')
-    expect(JSON.stringify(child.events)).not.toContain('第一轮回答')
+    expect(JSON.stringify(child.snapshotEvents())).not.toContain('第一轮回答')
   })
 
   it('mirrors tool/call + tool/result as native events with the sourceEventSeqs remapped', async () => {
@@ -176,10 +176,10 @@ describe('mirrorDshSession', () => {
     const child = childWithRounds('child-tools', 1)
     await mirrorDshSession(fakeCtx(), child, home, 'child-tools')
 
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ callId: 'call_1', name: 'Bash' })
-    const results = child.events.filter(event => event.type === 'tool/result')
+    const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
     // The result's pairing reference points at the CHILD's call event seq
     // (the source event's own sourceEventSeqs referenced the sub-dsh log's
@@ -190,7 +190,7 @@ describe('mirrorDshSession', () => {
   it('is a no-op when the sub-dsh session never materialized', async () => {
     const child = childWithRounds('child-3', 1)
     await expect(mirrorDshSession(fakeCtx(), child, tempHome(), 'child-3')).resolves.toEqual({ texts: [], total: 0 })
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
   })
 
   it('mirrors incrementally: a second pass appends only the round’s new events', async () => {
@@ -238,7 +238,7 @@ describe('mirrorDshSession', () => {
       usage: { inputTokens: 200, outputTokens: 20 },
     })
 
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
     const texts = assistant.map(event => JSON.stringify(event.data))
     expect(new Set(texts).size).toBe(texts.length)
@@ -261,7 +261,7 @@ describe('mirrorDshSession', () => {
 
     const first = await mirrorDshSession(fakeCtx(), child, home, 'child-todo')
     // The snapshot crosses verbatim (counted in the total, but not a text delta).
-    const writes = child.events.filter(event => event.type === 'todo/write')
+    const writes = child.snapshotEvents().filter(event => event.type === 'todo/write')
     expect(writes).toHaveLength(1)
     expect(writes[0]?.data).toEqual(todos1)
     expect(first.total).toBe(3)
@@ -276,7 +276,7 @@ describe('mirrorDshSession', () => {
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
     })
-    expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'todo/write')).toHaveLength(1)
 
     // A CHANGED snapshot (the sub-dsh updated the list) mirrors as the new
     // last-wins state; the intermediate one never entered the child log.
@@ -300,7 +300,7 @@ describe('mirrorDshSession', () => {
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 100, outputTokens: 10 },
     })
-    const after = child.events.filter(event => event.type === 'todo/write')
+    const after = child.snapshotEvents().filter(event => event.type === 'todo/write')
     expect(after).toHaveLength(2)
     expect(after[1]?.data).toEqual(todos2)
   })
@@ -322,22 +322,22 @@ describe('mirrorDshLiveEvent', () => {
     // Assistant messages cross verbatim, usage included, same as the span loop.
     const text = mirrorDshLiveEvent(child, assistantLine(1, '实时回复') as never)
     expect(text).toBe('thinking 1实时回复')
-    const assistant = child.events.find(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(assistant?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 10 } })
     // Turn boundaries never cross (the parent's own stay authoritative).
     expect(mirrorDshLiveEvent(child, { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } } as never)).toBeUndefined()
     expect(mirrorDshLiveEvent(child, { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } } as never)).toBeUndefined()
-    expect(child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
   })
 
   it('crosses assistant/chunk only under the token granularity, returning the delta text', () => {
     const off = Session.create(SessionId('child-live-fold-off'))
     expect(mirrorDshLiveEvent(off, chunk('hel') as never)).toBeUndefined()
-    expect(off.events).toHaveLength(0)
+    expect(off.snapshotEvents()).toHaveLength(0)
 
     const on = Session.create(SessionId('child-live-fold-on'))
     expect(mirrorDshLiveEvent(on, chunk('hel') as never, { granularity: 'token' })).toBe('hel')
-    const chunks = on.events.filter(event => event.type === 'assistant/chunk')
+    const chunks = on.snapshotEvents().filter(event => event.type === 'assistant/chunk')
     expect(chunks).toHaveLength(1)
     expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
     // Non-text chunks append but report no delta text.
@@ -346,7 +346,7 @@ describe('mirrorDshLiveEvent', () => {
       data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 1, blockType: 'text' } },
     }
     expect(mirrorDshLiveEvent(on, blockStart as never, { granularity: 'token' })).toBeUndefined()
-    expect(on.events.filter(event => event.type === 'assistant/chunk')).toHaveLength(2)
+    expect(on.snapshotEvents().filter(event => event.type === 'assistant/chunk')).toHaveLength(2)
   })
 
   it('keeps the file mirror\'s offset consistent after live-appended events (no double mirror)', async () => {
@@ -373,7 +373,7 @@ describe('mirrorDshLiveEvent', () => {
       observedModel: 'deepseek-official/deepseek-v4-flash',
       usage: { inputTokens: 200, outputTokens: 20 },
     })
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
   })
 })
 
@@ -411,7 +411,7 @@ describe('mirrorDshSession persistence', () => {
     const live = childWithRounds('child-persist', 1)
     const delta = await mirrorDshSession(liveCtx, live, home, 'child-persist')
     expect(delta.texts.length).toBeGreaterThan(0)
-    expect(live.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(live.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(appends).toEqual(['child-persist'])
   })
 })

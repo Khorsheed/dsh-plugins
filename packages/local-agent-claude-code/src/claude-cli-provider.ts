@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { TodoItem } from '@deepseek-ai/dsh-session/types'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import {
   NO_START_CAPABILITIES,
   settleRunResult,
@@ -409,7 +409,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           `subagent-claude: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
         )
       }
-      const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      const nextTurn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident stream-json session.
       // Channel failure falls through to the exec one-shot below.
       // See the fresh path: a container target is exec-only.
@@ -691,7 +691,7 @@ export function todosFromTodoWrite(input: unknown): TodoItem[] | undefined {
  * @returns whether a snapshot was appended.
  */
 function appendTodosIfChanged(childSession: Session, todos: TodoItem[]): boolean {
-  const last = childSession.events.filter(event => event.type === 'todo/write').at(-1)
+  const last = childSession.snapshotEvents().filter(event => event.type === 'todo/write').at(-1)
   if (last !== undefined && JSON.stringify(last.data) === JSON.stringify({ todos })) return false
   // todo/write's append takes no surface options (log-only UI state).
   childSession.append('todo/write', { todos })
@@ -1265,8 +1265,8 @@ export function appendClaudeTranscriptLine(
  * @returns whether the chunk was appended.
  */
 export function appendClaudeUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
-  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
-    const event = childSession.events[index]
+  for (let index = childSession.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = childSession.snapshotEvents()[index]
     if (event?.type !== 'assistant/message') continue
     const data = event.data as { turn?: number; step?: number }
     if (data.turn !== turn || typeof data.step !== 'number') return false
@@ -1470,7 +1470,7 @@ export async function persistIfStandalone(ctx: Context, childSession: Session): 
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.events)
+  await persistence?.append(childSession.id, childSession.snapshotEvents())
 }
 
 /**

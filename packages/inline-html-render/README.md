@@ -43,8 +43,8 @@ host 半边注册了 `inline-html-card` skill。只要用户想要**看得见的
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——本插件只消费标准 DOM + 客户端运行时 `ClientContext`,`ui-conversation` 渲染出的 `.md-code-block` / banner infostring 显示位 / `data-streaming` 结构在本次 API 审计范围内无变化。
-- 源码线(deepseek-harness master):✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——本插件只消费标准 DOM + 客户端运行时 `ClientContext`，`ui-conversation` 渲染出的 `.md-code-block` / banner infostring 显示位 / `data-streaming` 结构在 0.1.2-rc.1 上无变化；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
 
 ## 已知限制
 

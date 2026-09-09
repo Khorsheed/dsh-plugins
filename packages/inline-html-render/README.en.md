@@ -43,8 +43,8 @@ The host half registers the `inline-html-card` skill. Whenever the user wants a 
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — this plugin consumes only standard DOM + the client runtime `ClientContext`; the `.md-code-block` wrapper, its banner info-string display, and the `data-streaming` attribute that `ui-conversation` renders are unchanged within this API audit.
-- Source line (deepseek-harness master): ✅
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — this plugin consumes only standard DOM + the client runtime `ClientContext`; the `.md-code-block` wrapper, its banner info-string display, and the `data-streaming` attribute that `ui-conversation` renders are unchanged on 0.1.2-rc.1; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
 ## Known limitations
 

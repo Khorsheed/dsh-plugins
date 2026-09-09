@@ -46,6 +46,10 @@ export type FilePreviewKey =
   | 'json.collapseNode'
   | 'json.expandNode'
   | 'json.copyButtonTitle'
+  | 'json.treeLabel'
+  | 'markdown.copy'
+  | 'markdown.copied'
+  | 'markdown.footnotes'
   | 'drawer.empty'
   | 'drawer.listError'
   | 'drawer.count'
@@ -131,6 +135,10 @@ export const zh: Record<FilePreviewKey, string> = {
   'json.collapseNode': '折叠 JSON 节点',
   'json.expandNode': '展开 JSON 节点',
   'json.copyButtonTitle': '{action}；右键查看更多复制选项',
+  'json.treeLabel': 'JSON 结构',
+  'markdown.copy': '复制',
+  'markdown.copied': '已复制',
+  'markdown.footnotes': '脚注',
   'drawer.empty': '这个会话还没有写过文件',
   'drawer.listError': '文件列表加载失败',
   'drawer.count': '{count} 个文件',
@@ -207,6 +215,10 @@ export const en: Record<FilePreviewKey, string> = {
   'json.collapseNode': 'Collapse JSON node',
   'json.expandNode': 'Expand JSON node',
   'json.copyButtonTitle': '{action}; right-click for copy options',
+  'json.treeLabel': 'JSON structure',
+  'markdown.copy': 'Copy',
+  'markdown.copied': 'Copied',
+  'markdown.footnotes': 'Footnotes',
   'drawer.empty': 'This session has not written any files yet',
   'drawer.listError': 'Failed to load the file list',
   'drawer.count': '{count} files',

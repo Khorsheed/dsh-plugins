@@ -11,7 +11,7 @@
  */
 
 import type { FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FilePreviewRemote } from './contract.ts'
 
 /**

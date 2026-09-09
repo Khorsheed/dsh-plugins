@@ -10,7 +10,10 @@
  * plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API merge for the room namespace.
@@ -18,6 +21,10 @@ import type {} from '@khorsheed/dsh-room/remote'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
 // 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node').
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: pulls the ctx.slots service merge (SlotRegistry).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import { en, zh } from './locales.ts'
@@ -44,13 +51,17 @@ export type RoomRemote = TypertRemoteNamespaceMap['room']
 const NS = 'room'
 
 /**
- * Required services: slots, sessions, workspaces, the remote channel, and the
- * locale service. `remote.room` is deliberately NOT an inject: this plugin both
+ * Required services: slots, sessions, the remote channel, and the locale
+ * service. `remote.room` is deliberately NOT an inject: this plugin both
  * mounts the namespace (through `$mount` below) and consumes it, and the
  * Cordis property proxy only resolves services declared in `inject` or
  * provided by an ancestor fiber — declaring it would deadlock the loader.
+ * The event-Definition registry (`uiConversation.events`) is likewise NOT a
+ * static inject: the deferred ctx.inject arm keeps the registration
+ * independent of ui-conversation's mount order. The native directory picker
+ * (uiWorkspace) is probed at gesture time, never injected.
  */
-export const inject = ['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale']
+export const inject = ['slots', 'sessions', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, start the store, register the
@@ -58,7 +69,7 @@ export const inject = ['slots', 'sessions', 'workspaces', 'remote', 'conversatio
  * @param ctx - client root context.
  * @returns disposer unwinding the mounted Remote namespace.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(roomRemote))
@@ -183,7 +194,13 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       const carried = await remote.listProviders({})
       return carried.ok ? carried.value : undefined
     },
-    browseDirectory: () => ctx.workspaces.pickDirectory(),
+    browseDirectory: () => {
+      // Host 0.1.2 hangs the native picker on ui-workspace's service (the
+      // rc-era workspaces.pickDirectory wire primitive moved there,
+      // commit be531688f3). Absent service = the picker's cancel value.
+      const uiWorkspace = ctx.get('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
+      return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
+    },
     listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
   })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
@@ -214,12 +231,17 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     },
   })
 
-  // The journal projections: claim the room/* events into chat nodes.
-  ctx.conversationEvents.register(roomSpeechDefinition)
-  ctx.conversationEvents.register(roomRunDefinition)
-  ctx.conversationEvents.register(roomEventDefinition)
-  ctx.conversationEvents.register(roomRelayDefinition)
-  ctx.conversationEvents.register(roomTaskLineDefinition)
+  // The journal projections: claim the room/* events into chat nodes. Host
+  // 0.1.2 folded the event-Definition registry into `uiConversation.events`
+  // (commit be531688f3); the deferred arm never fires in a composition
+  // without the service, losing only the room chat rows, never the boot.
+  ctx.inject(['uiConversation'], (lctx) => {
+    lctx.uiConversation.events.register(roomSpeechDefinition)
+    lctx.uiConversation.events.register(roomRunDefinition)
+    lctx.uiConversation.events.register(roomEventDefinition)
+    lctx.uiConversation.events.register(roomRelayDefinition)
+    lctx.uiConversation.events.register(roomTaskLineDefinition)
+  })
 
   // The slots are declared by ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so

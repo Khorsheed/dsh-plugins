@@ -40,7 +40,7 @@ describe('session-mirror', () => {
 
     await mirrorKimiSession(ctx, child, home)
 
-    const events = child.events
+    const events = child.snapshotEvents()
     expect(events.filter(event => event.type === 'user/message').map(event => event.data.content)).toEqual([
       [{ type: 'text', text: '建个文件' }],
     ])
@@ -81,8 +81,8 @@ describe('session-mirror', () => {
     ctx.provide('sessionPersistence', { create: async () => {}, append: async () => {} })
 
     let total = await mirrorKimiSession(ctx, child, home, 's1')
-    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
-    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
 
     // The result lands in the wire later; the next delta pass pairs it with
     // the already-mirrored call instead of dropping or duplicating it.
@@ -91,7 +91,7 @@ describe('session-mirror', () => {
       '\n' + JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'Wrote 10 bytes' } } }),
     )
     total = await mirrorKimiSession(ctx, child, home, 's1', total)
-    const results = child.events.filter(event => event.type === 'tool/result')
+    const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
     expect(results[0]!.data.message.content[0]).toMatchObject({
       type: 'tool-result',
@@ -100,7 +100,7 @@ describe('session-mirror', () => {
     })
     // A third pass is a no-op (no duplicate result).
     await mirrorKimiSession(ctx, child, home, 's1', total)
-    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
   })
 
   it('attaches the wire usage record to the final assistant message', async () => {
@@ -114,7 +114,7 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-usage'))
     await mirrorKimiSession(new Context(), child, home)
 
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
     // Only the last assistant message carries the usage; earlier steps omit it.
     expect(assistant[0]!.data.usage).toBeUndefined()
@@ -137,7 +137,7 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-2'))
     await mirrorKimiSession(new Context(), child, home)
 
-    const user = child.events.find(event => event.type === 'user/message')
+    const user = child.snapshotEvents().find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '新任务' }])
   })
 
@@ -146,7 +146,7 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-3'))
     await mirrorKimiSession(new Context(), child, home, 'named')
 
-    const user = child.events.find(event => event.type === 'user/message')
+    const user = child.snapshotEvents().find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
   })
 
@@ -155,7 +155,7 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-3p'))
     await mirrorKimiSession(new Context(), child, home, 'session_named')
 
-    const user = child.events.find(event => event.type === 'user/message')
+    const user = child.snapshotEvents().find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
   })
 
@@ -169,7 +169,7 @@ describe('session-mirror', () => {
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     await mirrorKimiSession(new Context(), child, home, 'dedupe')
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
 
     // A pre-existing message with DIFFERENT text does not suppress the fold.
     const child2 = Session.create(SessionId('child-dedupe2'))
@@ -179,7 +179,7 @@ describe('session-mirror', () => {
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     await mirrorKimiSession(new Context(), child2, home, 'dedupe')
-    expect(child2.events.filter(event => event.type === 'user/message')).toHaveLength(2)
+    expect(child2.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(2)
   })
 
   it('keeps looking for a named session past earlier empty workspaces', async () => {
@@ -199,7 +199,7 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-6'))
     await mirrorKimiSession(new Context(), child, home, 'named-later')
 
-    const user = child.events.find(event => event.type === 'user/message')
+    const user = child.snapshotEvents().find(event => event.type === 'user/message')
     expect(user?.data.content).toEqual([{ type: 'text', text: '建个文件' }])
   })
 
@@ -207,7 +207,7 @@ describe('session-mirror', () => {
     const home = tempHome('kimi-mirror-empty-')
     const child = Session.create(SessionId('child-4'))
     await mirrorKimiSession(new Context(), child, home)
-    expect(child.events).toEqual([])
+    expect(child.snapshotEvents()).toEqual([])
   })
 
   it('leaves the session untouched when the newest session has no transcript', async () => {
@@ -216,7 +216,7 @@ describe('session-mirror', () => {
     mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
     const child = Session.create(SessionId('child-5'))
     await mirrorKimiSession(new Context(), child, home)
-    expect(child.events).toEqual([])
+    expect(child.snapshotEvents()).toEqual([])
   })
 })
 
@@ -246,25 +246,25 @@ describe('session-mirror resume deltas', () => {
     child.append('turn/start', { turn: 1 })
     writeFileSync(wirePath, round1Wire)
     const round1Total = await mirrorKimiSession(ctx, child, home, 'resume', 0)
-    const afterRound1 = child.events.length
+    const afterRound1 = child.snapshotEvents().length
 
     // Round 2 (resume): the full wire is now on disk; the offset must slice
     // ONLY the delta, so no round-1 message is duplicated.
     child.append('turn/start', { turn: 2 })
     writeFileSync(wirePath, fixtureWire)
     const round2Total = await mirrorKimiSession(ctx, child, home, 'resume', round1Total)
-    const afterRound2 = child.events.length
+    const afterRound2 = child.snapshotEvents().length
 
     expect(round1Total).toBeGreaterThan(0)
     expect(round2Total).toBeGreaterThan(round1Total)
     // The delta appended new events; nothing from round 1 was re-mirrored.
     expect(afterRound2).toBeGreaterThan(afterRound1)
 
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     const texts = assistant.map(event => JSON.stringify(event.data.message.content))
     expect(new Set(texts).size).toBe(texts.length)
 
-    const userEvents = child.events.filter(event => event.type === 'user/message')
+    const userEvents = child.snapshotEvents().filter(event => event.type === 'user/message')
     // Two rounds, two real user prompts (the system-reminders are filtered).
     expect(userEvents).toHaveLength(2)
     // Rounds carry distinct dsh turn numbers on their assistant messages.
@@ -293,9 +293,9 @@ describe('session-mirror resume deltas', () => {
     const total = await mirrorKimiSession(ctx, child, home, 's1', 0)
     expect(total).toBeGreaterThan(0)
     // Mirroring again from the recorded offset appends nothing new.
-    const eventsBefore = child.events.length
+    const eventsBefore = child.snapshotEvents().length
     const totalAgain = await mirrorKimiSession(ctx, child, home, 's1', total)
     expect(totalAgain).toBe(total)
-    expect(child.events.length).toBe(eventsBefore)
+    expect(child.snapshotEvents().length).toBe(eventsBefore)
   })
 })

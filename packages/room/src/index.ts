@@ -41,8 +41,7 @@ const catalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'
 const catalogModule = await import(catalogSpecifier)
   .catch(() => import('@deepseek-ai/dsh-session')) as { KNOWN_SESSION_EVENT_TYPES: Set<string> }
 for (const type of ROOM_EVENT_TYPES) catalogModule.KNOWN_SESSION_EVENT_TYPES.add(type)
-import { composeRoomAgent, inspectCold, roomSessionPreset } from './agent-setup.ts'
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import { agentPresetsDerivationHost, composeRoomAgent, deriveSessionPreset, inspectCold, roomSessionPreset } from './agent-setup.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
@@ -147,8 +146,8 @@ export class RoomService extends TypertRemoteService {
   private load(sessionId: SessionId): RoomLoad {
     const session = this.ctx.sessions.get(sessionId)
     if (session === undefined) return { ok: false, error: { code: 'session-not-found' } }
-    if (!isRoomLog(session.events)) return { ok: false, error: { code: 'not-a-room' } }
-    return { ok: true, session, state: replay(session.events) }
+    if (!isRoomLog(session.snapshotEvents())) return { ok: false, error: { code: 'not-a-room' } }
+    return { ok: true, session, state: replay(session.snapshotEvents()) }
   }
 
   /**
@@ -159,8 +158,8 @@ export class RoomService extends TypertRemoteService {
   private async loadCold(sessionId: SessionId): Promise<RoomColdLoad> {
     const live = this.ctx.sessions.get(sessionId)
     if (live !== undefined) {
-      return isRoomLog(live.events)
-        ? { ok: true, state: replay(live.events), preset: roomSessionPreset(live) }
+      return isRoomLog(live.snapshotEvents())
+        ? { ok: true, state: replay(live.snapshotEvents()), preset: roomSessionPreset(live) }
         : { ok: false, error: { code: 'not-a-room' } }
     }
     const inspected = await inspectCold(this.ctx, sessionId)
@@ -169,7 +168,7 @@ export class RoomService extends TypertRemoteService {
     return {
       ok: true,
       state: replay(inspected.events),
-      preset: resolveSessionPreset({ header: inspected.meta, events: inspected.events }),
+      preset: deriveSessionPreset(agentPresetsDerivationHost, { header: inspected.meta, events: inspected.events }),
     }
   }
 
@@ -217,7 +216,7 @@ export class RoomService extends TypertRemoteService {
   @Remote('isRoom')
   async isRoom(request: RoomIsRoomRequest): Promise<boolean> {
     const session = this.ctx.sessions.get(request.sessionId)
-    if (session !== undefined) return isRoomLog(session.events)
+    if (session !== undefined) return isRoomLog(session.snapshotEvents())
     const inspected = await inspectCold(this.ctx, request.sessionId)
     return inspected !== undefined && isRoomLog(inspected.events)
   }
@@ -246,12 +245,12 @@ export class RoomService extends TypertRemoteService {
       if (!cold.ok) return { ok: false, error: cold.error }
       return this.ensureLive(sessionId)
     }
-    if (!isRoomLog(live.events)) {
+    if (!isRoomLog(live.snapshotEvents())) {
       live.append('room/created', { version: 1 })
       live.append('room/member-added', { name: MAIN_AGENT_MEMBER, kind: 'main-agent', invitedBy: 'human' })
       await this.ctx.sessions.flush(live)
     }
-    return { ok: true, session: live, state: replay(live.events) }
+    return { ok: true, session: live, state: replay(live.snapshotEvents()) }
   }
 
   /**

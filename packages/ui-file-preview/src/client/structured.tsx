@@ -12,7 +12,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { JsonTree, MarkdownText, type JsonTreeLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { JsonTree, MarkdownText, type JsonTreeLabels, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** JSON tree cap: beyond this many source chars the parsed tree is too heavy; keep the code view. */
@@ -34,6 +34,14 @@ export function jsonTreeLabels(t: TranslateNS<'filePreview'>): JsonTreeLabels {
     collapseNode: t('json.collapseNode'),
     expandNode: t('json.expandNode'),
     copyButtonTitle: action => t('json.copyButtonTitle', { action }),
+  }
+}
+
+/** Localized Markdown chrome (code-fence copy buttons, footnotes) over the same namespace. */
+export function markdownLabels(t: TranslateNS<'filePreview'>): MarkdownLabels {
+  return {
+    code: { copyLabel: t('markdown.copy'), copiedLabel: t('markdown.copied') },
+    footnotes: t('markdown.footnotes'),
   }
 }
 
@@ -141,11 +149,11 @@ export function structuredPreview(
   const ext = dot < 0 ? '' : path.slice(dot).toLowerCase()
   if (ext === '.json' || ext === '.jsonc') {
     const data = jsonTreeData(content)
-    return data === null ? null : <JsonTree data={data} labels={jsonTreeLabels(t)} />
+    return data === null ? null : <JsonTree data={data} label={t('json.treeLabel')} labels={jsonTreeLabels(t)} />
   }
   if (ext === '.csv' || ext === '.tsv') {
     const rows = parseDelimited(content, ext === '.tsv' ? '\t' : ',')
-    return rows === null ? null : <MarkdownText text={toMarkdownTable(rows)} />
+    return rows === null ? null : <MarkdownText text={toMarkdownTable(rows)} labels={markdownLabels(t)} />
   }
   return null
 }

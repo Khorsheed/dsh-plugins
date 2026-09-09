@@ -9,10 +9,13 @@
  * Composing this plugin out of cordis.yml removes the tab.
  * @module @khorsheed/dsh-datasets/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
@@ -22,7 +25,7 @@ import type { DatasetBinding, ReadPassthroughRequest, ReadQuery } from '../types
 import { DatasetsView } from './DatasetsView.tsx'
 import { en, NS, zh } from './locales.ts'
 import { createDatasetsViewStore } from './store.ts'
-import type { DatasetsRemote, DatasetsViewInjected } from './contract.ts'
+import type { DatasetsRemote, DatasetsViewInjected, HostDescriptionSource } from './contract.ts'
 
 export { DatasetsView }
 
@@ -74,7 +77,7 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
  * datasets view tab.
  * @param ctx - client root context.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(datasetsRemote))

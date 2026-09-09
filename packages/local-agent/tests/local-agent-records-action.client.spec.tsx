@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent/types'
 import { LocalAgentRecordsAction, type LocalAgentRecordsActionProps } from '../src/client/LocalAgentRecordsAction.tsx'
 import { zh } from '../src/client/locales.ts'

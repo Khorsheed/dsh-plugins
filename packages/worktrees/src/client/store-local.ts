@@ -6,8 +6,7 @@
  * unrelated navigation flows. Module level exports the factory only (same
  * identity discipline as the drawer store).
  */
-import { defineStore } from '@deepseek-ai/dsh-client-store'
-import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { ListLocalDirectoryResult, LocalImageResult, ReadLocalFileResult } from '../types.ts'
 
 /** The local-files browser's state; fetched results are whole values. */

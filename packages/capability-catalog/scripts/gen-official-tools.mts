@@ -10,7 +10,9 @@ const OUT = new URL('../src/official-tools.ts', import.meta.url)
 
 function toolNamesFromSource(source: string): string[] {
   const names: string[] = []
-  const re = /ctx\.tools\.register\(\s*defineTool\(\s*\{/g
+  // Allow marker wrappers between register( and defineTool( — 0.1.2 registers
+  // send_message as register(markAdjacentAgentSendMessageTool(defineTool({…}).
+  const re = /ctx\.tools\.register\(\s*(?:[A-Za-z_$][\w$]*\(\s*)*defineTool\(\s*\{/g
   let m: RegExpExecArray | null
   while ((m = re.exec(source)) !== null) {
     const start = m.index + m[0].length

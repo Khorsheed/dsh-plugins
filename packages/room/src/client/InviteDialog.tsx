@@ -14,7 +14,7 @@
  * plus the host's structured duplicate/invalid errors ride the inline error
  * line, instructions ride the front of the member's FIRST task message
  * (never a system-prompt channel), the cwd is a read-only display filled by
- * the 浏览… button (the official `workspaces.pickDirectory` wire primitive;
+ * the 浏览… button (the official `uiWorkspace.pickDirectory` call;
  * empty = inherit the room session's cwd, shown as the placeholder), and
  * edit mode diffs name/cwd/instructions only.
  */
@@ -49,10 +49,9 @@ export interface InviteDialogProps {
   /** The roster's current names — the name dice never rolls one of these. */
   readonly existingNames: readonly string[]
   /**
-   * The 浏览… button's pick call (the official `workspaces.pickDirectory`
-   * wire primitive): resolves the picked absolute path, null on cancel, and
-   * throws when the host serves no native picking capability (the button's
-   * failure shows as an inline hint, the field stays as it was).
+   * The 浏览… button's pick call (the official `uiWorkspace.pickDirectory`
+   * call): resolves the picked absolute path, null on cancel or when the
+   * host serves no native picking capability.
    */
   readonly browseDirectory: () => Promise<string | null>
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>

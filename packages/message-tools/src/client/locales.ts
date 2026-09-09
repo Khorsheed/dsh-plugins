@@ -30,6 +30,10 @@ export const zh = {
   'model.empty': '暂无可用模型',
   'model.selectFailed': '模型切换失败',
   'message.extraBlock': '附加内容块',
+  'close': '关闭',
+  'markdown.copy': '复制',
+  'markdown.copied': '已复制',
+  'markdown.footnotes': '脚注',
   'json.truncated': '… 已截断，共 {total} 字符',
 } satisfies Record<string, string>
 
@@ -73,5 +77,9 @@ export const en = {
   'model.empty': 'No models available',
   'model.selectFailed': 'Could not switch model',
   'message.extraBlock': 'Extra content block',
+  'close': 'Close',
+  'markdown.copy': 'Copy',
+  'markdown.copied': 'Copied',
+  'markdown.footnotes': 'Footnotes',
   'json.truncated': '… truncated, {total} characters total',
 } satisfies Record<MessageToolsKey, string>

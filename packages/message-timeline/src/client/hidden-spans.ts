@@ -19,7 +19,7 @@
  * node, so the fold is empty and every order row still renders: the fix never
  * alters the baseline path.
  */
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { isHiddenSpanCarrierKind } from './timeline-kinds.ts'
 
 /** Span data carried by a `message-tools-withdrawn` / `message-tools-edited` node. */

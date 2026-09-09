@@ -243,8 +243,8 @@ Data goes to stdout as JSON, diagnostics to stderr; exit codes 0 ok / 1 failure 
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — consumes `Context.provide` and `commands`; the three sibling services are probed at run time, a missing one is a refusal, never a boot failure.
-- source line (deepseek-harness master): ✅ — same.
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — consumes `Context.provide` and `commands`; the three sibling services are probed at run time, a missing one is a refusal, never a boot failure. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.1.2-rc.1).
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 

@@ -15,9 +15,62 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+// Namespace handle for runtime feature detection: the 0.1.2 host replaced
+// the `resolveSessionPreset` free function with the
+// `agentPresetProjectionDefinition` unit, and a STATIC named import of a
+// removed export is a SyntaxError at module load — the derivation below
+// reads both surfaces through one structural cast (the ankh-guard pattern).
+import * as agentPresetsHost from '@deepseek-ai/dsh-agent-presets'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+
+/**
+ * The slice of a session log the preset derivation reads. Structural rather
+ * than the rc host's deleted `PresetBearingSession`: the 0.1.2 host removed
+ * that type together with `resolveSessionPreset`.
+ */
+interface PersistedPresetSource {
+  header: { agentPreset?: string | null }
+  events: readonly { type: string; data?: unknown }[]
+}
+
+/**
+ * The two preset-derivation surfaces a host may carry: the rc line exports
+ * `resolveSessionPreset`; the 0.1.2 line replaced it with the
+ * `agentPresetProjectionDefinition` unit. Probed per call, never from a
+ * version string (mirrors ankh-guard's PresetDerivationSurface).
+ */
+export interface PresetDerivationSurface {
+  agentPresetProjectionDefinition?: {
+    init(header: { agentPreset?: string | null }): string | null
+    apply(state: string | null, event: { type: string; data?: unknown }): string | null
+  }
+  resolveSessionPreset?: (session: PersistedPresetSource) => string | undefined
+}
+
+/**
+ * Which preset a session actually runs, newest selection winning. The 0.1.2
+ * host folds the header plus `agent-preset/selected` events through
+ * `agentPresetProjectionDefinition`; the rc host's `resolveSessionPreset` is
+ * the same fold. A host with neither yields undefined: the resume falls back
+ * to the deployment's default preset, the same outcome a preset-less session
+ * had before.
+ * @param host - the agent-presets module namespace, structurally probed.
+ * @param session - the session's header and event log.
+ * @returns the preset id, or `undefined` when the session names none.
+ */
+export function deriveSessionPreset(host: PresetDerivationSurface, session: PersistedPresetSource): string | undefined {
+  if (host.agentPresetProjectionDefinition !== undefined) {
+    const projection = host.agentPresetProjectionDefinition
+    let state = projection.init(session.header)
+    for (const event of session.events) state = projection.apply(state, event)
+    return state ?? undefined
+  }
+  return host.resolveSessionPreset?.(session)
+}
+
+/** The agent-presets module namespace as the derivation's probe input. */
+export const agentPresetsDerivationHost = agentPresetsHost as unknown as PresetDerivationSurface
 
 /** The agentPresets face this package consumes (probed, never injected). */
 export type AgentPresetsProbe = Pick<AgentPresets, 'resolve' | 'mount'>
@@ -69,7 +122,7 @@ export async function composeRoomAgent(ctx: Context, presetId: string | undefine
  * @returns the preset id, or undefined when none was recorded.
  */
 export function roomSessionPreset(session: Session): string | undefined {
-  return resolveSessionPreset({ header: session.header, events: session.events })
+  return deriveSessionPreset(agentPresetsDerivationHost, { header: session.header, events: session.snapshotEvents() })
 }
 
 /** The sessionPersistence face this package consumes (probed, never injected). */

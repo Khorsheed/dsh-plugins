@@ -327,7 +327,7 @@ export class DshCliProvider implements SubagentProvider {
         )
       }
       // The next turn follows the rounds already recorded in the child session.
-      const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      const nextTurn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
       // Live driver: continue the member's resident serve process. Channel
       // spawn/handshake failure falls through to the exec one-shot below.
       // See the fresh path: a container target is exec-only.

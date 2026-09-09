@@ -6,8 +6,7 @@
  * the factory (the framework instantiates per entry) and the drawer derives
  * its PropsStore share from the return type.
  */
-import { defineStore } from '@deepseek-ai/dsh-client-store'
-import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   ChangedFile, ChangesResult, CommitInfo, FileDiffResult, LocalImageResult, ReadFileResult, SessionSummary, WorktreeInfo,
 } from '../types.ts'

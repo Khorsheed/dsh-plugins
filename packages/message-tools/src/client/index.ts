@@ -13,16 +13,22 @@
  * adds.
  * @module @khorsheed/dsh-client-message-tools/client
  */
-import type { ClientContext, ConversationNodeDefinition, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: pulls the ctx.uiConversation service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API merge for the messageTools namespace.
 import type {} from '@khorsheed/dsh-client-message-tools/remote'
-// Type-only: pulls ui-conversation's SlotMap merge ('conversation.chat.node')
-// and the conversation service merge.
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node').
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: pulls the ctx.slots service merge (SlotRegistry).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.modelDirectories service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import messageToolsRemote from '@khorsheed/dsh-client-message-tools/remote'
@@ -63,47 +69,28 @@ const EMPTY_MODEL_DIRECTORY_STATE: ModelDirectoryState = Object.freeze({
  * Cordis property proxy only resolves services declared in `inject` or
  * provided by an ancestor fiber. Declaring it would deadlock the loader; the
  * namespace is read back from the global store with `ctx.get` after the
- * awaited mount.
- * The event-Definition registry is likewise NOT a static inject: its service
- * name differs per host line (see registerEventDefinitions below), so a
- * static entry would pend the fiber forever on the other line.
+ * awaited mount. The event-Definition registry (`uiConversation.events`) is
+ * likewise NOT a static inject: the deferred ctx.inject arm keeps the
+ * registration independent of ui-conversation's own mount order.
  */
 export const inject = ['slots', 'sessions', 'remote', 'conversation', 'locale']
 
-/** Structural face of the host event-Definition registry (identical on both host lines). */
-interface EventDefinitionRegistry {
-  register(definition: ConversationNodeDefinition): unknown
-}
-
 /**
- * Register the four message-tools event Definitions against whichever
- * registry seat the host line exposes: rc hosts carry the standalone
- * `conversationEvents` service (client-runtime package), 0.1.2 folded it
- * into `uiConversation.events` (upstream commit be531688f3). Neither name
- * exists on the other line, so both probes install and exactly one ever
- * fires. The registries are live (a registration re-assembles mounted
- * views), so the deferred arm needs no ordering against ui-conversation's
- * own apply.
+ * Register the four message-tools event Definitions against ui-conversation's
+ * event registry (host 0.1.2 folded the standalone registry service into
+ * `uiConversation.events`, upstream commit be531688f3). The registry is live
+ * (a registration re-assembles mounted views), so the deferred arm needs no
+ * ordering against ui-conversation's own apply; a composition without the
+ * service never fires it and simply has no chat projection at all.
  * @param ctx - client root context.
  */
-function registerEventDefinitions(ctx: ClientContext): void {
-  const registerAll = (registry: EventDefinitionRegistry): void => {
+function registerEventDefinitions(ctx: Context): void {
+  ctx.inject(['uiConversation'], (lctx) => {
+    const registry = lctx.uiConversation.events
     registry.register(withdrawnDividerDefinition)
     registry.register(restoredMessageDefinition)
     registry.register(restoredAssistantMessageDefinition)
     registry.register(editedMessageDefinition)
-  }
-  ctx.inject(['conversationEvents'], (lctx) => { registerAll(lctx.conversationEvents) })
-  // The alpha seat's name does not typecheck against the rc line's Context
-  // merge — probe it through the stringly face (feature detection, not a
-  // version check).
-  const probe = ctx as unknown as {
-    inject(deps: readonly string[], callback: () => void): unknown
-    get(name: string): unknown
-  }
-  probe.inject(['uiConversation'], () => {
-    const face = probe.get('uiConversation') as { events: EventDefinitionRegistry } | undefined
-    if (face !== undefined) registerAll(face.events)
   })
 }
 
@@ -114,7 +101,7 @@ function registerEventDefinitions(ctx: ClientContext): void {
  * @param ctx - client root context.
  * @returns disposer unwinding the mounted Remote namespace.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(messageToolsRemote))
@@ -199,9 +186,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // turn/end last); a replacement's span must cover all of it, so wait
     // for the turn to actually close. Bounded: a turn that never settles
     // rejects instead of letting the edit/withdraw race the stragglers.
-    // Snapshot seats differ per host line: rc carries the chat slice (and
-    // runningCalls) inside the session snapshot; 0.1.2 split the slice into
-    // the conversation binding's chat target (runningCalls under `legacy`).
+    // `running` rides the Session snapshot; the chat slice (timeline, and
+    // runningCalls under `legacy`) rides the conversation binding's chat
+    // target (host 0.1.2's split, see chat-hook.ts).
     const settleSnapshot = (): TurnSettleSnapshot | undefined => {
       const session = ctx.sessions.binding(sessionId)?.session.getSnapshot()
       if (session === undefined) return undefined
@@ -209,9 +196,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       if (chat === undefined) return undefined
       return {
         running: session.running,
-        runningCalls: (session as { runningCalls?: readonly unknown[] }).runningCalls
-          ?? (chat as { legacy?: { runningCalls?: readonly unknown[] } }).legacy?.runningCalls
-          ?? [],
+        runningCalls: chat.legacy.runningCalls,
         chat,
       } as TurnSettleSnapshot
     }

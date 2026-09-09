@@ -12,7 +12,7 @@ import { useSyncExternalStore } from 'react'
 import { FilePreviewView } from '../src/client/FilePreviewView.tsx'
 import type { FilePreviewViewProps } from '../src/client/contract.ts'
 import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FilePreviewList, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */

@@ -12,9 +12,10 @@
  * @module @khorsheed/dsh-room/client/nodes
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ChatConversationViewNode, ConversationNodeContext, ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  ConversationNodeContext, ConversationNodeDefinition,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Chat node data of one member speech row. */
 export interface RoomSpeechData {
@@ -86,7 +87,7 @@ export interface RoomTaskLineData {
   readonly status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'failed'
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     /** room: a member's reply (identity row + unframed markdown + actions). */
     'room-speech': RoomSpeechData

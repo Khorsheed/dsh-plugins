@@ -20,8 +20,8 @@
  * targets) shows as an inline error line.
  *
  * Taking over the chain inherits the official bar's environment duties (the
- * member-channel rule, local-agent 84a2ed0): pending interactions yield (the
- * selector declines while `owner.interactions` is non-empty, so the priority-1
+ * member-channel rule, local-agent 84a2ed0): a pending interaction yields (the
+ * selector declines while `owner.pendingInteraction` is set, so the priority-1
  * ApprovalPanel elects), and everything the hidden fallback tree carried is
  * re-homed INTO this component — the main agent's turn Stop (the send circle
  * swaps while `running`), the dock capsules (RoomDockCapsules), the main
@@ -32,7 +32,7 @@
 import {
   useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { parseMentions } from '../journal.ts'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
@@ -81,8 +81,8 @@ export function selectRoomComposer(
   owner: ComposerChainProps,
   isRoomCached: (sessionId: SessionId) => boolean,
 ): RoomComposerMatch | null {
-  if (owner.interactions.length > 0) return null
-  const sessionId = owner.session?.sessionId
+  if (owner.pendingInteraction !== undefined) return null
+  const sessionId = owner.sessionId ?? owner.session?.sessionId
   return sessionId !== undefined && isRoomCached(sessionId) ? { room: true } : null
 }
 

@@ -13,7 +13,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
@@ -95,7 +95,7 @@ export const Config: z<Config> = z.object({
  * composition `base` layer, so a field absent from the user layer inherits the
  * YAML value — the card only ever stores deliberate overrides.
  */
-export const KIMI_SETTINGS_NAMESPACE = settingsNamespace('local-agent-kimi')
+export const KIMI_SETTINGS_NAMESPACE = 'local-agent-kimi'
 
 /**
  * The card's schema; field defaults are the innermost layer below `base`.

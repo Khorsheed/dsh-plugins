@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '@khorsheed/dsh-ui-shortcuts/client'
 import type { ShortcutsRowInjected } from '../src/client/settings/ShortcutsRow.tsx'
 import { UI_SHORTCUTS_NAMESPACE } from '../src/settings.ts'
@@ -19,18 +20,17 @@ const SID = 's1' as SessionId
 
 type BenchOptions = {
   running?: boolean
-  subagent?: ConversationSnapshot['subagent']
+  subagent?: SessionSnapshot['subagent']
 }
 
 async function bench(over: BenchOptions = {}) {
   const runtime = await SlotTestRuntime.create()
   const submit = vi.fn()
   const cancel = vi.fn(() => Promise.resolve())
-  // The runtime provides a real workspaces service at root; shadow its
-  // startSession with a spy (providing a second one fails loud).
-  const startSession = vi.fn()
-  const workspaces = runtime.ctx.get('workspaces') as { startSession: () => void } | undefined
-  if (workspaces !== undefined) workspaces.startSession = startSession
+  // The runtime provides a real sessions service at root; new-session rides
+  // its create → open pair, so stub creation to return the fixture session.
+  const startSession = vi.fn(async () => SID)
+  runtime.sessions.stubCreate(startSession)
   runtime.ctx.provide('conversation', {
     input: { for: () => ({ submit }) },
     cancel,
@@ -98,7 +98,7 @@ describe('ui-shortcuts apply', () => {
     await b.runtime.dispose()
   })
 
-  it('Ctrl/Cmd+O starts a new session through the workspaces service and suppresses the browser open-file', async () => {
+  it('Ctrl/Cmd+O starts a new session through the sessions service and suppresses the browser open-file', async () => {
     const b = await bench()
     const ctrl = new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true, cancelable: true })
     document.dispatchEvent(ctrl)

@@ -30,5 +30,5 @@ dsh plugin --profile web remove @khorsheed/dsh-worktrees   # 卸载
 
 ## Compatibility
 
-- **npm 发布线（≥ 0.1.0-rc.6）**：完全可用。徽标挂 `conversation.session.header.utilities`（当前为空槽，零冲突）；抽屉挂 frame 级 `shell.overlay`（additive list，新 id）。`打开目录` 手势需要 loopback 连接且 host 声明 `canOpenPath`，否则自动隐藏。
-- **deepseek-harness master**：同一套槽位与服务，行为一致。headless profile 无浏览器消费方，本插件不贡献任何东西（model tools 属于治理阶段，尚未实现）。
+- **npm 发布线（≥ 0.1.2-rc.1）**：⚠️ 降级——徽标挂 `conversation.session.header.utilities`（当前为空槽，零冲突）；抽屉挂 frame 级 `shell.overlay`（additive list，新 id）。「打开目录 / 在 IDE 打开」手势在 0.1.2 上隐藏：host description 快照不再携带 `canOpenPath`（该能力已改为 RPC 探测），loopback 闸门无法确认；恢复是 follow-up，官方 seam 为 `remote.session.canOpenWorkspacePath` RPC。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- **deepseek-harness master**：同一套槽位与服务，行为一致（verifiedHost: 0.1.2-rc.1）。headless profile 无浏览器消费方，本插件不贡献任何东西（model tools 属于治理阶段，尚未实现）。

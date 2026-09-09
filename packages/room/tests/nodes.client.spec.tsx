@@ -2,10 +2,12 @@
 /** The room chat-flow nodes: Definition claiming/lifecycle and the renderers. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { ConversationNodeAssembler, createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  ChatConversationViewNode, ClientContext, ConversationViewDefinition, SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationViewDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
@@ -63,7 +65,7 @@ async function primedStore(): Promise<RoomStore> {
     isRoom: async () => ({ ok: true, value: true }),
     getState: async () => ({ ok: true, value: { ok: true, value: STATE } }),
   }
-  const store = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+  const store = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await store.ensure('room-1' as SessionId)
   return store
 }
@@ -151,17 +153,19 @@ describe('room node Definitions', () => {
       { entries: () => [roomRunDefinition], fallbackEntry: () => undefined },
       { entries: () => [chatView] },
     )
+    // The 0.1.2 assembler publishes only to ACTIVATED targets.
+    assembler.activateTarget('chat')
     const running = ev('room/run-state', 3, { member: 'ada', state: 'running', startedAt: 100 })
     const done = ev('room/run-state', 4, { member: 'ada', state: 'done', startedAt: 100, elapsedMs: 900 })
     // Open on the running edge (the live row materializes)…
-    assembler.replaceWindow([{ event: running, view: undefined }], false)
+    assembler.replaceWindow([{ type: 'event', event: running }], false)
     assembler.flush()
     let chat = assembler.snapshot('chat') as ChatConversationViewNode[]
     expect(chat).toHaveLength(1)
     expect(chat[0]).toMatchObject({ kind: 'room-run', visibility: 'visible', data: { state: 'running' } })
     // …then the terminal edge lands live: the row must fold away WITHOUT the
     // assembler's "withdrew materialized target" throw freezing the session.
-    assembler.append({ event: done, view: undefined })
+    assembler.append({ type: 'event', event: done })
     expect(() => assembler.flush()).not.toThrow()
     chat = assembler.snapshot('chat') as ChatConversationViewNode[]
     expect(chat).toHaveLength(1)
@@ -446,7 +450,7 @@ describe('RoomTaskLineView', () => {
         value: { ok: true, value: { ...STATE, tasks: tasks ?? [] } },
       }),
     }
-    const store = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+    const store = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
     if (tasks !== undefined) await store.ensure('room-1' as SessionId)
     return store
   }

@@ -9,9 +9,14 @@
  * out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-client-session-title-edit/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+// Type-only: pulls the Controller service merge (ctx.sessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -28,7 +33,7 @@ export const inject = ['slots', 'sessions', 'locale']
  * Client plugin body: register the dictionaries and the header action.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-title-edit: dictionaries')
   ctx.slots.inject(
     'conversation.session.header.actions',

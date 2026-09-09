@@ -317,11 +317,11 @@ describe('dsh live driver rounds', () => {
     expect(spawn.fake!.requests.map(r => r.method)).toEqual(['initialize', 'turn/start'])
     expect(spawn.fake!.requests[1]?.params).toMatchObject({ sessionId: 'child-live-1', text: '建个文件', resume: false })
     // Push mirror: the exchange landed in the child session event-by-event.
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     // Turn boundaries are the parent's own (opened after the accept ack, closed at settle).
-    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(1)
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(1)
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     // Progress: deltas for each mirrored event, then the authoritative mirror report.
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => {
@@ -341,7 +341,7 @@ describe('dsh live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    const types = child.events.map(e => e.type)
+    const types = child.snapshotEvents().map(e => e.type)
     // The parent's own boundary opens the round; mirrored events follow it.
     expect(types[0]).toBe('turn/start')
     expect(types.indexOf('user/message')).toBeGreaterThan(types.indexOf('turn/start'))
@@ -364,8 +364,8 @@ describe('dsh live driver rounds', () => {
     expect(m.spawns).toHaveLength(1)
     const starts = m.spawns[0]!.fake!.requests.filter(r => r.method === 'turn/start')
     expect(starts[1]?.params).toMatchObject({ sessionId: 'child-live-2', text: '继续', resume: true })
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(2)
-    expect(child.events.filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
     await m.driver.disposeAll()
   })
 
@@ -385,7 +385,7 @@ describe('dsh live driver rounds', () => {
     await run.dispose()
     expect(fake.terminated).toBe(false)
     // Turn/end mirrors the exec path's parent-abort shape.
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
@@ -400,7 +400,7 @@ describe('dsh live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
     await m.driver.disposeAll()
   })
 
@@ -415,7 +415,7 @@ describe('dsh live driver rounds', () => {
     off.queueChild(new FakeServeChild({ turn: () => ({ events: chunkEvents }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     await off.driver.disposeAll()
 
     const on = mount({ config: { liveMirrorGranularity: 'token' } })
@@ -423,7 +423,7 @@ describe('dsh live driver rounds', () => {
     on.queueChild(new FakeServeChild({ turn: () => ({ events: chunkEvents }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    expect(onChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     expect(on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)).toContain('hel')
     await on.driver.disposeAll()
   })
@@ -569,7 +569,7 @@ describe('B1: cancel in the slow spawn/handshake/accept windows', () => {
     expect((await run.result).stopReason).toBe('aborted')
     // No turn ever existed: no boundary, no interrupt, and the half-spawned
     // runtime was reclaimed.
-    expect(child.events).toHaveLength(0)
+    expect(child.snapshotEvents()).toHaveLength(0)
     expect(fake.requests.map(r => r.method)).not.toContain('turn/interrupt')
     await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
     expect(fake.requests.map(r => r.method)).toContain('shutdown')
@@ -593,7 +593,7 @@ describe('B1: cancel in the slow spawn/handshake/accept windows', () => {
     // The interrupt went out (the accept was in flight), the process survived
     // to unwind gracefully, and no parent-side turn boundary was opened.
     expect(fake.requests.map(r => r.method)).toContain('turn/interrupt')
-    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(0)
     await driver.disposeAll()
   })
 })
@@ -624,9 +624,9 @@ describe('B2: stop-then-rephrase never mis-settles the next round', () => {
     expect((await second.result).stopReason).toBe('completed')
     expect((await second.result).output).toEqual([{ type: 'text', text: '第二条回复' }])
     // The stale round-1 event never entered the child session.
-    expect(child.events.filter(e => e.type === 'assistant/message')
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')
       .map(e => JSON.stringify(e.data))).toEqual([expect.stringContaining('第二条回复')] as unknown as string[])
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     await m.driver.disposeAll()
   })
 })
@@ -674,7 +674,7 @@ describe('follow-up hardening (S1–S6)', () => {
     fake.pushIdle('child-s4', 1, { kind: 'completed' })
     const run = await pending
     expect((await run.result).stopReason).toBe('error') // no assistant answer — but the event survived
-    const mirrored = child.events.find(e => e.type === 'user/message')
+    const mirrored = child.snapshotEvents().find(e => e.type === 'user/message')
     expect(JSON.stringify(mirrored?.data)).toContain('建个文件')
     await m.driver.disposeAll()
   })
@@ -740,7 +740,7 @@ describe('follow-up hardening (S1–S6)', () => {
     m.queueChild(fake)
     const driver = new DshLiveDriver(m.ctx, {}, { initializeMs: 1_000, requestMs: 40, convergeMs: 40, channelRetryMs: 1_000 })
     await expect(driver.startRound(request() as never, roundSpec(m, child))).rejects.toThrow('timed out')
-    expect(child.events.filter(e => e.type === 'turn/start')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(0)
     await vi.waitFor(() => { expect(driver.liveCount).toBe(0) })
     expect(fake.requests.map(r => r.method)).toContain('shutdown')
     // An accept failure is a round failure, not a broken channel.
@@ -763,8 +763,8 @@ describe('dsh live driver persistence (write-behind owns durability)', () => {
     await vi.waitFor(() => {
       expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true)
     })
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     await m.driver.disposeAll()
   })
 })
@@ -845,11 +845,11 @@ describe('dsh live driver drain (settings handoff)', () => {
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
     // Event granularity: the pushed chunk stayed behind.
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { turn: 2 } }))
     await second.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

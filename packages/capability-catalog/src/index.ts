@@ -17,7 +17,8 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: pulls the ctx.settings service merge.
+import type {} from '@deepseek-ai/dsh-settings'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -127,8 +128,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
     // reload when the config document changes externally. Degrades silently when
     // settings is absent (in-process store only, resets on restart).
     ctx.inject(['settings'], (settingsCtx) => {
-      const ns = settingsNamespace(CAPABILITY_CATALOG_NS)
-      const scope = settingsCtx.settings.register(ns, CapabilityCatalogSettingsSchema)
+      const scope = settingsCtx.settings.register(CAPABILITY_CATALOG_NS, CapabilityCatalogSettingsSchema)
       const persisted = (scope.get() as { mcp?: PersistedMcpState } | undefined)?.mcp
       if (persisted !== undefined) this.mcp.loadFrom(persisted)
       this.mcp.onPersist = (): void => {

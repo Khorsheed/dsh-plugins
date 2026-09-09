@@ -129,17 +129,17 @@ describe('claude-cli-provider run settlement', () => {
     // The mirror runs after the child exits (fire-and-forget), so let it
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     // The stream transcript mirrors the tool call as a native
     // tool/call + tool/result pair; usage rides the final text message.
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
     expect(assistant[0]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]!.data).toMatchObject({ callId: 'tu1', name: 'Bash', arguments: 'echo hi' })
-    const toolResults = child.events.filter(event => event.type === 'tool/result')
+    const toolResults = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(toolResults).toHaveLength(1)
     expect(toolResults[0]!.data.message.content[0]).toMatchObject({
       type: 'tool-result',
@@ -147,12 +147,12 @@ describe('claude-cli-provider run settlement', () => {
       content: [{ type: 'text', text: 'hi' }],
       isError: false,
     })
-    const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+    const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
-      expect(append).toHaveBeenCalledWith(child.id, child.events)
+      expect(append).toHaveBeenCalledWith(child.id, child.snapshotEvents())
     })
     await done
   })
@@ -220,19 +220,19 @@ describe('claude-cli-provider run settlement', () => {
     // tool step mirror while the process is STILL running.
     emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'Task complete.' }] } })
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
     })
-    const liveCalls = child.events.filter(event => event.type === 'tool/call')
+    const liveCalls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(liveCalls).toHaveLength(1)
     expect(liveCalls[0]!.data).toMatchObject({ callId: 'tu1', name: 'Bash', arguments: 'echo hi' })
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(0)
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(reports.some(report => report.progress.kind === 'delta')).toBe(true)
 
     // The terminal result flushes the held text line with the round's usage.
     emit({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 2, output_tokens: 5 } })
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
 
     // Settle: the live mirror already covered the stream — no duplicates.
@@ -241,10 +241,10 @@ describe('claude-cli-provider run settlement', () => {
     await vi.waitFor(() => {
       expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 2)).toBe(true)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant).toHaveLength(1)
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
-    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     expect((assistant[0]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
     await done
   })
@@ -271,7 +271,7 @@ describe('claude-cli-provider run settlement', () => {
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
     expect(endData?.turn).toBe(1)
     expect(endData?.reason?.kind).toBe('error')
@@ -338,7 +338,7 @@ describe('claude-cli-provider run settlement', () => {
     // A zero exit with no parsed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
     expect(endData?.reason?.kind).toBe('error')
     await done
@@ -395,8 +395,8 @@ describe('claude-cli-provider resume round', () => {
     expect(result.stopReason).toBe('completed')
     expect(spawned[0]).toEqual(['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', 's1', '--output-format', 'stream-json', '接着做'])
     expect(run.id).toBe(SessionId('child-run-1'))
-    const turnStarts = child.events.filter(event => event.type === 'turn/start')
-    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
+    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
     expect(turnStarts).toHaveLength(2)
     expect(turnEnds).toHaveLength(2)
     expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
@@ -597,20 +597,20 @@ describe('claude-cli-provider abort path', () => {
     expect(hanging.terminated()).toBe(true)
     await expect(run.dispose()).resolves.toBeUndefined()
 
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
 
     // The partial stream (thinking + tool call) is mirrored after the kill.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-      expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'reasoning', text: '先想想怎么做。' }])
     // The killed stream's tool_use mirrors as a native call (no result — the
     // kill landed first).
-    expect(child.events.filter(event => event.type === 'tool/result')).toHaveLength(0)
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls[0]!.data).toMatchObject({ name: 'Bash', arguments: 'echo hi' })
     await hanging.done
   })

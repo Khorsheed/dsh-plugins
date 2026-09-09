@@ -30,5 +30,5 @@ dsh plugin --profile web remove @khorsheed/dsh-worktrees   # uninstall
 
 ## Compatibility
 
-- **npm release line (≥ 0.1.0-rc.6)**: fully functional. The badge mounts the `conversation.session.header.utilities` slot (currently empty — zero conflict); the drawer mounts the frame-wide `shell.overlay` (additive list, fresh id). The "open folder" gesture needs a loopback connection with the host declaring `canOpenPath`; it hides otherwise.
-- **deepseek-harness master**: same slots and service, identical behavior. Headless profiles have no browser consumer and this plugin contributes nothing there (model tools belong to the governance phase, not yet implemented).
+- **npm release line (≥ 0.1.2-rc.1)**: ⚠️ degraded — the badge mounts the `conversation.session.header.utilities` slot (currently empty — zero conflict); the drawer mounts the frame-wide `shell.overlay` (additive list, fresh id). The "open in folder / open in IDE" gestures are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (the capability became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- **deepseek-harness master**: same slots and service, identical behavior (verifiedHost: 0.1.2-rc.1). Headless profiles have no browser consumer and this plugin contributes nothing there (model tools belong to the governance phase, not yet implemented).

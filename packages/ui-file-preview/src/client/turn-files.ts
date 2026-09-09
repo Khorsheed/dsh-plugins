@@ -10,7 +10,7 @@
  * turn has no files — a no-file turn shows nothing, and the official
  * produced-files entry never mounts (priority -1 preemption unchanged).
  */
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 
 /**
  * Claim every turn of the chain (the row decides visibility from its fetch).

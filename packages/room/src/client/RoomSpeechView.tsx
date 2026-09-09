@@ -11,10 +11,11 @@
  * Deliberately absent: branch (forking the room session has undefined
  * roster/blackboard semantics) and TPS/TTFT (a CLI run has no token stream).
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   IconCheckOutline16, IconCopyOutline16, IconLinkOutline16, MarkdownText, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import type { RoomSpeechViewProps } from './slots.ts'
@@ -26,6 +27,14 @@ import css from './RoomSpeechView.module.css'
  * lines of prose.
  */
 const COLLAPSE_CHARS = 600
+
+/** Localized Markdown chrome (code-fence copy buttons, footnotes) over the room namespace. */
+function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
+  return {
+    code: { copyLabel: t('action.copy'), copiedLabel: t('action.copied') },
+    footnotes: t('markdown.footnotes'),
+  }
+}
 
 /** The member speech row. */
 export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: RoomSpeechViewProps): ReactNode {
@@ -44,6 +53,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
   const child = data.childSessionId
   const collapsible = data.text.length > COLLAPSE_CHARS
   const clamped = collapsible && !expanded
+  const labels = useMemo(() => markdownLabels(t), [t])
 
   const copy = (): void => {
     void writeClipboard(data.text).then((ok) => {
@@ -65,7 +75,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
         {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
-        <MarkdownText text={data.text} />
+        <MarkdownText text={data.text} labels={labels} />
         {clamped && <div className={css.fade} aria-hidden />}
       </div>
       {collapsible && (

@@ -16,6 +16,7 @@
     "src/service.ts",
     "src/types.ts",
     "src/client/contract.ts",
+    "src/client/host-description.ts",
     "src/client/html-bridge.ts",
     "src/client/html-src-doc.ts",
     "src/client/index.ts",

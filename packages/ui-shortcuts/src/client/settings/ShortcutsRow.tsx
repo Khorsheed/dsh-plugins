@@ -1,6 +1,6 @@
 /** Settings card for the shortcut registry: one rebindable field per registered action. */
 import { Fragment, useEffect } from 'react'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge, so this
 // component's props type matches the plugin configuration card contract.

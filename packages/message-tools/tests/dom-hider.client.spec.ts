@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { hiddenFlowKeys, installDomHider, renderHiderRules } from '../src/client/dom-hider.ts'
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatSlice } from '../src/client/chat-hook.ts'
 
 function node(kind: string, key: string, anchorSeq: number, data?: unknown): ChatConversationViewNode {
   return {
@@ -23,56 +23,41 @@ function divider(hiddenStartSeq: number, seq: number): ChatConversationViewNode 
   return node('message-tools-withdrawn', `21:message-tools-withdrawn${seq}`, seq, { seq, hiddenStartSeq })
 }
 
-function snapshotOf(nodes: readonly ChatConversationViewNode[]): ConversationSnapshot {
+function chatOf(nodes: readonly ChatConversationViewNode[]): ChatSlice {
   const byKey = new Map(nodes.map(n => [n.key, n]))
   return {
-    chat: {
-      order: nodes.map(n => n.key),
-      nodes: { get: (key: string) => byKey.get(key), values: () => nodes },
-    },
-  } as unknown as ConversationSnapshot
+    order: nodes.map(n => n.key),
+    nodes: { get: (key: string) => byKey.get(key), values: () => nodes },
+  } as unknown as ChatSlice
 }
 
-/** Minimal sessions-service stub: a list store plus per-id session stores. */
-function harness(opts: { chatSeat?: 'rc' | 'alpha' } = {}) {
+/**
+ * Minimal host stub: the session list store plus the uiConversation service
+ * whose per-session binding targets carry the chat slices (host 0.1.2's
+ * split — the chat slice no longer rides the Session snapshot).
+ */
+function harness() {
   const list = createSnapshotStore<{ current: string | undefined }>({ current: undefined })
-  const sessions = new Map<string, ReturnType<typeof createSnapshotStore<ConversationSnapshot>>>()
-  const provide = createSnapshotStore({ revision: 0 })
-  // Alpha seat (host 0.1.2): the chat slice leaves the Session snapshot for
-  // the uiConversation binding's chat target.
-  const chatTargets = new Map<string, ReturnType<typeof createSnapshotStore<unknown>>>()
-  const uiConversation = opts.chatSeat === 'alpha'
-    ? {
-      binding: (id: string) => ({
-        target: (name: string) => {
-          if (name !== 'chat' || !chatTargets.has(id)) throw new Error(`uiConversation.binding: unknown session "${id}"`)
-          return chatTargets.get(id)
-        },
-      }),
-    }
-    : undefined
+  const chatTargets = new Map<string, ReturnType<typeof createSnapshotStore<ChatSlice | undefined>>>()
+  const uiConversation = {
+    binding: (id: string) => ({
+      target: (name: string) => {
+        if (name !== 'chat' || !chatTargets.has(id)) throw new Error(`uiConversation.binding: unknown session "${id}"`)
+        return chatTargets.get(id)
+      },
+    }),
+  }
   const ctx = {
     get: (name: string) => (name === 'uiConversation' ? uiConversation : undefined),
-    sessions: {
-      list,
-      currentProvideInfo: provide,
-      binding: (id: string) => {
-        const session = sessions.get(id)
-        return session === undefined ? undefined : { session }
-      },
-    },
-  } as unknown as ClientContext
-  /** Register one session; alpha seat takes the bare chat slice, rc the full snapshot. */
-  const addSession = (id: string, snapshot: ConversationSnapshot): void => {
-    if (opts.chatSeat === 'alpha') {
-      const chat = (snapshot as unknown as { chat: unknown }).chat
-      sessions.set(id, createSnapshotStore({ running: false } as unknown as ConversationSnapshot))
-      chatTargets.set(id, createSnapshotStore(chat))
-    } else {
-      sessions.set(id, createSnapshotStore(snapshot))
-    }
+    sessions: { list },
+  } as unknown as Context
+  /** Register one session's chat target; returns the mutable store. */
+  const addSession = (id: string, chat: ChatSlice) => {
+    const store = createSnapshotStore<ChatSlice | undefined>(chat)
+    chatTargets.set(id, store)
+    return store
   }
-  return { ctx, list, sessions, provide, addSession }
+  return { ctx, list, addSession }
 }
 
 async function nextFrame(): Promise<void> {
@@ -112,16 +97,15 @@ describe('renderHiderRules', () => {
 
 describe('installDomHider', () => {
   it('writes hiding rules for the current session after the probe passes', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const row = document.createElement('div')
     row.setAttribute('data-chat-flow-key', '4:userA')
     document.body.appendChild(row)
-    const session = createSnapshotStore(snapshotOf([
+    addSession('s1', chatOf([
       node('user', '4:userA', 5),
       node('assistant-step', '14:assistant-stepB', 6),
       divider(5, 10),
     ]))
-    sessions.set('s1', session)
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()
@@ -134,47 +118,10 @@ describe('installDomHider', () => {
     expect(document.querySelector('style[data-message-tools-hider]')).toBeNull()
   })
 
-  it('installs without the currentProvideInfo feed (host 0.1.2-alpha.1 removed it)', async () => {
-    const { ctx, list, sessions } = harness()
-    delete (ctx.sessions as unknown as { currentProvideInfo?: unknown }).currentProvideInfo
-    const row = document.createElement('div')
-    row.setAttribute('data-chat-flow-key', '4:userA')
-    document.body.appendChild(row)
-    const session = createSnapshotStore(snapshotOf([
-      node('user', '4:userA', 5),
-      divider(5, 10),
-    ]))
-    sessions.set('s1', session)
-    const dispose = installDomHider(ctx)
-    list.update((s) => { s.current = 's1' })
-    await nextFrame()
-    const style = document.querySelector('style[data-message-tools-hider]')
-    expect(style?.textContent).toContain('[data-chat-flow-key="4:userA"]')
-    dispose()
-  })
-
-  it('reads the chat slice from the uiConversation binding on hosts where the Session snapshot has no chat (0.1.2)', async () => {
-    const { ctx, list, addSession } = harness({ chatSeat: 'alpha' })
-    const row = document.createElement('div')
-    row.setAttribute('data-chat-flow-key', '4:userA')
-    document.body.appendChild(row)
-    addSession('s1', snapshotOf([
-      node('user', '4:userA', 5),
-      divider(5, 10),
-    ]))
-    const dispose = installDomHider(ctx)
-    list.update((s) => { s.current = 's1' })
-    await nextFrame()
-    const style = document.querySelector('style[data-message-tools-hider]')
-    expect(style?.textContent).toContain('[data-chat-flow-key="4:userA"]')
-    dispose()
-  })
-
   it('disables itself with one warning only after the probe retry window expires with rows still absent', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const session = createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)]))
-    sessions.set('s1', session)
+    addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
     const dispose = installDomHider(ctx, { probeRetryWindowMs: 30 })
     list.update((s) => { s.current = 's1' })
     await nextFrame()
@@ -189,14 +136,13 @@ describe('installDomHider', () => {
   })
 
   it('recovers when the chat rows mount during the probe retry window', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const session = createSnapshotStore(snapshotOf([
+    const chat = addSession('s1', chatOf([
       node('user', '4:userA', 5),
       node('assistant-step', '14:assistant-stepB', 6),
       divider(5, 10),
     ]))
-    sessions.set('s1', session)
     // A short window proves the recovery happens through the retry, not the first probe.
     const dispose = installDomHider(ctx, { probeRetryWindowMs: 2_000 })
     list.update((s) => { s.current = 's1' })
@@ -213,8 +159,8 @@ describe('installDomHider', () => {
     expect(style?.textContent).toContain('[data-chat-flow-key="14:assistant-stepB"]')
     expect(warn).not.toHaveBeenCalled()
     // Recovered for good: later snapshots keep rewriting the rules.
-    session.update((snapshot) => {
-      (snapshot as { chat: { nodes: unknown } }).chat.nodes = {
+    chat.update((snapshot) => {
+      ;(snapshot as { nodes: unknown }).nodes = {
         get: () => undefined,
         values: () => [
           node('user', '4:userA', 5), node('tool-call', '9:tool-callC', 7), node('turn-tail', '9:turn-tailD', 9.1), divider(5, 10),
@@ -226,12 +172,12 @@ describe('installDomHider', () => {
   })
 
   it('rebinds on session switch and clears rules for sessions without spans', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const probeRow = document.createElement('div')
     probeRow.setAttribute('data-chat-flow-key', 'probe')
     document.body.appendChild(probeRow)
-    sessions.set('s1', createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)])))
-    sessions.set('s2', createSnapshotStore(snapshotOf([node('user', '4:userF', 2)])))
+    addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
+    addSession('s2', chatOf([node('user', '4:userF', 2)]))
     installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()
@@ -290,11 +236,11 @@ describe('hiddenFlowKeys explicit ranges', () => {
 describe('installDomHider edges', () => {
   it('falls back to setTimeout scheduling when requestAnimationFrame is absent', async () => {
     vi.stubGlobal('requestAnimationFrame', undefined)
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const row = document.createElement('div')
     row.setAttribute('data-chat-flow-key', '4:userA')
     document.body.appendChild(row)
-    sessions.set('s1', createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)])))
+    addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()
@@ -303,8 +249,8 @@ describe('installDomHider edges', () => {
   })
 
   it('returns early for a session with no hidden keys before probing', async () => {
-    const { ctx, list, sessions } = harness()
-    sessions.set('s1', createSnapshotStore(snapshotOf([node('user', '4:userA', 5)])))
+    const { ctx, list, addSession } = harness()
+    addSession('s1', chatOf([node('user', '4:userA', 5)]))
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()
@@ -313,44 +259,42 @@ describe('installDomHider edges', () => {
   })
 
   it('schedules the probe once for two synchronous snapshots, then rewrites on change', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const row = document.createElement('div')
     row.setAttribute('data-chat-flow-key', '4:userA')
     document.body.appendChild(row)
-    const session = createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)]))
-    sessions.set('s1', session)
+    const chat = addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     // A second synchronous emission while the probe is scheduled is dropped.
-    session.update((snapshot) => { (snapshot as unknown as { chat: { order: string[] } }).chat.order = [] })
+    chat.update((snapshot) => { (snapshot as unknown as { order: string[] }).order = [] })
     await nextFrame()
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('4:userA')
     // After the probe passed: a changed snapshot rewrites the rules; an
     // unchanged one keeps them.
-    session.update((snapshot) => {
-      (snapshot as { chat: { nodes: unknown } }).chat.nodes = {
+    chat.update((snapshot) => {
+      ;(snapshot as { nodes: unknown }).nodes = {
         get: () => undefined,
         values: () => [node('user', '4:userA', 5), node('user', '4:userB', 6), divider(5, 10)],
       }
     })
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('4:userB')
-    session.update((snapshot) => { (snapshot as unknown as { chat: { order: string[] } }).chat.order = ['x'] })
+    chat.update((snapshot) => { (snapshot as unknown as { order: string[] }).order = ['x'] })
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('4:userB')
     dispose()
   })
 
   it('ignores snapshots while disabled by an exhausted window, but reactivates when a row appears later', async () => {
-    const { ctx, list, sessions } = harness()
+    const { ctx, list, addSession } = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const session = createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)]))
-    sessions.set('s1', session)
+    const chat = addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
     const dispose = installDomHider(ctx, { probeRetryWindowMs: 30 })
     list.update((s) => { s.current = 's1' })
     await nextFrame()
     await new Promise(resolve => setTimeout(resolve, 60))
     expect(warn).toHaveBeenCalledTimes(1)
-    session.update((snapshot) => {
-      (snapshot as { chat: { nodes: unknown } }).chat.nodes = {
+    chat.update((snapshot) => {
+      ;(snapshot as { nodes: unknown }).nodes = {
         get: () => undefined,
         values: () => [node('user', '4:userA', 5), node('user', '4:userB', 6), divider(5, 10)],
       }
@@ -366,19 +310,17 @@ describe('installDomHider edges', () => {
     dispose()
   })
 
-  it('early-returns when rebinding the same session and tolerates a missing binding', async () => {
-    const { ctx, list, sessions, provide } = harness()
+  it('tolerates a session whose conversation binding is absent', async () => {
+    const { ctx, list, addSession } = harness()
     const row = document.createElement('div')
     row.setAttribute('data-chat-flow-key', '4:userA')
     document.body.appendChild(row)
-    sessions.set('s1', createSnapshotStore(snapshotOf([node('user', '4:userA', 5), divider(5, 10)])))
+    addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
     const dispose = installDomHider(ctx)
     list.update((s) => { s.current = 's1' })
     await nextFrame()
     const before = document.querySelector('style[data-message-tools-hider]')?.textContent
-    // Same current rebind through the provide channel: no rewrite.
-    provide.update((s) => { Object.assign(s, { revision: 1 }) })
-    expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toBe(before)
+    expect(before).toContain('4:userA')
     // A session with no binding clears the rules without throwing.
     list.update((s) => { s.current = 'ghost' })
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toBe('')

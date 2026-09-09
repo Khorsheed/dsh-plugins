@@ -15,8 +15,10 @@
  * with fake halves.
  * @module @khorsheed/dsh-whalesong/client/controller
  */
-import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { anySessionRunning, diffSessionList } from './status.ts'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import { anySessionRunning, diffPendingInteractions, diffSessionList } from './status.ts'
 import { createWhalesongOverlay, setWhalesongActive, type WhalesongOverlay } from './whalesong-overlay.ts'
 import { createSoundPlayer, type WhalesongSoundPlayer } from './sound.ts'
 import { createFaviconAnimator, type FaviconAnimator } from './favicon.ts'
@@ -31,6 +33,12 @@ export interface WhalesongRuntimeDeps {
   readonly win: Window
   /** Global session-list snapshot feed (`ctx.sessions.list`). */
   readonly list: ObservableSnapshot<SessionListState>
+  /**
+   * Pending-interaction feed (`ctx.uiSession.pendingInteractions`) driving the
+   * blocked chime; absent when the ui-session service is not assembled, which
+   * degrades the blocked chime off (completion chimes are unaffected).
+   */
+  readonly pending?: ObservableSnapshot<SessionPendingInteractionSnapshot>
   readonly createOverlay?: (doc: Document) => WhalesongOverlay
   readonly createSound?: (win: Window) => WhalesongSoundPlayer
   readonly createFavicon?: (win: Window) => FaviconAnimator
@@ -58,7 +66,7 @@ interface Running {
  * @returns the runtime handle.
  */
 export function createWhalesongRuntime(deps: WhalesongRuntimeDeps): WhalesongRuntime {
-  const { doc, win, list } = deps
+  const { doc, win, list, pending } = deps
   const makeOverlay = deps.createOverlay ?? createWhalesongOverlay
   const makeSound = deps.createSound ?? createSoundPlayer
   const makeFavicon = deps.createFavicon ?? createFaviconAnimator
@@ -71,32 +79,38 @@ export function createWhalesongRuntime(deps: WhalesongRuntimeDeps): WhalesongRun
     const sound = makeSound(win)
     sound.setVolume(volume)
     const favicon = makeFavicon(win)
-    // Baseline frame: current running state shows the whalesong but fires no edges.
+    // Baseline frames: current running/blocked state shows the whalesong but fires no edges.
     let prev: SessionListState = list.getSnapshot()
+    let prevPending = pending?.getSnapshot()
     const baselineRunning = anySessionRunning(prev)
     setWhalesongActive(doc, baselineRunning)
     favicon.setActive(baselineRunning)
 
     const reconcile = (): void => {
       const next = list.getSnapshot()
-      if (next === prev) return // unchanged snapshot: nothing to do
+      const nextPending = pending?.getSnapshot()
+      if (next === prev && nextPending === prevPending) return // unchanged snapshots: nothing to do
       const events = diffSessionList(prev, next)
+      const blocked = nextPending === undefined ? [] : diffPendingInteractions(prevPending, nextPending)
       prev = next
+      prevPending = nextPending
       setWhalesongActive(doc, events.anyRunning)
       favicon.setActive(events.anyRunning)
       // One chime per kind per frame: a multi-session completion wave stays quiet-ish.
       if (events.completed.length > 0) sound.play('completed')
-      if (events.blocked.length > 0) sound.play('blocked')
+      if (blocked.length > 0) sound.play('blocked')
     }
 
-    const unsubscribe = list.subscribe(reconcile)
+    const unsubscribeList = list.subscribe(reconcile)
+    const unsubscribePending = pending?.subscribe(reconcile)
     const poll = win.setInterval(reconcile, RECONCILE_MS)
     running = {
       overlay,
       sound,
       favicon,
       unsubscribe: () => {
-        unsubscribe()
+        unsubscribeList()
+        unsubscribePending?.()
         win.clearInterval(poll)
       },
     }

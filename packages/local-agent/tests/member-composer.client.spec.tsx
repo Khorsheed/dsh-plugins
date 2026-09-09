@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LocalAgentDelegationView, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import {
@@ -30,14 +31,16 @@ const MEMBER: LocalAgentDelegationView = {
 }
 
 /** Chain owner currency around a session snapshot fragment. */
-function owner(session: Partial<ConversationSnapshot> | undefined): ComposerChainProps {
+function owner(session: Partial<SessionSnapshot> | undefined): ComposerChainProps {
   return {
     interactions: [],
+    sessionId: CHILD as SessionId,
+    pendingInteraction: undefined,
     session: session === undefined ? undefined : {
       sessionId: CHILD as SessionId,
       ...session,
-    } as ConversationSnapshot,
-  }
+    } as SessionSnapshot,
+  } as ComposerChainProps
 }
 
 /** Component props: only the faces MemberComposer actually reads are real. */
@@ -47,8 +50,8 @@ function props(
   usage?: { uncachedInputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number },
   todos?: readonly { content: string; status: 'pending' | 'in_progress' | 'completed' }[],
 ): MemberComposerProps {
-  const snapshot = { running } as ConversationSnapshot
-  function useSession<T>(select: (state: ConversationSnapshot) => T): T {
+  const snapshot = { running } as SessionSnapshot
+  function useSession<T>(select: (state: SessionSnapshot) => T): T {
     return select(snapshot)
   }
   function useProjection(key: string): unknown {

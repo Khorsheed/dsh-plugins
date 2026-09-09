@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /** The members tab and the invite/edit dialog. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MembersView } from '../src/client/MembersView.tsx'
@@ -67,7 +68,7 @@ async function bench(options: { room?: boolean; providers?: RoomProviderList } =
       ? { ok: true, value: { ok: true, value: STATE } }
       : { ok: true, value: { ok: false, error: { code: 'not-a-room' } } },
   }
-  const roomStore = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+  const roomStore = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await roomStore.ensure(SESSION)
   const face = {
     roomStore,

@@ -131,8 +131,7 @@ dsh-skill to state explicitly that a runtime plugin skill should carry a
 
 | Host line | Verdict |
 |---|---|
-| npm release (≥ `dsh.compat.minHost`) | supported |
-| deepseek-harness master | supported |
+| npm release (≥ `0.1.2-rc.1`) | supported |
+| deepseek-harness master | supported (`verifiedHost: 0.1.2-rc.1`) |
 
-Machine-readable: `dsh.compat.minHost` in `package.json`. When a degraded model
-is omitted above, note it in `dsh.compat.notes`.
+Machine-readable: `dsh.compat.minHost` in `package.json` (currently `0.1.2-rc.1` — the floor moved up with the 0.1.2 baseline migration; older hosts stay on the previous release line). When a degraded mode is omitted above, note it in `dsh.compat.notes`.

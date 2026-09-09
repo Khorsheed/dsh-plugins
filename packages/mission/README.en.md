@@ -142,8 +142,8 @@ The `missions` entry in the conversation tab ring (web profile): five-bucket fil
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host.
-- source line (deepseek-harness master, fork or upstream): ✅ — same.
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — store, state machine and guards, linter, five-bucket projection, service face, model tools, CLI, and slash commands all work on the published host. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master, fork or upstream): ✅ — same (verifiedHost: 0.1.2-rc.1).
 
 Degraded / absent items (mirrors `dsh.compat` in package.json): slash commands need an interactive UI adapter (web/TUI) — headless profiles have no command adapter, so `/mission` is unavailable there while tools, the service face, and the CLI stay fully functional. A mount that sets `tools: 'read'` or `'none'` trims the model tools per the table above — that is the mounting profile's choice, not a missing host capability; the service face, CLI, slash command, and tab are unaffected. The session tab is a web surface; TUI has no tab mechanism, and headless profiles expose the Remote data face without a browser consumer. The tab is live-smoke-tested on the `0.1.0-rc.8` web profile; earlier release lines share the same gateway conventions but were not smoke-tested.
 

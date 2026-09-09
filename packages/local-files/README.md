@@ -30,10 +30,11 @@ Host 提供 `listLocalDirectory` / `readLocalFile` / `readLocalImage` 三个纯 
 
 | Host 行 | 结论 |
 | --- | --- |
-| npm release (`>= 0.1.0-rc.6`) | ✔ 目标行 |
-| deepseek-harness master | ✔ 目标行(`verifiedHost: 0.1.1-rc.2`) |
+| npm release (`>= 0.1.2-rc.1`) | ⚠️ 降级——external-open 手势隐藏（见下） |
+| deepseek-harness master | ⚠️ 同上（`verifiedHost: 0.1.2-rc.1`） |
 
 - 工作区 tab 是 web 表面；headless 无浏览器消费者时本插件零贡献。
-- 「打开目录」手势依赖 loopback + `canOpenPath`,不满足时降级为不显示。
+- 「打开目录 / 在 IDE 打开」手势在 0.1.2 上隐藏：host description 快照不再携带 `canOpenPath`（该能力已改为 RPC 探测），loopback 闸门无法确认；恢复是 follow-up，官方 seam 为 `remote.session.canOpenWorkspacePath` RPC。
+- minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
 
-> 细分：本插件是「任意本地目录浏览」；file-preview 是「当前会话产物」。二者语义不同,故做成两个独立包,不合并。
+> 细分：本插件是「任意本地目录浏览」；file-preview 是「当前会话产物」。二者语义不同，故做成两个独立包，不合并。

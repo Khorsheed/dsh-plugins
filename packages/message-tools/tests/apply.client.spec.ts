@@ -33,15 +33,13 @@ interface BenchOptions {
   bindingVanishes?: boolean
   /** The turn never settles (cancel never closes it): waitIdle hits its deadline. */
   stuckRunning?: boolean
-  /** Which host-line registry seat the bench provides (default 'rc'). */
-  eventsSeat?: 'rc' | 'alpha'
 }
 
-/** The settle-shaped snapshot stub: a turn whose teardown lands only when cancel completes it. */
+/** The settle-shaped state stub: a turn whose teardown lands only when cancel completes it. */
 interface SettleState {
   running: boolean
   runningCalls: readonly unknown[]
-  chat: { timeline: { turnOrder: readonly number[]; turns: Map<number, { status: 'open' | 'closed' | 'unknown' }> } }
+  timeline: { turnOrder: readonly number[]; turns: Map<number, { status: 'open' | 'closed' | 'unknown' }> }
 }
 
 /** Real cordis composition with the slot registry, locale runtime, and stub services. */
@@ -57,30 +55,36 @@ async function bench(options: BenchOptions = {}) {
   ctx.provide('remote', remoteService as never)
   const remote = remoteStub()
   ctx.provide('remote.messageTools', remote as never)
+  const settle = createSnapshotStore<SettleState>({
+    running: options.running === true,
+    runningCalls: options.running === true ? [{ call: 1 }] : [],
+    timeline: {
+      turnOrder: [1],
+      turns: new Map([[1, { status: options.running === true ? 'open' : 'closed' }]]),
+    },
+  })
   const conversationEvents = { register: vi.fn(() => () => {}) }
-  // The event-Definition registry seat differs per host line: rc exposes the
-  // standalone conversationEvents service, 0.1.2 folds it into
-  // uiConversation.events. The plugin probes both arms; the bench picks one.
-  if (options.eventsSeat === 'alpha') {
-    ctx.provide('uiConversation', { events: conversationEvents } as never)
-  } else {
-    ctx.provide('conversationEvents', conversationEvents as never)
-  }
+  // Host 0.1.2 seats: the event-Definition registry lives at
+  // uiConversation.events, and the settle probe's chat slice (timeline +
+  // legacy.runningCalls) rides the conversation binding's chat target while
+  // `running` stays on the Session snapshot.
+  ctx.provide('uiConversation', {
+    events: conversationEvents,
+    binding: () => ({
+      target: () => ({
+        getSnapshot: () => ({
+          timeline: settle.getSnapshot().timeline,
+          legacy: { runningCalls: settle.getSnapshot().runningCalls },
+        }),
+        subscribe: () => () => {},
+      }),
+    }),
+  } as never)
   const input = {
     state: createSnapshotStore({ draft: options.draft ?? '' }),
     setDraft: vi.fn((text: string) => { input.state.getSnapshot().draft = text }),
     notify: vi.fn(),
   }
-  const settle = createSnapshotStore<SettleState>({
-    running: options.running === true,
-    runningCalls: options.running === true ? [{ call: 1 }] : [],
-    chat: {
-      timeline: {
-        turnOrder: [1],
-        turns: new Map([[1, { status: options.running === true ? 'open' : 'closed' }]]),
-      },
-    },
-  })
   const conversation = {
     cancel: vi.fn(async () => {
       if (options.bindingVanishes === true) bindingState.missing = true
@@ -89,7 +93,7 @@ async function bench(options: BenchOptions = {}) {
         const snapshot = settle.getSnapshot()
         snapshot.running = false
         ;(snapshot as { runningCalls: unknown[] }).runningCalls = []
-        snapshot.chat.timeline.turns.set(1, { status: 'closed' })
+        snapshot.timeline.turns.set(1, { status: 'closed' })
       }
     }),
     send: vi.fn(async () => {}),
@@ -112,11 +116,10 @@ async function bench(options: BenchOptions = {}) {
   }
   ctx.provide('sessions', {
     list: createSnapshotStore<{ current?: string }>({}),
-    currentProvideInfo: createSnapshotStore({}),
     scope: () => (scopeState.behavior === 'no-scope' ? undefined : actx),
     binding: () => bindingState.missing
       ? undefined
-      : { session: { getSnapshot: () => settle.getSnapshot(), subscribe: () => () => {} } },
+      : { session: { getSnapshot: () => ({ running: settle.getSnapshot().running }), subscribe: () => () => {} } },
     subagentAddress: () => (options.subagent === true ? 'subagent://s1' : undefined),
   } as never)
   ctx.provide('conversation', {} as never)
@@ -124,7 +127,7 @@ async function bench(options: BenchOptions = {}) {
     ctx.provide('modelDirectories', { directoryFor: () => directory } as never)
   }
   const slots = ctx.get('slots') as SlotRegistry
-  // The keyed chat-node slot declared by ui-conversation in production.
+  // The keyed chat-node slot declared by ui-chat in production.
   slots.register({
     name: 'root',
     children: { 'conversation.chat.node': { kind: 'keyed', scope: 'session' } },
@@ -161,11 +164,27 @@ describe('message-tools client apply', () => {
     expect(keys).toHaveLength(6)
   })
 
-  it('registers the Definitions through uiConversation.events when the standalone service is absent (host 0.1.2)', async () => {
-    const { ctx, conversationEvents } = await bench({ eventsSeat: 'alpha' })
+  it('registers nothing when the uiConversation service is absent (the composition has no chat projection)', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    ctx.provide('locale', new LocaleRuntime(ctx))
+    ctx.provide('remote', { $mount: vi.fn(async (): Promise<() => Promise<void>> => async () => {}) } as never)
+    ctx.provide('remote.messageTools', remoteStub() as never)
+    ctx.provide('sessions', {
+      list: createSnapshotStore<{ current?: string }>({}),
+      scope: () => undefined,
+      binding: () => undefined,
+      subagentAddress: () => undefined,
+    } as never)
+    ctx.provide('conversation', {} as never)
+    const slots = ctx.get('slots') as SlotRegistry
+    slots.register({
+      name: 'root',
+      children: { 'conversation.chat.node': { kind: 'keyed', scope: 'session' } },
+    } as never, () => null)
+    // No uiConversation provided: the registry arm never fires, the rest applies.
     await ctx.plugin({ inject: [...inject], apply }).await()
-    await new Promise((resolve) => { setTimeout(resolve, 0) })
-    expect(conversationEvents.register).toHaveBeenCalledTimes(4)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(6)
   })
 
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {

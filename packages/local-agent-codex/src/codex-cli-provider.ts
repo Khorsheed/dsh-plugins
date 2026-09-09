@@ -403,7 +403,7 @@ export class CodexCliProvider implements SubagentProvider {
           `subagent-codex: resume target child session ${intent.childSessionId} is not live — start a fresh delegation instead`,
         )
       }
-      const nextTurn = childSession.events.filter(event => event.type === 'turn/start').length + 1
+      const nextTurn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
       const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
       // Logged BEFORE the drive-mode branch so live rounds report their endpoint too.
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
@@ -1096,8 +1096,8 @@ function appendCodexLine(
  * @returns whether the chunk was appended.
  */
 export function appendCodexUsageChunk(childSession: Session, turn: number, usage: TokenUsage): boolean {
-  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
-    const event = childSession.events[index]
+  for (let index = childSession.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = childSession.snapshotEvents()[index]
     if (event?.type !== 'assistant/message') continue
     const data = event.data as { turn?: number; step?: number }
     if (data.turn !== turn || typeof data.step !== 'number') return false
@@ -1131,7 +1131,7 @@ export async function persistIfStandalone(ctx: Context, childSession: Session): 
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.events)
+  await persistence?.append(childSession.id, childSession.snapshotEvents())
 }
 
 /**

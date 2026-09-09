@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /** The client room store: first pull, cache reads, mutation refresh, and the running-only poll. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { ROOM_LIVE_REFRESH_DEBOUNCE_MS, ROOM_POLL_INTERVAL_MS, RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import type { RoomState } from '../src/types.ts'
 
@@ -33,7 +34,7 @@ function bench(): Bench {
         return feed === undefined ? undefined : { sessionId: id, session: feed }
       },
     },
-  } as unknown as ClientContext
+  } as unknown as Context
   const gateway = {
     // The stub verdict: sessions whose id starts with 'room' are rooms.
     isRoom: vi.fn(async ({ sessionId }: { sessionId: SessionId }) => ({

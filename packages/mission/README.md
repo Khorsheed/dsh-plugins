@@ -142,8 +142,8 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 
 ## Compatibility
 
-- npm release line（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。
-- source line（deepseek-harness master，fork 或 upstream）：✅——同上。
+- npm release line（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅——store、状态机与 guard、lint、五桶投影、服务面、模型工具、CLI、slash 命令在发布版宿主上全部可用。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.1.2-rc.1）。
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。挂载时选 `tools: 'read'` 或 `'none'` 会按上表裁掉模型工具（不是宿主能力缺失，是挂载方的选择）——服务面、CLI、slash、tab 照常。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
 

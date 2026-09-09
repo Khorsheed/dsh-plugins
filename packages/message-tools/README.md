@@ -36,8 +36,8 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.1-rc.2`):✅ 完整——基于 rc.8 类型面构建并通过测试。本构建**要求 rc.8**:chat-node owner props 移除了 `loadImage`,改为必填的 `renderMessageImages` 附件槽渲染器——在 rc.6/rc.7 宿主上请停留在上一个构建。——亦在 0.1.1-rc.1 上验证(纯增量审计,2026-08-21)；rc.1→rc.2 复核(2026-08-22):消费面无变化,全量构建测试通过
-- 源码线(deepseek-harness master):✅
+- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）
 
 ## 已知限制
 

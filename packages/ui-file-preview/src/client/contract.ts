@@ -1,8 +1,8 @@
 /** Composed props contracts for the file-preview view, link-click drawer, and turn card. */
 
 import type { FilePreviewList, FilePreviewRead, FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
-import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { HostDescriptionSource } from './host-description.ts'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -11,6 +11,10 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@khorsheed/dsh-file-preview/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.turnTail').
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: pulls ui-session's SessionStandardProps merge (sessionId).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'

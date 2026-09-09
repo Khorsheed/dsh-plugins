@@ -13,7 +13,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { CodeBlock, JsonTree, MarkdownText, type JsonTreeLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, JsonTree, MarkdownText, type JsonTreeLabels, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './preview.module.css'
 
@@ -56,6 +56,14 @@ function jsonTreeLabels(t: TranslateNS<'datasets'>): JsonTreeLabels {
   }
 }
 
+/** Localized MarkdownText chrome copy over this plugin's `datasets` namespace. */
+function markdownLabels(t: TranslateNS<'datasets'>): MarkdownLabels {
+  return {
+    code: { copyLabel: t('preview.copy'), copiedLabel: t('preview.copied') },
+    footnotes: t('preview.footnotes'),
+  }
+}
+
 /**
  * Parse one text read as JSON for the tree preview. Only plain objects and
  * arrays within the size cap qualify; scalars and any parse failure —
@@ -86,11 +94,11 @@ export function DatasetPreview(props: { path: string; content: string; t: Transl
   let documentBody: ReactNode | null = null
   if (ext === '.json' || ext === '.jsonc') {
     const data = jsonTreeData(content)
-    if (data !== null) documentBody = <JsonTree data={data} labels={jsonTreeLabels(t)} />
+    if (data !== null) documentBody = <JsonTree data={data} label={t('preview.treeLabel')} labels={jsonTreeLabels(t)} />
   } else if (lang === 'markdown') {
-    documentBody = <MarkdownText text={content} />
+    documentBody = <MarkdownText text={content} labels={markdownLabels(t)} />
   }
-  if (documentBody === null) return <CodeBlock code={content} lang={lang} />
+  if (documentBody === null) return <CodeBlock code={content} lang={lang} copyLabel={t('preview.copy')} copiedLabel={t('preview.copied')} />
   return (
     <div className={css.structured}>
       <div className={css.structuredBanner}>

@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { TitleEditAction } from '../src/client/TitleEditAction.tsx'
 import type { TitleEditActionProps } from '../src/client/slots.ts'
 import { zh } from '../src/client/locales.ts'
@@ -189,6 +190,17 @@ describe('TitleEditAction commit', () => {
 describe('TitleEditAction failures', () => {
   it('maps a title-invalid host rejection to the invalid-title copy and stays open', async () => {
     const rename = vi.fn(async () => { throw renameFailure('title-invalid') })
+    render(<TitleEditAction {...props({ title: 'Old', rename })} />)
+    fireEvent.click(screen.getByRole('button', OPEN))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'New' } })
+    fireEvent.click(screen.getByRole('button', SAVE))
+    expect((await screen.findByRole('alert')).textContent).toBe('标题不能为空')
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', SAVE).disabled).toBe(false)
+  })
+
+  it('maps the namespaced session/title-invalid rejection to the invalid-title copy and stays open', async () => {
+    const rename = vi.fn(async () => { throw renameFailure('session/title-invalid') })
     render(<TitleEditAction {...props({ title: 'Old', rename })} />)
     fireEvent.click(screen.getByRole('button', OPEN))
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'New' } })

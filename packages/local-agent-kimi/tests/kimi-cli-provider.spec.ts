@@ -81,10 +81,10 @@ describe('kimi-cli-provider run settlement', () => {
     // The mirror runs after the child exits (fire-and-forget), so let it
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     })
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    expect(append).toHaveBeenCalledWith(child.id, child.events)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expect(append).toHaveBeenCalledWith(child.id, child.snapshotEvents())
     await done
   })
 
@@ -188,17 +188,17 @@ describe('kimi-cli-provider run settlement', () => {
 
     // A live poll mirrors the initial wire while the process is STILL running.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
     expect(reports.some(report => report.progress.kind === 'delta')).toBe(true)
 
     // The wire grows mid-run; the next poll mirrors only the new line.
     appendFileSync(wire, `${textLine}\n`)
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
     // Step numbering continues across live batches within the turn.
-    const steps = child.events
+    const steps = child.snapshotEvents()
       .filter(event => event.type === 'assistant/message')
       .map(event => (event.data as { step?: number }).step)
     expect(steps).toEqual([1, 2])
@@ -212,11 +212,11 @@ describe('kimi-cli-provider run settlement', () => {
     await vi.waitFor(() => {
       expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 3)).toBe(true)
     })
-    const texts = child.events
+    const texts = child.snapshotEvents()
       .filter(event => event.type === 'assistant/message')
       .map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
     expect(new Set(texts).size).toBe(texts.length)
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(offsets.get(child.id)).toBe(3)
     await done
   })
@@ -244,7 +244,7 @@ describe('kimi-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('error')
     // The timing window must close even on failure, with an error reason.
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
     expect(endData?.turn).toBe(1)
     expect(endData?.reason?.kind).toBe('error')
@@ -307,7 +307,7 @@ describe('kimi-cli-provider run settlement', () => {
     // A zero exit with no printed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
     expect(endData?.reason?.kind).toBe('error')
     // The turn/end error message is a generic diagnostic; the real error text
@@ -368,7 +368,7 @@ describe('kimi-cli-provider child session record', () => {
       origin: 'subagent',
       delegationDepth: 1,
     })
-    const descriptor = created[0]!.session.events.find(event => event.type === 'subagent/descriptor')
+    const descriptor = created[0]!.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     // The label carries the harness display name as the source marker.
     expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: Kimi 建文件' })
   })
@@ -460,8 +460,8 @@ describe('kimi-cli-provider resume round', () => {
     // The run id is the existing child session id, not a new one.
     expect(run.id).toBe(SessionId('child-run-1'))
     // Round 2 opens and closes its own turn (turn numbering increments).
-    const turnStarts = child.events.filter(event => event.type === 'turn/start')
-    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
+    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
     expect(turnStarts).toHaveLength(2)
     expect(turnEnds).toHaveLength(2)
     expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
@@ -786,15 +786,15 @@ describe('kimi-cli-provider abort path', () => {
     await expect(run.dispose()).resolves.toBeUndefined()
 
     // The aborted round's turn/end records the parent cancellation.
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
 
     // Once the child has exited, the partial content is mirrored into the
     // child session (with its usage) instead of leaving it blank.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '任务完成。' }])
     expect(assistant[0]!.data.usage).toBeUndefined()
     expect(append).toHaveBeenCalled()

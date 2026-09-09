@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the settings.plugin.item keyed-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'

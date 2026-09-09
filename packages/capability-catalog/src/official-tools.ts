@@ -17,6 +17,7 @@ export const OFFICIAL_TOOLS: readonly string[] = [
   "job_list",
   "job_output",
   "list_agents",
+  "list_subagent_models",
   "lsp",
   "pwsh",
   "ralph",

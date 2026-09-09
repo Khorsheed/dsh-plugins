@@ -216,7 +216,7 @@ export function roomTaskTool(backend: RoomTaskToolBackend) {
     async execute(args, exec) {
       const agent = exec.agent
       if (agent === undefined) return { text: 'room_task requires a calling agent (exec.agent was undefined).' }
-      if (!isRoomLog(agent.session.events)) {
+      if (!isRoomLog(agent.session.snapshotEvents())) {
         return { text: 'The current session is not a room; room_task is only usable inside a room session.' }
       }
       const sessionId = agent.session.id

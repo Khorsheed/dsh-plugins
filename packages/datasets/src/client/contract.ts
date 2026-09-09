@@ -1,7 +1,6 @@
 /** Composed props contract for the datasets session tab. */
 
-import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -15,6 +14,23 @@ import type {
   ReadQuery, ReadResult,
 } from '../types.ts'
 import type { createDatasetsViewStore } from './store.ts'
+
+/**
+ * Host facts the view reads, probed per host line by the browser half: rc
+ * hosts expose the full description (`home`, `canOpenPath`); 0.1.2's opening
+ * frame carries `home` only (`canOpenPath` became an RPC probe, so the
+ * external-open affordances degrade to hidden there).
+ */
+export interface HostFacts {
+  readonly home?: string
+  readonly canOpenPath?: boolean
+}
+
+/** Observable host-facts source (the slot hook's subscription shape). */
+export interface HostDescriptionSource {
+  getSnapshot(): HostFacts | undefined
+  subscribe(listener: () => void): () => void
+}
 
 /** The datasets Remote namespace (binding/bind/unbind/list/show/read), as mounted by this plugin. */
 export type DatasetsRemote = TypertRemoteNamespaceMap['datasets']

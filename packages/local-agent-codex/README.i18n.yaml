@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/local-agent-codex/README.en.md
-packages/local-agent-codex/README.en.md: 1a5cf2cfc1078de21d18fd5615672233ee142901
-packages/local-agent-codex/README.md: e52e7e0a7ca55600144ee0f2c5030cab522b63c1
+packages/local-agent-codex/README.en.md: 1f43febac36d19a968ae03e046dd00ee36449b20
+packages/local-agent-codex/README.md: 5f273f17c969a97fd7e396d41ed752bcbb2c74b9

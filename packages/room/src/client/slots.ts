@@ -2,11 +2,13 @@
  * Slot-facing types of the room client half: the injected action faces and
  * the composed props of its slot entries.
  */
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
 // 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node').
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList } from '../types.ts'
@@ -56,11 +58,11 @@ export interface RoomInviteInjected {
   /** List the invitable providers (undefined on transport failure). */
   readonly listProviders: () => Promise<RoomProviderList | undefined>
   /**
-   * Pick a member-level working directory through the official wire primitive
-   * (`workspaces.pickDirectory`, the same host call ui-directory-picker-native's
-   * flow drives — the picker UI itself is not reusable: ui-workspace's flow
-   * holes adopt the pick as a workspace). Resolves null on cancel; throws when
-   * the host serves no `native` directory-picking capability.
+   * Pick a member-level working directory through the official picker call
+   * (`uiWorkspace.pickDirectory` on host 0.1.2 — the picker UI itself is not
+   * reusable: ui-workspace's flow holes adopt the pick as a workspace).
+   * Resolves null on cancel or when the host serves no native
+   * directory-picking capability.
    */
   readonly browseDirectory: () => Promise<string | null>
   /**

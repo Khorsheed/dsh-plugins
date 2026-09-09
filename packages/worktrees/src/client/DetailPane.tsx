@@ -19,7 +19,7 @@ import type { DetailView } from './store.ts'
 import { DiffView } from './DiffView.tsx'
 import { HtmlPreview } from './HtmlPreview.tsx'
 import { ImagePreview } from './ImagePreview.tsx'
-import { hasStructuredPreview, structuredPreview } from './structured.tsx'
+import { hasStructuredPreview, markdownLabels, structuredPreview } from './structured.tsx'
 import css from './DetailPane.module.css'
 
 /** Props of the detail pane. */
@@ -85,6 +85,8 @@ export function DetailPane({
   const defaultPreview = markdown || html || structured
   const sourceMode = defaultPreview ? showPreview === false : showPreview !== true
   const previewMode = !sourceMode
+  // Cordis-free Markdown/CodeBlock chrome copy, rebuilt per locale revision.
+  const mdLabels = markdownLabels(t)
 
   const body = ((): ReactNode => {
     if (loading) return <div className={css.placeholder}>{t('state.loading')}</div>
@@ -102,8 +104,8 @@ export function DetailPane({
           {html
             ? <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
             : markdown
-              ? <div className={css.mdRender}><MarkdownText text={raw} /></div>
-              : structuredPreview(path, raw, t) ?? <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />}
+              ? <div className={css.mdRender}><MarkdownText text={raw} labels={mdLabels} /></div>
+              : structuredPreview(path, raw, t) ?? <CodeBlock className={css.code} code={raw} lang={languageFor(path)} copyLabel={mdLabels.code.copyLabel} copiedLabel={mdLabels.code.copiedLabel} />}
         </div>
       )
     }
@@ -114,11 +116,11 @@ export function DetailPane({
     const raw = content.content
     if (previewMode) {
       if (html) return <div className={css.htmlRender}><HtmlPreview path={path} content={raw} /></div>
-      if (markdown) return <div className={css.mdRender}><MarkdownText text={raw} /></div>
+      if (markdown) return <div className={css.mdRender}><MarkdownText text={raw} labels={mdLabels} /></div>
       const structuredBody = structuredPreview(path, raw, t)
       if (structuredBody !== null) return structuredBody
     }
-    return <CodeBlock className={css.code} code={raw} lang={languageFor(path)} />
+    return <CodeBlock className={css.code} code={raw} lang={languageFor(path)} copyLabel={mdLabels.code.copyLabel} copiedLabel={mdLabels.code.copiedLabel} />
   })()
 
   const basename = basenameOf(path)

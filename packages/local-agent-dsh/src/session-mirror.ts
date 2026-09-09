@@ -34,7 +34,9 @@ import { promisify } from 'node:util'
 import { zstdDecompress } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionEventMap, SessionSeq } from '@deepseek-ai/dsh-session'
+// Type-only: the 'todo/write' SessionEventMap merge (the passthrough mirror).
+import type {} from '@deepseek-ai/dsh-tool-todo'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -219,9 +221,9 @@ function mirroredToolText(event: SessionEvent): string {
  * event — the source event's own seqs reference the sub-dsh session's
  * numbering and are meaningless here.
  */
-function findMirroredCallSeq(childSession: Session, callId: string): number | undefined {
-  for (let index = childSession.events.length - 1; index >= 0; index -= 1) {
-    const event = childSession.events[index]
+function findMirroredCallSeq(childSession: Session, callId: string): SessionSeq | undefined {
+  for (let index = childSession.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = childSession.snapshotEvents()[index]
     if (event?.type !== 'tool/call') continue
     if ((event.data as { callId?: string }).callId === callId) return event.seq
   }
@@ -337,7 +339,7 @@ export async function mirrorDshSession(
     // The round mirrors the sub-dsh turn with the same number: the parent's
     // turn/start count IS this round's number (appended before spawn), and the
     // sub-dsh numbers its turns identically across fresh and resume rounds.
-    const round = childSession.events.filter(event => event.type === 'turn/start').length
+    const round = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length
     if (round === 0) return empty
     let start = -1
     let end = events.length
@@ -361,10 +363,10 @@ export async function mirrorDshSession(
     // (non-'user' sources) never cross, so they must not occupy skip
     // positions either.
     let lastTurnStart = -1
-    for (let index = 0; index < childSession.events.length; index += 1) {
-      if (childSession.events[index]?.type === 'turn/start') lastTurnStart = index
+    for (let index = 0; index < childSession.snapshotEvents().length; index += 1) {
+      if (childSession.snapshotEvents()[index]?.type === 'turn/start') lastTurnStart = index
     }
-    const mirrored = childSession.events.slice(lastTurnStart + 1)
+    const mirrored = childSession.snapshotEvents().slice(lastTurnStart + 1)
       .filter(event =>
         event.type === 'user/message' || event.type === 'assistant/message'
         || event.type === 'tool/call' || event.type === 'tool/result')
@@ -396,7 +398,7 @@ export async function mirrorDshSession(
     // identical snapshot, and intermediate snapshots stay out of the log.
     let todosAppended = 0
     const latestTodos = events.slice(start, end).filter(event => event.type === 'todo/write').at(-1)
-    const mirroredTodos = childSession.events.slice(lastTurnStart + 1)
+    const mirroredTodos = childSession.snapshotEvents().slice(lastTurnStart + 1)
       .filter(event => event.type === 'todo/write')
     if (latestTodos !== undefined && latestTodos.type === 'todo/write') {
       if (JSON.stringify(mirroredTodos.at(-1)?.data) !== JSON.stringify(latestTodos.data)) {
@@ -431,5 +433,5 @@ export async function persistIfStandalone(ctx: Context, childSession: Session): 
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.events)
+  await persistence?.append(childSession.id, childSession.snapshotEvents())
 }

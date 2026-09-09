@@ -14,7 +14,7 @@
  */
 import { useId, useState, type ReactNode } from 'react'
 import { IconChecklistOutline14, IconChevronDownOutline14, IconChevronUpOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
+import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: merges the `todos` key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-tool-todo/client'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'

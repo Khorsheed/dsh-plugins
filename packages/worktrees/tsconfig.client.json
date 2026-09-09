@@ -24,6 +24,7 @@
     "src/client/ImagePreview.tsx",
     "src/client/HtmlPreview.tsx",
     "src/client/html-src-doc.ts",
+    "src/client/host-description.ts",
     "src/client/DiffView.tsx",
     "src/client/Drawer.tsx",
     "src/client/FileTree.tsx",

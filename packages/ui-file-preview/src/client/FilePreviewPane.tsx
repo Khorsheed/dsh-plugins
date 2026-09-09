@@ -2,14 +2,14 @@
  * change-history tab that steps through every recorded write/edit diff. Used
  * by both the file view tab and the link-click drawer. */
 
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
-import { CodeBlock, DiffBlock, MarkdownText, IconCloseOutline16, IconFullscreenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, DiffBlock, MarkdownText, IconCloseOutline16, IconFullscreenOutline16, type DiffBlockLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { isHtmlPath, languageFor } from './path-utils.ts'
 import { buildSrcDoc } from './html-src-doc.ts'
 import { attachBridge } from './html-bridge.ts'
-import { structuredPreview } from './structured.tsx'
+import { markdownLabels, structuredPreview } from './structured.tsx'
 import css from './FilePreviewPane.module.css'
 
 /** Content-search state handed to the text preview body. */
@@ -45,13 +45,8 @@ function markLine(line: string, lowerQuery: string): ReactNode {
   return parts
 }
 
-// Host 0.1.2-alpha.1 made the DiffBlock chrome a required `labels` prop; the
-// npm rc line's DiffBlockProps has no such key, so a direct `labels={…}`
-// attribute fails the rc-side typecheck. Spreading a Partial-cast object
-// keeps one source compiling on both lines (the extraction-anchor pattern of
-// the CallId→ToolCallId rename); on the rc line the extra prop is inert.
 /** Localized DiffBlock chrome from the filePreview dictionary. */
-function diffBlockChrome(t: TranslateNS<'filePreview'>): Partial<ComponentProps<typeof DiffBlock>> {
+function diffBlockChrome(t: TranslateNS<'filePreview'>): { labels: DiffBlockLabels } {
   return {
     labels: {
       copy: t('diff.copy'),
@@ -62,7 +57,7 @@ function diffBlockChrome(t: TranslateNS<'filePreview'>): Partial<ComponentProps<
       expandAria: (count: number) => t('diff.expandAria', { count }),
       files: (count: number) => t('diff.files', { count }),
     },
-  } as Partial<ComponentProps<typeof DiffBlock>>
+  }
 }
 
 /** Plain-text render with per-line match highlighting (search mode). */
@@ -173,6 +168,8 @@ function PreviewBody(props: {
   fullscreen: boolean
 }) {
   const { read, t, search, htmlMode, scripted, onLoaded, iframeRef, frameRef, fullscreen } = props
+  // Cordis-free Markdown/CodeBlock chrome copy, rebuilt per locale revision.
+  const mdLabels = markdownLabels(t)
   switch (read.kind) {
     case 'text': {
       const content = read.content ?? ''
@@ -186,7 +183,7 @@ function PreviewBody(props: {
             {searching
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
-                ? <CodeBlock code={content} lang="html" />
+                ? <CodeBlock code={content} lang="html" copyLabel={mdLabels.code.copyLabel} copiedLabel={mdLabels.code.copiedLabel} />
                 : <HtmlRenderView content={content} mode={htmlMode} scripted={scripted} t={t} onLoaded={onLoaded} iframeRef={iframeRef} frameRef={frameRef} fullscreen={fullscreen} />}
           </div>
         )
@@ -196,7 +193,7 @@ function PreviewBody(props: {
       const documentBody = searching
         ? null
         : structuredPreview(read.path, content, t)
-          ?? (languageFor(read.path) === 'markdown' ? <MarkdownText text={content} /> : null)
+          ?? (languageFor(read.path) === 'markdown' ? <MarkdownText text={content} labels={mdLabels} /> : null)
       // The frame's format label mirrors CodeBlock's infostring: the prism
       // language when the map knows it ('markdown', 'json'), else the bare
       // extension ('csv', 'tsv').
@@ -216,7 +213,7 @@ function PreviewBody(props: {
                   <div className={css.structuredBody}>{documentBody}</div>
                 </div>
               )
-              : <CodeBlock code={content} lang={languageFor(read.path)} />}
+              : <CodeBlock code={content} lang={languageFor(read.path)} copyLabel={mdLabels.code.copyLabel} copiedLabel={mdLabels.code.copiedLabel} />}
         </div>
       )
     }

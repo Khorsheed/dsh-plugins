@@ -18,8 +18,11 @@
  * session only: flow keys are session-scoped (seq-like ids collide across
  * sessions), and only one chat view is mounted at a time.
  */
-import type { ChatConversationViewNode, ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { chatSourceOf, type ChatSlice } from './chat-hook.ts'
 import { MESSAGE_TOOLS_PLUGIN, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
@@ -96,7 +99,7 @@ export interface DomHiderOptions {
  * @param options - probe retry tuning.
  * @returns disposer removing the stylesheet and every subscription.
  */
-export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {}): () => void {
+export function installDomHider(ctx: Context, options: DomHiderOptions = {}): () => void {
   const probeRetryWindowMs = options.probeRetryWindowMs ?? 10_000
   // rAF so the probe runs after React committed; setTimeout covers jsdom.
   const nextFrame = typeof requestAnimationFrame === 'function'
@@ -214,27 +217,23 @@ export function installDomHider(ctx: ClientContext, options: DomHiderOptions = {
     signature = ''
     style.textContent = ''
     if (current === undefined) return
-    // Chat data lives inside the Session snapshot on rc hosts and in the
-    // uiConversation binding's chat target on 0.1.2 — chatSourceOf picks.
+    // Chat data lives in the uiConversation binding's chat target (host
+    // 0.1.2's split — see chat-hook.ts); its snapshot is undefined until the
+    // first subscription activates the view.
     const source = chatSourceOf(ctx, current)
     if (source === undefined) return
-    onSnapshot(source.getSnapshot())
-    stopSession = source.subscribe(() => { onSnapshot(source.getSnapshot()) })
+    const publish = (): void => {
+      const chat = source.getSnapshot()
+      if (chat !== undefined) onSnapshot(chat)
+    }
+    publish()
+    stopSession = source.subscribe(publish)
   }
 
   const stopList = ctx.sessions.list.subscribe(bindCurrent)
-  // Host 0.1.2-alpha.1 removed ISessions.currentProvideInfo (commit
-  // be531688f3, with the runtime package). It was only an extra rebind
-  // trigger here — bindCurrent re-resolves the session binding on every
-  // list snapshot, and alpha's binding() is pure addressing available as
-  // soon as the session is listed — so subscribe when the feed exists
-  // (rc hosts) and go without it when it does not.
-  const provideFeed = (ctx.sessions as { currentProvideInfo?: HostObservable<unknown> }).currentProvideInfo
-  const stopProvide = provideFeed?.subscribe(bindCurrent)
   bindCurrent()
   return () => {
     stopList()
-    stopProvide?.()
     stopSession?.()
     stopRetry()
     style.remove()

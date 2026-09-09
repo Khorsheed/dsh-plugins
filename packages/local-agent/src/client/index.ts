@@ -13,12 +13,14 @@
  * under the standard 子代理 list like every other subagent. The plugin holds
  * no host data — every open pulls fresh.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the generated Remote API, the ctx.remote merge, and the
 // locale Context merge.
 import type {} from '@khorsheed/dsh-local-agent/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: the ctx.slots service merge (renderer-owned slot registry).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the 'conversation.composer' SlotMap merge (chain registration).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import localAgentRemote from '@khorsheed/dsh-local-agent/remote'
@@ -54,7 +56,7 @@ export const inject = ['slots', 'remote', 'remote.commands', 'locale']
  * dictionaries, and put the member composer on the conversation chain.
  * @param ctx - client root context.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     // The namespace is registered by $mount; `ctx.remote.localAgentGateway`

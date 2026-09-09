@@ -17,7 +17,10 @@
  * the first pull lands (accepted, documented).
  * @module @khorsheed/dsh-room/client/room-store
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ctx.sessions service merge (ISessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   RoomGetStateRequest, RoomGetStateResult, RoomIsRoomRequest, RoomState,
@@ -55,7 +58,7 @@ export class RoomStore {
    * @param gateway - the mounted room Remote, undefined when the mount failed.
    */
   constructor(
-    private readonly ctx: ClientContext,
+    private readonly ctx: Context,
     private readonly gateway: RoomGateway | undefined,
   ) {}
 

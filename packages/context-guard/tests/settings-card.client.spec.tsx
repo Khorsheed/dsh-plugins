@@ -11,7 +11,7 @@ import { en } from '../src/client/locales.ts'
 import { ContextGuardSettingsCard } from '../src/client/SettingsCard.tsx'
 import type { ContextGuardSettingsCardProps } from '../src/client/slots.ts'
 import type { ContextGuardConfig } from '../src/client/config.ts'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 afterEach(() => {
   cleanup()

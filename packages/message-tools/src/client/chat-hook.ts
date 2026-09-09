@@ -1,69 +1,72 @@
 /**
- * Dual-host-line chat snapshot access. rc hosts carry the chat snapshot
- * inside the session snapshot (`useSession(...).chat` in components,
- * `Session.getSnapshot().chat` in the apply world); host 0.1.2 split it out —
- * components get the `useChat` session standard prop (ui-chat), the apply
- * world reads `ctx.uiConversation.binding(sessionId).target('chat')`. The
- * 0.1.2 snapshot carries the same field names (`order`, `nodes`, `timeline`)
- * at its top level. The seat choice is fixed per host line, so hook call
- * order never varies within a host.
+ * Chat snapshot access on host 0.1.2: the chat snapshot lives OUTSIDE the
+ * Session snapshot — components read it through the `useChat` session
+ * standard prop (ui-chat), the apply world through the conversation binding's
+ * chat target (`ctx.uiConversation.binding(sessionId).target('chat')`). The
+ * target snapshot is `undefined` until the first subscriber activates the
+ * chat view; callers treat that as "no chat yet", never as an error.
  */
-import type { ClientContext, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ChatSnapshot, UseChat } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the ctx.uiConversation service merge and ui-chat's
+// ConversationViewSnapshotMap 'chat' target merge.
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
-/** The chat slice the plugin's selectors read (the session snapshot's `chat` field on rc hosts). */
-export type ChatSlice = ConversationSnapshot['chat']
+/** The chat slice the plugin's selectors read. */
+export type ChatSlice = ChatSnapshot
 
-/** Selector hook over the chat slice (identical field names on both host lines). */
+/** Selector hook over the chat slice. */
 export type ChatSliceHook = SnapshotSelectorHook<ChatSlice>
 
 /**
- * Pick the live chat hook for this host line.
- * @param props - the entry's composed props (useChat present only on 0.1.2).
- * @returns the 0.1.2 `useChat` prop when present, else a `useSession` wrapper
- *   projecting the rc `chat` slice.
+ * Frozen empty chat snapshot for the degraded render path: a composition
+ * without ui-chat never mounts the `conversation.chat.node` slot at all, so
+ * this only guards a stray render — hook call order stays stable and every
+ * selector reads the empty state.
  */
-export function chatHookOf(props: { useSession: SnapshotSelectorHook<ConversationSnapshot> }): ChatSliceHook {
-  const direct = (props as unknown as { useChat?: SnapshotSelectorHook<unknown> }).useChat
-  const { useSession } = props
-  if (direct !== undefined) return direct as ChatSliceHook
-  return <S,>(selector: (chat: ChatSlice) => S, equal?: (a: S, b: S) => boolean): S =>
-    useSession(snapshot => selector(snapshot.chat), equal)
-}
-
-/** Structural face of the 0.1.2 uiConversation service (absent on rc hosts). */
-interface UiConversationProbe {
-  binding(sessionId: SessionId): { target(target: 'chat'): HostObservable<unknown> }
+const EMPTY_CHAT: ChatSlice = {
+  order: [],
+  nodes: {
+    get: () => undefined,
+    source: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    values: () => [],
+  },
+  locations: { getTurn: () => [], getStep: () => [] },
+  navigation: { items: () => [] },
+  timeline: { turnOrder: [], turns: new Map() },
+  legacy: { nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [] },
 }
 
 /**
- * Resolve the apply-world chat source for one session on either host line.
+ * Pick the live chat hook from the entry's composed props (`useChat` is a
+ * session standard prop on 0.1.2), degrading to the frozen empty snapshot
+ * when the framework composed none.
+ * @param props - the entry's composed props.
+ * @returns the chat selector hook.
+ */
+export function chatHookOf(props: { useChat?: UseChat }): ChatSliceHook {
+  const direct = props.useChat
+  if (direct !== undefined) return direct
+  return selector => selector(EMPTY_CHAT)
+}
+
+/**
+ * Resolve the apply-world chat source for one session.
  * @param ctx - client root context.
  * @param sessionId - owning session.
- * @returns an observable chat-slice source: the 0.1.2 conversation binding's
- *   chat target when the uiConversation service exists, else a projection
- *   over the rc Session snapshot; undefined while the session is unbound.
+ * @returns the conversation binding's chat target (its snapshot is undefined
+ *   until the first subscription activates the view), or undefined when the
+ *   uiConversation service or the session binding is absent.
  */
-export function chatSourceOf(ctx: ClientContext, sessionId: SessionId): HostObservable<ChatSlice> | undefined {
-  const uiConversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as UiConversationProbe | undefined
-  if (uiConversation !== undefined) {
-    let binding: ReturnType<UiConversationProbe['binding']>
-    try {
-      binding = uiConversation.binding(sessionId)
-    } catch {
-      return undefined // unknown session — the caller's undefined branch
-    }
-    const source = binding.target('chat')
-    return {
-      getSnapshot: () => source.getSnapshot() as ChatSlice,
-      subscribe: listener => source.subscribe(listener),
-    }
-  }
-  const session = ctx.sessions.binding(sessionId)?.session
-  if (session === undefined) return undefined
-  return {
-    getSnapshot: () => session.getSnapshot().chat,
-    subscribe: listener => session.subscribe(listener),
+export function chatSourceOf(ctx: Context, sessionId: SessionId): HostObservable<ChatSlice | undefined> | undefined {
+  const uiConversation = ctx.get('uiConversation')
+  if (uiConversation === undefined) return undefined
+  try {
+    return uiConversation.binding(sessionId).target('chat')
+  } catch {
+    return undefined // unknown session — the caller's undefined branch
   }
 }

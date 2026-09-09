@@ -9,9 +9,9 @@
 
 // Store engine value import: the engine rehomed out of client-runtime in
 // 0.1.2-alpha.1; the bundle inlines dsh-client-store so the artifact boots on
-// both host lines. EngineStoreHandle stays type-only (erased at build).
-import { defineStore } from '@deepseek-ai/dsh-client-store'
-import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+// both host lines. EngineStoreHandle comes from the same package, type-only
+// (erased at build).
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 
 export interface DrawerState {

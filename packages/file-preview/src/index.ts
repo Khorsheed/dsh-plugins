@@ -366,7 +366,7 @@ export class FilePreviewService extends TypertRemoteService {
    */
   @Remote('list')
   async list(agent: Agent): Promise<FilePreviewList> {
-    const folded = foldFilePreview(agent.session.events, this.resolved.maxFiles)
+    const folded = foldFilePreview(agent.session.snapshotEvents(), this.resolved.maxFiles)
     const captured = this.collector?.captured(agent.session.id)
     let entries: readonly FilePreviewEntry[] = folded.entries
     if (captured !== undefined && captured.size > 0) {
@@ -404,7 +404,7 @@ export class FilePreviewService extends TypertRemoteService {
   @Remote('turnFiles')
   async turnFiles(agent: Agent): Promise<FilePreviewTurnMap> {
     const session = agent.session
-    const events = session.events
+    const events = session.snapshotEvents()
     const asOfSeq = events.length === 0 ? -1 : events[events.length - 1]!.seq
     const cached = this.turnCache.get(session.id)
     let byTurn: TurnFilesByTurn

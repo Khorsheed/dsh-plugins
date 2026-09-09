@@ -168,7 +168,7 @@ export function TitleEditAction({ sessionId, useSessions, renameSession, t }: Ti
       await renameSession(title)
       closeEditor()
     } catch (cause) {
-      setError(isRenameFailure(cause) && cause.code === 'title-invalid'
+      setError(isRenameFailure(cause) && (cause.code === 'session/title-invalid' || cause.code === 'title-invalid')
         ? t('error.invalid')
         : t('error.rename'))
     } finally {

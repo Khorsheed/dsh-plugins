@@ -38,6 +38,10 @@ export type DatasetsKey =
   | 'preview.empty'
   | 'preview.loading'
   | 'preview.error'
+  | 'preview.copy'
+  | 'preview.copied'
+  | 'preview.footnotes'
+  | 'preview.treeLabel'
   | 'tree.fileCount'
   | 'tree.shared'
   | 'tree.unprotected'
@@ -100,6 +104,10 @@ export const zh: Record<DatasetsKey, string> = {
   'preview.empty': '在左侧选择一个文件查看内容',
   'preview.loading': '加载中…',
   'preview.error': '读取失败',
+  'preview.copy': '复制',
+  'preview.copied': '已复制',
+  'preview.footnotes': '脚注',
+  'preview.treeLabel': 'JSON 结构树',
   'tree.fileCount': '{count} 个文件',
   'tree.shared': '题集级共享',
   'tree.unprotected': '不受白名单保护',
@@ -156,6 +164,10 @@ export const en: Record<DatasetsKey, string> = {
   'preview.empty': 'Select a file on the left to preview it',
   'preview.loading': 'Loading…',
   'preview.error': 'Failed to read',
+  'preview.copy': 'Copy',
+  'preview.copied': 'Copied',
+  'preview.footnotes': 'Footnotes',
+  'preview.treeLabel': 'JSON tree',
   'tree.fileCount': '{count} files',
   'tree.shared': 'Dataset-level shared',
   'tree.unprotected': 'not whitelist-protected',

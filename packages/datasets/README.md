@@ -145,8 +145,8 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 ## Compatibility
 
-- npm release 线（`@deepseek-ai/dsh@0.1.0-rc.6+`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。会话 tab 已在 rc.8 的 web profile 上做过活实例冒烟（绑定 → 树 → 预览）；更早的 release 线共享同一套网关约定，但未做冒烟。
-- source 线（deepseek-harness master）：✅。
+- npm release 线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- source 线（deepseek-harness master）：✅（verifiedHost: 0.1.2-rc.1）。
 - `tools` 分组、金丝雀校验与可判性校验都在插件内部完成（第一项只是少调几次 `ctx.tools.register`，后两项只读 git 对象），不依赖任何新的宿主能力，两条线表现一致。
 - ⚠️ 降级（两条线相同）：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，模型工具与 CLI 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 

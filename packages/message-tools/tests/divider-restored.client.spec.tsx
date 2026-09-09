@@ -2,11 +2,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ChatConversationViewNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { WithdrawnDividerView } from '../src/client/WithdrawnDividerView.tsx'
 import { RestoredMessageView, type RestoredMessageViewProps } from '../src/client/RestoredMessageView.tsx'
 import { IconUndoOutline16 } from '../src/client/icons.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import type { ChatSlice } from '../src/client/chat-hook.ts'
 import type { WithdrawnDividerViewProps } from '../src/client/slots.ts'
 
 afterEach(() => {
@@ -56,7 +57,7 @@ function restoredNode(seq: number, restoredFromSeq: number): ChatConversationVie
   })
 }
 
-/** Divider props over a stub snapshot: useSession reads `snapshot.chat.nodes`. */
+/** Divider props over a stub chat slice: useChat reads `chat.nodes`. */
 function dividerProps(over: {
   hiddenStartSeq?: number
   seq?: number
@@ -66,14 +67,14 @@ function dividerProps(over: {
   const hiddenStartSeq = over.hiddenStartSeq ?? 5
   const seq = over.seq ?? 10
   const nodes = over.nodes ?? [userNode(5, '被撤回的用户问题'), assistantStepNode(6, '助手回复文本'), dividerNode(5, 10)]
-  const snapshot = {
-    chat: { nodes: { values: () => nodes } },
-  } as unknown as ConversationSnapshot
-  const useSession = <T,>(select: (snap: ConversationSnapshot) => T): T => select(snapshot)
+  const chat = {
+    nodes: { values: () => nodes },
+  } as unknown as ChatSlice
+  const useChat = <T,>(select: (snapshot: ChatSlice) => T): T => select(chat)
   return {
     node: dividerNode(hiddenStartSeq, seq),
     t,
-    useSession,
+    useChat,
     restoreMessage: over.restoreMessage ?? vi.fn(async () => {}),
   } as unknown as WithdrawnDividerViewProps
 }

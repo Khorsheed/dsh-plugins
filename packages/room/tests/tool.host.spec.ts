@@ -71,7 +71,7 @@ describe('room_invite tool (real composition)', () => {
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     const text = await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(plain))
     expect(text).toContain('joined')
-    expect(plain.events.filter(event => event.type.startsWith('room/')).map(event => event.type))
+    expect(plain.snapshotEvents().filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added', 'room/member-added'])
   })
 
@@ -253,7 +253,7 @@ describe('room_message tool (real composition)', () => {
     expect(text).toContain('Dispatched to ada')
     expect(text).toContain('asynchronously')
 
-    const events = room.events
+    const events = room.snapshotEvents()
     // The dispatch record and the auto-opened task journal as usual; the
     // caller is the main agent, so NO human user/message bubble is appended.
     expect(events.filter(event => event.type === 'room/dispatch').map(event => event.data))
@@ -286,6 +286,6 @@ describe('room_message tool (real composition)', () => {
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     const text = await call(messageTool, { member: 'main', text: '给自己记一笔' }, execFor(plain))
     expect(text).toContain('Dispatched to main')
-    expect(plain.events.some(event => event.type === 'room/created')).toBe(true)
+    expect(plain.snapshotEvents().some(event => event.type === 'room/created')).toBe(true)
   })
 })

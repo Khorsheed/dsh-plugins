@@ -3,10 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ChatConversationViewNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { UserMessageView } from '../src/client/UserMessageView.tsx'
+import type { ChatSlice } from '../src/client/chat-hook.ts'
 import type { UserMessageViewProps } from '../src/client/slots.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -53,8 +54,8 @@ function dividerNode(hiddenStartSeq: number, seq: number): ChatConversationViewN
   return chatNode('message-tools-withdrawn', seq, { seq, hiddenStartSeq })
 }
 
-function conversationWith(nodes: readonly ChatConversationViewNode[]): ConversationSnapshot {
-  return { chat: { nodes: { values: () => nodes } } } as unknown as ConversationSnapshot
+function conversationWith(nodes: readonly ChatConversationViewNode[]): ChatSlice {
+  return { nodes: { values: () => nodes } } as unknown as ChatSlice
 }
 
 /** Ready directory with the current route advertised, for the modelsAvailable seat. */
@@ -83,13 +84,13 @@ function props(over: {
   selectModel?: (selection: ModelSelection) => Promise<boolean>
 } = {}): UserMessageViewProps {
   const node = over.node ?? userNode([{ type: 'text', text: '你好' }])
-  const snapshot = conversationWith(over.snapshotNodes ?? [node])
+  const chat = conversationWith(over.snapshotNodes ?? [node])
   const directory = over.directory ?? directoryState()
   return {
     node,
     renderMessageImages: over.renderMessageImages ?? vi.fn(() => null),
     t,
-    useSession: (select: (snapshot: ConversationSnapshot) => unknown) => select(snapshot),
+    useChat: (select: (snapshot: ChatSlice) => unknown) => select(chat),
     editMessage: over.editMessage ?? vi.fn(async () => {}),
     withdrawMessage: over.withdrawMessage ?? vi.fn(async () => {}),
     backfillDraft: over.backfillDraft ?? vi.fn(),

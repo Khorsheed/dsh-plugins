@@ -19,8 +19,8 @@ export const inject = ['invariants']
  * exact route whose response is pinned by the host-config unit tests, and the
  * browser half renders an overlay/body class over the session-list snapshot
  * with every transition unit-tested against fake halves. The session-list
- * store itself (dsh-client-runtime) owns the snapshot contract; no second
- * authority exists to check at runtime.
+ * store itself (dsh-api-session-controller) owns the snapshot contract; no
+ * second authority exists to check at runtime.
  */
 const install: InvariantInstaller = () => {}
 

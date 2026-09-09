@@ -41,8 +41,8 @@ Optional, hot-applied within one poll round-trip (no browser refresh), in the pr
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — the rc.8→0.1.1-rc.1 API audit (2026-08-21) confirms every surface this plugin consumes is unchanged or additive (the ProjectionDefinition restructure, cacheHitPercent return-type change, and the credentials/updated event rename do not touch this package); no source change was needed; re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green.
-- source line (deepseek-harness master): ✅
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface, full build+test green; the blocked chime now subscribes `ctx.uiSession.pendingInteractions` (the ui-session service), and in an assembly without that service the blocked chime degrades off silently while completion chimes keep working. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
 ## Known Limitations
 

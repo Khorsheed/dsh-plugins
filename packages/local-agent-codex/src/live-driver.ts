@@ -27,7 +27,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -751,7 +751,7 @@ export class CodexLiveDriver {
     /** The round's accumulated reasoning deltas (token granularity; the final message's reasoning block). */
     let roundThink = ''
     /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
-    const chunkSeqs: number[] = []
+    const chunkSeqs: SessionSeq[] = []
     /**
      * The stream's (turn, step) merge key, reserved LAZILY at the first
      * think/text delta: every item completed before that moment folds below

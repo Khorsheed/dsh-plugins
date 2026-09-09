@@ -8,13 +8,38 @@
  * Definition per event and offers no suppression seam; hiding happens in the
  * renderers and the DOM hider.
  */
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ChatConversationViewNode, ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  ConversationNodeContext, ConversationNodeDefinition,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   isMessageToolsEdit, isMessageToolsReplacement, isMessageToolsRestore, isMessageToolsRestoreAssistant,
   stripRestoreAssistantFrame,
 } from '../marker.ts'
+
+/**
+ * Materialize one final chat-target node. The Definition contract's
+ * buildViewNode returns the ConversationViewNode base (key/kind/id/target/
+ * data), so the chat extras (anchorSeq/location/visibility) go through this
+ * explicitly typed builder instead of an excess-checked literal.
+ */
+function chatViewNode<State>(
+  context: ConversationNodeContext<State>,
+  kind: string,
+  anchorSeq: number,
+  data: unknown,
+): ChatConversationViewNode {
+  return {
+    key: context.key,
+    kind,
+    id: context.id,
+    target: 'chat',
+    anchorSeq,
+    location: context.start?.location ?? { kind: 'unresolved' },
+    visibility: 'visible',
+    data,
+  }
+}
 
 /** Chat node data of one withdrawal divider row. */
 export interface WithdrawnDividerData {
@@ -62,7 +87,7 @@ export interface RestoredAssistantMessageData {
   readonly text: string
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     /** message-tools withdrawal divider marking where a span was hidden. */
     'message-tools-withdrawn': WithdrawnDividerData
@@ -83,9 +108,11 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDividerData> = {
   kind: 'message-tools-withdrawn',
   target: 'chat',
-  match: event => isMessageToolsReplacement(event)
-    ? { id: String(event.seq), role: 'start' }
-    : null,
+  match: (event) => {
+    // Packed chunk rows share the bus; the guards speak SessionEvent only.
+    if (event.type !== 'user/message') return null
+    return isMessageToolsReplacement(event) ? { id: String(event.seq), role: 'start' } : null
+  },
   start: (_context, match) => {
     const event = match.event
     if (!isMessageToolsReplacement(event)) {
@@ -96,16 +123,7 @@ export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDiv
   update: context => context.state,
   buildViewNode: context => context.state === undefined
     ? null
-    : {
-      key: context.key,
-      kind: 'message-tools-withdrawn',
-      id: context.id,
-      target: 'chat',
-      anchorSeq: context.state.seq,
-      location: context.start?.location ?? { kind: 'unresolved' },
-      visibility: 'visible',
-      data: context.state,
-    },
+    : chatViewNode(context, 'message-tools-withdrawn', context.state.seq, context.state),
 }
 
 /**
@@ -117,9 +135,10 @@ export const withdrawnDividerDefinition: ConversationNodeDefinition<WithdrawnDiv
 export const editedMessageDefinition: ConversationNodeDefinition<EditedMessageData> = {
   kind: 'message-tools-edited',
   target: 'chat',
-  match: event => isMessageToolsEdit(event)
-    ? { id: String(event.seq), role: 'start' }
-    : null,
+  match: (event) => {
+    if (event.type !== 'user/message') return null
+    return isMessageToolsEdit(event) ? { id: String(event.seq), role: 'start' } : null
+  },
   start: (_context, match) => {
     const event = match.event
     if (!isMessageToolsEdit(event)) {
@@ -135,16 +154,7 @@ export const editedMessageDefinition: ConversationNodeDefinition<EditedMessageDa
   update: context => context.state,
   buildViewNode: context => context.state === undefined
     ? null
-    : {
-      key: context.key,
-      kind: 'message-tools-edited',
-      id: context.id,
-      target: 'chat',
-      anchorSeq: context.state.seq,
-      location: context.start?.location ?? { kind: 'unresolved' },
-      visibility: 'visible',
-      data: context.state,
-    },
+    : chatViewNode(context, 'message-tools-edited', context.state.seq, context.state),
 }
 
 /**
@@ -204,9 +214,10 @@ function joinAssistantText(blocks: readonly unknown[]): string {
 export const restoredMessageDefinition: ConversationNodeDefinition<RestoredMessageData> = {
   kind: 'message-tools-restored',
   target: 'chat',
-  match: event => isMessageToolsRestore(event)
-    ? { id: String(event.seq), role: 'start' }
-    : null,
+  match: (event) => {
+    if (event.type !== 'user/message') return null
+    return isMessageToolsRestore(event) ? { id: String(event.seq), role: 'start' } : null
+  },
   start: (_context, match) => {
     const event = match.event
     if (!isMessageToolsRestore(event)) {
@@ -223,16 +234,7 @@ export const restoredMessageDefinition: ConversationNodeDefinition<RestoredMessa
   update: context => context.state,
   buildViewNode: context => context.state === undefined
     ? null
-    : {
-      key: context.key,
-      kind: 'message-tools-restored',
-      id: context.id,
-      target: 'chat',
-      anchorSeq: context.state.seq,
-      location: context.start?.location ?? { kind: 'unresolved' },
-      visibility: 'visible',
-      data: context.state,
-    },
+    : chatViewNode(context, 'message-tools-restored', context.state.seq, context.state),
 }
 
 /**
@@ -245,9 +247,10 @@ export const restoredMessageDefinition: ConversationNodeDefinition<RestoredMessa
 export const restoredAssistantMessageDefinition: ConversationNodeDefinition<RestoredAssistantMessageData> = {
   kind: 'message-tools-restored-assistant',
   target: 'chat',
-  match: event => isMessageToolsRestoreAssistant(event)
-    ? { id: String(event.seq), role: 'start' }
-    : null,
+  match: (event) => {
+    if (event.type !== 'user/message') return null
+    return isMessageToolsRestoreAssistant(event) ? { id: String(event.seq), role: 'start' } : null
+  },
   start: (_context, match) => {
     const event = match.event
     if (!isMessageToolsRestoreAssistant(event)) {
@@ -263,16 +266,7 @@ export const restoredAssistantMessageDefinition: ConversationNodeDefinition<Rest
   update: context => context.state,
   buildViewNode: context => context.state === undefined
     ? null
-    : {
-      key: context.key,
-      kind: 'message-tools-restored-assistant',
-      id: context.id,
-      target: 'chat',
-      anchorSeq: context.state.seq,
-      location: context.start?.location ?? { kind: 'unresolved' },
-      visibility: 'visible',
-      data: context.state,
-    },
+    : chatViewNode(context, 'message-tools-restored-assistant', context.state.seq, context.state),
 }
 
 /**

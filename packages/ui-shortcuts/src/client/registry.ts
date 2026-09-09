@@ -4,8 +4,8 @@
  * flag; the keydown wiring reads its snapshots, the Settings row writes
  * preferences and toggles capture through it.
  */
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ShortcutPreference, ShortcutSettings } from '../settings.ts'
 import type { ShortcutActionContribution, ShortcutRegistry } from './contract.ts'
 

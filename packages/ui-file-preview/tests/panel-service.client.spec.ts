@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { FilePreviewController } from '../src/client/panel-service.ts'
 import type { FilePreviewActions } from '../src/client/panel-service.ts'
 

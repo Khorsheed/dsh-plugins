@@ -23,11 +23,14 @@
  * running after the main request is rejected.
  * @module @khorsheed/dsh-context-guard/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the typed `ctx.remote` (commands namespace) merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -67,7 +70,7 @@ export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'settings
  * @param ctx - client root context.
  * @param config - entry config (the section's composition base layer); defaults apply when the runner passes none.
  */
-export function apply(ctx: ClientContext, config?: Partial<ContextGuardConfig>): void {
+export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void {
   const fallback = resolveConfig(config)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'context-guard: dictionaries')
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ContextGuardConfig } from './config.ts'
 import type { ContextGuardSettingsCardProps } from './slots.ts'
 import css from './SettingsCard.module.css'

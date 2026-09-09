@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconCheckOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'

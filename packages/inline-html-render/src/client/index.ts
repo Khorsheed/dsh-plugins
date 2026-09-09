@@ -11,7 +11,7 @@
  * @module @khorsheed/dsh-inline-html-render/client
  */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import { installCardRenderer, type CardRenderer } from './renderer.ts'
 
 /** The client half requires no service: it only reads/writes the DOM. */
@@ -22,7 +22,7 @@ export const inject: readonly string[] = []
  * @param _ctx - client root context (unused; the renderer is DOM-only).
  * @returns a disposer tearing the renderer down.
  */
-export function apply(_ctx: ClientContext): () => void {
+export function apply(_ctx: Context): () => void {
   let renderer: CardRenderer | undefined
   // Effect so teardown/re-composition unwinds cleanly; a re-apply replaces the
   // previous renderer.

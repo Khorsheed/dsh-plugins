@@ -120,20 +120,20 @@ describe('codex-cli-provider run settlement', () => {
     // The mirror runs after the child exits (fire-and-forget), so let it
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
     // the response was appended as one assistant message carrying the usage
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
     expect(assistant[0]!.data.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     // the turn opened at spawn and closed at settle, bracketing the run
-    const turns = child.events.filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+    const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
     expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
     expect(turns[1]!.data).toEqual({ turn: 1, reason: { kind: 'completed' } })
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
-      expect(append).toHaveBeenCalledWith(child.id, child.events)
+      expect(append).toHaveBeenCalledWith(child.id, child.snapshotEvents())
     })
     await done
   })
@@ -201,9 +201,9 @@ describe('codex-cli-provider run settlement', () => {
     // mirror while the process is STILL running.
     emit({ type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: 'ls', aggregated_output: 'a.txt' } })
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
     })
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(reports.some(report => report.progress.kind === 'delta' && report.progress.text === '调查一下')).toBe(true)
 
     // The terminal event flushes the held lines, usage riding the final one.
@@ -212,15 +212,15 @@ describe('codex-cli-provider run settlement', () => {
       { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 6, output_tokens: 4 } },
     )
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
     // The command_execution item mirrors as a native tool/call + tool/result
     // pair, paired by the stream item id.
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect((calls[0]!.data as { callId: string; name: string; arguments: string }))
       .toMatchObject({ callId: 'item_1', name: 'Bash', arguments: 'ls' })
-    const results = child.events.filter(event => event.type === 'tool/result')
+    const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
     expect((results[0]!.data as { message: { content: { toolCallId: string; content: unknown }[] } }).message.content[0])
       .toMatchObject({ toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
@@ -231,11 +231,11 @@ describe('codex-cli-provider run settlement', () => {
     await vi.waitFor(() => {
       expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 3)).toBe(true)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     const texts = assistant.map(event => JSON.stringify((event.data as { message: { content: unknown } }).message.content))
     expect(new Set(texts).size).toBe(texts.length)
-    expect(child.events.filter(event => event.type === 'user/message')).toHaveLength(1)
-    expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
     await done
   })
@@ -263,7 +263,7 @@ describe('codex-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('error')
     // The timing window must close even on failure, with an error reason.
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
     expect(endData?.turn).toBe(1)
     expect(endData?.reason?.kind).toBe('error')
@@ -356,7 +356,7 @@ describe('codex-cli-provider run settlement', () => {
     // A zero exit with no parsed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
     expect(endData?.reason?.kind).toBe('error')
     // The format-drift warning fired exactly once for the whole run, and the
@@ -413,7 +413,7 @@ describe('codex-cli-provider child session record', () => {
       origin: 'subagent',
       delegationDepth: 1,
     })
-    const descriptor = created[0]!.session.events.find(event => event.type === 'subagent/descriptor')
+    const descriptor = created[0]!.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex: Codex 建文件' })
   })
 })
@@ -468,8 +468,8 @@ describe('codex-cli-provider resume round', () => {
     expect(result.stopReason).toBe('completed')
     expect(spawned[0]).toEqual(['codex', 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--json', 'resume', 't1', '接着做'])
     expect(run.id).toBe(SessionId('child-run-1'))
-    const turnStarts = child.events.filter(event => event.type === 'turn/start')
-    const turnEnds = child.events.filter(event => event.type === 'turn/end')
+    const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
+    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
     expect(turnStarts).toHaveLength(2)
     expect(turnEnds).toHaveLength(2)
     expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
@@ -711,19 +711,19 @@ describe('codex-cli-provider abort path', () => {
     expect(hanging.terminated()).toBe(true)
     await expect(run.dispose()).resolves.toBeUndefined()
 
-    const turnEnd = child.events.find(event => event.type === 'turn/end')
+    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
 
     // The partial stream (reply text + command) is mirrored after the kill.
     await vi.waitFor(() => {
-      expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
       // The killed stream's trailing command mirrors as a native tool/call
       // (no result — the kill landed first).
-      expect(child.events.filter(event => event.type === 'tool/call')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     })
-    const assistant = child.events.filter(event => event.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '我先创建一个文件。' }])
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect((calls[0]!.data as { name: string; arguments: string }))
       .toMatchObject({ name: 'Bash', arguments: 'echo hi > hi.txt' })
     await hanging.done
@@ -765,9 +765,9 @@ describe('codex-cli-provider abort path', () => {
     // usage was knowable — the recovery books it as a usage chunk pinned to
     // the carrier's step (the token projection counts it identically).
     await vi.waitFor(() => {
-      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
       expect(assistant).toHaveLength(1)
-      const usageChunk = child.events.find(event =>
+      const usageChunk = child.snapshotEvents().find(event =>
         event.type === 'assistant/chunk' && event.data.chunk.type === 'usage')
       expect(usageChunk?.data.chunk.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })
@@ -809,7 +809,7 @@ describe('codex-cli-provider abort path', () => {
     await run.dispose()
 
     await vi.waitFor(() => {
-      const assistant = child.events.filter(event => event.type === 'assistant/message')
+      const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
       expect(assistant).toHaveLength(1)
       expect(assistant[0]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })

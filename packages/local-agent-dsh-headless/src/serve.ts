@@ -148,7 +148,7 @@ export async function runServe(ctx: Context, io: ServeIo): Promise<void> {
         // Flush BEFORE the idle notification so the parent's file-based
         // reconciliation pass sees the complete round on disk.
         await sessions.flush(agent.session)
-        reason = summarizeTurn(agent.session.events, firstSeq).reason ?? null
+        reason = summarizeTurn(agent.session.snapshotEvents(), firstSeq).reason ?? null
       } catch (error) {
         // A turn-level failure must still close the parent's wait.
         reason = { kind: 'error', error: { message: messageOf(error), code: 'UNKNOWN' } }

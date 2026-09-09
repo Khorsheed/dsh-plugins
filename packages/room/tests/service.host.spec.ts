@@ -85,12 +85,12 @@ describe('RoomService Remote surface (real composition)', () => {
     const sessionId = SessionId(`session-${randomUUID()}`)
     await agents.create({ sessionId, meta: {} })
     const session = ctx.sessions.get(sessionId)!
-    expect(session.events.some(event => event.type === 'room/created')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'room/created')).toBe(false)
 
     const promoted = await service.ensureRoom(sessionId)
     expect(promoted.ok).toBe(true)
     // The marker and the main-agent seat journal onto the SAME session.
-    expect(session.events.filter(event => event.type.startsWith('room/')).map(event => event.type))
+    expect(session.snapshotEvents().filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added'])
     const state = await service.getState({ sessionId })
     expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [] } })
@@ -98,7 +98,7 @@ describe('RoomService Remote surface (real composition)', () => {
     // Idempotent: a second promotion journals nothing more.
     const again = await service.ensureRoom(sessionId)
     expect(again.ok).toBe(true)
-    expect(session.events.filter(event => event.type === 'room/created')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'room/created')).toHaveLength(1)
   })
 
   it('invite into a PLAIN session promotes it and lands the member', async () => {
@@ -107,7 +107,7 @@ describe('RoomService Remote surface (real composition)', () => {
     await agents.create({ sessionId, meta: {} })
     const invited = await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     expect(invited).toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: false } })
-    const events = ctx.sessions.get(sessionId)!.events
+    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     expect(events.filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added', 'room/member-added'])
     const state = await service.getState({ sessionId })
@@ -283,7 +283,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.postMessage({ sessionId, text: '今天先讨论方向' }))
       .toEqual({ ok: false, error: { code: 'no-targets' } })
     // Nothing is journaled: the rejection is pure defense.
-    const events = ctx.sessions.get(sessionId)!.events
+    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     expect(events.filter(event => event.type.startsWith('room/'))).toHaveLength(2)
     expect(events.some(event => event.type === 'user/message')).toBe(false)
     expect(await service.postMessage({ sessionId, text: '   ' }))
@@ -305,7 +305,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.postMessage({ sessionId, text: '@ada' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
 
-    const events = ctx.sessions.get(sessionId)!.events
+    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     // The human's raw text (mentions included) lands as a human-sourced
     // append-surface user/message — the official user bubble claims it, and
     // the main agent's next turn reads it. The append wakes nothing.
@@ -360,7 +360,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.postMessage({ sessionId, text: '  ', targets: ['ada'] }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
 
-    const events = ctx.sessions.get(sessionId)!.events
+    const events = ctx.sessions.get(sessionId)!.snapshotEvents()
     const dispatches = events.filter(event => event.type === 'room/dispatch')
     expect(dispatches.map(event => event.data)).toEqual([
       { targets: ['bill'], text: '接口找 @bill 对齐一下' },
@@ -455,7 +455,7 @@ describe('RoomService Remote surface (real composition)', () => {
     // settles, so he stays running) and the relay was marked sent once the
     // member's session received the prompt; the dismiss journaled nothing.
     const session = ctx.sessions.get(sessionId)!
-    const edges = session.events.filter(event => event.type === 'room/run-state')
+    const edges = session.snapshotEvents().filter(event => event.type === 'room/run-state')
     expect(edges.map(event => (event.data as { member: string }).member)).toEqual(['bill'])
     const after = await service.getState({ sessionId })
     expect(after).toMatchObject({

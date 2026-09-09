@@ -5,7 +5,7 @@
  * service.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   activeRowKey, flowLeftX, installRailTracker, jumpRow, measureGeometry,
@@ -288,7 +288,7 @@ describe('installRailTracker', () => {
     const user = scrollport.querySelector<HTMLElement>('[data-chat-anchor-key]')!
     rect(user, { top: 40, left: 200, width: 100, height: 20 })
 
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     const state = tracker.state.getSnapshot()
@@ -310,7 +310,7 @@ describe('installRailTracker', () => {
       top: 0, left: 0, width: 400, height: 300,
     })
 
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     expect(tracker.state.getSnapshot().chatView).toBe(false)
@@ -321,7 +321,7 @@ describe('installRailTracker', () => {
     document.body.innerHTML = ''
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     // No usable DOM means the state describes no session at all.
@@ -339,7 +339,7 @@ describe('installRailTracker', () => {
     rect(target, { top: 200, left: 0, width: 100, height: 20 })
     scrollport.scrollTop = 0
 
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     tracker.jumpTo('u1')
@@ -349,7 +349,7 @@ describe('installRailTracker', () => {
   })
 
   it('publishes the idle state while no session is current', () => {
-    const tracker = installRailTracker(fakeCtx(undefined) as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx(undefined) as unknown as Context, true)
     expect(tracker.state.getSnapshot()).toEqual({
       sessionId: undefined, ready: false, left: 0, top: 0, height: 0, scrollportWidth: 0, flowLeft: null,
       activeKey: null, chatView: false,
@@ -363,7 +363,7 @@ describe('installRailTracker', () => {
       top: 0, left: 0, width: 400, height: 300,
     })
     const ctx = fakeCtx('s1')
-    const tracker = installRailTracker(ctx as unknown as ClientContext, true)
+    const tracker = installRailTracker(ctx as unknown as Context, true)
     await frame()
     expect(tracker.state.getSnapshot().sessionId).toBe('s1')
 
@@ -379,7 +379,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
     const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
 
@@ -401,7 +401,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     expect(observe).toHaveBeenCalledTimes(2)
@@ -410,7 +410,7 @@ describe('installRailTracker', () => {
   })
 
   it('jumpTo is a no-op while no scrollport is bound', () => {
-    const tracker = installRailTracker(fakeCtx(undefined) as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx(undefined) as unknown as Context, true)
     expect(() => { tracker.jumpTo('k1') }).not.toThrow()
     tracker.dispose()
   })
@@ -422,7 +422,7 @@ describe('installRailTracker', () => {
     const sessions: Partial<ReturnType<typeof fakeSessions>> = fakeSessions('s1')
     delete sessions.currentProvideInfo
 
-    const tracker = installRailTracker({ sessions } as unknown as ClientContext, true)
+    const tracker = installRailTracker({ sessions } as unknown as Context, true)
     await frame()
 
     expect(tracker.state.getSnapshot()).toMatchObject({ sessionId: 's1', ready: true, left: 16 })
@@ -433,7 +433,7 @@ describe('installRailTracker', () => {
     document.body.innerHTML = '<div data-conversation-scroll=""></div>'
     const first = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
     rect(first, { top: 20, left: 10, width: 400, height: 300 })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
     expect(tracker.state.getSnapshot().left).toBe(16)
 
@@ -457,7 +457,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
     expect(tracker.state.getSnapshot().ready).toBe(true)
 
@@ -476,7 +476,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await new Promise((resolve) => { setTimeout(resolve, 30) })
 
     expect(tracker.state.getSnapshot().ready).toBe(true)
@@ -489,7 +489,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     const listener = vi.fn()
     tracker.state.subscribe(listener)
     await frame()
@@ -503,7 +503,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
     const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
 
@@ -519,7 +519,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
     const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
     vi.restoreAllMocks() // getBoundingClientRect falls back to all-zero boxes
@@ -537,7 +537,7 @@ describe('installRailTracker', () => {
       top: 0, left: 0, width: 400, height: 300,
     })
     const ctx = fakeCtx('s1')
-    const tracker = installRailTracker(ctx as unknown as ClientContext, true)
+    const tracker = installRailTracker(ctx as unknown as Context, true)
     await frame()
 
     ctx.sessions.list.set({ current: 's1' })
@@ -557,7 +557,7 @@ describe('installRailTracker', () => {
       top: 0, left: 0, width: 400, height: 300,
     })
     const addSpy = vi.spyOn(HTMLElement.prototype, 'addEventListener')
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
 
     // Dispose before the frame flushes — the dangerous window.
     tracker.dispose()
@@ -577,7 +577,7 @@ describe('installRailTracker', () => {
       top: 0, left: 0, width: 400, height: 300,
     })
     const ctx = fakeCtx(undefined)
-    const tracker = installRailTracker(ctx as unknown as ClientContext, true)
+    const tracker = installRailTracker(ctx as unknown as Context, true)
 
     // Two session changes land before either bind frame runs.
     ctx.sessions.list.set({ current: 's1' })
@@ -599,7 +599,7 @@ describe('installRailTracker', () => {
     rect(document.querySelector<HTMLElement>('[data-conversation-scroll]')!, {
       top: 0, left: 0, width: 400, height: 300,
     })
-    const tracker = installRailTracker(fakeCtx('s1') as unknown as ClientContext, true)
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
     expect(observe).toHaveBeenCalledTimes(1)
@@ -611,7 +611,7 @@ describe('installRailTracker', () => {
     document.body.innerHTML = ''
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const ctx = fakeCtx(undefined)
-    const tracker = installRailTracker(ctx as unknown as ClientContext, true)
+    const tracker = installRailTracker(ctx as unknown as Context, true)
 
     ctx.sessions.list.set({ current: 's1' })
     await frame()

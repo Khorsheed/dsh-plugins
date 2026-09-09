@@ -51,7 +51,7 @@ describe('MessageToolsService (real composition)', () => {
     })
     const session = ctx.sessions.get(SESSION)!
     expect(session.surface.nodes).toEqual([second + 1])
-    const replacement = session.events[second + 1]!
+    const replacement = session.snapshotEvents()[second + 1]!
     expect(replacement.type).toBe('user/message')
     if (replacement.type !== 'user/message') throw new Error('narrowing')
     expect(replacement.data.content).toEqual([{ type: 'text', text: WITHDRAWN_NOTICE }])
@@ -80,7 +80,7 @@ describe('MessageToolsService (real composition)', () => {
     const result = await service.restore({ sessionId: SESSION, targetSeq: first })
     expect(result).toMatchObject({ ok: true })
     const session = ctx.sessions.get(SESSION)!
-    const replay = session.surface.nodes.slice(-2).map(seq => session.events[seq]!)
+    const replay = session.surface.nodes.slice(-2).map(seq => session.snapshotEvents()[seq]!)
     expect(replay.map(event => event.type)).toEqual(['user/message', 'user/message'])
     const [user, assistant] = replay
     if (user?.type !== 'user/message' || assistant?.type !== 'user/message') throw new Error('narrowing')
@@ -112,7 +112,7 @@ describe('MessageToolsService (real composition)', () => {
     expect(result).toMatchObject({ ok: true, value: { triggered: true } })
     expect(followup).toHaveBeenCalledTimes(1)
     const session = ctx.sessions.get(SESSION)!
-    const replacement = session.events[session.surface.nodes[0]!]!
+    const replacement = session.snapshotEvents()[session.surface.nodes[0]!]!
     if (replacement.type !== 'user/message') throw new Error('narrowing')
     expect(replacement.data.content).toEqual([{ type: 'text', text: '编辑后' }])
     expect(replacement.data.source).toMatchObject({ kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN, op: 'edit' })

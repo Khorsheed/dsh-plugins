@@ -16,7 +16,7 @@ import z from '@deepseek-ai/schemastery'
 // Type-only: pulls the commands Context merge into the program.
 import type {} from '@deepseek-ai/dsh-commands'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { DatasetBinding } from './binding.ts'
 import { DatasetsError } from './dataset.ts'
 

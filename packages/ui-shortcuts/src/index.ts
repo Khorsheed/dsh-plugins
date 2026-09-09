@@ -1,7 +1,8 @@
 /** Host registration for the durable shortcut preferences. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: pulls the ctx.settings service merge.
+import type {} from '@deepseek-ai/dsh-settings'
 import { UI_SHORTCUTS_NAMESPACE, ShortcutSettingsSchema } from './settings.ts'
 
 export {
@@ -17,7 +18,7 @@ export {
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(
-      settingsNamespace(UI_SHORTCUTS_NAMESPACE),
+      UI_SHORTCUTS_NAMESPACE,
       ShortcutSettingsSchema,
     )
   })

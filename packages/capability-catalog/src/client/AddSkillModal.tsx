@@ -211,6 +211,7 @@ export function AddSkillModal({ onClose, addSkill, listDirSkills, pickDirectory,
         open
         onClose={() => setConfirm(null)}
         title={t('addExistsTitle')}
+        closeLabel={t('close')}
         description={`「${confirm.name}」${t('addExists')}`}
         footer={(
           <>

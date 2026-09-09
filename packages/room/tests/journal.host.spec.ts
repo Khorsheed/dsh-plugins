@@ -27,7 +27,7 @@ describe('RoomService journal (real composition)', () => {
     expect(await service.isRoom({ sessionId })).toBe(true)
     const session = ctx.sessions.get(sessionId)!
     expect(session).toBeDefined()
-    const marker = session.events.find(event => event.type === 'room/created')
+    const marker = session.snapshotEvents().find(event => event.type === 'room/created')
     expect(marker).toMatchObject({ type: 'room/created', data: { version: 1 } })
     // The marker is log-only: it never lands on the model-visible surface.
     expect(session.surface.nodes).toEqual([])

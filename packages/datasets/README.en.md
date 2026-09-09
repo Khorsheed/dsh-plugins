@@ -143,8 +143,8 @@ The tab's data face is a Typert Remote service (`datasetsRemote`, wire namespace
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.0-rc.6+`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable across the line. The session tab is live-smoke-tested on the rc.8 web profile (bind → tree → preview); earlier release lines share the same gateway conventions but were not smoke-tested.
-- source line (deepseek-harness master): ✅.
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ — every capability works; the contract surface (`ctx.tools`, `ctx.commands`, log-only session events, the Typert Remote channel, `conversation.view`) is stable on this line. minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1).
 - The `tools` grouping, the canary check and the judgeability check are all internal (the first only calls `ctx.tools.register` fewer times, the other two only read git objects) — no new host capability, identical on both lines.
 - ⚠️ degraded (both lines): slash commands need an interactive UI adapter (web/TUI profile); on headless profiles `/datasets` is unavailable while the model tools and the CLI stay fully functional. The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer.
 

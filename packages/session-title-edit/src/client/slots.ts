@@ -12,7 +12,7 @@ import type {} from './locales.ts'
 
 /** Rename failure carrying the wire error code for localized surfacing. */
 export interface RenameFailure extends Error {
-  /** Wire error code (e.g. `title-invalid`); transport failures keep the code the runtime reported. */
+  /** Wire error code (`session/title-invalid` on the 0.1.2 line, `title-invalid` before); transport failures keep the code the runtime reported. */
   code: string
 }
 

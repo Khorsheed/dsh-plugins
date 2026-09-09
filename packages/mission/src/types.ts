@@ -320,7 +320,7 @@ export interface MissionExportResultView {
 // Named re-exports so every type the Remote boundary references (directly or
 // nested) is reachable from the public `./types` subpath (the Typert
 // generator's boundary-type rule); the imports give this module local bindings.
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { RunSummary } from './service.ts'
 import type { SnapshotRef } from './export.ts'
 export type { RunSummary } from './service.ts'

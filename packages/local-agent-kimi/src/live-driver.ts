@@ -35,7 +35,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -773,7 +773,7 @@ export class KimiAcpLiveDriver {
     /** The round's accumulated thinking (token granularity; completes the stream's final message). */
     let roundThink = ''
     /** Seqs of the round's streamed chunk events (the final message's sourceEventSeqs). */
-    const chunkSeqs: number[] = []
+    const chunkSeqs: SessionSeq[] = []
     /**
      * The stream's (turn, step) merge key, reserved LAZILY at the first
      * think/text delta from the session's step ledger: every line folded

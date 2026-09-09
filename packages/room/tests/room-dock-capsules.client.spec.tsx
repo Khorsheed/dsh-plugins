@@ -5,8 +5,9 @@
  * blocked greying, inline add), and outside-click collapse.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RoomDockCapsules } from '../src/client/RoomDockCapsules.tsx'
@@ -60,7 +61,7 @@ async function bench(options: { room?: boolean; state?: RoomState } = {}): Promi
       ? { ok: true, value: { ok: true, value: state } }
       : { ok: true, value: { ok: false, error: { code: 'not-a-room' } } },
   }
-  const roomStore = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+  const roomStore = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await roomStore.ensure(SESSION)
   const addTask = vi.fn(async () => ({ ok: true as const }))
   const closeTask = vi.fn(async () => ({ ok: true as const }))

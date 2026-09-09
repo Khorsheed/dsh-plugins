@@ -166,7 +166,7 @@ async function runRound(
   await run.result
   // The settle mirror rides child.done behind the result; wait for it.
   await vi.waitFor(() => {
-    expect(child.events.some(event => event.type === 'turn/end')).toBe(true)
+    expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
   })
   await vi.waitFor(async () => {
     // Flush the post-exit mirror (turn/end + one tick of the mirror queue).
@@ -180,7 +180,7 @@ describe('todo/write mirroring into the member child session', () => {
     const { ctx } = fakeCtx()
     await runRound(child, ctx, roundStream(V1), 1)
 
-    const writes = child.events.filter(event => event.type === 'todo/write')
+    const writes = child.snapshotEvents().filter(event => event.type === 'todo/write')
     expect(writes).toHaveLength(1)
     expect(writes[0]?.data).toEqual({
       todos: [
@@ -191,11 +191,11 @@ describe('todo/write mirroring into the member child session', () => {
     })
     // The transcript still carries the task, the Bash fold (as a native
     // tool/call + tool/result pair), and the reply.
-    expect(child.events.filter(event => event.type === 'assistant/message')).toHaveLength(1)
-    const calls = child.events.filter(event => event.type === 'tool/call')
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'pnpm test' })
-    expect(JSON.stringify(child.events)).not.toContain('TodoWrite')
+    expect(JSON.stringify(child.snapshotEvents())).not.toContain('TodoWrite')
   })
 
   it('multi-round: round 2 TodoWrite replaces the list; an unchanged list re-appends nothing', async () => {
@@ -204,14 +204,14 @@ describe('todo/write mirroring into the member child session', () => {
     await runRound(child, ctx, roundStream(V1), 1)
     await runRound(child, ctx, roundStream(V2), 2)
 
-    const writes = child.events.filter(event => event.type === 'todo/write')
+    const writes = child.snapshotEvents().filter(event => event.type === 'todo/write')
     expect(writes).toHaveLength(2)
     expect((writes[1]?.data as { todos: { status: string }[] }).todos[0]?.status).toBe('completed')
 
     // Round 3 emits the SAME list: the standing snapshot is identical, so
     // nothing crosses.
     await runRound(child, ctx, roundStream(V2), 3)
-    expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(event => event.type === 'todo/write')).toHaveLength(2)
   })
 
   it('a round without TodoWrite leaves the earlier list standing', async () => {
@@ -219,7 +219,7 @@ describe('todo/write mirroring into the member child session', () => {
     const { ctx } = fakeCtx()
     await runRound(child, ctx, roundStream(V1), 1)
     await runRound(child, ctx, roundStream(undefined), 2)
-    expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'todo/write')).toHaveLength(1)
   })
 
   it('a shape-skewed TodoWrite folds to text and warns', async () => {
@@ -228,8 +228,8 @@ describe('todo/write mirroring into the member child session', () => {
     const skewed = assistantEvent([{ type: 'tool_use', id: 'tu1', name: 'TodoWrite', input: { todos: 'nope' } }])
     await runRound(child, ctx, `${skewed}\n${roundStream(undefined)}`, 1)
 
-    expect(child.events.filter(event => event.type === 'todo/write')).toHaveLength(0)
-    const skewedCalls = child.events.filter(event => event.type === 'tool/call')
+    expect(child.snapshotEvents().filter(event => event.type === 'todo/write')).toHaveLength(0)
+    const skewedCalls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(skewedCalls.some(event => (event.data as { name: string }).name === 'TodoWrite')).toBe(true)
     expect(warns.some(text => text.includes('TodoWrite'))).toBe(true)
   })

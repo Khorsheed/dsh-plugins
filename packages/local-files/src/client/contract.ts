@@ -4,8 +4,8 @@
  * @module @khorsheed/dsh-local-files/client
  */
 
-import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { HostDescriptionSource } from './host-description.ts'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'

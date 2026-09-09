@@ -68,7 +68,8 @@ export async function withdrawInPlace(steps: WithdrawInPlaceSteps, running: bool
 
 /**
  * The minimal slice of the client conversation snapshot the settle probe
- * reads (structurally satisfied by `ConversationSnapshot`, so the unit tests
+ * reads (structurally satisfied by the ui-chat snapshot's timeline slice, so
+ * the unit tests stub only these fields).
  * stub only these fields).
  */
 export interface TurnSettleSnapshot {

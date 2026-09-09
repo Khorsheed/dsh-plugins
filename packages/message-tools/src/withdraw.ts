@@ -216,11 +216,13 @@ function findWithdrawnSpan(
 ): readonly number[] | undefined {
   for (let index = events.length - 1; index > targetSeq; index--) {
     const event = events[index]
-    if (event !== undefined && isMessageToolsReplacement(event) && event.sourceEventSeqs?.includes(targetSeq)) {
-      const span: number[] = []
-      for (let seq = event.surfaceOp.start; seq < event.seq; seq++) span.push(seq)
-      return span
-    }
+    if (event === undefined || !isMessageToolsReplacement(event)) continue
+    // The brands are compile-time only; the fold addresses the log by plain number.
+    const sources = event.sourceEventSeqs as readonly number[] | undefined
+    if (sources?.includes(targetSeq) !== true) continue
+    const span: number[] = []
+    for (let seq: number = event.surfaceOp.start; seq < event.seq; seq++) span.push(seq)
+    return span
   }
   return undefined
 }

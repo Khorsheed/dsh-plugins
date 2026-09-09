@@ -6,7 +6,7 @@
  * is empty and nothing is hidden.
  */
 import { describe, expect, it } from 'vitest'
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { foldHiddenSpans, isSeqHidden } from '../src/client/hidden-spans.ts'
 
 function carrier(

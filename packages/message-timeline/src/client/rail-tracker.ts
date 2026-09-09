@@ -12,8 +12,11 @@
  * (one console.warn), missing rows only clear the active marker and make
  * jumps no-ops. Nothing throws and no official code is modified.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: pulls the ctx.sessions service merge.
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { TimelineRailState } from './slots.ts'
 import { isTimelineRowKind } from './timeline-kinds.ts'
 
@@ -160,7 +163,7 @@ export interface RailTracker {
  * @param includeSteering - whether steering rows count as user dots.
  * @returns the tracker face.
  */
-export function installRailTracker(ctx: ClientContext, includeSteering: boolean): RailTracker {
+export function installRailTracker(ctx: Context, includeSteering: boolean): RailTracker {
   const listeners = new Set<() => void>()
   let state: TimelineRailState = IDLE
   let activeSession: SessionId | undefined

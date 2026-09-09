@@ -274,13 +274,13 @@ describe('claude live driver rounds', () => {
     expect(spawn.spec.env).toEqual({ CLAUDE_CONFIG_DIR: m.homeDir })
     // Mirroring: prompt + folded lines, usage on the final line; the
     // tool_use folds to a native tool/call (+ tool/result) pair.
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-    const assistant = child.events.filter(e => e.type === 'assistant/message')
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
     expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'text', text: '第一条回复' }] } })
-    expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1)
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
     await m.driver.disposeAll()
@@ -298,7 +298,7 @@ describe('claude live driver rounds', () => {
     expect((await second.result).stopReason).toBe('completed')
     expect(m.spawns).toHaveLength(1)
     expect(m.spawns[0]!.fake!.userMessages).toEqual(['建个文件', '继续'])
-    expect(child.events.filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
     await m.driver.disposeAll()
   })
 
@@ -334,7 +334,7 @@ describe('claude live driver rounds', () => {
     const interrupt = fake.controlRequests.find(r => (r['request'] as { subtype?: string }).subtype === 'interrupt')
     expect(interrupt).toBeDefined()
     expect(fake.terminated).toBe(false)
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
@@ -374,9 +374,9 @@ describe('claude live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
     // The folded partial work is still mirrored.
-    expect(child.events.filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
     await m.driver.disposeAll()
   })
 
@@ -387,7 +387,7 @@ describe('claude live driver rounds', () => {
     off.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     expect(off.spawns[0]!.spec.argv).not.toContain('--include-partial-messages')
     await off.driver.disposeAll()
 
@@ -397,7 +397,7 @@ describe('claude live driver rounds', () => {
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
     expect(on.spawns[0]!.spec.argv).toContain('--include-partial-messages')
-    expect(onChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     await on.driver.disposeAll()
   })
 
@@ -414,8 +414,8 @@ describe('claude live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     // One final at the stream's own (turn, step): the projection replaces the
     // stream with it — no duplicated content, no dangling interrupted badge.
     expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
@@ -426,7 +426,7 @@ describe('claude live driver rounds', () => {
     ])
     expect(final.sourceEventSeqs?.length).toBeGreaterThan(0)
     // The fold skipped the think/text lines but the tool activity still folds.
-    expect(child.events.filter(e => e.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
     await m.driver.disposeAll()
   })
 
@@ -441,8 +441,8 @@ describe('claude live driver rounds', () => {
     fake.emit({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '写到一半' } } })
     controller.abort()
     expect((await run.result).stopReason).toBe('aborted')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
     // The interrupt unwinds the hung turn; its result lands so the chain converges.
@@ -465,15 +465,15 @@ describe('claude live driver rounds', () => {
     fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '结论' }] } })
     fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 5, cache_read_input_tokens: 0, output_tokens: 2 } })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
     // Chronological steps: tool=1, tool=2, the stream=3, the late tool shifts to 4.
-    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
-    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+    for (const chunk of child.snapshotEvents().filter(e => e.type === 'assistant/chunk')) {
       expect((chunk.data as { step: number }).step).toBe(3)
     }
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     await m.driver.disposeAll()
   })
@@ -632,11 +632,11 @@ describe('claude live driver drain (settings handoff)', () => {
     m.queueChild(new FakeClaude({ turn: () => ({ deltas: ['一', '二'], events: answerEvents('done') }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

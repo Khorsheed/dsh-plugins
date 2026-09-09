@@ -36,8 +36,8 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.1-rc.2`): ✅ full — built and tested against the rc.8 type surface. This build REQUIRES rc.8: chat-node owner props dropped `loadImage` for the required `renderMessageImages` attachment-slot renderer — stay on the previous build on rc.6/rc.7 hosts. — also verified on 0.1.1-rc.1 (additive audit, 2026-08-21); re-audited for rc.2 (2026-08-22): consumed surface unchanged, full build+test green
-- source line (deepseek-harness master): ✅
+- npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
 
 ## Known Limitations
 

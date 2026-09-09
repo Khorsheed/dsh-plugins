@@ -333,7 +333,7 @@ export class BashWriteCollector {
   #replay(session: Session): void {
     this.#pending.set(session.id, new Map())
     this.#captured.set(session.id, new Map())
-    for (const event of session.events) this.#onEvent(session, event)
+    for (const event of session.snapshotEvents()) this.#onEvent(session, event)
   }
 
   #onEvent(session: Session, event: SessionEvent): Promise<void> | void {

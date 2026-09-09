@@ -8,6 +8,15 @@ import type { FilePreviewDiff, FilePreviewEntry, FilePreviewList, FilePreviewOp 
 /** Tool names whose calls record a touched file path. */
 const FILE_TOOL_NAMES: ReadonlySet<string> = new Set(['read', 'write', 'edit'])
 
+/**
+ * Settled nested-dispatch event names, matched by name (feature detection,
+ * never a version check): `tool/code-dispatch` is the Code Mode name every
+ * host through 0.1.2-rc.1 emits; `tool/ptc-dispatch` is the PTC rename later
+ * 0.1.2 seats move to. Both carry the same settled-dispatch payload, so one
+ * branch serves either.
+ */
+const DISPATCH_EVENT_NAMES: ReadonlySet<string> = new Set(['tool/code-dispatch', 'tool/ptc-dispatch'])
+
 /** The argument key carrying the touched path (shared by all three file tools). */
 const FILE_PATH_ARGUMENT = 'file_path'
 
@@ -78,7 +87,8 @@ export function diffsFromResultMeta(meta: unknown): readonly FilePreviewResultDi
  * first-seen order and deduplicated by display path; a later occurrence
  * refreshes the entry's op and location without moving it, and each write/edit
  * tool result appends its change's diff to the entry's `diffs` in event order.
- * Nested Code Mode file dispatches (`tool/code-dispatch` events) count too —
+ * Nested Code Mode file dispatches (`tool/code-dispatch` events, or
+ * `tool/ptc-dispatch` on seats running the PTC rename) count too —
  * they carry no turn/step of their own, so the entry borrows the enclosing
  * root call's location.
  * @param events - the session's events in ascending seq order.
@@ -107,14 +117,17 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
       record(target, event.seq, event.data.turn, event.data.step)
       continue
     }
-    if (event.type === 'tool/code-dispatch') {
+    if (DISPATCH_EVENT_NAMES.has(event.type)) {
       // The dispatch event IS the settled outcome: a failed sub-call changed
-      // nothing, so only successful file touches record.
-      if (event.data.isError) continue
-      const target = targetFromArguments(event.data.name, event.data.arguments)
+      // nothing, so only successful file touches record. The PTC rename keeps
+      // the code-dispatch payload shape (the ptc name has no SessionEventMap
+      // row yet), so the data reads through the declared constituent.
+      const dispatch = event as SessionEvent<'tool/code-dispatch'>
+      if (dispatch.data.isError) continue
+      const target = targetFromArguments(dispatch.data.name, dispatch.data.arguments)
       if (target === undefined) continue
-      const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
-      record(target, event.seq, site.turn, site.step)
+      const site = callSites.get(String(dispatch.data.rootCallId)) ?? { turn: 0, step: 0 }
+      record(target, dispatch.seq, site.turn, site.step)
       continue
     }
     if (event.type === 'tool/result') {
@@ -318,19 +331,21 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       recordLocation(target.path, event.data.turn, event.seq, event.data.step)
       continue
     }
-    if (event.type === 'tool/code-dispatch') {
+    if (DISPATCH_EVENT_NAMES.has(event.type)) {
       // The dispatch event IS the settled outcome: a failed sub-call changed
       // nothing, so only successful file touches record. Code Mode writes are
       // uncountable (no result diffs reach the session), so they register the
-      // path and poison the line-count totals (unknown wins).
-      if (event.data.isError) continue
-      const target = targetFromArguments(event.data.name, event.data.arguments)
+      // path and poison the line-count totals (unknown wins). Same payload
+      // shape caveat as foldFilePreview above.
+      const dispatch = event as SessionEvent<'tool/code-dispatch'>
+      if (dispatch.data.isError) continue
+      const target = targetFromArguments(dispatch.data.name, dispatch.data.arguments)
       if (target === undefined) continue
       // Reads leave no card entry here too — only mutations register.
       if (target.op === 'read') continue
-      const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
+      const site = callSites.get(String(dispatch.data.rootCallId)) ?? { turn: 0, step: 0 }
       sessionSeen.add(target.path)
-      recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
+      recordContribution(target.path, site.turn, dispatch.seq, site.step, undefined, undefined, true)
       continue
     }
     if (event.type === 'tool/result') {

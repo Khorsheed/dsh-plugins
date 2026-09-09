@@ -30,10 +30,11 @@ No config. It installs standalone as a plugin, or drops into a cordis.yml compos
 
 | Host line | Verdict |
 | --- | --- |
-| npm release (`>= 0.1.0-rc.6`) | ✔ target line |
-| deepseek-harness master | ✔ target line (`verifiedHost: 0.1.1-rc.2`) |
+| npm release (`>= 0.1.2-rc.1`) | ⚠️ degraded — the external-open gestures are hidden (see below) |
+| deepseek-harness master | ⚠️ same (`verifiedHost: 0.1.2-rc.1`) |
 
 - The Workspace tab is a web surface; on headless profiles with no browser consumer the plugin contributes nothing.
-- The "Open Folder" gesture depends on loopback + `canOpenPath`; it degrades to hidden when unmet.
+- The "open in folder / open in IDE" gestures are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (the capability became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam.
+- minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 
 > Nuance: this plugin is "browse any local directory"; file-preview is "current session's products". Their semantics differ, so they are two independent packages, not merged.

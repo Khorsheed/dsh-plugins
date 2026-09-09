@@ -20,7 +20,8 @@ function makeService(fs: Partial<FileSystem>, config = {}): FilePreviewService {
 
 /** A loose session double carrying only the fields the service reads. */
 function makeAgent(session: { events: readonly SessionEvent[]; header: { cwd?: string | undefined } }): Agent {
-  return { session: session as unknown as Session } as unknown as Agent
+  const { events, ...rest } = session
+  return { session: { ...rest, snapshotEvents: () => events } as unknown as Session } as unknown as Agent
 }
 
 const target = { displayPath: 'notes.md' } as unknown as FsTarget

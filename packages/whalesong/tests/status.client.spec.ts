@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
-import { anySessionRunning, diffSessionList } from '../src/client/status.ts'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { anySessionRunning, diffPendingInteractions, diffSessionList } from '../src/client/status.ts'
 
 type RowSpec = Partial<SessionSummary> & { running: boolean }
 
@@ -17,6 +19,11 @@ function state(rows: Record<string, RowSpec>): SessionListState {
     phase: 'ready',
     subagentsByParent: {},
   } as unknown as SessionListState
+}
+
+/** Build a pending-interaction frame: one approval-shaped entry per session id. */
+function pending(...ids: string[]): SessionPendingInteractionSnapshot {
+  return new Map(ids.map(id => [id as SessionId, { key: `${id}:approval`, kind: 'approval', sessionId: id as SessionId }]))
 }
 
 describe('anySessionRunning', () => {
@@ -42,11 +49,10 @@ describe('diffSessionList', () => {
   it('treats the first frame as a pure baseline (no edges)', () => {
     const events = diffSessionList(undefined, state({
       a: { running: true },
-      b: { running: false, pendingInteraction: 'approval' },
+      b: { running: false },
     }))
     expect(events.anyRunning).toBe(true)
     expect(events.completed).toEqual([])
-    expect(events.blocked).toEqual([])
   })
 
   it('flags running true→false as a completion edge', () => {
@@ -54,23 +60,7 @@ describe('diffSessionList', () => {
     const next = state({ a: { running: false } })
     const events = diffSessionList(prev, next)
     expect(events.completed).toEqual(['a'])
-    expect(events.blocked).toEqual([])
     expect(events.anyRunning).toBe(false)
-  })
-
-  it('flags pendingInteraction appearing as a blocked edge', () => {
-    const prev = state({ a: { running: true } })
-    const next = state({ a: { running: true, pendingInteraction: 'question' } })
-    const events = diffSessionList(prev, next)
-    expect(events.blocked).toEqual(['a'])
-    expect(events.completed).toEqual([])
-    expect(events.anyRunning).toBe(true)
-  })
-
-  it('does not re-flag a pending interaction that persists', () => {
-    const prev = state({ a: { running: true, pendingInteraction: 'approval' } })
-    const next = state({ a: { running: true, pendingInteraction: 'approval' } })
-    expect(diffSessionList(prev, next).blocked).toEqual([])
   })
 
   it('handles multiple sessions independently', () => {
@@ -81,25 +71,23 @@ describe('diffSessionList', () => {
     })
     const next = state({
       a: { running: false },
-      b: { running: true, pendingInteraction: 'plan-review' },
+      b: { running: true },
       c: { running: false },
     })
     const events = diffSessionList(prev, next)
     expect(events.completed).toEqual(['a'])
-    expect(events.blocked).toEqual(['b'])
     expect(events.anyRunning).toBe(true) // b still runs
   })
 
-  it('does not flag a new session that appears already running or blocked', () => {
+  it('does not flag a new session that appears already running or stopped', () => {
     const prev = state({ a: { running: false } })
     const next = state({
       a: { running: false },
       b: { running: true },
-      c: { running: false, pendingInteraction: 'approval' },
+      c: { running: false },
     })
     const events = diffSessionList(prev, next)
     expect(events.completed).toEqual([])
-    expect(events.blocked).toEqual([])
     expect(events.anyRunning).toBe(true)
   })
 
@@ -131,5 +119,32 @@ describe('diffSessionList', () => {
     const events = diffSessionList(prev, next)
     expect(events.completed).toEqual(['a'])
     expect(events.anyRunning).toBe(true)
+  })
+})
+
+describe('diffPendingInteractions', () => {
+  it('treats the first frame as a pure baseline (no edges)', () => {
+    expect(diffPendingInteractions(undefined, pending('a'))).toEqual([])
+  })
+
+  it('flags a pending interaction appearing as a blocked edge', () => {
+    expect(diffPendingInteractions(pending(), pending('a'))).toEqual(['a'])
+  })
+
+  it('does not re-flag a pending interaction that persists', () => {
+    expect(diffPendingInteractions(pending('a'), pending('a'))).toEqual([])
+  })
+
+  it('handles multiple sessions independently', () => {
+    expect(diffPendingInteractions(pending('a'), pending('a', 'b'))).toEqual(['b'])
+  })
+
+  it('does not flag a session whose interaction clears, and re-fires when it returns', () => {
+    expect(diffPendingInteractions(pending('a'), pending())).toEqual([])
+    expect(diffPendingInteractions(pending(), pending('a'))).toEqual(['a'])
+  })
+
+  it('tolerates sessions vanishing between frames (no crash, no edge)', () => {
+    expect(diffPendingInteractions(pending('a', 'b'), pending('a'))).toEqual([])
   })
 })

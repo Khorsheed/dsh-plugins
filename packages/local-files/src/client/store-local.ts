@@ -5,7 +5,7 @@
  * interaction model. Module level exports the factory only (same identity
  * discipline as the drawer store).
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { ListLocalDirectoryResult, LocalFilesRead } from '../types.ts'
 
 /** The local-files view's state; fetched results are whole values. */

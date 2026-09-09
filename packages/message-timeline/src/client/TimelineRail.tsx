@@ -14,7 +14,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { PANEL_WIDTH_MIN } from './config.ts'
 import { chatHookOf } from './chat-hook.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
@@ -51,9 +51,10 @@ export function TimelineRail({
   ...standard
 }: TimelineRailProps) {
   const rail = useRail(s => s)
-  // Chat data moved out of the session snapshot into the `useChat` standard
-  // prop on host 0.1.2; the helper picks whichever seat this host provides.
-  const useChatSlice = chatHookOf(standard as { useSession: TimelineRailProps['useSession'] })
+  // Chat data lives in the `useChat` standard prop on 0.1.2 (the rc-line
+  // session-snapshot seat is gone); the helper degrades to an empty slice
+  // when the seat is absent.
+  const useChatSlice = chatHookOf(standard)
   const useSession = standard.useSession
   const order = useChatSlice(c => c.order)
   const nodes = useChatSlice(c => c.nodes)

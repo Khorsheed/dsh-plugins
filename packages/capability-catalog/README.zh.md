@@ -65,9 +65,9 @@ harness 的 `@deepseek-ai/dsh-skill` 已文档化 `resourceBase` 与 `register()
 
 ## Compatibility
 
-| 宿主版本 | 结论 |
+| Host 线 | 结论 |
 |---|---|
-| npm 发布（≥ `dsh.compat.minHost`） | 支持 |
-| deepseek-harness master | 支持 |
+| npm 发布（≥ `0.1.2-rc.1`） | 支持 |
+| deepseek-harness master | 支持（`verifiedHost: 0.1.2-rc.1`） |
 
-机器可读：`package.json` 的 `dsh.compat.minHost`。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。
+机器可读：`package.json` 的 `dsh.compat.minHost`（当前 `0.1.2-rc.1`——地板随 0.1.2 基线迁移前移；旧宿主请停留在旧发布线）。若上面省略了降级项，请在 `dsh.compat.notes` 里注明。

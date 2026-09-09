@@ -5,8 +5,9 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: pulls ui-conversation's SlotMap merge ('conversation.chat.node').
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node') and its
+// useChat session standard prop.
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap and ChatNodeDataMap merges.
 import type {} from './locales.ts'
 import type {} from './withdrawn-node.ts'

@@ -9,8 +9,8 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  ChatConversationViewNode, ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  ChatConversationViewNode,
+} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { en } from '../src/client/locales.ts'
 import { TimelineRail } from '../src/client/TimelineRail.tsx'
 import type { TimelineRailProps, TimelineRailState } from '../src/client/slots.ts'
@@ -47,15 +47,20 @@ function nodeStore(...list: ChatConversationViewNode[]): { get: (key: string) =>
 
 const ALL_NODES = Object.values(NODES)
 
-function sessionSnapshot(overrides: { order?: readonly string[]; hasMore?: boolean; loadingOlder?: boolean } = {}) {
+/** The useChat slice: the visible order plus the node store. */
+function chatSnapshot(overrides: { order?: readonly string[]; nodes?: ReturnType<typeof nodeStore> } = {}) {
   return {
-    chat: {
-      order: overrides.order ?? ['k1', 'k2', 'k3'],
-      nodes: nodeStore(...ALL_NODES),
-    },
+    order: overrides.order ?? ['k1', 'k2', 'k3'],
+    nodes: overrides.nodes ?? nodeStore(...ALL_NODES),
+  }
+}
+
+/** The useSession slice: history paging state (chat data lives in useChat). */
+function sessionSnapshot(overrides: { hasMore?: boolean; loadingOlder?: boolean } = {}) {
+  return {
     hasMore: overrides.hasMore ?? false,
     loadingOlder: overrides.loadingOlder ?? false,
-  } as unknown as ConversationSnapshot
+  }
 }
 
 const RAIL: TimelineRailState = {
@@ -64,6 +69,7 @@ const RAIL: TimelineRailState = {
 }
 
 function renderRail(overrides: Partial<TimelineRailProps> = {}) {
+  const chatStore = createSnapshotStore(chatSnapshot())
   const sessionStore = createSnapshotStore(sessionSnapshot())
   const railStore = createSnapshotStore(RAIL)
   const jumpTo = vi.fn()
@@ -71,6 +77,7 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
   const props = {
     sessionId: 's1',
     useSession: bindSnapshotSelector(sessionStore),
+    useChat: bindSnapshotSelector(chatStore),
     useRail: bindSnapshotSelector(railStore),
     jumpTo,
     loadOlder,
@@ -80,7 +87,7 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
     t: (key: keyof typeof en) => en[key],
   } as unknown as TimelineRailProps
   const view = render(<TimelineRail {...{ ...props, ...overrides }} />)
-  return { view, sessionStore, railStore, jumpTo, loadOlder }
+  return { view, sessionStore, chatStore, railStore, jumpTo, loadOlder }
 }
 
 function items(): HTMLElement[] {
@@ -130,16 +137,12 @@ describe('the flat timeline panel', () => {
       data: { content: [{ type: 'text', text: '被撤回的原消息' }] },
     } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          // The host order no longer surfaces any user bubble (all withdrawn /
-          // replaced); the edited bubble lives only in the store.
-          order: [],
-          nodes: nodeStore(edited, withdrawn),
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        // The host order no longer surfaces any user bubble (all withdrawn /
+        // replaced); the edited bubble lives only in the store.
+        order: [],
+        nodes: nodeStore(edited, withdrawn),
+      })),
     })
 
     expect(items()).toHaveLength(1)
@@ -155,14 +158,10 @@ describe('the flat timeline panel', () => {
       data: { seq: 9, hiddenStartSeq: 5, content: [{ type: 'text', text: '改过的内容' }] },
     } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['k1', 'k3'],
-          nodes: nodeStore(NODES.k1, NODES.k3, edited),
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['k1', 'k3'],
+        nodes: nodeStore(NODES.k1, NODES.k3, edited),
+      })),
     })
 
     expect(items()).toHaveLength(3)
@@ -187,18 +186,14 @@ describe('the flat timeline panel', () => {
       data: { content: [{ type: 'text', text: '最新消息' }] },
     } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          // The host order surfaces only the newest user row; the edited bubble
-          // lives only in the store (store iteration yields the bubble first,
-          // the newest row second — the order loop keeps the row, the append
-          // adds the bubble).
-          order: ['k3'],
-          nodes: nodeStore(edited, newest),
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        // The host order surfaces only the newest user row; the edited bubble
+        // lives only in the store (store iteration yields the bubble first,
+        // the newest row second — the order loop keeps the row, the append
+        // adds the bubble).
+        order: ['k3'],
+        nodes: nodeStore(edited, newest),
+      })),
     })
 
     expect(items()).toHaveLength(2)
@@ -220,16 +215,12 @@ describe('the flat timeline panel', () => {
       data: { seq: 20, hiddenStartSeq: 5 },
     } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          // The host still lists the withdrawn original (no suppression seam),
-          // plus one untouched user message and the divider.
-          order: ['k1', 'kw', 'kd'],
-          nodes: nodeStore(NODES.k1, withdrawn, divider),
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        // The host still lists the withdrawn original (no suppression seam),
+        // plus one untouched user message and the divider.
+        order: ['k1', 'kw', 'kd'],
+        nodes: nodeStore(NODES.k1, withdrawn, divider),
+      })),
     })
 
     expect(items()).toHaveLength(1)
@@ -252,14 +243,10 @@ describe('the flat timeline panel', () => {
       data: { seq: 7, content: [{ type: 'text', text: '被撤回的原文' }] },
     } as unknown as ChatConversationViewNode
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['kw', 'ke'],
-          nodes: nodeStore(withdrawn, edited),
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['kw', 'ke'],
+        nodes: nodeStore(withdrawn, edited),
+      })),
     })
 
     expect(items()).toHaveLength(1)
@@ -275,11 +262,10 @@ describe('the flat timeline panel', () => {
       values: () => { throw new Error('boom') },
     }
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: { order: ['k1', 'k3'], nodes: badStore },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['k1', 'k3'],
+        nodes: badStore,
+      })),
     })
 
     expect(items()).toHaveLength(2)
@@ -287,20 +273,13 @@ describe('the flat timeline panel', () => {
     expect(panel().textContent).toContain('谢谢')
   })
 
-  it('reads chat data from the useChat prop when the session snapshot has no chat slice (host 0.1.2)', () => {
-    // alpha split the chat snapshot out of the session snapshot: the entry
-    // gets useChat (top-level order/nodes) and a chat-less useSession.
-    const chatless = sessionSnapshot() as unknown as Record<string, unknown>
-    delete chatless['chat']
-    renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore(chatless)),
-      useChat: bindSnapshotSelector(createSnapshotStore({
-        order: ['k1', 'k2', 'k3'],
-        nodes: { get: (key: string) => NODES[key] },
-      })),
-    } as Partial<TimelineRailProps>)
-    expect(items()).toHaveLength(3)
-    expect(panel().textContent).toContain('你好')
+  it('hides the panel when the useChat seat is absent (degrade, never a throw)', () => {
+    // A host without the ui-chat standard prop leaves the rail an empty slice:
+    // no rows, so the portal never mounts — the plugin stays invisible rather
+    // than crashing the entry.
+    renderRail({ useChat: undefined })
+    expect(items()).toHaveLength(0)
+    expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
   })
 
   it('drops steering rows when includeSteering is off', () => {
@@ -447,14 +426,10 @@ describe('the flat timeline panel', () => {
 
   it('skips nodes that do not resolve', () => {
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['missing', 'k1', 'k3'],
-          nodes: { get: (key: string) => NODES[key] },
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['missing', 'k1', 'k3'],
+        nodes: { get: (key: string) => NODES[key] },
+      })),
     })
     // 'missing' has no node: only k1 and k3 produce rows.
     expect(items()).toHaveLength(2)
@@ -464,14 +439,10 @@ describe('the flat timeline panel', () => {
     const contentless = node('kc', 'user', '')
     ;(contentless.data as { content?: unknown }).content = undefined
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore({
-        chat: {
-          order: ['kc'],
-          nodes: { get: (key: string) => (key === 'kc' ? contentless : undefined) },
-        },
-        hasMore: false,
-        loadingOlder: false,
-      } as unknown as ConversationSnapshot)),
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['kc'],
+        nodes: { get: (key: string) => (key === 'kc' ? contentless : undefined) },
+      })),
     })
     expect(panel().textContent).toContain(en['rail.empty'])
   })
@@ -515,16 +486,17 @@ describe('the flat timeline panel', () => {
     const assistant = {
       key: 'a1', kind: 'assistant', target: 'chat', anchorSeq: 1, data: {},
     } as unknown as ChatConversationViewNode
-    const paged = (withUser: boolean, loading = false) => ({
-      chat: {
-        order: withUser ? ['k1', 'a1'] : ['a1'],
-        nodes: { get: (key: string) => (key === 'k1' ? NODES.k1 : assistant) },
-      },
-      hasMore: true,
-      loadingOlder: loading,
-    }) as unknown as ConversationSnapshot
-    const sessionStore = createSnapshotStore(paged(false))
-    const { loadOlder } = renderRail({ useSession: bindSnapshotSelector(sessionStore) })
+    const pagedChat = (withUser: boolean) => ({
+      order: withUser ? ['k1', 'a1'] : ['a1'],
+      nodes: { get: (key: string) => (key === 'k1' ? NODES.k1 : assistant) },
+    })
+    const pagedSession = (loading = false) => ({ hasMore: true, loadingOlder: loading })
+    const chatStore = createSnapshotStore(pagedChat(false))
+    const sessionStore = createSnapshotStore(pagedSession())
+    const { loadOlder } = renderRail({
+      useChat: bindSnapshotSelector(chatStore),
+      useSession: bindSnapshotSelector(sessionStore),
+    })
 
     expect(items()).toHaveLength(0)
     expect(loadOlder).toHaveBeenCalledTimes(1)
@@ -532,15 +504,16 @@ describe('the flat timeline panel', () => {
     // While no user message has materialized the initialPages cap does not
     // apply: more arrivals than the cap keep paging.
     for (let page = 2; page <= 7; page += 1) {
-      act(() => { sessionStore.set(paged(false, true)) })
-      act(() => { sessionStore.set(paged(false)) })
+      act(() => { sessionStore.set(pagedSession(true)) })
+      act(() => { sessionStore.set(pagedSession()) })
       expect(loadOlder).toHaveBeenCalledTimes(page)
     }
 
     // A user message materializes: the panel appears and the capped
     // prefetch stops (the bootstrap pages already exceed initialPages).
-    act(() => { sessionStore.set(paged(true, true)) })
-    act(() => { sessionStore.set(paged(true)) })
+    act(() => { chatStore.set(pagedChat(true)) })
+    act(() => { sessionStore.set(pagedSession(true)) })
+    act(() => { sessionStore.set(pagedSession()) })
     expect(items()).toHaveLength(1)
     expect(loadOlder).toHaveBeenCalledTimes(7)
   })
@@ -656,7 +629,7 @@ describe('hidden conditions', () => {
 
   it('renders nothing when the session has no user messages', () => {
     renderRail({
-      useSession: bindSnapshotSelector(createSnapshotStore(sessionSnapshot({ order: ['a1'] }))),
+      useChat: bindSnapshotSelector(createSnapshotStore(chatSnapshot({ order: ['a1'] }))),
       useRail: bindSnapshotSelector(createSnapshotStore({ ...RAIL, activeKey: null })),
     })
     expect(items()).toHaveLength(0)

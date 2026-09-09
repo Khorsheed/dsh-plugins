@@ -70,6 +70,7 @@ export const zh = {
   'json.collapseNode': '收起节点',
   'json.expandNode': '展开节点',
   'json.copyButtonTitle': '复制{action}',
+  'markdown.footnotes': '脚注',
   'aria.openLocal': '打开工作区文件浏览',
 } satisfies Record<string, string>
 
@@ -156,5 +157,6 @@ export const en = {
   'json.collapseNode': 'Collapse node',
   'json.expandNode': 'Expand node',
   'json.copyButtonTitle': 'Copy {action}',
+  'markdown.footnotes': 'Footnotes',
   'aria.openLocal': 'Open workspace file browser',
 } satisfies Record<string, string>

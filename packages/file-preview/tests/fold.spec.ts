@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { JsonValue } from '@deepseek-ai/dsh-session/types'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   diffsFromResultMeta, foldFilePreview, foldFilePreviewByTurn, pathFromToolCall,
 } from '@khorsheed/dsh-file-preview/src/fold.ts'
@@ -247,9 +247,19 @@ function codeDispatch(
   }
 }
 
+/**
+ * Build the PTC-rename twin of a settled dispatch: later 0.1.2 seats emit
+ * `tool/ptc-dispatch` with the same payload, and the fold must recognize both
+ * names (feature detection, never a version check).
+ */
+function ptcDispatch(
+  seq: number, name: string, args: unknown, rootSeq: number, isError = false,
+): SessionEvent<'tool/code-dispatch'> {
+  return { ...codeDispatch(seq, name, args, rootSeq, isError), type: 'tool/ptc-dispatch' as unknown as 'tool/code-dispatch' }
+}
+
 describe('foldFilePreview code dispatches', () => {
-  it('records nested Code Mode file dispatches with the root call location', () => {
-    const events = [
+  it('records nested Code Mode file dispatches with the root call location', () => {    const events = [
       toolCall(0, 'run_code', { code: '…' }, 3, 2),
       codeDispatch(1, 'write', { file_path: 'a.md' }, 0),
       codeDispatch(2, 'edit', { file_path: 'b.ts' }, 0),
@@ -275,6 +285,17 @@ describe('foldFilePreview code dispatches', () => {
   it('falls back to a zero location when the root call is outside the window', () => {
     const events = [codeDispatch(1, 'write', { file_path: 'a.md' }, 99)]
     expect(foldFilePreview(events, 500).entries[0]).toMatchObject({ path: 'a.md', turn: 0, step: 0 })
+  })
+
+  it('recognizes the PTC rename (tool/ptc-dispatch) with the same payload', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 2),
+      ptcDispatch(1, 'write', { file_path: 'a.md' }, 0),
+    ]
+    expect(foldFilePreview(events, 500).entries).toMatchObject([
+      { path: 'a.md', op: 'write', seq: 1, turn: 3, step: 2 },
+    ])
+    expect(foldFilePreviewByTurn(events).get(3)?.get('a.md')?.step).toBe(2)
   })
 
   it('refreshes a top-level entry in place when a dispatch repeats the path', () => {

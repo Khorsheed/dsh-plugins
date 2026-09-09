@@ -12,7 +12,7 @@ import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap, SessionSeq } from '@deepseek-ai/dsh-session'
 import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
@@ -48,7 +48,7 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
  */
 export function nextKimiSessionStep(childSession: Session, turn: number): number {
   let next = 1
-  for (const event of childSession.events) {
+  for (const event of childSession.snapshotEvents()) {
     const data = event.data as { turn?: number; step?: number }
     if (data.turn === turn && typeof data.step === 'number') next = Math.max(next, data.step + 1)
   }
@@ -237,9 +237,9 @@ export async function mirrorKimiSessionDelta(
   // The child session's own events are the ledger of mirrored tool calls:
   // callId → its event (for pairing late results) and the already-settled
   // call ids (so a backfill never duplicates a result).
-  const openCalls = new Map<string, { turn: number; step: number; seq: number }>()
+  const openCalls = new Map<string, { turn: number; step: number; seq: SessionSeq }>()
   const settledCalls = new Set<string>()
-  for (const event of childSession.events) {
+  for (const event of childSession.snapshotEvents()) {
     const data = event.data as { turn?: number; step?: number }
     if (typeof data.turn === 'number' && typeof data.step === 'number') {
       steps.set(data.turn, Math.max(steps.get(data.turn) ?? 0, data.step + 1))
@@ -370,7 +370,7 @@ async function persistIfStandalone(ctx: Context, childSession: Session): Promise
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) return
   const persistence = ctx.get('sessionPersistence')
-  await persistence?.append(childSession.id, childSession.events)
+  await persistence?.append(childSession.id, childSession.snapshotEvents())
 }
 
 /**
@@ -380,13 +380,13 @@ async function persistIfStandalone(ctx: Context, childSession: Session): Promise
  */
 function userAlreadyAppended(childSession: Session, turn: number, text: string): boolean {
   let turnStartSeq = -1
-  for (const event of childSession.events) {
+  for (const event of childSession.snapshotEvents()) {
     if (event.type === 'turn/start' && (event.data as { turn?: number }).turn === turn) {
       turnStartSeq = event.seq
     }
   }
   if (turnStartSeq < 0) return false
-  for (const event of childSession.events) {
+  for (const event of childSession.snapshotEvents()) {
     if (event.seq < turnStartSeq || event.type !== 'user/message') continue
     const data = event.data as { content?: readonly { type: string; text?: string }[] }
     const existing = (data.content ?? []).map(block => block.text ?? '').join('')

@@ -6,7 +6,7 @@
  * session's actions; a gesture that lands before the view ever mounted parks
  * a pending path that the next attach applies.
  */
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createFilePreviewStore } from './file-preview-store.ts'
 

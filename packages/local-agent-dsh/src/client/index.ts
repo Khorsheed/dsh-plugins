@@ -13,13 +13,16 @@
  * disables the controls.
  * @module @khorsheed/dsh-local-agent-dsh/client
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: the typed `ctx.remote` (commands namespace) merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the ctx.settingsScope service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: the ctx.slots service merge (renderer-owned slot registry).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the 'settings.plugin.item' keyed-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: the family core's LocaleNamespaceMap merge ('local-agent', the
@@ -51,7 +54,7 @@ export const inject = ['slots', 'settingsScope', 'remote', 'remote.commands', 'l
  * bound to the local-agent-dsh namespace.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-dsh: dictionaries')
   const scope = ctx.settingsScope.bind<DshCardSettings>({ namespace: 'local-agent-dsh' })
   // The auth block's copy lives in the family core's dictionary; binding is

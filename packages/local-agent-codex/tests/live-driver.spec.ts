@@ -365,18 +365,18 @@ describe('codex live driver rounds', () => {
     // Mirroring: the prompt plus the items, with the round's usage on the
     // final assistant line (the hold-back rule); the commandExecution item
     // mirrors as a native tool/call + tool/result pair.
-    expect(child.events.filter(e => e.type === 'user/message')).toHaveLength(1)
-    const assistant = child.events.filter(e => e.type === 'assistant/message')
+    expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
     expect(assistant[1]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
-    const calls = child.events.filter(e => e.type === 'tool/call')
+    const calls = child.snapshotEvents().filter(e => e.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'ls' })
-    const toolResults = child.events.filter(e => e.type === 'tool/result')
+    const toolResults = child.snapshotEvents().filter(e => e.type === 'tool/result')
     expect(toolResults).toHaveLength(1)
     expect(toolResults[0]?.data.message.content[0]).toMatchObject({ content: [{ type: 'text', text: 'a.txt' }] })
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
     await m.driver.disposeAll()
@@ -400,8 +400,8 @@ describe('codex live driver rounds', () => {
     const methods = m.spawns[0]!.fake!.requests.map(r => r.method)
     // thread is already loaded: no second thread/start, no thread/resume.
     expect(methods).toEqual(['initialize', 'thread/start', 'turn/start', 'turn/start'])
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(2)
-    expect(child.events.filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
     await m.driver.disposeAll()
   })
 
@@ -437,7 +437,7 @@ describe('codex live driver rounds', () => {
     const interrupt = fake.requests.find(r => r.method === 'turn/interrupt')
     expect(interrupt?.params).toEqual({ threadId: 'thread-1', turnId: 'turn-1' })
     expect(fake.terminated).toBe(false)
-    expect(child.events.find(e => e.type === 'turn/end')?.data).toMatchObject({
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
@@ -481,7 +481,7 @@ describe('codex live driver rounds', () => {
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-2', status: 'completed' } })
     expect((await second.result).stopReason).toBe('completed')
     expect((await second.result).output).toEqual([{ type: 'text', text: '第二条' }])
-    expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
     await m.driver.disposeAll()
   })
 
@@ -510,7 +510,7 @@ describe('codex live driver rounds', () => {
     off.queueChild(new FakeAppServer({ turn: () => ({ deltas, items: answerItems('hello') }) }))
     const offRun = await off.driver.startRound(request() as never, roundSpec(off, offChild))
     await offRun.result
-    expect(offChild.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(offChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     await off.driver.disposeAll()
 
     const on = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
@@ -518,7 +518,7 @@ describe('codex live driver rounds', () => {
     on.queueChild(new FakeAppServer({ turn: () => ({ deltas, items: answerItems('hello') }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    const chunks = onChild.events.filter(e => e.type === 'assistant/chunk')
+    const chunks = onChild.snapshotEvents().filter(e => e.type === 'assistant/chunk')
     expect(chunks).toHaveLength(2)
     expect(chunks[0]?.data).toMatchObject({ chunk: { type: 'text-delta', text: 'hel' } })
     await on.driver.disposeAll()
@@ -540,8 +540,8 @@ describe('codex live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     // One final at the stream's own (turn, step): the projection replaces the
     // stream with it — no duplicated content, no dangling interrupted badge.
     expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
@@ -565,8 +565,8 @@ describe('codex live driver rounds', () => {
     fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'item-m', delta: '写到一半' })
     controller.abort()
     expect((await run.result).stopReason).toBe('aborted')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
     await m.driver.disposeAll()
@@ -592,15 +592,15 @@ describe('codex live driver rounds', () => {
     })
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
     // Chronological steps: t1=1, t2=2, the stream=3, the late tool shifts to 4.
-    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
-    for (const chunk of child.events.filter(e => e.type === 'assistant/chunk')) {
+    for (const chunk of child.snapshotEvents().filter(e => e.type === 'assistant/chunk')) {
       expect((chunk.data as { step: number }).step).toBe(3)
     }
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     await m.driver.disposeAll()
   })
@@ -612,13 +612,13 @@ describe('codex live driver rounds', () => {
     m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('静默答案') }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.events.filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
     // The tool card folds at its positional step (2); the fallback final
     // lands past every line (lines.length + 1 = 4), never above the tool.
-    const toolSteps = child.events.filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
+    const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([2])
-    const final = child.events.find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect((final.data as { step: number }).step).toBe(4)
     await m.driver.disposeAll()
   })
@@ -649,7 +649,7 @@ describe('codex live driver lifecycle', () => {
     const run = await pending
     expect(Date.now() - start).toBeLessThan(5_000)
     expect((await run.result).stopReason).toBe('aborted')
-    expect(child.events).toHaveLength(0)
+    expect(child.snapshotEvents()).toHaveLength(0)
     await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
     expect(m.driver.disabled).toBe(false)
   })
@@ -738,7 +738,7 @@ describe('codex live driver review fixes', () => {
     controller.abort()
     expect((await run.result).stopReason).toBe('aborted')
     // The volatile last line survived settlement, with the observed usage.
-    const assistant = child.events.filter(e => e.type === 'assistant/message')
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
     expect(assistant[1]?.data).toMatchObject({
       message: { content: [{ type: 'text', text: '半截回复' }] },
@@ -844,11 +844,11 @@ describe('codex live driver drain (settings handoff)', () => {
     m.queueChild(new FakeAppServer({ turn: () => ({ deltas, items: answerItems('hello') }) }))
     const first = await m.driver.startRound(request() as never, roundSpec(m, child))
     await first.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(0)
     m.driver.setLiveMirrorGranularity('token')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
     await second.result
-    expect(child.events.filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/chunk')).toHaveLength(2)
     // Same runtime, same process: granularity rides the existing generation.
     expect(m.spawns).toHaveLength(1)
     await m.driver.disposeAll()

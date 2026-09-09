@@ -14,7 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
@@ -80,7 +80,7 @@ export const DEFAULT_SANDBOX: NonNullable<Config['sandbox']> = 'workspace-write'
  * composition `base` layer, so a field absent from the user layer inherits the
  * YAML value — the card only ever stores deliberate overrides.
  */
-export const CODEX_SETTINGS_NAMESPACE = settingsNamespace('local-agent-codex')
+export const CODEX_SETTINGS_NAMESPACE = 'local-agent-codex'
 
 /**
  * The card's schema; field defaults are the innermost layer below `base`.

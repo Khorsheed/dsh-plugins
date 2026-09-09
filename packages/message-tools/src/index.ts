@@ -11,6 +11,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type {} from '@deepseek-ai/dsh-session'
+// Value: the branded seq constructor the surface markers require.
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context.
 import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -61,14 +63,14 @@ export class MessageToolsService extends TypertRemoteService {
   async withdraw(request: MessageToolsWithdrawRequest): Promise<MessageToolsWithdrawResult> {
     const session = this.ctx.sessions.get(request.sessionId)
     if (session === undefined) return { ok: false, error: { code: 'session-not-found' } }
-    const planned = planWithdrawal(session.events, session.surface.nodes, request.targetSeq)
+    const planned = planWithdrawal(session.snapshotEvents(), session.surface.nodes, request.targetSeq)
     if (!planned.ok) return { ok: false, error: { code: planned.code } }
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: WITHDRAWN_NOTICE }],
       source: { kind: 'plugin', plugin: MESSAGE_TOOLS_PLUGIN },
     }), {
-      surfaceOp: { op: 'replace', start: planned.plan.start, end: planned.plan.end },
-      sourceEventSeqs: [...planned.plan.sourceEventSeqs],
+      surfaceOp: { op: 'replace', start: SessionSeq(planned.plan.start), end: SessionSeq(planned.plan.end) },
+      sourceEventSeqs: planned.plan.sourceEventSeqs.map(seq => SessionSeq(seq)),
     })
     await this.ctx.sessions.flush(session)
     return {
@@ -95,7 +97,7 @@ export class MessageToolsService extends TypertRemoteService {
   async restore(request: MessageToolsRestoreRequest): Promise<MessageToolsRestoreResult> {
     const session = this.ctx.sessions.get(request.sessionId)
     if (session === undefined) return { ok: false, error: { code: 'session-not-found' } }
-    const planned = planRestore(session.events, session.surface.nodes, request.targetSeq)
+    const planned = planRestore(session.snapshotEvents(), session.surface.nodes, request.targetSeq)
     if (!planned.ok) return { ok: false, error: { code: planned.code } }
     const appendedSeqs: number[] = []
     for (const entry of planned.plan.entries) {
@@ -110,7 +112,7 @@ export class MessageToolsService extends TypertRemoteService {
         })
       appendedSeqs.push(session.append('user/message', message, {
         surfaceOp: 'append',
-        sourceEventSeqs: [entry.sourceSeq],
+        sourceEventSeqs: [SessionSeq(entry.sourceSeq)],
       }).seq)
     }
     await this.ctx.sessions.flush(session)
@@ -133,14 +135,14 @@ export class MessageToolsService extends TypertRemoteService {
   async edit(request: MessageToolsEditRequest): Promise<MessageToolsEditResult> {
     const session = this.ctx.sessions.get(request.sessionId)
     if (session === undefined) return { ok: false, error: { code: 'session-not-found' } }
-    const planned = planEdit(session.events, session.surface.nodes, request.targetSeq, request.text)
+    const planned = planEdit(session.snapshotEvents(), session.surface.nodes, request.targetSeq, request.text)
     if (!planned.ok) return { ok: false, error: { code: planned.code } }
     const replacement = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: request.text }],
       source: editReplacementSource(),
     }), {
-      surfaceOp: { op: 'replace', start: planned.plan.start, end: planned.plan.end },
-      sourceEventSeqs: [...planned.plan.sourceEventSeqs],
+      surfaceOp: { op: 'replace', start: SessionSeq(planned.plan.start), end: SessionSeq(planned.plan.end) },
+      sourceEventSeqs: planned.plan.sourceEventSeqs.map(seq => SessionSeq(seq)),
     })
     await this.ctx.sessions.flush(session)
     const agent = this.ctx.agents.get(request.sessionId)

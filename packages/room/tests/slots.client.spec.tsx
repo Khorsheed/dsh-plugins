@@ -2,7 +2,8 @@
 /** The browser half's apply: Remote mount, the slot entries, store wiring, teardown. */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createSnapshotStore, SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { apply, inject } from '../src/client/index.ts'
@@ -46,7 +47,9 @@ async function bench(options: {
   }
   ctx.provide('remote.room', remote as never)
   const conversationEvents = { register: vi.fn(() => () => {}) }
-  ctx.provide('conversationEvents', conversationEvents as never)
+  // Host 0.1.2's registry seat: uiConversation.events (the standalone
+  // conversationEvents service is gone).
+  ctx.provide('uiConversation', { events: conversationEvents } as never)
   const sessions = {
     open: vi.fn(),
     list: createSnapshotStore({
@@ -60,17 +63,6 @@ async function bench(options: {
     }),
   }
   ctx.provide('sessions', sessions as never)
-  const workspaces = {
-    list: createSnapshotStore({
-      items: [],
-      archivedSessionIds: [],
-      state: 'idle', phase: 'pending', error: null,
-      baselinesReady: true,
-      recentWorkspaceId: undefined,
-    }),
-    pickDirectory: vi.fn(async () => null),
-  }
-  ctx.provide('workspaces', workspaces as never)
   const slots = ctx.get('slots') as SlotRegistry
   // The slot declarations as their owning packages declare them in production.
   slots.register({
@@ -88,7 +80,7 @@ async function bench(options: {
 
 describe('room client apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'remote', 'conversationEvents', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'remote', 'locale'])
   })
 
   it('mounts the Remote, registers the five Definitions and the slot entries with the right shapes', async () => {
@@ -107,7 +99,7 @@ describe('room client apply', () => {
     // The chain selector declines while nothing is cached (no session here).
     const select = (composer[0] as { select?: (owner: object) => unknown }).select
     expect(select).toBeTypeOf('function')
-    expect(select!({ interactions: [] })).toBeNull()
+    expect(select!({ pendingInteraction: undefined })).toBeNull()
 
     const views = slots.entries('conversation.view')
     expect(views).toHaveLength(1)
@@ -149,13 +141,13 @@ describe('room client apply', () => {
     const entry = slots.entries('conversation.composer')[0]!
     const select = (entry as unknown as { select: (owner: object) => unknown }).select
     // No session, or an uncached one: decline (the official bar stays).
-    expect(select({ interactions: [], session: undefined })).toBeNull()
-    expect(select({ interactions: [], session: { sessionId: 'plain' } })).toBeNull()
+    expect(select({ pendingInteraction: undefined, sessionId: undefined })).toBeNull()
+    expect(select({ pendingInteraction: undefined, sessionId: 'plain' })).toBeNull()
     // Prime the cache through the injected store (the isRoom stub: only 'room-1' is a room).
     // The composer inject binds the task-board actions to the session id.
     const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
     await face.roomStore.ensure('room-1' as never)
-    expect(select({ interactions: [], session: { sessionId: 'room-1' } })).toEqual({ room: true })
+    expect(select({ pendingInteraction: undefined, sessionId: 'room-1' })).toEqual({ room: true })
   })
 
   it('collapses every contribution on teardown', async () => {

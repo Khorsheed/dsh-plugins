@@ -3,13 +3,16 @@
  * face (jump/loadOlder plus the rail geometry hook) and the composed props of
  * the `conversation.session.header.utilities` entry.
  */
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: pulls ui-conversation's SlotMap merge (the header utilities slot)
-// and the runtime's SessionStandardProps merge (useSession / sessionId).
+// Type-only: pulls ui-conversation's SlotMap merge (the header utilities slot),
+// ui-session's SessionStandardProps merge (useSession / sessionId), and
+// ui-chat's useChat merge.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 

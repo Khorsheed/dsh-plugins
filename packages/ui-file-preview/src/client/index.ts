@@ -15,9 +15,16 @@
  * distributes as an independent package with no edits to core packages.
  * Composing this plugin out of cordis.yml removes every surface it adds.
  */
-import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { HostDescriptionSource } from './host-description.ts'
+// Type-only: pulls the ctx.workspaces service merge.
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
@@ -94,7 +101,7 @@ function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionS
  * controller, the file view tab, the per-turn file row, and the drawer.
  * @param ctx - client root context.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(filePreviewRemote))

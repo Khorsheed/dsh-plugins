@@ -329,7 +329,7 @@ describe('DispatchEngine (real composition)', () => {
         runs: [{ member: 'main', state: 'done' }],
       },
     })
-    expect(bench.ctx.sessions.get(bench.sessionId)!.events.some(event => event.type === 'room/speech')).toBe(false)
+    expect(bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().some(event => event.type === 'room/speech')).toBe(false)
   })
 
   it('fails loud when the room agent is not live', async () => {
@@ -414,7 +414,7 @@ describe('DispatchEngine (real composition)', () => {
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '搞定'))
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '干活' })
     await bench.service.engine.idle()
-    const edges = bench.ctx.sessions.get(bench.sessionId)!.events
+    const edges = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
       .filter(event => event.type === 'room/run-state')
       .map(event => event.data as { state: string; startedAt: number })
     expect(edges.map(edge => edge.state)).toEqual(['running', 'done'])
@@ -439,10 +439,10 @@ describe('DispatchEngine (real composition)', () => {
     flight.resolve({ output: [], stopReason: 'aborted' })
     await bench.service.engine.idle()
     const session = bench.ctx.sessions.get(bench.sessionId)!
-    const edges = session.events.filter(event => event.type === 'room/run-state')
+    const edges = session.snapshotEvents().filter(event => event.type === 'room/run-state')
     // Exactly running + cancelled: the engine's settle saw the cancel edge and no-oped.
     expect(edges.map(event => (event.data as { state: string }).state)).toEqual(['running', 'cancelled'])
-    expect(session.events.some(event => event.type === 'room/speech')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'room/speech')).toBe(false)
     // The cancelled run closed the auto-opened task as cancelled.
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'ada', status: 'cancelled' }] } })

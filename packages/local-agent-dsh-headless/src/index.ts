@@ -96,7 +96,7 @@ async function run(ctx: Context, config: Config, io: HeadlessIo): Promise<void> 
   }))
   await agent.whenIdle()
   await sessions.flush(agent.session)
-  const outcome = summarizeTurn(agent.session.events, firstSeq)
+  const outcome = summarizeTurn(agent.session.snapshotEvents(), firstSeq)
   io.stdout.write(outcome.text + '\n')
   if (outcome.reason?.kind === 'error') {
     io.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`)

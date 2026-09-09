@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   apply, UI_SHORTCUTS_NAMESPACE,
 } from '@khorsheed/dsh-ui-shortcuts'
@@ -23,7 +23,7 @@ describe('ui-shortcuts host', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
-    const ns = settingsNamespace(UI_SHORTCUTS_NAMESPACE)
+    const ns = UI_SHORTCUTS_NAMESPACE
     expect(ctx.settings.get(ns)).toEqual({})
     await ctx.settings.update(ns, { pause: PREFERENCE, steerSend: NONE })
     // The dict schema persists exactly the written entries; unwritten action

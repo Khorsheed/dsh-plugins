@@ -5,7 +5,7 @@
  * and the card react to the same live section.
  */
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right' and its InputZone owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'

@@ -8,7 +8,7 @@ import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 
 /** A minimal session double carrying only the fields the collector reads. */
 function fakeSession(id: string, cwd: string | undefined, events: readonly SessionEvent[] = []): Session {
-  return { id, header: { cwd }, events } as unknown as Session
+  return { id, header: { cwd }, snapshotEvents: () => events } as unknown as Session
 }
 
 function toolCall(callId: string, command: string, seq: number, turn = 1, step = 1): SessionEvent {

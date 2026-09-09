@@ -10,12 +10,20 @@
  * hidden panel when those attributes change — no official code is modified.
  * @module @khorsheed/dsh-message-timeline/client
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls ui-conversation's SlotMap merge (the header utilities seat)
 // and the conversation service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the ctx.slots service merge.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the ctx.sessions service merge.
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: pulls the SessionStandardProps merge (useSession / sessionId).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: pulls the useChat SessionStandardProps merge.
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { resolveConfig, type TimelineConfig } from './config.ts'
 import { en, zh } from './locales.ts'
 import { installRailTracker } from './rail-tracker.ts'
@@ -40,7 +48,7 @@ export const inject = ['slots', 'sessions', 'locale']
  * @param ctx - client root context.
  * @param config - entry config; defaults apply when the runner passes none.
  */
-export function apply(ctx: ClientContext, config?: Partial<TimelineConfig>): void {
+export function apply(ctx: Context, config?: Partial<TimelineConfig>): void {
   const options = resolveConfig(config)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'message-timeline: dictionaries')
   if (!options.enabled) return

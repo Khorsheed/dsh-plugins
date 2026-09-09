@@ -20,7 +20,7 @@ import {
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalFilesRead } from '../types.ts'
 import { isHtmlPath, isMarkdown, languageFor } from './language.ts'
-import { structuredPreview } from './structured.tsx'
+import { structuredPreview, markdownLabels } from './structured.tsx'
 import { buildSrcDoc } from './html-src-doc.ts'
 import { attachBridge } from './html-bridge.ts'
 import css from './DetailPane.module.css'
@@ -160,7 +160,7 @@ function PreviewBody(props: {
             {searching
               ? <MarkedContent content={content} search={search} />
               : htmlMode === 'source'
-                ? <CodeBlock code={content} lang="html" />
+                ? <CodeBlock code={content} lang="html" copyLabel={t('action.copy')} copiedLabel={t('action.copied')} />
                 : <HtmlRenderView content={content} mode={htmlMode} scripted={scripted} t={t} onLoaded={onLoaded} iframeRef={iframeRef} frameRef={frameRef} fullscreen={fullscreen} />}
           </div>
         )
@@ -168,7 +168,7 @@ function PreviewBody(props: {
       const documentBody = searching
         ? null
         : structuredPreview(read.path, content, t)
-          ?? (isMarkdown(read.path) ? <MarkdownText text={content} /> : null)
+          ?? (isMarkdown(read.path) ? <MarkdownText text={content} labels={markdownLabels(t)} /> : null)
       const dot = read.path.lastIndexOf('.')
       const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
@@ -185,7 +185,7 @@ function PreviewBody(props: {
                   <div className={css.structuredBody}>{documentBody}</div>
                 </div>
               )
-              : <CodeBlock code={content} lang={languageFor(read.path)} />}
+              : <CodeBlock code={content} lang={languageFor(read.path)} copyLabel={t('action.copy')} copiedLabel={t('action.copied')} />}
         </div>
       )
     }

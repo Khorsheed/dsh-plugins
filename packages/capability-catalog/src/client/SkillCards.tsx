@@ -72,6 +72,7 @@ export function DeleteSkillConfirm({ name, onCancel, onConfirm, t }: {
       open
       onClose={onCancel}
       title={t('delete')}
+      closeLabel={t('close')}
       description={`${t('confirmDelete')}「${name}」？`}
       footer={(
         <>

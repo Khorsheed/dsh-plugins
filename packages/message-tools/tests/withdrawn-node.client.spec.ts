@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { MESSAGE_TOOLS_PLUGIN, WITHDRAWN_NOTICE } from '../src/marker.ts'
 import {

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /** The room composer takeover: chain selector (room election + interaction yield), mention completion, dispatch submit, bare-message release, error line, the inherited environment surfaces (Stop, todo strip, queue strip, dock capsules, stats row). */
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, SessionId, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -38,7 +40,7 @@ async function primedStore(state: RoomState = STATE): Promise<RoomStore> {
     isRoom: async () => ({ ok: true, value: true }),
     getState: async () => ({ ok: true, value: { ok: true, value: state } }),
   }
-  const store = new RoomStore({ sessions: { list } } as unknown as ClientContext, gateway)
+  const store = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
   await store.ensure(SESSION)
   return store
 }
@@ -290,11 +292,11 @@ describe('RoomComposer', () => {
   })
 })
 
-/** A minimal chain-currency owner: no interactions, an ordinary session. */
+/** A minimal chain-currency owner: no pending interaction, an ordinary session. */
 function owner(overrides: Partial<ComposerChainProps> = {}): ComposerChainProps {
   return {
-    interactions: [],
-    session: { sessionId: SESSION } as unknown as ComposerChainProps['session'],
+    pendingInteraction: undefined,
+    sessionId: SESSION,
     ...overrides,
   }
 }
@@ -304,11 +306,11 @@ describe('selectRoomComposer', () => {
     const cached = (id: SessionId): boolean => id === SESSION
     expect(selectRoomComposer(owner(), cached)).toEqual({ room: true })
     expect(selectRoomComposer(owner(), () => false)).toBeNull()
-    expect(selectRoomComposer(owner({ session: undefined }), cached)).toBeNull()
+    expect(selectRoomComposer(owner({ sessionId: undefined }), cached)).toBeNull()
   })
 
   it('declines while an interaction is pending — the ApprovalPanel elects at priority 1', () => {
-    const pending = owner({ interactions: [{ kind: 'question' } as never] })
+    const pending = owner({ pendingInteraction: { kind: 'question' } as never })
     expect(selectRoomComposer(pending, () => true)).toBeNull()
   })
 })

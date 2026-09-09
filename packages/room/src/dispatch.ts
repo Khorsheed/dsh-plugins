@@ -87,15 +87,15 @@ function assemblePrompt(
   text: string,
   relayIds: readonly string[],
 ): { readonly prompt: string; readonly carried: readonly RoomRelay[] } {
-  const state = replay(room.events)
+  const state = replay(room.snapshotEvents())
   const carried = state.relays.filter(relay =>
     relay.state === 'confirmed' && relay.to === member.name && !relayIds.includes(relay.id))
   const sections: string[] = []
-  const pending = pendingInstructions(room.events, member.name, cursor)
+  const pending = pendingInstructions(room.snapshotEvents(), member.name, cursor)
   if (pending?.kind === 'initial') sections.push(`你的角色指令：${pending.instructions}`)
   if (pending?.kind === 'update') sections.push(`你的角色指令更新为：${pending.instructions}`)
   if (state.goal !== undefined) sections.push(`本房间的目标：${state.goal}`)
-  if (rosterStaleSince(room.events, cursor)) sections.push(rosterSection(state, member.name))
+  if (rosterStaleSince(room.snapshotEvents(), cursor)) sections.push(rosterSection(state, member.name))
   if (carried.length > 0) sections.push(notificationsSection(carried))
   sections.push(text)
   return { prompt: sections.join('\n\n'), carried }
@@ -148,12 +148,12 @@ export class DispatchEngine {
 
   /** Execute one dispatch: run-state running → member turn → settle edges. */
   private async run(room: Session, memberName: string, text: string, options: DispatchOptions): Promise<void> {
-    const state = replay(room.events)
+    const state = replay(room.snapshotEvents())
     const member = state.members.find(entry => entry.name === memberName)
     // Removed between the dispatch and its execution: nothing to run, and the
     // removal event is already the journal's answer.
     if (member === undefined) return
-    const cursor = previousCursor(room.events, memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
+    const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
     const startedAt = Date.now()
     room.append('room/run-state', { member: memberName, state: 'running', startedAt })
     await this.ctx.sessions.flush(room)
@@ -202,7 +202,7 @@ export class DispatchEngine {
     }))
     await this.markSent(room, [
       ...carried,
-      ...replay(room.events).relays.filter(relay => relayIds.includes(relay.id)),
+      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
     ])
     // Phase-1 simplicity: the followup's own turn converging to idle IS the
     // run; the main agent's reply is its ordinary assistant speech (no
@@ -238,7 +238,7 @@ export class DispatchEngine {
     }
     await this.markSent(room, [
       ...carried,
-      ...replay(room.events).relays.filter(relay => relayIds.includes(relay.id)),
+      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
     ])
     const result = await run.result
     if (result.stopReason === 'completed') {
@@ -253,7 +253,7 @@ export class DispatchEngine {
       // at the gate — the same shape the family bridge's member_message
       // produces, so downstream handling is identical.
       const directive = parseRelayDirective(runOutputText(result.output))
-      const roster = replay(room.events).members
+      const roster = replay(room.snapshotEvents()).members
       if (directive !== undefined && directive.to !== member.name
         && roster.some(entry => entry.name === directive.to)) {
         room.append('room/relay', {
@@ -288,13 +288,13 @@ export class DispatchEngine {
     room: Session, memberName: string, startedAt: number,
     state: 'done' | 'cancelled' | 'failed', error?: string,
   ): Promise<void> {
-    const current = replay(room.events).runs.find(entry => entry.member === memberName)
+    const current = replay(room.snapshotEvents()).runs.find(entry => entry.member === memberName)
     if (current !== undefined && current.startedAt === startedAt && current.state !== 'running') return
     room.append('room/run-state', {
       member: memberName, state, startedAt, elapsedMs: Date.now() - startedAt,
       ...error === undefined ? {} : { error },
     })
-    for (const task of replay(room.events).tasks) {
+    for (const task of replay(room.snapshotEvents()).tasks) {
       if (task.member === memberName && task.status === 'in_progress') {
         room.append('room/task-updated', { id: task.id, status: state })
       }
