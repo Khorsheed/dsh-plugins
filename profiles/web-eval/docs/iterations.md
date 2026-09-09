@@ -271,9 +271,12 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T29 | 代码 | local-agent：每次委派可覆盖 scoped home / 配置 | T3 | |
 | T30a ✅ | 代码 | local-agent：四家 provider 插件配置加可选 `model`，不写 = 今天的表现，写了每轮委派以它起 CLI；改配置后新 run 走新值、进行中的 run 不受影响；`effectiveSettings.model` 报配置值并由回读核对；provider 设置卡「默认模型」（dev 域 UI，自由输入加最近值，不硬编码模型目录） | 无 | 合入 main `8633996`；codex `-m` / claude `--model` / kimi `-m`（常驻改写 default_model）；dsh 无按次传模型的启动面，不给键；真机 codex 与 claude 两轮回读命中，kimi 到请求记录为止（配额） |
 | T30b | 代码 | local-agent：委派级模型参数——首轮委派指定、成员内固定、resume 不换；T31 的条件 provision 用它做同 harness 两模型；前置：dsh-local-agent-dsh-headless 开一条按次传模型的启动路，dsh 才能拿到 model 键 | T29 T30a | |
+| T30c | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；计划加 `pricing` 段随 run 冻结进 run.meta，「标价成本」从此有数 | 无 | |
 | T31 | 代码 | eval：`conditions provision` + 条件注册表数据面（模型等因子只展示与 diff，不给选） | T29 T30b | |
 | T32 | 代码 | capability-catalog：按 preset scope 的能力清单哈希 | 无 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
+
+T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用数没人采，「标价成本」列因为没人记价格一直空着；两条都是采集面已有、只差汇总的活，合成一条，不依赖 I3 与 T29。
 
 模型切换（2026-09-08 定）：「配置能切模型、切了新 run 照新的走、缺省与今天一致、前端能切能指定」拆成两半。配置切换与设置卡是 T30a，不依赖 I3 与 T29，可与 T22 并行发；按次委派指定是 T30b，与条件 provision（T31）一起才有意义。界面上「指定某次 run 用哪个模型」走 I5 的计划审阅（T36）读条件文件，不另做入口。
 
@@ -1290,6 +1293,41 @@ eval 测试全绿，gate 绿；真机两次结果如上；run.meta.readiness 里
 
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；三家两轮回读表（脱敏）；每家用的是旗标还是配置写入。
+```
+
+### T30c · local-agent + eval：工具调用计数进 settle 观测与效率表；计划的 `pricing` 段随 run 冻结（可发）
+
+```text
+# 任务 T30c：工具调用计数进 settle 观测与效率表；计划加 pricing 段，标价成本有数
+
+## 背景
+效率表（T10 / T23）今天有活跃时长、委派轮次、输出 token、输入 token、cacheRead、标价成本六列。token 四列四家都在 settle 时算出（codex 读 rollout 的 token_count，claude 读流末 usage，kimi 读 session view，dsh 读 session mirror 累计），编排器经 onProgress 的 settled 事件并进委派记录。工具调用没有位置：四家 provider 都解析了工具事件——codex 的 item.completed 里 command_execution / function_call、claude 的 tool_use、kimi 的 acp 工具调用、dsh 的 session mirror——但只用来镜像进子会话与展示，没有汇成计数。「标价成本」列读 run.meta.pricing（report.ts:1309，按条件 id 或模型 id 取一个数），而今天没有任何东西写 run.meta.pricing，列永远空。
+
+## 先读
+packages/local-agent/src/types.ts 的 settled 观测（kind / observedModel / cliVersion / usage，types.ts:436–452）与 TokenUsage；四家 provider 的流解析处（codex-cli-provider.ts 的 item.completed 分支、claude-cli-provider.ts 的 tool_use、kimi 的 session-view / session-mirror、dsh 的 session-mirror）；packages/eval/src/faces.ts 的 DelegationProgress / DelegationUsage、run.ts 的 settled 合并（852–853 行一带）、report.ts 的 ConditionEfficiency 与 pricing 读取、report-render.ts 的效率表；packages/eval/src/schema.ts 的 PLAN_SCHEMA 与 run.meta 的写入；T10 / T23 / T25 的 Agent Note。
+
+## 分支
+从 main 开 worktree ../dsh-plugins-wt-tool-calls-pricing，分支 feat/tool-calls-and-pricing，改 packages/local-agent、四个 provider 包、packages/eval（各自 README 双语 + sidecar）；不改 lab、mission、datasets。
+
+## 已定决定（照此实现）
+- settled 观测加可选 toolCalls: { count: number, byName: Record<string, number> }，每轮一份，名字按各家 CLI 自己报的写（codex 的 command_execution 就叫 command_execution，function_call 取函数名；claude 取 tool_use 的 name；kimi 与 dsh 取各自事件里的工具名），不做跨家归一——横比只比 count，byName 供阅读。TokenUsage 不动。
+- 计数只来自 provider 已经解析的事件，不新增解析路径；哪家的事件里拿不到名字就只报 count，README 写明。
+- eval：DelegationProgress 加同名字段，run.ts 与 usage 一样并进委派注解；效率表加「工具调用」一列，按条件汇总只计已完成格（T23 规则），缺席打「—」不是 0；results.jsonl 每格带 toolCalls。
+- pricing 随 run 冻结：dataseek.plan/1 加可选 pricing 段 { currency, rates: { <条件 id 或模型 id>: { input, output, cacheRead?, cacheWrite?, reasoning? } } }，单位是每百万 token 的标价；run 创建时原样写进 run.meta.pricing，跑到一半改计划不影响已建的 run。价格是 run 的事实不是受试对象的事实，不进条件哈希。
+- 报告的「标价成本」改成按 token 类别相乘求和：rates 先按条件 id 取，再按回读模型，再按声明模型；哪一类 token 有数而 rates 没给单价，成本标「部分」并在附注点名，不悄悄少算。契约改动记版本（T20c 之后是 v1-rev8），双语 + sidecar + 夹具。
+- 「标价」二字不改：它是挂牌价的算术，不是账单。
+
+## 交付
+四家 toolCalls；eval 字段、效率表列、pricing 段与成本算法；测试（每家：从夹具流数出 count 与 byName；eval：settled 并入、缺席打「—」、成本三级取价与「部分」标注、pricing 冻结进 run.meta）；README 双语；Agent Note（feature）。真机：本机 codex 与 claude 各委派一轮带工具调用的任务（例如「列出当前目录并统计文件数」），回读 toolCalls 非空且 byName 与 CLI 自己的输出对得上；用 pilot-a-round1 bundle 加一份 pricing 复算报告，成本列有数、results.jsonl 其余字段逐字节不变。
+
+## 约束
+不碰 3080 与 ~/.dsh-official；凭据不进日志与回报；不改 verdict / probe 契约；不改条件哈希的输入。
+
+## 完成判据
+local-agent 家族与 eval 测试全绿，gate 绿；真机两家的 toolCalls 表；pilot A 复算的效率表原文（含成本列）。
+
+## 回报
+分支名与 commit；Agent Note 路径；gate 输出；两家 toolCalls 表；效率表原文。
 ```
 
 ## 四、验收规程
