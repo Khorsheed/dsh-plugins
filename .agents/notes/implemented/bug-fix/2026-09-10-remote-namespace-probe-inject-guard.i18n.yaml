@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-remote-namespace-probe-inject-guard.md
+.agents/notes/implemented/bug-fix/2026-09-10-remote-namespace-probe-inject-guard.md: d7f0cf57e5f3650f9a2e879034ab594a15853eff
+.agents/notes/implemented/bug-fix/2026-09-10-remote-namespace-probe-inject-guard.zh.md: 358bdebeacf6294548d7257bfa404f42b782530d

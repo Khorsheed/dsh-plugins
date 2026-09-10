@@ -70,10 +70,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** Open the host's native directory picker (resolves the chosen path). */
   const pickWorkspace = async (): Promise<string | null> => {
     // 0.1.2 moved the native directory picker to the directoryPicker Remote
-    // namespace; absent there the gesture resolves null (cancelled-shaped).
-    const picker = (ctx.remote as unknown as {
-      directoryPicker?: { pick(): Promise<{ ok: boolean; value?: string | null; error?: { message: string } }> }
-    }).directoryPicker
+    // namespace. Property access (`ctx.remote.directoryPicker`) goes through
+    // the context proxy's inject guard and throws "without inject" for a
+    // plugin that does not declare the namespace — declaring it would instead
+    // pend the whole plugin on hosts whose composition has no directory
+    // picker. `ctx.get` reads the root store without the inject requirement
+    // and yields undefined there, so the gesture degrades to null
+    // (cancelled-shaped) instead of either failure mode.
+    const picker = ctx.get('remote.directoryPicker') as {
+      pick(): Promise<{ ok: boolean; value?: string | null; error?: { message: string } }>
+    } | undefined
     if (picker === undefined) return null
     const result = await picker.pick()
     if (!result.ok) throw new Error(result.error?.message ?? 'directory picker failed')
