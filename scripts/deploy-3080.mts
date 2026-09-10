@@ -155,8 +155,19 @@ try {
   let ws = readFileSync(wsPath, 'utf8')
   for (const m of metas) {
     const line = `  '${m.name}': 'file:${m.tgzPath}'`
-    if (ws.includes(`'${m.name}':`)) ws = ws.replace(new RegExp(`  '${m.name.replace(/[.*+?^${'{}()|[\]\\]/g, '\\$&')}': '[^']*'`), line)
-    else ws = ws.trimEnd() + (ws.includes('overrides:') ? `\n${line}\n` : `\n\noverrides:\n${line}\n`)
+    if (ws.includes(`'${m.name}':`)) {
+      ws = ws.replace(new RegExp(`  '${m.name.replace(/[.*+?^${'{}()|[\]\\]/g, '\\$&')}': '[^']*'`), line)
+    } else if (ws.includes('overrides:')) {
+      // Append inside the overrides block, not at EOF: a later top-level key
+      // (e.g. minimumReleaseAgeExclude, added by dsh plugin add) must not
+      // swallow the line into its own list — that corrupts the YAML.
+      const rest = ws.slice(ws.indexOf('overrides:'))
+      const nextKey = rest.search(/\n(?=\S)/) // first subsequent line at column 0
+      const insertAt = nextKey === -1 ? ws.length : ws.indexOf('overrides:') + nextKey + 1
+      ws = ws.slice(0, insertAt).trimEnd() + `\n${line}\n` + ws.slice(insertAt).replace(/^\n*/, '\n')
+    } else {
+      ws = ws.trimEnd() + `\n\noverrides:\n${line}\n`
+    }
   }
   writeFileSync(wsPath, ws)
   rmSync(join(PROFILE, 'node_modules'), { recursive: true, force: true })
