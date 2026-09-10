@@ -39,6 +39,7 @@ import {
   containerExecSpawn,
   containerScopedHome,
   delegationEnv,
+  establishSubagentCatalogChild,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -252,10 +253,17 @@ export class DshCliProvider implements SubagentProvider {
       // harness display name as the source marker so the dropdown shows which
       // local agent produced the conversation.
       const harness = this.ctx.localAgent.get('dsh')
+      const label = subagentDelegationLabel(harness?.displayName ?? 'dsh', request.descriptor.label)
       childSession.append('subagent/descriptor', {
         ...request.descriptor,
-        label: subagentDelegationLabel(harness?.displayName ?? 'dsh', request.descriptor.label),
+        label,
       })
+      // The official runtime appends the parent-side subagent/catalog
+      // discovery row only for in-process children (run.localAgent); this run
+      // is remote, so the provider appends it here — once per child, where
+      // the descriptor lands. A failure degrades to the warn below; a missing
+      // row never blocks the delegation.
+      establishSubagentCatalogChild(request.parent.session, childSession.header, label)
       void this.ctx.get('sessionPersistence')?.create(childSession.header).catch(() => {})
     } catch (error) {
       this.ctx.logger.warn(`subagent-dsh: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)

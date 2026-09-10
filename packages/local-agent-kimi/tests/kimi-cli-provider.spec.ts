@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
@@ -353,10 +353,21 @@ describe('kimi-cli-provider child session record', () => {
     ctx.provide('logger', { warn: () => {} } as never)
 
     const provider = new KimiCliProvider(ctx)
+    // A real parent Session: the provider appends the parent-side
+    // subagent/catalog discovery row to it — the row the official runtime
+    // only appends for in-process children (run.localAgent).
+    const parent = Session.create(SessionId('parent-1'), [], {
+      id: SessionId('parent-1'),
+      version: SESSION_FORMAT_VERSION,
+      createdAt: 1,
+      isSeeded: false,
+      cwd: '/tmp',
+      delegationDepth: 0,
+    })
     const request = {
       label: 'Kimi 建文件',
       prompt: [{ type: 'text', text: '建个文件' }],
-      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
+      parent: { session: parent },
       signal: new AbortController().signal,
       descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi 建文件' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
@@ -374,6 +385,17 @@ describe('kimi-cli-provider child session record', () => {
     const descriptor = created[0]!.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     // The label carries the harness display name as the source marker.
     expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: Kimi 建文件' })
+    // The parent-side catalog row lands once, with the same composed label,
+    // feeding the official subagent/catalog discovery projection.
+    const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
+    expect(catalog).toHaveLength(1)
+    expect(catalog[0]?.data).toEqual({
+      version: 0,
+      childId: created[0]!.id,
+      childCreatedAt: created[0]!.session.header.createdAt,
+      mode: 'one-shot',
+      label: 'Kimi Code: Kimi 建文件',
+    })
   })
 
   it('degrades to a plain run when the sessions service is absent', async () => {
@@ -448,10 +470,17 @@ describe('kimi-cli-provider resume round', () => {
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
 
     const provider = new KimiCliProvider(ctx)
+    const parent = Session.create(SessionId('parent-1'), [], {
+      id: SessionId('parent-1'),
+      version: SESSION_FORMAT_VERSION,
+      createdAt: 1,
+      isSeeded: false,
+      cwd: '/tmp',
+    })
     const request = {
       label: '继续',
       prompt: [{ type: 'text', text: '接着做' }],
-      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
+      parent: { session: parent },
       signal: new AbortController().signal,
       descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
@@ -463,6 +492,9 @@ describe('kimi-cli-provider resume round', () => {
     expect(spawned[0]).toEqual(['kimi', '-S', 'session_run-1', '-p', '接着做'])
     // The run id is the existing child session id, not a new one.
     expect(run.id).toBe(SessionId('child-run-1'))
+    // A resume round never re-writes the parent-side catalog row: the
+    // discovery fact lands once, with the descriptor, on the fresh round.
+    expect(parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')).toHaveLength(0)
     // Round 2 opens and closes its own turn (turn numbering increments).
     const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
     const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')

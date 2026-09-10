@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-subagent-catalog-remote-runs.md
+.agents/notes/implemented/feature/2026-09-10-subagent-catalog-remote-runs.md: 4726f81e63b988b3b13d62b37ff0bf9b010e4f62
+.agents/notes/implemented/feature/2026-09-10-subagent-catalog-remote-runs.zh.md: 7f9b081a1da2eee0ed3a0bd5f73b6c42d0cbfa54

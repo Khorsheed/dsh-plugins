@@ -73,7 +73,7 @@
 
 ### 第四批：能力层切换
 
-- local-agent-tool-subagent 子 agent 登记 → `establishCatalogChild()` + `subagent/catalog`。
+- ✅ 已落地（2026-09-10）：local-agent-tool-subagent 子 agent 登记 → `subagent/catalog`。官方 `establishCatalogChild()` 在 npm 发布线不可达（exports 无 `./catalog`,`./src/*` 不带产物），家族核心内联同构写入口 `establishSubagentCatalogChild()`，四家 provider 在 fresh 轮 descriptor 落定后补父侧 catalog 行（每子会话一次，失败降级 warn）。见 [Agent Note](../.agents/notes/implemented/feature/2026-09-10-subagent-catalog-remote-runs.md)。
 - 构建链 → `@deepseek-ai/dsh-typert-generator` npm 包（先实测社区仓布局）。
 - local-files / file-preview 大文件分页 → `ctx.fs.readByteRange`。
 - context-clearing 提案所依赖的 `surfaceOp: replace` 已是官方正式机制，可推进。

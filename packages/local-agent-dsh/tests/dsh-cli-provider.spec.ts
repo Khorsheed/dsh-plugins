@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { LocalAgentDelegationIntent } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
@@ -166,6 +166,39 @@ describe('dsh-cli-provider fresh run', () => {
       parentSessionId: 'parent-1',
       cliSessionId: sessionId,
       cwd: '/tmp',
+    })
+    await run.dispose()
+  })
+
+  it('appends the parent-side subagent/catalog row once, where the child descriptor lands', async () => {
+    const { ctx } = mount({ key: 'sk-test' })
+    const provider = new DshCliProvider(ctx, {})
+    // A real parent Session: the provider appends the parent-side
+    // subagent/catalog discovery row to it — the row the official runtime
+    // only appends for in-process children (run.localAgent).
+    const parent = Session.create(SessionId('parent-1'), [], {
+      id: SessionId('parent-1'),
+      version: SESSION_FORMAT_VERSION,
+      createdAt: 1,
+      isSeeded: false,
+      cwd: '/tmp',
+    })
+    const run = await provider.start({
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: parent },
+      descriptor: { description: '测试委派' },
+      signal: new AbortController().signal,
+    } as never)
+    await run.result
+    const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
+    expect(catalog).toHaveLength(1)
+    // The row names the child session the provider just created (for dsh the
+    // run id IS the child session id) and carries the harness label.
+    expect(catalog[0]?.data).toMatchObject({
+      version: 0,
+      childId: run.id,
+      mode: 'one-shot',
+      label: 'dsh',
     })
     await run.dispose()
   })

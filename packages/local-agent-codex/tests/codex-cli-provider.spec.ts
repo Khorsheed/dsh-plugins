@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
@@ -401,10 +401,21 @@ describe('codex-cli-provider child session record', () => {
     ctx.provide('logger', { warn: () => {} } as never)
 
     const provider = new CodexCliProvider(ctx)
+    // A real parent Session: the provider appends the parent-side
+    // subagent/catalog discovery row to it — the row the official runtime
+    // only appends for in-process children (run.localAgent).
+    const parent = Session.create(SessionId('parent-1'), [], {
+      id: SessionId('parent-1'),
+      version: SESSION_FORMAT_VERSION,
+      createdAt: 1,
+      isSeeded: false,
+      cwd: '/tmp',
+      delegationDepth: 0,
+    })
     const request = {
       label: 'Codex 建文件',
       prompt: [{ type: 'text', text: '建个文件' }],
-      parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
+      parent: { session: parent },
       signal: new AbortController().signal,
       descriptor: { version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex 建文件' },
     } as unknown as Parameters<CodexCliProvider['start']>[0]
@@ -419,6 +430,17 @@ describe('codex-cli-provider child session record', () => {
     })
     const descriptor = created[0]!.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'codex-local', label: 'Codex: Codex 建文件' })
+    // The parent-side catalog row lands once, with the same composed label,
+    // feeding the official subagent/catalog discovery projection.
+    const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
+    expect(catalog).toHaveLength(1)
+    expect(catalog[0]?.data).toEqual({
+      version: 0,
+      childId: created[0]!.id,
+      childCreatedAt: created[0]!.session.header.createdAt,
+      mode: 'one-shot',
+      label: 'Codex: Codex 建文件',
+    })
   })
 })
 

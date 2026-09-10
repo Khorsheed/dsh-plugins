@@ -78,7 +78,7 @@ patch 层的 `config` 是整值**替换**而不是深合并,所以覆盖这一�
 
 **工具 schema。** 官方子集(`description`/`prompt`)加一个可选参数:`resume?: string`——首次委派结果文本返回的 dsh 子会话 id。
 
-**首次调用 vs 续聊调用。** 首次调用与官方工具完全一致:stage 一个 fresh intent 并启动一次性委派。续聊调用在任何 CLI 启动前先通过 `localAgent` 服务解析句柄,然后在同一个 dsh 子会话里执行提供方的续聊命令(`kimi -S session_<id> -p`、`claude -p --resume <id>`、`codex exec --json resume <thread_id>`),并以独立的 `turn/start`/`turn/end` 对和 usage 追加新一轮。续聊轮仍走 `ctx.subagents.start()`,因此生命周期事件与标准子代理展示不变。
+**首次调用 vs 续聊调用。** 首次调用与官方工具完全一致:stage 一个 fresh intent 并启动一次性委派。续聊调用在任何 CLI 启动前先通过 `localAgent` 服务解析句柄,然后在同一个 dsh 子会话里执行提供方的续聊命令(`kimi -S session_<id> -p`、`claude -p --resume <id>`、`codex exec --json resume <thread_id>`),并以独立的 `turn/start`/`turn/end` 对和 usage 追加新一轮。续聊轮仍走 `ctx.subagents.start()`,因此生命周期事件与标准子代理展示不变。首次委派落子会话 `subagent/descriptor` 时,provider 同时把官方 `subagent/catalog` 发现行写进父会话(remote run 没有 `run.localAgent`,官方 runtime 不代写),委派因此进入标准子代理目录;该行每个子会话只写一次,续聊轮不重写。
 
 **安全。** 任务文本不可信:工具只读 `resume` 参数,且 registry 只对记录该委派的同一 parent 会话和提供方解析句柄——塞进 prompt 的句柄被忽略,伪造的被拒绝。句柄也无法搭 `subagent/descriptor` 的便车(其 schema 严格,未知字段直接抛错),因此已解析目标经 `localAgent` 服务的委派 registry 和按 (parent, provider) 分组的 intent 队列传递。
 

@@ -122,6 +122,14 @@
 - **影响面不止 guard**：taskpilot 的任务胶囊、room 的成员状态、mission 的 attempt 判活，凡是要显示「这个 agent 在忙还是在等你」的地方都会撞同一堵墙。
 - **状态**：绕行中（@khorsheed/dsh-ankh-guard）。
 
+### S15. `establishCatalogChild` 不在包导出面上（remote run 无法复用官方 catalog 写入路径）
+
+- **需求**：自建子会话的 subagent provider（remote run,`run.localAgent` 缺位）需要向父会话 append `subagent/catalog` 发现行,官方 runtime 只代写 in-process 子会话（`SubagentRuntime.start()`）。官方 helper `establishCatalogChild()` 存在于 `packages/subagent/subagent/src/catalog.ts`,但包 exports 只有 `.`/`./internal`/`./invariant`/`./client`/`./typert`/`./remote`/`./src/*`,且 npm 产物不带 `src/`——发布线上不可导入。
+- **现状绕行**：家族核心内联同构写入口 `establishSubagentCatalogChild()`（`@khorsheed/dsh-local-agent`）,payload 与上游 helper 逐字节一致,事件类型仍消费官方包的 `SessionEventMap` augmentation（上游 schema 变动在这里是编译错误）。四家 provider 在 fresh 轮 descriptor 落定后调用。见 `.agents/notes/implemented/feature/2026-09-10-subagent-catalog-remote-runs.md`。
+- **建议的官方改动**：把 `establishCatalogChild`（及 `SUBAGENT_CATALOG_VERSION`）从 `@deepseek-ai/dsh-subagent` 包根导出——runtime 自己已经 import 它,导出只是把它抬进 index 的 export 列表。
+- **退役条件**：包根导出该 helper 后,本地内联实现改为 re-export/直调,删掉重复 payload 构造。
+- **状态**：绕行中（@khorsheed/dsh-local-agent 家族）。
+
 
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。

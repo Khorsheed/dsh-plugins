@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
@@ -346,6 +346,65 @@ describe('claude-cli-provider run settlement', () => {
     const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
     expect(endData?.reason?.kind).toBe('error')
     await done
+  })
+})
+
+describe('claude-cli-provider child session record', () => {
+  it('appends the parent-side subagent/catalog row where the child descriptor lands', async () => {
+    const ctx = new Context()
+    const created: Session[] = []
+    ctx.provide('sessions', {
+      create: (id: SessionId) => {
+        const session = Session.create(id)
+        created.push(session)
+        return session
+      },
+    } as never)
+    ctx.provide('localAgent', {
+      homeDir: () => '/tmp/claude-home',
+      get: () => ({ displayName: 'Claude Code' }),
+      takeDelegationIntent: () => undefined,
+      recordDelegation: () => {},
+      getDelegation: () => undefined,
+      recordRoundSettled: () => {},
+      setKimiMirroredLines: () => {},
+      kimiMirroredLines: () => undefined,
+    } as never)
+    ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in record test') } } as never)
+    ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
+
+    const provider = new ClaudeCliProvider(ctx)
+    // A real parent Session: the provider appends the parent-side
+    // subagent/catalog discovery row to it — the row the official runtime
+    // only appends for in-process children (run.localAgent).
+    const parent = Session.create(SessionId('parent-1'), [], {
+      id: SessionId('parent-1'),
+      version: SESSION_FORMAT_VERSION,
+      createdAt: 1,
+      isSeeded: false,
+      cwd: '/tmp',
+      delegationDepth: 0,
+    })
+    const request = {
+      label: '任务',
+      prompt: [{ type: 'text', text: '建个文件' }],
+      parent: { session: parent },
+      signal: new AbortController().signal,
+      descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '任务' },
+    } as unknown as Parameters<ClaudeCliProvider['start']>[0]
+
+    await expect(provider.start(request)).rejects.toThrow(/not spawned/)
+    expect(created).toHaveLength(1)
+    // The row lands once per child, carrying the descriptor's composed label.
+    const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
+    expect(catalog).toHaveLength(1)
+    expect(catalog[0]?.data).toEqual({
+      version: 0,
+      childId: created[0]!.id,
+      childCreatedAt: created[0]!.header.createdAt,
+      mode: 'one-shot',
+      label: 'Claude Code: 任务',
+    })
   })
 })
 

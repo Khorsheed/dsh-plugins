@@ -29,7 +29,7 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
@@ -119,6 +119,42 @@ export interface LocalAgentRecordsAdapter {
  */
 export function subagentDelegationLabel(displayName: string, description: string | undefined): string {
   return description === undefined ? displayName : `${displayName}: ${description}`
+}
+
+/**
+ * Append the parent-side `subagent/catalog` discovery row for a freshly
+ * established session-backed child. The official SubagentRuntime writes this
+ * row only for IN-PROCESS children (`run.localAgent.session`, harness
+ * `SubagentRuntime.start`); a family provider's run is remote, so the
+ * provider appends the row itself, right where the child's
+ * `subagent/descriptor` lands — exactly once per child session, since resume
+ * rounds never create a session.
+ *
+ * The payload mirrors the upstream `establishCatalogChild` helper
+ * (harness packages/subagent catalog.ts) byte-for-byte. It is inlined
+ * because that helper is unreachable through the package's exports map on
+ * the npm release line: only `./src/*` would resolve it, and published
+ * artifacts ship no `src/`. The `subagent/catalog` event type itself rides
+ * the official package's SessionEventMap augmentation, so this append stays
+ * type-checked against the host's own schema. A throw is the caller's to
+ * degrade (warn and continue) — a missing catalog row never blocks the
+ * delegation itself.
+ * @param parent - the durable direct parent session receiving the row.
+ * @param child - the established child's immutable session header.
+ * @param label - the same composed label the child's descriptor carries.
+ */
+export function establishSubagentCatalogChild(
+  parent: Session,
+  child: SessionHeader,
+  label: string | undefined,
+): void {
+  parent.append('subagent/catalog', {
+    version: 0,
+    childId: child.id,
+    childCreatedAt: child.createdAt,
+    mode: 'one-shot',
+    ...label === undefined ? {} : { label },
+  })
 }
 
 /**
