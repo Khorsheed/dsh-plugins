@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-11-remote-exact-arity.md
+.agents/notes/implemented/bug-fix/2026-09-11-remote-exact-arity.md: d8d8c54b3f1c301b8f7b7f787bec866b224f37d3
+.agents/notes/implemented/bug-fix/2026-09-11-remote-exact-arity.zh.md: 0ac4cefabc27192aa9ce6826bc696cb03b24a2be
