@@ -63,7 +63,6 @@ function makeHarness(over: HarnessOptions = {}) {
     summary,
     fetchBadgeConfig,
     open: vi.fn(),
-    openLocalFiles: vi.fn(),
     subscribeVersion: vi.fn(() => () => {}),
     getVersion: vi.fn(() => Promise.resolve(0)),
     useSessions: ((sel: (s: { byId: Record<string, unknown> }) => unknown) => sel({
@@ -119,6 +118,17 @@ describe('WorktreesBadge visiblePresets gate', () => {
     const { props, summary } = makeHarness({ projectionValues: { agentPreset: 'dev' } })
     summary.mockReturnValue(new Promise(() => {}))
     render(<WorktreesBadge {...props} />)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('renders nothing in a non-repo session (the workspace capsule left the header)', async () => {
+    const { props, summary } = makeHarness({ projectionValues: { agentPreset: 'dev' } })
+    summary.mockResolvedValue({
+      ok: true as const,
+      value: { ...SUMMARY, isRepo: false, repo: '', repoName: '', branch: null, head: '' },
+    })
+    render(<WorktreesBadge {...props} />)
+    await waitFor(() => expect(summary).toHaveBeenCalled())
     expect(screen.queryByRole('status')).toBeNull()
   })
 })

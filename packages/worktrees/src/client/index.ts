@@ -1,12 +1,12 @@
 /**
- * Worktrees plugin, browser half: a per-session repo/worktree badge in the
- * session header (`conversation.session.header.utilities`), a right-Sidebar
- * page tab (`sidebar.right.pane.tab`, registered through the official
- * two-stage path: the `worktrees` type into `ctx.sidebarRightTabs`, the body
- * into the keyed seat under the type's id) with the session-changes /
- * repository-commits / repository-files views behind the badge's branch
- * capsule, and a frame-wide local-files browser (`shell.overlay`) behind the
- * folder capsule. The session-changes view lists the git uncommitted files
+ * Worktrees plugin, browser half: a per-session branch/worktree capsule in
+ * the session header (`conversation.session.header.utilities`, repo sessions
+ * only), a right-Sidebar page tab (`sidebar.right.pane.tab`, registered
+ * through the official two-stage path: the `worktrees` type into
+ * `ctx.sidebarRightTabs`, the body into the keyed seat under the type's id)
+ * with the session-changes / repository-commits / repository-files views
+ * behind the badge's branch capsule, and a frame-wide local-files browser
+ * (`shell.overlay`). The session-changes view lists the git uncommitted files
  * this session touched, filtered through the sibling file-preview fold's
  * `list` when that plugin is present (probed via `ctx.get`, never a
  * dependency; absent → every uncommitted file shows, the pre-filter
@@ -22,6 +22,12 @@
  * occupant; the same priority throws at registration) — there is no
  * coexistence, so evicting the official way back into a collapsed sidebar
  * would be the only way in.
+ *
+ * The badge used to carry a second folder capsule opening the local-files
+ * browser from the header; 2026-09-10 the workspace capsule left the header
+ * (file browsing converged on the sidebar / conversation-tab entries). The
+ * browser surface itself stays mounted — it keeps the workspace switcher and
+ * the native directory picker (`pickWorkspace`), so no capability is lost.
  *
  * The external-open gestures (show in folder) ride the official open-in-app
  * host routes (0.1.5): a once-per-page probe of GET /open-in-app/apps decides
@@ -204,7 +210,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       summary: (sid: SessionId) => remote.summary(sid),
       fetchBadgeConfig: () => remote.badgeConfig(),
       open: (mode) => { controller.open(mode) },
-      openLocalFiles: (sid: SessionId, start: string) => { controller.openLocalFiles(sid, start) },
       subscribeVersion: (listener) => controller.subscribeVersion(listener),
       getVersion: () => controller.getVersion(),
     }),

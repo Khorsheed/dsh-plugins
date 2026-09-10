@@ -78,7 +78,6 @@ export const zh = {
   'wt.pickWorktree': '切换工作树',
   'wt.noWorktrees': '该仓库无其他工作树',
   'wt.direct': '切换到此工作树',
-  'local.title': '本地文件',
   'local.browse': '本地文件浏览器',
   'local.workspace': '工作区',
   'local.chooseWorkspace': '选择工作区',
@@ -106,7 +105,6 @@ export const zh = {
   'state.error': '加载失败：{message}',
   'aria.badge': '当前会话的仓库与 worktree 状态',
   'aria.openDrawer': '打开改动详情',
-  'aria.openLocal': '打开本地文件浏览器',
 } satisfies Record<string, string>
 
 /** The worktrees namespace key union. */
@@ -200,7 +198,6 @@ export const en = {
   'wt.pickWorktree': 'Switch worktree',
   'wt.noWorktrees': 'No other worktrees in this repo',
   'wt.direct': 'Switch to this worktree',
-  'local.title': 'Local files',
   'local.browse': 'Local file browser',
   'local.workspace': 'Workspace',
   'local.chooseWorkspace': 'Choose workspace',
@@ -228,5 +225,4 @@ export const en = {
   'state.error': 'Failed to load: {message}',
   'aria.badge': 'Current session repository and worktree status',
   'aria.openDrawer': 'Open the worktrees tab',
-  'aria.openLocal': 'Open the local file browser',
 } satisfies Record<string, string>

@@ -42,10 +42,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.repoZone {
-  color: var(--dsw-alias-label-secondary);
-}
-
 .zoneText {
   max-width: 110px;
   overflow: hidden;
@@ -59,12 +55,4 @@
 
 .countsDirty {
   color: var(--dsw-alias-state-warn-primary);
-}
-
-.sep {
-  flex: none;
-  width: 1px;
-  height: 12px;
-  margin: 0 2px;
-  background: var(--dsw-alias-border-l2);
 }

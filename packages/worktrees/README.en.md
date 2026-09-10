@@ -6,8 +6,8 @@ A git-status visibility plugin for multi-worktree collaboration: a per-session *
 
 ## Features
 
-- **Session badge** (header `conversation.session.header.utilities`): the current session's repository, branch, and combined diff line count; hover shows the uncommitted/committed breakdown; green = clean, yellow = changes.
-- **Two click zones**: the branch capsule opens the right-sidebar worktrees tab (Changes mode); the folder capsule opens the local-files browser (frame-wide `shell.overlay`, a git-agnostic directory browse).
+- **Session badge** (header `conversation.session.header.utilities`): the current session's branch and combined diff line count; hover shows the uncommitted/committed breakdown; green = clean, yellow = changes. Repository sessions only — the badge used to carry a folder capsule opening the local-files browser; as of 2026-09-10 that workspace capsule left the header (file browsing converged on the local-files plugin's Files tab / sidebar card), while the browser surface (`shell.overlay`) stays mounted.
+- **One click zone**: the branch capsule opens the right-sidebar worktrees tab (Changes mode).
 - **Worktrees tab** (an official right-Sidebar page-type tab, kind `worktrees`, opened through `ctx.sidebarRight.openTab` and also enterable from the sidebar's guide page):
   - **Session changes mode**: only the files THIS session modified and has not committed (the git uncommitted list ∩ the file-preview plugin's session-touched set, op ≠ read; when file-preview is absent or its read fails the view falls back to every uncommitted file — degrade, never break), VS Code Source Control style, leaves carry A/M/D/?? badges and line counts; selecting a file shows the right detail pane's `Diff | Content` toggle (colored diff / official CodeBlock); selecting collapses the left tree to an icon rail, click to restore.
   - **Repository commits mode**: the branch's own log (`main..HEAD`; short sha + subject + relative time), deliberately NOT session-filtered; selecting a commit expands its **commit file tree** inline; clicking a file shows that commit's diff.

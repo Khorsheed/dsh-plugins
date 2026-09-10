@@ -47,8 +47,6 @@ export interface WorktreesBadgeInjected {
   fetchBadgeConfig: () => Promise<RemoteResult<BadgeConfig>>
   /** Open the worktrees right-Sidebar tab in one mode. */
   open: (mode: DrawerMode) => void
-  /** Open the local-files browser from a starting directory for one session. */
-  openLocalFiles: (sessionId: SessionId, start: string) => void
   /** Subscribe to active-worktree changes (a tab switch bumps it). */
   subscribeVersion: (listener: () => void) => () => void
   /** The current active-worktree version (for re-fetch sequencing). */
