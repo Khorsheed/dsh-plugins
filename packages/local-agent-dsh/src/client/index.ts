@@ -78,7 +78,9 @@ export function apply(ctx: Context): void {
         authT,
         auth: {
           status: name =>
-            gateway()?.status(name).then(result => (result.ok ? result.value : undefined))
+            // The Remote declares (name, scope?) and the client enforces exact arity:
+            // pass the default scope explicitly (undefined reads as omitted host-side).
+            gateway()?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
               ?? Promise.resolve(undefined),
           runCommand: (sessionId: SessionId, line: string) =>
             ctx.remote.commands.execute(sessionId, line, [])
