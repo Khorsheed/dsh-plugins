@@ -50,23 +50,28 @@ function IdeSplitButton(props: {
   const current = ides.find(entry => entry.id === choice) ?? ides[0]
   if (current === undefined) return null
   return (
+    // The official OpenInAppAction's pill: main label + hairline-split chevron,
+    // 28px to match the header's other tools. The menu right-aligns to the
+    // anchor (align="end") so it never overflows the pane's right edge.
     <span className={css.split}>
       <button
         type="button"
-        className={css.tool}
+        className={css.splitMain}
         title={t('row.openIdeIn', { app: current.label })}
         aria-label={t('row.openIdeIn', { app: current.label })}
         onClick={() => { openInIde(path, current.id) }}
       >
-        <IconCodeOutline16 />
+        <IconCodeOutline16 size={14} />
+        <span className={css.splitLabel}>{current.label}</span>
       </button>
       {ides.length > 1 && (
         <Menu
           open={open}
+          align="end"
           anchor={(
             <button
               type="button"
-              className={css.tool}
+              className={css.splitChevron}
               title={t('row.openIdeMore')}
               aria-label={t('row.openIdeMore')}
               aria-expanded={open}
