@@ -1,7 +1,7 @@
 # member-channel 回调认证加固（member-channel-auth-hardening）
 
 - **分类**：plugin
-- **状态**：idea
+- **状态**：in-progress（M1 已落地，M2 待择）
 - **最后更新**：2026-09-10
 - **查重结果**：已搜 `proposals/active/` + `proposals/closed/` + `.agents/notes/`。最近邻：local-agent-member-channel（通道本体，verified）、2026-09-10 host-015 breaking 适配 note（pid 移除后 fail-closed 的出处）。无认证加固提案，新建。
 - **官方依赖**：纯插件（主路径）；长期可附上游候选（spawn-scoped capability token，见下）。
@@ -28,3 +28,7 @@
 
 - M1：CLI 成员互发消息在活体恢复（token-only），测试覆盖 token 错误/未知 run/投递成功三路，README 威胁模型段落落地。
 - M2 任一落地或明确放弃（注明理由）后关闭。
+
+## 实现记录
+
+- **M1（2026-09-10 落地）**：wire 去掉 `pid` 字段（`{ token, to, text }`），`MemberChannel.handle` 只验 token；`LocalAgentMemberRun.cliPid` 与 `bindMemberRunPid` 删除（无生产方的死 API，不留着冒充第二因子）；bridge 不再发送 `process.ppid`。token 既有强度不变：逐 run 铸造、0700 scoped home 下发、settle 即焚。测试：`member-channel.spec.ts` 覆盖 token 错误/未知 run（含 settle 后过期）/投递成功，`member-bridge.spec.ts` 钉住无 pid 的 wire 形状；local-agent README「已知限制」新增威胁模型段落（中英）。Agent Note：[member-channel token-only auth](../../.agents/notes/implemented/architecture/2026-09-10-member-channel-token-only.md)。

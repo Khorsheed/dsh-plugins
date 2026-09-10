@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-host-015-breaking-adaptation.md
-.agents/notes/implemented/architecture/2026-09-10-host-015-breaking-adaptation.md: 1f5710f64daa4ae8aa51e7edac198aff75111186
-.agents/notes/implemented/architecture/2026-09-10-host-015-breaking-adaptation.zh.md: 85e741d3e437a7742845ed974d8da3a513557810
+.agents/notes/implemented/architecture/2026-09-10-host-015-breaking-adaptation.md: 90d3f0de8906ad8a3100cd002faa89f78bc9c737
+.agents/notes/implemented/architecture/2026-09-10-host-015-breaking-adaptation.zh.md: 410ce09af2b1716baf6ae60aae60c64ce3f50470
