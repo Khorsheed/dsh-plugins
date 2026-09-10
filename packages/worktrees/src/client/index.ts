@@ -193,7 +193,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'worktrees-badge',
-    order: 10,
+    // Leftmost utility: list slots sort by priority asc, then order asc, then
+    // registration sequence (ui-slots src/index.ts). Neighbors: the official
+    // open-in-app split button at order -10, the official session-log-export
+    // "…" menu at order 0 (its registration is upstream and NOT movable from
+    // here), message-timeline at 100.
+    order: -20,
     locale: NS,
     inject: (): WorktreesBadgeInjected => ({
       summary: (sid: SessionId) => remote.summary(sid),

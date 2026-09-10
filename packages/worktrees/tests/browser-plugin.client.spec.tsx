@@ -131,9 +131,11 @@ describe('worktrees browser plugin', () => {
     expect(entry?.locale).toBe('worktrees')
     expect(entry?.store).toBeTruthy()
     // The badge keeps the utilities list slot (the corner is single and
-    // already occupied by ui-sidebar-right's ExpandButton).
+    // already occupied by ui-sidebar-right's ExpandButton), ordered leftmost:
+    // list slots render priority asc then order asc, and the official
+    // neighbors sit at -10 (open-in-app) and 0 (session-log-export "…").
     const { entry: badge } = badgeApi(b)
-    expect(badge?.options).toMatchObject({ id: 'worktrees-badge' })
+    expect(badge?.options).toMatchObject({ id: 'worktrees-badge', order: -20 })
     expect(b.ctx.slots.entries('shell.overlay').length).toBe(1)
     await b.fiber.dispose()
   })

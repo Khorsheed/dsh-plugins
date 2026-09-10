@@ -4,7 +4,7 @@
 export const zh = {
   'tab.title': '工作树',
   'guide.title': '工作树与改动',
-  'guide.description': '本会话改动、仓库提交记录与仓库文件浏览',
+  'guide.description': '本会话改动与 diff · 仓库提交记录 · 仓库文件浏览',
   'mode.worktree': '本会话改动',
   'mode.commits': '仓库提交记录',
   'mode.repo': '仓库文件',
@@ -126,7 +126,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'tab.title': 'Worktrees',
   'guide.title': 'Worktrees & changes',
-  'guide.description': "This session's uncommitted changes, the repository commit log, and a full repo browse",
+  'guide.description': 'Session changes with diffs · repository commit log · repo file browser',
   'mode.worktree': 'Session changes',
   'mode.commits': 'Repository commits',
   'mode.repo': 'Repository',
