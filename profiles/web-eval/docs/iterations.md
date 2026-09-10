@@ -280,11 +280,13 @@ T22 中途回报（2026-09-08）：第 1–3 步完成——镜像备好 dsh 家
 | T30b | 代码 | local-agent：委派级 `model`——首轮指定、记录、resume 不换；四家 argv 或配置写入；dsh headless 加 `--model`；eval 把条件的 model.declared 作为每轮的请求模型传下去 | T29 T30a | |
 | T30c ✅ | 代码 | local-agent + eval：settle 观测加工具调用计数（次数 + 按名分布），效率表多一列；每轮的 token 与工具调用落进 bundle 的 `report/usage.jsonl`，计价留给 bundle 之外的非模型环节 | 无 | 合入 main `fc5141d`（2026-09-10）；四家都在已走过的折叠分支里数，byName 记各家自己的名字（codex 是 command_execution 不是卡片上的 Bash）；kimi / dsh 按本轮不按镜像窗口；usage.jsonl 每轮一行，多 `attempt` 与 `counted` 两列，效率表从 counted:true 加总复现；未报计数打「—」不补零；codex 的 function_call 未数（0.144.0 的 exec 流里 provider 本就不解析它）；只有 exec 路径报 settle 观测 |
 | T29b | 代码 | eval + profile：`/eval run` 起一个 jobs 后台任务立即返回，发起端断开不中止，Remote 入口让 CI 无浏览器也能发起；plan 与 `--out` 路径展开 `~`；install.sh / update.sh 的 dsh 前置检查前移并覆盖预设残留 | 无 | |
-| T31 | 代码 | eval：`conditions provision` 写 lock（作用域就绪 + effectiveSettings 与声明逐项核对 + home.sha）；`conditions list / diff` 数据面（只展示与 diff，不给选）；决策 9 改为模型级并进 validate | T29 T30b | |
+| T31 | 代码 | eval：`conditions provision` 写 lock（作用域就绪 + effectiveSettings 与声明逐项核对 + home.sha）；`conditions list / diff` 数据面（只展示与 diff，不给选）；决策 9 放宽：多判官面板、每格由谁判进报告、自评格标出不拒绝 | T29 T30b | |
 | T32 | 代码 | capability-catalog：`snapshotFor(presetId)` + 能力清单的规范化哈希；eval 把编排实例的能力哈希记进 run.meta；sub-dsh 的能力面按 scope 的子 profile 组 preset roster，条件的 `preset` 字段从此可被核对 | T29 T31 | |
 | T33 | 运维 | pilot B：dsh × 两模型；pilot C：claude × 两模型；pilot D：同 harness 两 preset | T29–T32 | 三份配对结果 |
 
 T29（2026-09-10 文案发出，同日验收）：I4 的入口。同一家两个条件今天共用一份作用域目录（T20c 记的边界），模型之外的因子——登录身份、作用域配置——没法按条件分开；T30b、T31 都压在它上面。
+
+T32（2026-09-10 定）：pilot D 的口径是「sub-dsh × 两 preset」——preset 只管得到我们自己组的子实例，三家外部 CLI 的技能包留 I6 单独做。
 
 T30b、T31（2026-09-10 文案发出）：T22 第 5 步的互斥（判官 dsh v4-pro 声明、实跑 v4-flash、改成 v4-flash 又撞 JUDGE_IS_PLAYER）根子是模型没法按次委派——T30b 让判官条件请求 v4-pro，互斥自然解；T31 再把决策 9 收成模型级并进 validate。
 
@@ -1410,19 +1412,19 @@ packages/local-agent/src/types.ts（DelegationCallOptions、Intent 的 fresh / r
 不碰 3080 与 ~/.dsh-official；凭据不进日志与回报；不改 lab / mission / datasets；缺省行为（不传 model）逐字节不变，pilot-a-round1 复算相同。
 
 ## 完成判据
-五包测试全绿，gate 绿；真机四轮回读表；一份带判官 dsh v4-pro、选手 dsh v4-flash 的 P0 计划在宿主路径上就绪检查两条都过且不再 JUDGE_IS_PLAYER（tsx 驱动即可，不必跑完）。
+五包测试全绿，gate 绿；真机四轮回读表；一份带判官 dsh v4-pro、选手 dsh v4-flash 的 P0 计划在宿主路径上就绪检查两条都过，判官回读 v4-pro（tsx 驱动即可，不必跑完；JUDGE_IS_PLAYER 的去留归 T31）。
 
 ## 回报
 分支名与 commit；Agent Note 路径；gate 输出；四轮回读表；那份计划的就绪原文。
 ```
 
-### T31 · eval：conditions provision 写 lock；conditions list / diff 数据面；决策 9 改模型级进 validate（可发，建议 T30b 之后）
+### T31 · eval：conditions provision 写 lock；conditions list / diff 数据面；决策 9 放宽为多判官面板（可发，建议 T30b 之后）
 
 ```text
-# 任务 T31：dsh-eval——conditions provision 写 lock（作用域就绪 + effectiveSettings 逐项核对 + home.sha）；list / diff 只展示不给选；决策 9 改模型级
+# 任务 T31：dsh-eval——conditions provision 写 lock（作用域就绪 + effectiveSettings 逐项核对 + home.sha）；list / diff 只展示不给选；决策 9 放宽为多判官面板
 
 ## 背景
-条件锚点是 T8b 立的：conditions/<id>.lock.json（dataseek.condition-lock/1，schema.ts:456）记条件哈希与 home.sha，validate 读它出 LOCK_STALE / HOME_NOT_PROVISIONED / HOME_MISMATCH（validate.ts:330–387），run 读它出 LOCK_STALE 拒绝或 LOCK_MISSING 警告（run.ts:1397–1406）。但仓库里没有任何东西写 lock——read.ts:108 与 service.ts:95 都指着「dsh-eval conditions provision（I4）」。CLI 只有 conditions hash（cli-core.ts:232–252），slash 只有 run 与 finalize，eval_conditions 工具只读。另一处空白：condition 的 model.declared、reasoning.effort、permissions、model.endpoint 从来没有和该作用域的 effectiveSettings 对过——home.sha 哈希的是配置内容，不是语义；就绪检查只核模型回读。决策 9「判官不得是选手之一」在 run.ts:1441 是 (harness.name, model.declared) 元组、在 validate.ts:268 只是条件 id 重合；T30b 让判官能按次请求别的模型后，这条要收成模型级并两处一致。
+条件锚点是 T8b 立的：conditions/<id>.lock.json（dataseek.condition-lock/1，schema.ts:456）记条件哈希与 home.sha，validate 读它出 LOCK_STALE / HOME_NOT_PROVISIONED / HOME_MISMATCH（validate.ts:330–387），run 读它出 LOCK_STALE 拒绝或 LOCK_MISSING 警告（run.ts:1397–1406）。但仓库里没有任何东西写 lock——read.ts:108 与 service.ts:95 都指着「dsh-eval conditions provision（I4）」。CLI 只有 conditions hash（cli-core.ts:232–252），slash 只有 run 与 finalize，eval_conditions 工具只读。另一处空白：condition 的 model.declared、reasoning.effort、permissions、model.endpoint 从来没有和该作用域的 effectiveSettings 对过——home.sha 哈希的是配置内容，不是语义；就绪检查只核模型回读。决策 9「判官不得是选手之一」在 run.ts:1441 是 (harness.name, model.declared) 元组、在 validate.ts:268 只是条件 id 重合。公开榜单（MT-Bench、AlpacaEval、Arena-Hard）都让选手模型当评委并记录自评偏好，补救是多评委面板与标出「谁判了谁」而不是全局排除；SWE-bench 一类根本不用模型评委。2026-09-10 定：决策 9 放宽——支持多判官，每格由谁判进报告，判官与该格选手同模型的格标为「自评」但不拒绝，先不加更多约束。
 
 ## 先读
 packages/eval/src/schema.ts（CONDITION_SCHEMA、LOCK_SCHEMA）、hash.ts（hashConditionDocument、hashHome）、read.ts（ConditionSummary、lock 读取）、service.ts、cli-core.ts、slash.ts、tools.ts（eval_conditions）、validate.ts（resolveConditionReadiness、JUDGE_IS_PLAYER）、run.ts（lock 核对、JUDGE_IS_PLAYER、readiness 主体构造）；packages/local-agent 的 LocalAgentStatus / LocalAgentEffectiveSettings 与 T29 后按目录取的 effectiveSettings；faces.ts 的 LocalAgentFace；T8b / T14 / T23 / T29 / T30a / T30b 的 Agent Note；profiles/web-eval/README.md 冻结决策 5 与 9。
@@ -1433,11 +1435,11 @@ packages/eval/src/schema.ts（CONDITION_SCHEMA、LOCK_SCHEMA）、hash.ts（hash
 ## 已定决定（照此实现）
 - 动词 conditions provision <condition.json> --repo <题库工作副本>：一、按条件的 harness + scope 取作用域目录（homeDir 读即物化）；二、credentialState 不是 present 就停下并打印该跑的登录命令（/<家> login --scope <名>），不自动登录、不复制凭据；三、读该作用域的 effectiveSettings，与条件逐项核：cliVersion 对 harness.version（声明为 null 则回填进 lock 不改条件文档）、model 对 model.declared（声明非 null 时以声明为准——T30b 会按次请求它；effectiveSettings 报的是缺省，不一致只 warn）、reasoningEffort 对 reasoning.effort、sandbox / permissionMode / autoApprove 对 permissions、baseUrl 对 model.endpoint——permissions 与 endpoint 不一致是 error，拒写 lock；四、hashHome 算 home.sha；五、写 lock：{schema, condition, sha, home{sha}, provisioned{at, cliVersion, effective{model, reasoningEffort, permissions, endpoint}}}，additive 字段留在 /1（LOCK_SCHEMA 若关着 additionalProperties 就开成可选字段，不升版本）。只写给定 --repo 的工作副本，不 commit，不碰共享检出。
 - conditions list [--repo]：现有 service.conditions() 的表（id、sha、lock 状态、home.sha 是否匹配）加 provisioned 快照列；conditions diff <a> <b>：两份条件文档的逐字段差异（canonical JSON 深比较，notes 除外），输出只标「哪些字段不同、各自取值」，不做任何推荐——「只展示与 diff，不给选」。三个动词 CLI 与 slash 都有；eval_conditions 工具加 diff 参数，仍只读。
-- 决策 9 改为模型级：判官条件请求的模型（model.declared，非 null）不得等于任何选手条件请求的模型，harness 不同也不行；model.declared 为 null 的判官条件 validate 报 error（判官必须显式 pin 模型）。run.ts:1441 与 validate.ts:268 都改成这条，错误文案点名两个条件与那个模型。README 决策 9 的措辞同步改；Agent Note 写明为什么从元组收紧到模型（判官评的是文本，模型才是会偏向自己输出的那一方，harness 不是）。
+- 决策 9 放宽为多判官面板：plan.judge.conditions 可列多个判官，每个判官对每格各判 samples 次；判官条件的 model.declared 必须非 null（validate 报 error，否则没法判重合）。去掉 run.ts:1441 与 validate.ts:268 的 JUDGE_IS_PLAYER 拒绝，改为：判官模型等于该格选手模型的格记 selfJudged: true。verdicts 与 results.jsonl 每条判定带 judge（条件 id 与模型）；summary.md 的比较节每格列出由谁判、自评格加标记；一致性一节除同判官双采样的 κ 外，列了多个判官时加跨判官一致性一行。README 决策 9 的措辞同步改成「判官显式 pin 模型；每格由谁判进报告；自评格标出」；Agent Note 写明为什么不做全局排除（要评全部模型时评委必然与某个选手重合，榜单实践是标出而不是禁止）。
 - run 对 lock 的态度不变：缺失 warn、过期拒；validate 的 ready / unready 判定加一条：lock 里 provisioned.effective 与条件不一致 → unready 并点名字段。
 
 ## 交付
-三个动词 + 工具参数；lock 写入与校验；决策 9 两处；测试（provision 的五步各自失败路径与成功写入；list / diff 输出形状；决策 9 的模型级判定、null 判官报 error；validate 的 provisioned 不一致 unready）；README 双语；协议文档条件锚点一节；Agent Note（feature）。真机：本机 codex 一个条件 provision 成功写 lock，改条件的 permissions 后再 provision 被拒；用题库 t29-two-scopes 的两个条件 diff，只差 scope 一项；一份判官与选手同模型的计划 validate 出决策 9 的 error。
+三个动词 + 工具参数；lock 写入与校验；决策 9 两处；测试（provision 的五步各自失败路径与成功写入；list / diff 输出形状；多判官分配与 selfJudged 标记、null 判官报 error、跨判官一致性；validate 的 provisioned 不一致 unready）；README 双语；协议文档条件锚点一节；Agent Note（feature）。真机：本机 codex 一个条件 provision 成功写 lock，改条件的 permissions 后再 provision 被拒；用题库 t29-two-scopes 的两个条件 diff，只差 scope 一项；一份两个判官、其中一个与某选手同模型的 P0 计划在宿主路径上跑通（tsx 驱动即可），报告每格列出两位判官、同模型那格标自评、一致性一节有跨判官一行。
 
 ## 约束
 不碰 3080 与 ~/.dsh-official；不改 datasets / mission / lab；题库只以 --repo 指向的工作副本读写，共享检出 HEAD 不动；凭据不进 lock、日志、回报。
@@ -1484,7 +1486,7 @@ eval 测试全绿，gate 绿；真机三样；pilot-a-round1 复算逐字节相�
 分支名与 commit；Agent Note 路径；gate 输出；断开浏览器那次 run 的 job 输出末尾十行与 mission 状态；install.sh 前置检查失败的原文。
 ```
 
-### T32 · capability-catalog：snapshotFor(presetId) 与能力清单哈希；sub-dsh 的能力面按 scope 组 preset（待确认 pilot D 口径后可发）
+### T32 · capability-catalog：snapshotFor(presetId) 与能力清单哈希；sub-dsh 的能力面按 scope 组 preset（可发；2026-09-10 定 pilot D 口径为 sub-dsh × 两 preset，外部 CLI 的技能包留 I6）
 
 ```text
 # 任务 T32：capability-catalog——按 preset 取快照并出规范化哈希；eval 记编排实例的能力哈希；sub-dsh 的子 profile 按 scope 组 preset roster
