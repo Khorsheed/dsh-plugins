@@ -229,11 +229,11 @@ export interface DetailPaneProps {
   displayPath?: string | undefined
   /** Copy the selected file's path; resolves true only on acceptance. */
   onCopyPath?: ((path: string) => Promise<boolean>) | undefined
-  /** Whether the host-open gestures are available (loopback + canOpenPath). */
+  /** Whether any host-open gesture is available (the open-in-app probe resolved an app). */
   canOpenHost?: boolean
   /** Open the selected file's parent folder in the host file manager. */
   onOpenFolder?: ((path: string) => void) | undefined
-  /** Open the selected file with the host OS default application (IDE). */
+  /** Open the selected file's parent folder in the host editor/IDE. */
   onOpenIDE?: ((path: string) => void) | undefined
   /** Called when the view changes (retained for the parent's contract). */
   onViewChange?: (view: DetailView) => void

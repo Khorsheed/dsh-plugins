@@ -7,7 +7,7 @@ A standalone workspace file-browser plugin: adds a **Workspace tab** to the sess
 ## Features
 
 - **Workspace tab** (`conversation.view` list entry, parallel to chat / products / worktrees): left file tree (lazy per-level loading, show/hide dot-files, toggle, draggable width) + right detail pane (structured HTML/Markdown/JSON/CSV preview + image preview).
-- **Breadcrumb top bar + action row**: breadcrumbs navigate by level; the action buttons are "Choose Directory" (native directory picker), "Open Folder" (shown when loopback with `canOpenPath`), and "Refresh".
+- **Breadcrumb top bar + action row**: breadcrumbs navigate by level; the action buttons are "Choose Directory" (native directory picker), "Open Folder" (shown when the host's open-in-app probe resolved a file manager), and "Refresh".
 - **Git-agnostic**: it browses any absolute local path (including untracked, ignored, and git-external files), with no repository judgment.
 - **Per-session memory**: each session remembers its last-browsed root (localStorage `dsh-local-files-root:<sessionId>`); switching sessions restores it automatically without cross-talk.
 
@@ -30,11 +30,12 @@ No config. It installs standalone as a plugin, or drops into a cordis.yml compos
 
 | Host line | Verdict |
 | --- | --- |
-| npm release (`>= 0.1.2-rc.1`) | ⚠️ degraded — the external-open gestures are hidden (see below) |
-| deepseek-harness master | ⚠️ same (`verifiedHost: 0.1.2-rc.1`) |
+| npm release (`>= 0.1.5-rc.1`) | ✅ full |
+| npm release (`0.1.2-rc.1` … `0.1.4.x`) | ⚠️ degraded — the external-open gestures stay hidden (the host has no open-in-app routes) |
+| deepseek-harness master | ✅ full (open-in-app landed with 0.1.5; `verifiedHost: 0.1.2-rc.1`) |
 
 - The Workspace tab is a web surface; on headless profiles with no browser consumer the plugin contributes nothing.
-- The "open in folder / open in IDE" gestures are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (the capability became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam.
+- The "open in folder / open in IDE" gestures are restored through the official open-in-app capability: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager, resp. editor/IDE); the official open route accepts directories only, so a file gesture opens its containing directory. Hosts without open-in-app (< 0.1.5) fail the probe and keep the gestures hidden — a silent degrade, so minHost does not move.
 - minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 
 > Nuance: this plugin is "browse any local directory"; file-preview is "current session's products". Their semantics differ, so they are two independent packages, not merged.

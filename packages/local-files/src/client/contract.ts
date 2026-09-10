@@ -5,7 +5,7 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { HostDescriptionSource } from './host-description.ts'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,14 +33,14 @@ export interface WorkspaceViewInjected {
   pickWorkspace: () => Promise<string | null>
   /** The session's workspace cwd (its creation `cwd`), or undefined when unknown. */
   sessionCwd: (sessionId: SessionId) => string | undefined
-  /** Whether the browser itself is connected over loopback. */
-  isLoopback: boolean
   hooks: {
-    /** Current generation's Host description, bound by the slot renderer. */
-    hostDescription: HostDescriptionSource
+    /** open-in-app catalog ids the host probed as installed (null until answered). */
+    openInApps: ObservableSnapshot<readonly string[] | null>
   }
-  /** Open a path with the host OS default application (folder/IDE). */
-  openExternal: (path: string) => void
+  /** Open a directory in the host's file manager (no-op when none resolved). */
+  openFolder: (path: string) => void
+  /** Open a directory in the host's editor/IDE (no-op when none resolved). */
+  openIDE: (path: string) => void
 }
 
 /** Full props of the workspace view entry. */

@@ -9,8 +9,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { HostDescriptionSource } from './host-description.ts'
 // Type-only: pulls the Controller service merge (ctx.sessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.slots service merge.
@@ -30,27 +28,13 @@ import type {
   LocalFilesRemote, WorkspaceViewInjected,
 } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
+import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
 import { createLocalFilesStore } from './store-local.ts'
 
 export { WorkspaceView }
 
 /** Required services: slots, sessions, the remote channel, and the locale. */
-export const inject = ['slots', 'sessions', 'remote', 'locale', 'connection']
-
-/**
- * Host-facts source for the view's hooks: 0.1.2 folded the facts into the
- * connection generation's opening frame. The derived snapshot carries `home`
- * but no `canOpenPath` (that capability became an RPC probe), which reads as
- * unavailable and hides the external-open buttons — the intended degrade.
- * @param connection - the connection service handle.
- * @returns an observable Host-description source.
- */
-function hostDescriptionSourceOf(connection: ConnectionHandle): HostDescriptionSource {
-  return {
-    getSnapshot: () => connection.generation.getSnapshot()?.host,
-    subscribe: listener => connection.generation.subscribe(listener),
-  }
-}
+export const inject = ['slots', 'sessions', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, and the
@@ -70,19 +54,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-files: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.get('remote.localFiles') as LocalFilesRemote
-  const connection = ctx.get('connection') as ConnectionHandle
   const sessions: ISessions = ctx.sessions
 
-  const openOnHost = (path: string): void => {
-    // 0.1.2 moved path opens to the session Remote namespace
-    // (remote.session.openWorkspacePath); absent there the gesture degrades
-    // to a no-op.
-    const opened = (ctx.remote as unknown as {
-      session?: { openWorkspacePath(request: { path: string }): Promise<unknown> }
-    }).session?.openWorkspacePath({ path })
-    void Promise.resolve(opened ?? false).catch(() => {
-      // Host/OS open failures stay silent; the native app surfaces its own error.
-    })
+  // The external-open gestures ride the official open-in-app routes (host
+  // 0.1.5): one apps probe decides their visibility — a host without the
+  // routes publishes an empty list and the gestures stay hidden.
+  const openInApp = new OpenInAppProbe()
+  void openInApp.load()
+  const openWith = (pick: (apps: readonly string[]) => string | undefined) => (path: string): void => {
+    const app = pick(openInApp.apps.getSnapshot() ?? [])
+    if (app === undefined) return
+    void openInApp.open(app, path)
   }
 
   /** Open the host's native directory picker (resolves the chosen path). */
@@ -116,9 +98,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       readFile: (request: ReadLocalFileRequest) => remote.readFile(request),
       pickWorkspace,
       sessionCwd,
-      isLoopback: connection.isLoopback,
-      hooks: { hostDescription: hostDescriptionSourceOf(connection) },
-      openExternal: (path) => { openOnHost(path) },
+      hooks: { openInApps: openInApp.apps },
+      openFolder: openWith(pickFileManager),
+      openIDE: openWith(pickIde),
     }),
   }, WorkspaceView))
 

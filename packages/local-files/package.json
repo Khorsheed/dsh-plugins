@@ -55,7 +55,6 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
@@ -65,7 +64,6 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-client-connection": { "optional": true },
     "@deepseek-ai/dsh-client-locale": { "optional": true },
     "@deepseek-ai/dsh-client-ui-conversation": { "optional": true },
     "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
@@ -76,7 +74,6 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
@@ -113,7 +110,6 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation"
@@ -122,7 +118,7 @@
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
-      "notes": "The workspace tab mounts the conversation.view slot; it is a web surface — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) are hidden on 0.1.2: the host description snapshot no longer carries `canOpenPath` (it became an RPC probe), so the loopback gate can never confirm it; restoration is a follow-up against the official `remote.session.canOpenWorkspacePath` RPC seam.",
+      "notes": "The workspace tab mounts the conversation.view slot; it is a web surface — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) ride the official open-in-app routes: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager resp. editor/IDE). Hosts without open-in-app (< 0.1.5) fail the probe and keep the gestures hidden — an invisible degrade, so minHost stays at 0.1.2-rc.1.",
       "verifiedHost": "0.1.2-rc.1"
     }
   }

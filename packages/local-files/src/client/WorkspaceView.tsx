@@ -15,6 +15,7 @@ import { DetailPane } from './DetailPane.tsx'
 import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { localRootOf, rememberLocalRoot } from './local-root.ts'
 import { basenameOf, dirnameOf } from './language.ts'
+import { pickFileManager, pickIde } from './open-in-app.ts'
 import css from './WorkspaceView.module.css'
 
 /** Map a directory listing to FileTree leaves. Hidden (dot-prefixed) entries are
@@ -30,7 +31,7 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
 /** The workspace view tab. */
 export function WorkspaceView({
   sessionId, useStore, actions, t,
-  listDirectory, readFile, pickWorkspace, sessionCwd, isLoopback, useHostDescription, openExternal,
+  listDirectory, readFile, pickWorkspace, sessionCwd, useOpenInApps, openFolder, openIDE,
 }: WorkspaceViewProps): ReactNode {
   const root = useStore(s => s.root)
   const currentSession = useStore(s => s.sessionId)
@@ -39,7 +40,12 @@ export function WorkspaceView({
   const preview = useStore(s => s.preview)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
-  const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
+  // The open-in-app probe publishes null until the host answered; both
+  // gestures hide until their catalog id resolved (and on hosts without
+  // open-in-app, forever).
+  const openInApps = useOpenInApps(apps => apps)
+  const canOpenFolder = openInApps !== null && pickFileManager(openInApps) !== undefined
+  const canOpenIDE = openInApps !== null && pickIde(openInApps) !== undefined
 
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
@@ -140,8 +146,8 @@ export function WorkspaceView({
           <button type="button" className={css.action} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
             <IconProjectAddOutline16 />
           </button>
-          {canOpenHost && root !== null && (
-            <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openExternal(root) }}>
+          {canOpenFolder && root !== null && (
+            <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openFolder(root) }}>
               <IconFolderOpenOutline16 />
             </button>
           )}
@@ -197,9 +203,11 @@ export function WorkspaceView({
             error={error}
             displayPath={selectedPath ?? undefined}
             onCopyPath={(p) => writeClipboard(p)}
-            canOpenHost={canOpenHost}
-            onOpenFolder={(p) => openExternal(dirnameOf(p) || p)}
-            onOpenIDE={(p) => openExternal(p)}
+            canOpenHost={canOpenFolder || canOpenIDE}
+            // The open route accepts directories only, so both file gestures
+            // open the selected file's parent directory.
+            onOpenFolder={canOpenFolder ? (p) => openFolder(dirnameOf(p) || p) : undefined}
+            onOpenIDE={canOpenIDE ? (p) => openIDE(dirnameOf(p) || p) : undefined}
             t={t}
           />
         </div>
