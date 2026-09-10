@@ -15,8 +15,9 @@
 - **需求**：第三方能替换"打开文件"的目标（官方写死 `workspaces.openPath` → 跳 OS/IDE）。
 - **曾用绕行**：turnTail chain 以 `priority: -1` 抢占官方产物行（first-match 选举）；正文 mention 用 document 捕获阶段 click 拦截（三道闸门 + fail-open）。官方**工具结果行**的文件链接（`button.fileLink`）不在拦截面内，留作官方落地后的统一受益者。
 - **官方落地（0.1.5-rc.1）**：三处打开入口统一收敛到 `ctx.sidebarRight.openResource()`（ui-chat 的 `openFile` 即 `fileAddressFor` + `openResource`）；`ctx.sidebarRightTabs.register()` 认领注册表（glob patterns + `priority: 'extension'` 默认压过内置）允许第三方接管地址类型；官方 `text` 类型（ui-sidebar-documentpreview）认领 `dsh-resource://file/**`。
-- **退役动作**：ui-file-preview 0.3.0 拆除 DOM 拦截、`shell.overlay` 抽屉、`conversation.view` 注册与 turnTail `priority: -1` 抢占；列表/卡片点击改走 `openResource` / owner `openFile`。工作区外路径造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区）,降级为仅改动记录——这是资源层语义,不是缝。
+- **退役动作**：ui-file-preview 0.3.0 拆除 DOM 拦截、`shell.overlay` 抽屉、`conversation.view` 注册与 turnTail 抢占（卡片改显式 `priority: 1`，选举语义=升序先选、官方 0 档永远先认领）；列表/卡片点击改走 `openResource` / owner `openFile`。工作区外路径造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区），只剩列表条目——这是资源层语义，不是缝。
 - **状态**：已退役（0.1.5-rc.1，@khorsheed/dsh-client-ui-file-preview 0.3.0）。
+- **尾巴（0.1.5-rc.1 实测补充，绕行中）**：打开*方向*仍无官方覆盖点——`ui-deliverables` 的 `chatFileMentions` 对被 `present` 工具交付过的文件走原生默认程序（`opener.open`），未交付的才走 sidebar。ui-file-preview 用**就地包装**统一进 sidebar：`ctx.provide` 拒绝重名、`ctx.set` 拒绝非提供方 fiber（vendor/cordis reflect.ts "cannot set property in multiple fibers"），所以只能直接改写所提供对象的 `forClosing`（保留原实现的认领/文案，resolved `open` 全部改走 `owner.openFile`；resolved 路径取 `hit.title`——官方 builder 的契约）。加载序靠 `dsh.client.inject` 的 ui-deliverables 包边；deliverables fiber 重载（HMR）会丢包装，接受。**退役条件**：官方为 mention 打开方向提供覆盖点（可替换的 opener 或 deliverables 配置项）；落地后删 `mentions-wrap.ts`。每次官方升级核对：`producedFileMentions` 的 `title: path` 契约、chat 视图 `ctx.get('chatFileMentions')` 的逐次读取。
 
 ### S2. bash/子进程写入的文件不进任何日志结构
 

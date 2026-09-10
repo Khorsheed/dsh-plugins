@@ -2,6 +2,7 @@
 
 import type { FilePreviewList, FilePreviewTurnFile } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -25,6 +26,18 @@ export type FilePreviewRemote = TypertRemoteNamespaceMap['filePreview']
 export interface FilePreviewTabInjected {
   /** Fetch one session's touched-file list (one RPC; supplies the diff history). */
   listFiles: (sessionId: SessionId) => Promise<RemoteResult<FilePreviewList>>
+  /** Copy one path's host-resolved absolute spelling to the clipboard; resolves true only when the host accepted the write. */
+  copyPath: (path: string) => Promise<boolean>
+  /** Reveal one path in the host file manager (file selected; falls back to the official open-in-app route on its parent folder). */
+  revealFolder: (path: string) => void
+  /** Open one path in the probed IDE application (file-exact, through the host Remote's openExternal). */
+  openInIde: (path: string) => void
+  /** Start the once-per-page open-in-app probe (the gestures hide until it answers). */
+  loadOpenInApps: () => void
+  hooks: {
+    /** Probed open-in-app catalog ids (null until answered), bound by the slot renderer. */
+    openInApps: ObservableSnapshot<readonly string[] | null>
+  }
 }
 
 /** Full props of the tab body entry (runtime + store + injected + locale shares). */

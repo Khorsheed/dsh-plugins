@@ -6,10 +6,10 @@
  * and the file-preview tab read the same host data. The claim is
  * unconditional so the card mounts for every turn the election reaches it for
  * and renders nothing until its fetch settles or the turn has no files. Since
- * the 0.1.5-rc.1 move the entry carries no priority: the official
- * deliverables row (same default band, registered earlier) elects first and
- * claims the turns its own data covers — this card renders exactly the turns
- * official data misses (bash captures, S2).
+ * the 0.1.5-rc.1 move the entry registers at priority 1 — explicitly behind
+ * the official deliverables entry (default 0; the chain elects ascending), so
+ * the official card wins every turn it claims and this card renders exactly
+ * the turns official data misses (bash captures, S2).
  */
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 

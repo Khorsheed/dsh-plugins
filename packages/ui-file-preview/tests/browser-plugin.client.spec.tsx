@@ -37,6 +37,14 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
     calls.push({ method: 'turnFiles', args })
     return { ok: true, value: { asOfSeq: 0, turns: [] } }
   })
+  const reveal = vi.fn(async (...args: unknown[]) => {
+    calls.push({ method: 'reveal', args })
+    return { ok: true, value: { revealed: true } }
+  })
+  const openExternal = vi.fn(async (...args: unknown[]) => {
+    calls.push({ method: 'openExternal', args })
+    return { ok: true, value: { opened: true } }
+  })
   class RemoteService extends Service {
     constructor(serviceCtx: Context) {
       super(serviceCtx, 'remote')
@@ -49,8 +57,11 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
   // `ctx.get('remote.filePreview')` after the mount settles).
   const mount = vi.fn(async () => () => {})
   Object.assign(ctx.remote, { $mount: mount })
-  ctx.provide('remote.filePreview', { list, turnFiles })
+  ctx.provide('remote.filePreview', { list, turnFiles, reveal, openExternal })
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ current: sid('s1'), byId: { s1: { cwd: '/work' } } }) },
+  })
   // A fake tab-type registry recording registrations; the real registry's
   // ranking/coexistence rules are the host's own test coverage.
   const registered: SidebarRightTabDefinition[] = []
@@ -86,13 +97,13 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
   } as never, (() => null) as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, calls, list, turnFiles, mount, registered, previews, openTab }
+  return { ctx, fiber, calls, list, turnFiles, reveal, openExternal, mount, registered, previews, openTab }
 }
 
 /** The tab body entry's inject factory, called the way the outlet would. */
 function tabApi(b: Awaited<ReturnType<typeof bench>>) {
   const entry = b.ctx.slots.entries('sidebar.right.pane.tab')[0]
-  const injected = (entry?.inject as unknown as (() => FilePreviewTabInjected) | undefined)?.()
+  const injected = (entry?.inject as unknown as ((sessionId: SessionId) => FilePreviewTabInjected) | undefined)?.(sid('s1'))
   return { entry, injected }
 }
 
@@ -125,10 +136,12 @@ describe('ui-file-preview browser plugin', () => {
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
     expect(entry?.locale).toBe('filePreview')
     expect(entry?.store).toBeTruthy()
-    // The turn row: default priority (no preemption of the official row).
+    // The turn row: priority 1, explicitly AFTER the official deliverables
+    // entry (default 0) — the official card wins every turn it claims; ours
+    // renders only the turns official data misses.
     const { entry: turnEntry } = turnApi(b)
     expect(turnEntry).toBeTruthy()
-    expect(turnEntry?.options.priority).toBeUndefined()
+    expect(turnEntry?.options.priority).toBe(1)
     expect(turnEntry?.locale).toBe('filePreview')
     // The change-history renderer: builtin band (never the default), cheapest
     // loading mode, body in the keyed document seat.
@@ -162,6 +175,73 @@ describe('ui-file-preview browser plugin', () => {
       { method: 'list', args: ['s1'] },
       { method: 'turnFiles', args: ['s1'] },
     ])
+    await b.fiber.dispose()
+  })
+
+  it('wraps chatFileMentions so mention opens route to owner.openFile', async () => {
+    // Provided before the plugin applies (the dsh.client.inject edge orders
+    // ui-deliverables first); the wrap keeps claim/copy and reroutes open.
+    const nativeOpen = vi.fn()
+    const ctx2 = new Context()
+    const original = {
+      forClosing: () => ({
+        resolve: (value: string) =>
+          value === 'a.md' ? { open: () => { nativeOpen(value) }, label: '打开 a.md', title: '/work/a.md' } : undefined,
+      }),
+    }
+    ctx2.provide('chatFileMentions', original)
+    ctx2.provide('locale', new LocaleRuntime(ctx2))
+    ctx2.provide('sessions', { list: { getSnapshot: () => ({ current: undefined, byId: {} }) } })
+    class RemoteService2 extends Service {
+      constructor(serviceCtx: Context) {
+        super(serviceCtx, 'remote')
+      }
+    }
+    new RemoteService2(ctx2)
+    Object.assign(ctx2.remote, { $mount: vi.fn(async () => () => {}) })
+    ctx2.provide('remote.filePreview', {
+      list: vi.fn(async () => ({ ok: true, value: { entries: [], asOfSeq: -1, truncated: false } })),
+      turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
+    })
+    ctx2.provide('sidebarRightTabs', { register: () => () => {} })
+    ctx2.provide('sidebarRight', { openTab: vi.fn() })
+    await ctx2.plugin(SlotRegistry).await()
+    ctx2.slots.register({
+      name: 'root',
+      children: { 'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' }, 'sidebar.right.tab.document': { kind: 'keyed', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'chain', scope: 'session', owner: {} } },
+    } as never, (() => null) as never)
+    const fiber = ctx2.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const openFile = vi.fn()
+    const resolved = original.forClosing({ openFile } as never, 's1' as never)
+    const hit = resolved!.resolve('a.md')
+    expect(hit?.label).toBe('打开 a.md')
+    hit?.open()
+    expect(openFile).toHaveBeenCalledWith('/work/a.md')
+    expect(nativeOpen).not.toHaveBeenCalled()
+    await fiber.dispose()
+  })
+
+  it('routes row gestures: reveal through the Remote, IDE through openExternal', async () => {
+    const b = await bench()
+    const { injected } = tabApi(b)
+    if (injected === undefined) throw new Error('tab inject missing')
+    injected.revealFolder('docs/a.md')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(b.reveal).toHaveBeenCalledWith('s1', 'docs/a.md')
+    // IDE open requires a probed IDE id; the probe defaults to no answer in
+    // this bench (no fetch), so kick it and stub the catalog.
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ apps: ['finder', 'cursor'] }))) as never
+    try {
+      injected.loadOpenInApps()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      injected.openInIde('docs/a.md')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(b.openExternal).toHaveBeenCalledWith('s1', 'docs/a.md', 'cursor')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
     await b.fiber.dispose()
   })
 

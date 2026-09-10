@@ -17,6 +17,10 @@ import { FilePreviewTab } from '../src/client/FilePreviewTab.tsx'
 import { createFilePreviewStore } from '../src/client/file-preview-store.ts'
 import type { FilePreviewTabProps } from '../src/client/contract.ts'
 
+/** A useOpenInApps stand-in over a fixed probe answer. */
+const useOpenInAppsFake = (apps: readonly string[] | null) =>
+  <T,>(selector: (value: readonly string[] | null) => T): T => selector(apps)
+
 function entry(path: string, seq: number, diffs: FilePreviewEntry['diffs'] = []): FilePreviewEntry {
   return { path, op: 'write', seq, turn: 1, step: 1, diffs }
 }
@@ -38,6 +42,11 @@ interface HarnessOptions {
   readonly openResource?: (address: string) => void
   readonly navigation?: { readonly params?: { readonly path?: string } | undefined; readonly revision: number }
   readonly cwd?: string | undefined
+  /** Probed open-in-app catalog ids; null while the probe is unanswered. */
+  readonly apps?: readonly string[] | null
+  readonly copyPath?: FilePreviewTabProps['copyPath']
+  readonly revealFolder?: FilePreviewTabProps['revealFolder']
+  readonly openInIde?: FilePreviewTabProps['openInIde']
 }
 
 /** Render the body over a real store instance, re-rendering on store commits. */
@@ -46,6 +55,10 @@ function renderTab(opts: HarnessOptions = {}) {
   const navigation = opts.navigation ?? { params: undefined, revision: 0 }
   const cwd = 'cwd' in opts ? opts.cwd : '/work'
   const listFiles = opts.listFiles ?? vi.fn(async () => ({ ok: true as const, value: LIST }))
+  const apps = 'apps' in opts ? (opts.apps ?? null) : ['finder', 'cursor']
+  const copyPath = opts.copyPath ?? vi.fn(async () => true)
+  const revealFolder = opts.revealFolder ?? vi.fn()
+  const openInIde = opts.openInIde ?? vi.fn()
   const useSessionsFake = (selector: (state: { byId: Record<string, { cwd: string | undefined }> }) => unknown) =>
     selector({ byId: { s1: { cwd } } })
   // Stable per mount, as the slot runtime guarantees: a fresh signal per call
@@ -79,11 +92,16 @@ function renderTab(opts: HarnessOptions = {}) {
       useStore: <T,>(selector: (state: never) => T): T => selector(instance.getSnapshot() as never),
       actions: instance.actions,
       listFiles,
+      copyPath,
+      revealFolder,
+      openInIde,
+      loadOpenInApps: vi.fn(),
+      useOpenInApps: useOpenInAppsFake(apps),
       t: (key: string) => key,
     } as unknown as FilePreviewTabProps
     return <FilePreviewTab {...props} />
   }
-  return { openResource, listFiles, ...render(<Harness />) }
+  return { openResource, listFiles, copyPath, revealFolder, openInIde, ...render(<Harness />) }
 }
 
 afterEach(cleanup)
@@ -147,6 +165,37 @@ describe('FilePreviewTab', () => {
     // The matched name renders split around a <mark>, so query by the row's title.
     expect(container.querySelector('[title="src/agent.ts"]')).toBeNull()
     expect(container.querySelector('[title="docs/guide.md"]')).not.toBeNull()
+  })
+
+  it('row actions: copy always, folder/IDE behind the probed catalog', async () => {
+    const copyPath = vi.fn(async () => true)
+    const revealFolder = vi.fn()
+    const openInIde = vi.fn()
+    const openResource = vi.fn()
+    renderTab({ copyPath, revealFolder, openInIde, openResource, apps: ['finder', 'cursor'] })
+    await act(async () => {})
+    // Two rows listed — the actions repeat per row; click the first row's.
+    fireEvent.click(screen.getAllByLabelText('row.copyPath')[0]!)
+    expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
+    fireEvent.click(screen.getAllByLabelText('row.openFolder')[0]!)
+    expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
+    fireEvent.click(screen.getAllByLabelText('row.openIde')[0]!)
+    expect(openInIde).toHaveBeenCalledWith('src/agent.ts')
+    // A row action never triggers the row's own open gesture.
+    expect(openResource).not.toHaveBeenCalled()
+  })
+
+  it('hides the folder/IDE gestures until the probe answers with a handler', async () => {
+    renderTab({ apps: null })
+    await act(async () => {})
+    expect(screen.getAllByLabelText('row.copyPath').length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('row.openIde')).toBeNull()
+    cleanup()
+    renderTab({ apps: [] })
+    await act(async () => {})
+    expect(screen.queryByLabelText('row.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('row.openIde')).toBeNull()
   })
 
   it('refresh re-fetches the list', async () => {

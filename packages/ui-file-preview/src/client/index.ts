@@ -22,6 +22,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.locale service merge.
@@ -43,6 +46,9 @@ import { createFilePreviewStore } from './file-preview-store.ts'
 import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
 import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
 import { en, NS, zh } from './locales.ts'
+import { wrapChatFileMentions } from './mentions-wrap.ts'
+import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
+import { parentPath } from './path-utils.ts'
 import { createTurnFilesLoader } from './turn-files-cache.ts'
 import { selectTurnFiles } from './turn-files.ts'
 import type { FilePreviewRemote, FilePreviewTabInjected, FilePreviewTurnRowInjected } from './contract.ts'
@@ -51,9 +57,10 @@ export { DiffHistory } from './DiffHistory.tsx'
 export { FilePreviewTab, FileHistoryBody, TurnFileRow }
 export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
 
-/** Required services: slots, the remote channel, the locale, and the
- * right-Sidebar faces (tab-type registry + the navigation service the turn
- * card's outside-workspace gesture opens pages through). The
+/** Required services: slots, sessions (cwd for the row gestures), the remote
+ * channel, the locale, and the right-Sidebar faces (tab-type registry + the
+ * navigation service the turn card's outside-workspace gesture opens pages
+ * through). The
  * `remote.filePreview` namespace is deliberately NOT an inject: this plugin
  * both mounts the namespace (through `$mount` below) and consumes it, and the
  * Cordis property proxy only resolves services declared in `inject` or
@@ -63,7 +70,7 @@ export { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, FILE_HISTORY_ID }
  * The mount is awaited and the namespace is then read back from the global
  * store with `ctx.get`, which resolves any active provider in the same
  * isolation scope. */
-export const inject = ['slots', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
+export const inject = ['slots', 'sessions', 'remote', 'locale', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, the tab
@@ -94,6 +101,46 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // (the host returns the whole per-turn map, cached by the log watermark).
   const turnFilesLoader = createTurnFilesLoader(remote)
 
+  // S1 tail: route prose-mention opens into the sidebar too. The wrap is
+  // in-place on ui-deliverables' provided object (see mentions-wrap.ts for
+  // why not provide/set); the dsh.client.inject edge on
+  // @deepseek-ai/dsh-client-ui-deliverables orders its apply before ours, and
+  // a composition without it simply has no prose links to wrap.
+  const mentions = ctx.get('chatFileMentions')
+  if (mentions !== undefined) wrapChatFileMentions(mentions)
+
+  // Row gestures: copy always works (clipboard needs no host capability);
+  // folder/IDE gestures key off the once-per-page open-in-app probe — a host
+  // without the route (or a failed probe) reads as "no apps" and the buttons
+  // stay hidden. Folder open keeps the old drawer's semantics: reveal the
+  // file selected in the host file manager (host Remote), falling back to the
+  // official open route on the parent folder. IDE open is file-exact, which
+  // the official route refuses (directories only) — it rides the host half's
+  // `openExternal` instead.
+  const sessions: ISessions = ctx.sessions
+  const openInApps = new OpenInAppProbe()
+  const sessionCwd = (sessionId: SessionId): string | undefined =>
+    sessions.list.getSnapshot().byId[sessionId]?.cwd
+  const revealFolder = (sessionId: SessionId, path: string): void => {
+    const resolved = resolveWorkspacePath(sessionCwd(sessionId), path)
+    const fallback = (): void => {
+      const fileManager = pickFileManager(openInApps.apps.getSnapshot() ?? [])
+      if (fileManager !== undefined) void openInApps.open(fileManager, parentPath(resolved) || '.')
+    }
+    void remote.reveal(sessionId, path).then((result) => {
+      if (result.ok && result.value.revealed) return
+      fallback()
+    }).catch(fallback)
+  }
+  const openInIde = (sessionId: SessionId, path: string): void => {
+    const ide = pickIde(openInApps.apps.getSnapshot() ?? [])
+    if (ide === undefined) return
+    void remote.openExternal(sessionId, path, ide).catch(() => {
+      // A launch failure stays silent in the row; the native app surfaces its
+      // own error dialog when the path is unusable.
+    })
+  }
+
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', which outranks
   // every builtin viewer — correct here because the type claims nothing.
@@ -105,17 +152,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     key: FILE_PREVIEW_ID,
     locale: NS,
     store: createFilePreviewStore,
-    inject: (): FilePreviewTabInjected => ({
+    inject: (sessionId: SessionId): FilePreviewTabInjected => ({
       listFiles: (sid: SessionId) => remote.list(sid),
+      copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
+      revealFolder: (path: string) => { revealFolder(sessionId, path) },
+      openInIde: (path: string) => { openInIde(sessionId, path) },
+      loadOpenInApps: () => { void openInApps.load() },
+      hooks: { openInApps: openInApps.apps },
     }),
   }, FilePreviewTab)), 'ui-file-preview: tab body')
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
-    // No priority: the chain elects the first non-null select in ascending
-    // priority order, and the official deliverables entry (also default)
-    // registered first at host boot. This card's unconditional claim is
-    // consulted only for turns the official row declines.
+    // Priority 1: the chain elects the first non-null select in ASCENDING
+    // priority order (ui-slots ChainSelect contract), and the official
+    // deliverables entry carries the default 0 — so the official card claims
+    // every turn its own data covers, and this card's unconditional claim is
+    // consulted only for turns official data misses (pure bash captures, S2).
+    // Explicit beats implicit: at equal priority the election would ride on
+    // registration order, which drifts with compose order.
+    priority: 1,
     select: selectTurnFiles,
     locale: NS,
     inject: (): FilePreviewTurnRowInjected => ({

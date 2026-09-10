@@ -22,6 +22,10 @@ export type FilePreviewKey =
   | 'history.step.latest'
   | 'history.step.older'
   | 'history.step.newer'
+  | 'row.copyPath'
+  | 'row.copied'
+  | 'row.openFolder'
+  | 'row.openIde'
   | 'turn.summary'
   | 'turn.summaryOne'
   | 'turn.expand'
@@ -60,6 +64,10 @@ export const zh: Record<FilePreviewKey, string> = {
   'history.step.latest': '最新',
   'history.step.older': '查看更早的修改',
   'history.step.newer': '查看更新的修改',
+  'row.copyPath': '复制路径',
+  'row.copied': '已复制',
+  'row.openFolder': '在文件夹中打开',
+  'row.openIde': '在 IDE 打开',
   'turn.summary': '{count} 个文件已修改',
   'turn.summaryOne': '1 个文件已修改',
   'turn.expand': '展开其余 {count} 个',
@@ -92,6 +100,10 @@ export const en: Record<FilePreviewKey, string> = {
   'history.step.latest': 'latest',
   'history.step.older': 'View an earlier change',
   'history.step.newer': 'View a newer change',
+  'row.copyPath': 'Copy path',
+  'row.copied': 'Copied',
+  'row.openFolder': 'Show in folder',
+  'row.openIde': 'Open in IDE',
   'turn.summary': '{count} files changed',
   'turn.summaryOne': '1 file changed',
   'turn.expand': 'Show {count} more',

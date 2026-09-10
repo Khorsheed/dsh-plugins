@@ -8,7 +8,8 @@ The agent worked for an hour; which files did it actually touch, and what did th
 
 ## Features
 
-- **Right-sidebar Produced page** — a page-type right-sidebar tab (entered from the guide page): a pure list of every file the session wrote or edited, latest activity first, searchable.
+- **Right-sidebar Produced page** — a page-type right-sidebar tab (entered from the guide page): a pure list of every file the session wrote or edited, latest activity first, searchable. Each row carries hover actions — copy path always, plus "show in folder" (the file selected in the host file manager) and "open in IDE" when the host probe finds a handler.
+- **Mentions open in the sidebar** — prose file references (including files delivered through the present tool) always open in the right sidebar, never the native default application.
 - **Official document preview** — clicking an in-workspace file hands rendering to the official document tab via `openResource('dsh-resource://file/session/<id>/<path>')`; this plugin no longer draws content previews of its own.
 - **Change history** — a switchable renderer of the official preview page (pick "Change history" in the toolbar dropdown): step through every recorded write/edit diff with its turn and step. The official renderers have no notion of history, so this part stays self-drawn.
 - **Turn mutation card** — each finished turn ends with a collapsible "N files changed" card (including bash captures — broader than the official deliverables row) with per-file line deltas. Clicking an in-workspace file takes the official open route; an outside-workspace artifact opens the Produced page with that file's change history selected.

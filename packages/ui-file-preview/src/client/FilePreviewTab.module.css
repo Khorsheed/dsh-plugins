@@ -197,3 +197,50 @@
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* One row plus its hover actions: the actions float over the row's trailing
+   edge, revealed on hover or keyboard focus, with the list's own background
+   so the row text fades under them instead of colliding. */
+.rowWrap {
+  position: relative;
+}
+
+.rowWrap .row {
+  width: 100%;
+}
+
+.rowActions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  transform: translateY(-50%);
+}
+
+.rowWrap:hover .rowActions,
+.rowWrap:focus-within .rowActions {
+  display: inline-flex;
+}
+
+.rowAction {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.rowAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
