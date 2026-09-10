@@ -44,8 +44,9 @@ import { FilePreviewTab } from './FilePreviewTab.tsx'
 import { FileHistoryBody } from './FileHistoryBody.tsx'
 import { TurnFileRow } from './TurnFileRow.tsx'
 import { createFilePreviewStore } from './file-preview-store.ts'
-import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition } from './definition.tsx'
+import { FILE_PREVIEW_ID, FILE_PREVIEW_KIND, filePreviewDefinition, type FileClaimSource } from './definition.tsx'
 import { FILE_HISTORY_ID, HISTORY_EXTENSIONS } from './history-definition.ts'
+import { basename } from './path-utils.ts'
 import { en, NS, zh } from './locales.ts'
 import { wrapChatFileMentions } from './mentions-wrap.ts'
 import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
@@ -100,7 +101,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const remote = ctx.get('remote.filePreview') as FilePreviewRemote
   // The turn card's host-fed loader: one RPC warms every turn rendered so far
   // (the host returns the whole per-turn map, cached by the log watermark).
-  const turnFilesLoader = createTurnFilesLoader(remote)
+  const turnFilesLoader0 = createTurnFilesLoader(remote)
+  const turnFilesLoader: typeof turnFilesLoader0 = (sessionId, turn) =>
+    turnFilesLoader0(sessionId, turn).then((files) => {
+      recordProducts(sessionId, files.map(file => file.path))
+      return files
+    })
 
   // S1 tail: route prose-mention opens into the sidebar too. The wrap is
   // in-place on ui-deliverables' provided object (see mentions-wrap.ts for
@@ -115,7 +121,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     name: '@khorsheed/dsh-client-ui-file-preview/mentions-wrap',
     inject: ['chatFileMentions'],
     apply: (sub: Context) => {
-      wrapChatFileMentions((sub as unknown as { chatFileMentions: ChatFileMentions }).chatFileMentions)
+      wrapChatFileMentions((sub as unknown as { chatFileMentions: ChatFileMentions }).chatFileMentions, {
+        // Mentions land in this package's detail view, not the official
+        // document tab; a throw (no mounted sidebar surface) falls back to
+        // the owner's openFile inside the wrap.
+        open: (path) => { ctx.sidebarRight.openTab(FILE_PREVIEW_KIND, { params: { path } }) },
+        label: (path) => t('mention.open', { name: basename(path) }),
+      })
     },
   })
 
@@ -131,6 +143,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const openInApps = new OpenInAppProbe()
   const sessionCwd = (sessionId: SessionId): string | undefined =>
     sessions.list.getSnapshot().byId[sessionId]?.cwd
+
+  // The products cache backing the tab type's canOpen: session → the
+  // workspace-resolved paths the fold reported. Fed by every list fetch and
+  // by the turn card's per-session loader (chat scrolling warms it before any
+  // open gesture). Cold cache = canOpen declines = the official document tab
+  // keeps the open — the documented best-effort degrade.
+  const claimed = new Map<string, Set<string>>()
+  const recordProducts = (sessionId: SessionId, paths: Iterable<string>): void => {
+    const cwd = sessionCwd(sessionId)
+    const set = claimed.get(sessionId) ?? new Set<string>()
+    for (const path of paths) set.add(resolveWorkspacePath(cwd, path))
+    claimed.set(sessionId, set)
+  }
+  const claims: FileClaimSource = {
+    claimsFile: (sessionId, path) =>
+      claimed.get(sessionId)?.has(resolveWorkspacePath(sessionCwd(sessionId as SessionId), path)) ?? false,
+  }
   const revealFolder = (sessionId: SessionId, path: string): void => {
     const resolved = resolveWorkspacePath(sessionCwd(sessionId), path)
     const fallback = (): void => {
@@ -151,10 +180,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
   }
 
-  // Stage one of the right-Sidebar registration: the page type itself (guide
-  // entry, no address claims). The default band is 'extension', which outranks
-  // every builtin viewer — correct here because the type claims nothing.
-  ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t)), 'ui-file-preview: tab type')
+  // Stage one of the right-Sidebar registration: the tab type (guide entry
+  // PLUS address claims — `dsh-resource://file/**` for paths the fold recorded
+  // and the preview stack renders; see definition.tsx). The default band is
+  // 'extension', outranking the official document tab's 'fallback'.
+  ctx.effect(() => ctx.sidebarRightTabs.register(filePreviewDefinition(t, claims)), 'ui-file-preview: tab type')
 
   // Stage two: the body under the type's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
@@ -163,7 +193,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     store: createFilePreviewStore,
     inject: (sessionId: SessionId): FilePreviewTabInjected => ({
-      listFiles: (sid: SessionId) => remote.list(sid),
+      listFiles: (sid: SessionId) => remote.list(sid).then((result) => {
+        if (result.ok) recordProducts(sid, result.value.entries.map(entry => entry.path))
+        return result
+      }),
       readFile: (sid: SessionId, path: string) => remote.read(sid, path),
       copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
       revealFolder: (path: string) => { revealFolder(sessionId, path) },
@@ -229,7 +262,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           key: FILE_HISTORY_ID,
           locale: NS,
           inject: (): Pick<FilePreviewTabInjected, 'listFiles'> => ({
-            listFiles: (sid: SessionId) => remote.list(sid),
+            // The renderer sits inside the official document tab — a file it
+            // renders is by definition a product; feed the claim cache too.
+            listFiles: (sid: SessionId) => remote.list(sid).then((result) => {
+              if (result.ok) recordProducts(sid, result.value.entries.map(entry => entry.path))
+              return result
+            }),
           }),
         },
         FileHistoryBody,

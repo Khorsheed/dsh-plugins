@@ -31,7 +31,7 @@ async function bench(opts: { documentPreviews?: boolean } = {}) {
   const calls: { method: string; args: unknown[] }[] = []
   const list = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'list', args })
-    return { ok: true, value: { entries: [], asOfSeq: -1, truncated: false } }
+    return { ok: true, value: { entries: [{ path: 'src/agent.ts', op: 'write', seq: 1, turn: 1, step: 1, diffs: [] }], asOfSeq: -1, truncated: false } }
   })
   const turnFiles = vi.fn(async (...args: unknown[]) => {
     calls.push({ method: 'turnFiles', args })
@@ -125,12 +125,18 @@ describe('ui-file-preview browser plugin', () => {
   it('mounts the Remote and registers the tab type, the body, and the turn row', async () => {
     const b = await bench()
     expect(b.mount).toHaveBeenCalledTimes(1)
-    // Stage one: the page type, entered from the guide, claiming no address.
+    // Stage one: the type — page (guide entry) AND claimant of
+    // `dsh-resource://file/**` for fold-recorded renderable products.
     const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
     expect(definition?.id).toBe(FILE_PREVIEW_ID)
-    expect(definition?.patterns).toBeUndefined()
+    expect(definition?.patterns).toEqual(['dsh-resource://file/**'])
     expect(definition?.title('sidebar://file-preview')).toBeTruthy()
+    expect(definition?.title('dsh-resource://file/session/s1/docs/My%20Note.md')).toBe('My Note.md')
     expect(definition?.guide?.length).toBe(1)
+    // canOpen: cold fold cache declines (the official document tab keeps the
+    // open), and non-renderable suffixes never claim.
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/src/agent.ts')).toBe(false)
+    expect(definition?.canOpen?.('dsh-resource://file/absolute/tmp/a.md')).toBe(false)
     // Stage two: the body under the type's id, with the store and the locale.
     const { entry } = tabApi(b)
     expect(entry?.options).toMatchObject({ key: FILE_PREVIEW_ID })
@@ -157,12 +163,26 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
+  it('claims addresses only after the fold cache warms, and never for unrenderable types', async () => {
+    const b = await bench()
+    const definition = b.registered.find(d => d.kind === FILE_PREVIEW_KIND)
+    const address = 'dsh-resource://file/session/s1/src/agent.ts'
+    expect(definition?.canOpen?.(address)).toBe(false)
+    const { injected } = tabApi(b)
+    if (injected === undefined) throw new Error('tab inject missing')
+    await injected.listFiles(sid('s1'))
+    expect(definition?.canOpen?.(address)).toBe(true)
+    // The fold recorded it, but pdf stays with the official renderer.
+    expect(definition?.canOpen?.('dsh-resource://file/session/s1/docs/report.pdf')).toBe(false)
+    await b.fiber.dispose()
+  })
+
   it('routes the tab body and turn card callbacks through the filePreview Remote', async () => {
     const b = await bench()
     const { injected } = tabApi(b)
     if (injected === undefined) throw new Error('tab inject missing')
     const listResult = await injected.listFiles(sid('s1'))
-    expect(listResult).toMatchObject({ ok: true, value: { entries: [] } })
+    expect(listResult).toMatchObject({ ok: true })
     const { injected: turnInjected } = turnApi(b)
     if (turnInjected === undefined) throw new Error('turn inject missing')
     // The turn card's host-fed loader reaches the turnFiles RPC (cached: the
@@ -178,9 +198,9 @@ describe('ui-file-preview browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('wraps chatFileMentions so mention opens route to owner.openFile', async () => {
-    // Provided before the plugin applies (the dsh.client.inject edge orders
-    // ui-deliverables first); the wrap keeps claim/copy and reroutes open.
+  it('wraps chatFileMentions so mention opens route to our detail view', async () => {
+    // Provided before the plugin applies (the nested fiber pends on the
+    // service); the wrap keeps the claim logic and reroutes open + label.
     const nativeOpen = vi.fn()
     const ctx2 = new Context()
     const original = {
@@ -204,7 +224,8 @@ describe('ui-file-preview browser plugin', () => {
       turnFiles: vi.fn(), reveal: vi.fn(), openExternal: vi.fn(),
     })
     ctx2.provide('sidebarRightTabs', { register: () => () => {} })
-    ctx2.provide('sidebarRight', { openTab: vi.fn() })
+    const openTab = vi.fn()
+    ctx2.provide('sidebarRight', { openTab })
     await ctx2.plugin(SlotRegistry).await()
     ctx2.slots.register({
       name: 'root',
@@ -215,9 +236,11 @@ describe('ui-file-preview browser plugin', () => {
     const openFile = vi.fn()
     const resolved = original.forClosing({ openFile } as never, 's1' as never)
     const hit = resolved!.resolve('a.md')
-    expect(hit?.label).toBe('打开 a.md')
+    // The official "在默认程序中打开" label is replaced by the sidebar wording.
+    expect(hit?.label).not.toBe('打开 a.md')
     hit?.open()
-    expect(openFile).toHaveBeenCalledWith('/work/a.md')
+    expect(openTab).toHaveBeenCalledWith('file-preview', { params: { path: '/work/a.md' } })
+    expect(openFile).not.toHaveBeenCalled()
     expect(nativeOpen).not.toHaveBeenCalled()
     await fiber.dispose()
   })

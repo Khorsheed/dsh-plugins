@@ -76,6 +76,7 @@ export type FilePreviewKey =
   | 'row.openFolder'
   | 'row.openIde'
   | 'detail.back'
+  | 'mention.open'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -157,6 +158,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'row.openFolder': '在文件夹中打开',
   'row.openIde': '在 IDE 打开',
   'detail.back': '返回产物列表',
+  'mention.open': '在侧边栏打开 {name}',
 }
 
 /** English dictionary. */
@@ -232,4 +234,5 @@ export const en: Record<FilePreviewKey, string> = {
   'row.openFolder': 'Show in folder',
   'row.openIde': 'Open in IDE',
   'detail.back': 'Back to products',
+  'mention.open': 'Open {name} in the sidebar',
 }

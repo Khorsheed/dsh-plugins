@@ -24,3 +24,28 @@ export const HISTORY_EXTENSIONS: readonly string[] = [
   'go', 'rs', 'java', 'c', 'h', 'cpp', 'hpp', 'rb', 'php', 'swift', 'kt',
   'vue', 'svelte', 'diff', 'patch',
 ]
+
+/**
+ * Suffixes the detail view's preview stack renders: the change-history text
+ * set plus the image formats the pane's image arm serves. Everything else
+ * (pdf, archives, binaries) stays with the official document tab — the tab
+ * type's `canOpen` filters on this set before claiming an address.
+ */
+export const RENDERABLE_EXTENSIONS: readonly string[] = [
+  ...HISTORY_EXTENSIONS,
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico',
+]
+
+const RENDERABLE = new Set(RENDERABLE_EXTENSIONS)
+
+/**
+ * Whether the detail view can render this path's content (suffix match,
+ * case-insensitive, compound suffixes intentionally not special-cased).
+ * @param path - any file path spelling.
+ */
+export function renderablePath(path: string): boolean {
+  const base = path.replaceAll('\\', '/').toLowerCase()
+  const name = base.slice(base.lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && RENDERABLE.has(name.slice(dot + 1))
+}

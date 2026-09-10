@@ -3,11 +3,14 @@
  * `chatFileMentions` routes clicks on files delivered through the `present`
  * tool to the native default application (`opener.open`), while undelivered
  * files open in the right sidebar (`owner.openFile`). This plugin wants every
- * prose mention to open in the sidebar, so the provided service's
- * `forClosing` is WRAPPED IN PLACE: the original implementation keeps its
- * claim and copy logic (which paths link, which labels they carry), and only
- * the resolved `open` behavior is replaced with `owner.openFile` — the
- * official route into the right-sidebar document tab.
+ * prose mention to open in this package's detail view, so the provided
+ * service's `forClosing` is WRAPPED IN PLACE: the original implementation
+ * keeps its claim logic (which paths link), while every resolved mention gets
+ * a new `open` (the detail view through the injected reroute, falling back to
+ * `owner.openFile` — the official openResource route, which the file-preview
+ * tab type claims for known products — when the reroute throws) and a new
+ * label (the official text for present-delivered files says "open in the
+ * default app", which is no longer true).
  *
  * Why in-place mutation: `ctx.provide` rejects a second provider and
  * `ctx.set` rejects any fiber but the provider's own ("cannot set property in
@@ -29,13 +32,30 @@
  */
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 
+/** The open behavior and label the wrap substitutes for every resolved mention. */
+export interface MentionReroute {
+  /**
+   * Open one resolved path in this package's own surface (the detail view).
+   * May throw (no mounted sidebar surface); the wrap then falls back to the
+   * owner's official `openFile`.
+   */
+  open(path: string): void
+  /**
+   * The mention's action label.
+   * @param path - the resolved path (the hit's title).
+   * @returns the visible label.
+   */
+  label(path: string): string
+}
+
 /**
  * Wrap the provided chatFileMentions service so every resolved mention opens
- * through `owner.openFile` (the sidebar document tab) instead of the native
- * default application. Idempotent: a second wrap of the same object is a no-op.
+ * in this package's detail view instead of the native default application.
+ * Idempotent: a second wrap of the same object is a no-op.
  * @param mentions - the live service object ui-deliverables provided.
+ * @param reroute - the substituted open behavior and label.
  */
-export function wrapChatFileMentions(mentions: ChatFileMentions): void {
+export function wrapChatFileMentions(mentions: ChatFileMentions, reroute: MentionReroute): void {
   if (WRAP_MARK in mentions) return
   const original = mentions.forClosing.bind(mentions)
   mentions.forClosing = (owner, sessionId) => {
@@ -45,9 +65,20 @@ export function wrapChatFileMentions(mentions: ChatFileMentions): void {
       resolve(value: string) {
         const hit = resolved.resolve(value)
         if (hit === undefined) return undefined
-        // hit.title is the resolved path (official builder contract); the
-        // owner opens it in the right sidebar.
-        return { ...hit, open: () => owner.openFile(hit.title) }
+        // hit.title is the resolved path (official builder contract).
+        return {
+          ...hit,
+          label: reroute.label(hit.title),
+          open: () => {
+            try {
+              reroute.open(hit.title)
+            } catch {
+              // No mounted sidebar surface (or a lost race): the official
+              // openFile still lands the file in the right sidebar.
+              owner.openFile(hit.title)
+            }
+          },
+        }
       },
     }
   }

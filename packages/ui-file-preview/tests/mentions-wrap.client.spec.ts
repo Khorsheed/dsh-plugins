@@ -16,7 +16,7 @@ function fakeMentions() {
   const mentions: ChatFileMentions = {
     forClosing: (_owner, _sessionId) => ({
       resolve: (value: string) =>
-        value === 'a.md' ? { open: () => { nativeOpen(value) }, label: '打开 a.md', title: '/work/a.md' } : undefined,
+        value === 'a.md' ? { open: () => { nativeOpen(value) }, label: '在默认程序中打开 a.md', title: '/work/a.md' } : undefined,
     }),
   }
   return { mentions, nativeOpen }
@@ -24,36 +24,52 @@ function fakeMentions() {
 
 const owner = { openFile: vi.fn() } as unknown as TurnTailOwnerProps
 
+function reroute() {
+  return { open: vi.fn(), label: vi.fn((path: string) => `在侧边栏打开 ${path}`) }
+}
+
 describe('wrapChatFileMentions', () => {
-  it('reroutes a resolved mention into owner.openFile with the resolved path', () => {
+  it('reroutes a resolved mention into the injected open with a fixed label', () => {
     const { mentions, nativeOpen } = fakeMentions()
-    wrapChatFileMentions(mentions)
+    const route = reroute()
+    wrapChatFileMentions(mentions, route)
     const resolved = mentions.forClosing(owner, 's1' as SessionId)
     expect(resolved).toBeDefined()
     const hit = resolved!.resolve('a.md')
-    // Claim and copy logic stay the original implementation's.
-    expect(hit?.label).toBe('打开 a.md')
+    // The claim logic stays the original implementation's; the label is ours.
     expect(hit?.title).toBe('/work/a.md')
+    expect(hit?.label).toBe('在侧边栏打开 /work/a.md')
+    hit?.open()
+    expect(route.open).toHaveBeenCalledWith('/work/a.md')
+    expect(nativeOpen).not.toHaveBeenCalled()
+    expect(owner.openFile).not.toHaveBeenCalled()
+  })
+
+  it('falls back to owner.openFile when the reroute throws', () => {
+    const { mentions } = fakeMentions()
+    const route = reroute()
+    route.open.mockImplementation(() => { throw new Error('sidebarRight: no session surface is mounted') })
+    wrapChatFileMentions(mentions, route)
+    const hit = mentions.forClosing(owner, 's1' as SessionId)!.resolve('a.md')
     hit?.open()
     expect(owner.openFile).toHaveBeenCalledWith('/work/a.md')
-    expect(nativeOpen).not.toHaveBeenCalled()
   })
 
   it('passes through unclaimed values and undefined forClosing results', () => {
     const { mentions } = fakeMentions()
-    wrapChatFileMentions(mentions)
+    wrapChatFileMentions(mentions, reroute())
     const resolved = mentions.forClosing(owner, 's1' as SessionId)
     expect(resolved!.resolve('other.md')).toBeUndefined()
     const bare = { forClosing: () => undefined } as unknown as ChatFileMentions
-    wrapChatFileMentions(bare)
+    wrapChatFileMentions(bare, reroute())
     expect(bare.forClosing(owner, 's1' as SessionId)).toBeUndefined()
   })
 
   it('is idempotent — a second wrap keeps the first', () => {
     const { mentions } = fakeMentions()
-    wrapChatFileMentions(mentions)
+    wrapChatFileMentions(mentions, reroute())
     const wrapped = mentions.forClosing
-    wrapChatFileMentions(mentions)
+    wrapChatFileMentions(mentions, reroute())
     expect(mentions.forClosing).toBe(wrapped)
   })
 })

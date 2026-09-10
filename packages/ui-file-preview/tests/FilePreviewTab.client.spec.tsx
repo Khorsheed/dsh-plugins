@@ -42,7 +42,12 @@ const READ: FilePreviewRead = { path: 'src/agent.ts', kind: 'text', content: 'co
 interface HarnessOptions {
   readonly listFiles?: FilePreviewTabProps['listFiles']
   readonly readFile?: FilePreviewTabProps['readFile']
-  readonly navigation?: { readonly params?: { readonly path?: string } | undefined; readonly revision: number }
+  readonly navigation?: {
+    readonly params?: { readonly path?: string } | undefined
+    readonly revision: number
+    /** The opened address; defaults to the page address. */
+    readonly address?: string
+  }
   readonly cwd?: string | undefined
   /** Probed open-in-app catalog ids; null while the probe is unanswered. */
   readonly apps?: readonly string[] | null
@@ -76,7 +81,11 @@ function renderTab(opts: HarnessOptions = {}) {
       contentId: 'sidebar://file-preview',
       title: 'Produced',
       visible: true,
-      navigation: { address: 'sidebar://file-preview', params: navigation.params, revision: navigation.revision },
+      navigation: {
+        address: navigation.address ?? 'sidebar://file-preview',
+        params: navigation.params,
+        revision: navigation.revision,
+      },
       signal,
       actions: tabActions,
     },
@@ -207,6 +216,21 @@ describe('FilePreviewTab', () => {
     fireEvent.click(screen.getByText('artifact.html'))
     await act(async () => {})
     expect(readFile).toHaveBeenCalledWith('s1', '/tmp/artifact.html')
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
+  })
+
+  it('an openResource-claimed address lands directly on the detail view', async () => {
+    const { readFile } = renderTab({
+      navigation: { address: 'dsh-resource://file/session/s1/src/agent.ts', revision: 1 },
+    })
+    await act(async () => {})
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
+    expect(readFile).toHaveBeenCalledWith('s1', 'src/agent.ts')
+  })
+
+  it('a page re-open after backing out re-applies the navigation selection', async () => {
+    renderTab({ navigation: { params: { path: 'src/agent.ts' }, revision: 1 } })
+    await act(async () => {})
     expect(screen.getByLabelText('detail.back')).toBeTruthy()
   })
 

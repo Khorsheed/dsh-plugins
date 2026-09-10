@@ -17,8 +17,8 @@
  * lands directly on the detail view.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   FileTypeIcon, IconCheckOutline16, IconChevronLeftOutline14, IconCodeOutline16, IconCopyOutline16,
   IconFolderOpenOutline16, IconGlobeOutline14, IconRefreshOutline16,
@@ -171,14 +171,29 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   // the first mounted body.
   useEffect(() => { loadOpenInApps() }, [loadOpenInApps])
 
-  // A navigation carrying params (the turn card's outside-workspace gesture)
-  // selects its path; the revision bumps on every navigation, so a repeat
-  // open of the same page re-applies the selection.
+  // A navigation selects its path: `params.path` (the turn card's
+  // outside-workspace gesture), or the claimed address's path (every
+  // openResource route — the official card, the file tree, mentions). The
+  // revision bumps on every navigation, so a repeat open re-applies it.
   const revision = navigation.revision
   const navPath = navigation.params?.path
+  const navAddress = navigation.address
+  // Applied once per navigation revision: the list arriving later must NOT
+  // re-apply (a refresh would yank the user out of the list they backed into).
+  const appliedRevision = useRef(0)
   useEffect(() => {
-    if (revision !== 0 && navPath !== undefined) actions.select(tab.id, navPath)
-  }, [revision, navPath, tab.id, actions])
+    if (revision === 0 || appliedRevision.current === revision) return
+    const path = navPath ?? (() => {
+      const parsed = navAddress === undefined ? undefined : parseFileAddress(navAddress)
+      return parsed?.scope === 'session' ? parsed.path : undefined
+    })()
+    if (path === undefined) return
+    appliedRevision.current = revision
+    // Select the fold's own spelling when the list knows the file (the store
+    // keys entries by their recorded display path), else the address's.
+    const known = list?.find(entry => resolveWorkspacePath(cwd, entry.path) === resolveWorkspacePath(cwd, path))
+    actions.select(tab.id, known?.path ?? path)
+  }, [revision, navPath, navAddress, list, cwd, tab.id, actions])
 
   // Latest activity first: the fold keeps first-seen order. The list shows
   // the session's products only — written/edited files, matching the chat

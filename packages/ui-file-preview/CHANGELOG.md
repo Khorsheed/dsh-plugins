@@ -12,7 +12,8 @@
 - 回合变更卡片保留（数据含 bash 捕获，比官方产物行全），改默认优先级：官方产物行先选举，本卡片只出现在官方数据覆盖不到的回合；点击工作区内文件走官方 `openFile` 路由，工作区外产物打开右栏「产物」页并选中其改动记录
 - 边界：工作区外的 bash 产物造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区）——列表行带提示标记，但我们自己的详情页不受此限：内容与改动记录照常可看
 - 行动作恢复（旧抽屉语义，详情页头部）：复制路径（始终）/ 在文件夹中打开（宿主半 `reveal` 选中文件，回退官方 open-in-app 路由开父目录）/ 在 IDE 打开（官方 open 路由只收目录，文件级走宿主半新方法 `openExternal`——macOS `open -a`，经 `/open-in-app/apps` 探测，无对应应用或非 macOS 时按钮隐藏）
-- mention 打开方向统一进右栏：就地包装官方 `chatFileMentions`（保留官方认领/文案，open 全走 `owner.openFile`）；登记为缝 S1 的尾巴
+- mention 打开直落详情页：就地包装官方 `chatFileMentions`（保留官方认领逻辑，open 改走 `openTab` 详情页、label 修为「在侧边栏打开」）；登记为缝 S1 的尾巴
+- 产物打开入口统一：tab 类型升级为地址认领型（`patterns: ['dsh-resource://file/**']` + `canOpen` 按 fold 记录 + 可渲染后缀过滤，extension 档压过官方 fallback 档的 document tab；认不到/渲染不了自动回落官方）。官方产物卡片、文件树等 openResource 入口对产物文件都落我们的详情页
 - 回合卡片选举确定性：显式 `priority: 1` 排在官方 deliverables（默认 0）之后——官方认领的回合永远显示官方卡片，本卡片只出现在官方数据缺失的回合
 
 ## 0.2.0（2026-09-10）
