@@ -1,8 +1,14 @@
 /**
- * Local-files plugin, browser half: a workspace view tab beside chat and
- * 产物 — a git-agnostic file browser over the session's workspace. It mounts
- * the localFiles Remote through the official `ctx.remote.$mount` channel and
- * registers a `conversation.view` entry so the browser surfaces as its own tab.
+ * Local-files plugin, browser half: a git-agnostic file browser over any
+ * local directory. It mounts the localFiles Remote through the official
+ * `ctx.remote.$mount` channel and surfaces the browser twice: as the 文件列表
+ * / Files `conversation.view` tab beside chat and 产物, and — on hosts with
+ * the right Sidebar (0.1.5+) — as a page-type `sidebar.right.pane.tab` entry
+ * the guide page offers (the official files card stays workspace-scoped;
+ * ours browses any directory). The sidebar registration lives in a nested
+ * plugin pended on `sidebarRightTabs`, so a composition without the right
+ * Sidebar simply never activates it and the conversation tab remains the
+ * only entry there.
  *
  * @module @khorsheed/dsh-local-files/client
  */
@@ -19,6 +25,9 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@khorsheed/dsh-local-files/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the ctx.sidebarRightTabs service merge and the
+// right-Sidebar SlotMap seat ('sidebar.right.pane.tab').
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import localFilesRemote from '@khorsheed/dsh-local-files/remote'
 import type {
   ListLocalDirectoryRequest, ReadLocalFileRequest,
@@ -27,11 +36,13 @@ import { WorkspaceView } from './WorkspaceView.tsx'
 import type {
   LocalFilesRemote, WorkspaceViewInjected,
 } from './contract.ts'
+import { LOCAL_FILES_TAB_ID, localFilesDefinition } from './definition.tsx'
 import { en, NS, zh } from './locales.ts'
 import { OpenInAppProbe, pickFileManager, pickIde } from './open-in-app.ts'
 import { createLocalFilesStore } from './store-local.ts'
 
 export { WorkspaceView }
+export { LOCAL_FILES_KIND, LOCAL_FILES_TAB_ID } from './definition.tsx'
 
 /** Required services: slots, sessions, the remote channel, and the locale. */
 export const inject = ['slots', 'sessions', 'remote', 'locale']
@@ -92,6 +103,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return snapshot.byId[sessionId]?.cwd
   }
 
+  /** The injected business face — identical for every surface the browser mounts on. */
+  const browserFace = (): WorkspaceViewInjected => ({
+    listDirectory: (request: ListLocalDirectoryRequest) => remote.listDirectory(request),
+    readFile: (request: ReadLocalFileRequest) => remote.readFile(request),
+    pickWorkspace,
+    sessionCwd,
+    hooks: { openInApps: openInApp.apps },
+    openFolder: openWith(pickFileManager),
+    openIDE: openWith(pickIde),
+  })
+
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
     id: 'local-files',
@@ -99,16 +121,28 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     label: () => t('tab.label'),
     store: createLocalFilesStore,
-    inject: (_sessionId, _actions): WorkspaceViewInjected => ({
-      listDirectory: (request: ListLocalDirectoryRequest) => remote.listDirectory(request),
-      readFile: (request: ReadLocalFileRequest) => remote.readFile(request),
-      pickWorkspace,
-      sessionCwd,
-      hooks: { openInApps: openInApp.apps },
-      openFolder: openWith(pickFileManager),
-      openIDE: openWith(pickIde),
-    }),
+    inject: browserFace,
   }, WorkspaceView))
+
+  // The right-Sidebar entry (0.1.5+). A nested plugin pended on
+  // `sidebarRightTabs` — cordis only re-wakes fibers that declare a service
+  // in `inject`, and a composition without the right Sidebar (hosts before
+  // 0.1.5) never provides it, so the registration simply never activates
+  // there instead of pending the whole plugin.
+  ctx.plugin({
+    name: '@khorsheed/dsh-local-files/sidebar-tab',
+    inject: ['sidebarRightTabs'],
+    apply: (sub: Context) => {
+      sub.effect(() => sub.sidebarRightTabs.register(localFilesDefinition(t)), 'local-files: tab type')
+      sub.effect(() => sub.slots.inject('sidebar.right.pane.tab', () => sub.slots.register({
+        name: 'sidebar.right.pane.tab',
+        key: LOCAL_FILES_TAB_ID,
+        locale: NS,
+        store: createLocalFilesStore,
+        inject: browserFace,
+      }, WorkspaceView)), 'local-files: sidebar tab body')
+    },
+  })
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

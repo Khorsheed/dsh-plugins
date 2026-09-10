@@ -58,6 +58,7 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
@@ -67,6 +68,7 @@
     "@deepseek-ai/dsh-client-locale": { "optional": true },
     "@deepseek-ai/dsh-client-ui-conversation": { "optional": true },
     "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-sidebar-right": { "optional": true },
     "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
     "@deepseek-ai/dsh-invariants": { "optional": true },
     "react": { "optional": true }
@@ -79,6 +81,7 @@
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.5-rc.1",
@@ -112,13 +115,14 @@
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
-      "notes": "The workspace tab mounts the conversation.view slot; it is a web surface — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) ride the official open-in-app routes: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager resp. editor/IDE). Hosts without open-in-app (< 0.1.5) fail the probe and keep the gestures hidden — an invisible degrade, so minHost stays at 0.1.2-rc.1.",
+      "notes": "The 文件列表/Files tab mounts the conversation.view slot; on hosts with the right Sidebar (0.1.5+) the browser additionally registers as a page-type sidebar tab the guide page offers (the registration is a nested plugin pended on `sidebarRightTabs`, so older hosts simply never activate it). It is a web surface — headless profiles have no browser consumer and the plugin contributes nothing there. The external-open gestures (open-in-folder / open-in-IDE) ride the official open-in-app routes: the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager resp. editor/IDE). Hosts without open-in-app (< 0.1.5) fail the probe and keep the gestures hidden — an invisible degrade, so minHost stays at 0.1.2-rc.1.",
       "verifiedHost": "0.1.2-rc.1"
     }
   }

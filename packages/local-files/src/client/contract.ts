@@ -1,5 +1,10 @@
 /**
- * Composed props contract for the local-files workspace view tab.
+ * Composed props contract for the local-files file-browser view. The browser
+ * mounts on two seats — the `conversation.view` tab and, on hosts with the
+ * right Sidebar, the keyed `sidebar.right.pane.tab` — whose owner shares
+ * differ (conversation.view hands view-switching props the browser never
+ * reads), so the runtime share is spelled structurally: the one framework
+ * prop the view consumes is the session id.
  *
  * @module @khorsheed/dsh-local-files/client
  */
@@ -7,13 +12,11 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
-  InjectFace, PropsLocale, PropsRuntime, PropsStore,
+  InjectFace, PropsLocale, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 // Type-only: pulls the generated Remote API (ctx.remote merge + namespace).
 import type {} from '@khorsheed/dsh-local-files/remote'
-// Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead,
   ReadLocalFileRequest,
@@ -43,9 +46,9 @@ export interface WorkspaceViewInjected {
   openIDE: (path: string) => void
 }
 
-/** Full props of the workspace view entry. */
+/** Full props of the file-browser view, on either seat it mounts on. */
 export type WorkspaceViewProps =
-  & PropsRuntime<'conversation.view'>
+  & { sessionId: SessionId }
   & PropsStore<ReturnType<typeof createLocalFilesStore>>
   & InjectFace<WorkspaceViewInjected>
   & PropsLocale<'localFiles'>

@@ -2,13 +2,11 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'tab.label': '工作区',
-  'tab.aria': '工作区文件浏览',
-  'local.workspace': '工作区',
+  'tab.label': '文件列表',
   'local.chooseWorkspace': '选择工作区',
+  'guide.description': '随时浏览任何目录的文件，不限于当前工作区',
   'local.refreshFiles': '刷新文件',
   'local.openFolder': '在文件夹中显示',
-  'local.browse': '工作区文件浏览',
   'local.noRoot': '未选择目录',
   'local.empty': '空目录',
   'local.noSelection': '选择一个文件预览内容',
@@ -71,7 +69,6 @@ export const zh = {
   'json.expandNode': '展开节点',
   'json.copyButtonTitle': '复制{action}',
   'markdown.footnotes': '脚注',
-  'aria.openLocal': '打开工作区文件浏览',
 } satisfies Record<string, string>
 
 /** The local-files namespace key union. */
@@ -89,13 +86,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'tab.label': 'Workspace',
-  'tab.aria': 'Workspace file browser',
-  'local.workspace': 'Workspace',
+  'tab.label': 'Files',
   'local.chooseWorkspace': 'Choose workspace',
+  'guide.description': 'Browse the files of any directory at any time — not limited to the current workspace',
   'local.refreshFiles': 'Refresh files',
   'local.openFolder': 'Show in folder',
-  'local.browse': 'Workspace file browser',
   'local.noRoot': 'No directory selected',
   'local.empty': 'Empty directory',
   'local.noSelection': 'Select a file to preview',
@@ -158,5 +153,4 @@ export const en = {
   'json.expandNode': 'Expand node',
   'json.copyButtonTitle': 'Copy {action}',
   'markdown.footnotes': 'Footnotes',
-  'aria.openLocal': 'Open workspace file browser',
 } satisfies Record<string, string>
