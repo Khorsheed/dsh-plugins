@@ -3,12 +3,16 @@
  * session header (`conversation.session.header.utilities`), a right-Sidebar
  * page tab (`sidebar.right.pane.tab`, registered through the official
  * two-stage path: the `worktrees` type into `ctx.sidebarRightTabs`, the body
- * into the keyed seat under the type's id) with the changes / commits /
- * repository views behind the badge's branch capsule, and a frame-wide
- * local-files browser (`shell.overlay`) behind the folder capsule. The
- * worktrees Remote is mounted here through the official `ctx.remote.$mount`
- * channel, so the plugin distributes as an independent package with no edits
- * to core packages. Composing this plugin out of cordis.yml removes every
+ * into the keyed seat under the type's id) with the session-changes /
+ * repository-commits / repository-files views behind the badge's branch
+ * capsule, and a frame-wide local-files browser (`shell.overlay`) behind the
+ * folder capsule. The session-changes view lists the git uncommitted files
+ * this session touched, filtered through the sibling file-preview fold's
+ * `list` when that plugin is present (probed via `ctx.get`, never a
+ * dependency; absent → every uncommitted file shows, the pre-filter
+ * behavior). The worktrees Remote is mounted here through the official
+ * `ctx.remote.$mount` channel, so the plugin distributes as an independent
+ * package with no edits to core packages. Composing this plugin out of cordis.yml removes every
  * surface it adds.
  *
  * The badge deliberately stays in the utilities list slot: the 0.1.5 header
@@ -52,6 +56,7 @@ import { WorktreesBadge } from './Badge.tsx'
 import { WorktreesTab } from './WorktreesTab.tsx'
 import { LocalFilesDrawer } from './LocalFilesDrawer.tsx'
 import type {
+  FilePreviewListProbe,
   LocalFilesDrawerInjected, WorktreesBadgeInjected, WorktreesTabInjected, WorktreesRemote,
 } from './contract.ts'
 import { WORKTREES_KIND, WORKTREES_TAB_ID, worktreesDefinition } from './definition.tsx'
@@ -105,6 +110,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'worktrees: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.get('remote.worktrees') as WorktreesRemote
+  // Optional sibling face: the file-preview fold's session-touched list feeds
+  // the session-changes filter. A peer community package, probed through the
+  // global store — absent (not installed) the probe is undefined and the tab
+  // shows every uncommitted file (the pre-filter behavior).
+  const filePreview = ctx.get('remote.filePreview') as FilePreviewListProbe | undefined
   // The once-per-page open-in-app probe; kicks off at apply and publishes
   // through a snapshot store the surfaces bind as a hook.
   const openInApp = new OpenInAppProbe()
@@ -154,6 +164,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (): WorktreesTabInjected => ({
       fetchSummary: (sid: SessionId) => remote.summary(sid),
       fetchChanges: (sid: SessionId) => remote.changes(sid),
+      // Fail-open on every absence: no sibling, or a failed read, both read
+      // as "no filter" — the session-changes tab then lists every
+      // uncommitted file, exactly the pre-filter behavior.
+      fetchSessionTouched: async (sid: SessionId) => {
+        if (filePreview === undefined) return null
+        const result = await filePreview.list(sid).catch(() => null)
+        if (result === null || !result.ok) return null
+        return result.value.entries.filter(entry => entry.op !== 'read').map(entry => entry.path)
+      },
       fetchRepoFiles: (sid: SessionId) => remote.repoFiles(sid),
       fetchCommitLog: (sid: SessionId) => remote.commitLog(sid),
       fetchCommitFiles: (sid: SessionId, sha: string) => remote.commitFiles(sid, { sha }),

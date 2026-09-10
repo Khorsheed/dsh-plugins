@@ -2,15 +2,15 @@
 
 [English](README.en.md) | 中文
 
-A git-status visibility plugin for multi-worktree collaboration: a per-session **repo/worktree badge** in the session header, and a right-sidebar **worktrees tab** (uncommitted/committed file tree with diffs, IDE-style commit log, full repository browse) behind it. Read-only git facts — it never writes to the repository and does no governance judgment.
+A git-status visibility plugin for multi-worktree collaboration: a per-session **repo/worktree badge** in the session header, and a right-sidebar **worktrees tab** (this session's uncommitted changes with diffs, IDE-style repository commit log, full repository browse) behind it. Read-only git facts — it never writes to the repository and does no governance judgment.
 
 ## Features
 
 - **Session badge** (header `conversation.session.header.utilities`): the current session's repository, branch, and combined diff line count; hover shows the uncommitted/committed breakdown; green = clean, yellow = changes.
 - **Two click zones**: the branch capsule opens the right-sidebar worktrees tab (Changes mode); the folder capsule opens the local-files browser (frame-wide `shell.overlay`, a git-agnostic directory browse).
 - **Worktrees tab** (an official right-Sidebar page-type tab, kind `worktrees`, opened through `ctx.sidebarRight.openTab` and also enterable from the sidebar's guide page):
-  - **Changes mode**: uncommitted + committed change segments in one file tree (VS Code Source Control style), leaves carry A/M/D/?? badges and line counts; selecting a file shows the right detail pane's `Diff | Content` toggle (colored diff / official CodeBlock); selecting collapses the left tree to an icon rail, click to restore.
-  - **Commits mode**: the branch's own log (`main..HEAD`; short sha + subject + relative time); selecting a commit expands its **commit file tree** inline; clicking a file shows that commit's diff.
+  - **Session changes mode**: only the files THIS session modified and has not committed (the git uncommitted list ∩ the file-preview plugin's session-touched set, op ≠ read; when file-preview is absent or its read fails the view falls back to every uncommitted file — degrade, never break), VS Code Source Control style, leaves carry A/M/D/?? badges and line counts; selecting a file shows the right detail pane's `Diff | Content` toggle (colored diff / official CodeBlock); selecting collapses the left tree to an icon rail, click to restore.
+  - **Repository commits mode**: the branch's own log (`main..HEAD`; short sha + subject + relative time), deliberately NOT session-filtered; selecting a commit expands its **commit file tree** inline; clicking a file shows that commit's diff.
   - **Repository mode**: the full file list (`git ls-files -co`, tracked + untracked, ignored excluded) as a tree; clicking a file shows its content.
 - **Git action row**: refresh / copy branch name / show in folder (shown when the official open-in-app probe confirms a host file manager).
 - The tree defaults to the first level only, with expand-all / collapse-all — the whole tree is always reachable. All file lists are fetched once (client-side trie); only per-file diffs are fetched on demand.

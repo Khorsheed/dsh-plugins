@@ -61,10 +61,29 @@ export type WorktreesBadgeProps =
   & InjectFace<WorktreesBadgeInjected>
   & PropsLocale<'worktrees'>
 
+/**
+ * The minimal shape of the sibling file-preview fold's Remote namespace this
+ * plugin consumes WHEN PRESENT (a peer community package, probed through
+ * `ctx.get('remote.filePreview')`, never a dependency): the session-touched
+ * file list feeding the session-changes filter. Spelled locally so an absent
+ * sibling is a typing non-event.
+ */
+export interface FilePreviewListProbe {
+  list(sessionId: SessionId): Promise<RemoteResult<{
+    readonly entries: readonly { readonly path: string; readonly op: string }[]
+  }>>
+}
+
 /** Business face injected into the right-Sidebar worktrees tab body. */
 export interface WorktreesTabInjected {
   fetchSummary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
   fetchChanges: (sessionId: SessionId) => Promise<RemoteResult<ChangesResult>>
+  /**
+   * This session's touched-and-modified display paths (fold `list`, op ≠
+   * read), or null when the file-preview sibling is absent or the read
+   * failed — null means "no filter" (the tab shows every uncommitted file).
+   */
+  fetchSessionTouched: (sessionId: SessionId) => Promise<readonly string[] | null>
   fetchRepoFiles: (sessionId: SessionId) => Promise<RemoteResult<string[]>>
   fetchCommitLog: (sessionId: SessionId) => Promise<RemoteResult<CommitInfo[]>>
   fetchCommitFiles: (sessionId: SessionId, sha: string) => Promise<RemoteResult<CommitFilesResult>>

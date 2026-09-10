@@ -31,10 +31,16 @@ export interface WorktreesState {
   selectedCommit: string | null
   /** Whether the left tree is collapsed to the narrow icon rail. */
   treeCollapsed: boolean
-  /** The badge/drawer summary, loaded on open. */
+  /** The badge/tab summary, loaded on mount. */
   summary: SessionSummary | null
   /** The two change segments (worktree mode). */
   changes: ChangesResult | null
+  /**
+   * This session's touched-and-modified display paths (the sibling
+   * file-preview fold's `list`, op ≠ read), or null when that plugin is
+   * absent / unanswered — null means "no filter", the pre-filter behavior.
+   */
+  sessionTouched: readonly string[] | null
   /** The repository's full file list (repo mode). */
   repoFiles: readonly string[] | null
   /** The branch's own commit log (commits mode). */
@@ -75,6 +81,7 @@ export type WorktreesActions = {
   setError: (draft: WorktreesState, error: string | null) => void
   setSummary: (draft: WorktreesState, summary: SessionSummary) => void
   setChanges: (draft: WorktreesState, changes: ChangesResult) => void
+  setSessionTouched: (draft: WorktreesState, paths: readonly string[] | null) => void
   setRepoFiles: (draft: WorktreesState, files: readonly string[]) => void
   setCommits: (draft: WorktreesState, commits: readonly CommitInfo[]) => void
   setCommitFiles: (draft: WorktreesState, files: readonly ChangedFile[]) => void
@@ -95,6 +102,7 @@ const INITIAL: WorktreesState = {
   treeCollapsed: false,
   summary: null,
   changes: null,
+  sessionTouched: null,
   repoFiles: null,
   commits: null,
   commitFiles: null,
@@ -166,6 +174,7 @@ export function createWorktreesStore(): EngineStoreHandle<WorktreesState, Worktr
       setError: (d, error: string | null) => { d.error = error },
       setSummary: (d, summary: SessionSummary) => { d.summary = summary },
       setChanges: (d, changes: ChangesResult) => { d.changes = changes },
+      setSessionTouched: (d, paths: readonly string[] | null) => { d.sessionTouched = paths },
       setRepoFiles: (d, files: readonly string[]) => { d.repoFiles = files },
       setCommits: (d, commits: readonly CommitInfo[]) => { d.commits = commits },
       setCommitFiles: (d, files: readonly ChangedFile[]) => { d.commitFiles = files },

@@ -1,12 +1,18 @@
 /**
  * The worktrees right-Sidebar tab body (`sidebar.right.pane.tab` under this
- * package's type id): the session's changes / commits / repository page
- * behind the badge. The header holds the worktree summary and the git action
- * row (refresh, copy branch, show in folder — the host gesture gated on the
- * official open-in-app probe); a mode switcher offers Changes / Commits /
- * Repository; the body is a left list-or-tree column and the right detail
- * pane (diff | content). Selecting a file collapses the left tree to a
- * narrow icon rail; clicking the rail restores it.
+ * package's type id): the session's page behind the badge. The header holds
+ * the worktree summary and the git action row (refresh, copy branch, show in
+ * folder — the host gesture gated on the official open-in-app probe); a mode
+ * switcher offers 本会话改动 / 仓库提交记录 / 仓库文件; the body is a left
+ * list-or-tree column and the right detail pane (diff | content). Selecting a
+ * file collapses the left tree to a narrow icon rail; clicking the rail
+ * restores it.
+ *
+ * The 本会话改动 mode lists only files THIS session modified and has not
+ * committed: the worktree's git uncommitted list ∩ the sibling file-preview
+ * fold's session-touched set (op ≠ read). A null touched set — sibling
+ * absent, or its read failed — means no filter: every uncommitted file
+ * shows, exactly the pre-filter behavior.
  *
  * Geometry — width, docking, fullscreen, close — is the right Sidebar's own;
  * this body draws only the page. Open/re-open arrives as navigation params
@@ -18,6 +24,7 @@ import {
   IconBranchOutline16, IconChevronDownOutline14, IconCopyOutline16, IconFolderOpenOutline16,
   IconPanelLeftOutline16, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { isAbsoluteWorkspacePath, relativizeToCwd, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
@@ -36,8 +43,8 @@ const TREE_WIDTH_KEY = 'dsh-worktrees-tree-w'
 
 /** The worktrees tab body. */
 export function WorktreesTab({
-  sessionId, useTabInfo, useStore, actions, t,
-  fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
+  sessionId, useTabInfo, useStore, useSessions, actions, t,
+  fetchSummary, fetchChanges, fetchSessionTouched, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent, bumpVersion,
   fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, useOpenInApp, openExternal, copyBranch,
 }: WorktreesTabProps): ReactNode {
@@ -50,6 +57,7 @@ export function WorktreesTab({
   const treeCollapsed = useStore(s => s.treeCollapsed)
   const summary = useStore(s => s.summary)
   const changes = useStore(s => s.changes)
+  const sessionTouched = useStore(s => s.sessionTouched)
   const repoFiles = useStore(s => s.repoFiles)
   const commits = useStore(s => s.commits)
   const commitFiles = useStore(s => s.commitFiles)
@@ -66,6 +74,8 @@ export function WorktreesTab({
   // stays hidden until the probe confirms a file manager (hidden = degrade).
   const openInAppApps = useOpenInApp(apps => apps)
   const folderApp = openInAppApps === null ? undefined : pickFileManager(openInAppApps)
+  // The session's workspace root (resolves the fold's relative display paths).
+  const cwd = useSessions(s => s.byId[sessionId]?.cwd)
 
   const [copied, setCopied] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
@@ -86,44 +96,63 @@ export function WorktreesTab({
     if (revision !== 0 && navMode !== undefined && navMode !== mode) actions.setMode(navMode)
   }, [revision, navMode, mode, actions])
 
+  // The session-touched set in repo-relative spelling: display paths resolve
+  // against the session cwd (relative entries) and relativize against the
+  // active worktree root; entries outside it never match. A relative entry
+  // with no known cwd is taken as repo-relative (the agent's cwd IS the
+  // worktree root in the common case). null = no filter.
+  const repoRoot = summary?.repo ?? ''
+  const touchedRel = useMemo<ReadonlySet<string> | null>(() => {
+    if (sessionTouched === null) return null
+    const set = new Set<string>()
+    for (const path of sessionTouched) {
+      const absolute = resolveWorkspacePath(cwd, path)
+      const relative = relativizeToCwd(absolute, repoRoot)
+      if (relative !== absolute) set.add(relative)
+      else if (!isAbsoluteWorkspacePath(absolute)) set.add(absolute)
+    }
+    return set
+  }, [sessionTouched, cwd, repoRoot])
+
+  // 本会话改动: the git uncommitted files this session touched (op ≠ read);
+  // a null touched set keeps every uncommitted file (the pre-filter behavior).
+  const sessionChanges = useMemo<readonly ChangedFile[]>(() => {
+    const uncommitted = changes?.uncommitted ?? []
+    if (touchedRel === null) return uncommitted
+    return uncommitted.filter(file => touchedRel.has(file.path))
+  }, [changes, touchedRel])
+
   // Resolve the selected file's metadata for the detail pane.
   const selectedFile: ChangedFile | undefined = useMemo(() => {
     if (selectedPath === null) return undefined
     if (mode === 'worktree') {
-      return changes?.uncommitted.find(file => file.path === selectedPath)
-        ?? changes?.committed.find(file => file.path === selectedPath)
+      return sessionChanges.find(file => file.path === selectedPath)
     }
     if (mode === 'commits') {
       return commitFiles?.find(file => file.path === selectedPath)
     }
     return undefined
-  }, [mode, selectedPath, changes, commitFiles])
+  }, [mode, selectedPath, sessionChanges, commitFiles])
 
   const hasDiff = selectedSegment !== null && !(selectedFile?.status === '??')
   const untracked = selectedFile?.status === '??'
 
   const groups = useMemo<FileTreeGroup[]>(() => {
     if (mode === 'worktree') {
-      const uncommitted = (changes?.uncommitted ?? []).map(file => ({
+      // One group — the session's own uncommitted changes (the switcher tab
+      // already names the scope; the old 未提交/已提交 split left with the
+      // drawer).
+      const items = sessionChanges.map(file => ({
         path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
       }))
-      const committed = (changes?.committed ?? []).map(file => ({
-        path: file.path, status: file.status, additions: file.additions, deletions: file.deletions,
-      }))
-      // Two groups (未提交 / 已提交) instead of one merged list, so it is clear
-      // which changes are uncommitted (vs HEAD) and which are the branch's own
-      // commits on top of base.
-      return [
-        { key: 'uncommitted', title: t('group.uncommitted'), count: uncommitted.length, items: uncommitted },
-        { key: 'committed', title: t('group.committed'), count: committed.length, items: committed },
-      ]
+      return [{ key: 'session', title: '', count: items.length, items }]
     }
     if (mode === 'repo') {
       const items: FileTreeItem[] = (repoFiles ?? []).map(path => ({ path, status: '' }))
       return [{ key: 'repo', title: '', count: items.length, items }]
     }
     return []
-  }, [mode, changes, repoFiles, t])
+  }, [mode, sessionChanges, repoFiles, t])
 
   // Summary on mount / refresh.
   useEffect(() => {
@@ -135,6 +164,15 @@ export function WorktreesTab({
     })
     return () => { cancelled = true }
   }, [rev, sessionId, fetchSummary, actions, tab.signal])
+
+  // Session-touched set on mount / refresh (feeds the session-changes filter).
+  useEffect(() => {
+    let cancelled = false
+    void fetchSessionTouched(sessionId).then(paths => {
+      if (!cancelled && !tab.signal.aborted) actions.setSessionTouched(paths)
+    })
+    return () => { cancelled = true }
+  }, [rev, sessionId, fetchSessionTouched, actions, tab.signal])
 
   // Eager count data: the commit log and repo file list are fetched on mount /
   // refresh (cheap git reads) so every switcher tab shows its count up front,
@@ -226,10 +264,10 @@ export function WorktreesTab({
 
   // Per-mode counts for the compact switcher labels.
   const counts = useMemo(() => ({
-    worktree: changes === null ? null : changes.uncommitted.length + changes.committed.length,
+    worktree: changes === null ? null : sessionChanges.length,
     commits: commits === null ? null : commits.length,
     repo: repoFiles === null ? null : repoFiles.length,
-  }), [changes, commits, repoFiles])
+  }), [changes, sessionChanges, commits, repoFiles])
 
   // In the commits mode default to the newest commit so the right pane opens
   // onto a detail view rather than an empty surface.
@@ -262,13 +300,12 @@ export function WorktreesTab({
 
   const onSelectFile = (path: string): void => {
     let segment: 'uncommitted' | 'committed' | 'commit' | null = null
-    const untracked = (changes?.uncommitted ?? []).find(file => file.path === path)?.status === '??'
+    const untracked = sessionChanges.find(file => file.path === path)?.status === '??'
     if (mode === 'worktree') {
-      if ((changes?.uncommitted ?? []).some(file => file.path === path)) segment = 'uncommitted'
-      else if ((changes?.committed ?? []).some(file => file.path === path)) segment = 'committed'
+      if (sessionChanges.some(file => file.path === path)) segment = 'uncommitted'
     } else if (mode === 'commits') {
       segment = 'commit'
-    } else if ((changes?.uncommitted ?? []).some(file => file.path === path)) {
+    } else if (sessionChanges.some(file => file.path === path)) {
       segment = 'uncommitted'
     }
     actions.select(path, segment)
@@ -334,6 +371,7 @@ export function WorktreesTab({
             treeTitle={mode === 'repo'
               ? t('mode.repo')
               : t('tree.changedFilesTitle')}
+            emptyText={mode === 'worktree' && touchedRel !== null ? t('group.emptySession') : undefined}
             collapsed={treeCollapsed}
             onToggleCollapse={() => { actions.toggleTree() }}
             t={t}
@@ -472,7 +510,7 @@ export function WorktreesTab({
           {mode === 'commits' && selectedCommit !== null ? (
             (() => {
               const commit = commits?.find(candidate => candidate.sha === selectedCommit)
-              if (commit === undefined) return <Overview summary={summary} changes={changes} repoMode={false} t={t} />
+              if (commit === undefined) return <Overview summary={summary} changes={changes === null ? null : { uncommitted: sessionChanges, committed: [] }} repoMode={false} t={t} />
               return (
                 <CommitDetails
                   commit={commit}
@@ -511,7 +549,7 @@ export function WorktreesTab({
               t={t}
             />
           ) : (
-            <Overview summary={summary} changes={changes} repoMode={mode === 'repo'} repoCount={repoFiles?.length ?? 0} t={t} />
+            <Overview summary={summary} changes={changes === null ? null : { uncommitted: sessionChanges, committed: [] }} repoMode={mode === 'repo'} repoCount={repoFiles?.length ?? 0} t={t} />
           )}
         </div>
       </div>
