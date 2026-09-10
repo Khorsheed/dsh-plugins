@@ -32,8 +32,8 @@ export interface FilePreviewTabInjected {
   copyPath: (path: string) => Promise<boolean>
   /** Reveal one path in the host file manager (file selected; falls back to the official open-in-app route on its parent folder). */
   revealFolder: (path: string) => void
-  /** Open one path in the probed IDE application (file-exact, through the host Remote's openExternal). */
-  openInIde: (path: string) => void
+  /** Open one path in an IDE application (file-exact, through the host Remote's openExternal); defaults to the probed preference. */
+  openInIde: (path: string, app?: string) => void
   /** Start the once-per-page open-in-app probe (the gestures hide until it answers). */
   loadOpenInApps: () => void
   hooks: {

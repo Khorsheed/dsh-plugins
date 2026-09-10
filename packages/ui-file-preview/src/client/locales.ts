@@ -74,7 +74,8 @@ export type FilePreviewKey =
   | 'row.copyPath'
   | 'row.copied'
   | 'row.openFolder'
-  | 'row.openIde'
+  | 'row.openIdeIn'
+  | 'row.openIdeMore'
   | 'detail.back'
   | 'mention.open'
 
@@ -156,7 +157,8 @@ export const zh: Record<FilePreviewKey, string> = {
   'row.copyPath': '复制路径',
   'row.copied': '已复制',
   'row.openFolder': '在文件夹中打开',
-  'row.openIde': '在 IDE 打开',
+  'row.openIdeIn': '在 {app} 打开',
+  'row.openIdeMore': '选择应用打开',
   'detail.back': '返回产物列表',
   'mention.open': '在侧边栏打开 {name}',
 }
@@ -232,7 +234,8 @@ export const en: Record<FilePreviewKey, string> = {
   'row.copyPath': 'Copy path',
   'row.copied': 'Copied',
   'row.openFolder': 'Show in folder',
-  'row.openIde': 'Open in IDE',
+  'row.openIdeIn': 'Open in {app}',
+  'row.openIdeMore': 'Choose an application',
   'detail.back': 'Back to products',
   'mention.open': 'Open {name} in the sidebar',
 }

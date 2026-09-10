@@ -22,6 +22,12 @@ Host 0.1.5-rc.1 landed the right-Sidebar resource routing (seam registry S1): ev
 - **minHost moves to 0.1.5-rc.1** (the extension surfaces it consumes did not exist before), version 0.3.0; older hosts stay on the 0.2.x line.
 - **Dependency mechanics**: the package rides the repo-wide 0.1.5-rc.1 baseline. One repo-level adjustment was forced: the 0.1.5 client packages peer on `@deepseek-ai/cordis ^4.0.2` while the repo line is 4.0.1 — two cordis instances split every `declare module` merge (Context, SlotMap, LocaleNamespaceMap) into per-peer-variant copies, and a plugin's own merges then never reach the copy its imports resolve. the fix shipped repo-wide as an `overrides` pin of cordis to 4.0.2 (bb04c84), so the graph keeps one cordis instance. Separately, the 0.1.5 `dsh-client-store` npm artifact ships unbundled (bare `zustand`/`immer` imports, no declared deps — the official build bundles them; arguably an upstream packaging bug), and the client bundle inlines that engine (`INLINE_SAFE`), so the package dev-depends on `zustand ~4.4.7` + `immer ^10.1.1` to make the inline resolvable.
 
+### Polish after live comparison
+
+- Diff/read content now shares the official document tab's reading size: the theme's `--dsw-font-markdown-code-block` is a fixed 11px/19px and never tracks the content-font-size setting, so the pane scope rebinds it to `var(--dsh-content-font-size-secondary)/1.6` + the mono family (the official TextPreview body's exact recipe).
+- The detail 改动记录 tab appears only when the fold recorded diffs (an always-on tab showing an empty notice read as broken); the official renderer dropdown entry stays statically suffix-matched, unaffected.
+- Open-in-IDE is a split button (main = current choice, chevron lists every probed IDE, re-chooses on select; the official `OpenInAppAction` component is unimportable by slot-claim rules, so the interaction is redrawn over the ui-primitives `Menu`). Display names ride a mirrored id→label map (proper nouns, unlocalized — the official rule).
+
 ## Alternatives considered
 
 - **Keep the drawer/view next to the right-Sidebar tab** — rejected: two previews of the same file in two places doubles the maintenance surface the migration exists to delete, and the drawer's only unique content (diff history) moved into the tab body.

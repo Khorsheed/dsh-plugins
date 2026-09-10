@@ -122,6 +122,8 @@
 
 
 .historyScroll {
+  /* Same reading-size alignment as the pane (see FilePreviewPane.module.css). */
+  --dsw-font-markdown-code-block: var(--dsh-content-font-size-secondary, 13px)/1.6 var(--dsw-font-mono, ui-monospace, monospace);
   flex: 1;
   min-height: 0;
   padding: 10px 12px;
@@ -249,6 +251,7 @@
 }
 
 .detailDir {
+  padding-right: 3px; /* segment breathing room in the breadcrumb */
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -262,4 +265,16 @@
   flex: none;
   align-items: center;
   gap: 2px;
+}
+
+/* The IDE split button: main tool + chevron read as one control. */
+.split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.split .tool {
+  width: 24px;
+  padding: 6px 4px;
 }

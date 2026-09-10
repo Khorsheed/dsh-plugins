@@ -8,7 +8,7 @@ const EXPECTED_KEYS: readonly FilePreviewKey[] = [
   'history.title', 'history.empty',
   'history.step', 'history.step.count', 'history.step.latest', 'history.step.older', 'history.step.newer',
   'detail.back', 'mention.open',
-  'row.copyPath', 'row.copied', 'row.openFolder', 'row.openIde',
+  'row.copyPath', 'row.copied', 'row.openFolder', 'row.openIdeIn', 'row.openIdeMore',
   'turn.summary', 'turn.summaryOne', 'turn.expand', 'turn.collapse',
   'diff.copy', 'diff.copied', 'diff.collapse', 'diff.collapseAria', 'diff.expand', 'diff.expandAria', 'diff.files',
 ]

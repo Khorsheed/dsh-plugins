@@ -64,6 +64,42 @@ export function pickIde(apps: readonly string[]): string | undefined {
   return IDE_IDS.find(id => apps.includes(id))
 }
 
+/** Display names per IDE catalog id (official catalog naming; proper nouns, not localized). */
+const IDE_LABELS: Readonly<Record<string, string>> = {
+  cursor: 'Cursor',
+  vscode: 'Visual Studio Code',
+  vscodeinsiders: 'Visual Studio Code - Insiders',
+  windsurf: 'Windsurf',
+  zed: 'Zed',
+  sublimetext: 'Sublime Text',
+  xcode: 'Xcode',
+  androidstudio: 'Android Studio',
+  intellij: 'IntelliJ IDEA',
+  pycharm: 'PyCharm',
+  webstorm: 'WebStorm',
+  phpstorm: 'PhpStorm',
+  goland: 'GoLand',
+  rider: 'Rider',
+  rustrover: 'RustRover',
+}
+
+/** One probed IDE entry for the split button's menu. */
+export interface IdeChoice {
+  readonly id: string
+  readonly label: string
+}
+
+/**
+ * Every probed IDE in catalog order, nameable ones only (a catalog id without
+ * a known label stays invisible rather than showing a raw id — the official
+ * OpenInAppAction's rule).
+ * @param apps - probed app ids in the host's menu order.
+ */
+export function listIdes(apps: readonly string[]): readonly IdeChoice[] {
+  return IDE_IDS.filter(id => apps.includes(id) && IDE_LABELS[id] !== undefined)
+    .map(id => ({ id, label: IDE_LABELS[id]! }))
+}
+
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */

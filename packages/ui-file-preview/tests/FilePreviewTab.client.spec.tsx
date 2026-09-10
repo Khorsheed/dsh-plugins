@@ -164,6 +164,16 @@ describe('FilePreviewTab', () => {
     expect(document.body.textContent).toContain('const a = 1')
   })
 
+  it('the 改动记录 tab appears only when the fold recorded diffs', async () => {
+    renderTab()
+    await act(async () => {})
+    // guide.md has no diffs: the toggle is absent, content shows directly.
+    fireEvent.click(screen.getByText('guide.md'))
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: 'drawer.tab.diff' })).toBeNull()
+    expect(screen.getByLabelText('detail.back')).toBeTruthy()
+  })
+
   it('the back button returns to the list', async () => {
     renderTab()
     await act(async () => {})
@@ -186,8 +196,8 @@ describe('FilePreviewTab', () => {
     expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
     fireEvent.click(screen.getByLabelText('row.openFolder'))
     expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getByLabelText('row.openIde'))
-    expect(openInIde).toHaveBeenCalledWith('src/agent.ts')
+    fireEvent.click(screen.getByLabelText('row.openIdeIn'))
+    expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'cursor')
   })
 
   it('hides the folder/IDE gestures until the probe answers with a handler', async () => {
@@ -197,7 +207,21 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     expect(screen.getByLabelText('row.copyPath')).toBeTruthy()
     expect(screen.queryByLabelText('row.openFolder')).toBeNull()
-    expect(screen.queryByLabelText('row.openIde')).toBeNull()
+    expect(screen.queryByLabelText('row.openIdeIn')).toBeNull()
+  })
+
+  it('the IDE split button lists every probed IDE and re-chooses on select', async () => {
+    const openInIde = vi.fn()
+    renderTab({ openInIde, apps: ['finder', 'cursor', 'vscode'] })
+    await act(async () => {})
+    fireEvent.click(screen.getByText('agent.ts'))
+    await act(async () => {})
+    fireEvent.click(screen.getByLabelText('row.openIdeMore'))
+    fireEvent.click(screen.getByText('Visual Studio Code'))
+    expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
+    // The choice sticks: the main button now launches vscode.
+    fireEvent.click(screen.getByLabelText('row.openIdeIn'))
+    expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
   })
 
   it('an outside-workspace file opens the same detail view (Remote read resolves it)', async () => {

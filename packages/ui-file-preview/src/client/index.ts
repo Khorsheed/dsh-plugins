@@ -171,8 +171,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       fallback()
     }).catch(fallback)
   }
-  const openInIde = (sessionId: SessionId, path: string): void => {
-    const ide = pickIde(openInApps.apps.getSnapshot() ?? [])
+  const openInIde = (sessionId: SessionId, path: string, app?: string): void => {
+    const ide = app ?? pickIde(openInApps.apps.getSnapshot() ?? [])
     if (ide === undefined) return
     void remote.openExternal(sessionId, path, ide).catch(() => {
       // A launch failure stays silent in the row; the native app surfaces its
@@ -200,7 +200,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       readFile: (sid: SessionId, path: string) => remote.read(sid, path),
       copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
       revealFolder: (path: string) => { revealFolder(sessionId, path) },
-      openInIde: (path: string) => { openInIde(sessionId, path) },
+      openInIde: (path: string, app?: string) => { openInIde(sessionId, path, app) },
       loadOpenInApps: () => { void openInApps.load() },
       hooks: { openInApps: openInApps.apps },
     }),

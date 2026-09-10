@@ -1,6 +1,11 @@
 /* Shared preview pane styles (file view tab and link-click drawer). */
 
 .previewColumn {
+  /* Align code and diff content with the official document tab's reading
+     size: the theme's --dsw-font-markdown-code-block is a fixed 11px and never
+     tracks the content font size setting, while the official text preview
+     body reads --dsh-content-font-size-secondary. */
+  --dsw-font-markdown-code-block: var(--dsh-content-font-size-secondary, 13px)/1.6 var(--dsw-font-mono, ui-monospace, monospace);
   display: flex;
   flex: 1;
   min-height: 0;

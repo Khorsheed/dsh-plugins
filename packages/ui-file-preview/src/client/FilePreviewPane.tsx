@@ -297,9 +297,11 @@ export function FilePreviewPane(props: {
     return () => document.removeEventListener('fullscreenchange', onFullscreen)
   }, [])
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
-  // The toggle is always offered: an entry without recorded diffs shows the
-  // empty notice under 改动记录 (bash captures land here).
-  const showTabs = entry !== undefined
+  // The toggle appears only when the fold recorded diffs for this file — an
+  // always-on 改动记录 tab that then shows an empty notice reads as broken.
+  // (The official document tab's renderer dropdown keeps its own always-listed
+  // change-history entry; the registry matches by suffix statically.)
+  const showTabs = entry !== undefined && entry.diffs.length > 0
   const showingDiff = showTabs && view === 'diff'
 
   const matches = useMemo(() => {
@@ -456,12 +458,10 @@ export function FilePreviewPane(props: {
       {html && slow && htmlMode !== 'source' && read.kind === 'text' && (
         <div className={css.notice}>{t('preview.slowHint')}</div>
       )}
-      {showingDiff
+      {showingDiff && entry !== undefined
         ? (
           <div className={css.previewScroll}>
-            {entry.diffs.length > 0
-              ? <DiffHistory entry={entry} t={t} />
-              : <div className={css.empty}>{t('history.empty')}</div>}
+            <DiffHistory entry={entry} t={t} />
           </div>
         )
         : <PreviewBody read={read} t={t} search={search} htmlMode={htmlMode} scripted={scripted} onLoaded={onHtmlLoaded} iframeRef={htmlIframeRef} frameRef={htmlFrameRef} fullscreen={fullscreen} />}

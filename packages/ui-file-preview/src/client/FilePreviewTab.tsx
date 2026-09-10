@@ -20,8 +20,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  FileTypeIcon, IconCheckOutline16, IconChevronLeftOutline14, IconCodeOutline16, IconCopyOutline16,
-  IconFolderOpenOutline16, IconGlobeOutline14, IconRefreshOutline16,
+  FileTypeIcon, IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconCodeOutline16,
+  IconCopyOutline16, IconFolderOpenOutline16, IconGlobeOutline14, IconRefreshOutline16, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FilePreviewEntry, FilePreviewRead } from '@khorsheed/dsh-file-preview/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -29,9 +29,62 @@ import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { FilePreviewTabProps, FilePreviewTabInjected } from './contract.ts'
 import { useCopyPathFeedback } from './copy-path.ts'
 import { FilePreviewPane } from './FilePreviewPane.tsx'
-import { pickFileManager, pickIde } from './open-in-app.ts'
+import { listIdes, pickFileManager, type IdeChoice } from './open-in-app.ts'
 import { basename, highlightMatch, isWithinWorkspace, matchesQuery, parentPath, relativeToCwd, sortByLatest } from './path-utils.ts'
 import css from './FilePreviewTab.module.css'
+
+/**
+ * The open-in-IDE split button (the official OpenInAppAction's interaction,
+ * redrawn — slot-claim rules keep that component unimportable): the main
+ * button launches the current choice, the chevron lists every probed IDE and
+ * re-chooses on select. The choice is component state (per mount).
+ */
+function IdeSplitButton(props: {
+  readonly path: string
+  readonly ides: readonly IdeChoice[]
+  readonly openInIde: FilePreviewTabInjected['openInIde']
+  readonly t: FilePreviewTabProps['t']
+}): ReactNode {
+  const { path, ides, openInIde, t } = props
+  const [open, setOpen] = useState(false)
+  const [choice, setChoice] = useState(ides[0]?.id)
+  const current = ides.find(entry => entry.id === choice) ?? ides[0]
+  if (current === undefined) return null
+  return (
+    <span className={css.split}>
+      <button
+        type="button"
+        className={css.tool}
+        title={t('row.openIdeIn', { app: current.label })}
+        aria-label={t('row.openIdeIn', { app: current.label })}
+        onClick={() => { openInIde(path, current.id) }}
+      >
+        <IconCodeOutline16 />
+      </button>
+      {ides.length > 1 && (
+        <Menu
+          open={open}
+          anchor={(
+            <button
+              type="button"
+              className={css.tool}
+              title={t('row.openIdeMore')}
+              aria-label={t('row.openIdeMore')}
+              aria-expanded={open}
+              onClick={() => { setOpen(value => !value) }}
+            >
+              <IconChevronDownOutline14 />
+            </button>
+          )}
+          items={ides.map(entry => ({ id: entry.id, label: entry.label }))}
+          selectedId={current.id}
+          onSelect={(id) => { setChoice(id); openInIde(path, id) }}
+          onClose={() => { setOpen(false) }}
+        />
+      )}
+    </span>
+  )
+}
 
 /** One detail view: header (back + breadcrumb + actions) over the preview pane. */
 function DetailView(props: {
@@ -52,7 +105,7 @@ function DetailView(props: {
   const [failed, setFailed] = useState(false)
   const { copied, onCopy } = useCopyPathFeedback(copyPath, path)
   const fileManager = apps === null ? undefined : pickFileManager(apps)
-  const ide = apps === null ? undefined : pickIde(apps)
+  const ides = apps === null ? [] : listIdes(apps)
   // The header shows the host-resolved absolute spelling (the same one the
   // copy/open gestures act on), directory greyed and the final segment solid.
   const displayPath = resolveWorkspacePath(cwd, path)
@@ -109,17 +162,7 @@ function DetailView(props: {
               <IconFolderOpenOutline16 />
             </button>
           )}
-          {ide !== undefined && (
-            <button
-              type="button"
-              className={css.tool}
-              title={t('row.openIde')}
-              aria-label={t('row.openIde')}
-              onClick={() => { openInIde(path) }}
-            >
-              <IconCodeOutline16 />
-            </button>
-          )}
+          <IdeSplitButton path={path} ides={ides} openInIde={openInIde} t={t} />
         </div>
       </div>
       {read === null && !failed && <div className={css.empty}>{t('list.loading')}</div>}

@@ -22,6 +22,12 @@ Status: implemented
 - **minHost 前移至 0.1.5-rc.1**（消费的扩展面在此之前不存在），版本 0.3.0；旧宿主停留 0.2.x 线。
 - **依赖机制**：本包随全仓 0.1.5-rc.1 基线走。一处仓级调整不可避免：0.1.5 的客户端包 peer 要求 `@deepseek-ai/cordis ^4.0.2`，而仓内基线是 4.0.1——两个 cordis 实例会把每个 `declare module` 合并（Context、SlotMap、LocaleNamespaceMap）按 peer 变体劈成两份，插件自己的合并永远落不到它 import 解析到的那份上。修复最终以仓级形态落地：`overrides` 把 cordis 钉到 4.0.2（bb04c84），全图保持一个 cordis 实例。另外，0.1.5 的 `dsh-client-store` npm 产物未打包（裸 `zustand`/`immer` import 且无声明依赖——官方构建本应内联，疑似上游打包缺陷），而客户端 bundle 按 `INLINE_SAFE` 内联该引擎，因此本包 dev-depends `zustand ~4.4.7` + `immer ^10.1.1` 使内联可解析。
 
+### 活体对比后的打磨
+
+- diff/内容统一吃官方 document tab 的阅读字号：主题的 `--dsw-font-markdown-code-block` 是固定 11px/19px、从不跟随正文字号设置，故在 pane 作用域内重绑为 `var(--dsh-content-font-size-secondary)/1.6` + 等宽族（官方 TextPreview body 的原配方）。
+- 详情页「改动记录」tab 按需出现（fold 无 diff 记录时不显示——常驻 tab 配空态读起来像坏了）；官方渲染器下拉项仍按后缀静态匹配，不受影响。
+- 「在 IDE 打开」改 split button（主按钮=当前选择，chevron 列出全部探测到的 IDE，选择即换即开；官方 `OpenInAppAction` 组件受 slot 申领规则不可导入，交互照它自绘在 ui-primitives `Menu` 上）。显示名用镜像的 id→label 表（专有名词，不本地化——官方同规则）。
+
 ## Alternatives considered
 
 - **抽屉/视图与右栏 tab 并存**——否决：同一文件两处预览，保留了本次迁移要删的维护面；抽屉独有的内容（diff 历史）已迁入 tab body。
