@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-room-invite-dialog-official-tokens.md
-.agents/notes/implemented/feature/2026-09-10-room-invite-dialog-official-tokens.md: 94e0d292a88443ac334291d7d085a3bef20d562b
-.agents/notes/implemented/feature/2026-09-10-room-invite-dialog-official-tokens.zh.md: a2f900714fdb73046527f40c1693b567ad649552
+.agents/notes/implemented/feature/2026-09-10-room-invite-dialog-official-tokens.md: e5f8ae288e88bc31fe11c5c0e503733aa779c39c
+.agents/notes/implemented/feature/2026-09-10-room-invite-dialog-official-tokens.zh.md: e417812981827fecf4e72c9fad24d686eb10eaae

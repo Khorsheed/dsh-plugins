@@ -24,4 +24,8 @@ describe('InviteDialog styling', () => {
     expect(css).not.toContain('bg-accent')
     expect(css).not.toContain('border-accent')
   })
+
+  it('re-declares left alignment on the overlay — inherited centered text (the members guide state) must not reach the form labels', () => {
+    expect(css).toMatch(/\.overlay \{[^}]*text-align: left/s)
+  })
 })

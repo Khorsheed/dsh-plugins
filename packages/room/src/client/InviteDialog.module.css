@@ -14,6 +14,11 @@
   justify-content: center;
   background: transparent;
   z-index: 100;
+  /* Fixed positioning keeps the inherited text-align — the members guide
+     state (`.guide` in MembersView.module.css) centers its text, and the
+     dialog mounts inside that tree, so the card re-declares left alignment
+     (labels sit at the field's left edge, the official form convention). */
+  text-align: left;
 }
 
 .card {

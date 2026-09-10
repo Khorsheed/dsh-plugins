@@ -22,4 +22,4 @@ Status: implemented
 
 ## 后果
 
-弹窗在两个主题下都落在官方黑白灰阶上，零主题分支代码，弹窗内不再出现 accent 蓝。测试：`tests/invite-dialog-style.spec.ts` 钉住主按钮 token 三件套与 accent token 的缺席；`tests/members.client.spec.tsx` 改为断言预览方块不带内联 `--member-color`（中性），并断言提交按钮保留 `primary` 类名钩子。名册/speech/composer 的 member-color 身份色体系不受影响，locale 文案与 README 对弹窗的功能性描述均未改。
+弹窗在两个主题下都落在官方黑白灰阶上，零主题分支代码，弹窗内不再出现 accent 蓝。随后补了一处修复：overlay 显式重声明 `text-align: left`——弹窗挂载在成员引导态（`.guide` 文本居中）的树内，fixed 定位不切断继承，不修则所有字段标签都被渲染成居中。测试：`tests/invite-dialog-style.spec.ts` 钉住主按钮 token 三件套、accent token 的缺席与 overlay 的左对齐；`tests/members.client.spec.tsx` 改为断言预览方块不带内联 `--member-color`（中性），并断言提交按钮保留 `primary` 类名钩子。名册/speech/composer 的 member-color 身份色体系不受影响，locale 文案与 README 对弹窗的功能性描述均未改。
