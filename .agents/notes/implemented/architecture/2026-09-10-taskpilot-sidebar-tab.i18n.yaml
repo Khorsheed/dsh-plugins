@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-taskpilot-sidebar-tab.md
+.agents/notes/implemented/architecture/2026-09-10-taskpilot-sidebar-tab.md: a9afc82f42918628862327cd5c01f02748aaa31c
+.agents/notes/implemented/architecture/2026-09-10-taskpilot-sidebar-tab.zh.md: 74ca1f43b1660abe45e6f464522398e9300d6bd0

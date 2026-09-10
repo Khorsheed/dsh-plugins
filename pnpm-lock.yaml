@@ -1557,9 +1557,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-client-ui-layout':
-        specifier: 0.1.5-rc.1
-        version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
@@ -1585,11 +1582,14 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(bfd57b829b4aa5a2669e1ad7ff7c2ffc)
-      '@deepseek-ai/dsh-client-store':
-        specifier: 0.1.5-rc.1
+      '@deepseek-ai/dsh-client-ui-dockkit':
+        specifier: ^0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-renderer':
         specifier: 0.1.5-rc.1
+        version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: ^0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
       '@testing-library/dom':
         specifier: ^10.4.1
@@ -2187,6 +2187,11 @@ packages:
 
   '@deepseek-ai/dsh-client-ui-conversation@0.1.5-rc.1':
     resolution: {integrity: sha512-/A+lvO6mc+uTJWJerFyhZeBV+Ez9Sid8+wx7NbIrrg/mdt191IdHqHI9v2sGiIQ/1d+nI3S0YjhOxMH4hGka5A==}
+    peerDependencies:
+      '@deepseek-ai/cordis': 4.0.2
+
+  '@deepseek-ai/dsh-client-ui-dockkit@0.1.5-rc.1':
+    resolution: {integrity: sha512-fH4+wUuwZtI7xmfZRaHjzVztBeih+UHcjOvVzMdcrqTc7QZlnkfK/PEW5zjUgxlQiRlUjFwgQGTAeUFGJItsRA==}
     peerDependencies:
       '@deepseek-ai/cordis': 4.0.2
 
@@ -5199,6 +5204,10 @@ snapshots:
     dependencies:
       '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
       '@deepseek-ai/schemastery': 3.18.2
+
+  '@deepseek-ai/dsh-client-ui-dockkit@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)':
+    dependencies:
+      '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
 
   '@deepseek-ai/dsh-client-ui-layout@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)':
     dependencies:

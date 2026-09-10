@@ -86,6 +86,7 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1'
   - '@deepseek-ai/dsh-workspace@0.1.5-rc.1'
   - '@deepseek-ai/dsh-client-ui-sidebar-right@0.1.5-rc.1'
+  - '@deepseek-ai/dsh-client-ui-dockkit@0.1.5-rc.1'
   - '@deepseek-ai/dsh-chunked-list@0.1.5-rc.1'
   - '@deepseek-ai/dsh-client-file-upload@0.1.5-rc.1'
   - '@deepseek-ai/dsh-http-proxy@0.1.5-rc.1'

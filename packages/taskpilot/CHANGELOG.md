@@ -1,5 +1,14 @@
 # 变更记录
 
+## Unreleased
+
+迁移至宿主 0.1.5 的右栏体系。
+
+- **BREAKING**：minHost 前移至 `0.1.5-rc.1`；宿主 `0.1.2-rc.1` 的用户请停留在 `0.2.0`
+- 详情抽屉（`shell.overlay` 浮层 + 推开布局）整体退役，改为官方右栏的 page-type tab：类型注册进 `ctx.sidebarRightTabs`（kind `taskpilot`，extension 档默认优先级），body 与 chip 标题进 keyed `sidebar.right.pane.tab(.title)` 槽位；胶囊的详情入口改调 `ctx.sidebarRight.openTab('taskpilot', { params: { jobId } })`，同一 tab 内重新导航切换任务
+- 删除抽屉自有状态（drawer store）、推开布局（drawer-inset）与 document 标记逻辑：宽度/全屏/停靠几何全部交给右栏
+- `dsh-client-store` 依赖随抽屉 store 一并移除；新增 `@deepseek-ai/dsh-client-ui-sidebar-right` peer 依赖
+
 ## 0.2.0（2026-09-10）
 
 适配宿主 0.1.2 线。

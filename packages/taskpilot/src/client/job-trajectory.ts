@@ -1,7 +1,7 @@
 /**
  * Fold the session log into the per-job execution trail.
  *
- * The drawer reads the same durable log the trajectory view reads; this pure
+ * The detail tab reads the same durable log the trajectory view reads; this pure
  * function picks out the events one background job produced. The fold is
  * deliberately tolerant: wire shapes are accessed through narrow local
  * interfaces and malformed rows are skipped, so a compaction-folded or
@@ -64,7 +64,7 @@ function clip(text: string, max: number): string {
 
 /**
  * Multi-line command block for the expandable start-row detail: the command,
- * workdir, and description exactly as the model issued them, so the drawer
+ * workdir, and description exactly as the model issued them, so the tab
  * shows what actually ran even though the background ack text carries none of
  * it. Empty when the call arguments were not logged.
  */

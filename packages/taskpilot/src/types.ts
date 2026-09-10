@@ -42,7 +42,7 @@ export function renderTaskPilotCommand(command: TaskPilotCommand): string {
 }
 
 /**
- * One timeline row in the job detail drawer, folded from the session log.
+ * One timeline row in the job detail tab, folded from the session log.
  * `detail` holds the expandable full text (tool result / notice body).
  */
 export interface TrajectoryEntry {
