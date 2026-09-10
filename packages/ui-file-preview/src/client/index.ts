@@ -203,32 +203,38 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // The change-history document renderer: metadata into the registry, the
   // body into the keyed document seat. `priority: 'builtin'` keeps the
   // official renderer the default (an extension band would take it over);
-  // the toolbar dropdown lists every match regardless. Degrade silently on a
-  // composition without the document-preview package (its seat is absent
-  // there anyway).
-  const previews = ctx.get('documentPreviews')
-  if (previews !== undefined) {
-    ctx.effect(() => previews.register({
-      id: FILE_HISTORY_ID,
-      extensions: HISTORY_EXTENSIONS,
-      priority: 'builtin',
-      title: () => t('history.title'),
-      // The body never touches the owner's prepared content — the diffs come
-      // from the filePreview fold — so the cheapest delivery mode applies.
-      loading: 'text-pages',
-    }), 'ui-file-preview: history renderer metadata')
-    ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
-      {
-        name: 'sidebar.right.tab.document',
-        key: FILE_HISTORY_ID,
-        locale: NS,
-        inject: (): Pick<FilePreviewTabInjected, 'listFiles'> => ({
-          listFiles: (sid: SessionId) => remote.list(sid),
-        }),
-      },
-      FileHistoryBody,
-    )), 'ui-file-preview: history renderer body')
-  }
+  // the toolbar dropdown lists every match regardless.
+  // A one-shot `ctx.get` here races the documentpreview fiber's provide —
+  // cordis only re-wakes fibers that declare a service in `inject` — so the
+  // registrations live in a nested plugin pended on the service; in a
+  // composition without document previews it simply never activates.
+  ctx.plugin({
+    name: '@khorsheed/dsh-client-ui-file-preview/history-renderer',
+    inject: ['documentPreviews'],
+    apply: (sub: Context) => {
+      const previews = sub.documentPreviews
+      sub.effect(() => previews.register({
+        id: FILE_HISTORY_ID,
+        extensions: HISTORY_EXTENSIONS,
+        priority: 'builtin',
+        title: () => t('history.title'),
+        // The body never touches the owner's prepared content — the diffs come
+        // from the filePreview fold — so the cheapest delivery mode applies.
+        loading: 'text-pages',
+      }), 'ui-file-preview: history renderer metadata')
+      sub.effect(() => sub.slots.inject('sidebar.right.tab.document', () => sub.slots.register(
+        {
+          name: 'sidebar.right.tab.document',
+          key: FILE_HISTORY_ID,
+          locale: NS,
+          inject: (): Pick<FilePreviewTabInjected, 'listFiles'> => ({
+            listFiles: (sid: SessionId) => remote.list(sid),
+          }),
+        },
+        FileHistoryBody,
+      )), 'ui-file-preview: history renderer body')
+    },
+  })
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
