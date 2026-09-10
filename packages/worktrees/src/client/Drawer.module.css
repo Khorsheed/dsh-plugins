@@ -1,9 +1,9 @@
-/* The frame-wide worktrees drawer: right-side panel over a dimmed backdrop,
-   following the FilePreviewDrawer geometry and the official alias tokens.
+/* Shared sheet of the worktrees right-Sidebar tab and the local-files
+   browser overlay (`shell.overlay`), following the official alias tokens.
 
-   The emphasis color system is shared across the drawer's surfaces so the
-   mode tabs, the commit list and the file table read as ONE design system:
-   a single blue family (active / active-bg / hover) that flips for dark. */
+   The emphasis color system is shared across both surfaces so the mode tabs,
+   the commit list and the file table read as ONE design system: a single
+   blue family (active / active-bg / hover) that flips for dark. */
 :root {
   --wt-active: #315efb;
   --wt-active-bg: #eaf0ff;
@@ -29,6 +29,16 @@ body[data-ds-dark-theme] {
   border-radius: 3px;
 }
 
+/* The worktrees tab body: a flex column filling the right-Sidebar pane —
+   the sidebar owns the track width, docking, and fullscreen. */
+.tabRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -50,15 +60,6 @@ body[data-ds-dark-theme] {
   background: var(--dsw-alias-bg-base);
   box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
   pointer-events: auto;
-}
-
-/* The document mark is set by the drawer's open effect; the push targets the
-   conversation slot's scroll region so only chat moves, leaving the sidebar
-   and details columns untouched. The composer seat lives INSIDE the scroll
-   region (ConversationRoot renders it as a child), so it follows the shrunken
-   container on its own — a seat-level margin would double the push. */
-:global(html[data-worktrees-drawer-open]) :global([data-slot='conversation']) [data-conversation-scroll] {
-  margin-right: var(--dsh-worktrees-drawer-w, min(520px, 100vw));
 }
 
 .header {

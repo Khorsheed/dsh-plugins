@@ -21,7 +21,8 @@ import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { ImagePreview, isImageFile } from './ImagePreview.tsx'
 import { localRootOf, rememberLocalRoot } from './local-root.ts'
 import { basenameOf } from './language.ts'
-import { useDrawerWidth, useTreeWidth } from './Drawer.tsx'
+import { pickFileManager } from './open-in-app.ts'
+import { useDrawerWidth, useTreeWidth } from './sizing.ts'
 import css from './Drawer.module.css'
 
 /** Default browser width (px) — matches the drawer. */
@@ -48,7 +49,7 @@ function toItems(listing: ListLocalDirectoryResult | null, showHidden: boolean):
 /** The local-files browser. */
 export function LocalFilesDrawer({
   useStore, actions, t,
-  listLocalDirectory, readLocalFile, readLocalImage, pickWorkspace, isLoopback, useHostDescription, openExternal,
+  listLocalDirectory, readLocalFile, readLocalImage, pickWorkspace, useOpenInApp, openExternal,
 }: LocalFilesDrawerProps): ReactNode {
   const open = useStore(s => s.open)
   const sessionId = useStore(s => s.sessionId)
@@ -59,7 +60,10 @@ export function LocalFilesDrawer({
   const image = useStore(s => s.image)
   const error = useStore(s => s.error)
   const rev = useStore(s => s.rev)
-  const canOpenHost = isLoopback && useHostDescription(description => description?.canOpenPath === true)
+  // The open-in-app probe feed: null until the host answered — the gesture
+  // stays hidden until the probe confirms a file manager (hidden = degrade).
+  const openInAppApps = useOpenInApp(apps => apps)
+  const folderApp = openInAppApps === null ? undefined : pickFileManager(openInAppApps)
 
   const {
     width: drawerWidth,
@@ -197,8 +201,8 @@ export function LocalFilesDrawer({
             <button type="button" className={css.browserAction} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
               <IconProjectAddOutline16 />
             </button>
-            {canOpenHost && root !== null && (
-              <button type="button" className={css.browserAction} title={t('local.openFolder')} onClick={() => { openExternal(root) }}>
+            {folderApp !== undefined && root !== null && (
+              <button type="button" className={css.browserAction} title={t('local.openFolder')} onClick={() => { openExternal(folderApp, root) }}>
                 <IconFolderOpenOutline16 />
               </button>
             )}

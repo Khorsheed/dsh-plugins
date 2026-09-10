@@ -40,8 +40,8 @@ export interface CommitDetailsProps {
   onBack: () => void
   /** Copy the commit sha; resolves true only on acceptance. */
   copySha: (sha: string) => Promise<boolean>
-  /** Open the repository folder with the host application. */
-  openFolder: () => void
+  /** Open the repository folder with the host application; undefined when the open-in-app probe found no file manager. */
+  openFolder: (() => void) | undefined
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
 }
@@ -88,9 +88,11 @@ export function CommitDetails({
             <button type="button" className={css.action} title={t('action.copy')} onClick={() => { void copySha(commit.sha) }}>
               <IconCopyOutline16 />
             </button>
-            <button type="button" className={css.action} title={t('action.openFolder')} onClick={openFolder}>
-              <IconFolderOpenOutline16 />
-            </button>
+            {openFolder !== undefined && (
+              <button type="button" className={css.action} title={t('action.openFolder')} onClick={openFolder}>
+                <IconFolderOpenOutline16 />
+              </button>
+            )}
           </span>
         </div>
         <div className={css.summary}>{t('commit.summary', { count: formatCount(files.length), add: formatCount(added), del: formatCount(removed) })}</div>

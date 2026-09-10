@@ -20,23 +20,25 @@
     "src/client/CommitList.tsx",
     "src/client/CommitDetails.tsx",
     "src/client/contract.ts",
+    "src/client/definition.tsx",
     "src/client/DetailPane.tsx",
     "src/client/ImagePreview.tsx",
     "src/client/HtmlPreview.tsx",
     "src/client/html-src-doc.ts",
-    "src/client/host-description.ts",
     "src/client/DiffView.tsx",
-    "src/client/Drawer.tsx",
     "src/client/FileTree.tsx",
     "src/client/index.ts",
     "src/client/LocalFilesDrawer.tsx",
     "src/client/language.ts",
     "src/client/local-root.ts",
+    "src/client/open-in-app.ts",
+    "src/client/sizing.ts",
     "src/client/structured.tsx",
     "src/client/locales.ts",
     "src/client/Overview.tsx",
     "src/client/panel-service.ts",
     "src/client/store-local.ts",
-    "src/client/store.ts"
+    "src/client/store.ts",
+    "src/client/WorktreesTab.tsx"
   ]
 }

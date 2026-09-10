@@ -2,6 +2,9 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'tab.title': '工作树',
+  'guide.title': '工作树与改动',
+  'guide.description': '当前会话仓库的改动、提交记录与文件浏览',
   'mode.worktree': '改动',
   'mode.commits': '提交记录',
   'mode.repo': '仓库文件',
@@ -115,13 +118,16 @@ export const NS = 'worktrees'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The worktree status badge and drawer copy. */
+    /** The worktree status badge, the right-Sidebar tab, and the local-files browser copy. */
     'worktrees': WorktreesKey
   }
 }
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'tab.title': 'Worktrees',
+  'guide.title': 'Worktrees & changes',
+  'guide.description': "The session repository's changes, commit log, and file browser",
   'mode.worktree': 'Changes',
   'mode.commits': 'Commits',
   'mode.repo': 'Repository',
@@ -223,6 +229,6 @@ export const en = {
   'state.loading': 'Loading…',
   'state.error': 'Failed to load: {message}',
   'aria.badge': 'Current session repository and worktree status',
-  'aria.openDrawer': 'Open changes drawer',
+  'aria.openDrawer': 'Open the worktrees tab',
   'aria.openLocal': 'Open the local file browser',
 } satisfies Record<string, string>

@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 /**
- * Drawer spec under the composed-props form: a real store instance
+ * Worktrees tab spec under the composed-props form: a real store instance
  * (createWorktreesStore().create()) and injected Remote mocks. Asserts the
- * open → changes-fetch → file-select → diff-fetch chain that the browser
+ * mount → changes-fetch → file-select → diff-fetch chain that the browser
  * flow depends on: selecting a committed file must drive a
  * `fetchFileDiff(sessionId, { path, segment: 'committed' })` call when the
- * detail view switches to diff, and a `fetchReadFile` call for content.
+ * detail view switches to diff, and a `fetchReadFile` call for content. The
+ * tab renders on mount (open/close is the tab record's own, owned by the
+ * right Sidebar) and follows navigation params on every revision.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
-import type { WorktreesDrawerProps } from '../src/client/contract.ts'
-import { WorktreesDrawer } from '../src/client/Drawer.tsx'
+import type { WorktreesTabProps } from '../src/client/contract.ts'
+import { WorktreesTab } from '../src/client/WorktreesTab.tsx'
 import { createWorktreesStore } from '../src/client/store.ts'
 import type { ChangesResult, FileDiffResult, ReadFileResult, SessionSummary } from '../src/types.ts'
 
@@ -51,7 +53,14 @@ const CHANGES: ChangesResult = {
   ],
 }
 
-function makeHarness() {
+interface HarnessOptions {
+  /** Navigation params the open carried (the badge's mode). */
+  params?: { mode?: 'worktree' | 'commits' | 'repo' }
+  /** Navigation revision (0 = a record nobody opened by address). */
+  revision?: number
+}
+
+function makeHarness(over: HarnessOptions = {}) {
   const instance = createWorktreesStore().create()
   const fetchSummary = vi.fn<() => Promise<Result<SessionSummary>>>()
   const fetchChanges = vi.fn<() => Promise<Result<ChangesResult>>>()
@@ -71,56 +80,58 @@ function makeHarness() {
   fetchFileDiff.mockResolvedValue({ ok: true as const, value: { diff: 'diff --git a/x b/x\n+new\n' } })
   fetchReadFile.mockResolvedValue({ ok: true as const, value: { content: 'hello\n' } })
 
+  const navigation = { address: 'sidebar://worktrees', params: over.params, revision: over.revision ?? 0 }
+  // Stable identities: the body lists `tab.signal` in effect deps, so a fresh
+  // object per render would re-fire every fetch effect in a loop.
+  const tab = { id: 'tab-1', signal: new AbortController().signal, navigation }
   const props = {
+    sessionId: SESSION,
+    useTabInfo: () => ({ tab }),
     useStore: hookOf(instance),
     actions: instance.actions,
-    useSessions: ((sel: (s: { current: string | undefined }) => unknown) => sel({ current: SESSION })) as never,
+    // No probed apps: the open-in-app gestures stay hidden.
+    useOpenInApp: ((sel: (apps: readonly string[] | null) => unknown) => sel([])) as never,
     fetchSummary,
     fetchChanges,
     fetchRepoFiles,
     fetchCommitLog,
     fetchCommitFiles,
+    fetchWorktrees: vi.fn(),
+    switchWorktree: vi.fn(),
+    directAgent: vi.fn(),
+    bumpVersion: vi.fn(),
     fetchFileDiff,
     fetchReadFile,
-    isLoopback: true,
-    useHostDescription: ((sel: (d: { canOpenPath: boolean }) => unknown) => sel({ canOpenPath: true })) as never,
+    fetchReadFileAtCommit: vi.fn(),
+    fetchReadRepoImage: vi.fn(),
     openExternal,
     copyBranch,
     t: (key: string, params?: Record<string, unknown>) => (
       params === undefined ? key : `${key} ${JSON.stringify(params)}`
     ),
-  } as unknown as WorktreesDrawerProps
+  } as unknown as WorktreesTabProps
 
-  return { instance, props, fetchFileDiff, fetchReadFile, fetchChanges }
+  return { instance, props, fetchFileDiff, fetchReadFile, fetchChanges, fetchCommitLog }
 }
 
 afterEach(() => { cleanup() })
 
-describe('WorktreesDrawer', () => {
-  it('renders nothing while closed', () => {
-    const { instance, props } = makeHarness()
-    render(<WorktreesDrawer {...props} />)
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
+describe('WorktreesTab', () => {
+  it('fetches changes on mount and drives fileDiff on select + diff view', async () => {
+    const { props, fetchFileDiff, fetchReadFile, fetchChanges } = makeHarness()
+    render(<WorktreesTab {...props} />)
 
-  it('fetches changes on open and drives fileDiff on select + diff view', async () => {
-    const { instance, props, fetchFileDiff, fetchReadFile, fetchChanges } = makeHarness()
-    render(<WorktreesDrawer {...props} />)
-
-    // Open in changes mode.
-    instance.actions.open('worktree')
     await waitFor(() => expect(fetchChanges).toHaveBeenCalledWith(SESSION))
-    await waitFor(() => expect(fetchChanges.mock.results[0]?.value).toBeDefined())
     await new Promise(r => setTimeout(r, 500))
     // The tree defaults to the first level — expand the directories down to
     // the committed file, then click it. The tree rows are buttons whose text
     // lives in a child span; query the span and climb to the row.
-    const dialog = () => within(screen.getByRole('dialog'))
+    const region = () => within(screen.getByRole('region'))
     for (const dir of ['packages', 'room', 'src']) {
-      const dirRow = await dialog().findByRole('button', { name: dir })
+      const dirRow = await region().findByRole('button', { name: dir })
       fireEvent.click(dirRow)
     }
-    const row = await dialog().findByRole('button', { name: /index\.ts/ })
+    const row = await region().findByRole('button', { name: /index\.ts/ })
     fireEvent.click(row)
     // Selecting a file no longer folds the tree (manual collapse only) and the
     // detail defaults to the diff → fileDiff drives
@@ -134,5 +145,13 @@ describe('WorktreesDrawer', () => {
     const contentButton = await screen.findByText('detail.content')
     fireEvent.click(contentButton)
     await waitFor(() => expect(fetchReadFile).toHaveBeenCalledWith(SESSION, { path: 'packages/room/src/index.ts' }))
+  })
+
+  it('applies the navigation params mode on arrival', async () => {
+    const { instance, props, fetchCommitLog } = makeHarness({ params: { mode: 'commits' }, revision: 1 })
+    render(<WorktreesTab {...props} />)
+    await waitFor(() => expect(instance.getSnapshot().mode).toBe('commits'))
+    // The commits mode's data plane is the commit log.
+    await waitFor(() => expect(fetchCommitLog).toHaveBeenCalledWith(SESSION))
   })
 })

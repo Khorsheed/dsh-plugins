@@ -1,25 +1,24 @@
 /**
- * The drawer's transient store: open state, mode, selection, and the fetched
+ * The worktrees tab's transient store: mode, selection, and the fetched
  * results (whole values, null until loaded). Module level exports the factory
  * only — a module-level handle would pin the store's identity in the module
  * cache (a de-facto singleton surviving plugin reloads). register() receives
- * the factory (the framework instantiates per entry) and the drawer derives
- * its PropsStore share from the return type.
+ * the factory (the framework instantiates one per session scope) and the tab
+ * derives its PropsStore share from the return type. Open/close state is the
+ * tab record's own — the right Sidebar owns it, so nothing here tracks it.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   ChangedFile, ChangesResult, CommitInfo, FileDiffResult, LocalImageResult, ReadFileResult, SessionSummary, WorktreeInfo,
 } from '../types.ts'
 
-/** The drawer's three modes. */
+/** The tab's three modes. */
 export type DrawerMode = 'worktree' | 'commits' | 'repo'
 /** The detail pane's two views. */
 export type DetailView = 'diff' | 'content'
 
-/** The drawer's state; fetched results are whole values, null until loaded. */
+/** The tab's state; fetched results are whole values, null until loaded. */
 export interface WorktreesState {
-  /** Whether the drawer is open. */
-  open: boolean
   /** The active mode (defaults to the worktree changes view). */
   mode: DrawerMode
   /** The selected file's repo-relative path, or null. */
@@ -64,8 +63,6 @@ export interface WorktreesState {
 
 /** Annotation twin of the actions literal below (drift fails assignability at defineStore). */
 export type WorktreesActions = {
-  open: (draft: WorktreesState, mode: DrawerMode) => void
-  close: (draft: WorktreesState) => void
   setMode: (draft: WorktreesState, mode: DrawerMode) => void
   toggleTree: (draft: WorktreesState) => void
   setTreeCollapsed: (draft: WorktreesState, collapsed: boolean) => void
@@ -90,7 +87,6 @@ export type WorktreesActions = {
 }
 
 const INITIAL: WorktreesState = {
-  open: false,
   mode: 'worktree',
   selectedPath: null,
   selectedSegment: null,
@@ -114,28 +110,13 @@ const INITIAL: WorktreesState = {
 }
 
 /**
- * Create the worktrees drawer store handle.
+ * Create the worktrees tab store handle.
  * @returns the store handle (spec + type + identity + factory in one).
  */
 export function createWorktreesStore(): EngineStoreHandle<WorktreesState, WorktreesActions> {
   return defineStore({
     init: (): WorktreesState => ({ ...INITIAL }),
     actions: {
-      open: (d, mode: DrawerMode) => {
-        d.open = true
-        d.mode = mode
-        d.error = null
-        d.rev += 1
-      },
-      close: (d) => {
-        d.open = false
-        d.selectedPath = null
-        d.selectedSegment = null
-        d.selectedCommit = null
-        d.diff = null
-        d.content = null
-        d.repoImage = null
-      },
       setMode: (d, mode: DrawerMode) => {
         d.mode = mode
         d.selectedPath = null

@@ -1,10 +1,10 @@
 /**
  * Slot-facing types of the worktrees client half: the injected faces and the
- * composed props of its two entries — the session-header badge
- * (`conversation.session.header.utilities`) and the frame-wide drawer
+ * composed props of its entries — the session-header badge
+ * (`conversation.session.header.utilities`), the right-Sidebar page tab
+ * (`sidebar.right.pane.tab`), and the frame-wide local-files browser
  * (`shell.overlay`).
  */
-import type { HostDescriptionSource } from './host-description.ts'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   InjectFace, PropsLocale, PropsRuntime, PropsStore,
@@ -17,6 +17,11 @@ import type {} from '@khorsheed/dsh-worktrees/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls ui-session's SessionStandardProps merge (sessionId).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: pulls the right-Sidebar SlotMap seats ('sidebar.right.pane.tab')
+// and the tab-params map this package merges into.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type {
@@ -26,6 +31,7 @@ import type {
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
   SessionSummary, WorktreeInfo,
 } from '../types.ts'
+import type { OpenInAppSource } from './open-in-app.ts'
 import type { createLocalFilesStore } from './store-local.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
@@ -39,11 +45,11 @@ export interface WorktreesBadgeInjected {
    * arrives through the data face). An empty list keeps the badge visible.
    */
   fetchBadgeConfig: () => Promise<RemoteResult<BadgeConfig>>
-  /** Open the drawer in one mode (routes to the root drawer store). */
+  /** Open the worktrees right-Sidebar tab in one mode. */
   open: (mode: DrawerMode) => void
   /** Open the local-files browser from a starting directory for one session. */
   openLocalFiles: (sessionId: SessionId, start: string) => void
-  /** Subscribe to active-worktree changes (a drawer switch bumps it). */
+  /** Subscribe to active-worktree changes (a tab switch bumps it). */
   subscribeVersion: (listener: () => void) => () => void
   /** The current active-worktree version (for re-fetch sequencing). */
   getVersion: () => number
@@ -55,8 +61,8 @@ export type WorktreesBadgeProps =
   & InjectFace<WorktreesBadgeInjected>
   & PropsLocale<'worktrees'>
 
-/** Business face injected into the root overlay drawer entry. */
-export interface WorktreesDrawerInjected {
+/** Business face injected into the right-Sidebar worktrees tab body. */
+export interface WorktreesTabInjected {
   fetchSummary: (sessionId: SessionId) => Promise<RemoteResult<SessionSummary>>
   fetchChanges: (sessionId: SessionId) => Promise<RemoteResult<ChangesResult>>
   fetchRepoFiles: (sessionId: SessionId) => Promise<RemoteResult<string[]>>
@@ -75,23 +81,24 @@ export interface WorktreesDrawerInjected {
   fetchReadFileAtCommit: (sessionId: SessionId, request: ReadFileAtCommitRequest) => Promise<RemoteResult<ReadFileResult>>
   /** Read a repo-relative file as an inline image (the repo browser's image data plane). */
   fetchReadRepoImage: (sessionId: SessionId, request: ReadRepoImageRequest) => Promise<RemoteResult<LocalImageResult>>
-  /** Whether the browser itself is connected over loopback. */
-  isLoopback: boolean
   hooks: {
-    /** Current generation's Host description, bound by the slot renderer. */
-    hostDescription: HostDescriptionSource
+    /** The official open-in-app probe feed (null until the host answered), bound by the slot renderer. */
+    openInApp: OpenInAppSource
   }
-  /** Open the worktree path with the host default application (folder/IDE). */
-  openExternal: (path: string) => void
+  /**
+   * Open a directory with one probed host application (the official
+   * open-in-app POST route; directories only).
+   */
+  openExternal: (appId: string, path: string) => void
   /** Copy the branch name to the clipboard; resolves true only on acceptance. */
   copyBranch: (branch: string) => Promise<boolean>
 }
 
-/** Full props of the root overlay drawer entry. */
-export type WorktreesDrawerProps =
-  PropsRuntime<'shell.overlay'>
+/** Full props of the right-Sidebar worktrees tab body entry. */
+export type WorktreesTabProps =
+  PropsRuntime<'sidebar.right.pane.tab'>
   & PropsStore<ReturnType<typeof createWorktreesStore>>
-  & InjectFace<WorktreesDrawerInjected>
+  & InjectFace<WorktreesTabInjected>
   & PropsLocale<'worktrees'>
 
 /** Business face injected into the root overlay local-files browser entry. */
@@ -106,14 +113,12 @@ export interface LocalFilesDrawerInjected {
   listWorkspaces: () => readonly { id: string; title: string; path: string }[]
   /** Open the host's native directory picker; resolves the chosen path, or null when cancelled. */
   pickWorkspace: () => Promise<string | null>
-  /** Whether the browser itself is connected over loopback. */
-  isLoopback: boolean
   hooks: {
-    /** Current generation's Host description, bound by the slot renderer. */
-    hostDescription: HostDescriptionSource
+    /** The official open-in-app probe feed (null until the host answered), bound by the slot renderer. */
+    openInApp: OpenInAppSource
   }
-  /** Open a path with the host default application (folder/IDE). */
-  openExternal: (path: string) => void
+  /** Open a directory with one probed host application (official open-in-app route; directories only). */
+  openExternal: (appId: string, path: string) => void
 }
 
 /** Full props of the root overlay local-files browser entry. */

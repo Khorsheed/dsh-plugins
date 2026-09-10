@@ -4,11 +4,12 @@
  * local-files browser — git-agnostic, so it renders in EVERY session (repo or
  * not), starting from the session's repository root (or the filesystem root
  * when the session is not a repo). RIGHT (branch icon + branch name + counts)
- * opens the worktrees drawer (changes / commits / repo files) and only renders
- * in repository sessions. Status is expressed by the counts color (warn tint
- * when there are uncommitted changes) rather than a jarring outline. The
- * branch capsule re-fetches whenever the active worktree changes (a drawer
- * switch bumps the version), so it tracks the switched worktree's branch.
+ * opens the worktrees right-Sidebar tab (changes / commits / repo files) and
+ * only renders in repository sessions. Status is expressed by the counts
+ * color (warn tint when there are uncommitted changes) rather than a jarring
+ * outline. The branch capsule re-fetches whenever the active worktree changes
+ * (a tab switch bumps the version), so it tracks the switched worktree's
+ * branch.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { IconBranchOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'

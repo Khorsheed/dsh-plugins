@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.md
+
+.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.md: 61d6660ec6f5c9ffdd87d21f8ebecca4ccb656b4
+.agents/notes/implemented/architecture/2026-09-10-worktrees-sidebar-tab.zh.md: 30f38d454fa73b95b26bd0f25bb99491a53e893d
